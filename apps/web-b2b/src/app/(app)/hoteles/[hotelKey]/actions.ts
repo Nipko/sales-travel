@@ -57,7 +57,7 @@ export interface HotelDetailRatesResult {
   readonly error?: string;
 }
 
-const INVALID_KEY = 'No reconocemos ese hotel. Abrilo desde los resultados de una búsqueda.';
+const INVALID_KEY = 'No reconocemos ese hotel. Ábrelo desde los resultados de una búsqueda.';
 
 function pathOf(ref: HotelProviderHotelRef): string {
   return `/hotels/content/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.hotelId)}?lang=${CONTENT_LANG}`;
@@ -105,7 +105,7 @@ export async function hotelRatesAction(
     return {
       ok: false,
       outcomes: [],
-      error: 'Faltan los datos de la búsqueda. Buscá de nuevo desde Hoteles.',
+      error: 'Faltan los datos de la búsqueda. Busca de nuevo desde Hoteles.',
     };
   }
 

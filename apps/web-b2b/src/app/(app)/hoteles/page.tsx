@@ -1,7 +1,19 @@
 'use client';
 
-import { Hotel, Info, Loader2, RefreshCw, Search, TriangleAlert } from 'lucide-react';
+import { Hotel, Info, RefreshCw, TriangleAlert } from 'lucide-react';
 import { startTransition, useActionState, useEffect, useId, useRef, useState } from 'react';
+import {
+  DateRangePicker,
+  EMPTY_RANGE,
+  rangeLengthLabel,
+  todayIso,
+  type DateRange,
+} from '../../../components/ui/date-range-picker';
+import {
+  ResultsSkeletonFrame,
+  SearchButtonLabel,
+  SearchLoading,
+} from '../../../components/ui/search-loading';
 import { cn } from '../../../lib/cn';
 import {
   hotelSearchCurrenciesAction,
@@ -13,6 +25,7 @@ import {
 import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
 import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
+import { HotelResultSkeleton } from './_components/hotel-result-card';
 import { HotelResults } from './_components/hotel-results';
 import {
   newSearchToken,
@@ -30,6 +43,7 @@ import {
 } from './_components/search-currency';
 import { SearchSummaryBar } from './_components/search-summary-bar';
 import { searchWalletNotice, type SearchWallets } from './_components/search-wallet';
+import { searchingEcho, stayDatesProblem, type StayDatesProblem } from './_components/stay-dates';
 
 const INITIAL: HotelSearchResult = {
   ok: false,
@@ -43,11 +57,6 @@ const inputClass = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 focus-visible:border-[var(--color-primary)]',
   'transition-all duration-150',
 );
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 /**
  * Resultados incompletos: un proveedor no respondió, se omitió en esta búsqueda o respondió con
@@ -100,7 +109,7 @@ function DegradedProvidersNotice({
         {switchTo ? (
           <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-[var(--color-fg-muted)]">
-              Hay tarifas en {switchTo} que no se muestran: buscá en {switchTo} para verlas. No se
+              Hay tarifas en {switchTo} que no se muestran: busca en {switchTo} para verlas. No se
               convierte ningún precio.
             </p>
             <button
@@ -111,7 +120,7 @@ function DegradedProvidersNotice({
             >
               <RefreshCw
                 aria-hidden="true"
-                className={cn('size-3.5', searching && 'animate-spin')}
+                className={cn('size-3.5', searching && 'animate-spin motion-reduce:animate-none')}
               />
               Buscar en {switchTo}
             </button>
@@ -124,12 +133,27 @@ function DegradedProvidersNotice({
 
 export default function HotelesPage() {
   const [state, formAction, isPending] = useActionState(searchHotelsAction, INITIAL);
-  const [checkin, setCheckin] = useState('');
-  const [checkout, setCheckout] = useState('');
+  // Entrada y salida en un solo calendario, como vuelos: primer clic la entrada, segundo la salida.
+  const [dates, setDates] = useState<DateRange>(EMPTY_RANGE);
+  const [datesProblem, setDatesProblem] = useState<string | null>(null);
+  const datesIds = {
+    label: useId(),
+    nights: useId(),
+    checkin: useId(),
+    checkout: useId(),
+    error: useId(),
+  };
+  const nightsLabel = rangeLengthLabel(dates, 'stay');
+  const datesDescribedBy =
+    [nightsLabel !== null ? datesIds.nights : null, datesProblem !== null ? datesIds.error : null]
+      .filter(Boolean)
+      .join(' ') || undefined;
+  /** Qué se está buscando, congelado al enviar: si el vendedor sigue tocando, la espera no miente. */
+  const [echo, setEcho] = useState('');
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
   const formId = useId();
-  const today = todayISO();
+  const today = todayIso();
 
   // Con resultados, el formulario se pliega detrás de la barra de la búsqueda; "Editar búsqueda"
   // lo vuelve a abrir con los mismos datos (sigue montado, sólo oculto). Cada búsqueda nueva lo
@@ -211,6 +235,36 @@ export default function HotelesPage() {
     window.history.replaceState(null, '', `${pathname}${query}${hash}`);
   }
 
+  /** Toda búsqueda sale por acá: el eco de la espera y el foco a los resultados al volver. */
+  function launch(data: FormData) {
+    const field = (name: string) => {
+      const value = data.get(name);
+      return typeof value === 'string' ? value : '';
+    };
+    setEcho(
+      searchingEcho({
+        destinationLabel: field('destinationLabel'),
+        hotelIdsCount: field('hotelIds')
+          .split(/[\s,;]+/)
+          .filter(Boolean).length,
+        checkinDate: field('checkinDate'),
+        checkoutDate: field('checkoutDate'),
+      }),
+    );
+    focusResults.current = true;
+    startTransition(() => formAction(data));
+  }
+
+  /** Marca las fechas y lleva el foco a la mitad del calendario que hay que tocar. */
+  function showDatesProblem(problem: StayDatesProblem) {
+    setDatesProblem(problem.message);
+    window.requestAnimationFrame(() =>
+      document
+        .getElementById(problem.edge === 'end' ? datesIds.checkout : datesIds.checkin)
+        ?.focus(),
+    );
+  }
+
   /** "Buscar en USD" del aviso: la misma búsqueda, con la otra moneda. */
   function searchIn(next: string) {
     const form = formRef.current;
@@ -219,21 +273,23 @@ export default function HotelesPage() {
     // El valor del campo todavía es el anterior hasta el próximo render: se pisa en los datos.
     const data = new FormData(form);
     data.set('currency', next);
-    focusResults.current = true;
-    startTransition(() => formAction(data));
+    launch(data);
   }
 
   /**
    * "Buscar de nuevo" del aviso de vencimiento: la misma búsqueda. Con el formulario plegado, un
    * campo que dejó de valer (la entrada quedó en el pasado con la pantalla abierta desde ayer)
-   * frenaría el envío sin que se vea por qué: se abre el formulario y el navegador lo señala.
+   * frenaría el envío sin que se vea por qué: se abre el formulario y se señala el campo. Las
+   * fechas van en campos ocultos, que el navegador no valida: las revisa `stayDatesProblem`.
    */
   function searchAgain() {
     const form = formRef.current;
     if (!form) return;
-    if (!form.checkValidity()) {
+    const problem = stayDatesProblem(dates.start ?? '', dates.end ?? '', todayIso());
+    if (problem !== null || !form.checkValidity()) {
       setEditing(true);
-      window.requestAnimationFrame(() => form.reportValidity());
+      if (problem !== null) showDatesProblem(problem);
+      else window.requestAnimationFrame(() => form.reportValidity());
       return;
     }
     form.requestSubmit();
@@ -314,54 +370,72 @@ export default function HotelesPage() {
         action={formAction}
         onSubmit={(event) => {
           event.preventDefault();
-          focusResults.current = true;
-          const data = new FormData(event.currentTarget);
-          startTransition(() => formAction(data));
+          // El botón queda enfocable mientras se busca (`aria-disabled`): un segundo Enter no
+          // lanza otra búsqueda encima de la primera.
+          if (isPending) return;
+          // Hoy se mide al enviar, no al pintar: la pantalla puede llevar abierta desde ayer.
+          const problem = stayDatesProblem(dates.start ?? '', dates.end ?? '', todayIso());
+          if (problem !== null) {
+            showDatesProblem(problem);
+            return;
+          }
+          setDatesProblem(null);
+          launch(new FormData(event.currentTarget));
         }}
         className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] sm:p-5"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DestinationCombobox />
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="checkinDate"
-              className="block text-xs font-medium text-[var(--color-fg)]"
-            >
-              Entrada
-            </label>
-            <input
-              id="checkinDate"
-              name="checkinDate"
-              type="date"
-              required
-              min={today}
-              value={checkin}
-              onChange={(e) => {
-                setCheckin(e.target.value);
-                if (checkout && e.target.value >= checkout) setCheckout('');
-              }}
-              className={inputClass}
-            />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1.1fr)]">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <DestinationCombobox />
           </div>
 
           <div className="space-y-1.5">
-            <label
-              htmlFor="checkoutDate"
-              className="block text-xs font-medium text-[var(--color-fg)]"
-            >
-              Salida
-            </label>
-            <input
-              id="checkoutDate"
-              name="checkoutDate"
-              type="date"
-              required
-              min={checkin || today}
-              value={checkout}
-              onChange={(e) => setCheckout(e.target.value)}
-              className={inputClass}
+            {/* Las noches van en el rótulo y no dentro del campo: adentro le quitaban lugar a las
+                fechas, que se cortaban («mar…») entre 1024 y 1200 px y a 320 px. */}
+            <div className="flex items-baseline justify-between gap-2">
+              <span
+                id={datesIds.label}
+                className="block text-xs font-medium text-[var(--color-fg)]"
+              >
+                Fechas
+              </span>
+              {nightsLabel !== null ? (
+                <span
+                  id={datesIds.nights}
+                  className="text-xs font-medium tabular-nums text-[var(--color-fg-muted)]"
+                >
+                  {nightsLabel}
+                </span>
+              ) : null}
+            </div>
+            <DateRangePicker
+              mode="roundtrip"
+              purpose="stay"
+              size="md"
+              value={dates}
+              onChange={(range) => {
+                setDates(range);
+                setDatesProblem(null);
+              }}
+              min={today}
+              startName="checkinDate"
+              endName="checkoutDate"
+              triggerId={datesIds.checkin}
+              endTriggerId={datesIds.checkout}
+              labelledBy={datesIds.label}
+              invalid={datesProblem !== null}
+              describedBy={datesDescribedBy}
             />
+            {datesProblem !== null ? (
+              <p
+                id={datesIds.error}
+                role="alert"
+                className="flex items-start gap-1.5 text-xs font-medium text-[var(--color-danger)]"
+              >
+                <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+                {datesProblem}
+              </p>
+            ) : null}
           </div>
 
           <RoomsPicker />
@@ -397,8 +471,8 @@ export default function HotelesPage() {
             className="mt-0.5 size-3.5 shrink-0 text-[var(--color-fg-subtle)]"
           />
           <span>
-            Elegí un destino del autocompletado y buscamos en el catálogo de hoteles de cada
-            proveedor habilitado. Si necesitás hoteles puntuales, podés escribir sus IDs. Los
+            Elige un destino del autocompletado y buscamos en el catálogo de hoteles de cada
+            proveedor habilitado. Si necesitas hoteles puntuales, puedes escribir sus IDs. Los
             catálogos se actualizan todas las noches: un destino o un hotel nuevo puede tardar un
             día en aparecer. Precio, estrellas, régimen y &quot;Solo reembolsables&quot; se filtran
             en los resultados, sin volver a buscar.
@@ -406,25 +480,30 @@ export default function HotelesPage() {
         </div>
 
         <div className="mt-4 flex justify-end">
+          {/* `aria-disabled` y no `disabled`: un botón deshabilitado suelta el foco al `body`
+              durante toda la espera (y ahí se queda si la búsqueda falla), y el «Buscando…» a
+              media opacidad no se lee. El envío repetido lo frena `onSubmit`. */}
           <button
             type="submit"
-            disabled={isPending}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-5 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            aria-disabled={isPending || undefined}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-5 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-[background-color,transform] hover:bg-[var(--color-primary-hover)] active:scale-[0.99] aria-disabled:cursor-progress aria-disabled:active:scale-100 motion-reduce:transform-none sm:w-auto"
           >
-            {isPending ? (
-              <>
-                <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Buscando…
-              </>
-            ) : (
-              <>
-                <Search aria-hidden="true" className="size-4" /> Buscar hoteles
-              </>
-            )}
+            <SearchButtonLabel searching={isPending}>Buscar hoteles</SearchButtonLabel>
           </button>
         </div>
       </form>
 
-      {state.error ? (
+      {/* La espera ocupa el lugar de los resultados. Los de la búsqueda anterior quedan montados
+          pero ocultos: filtros, orden y vista viven en ellos (y en la URL) y no se pierden. */}
+      <SearchLoading active={isPending} subject="hoteles" echo={echo}>
+        <ResultsSkeletonFrame>
+          {[0, 1, 2].map((i) => (
+            <HotelResultSkeleton key={i} />
+          ))}
+        </ResultsSkeletonFrame>
+      </SearchLoading>
+
+      {state.error && !isPending ? (
         <div
           role="alert"
           className="rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5 px-4 py-3 text-sm text-[var(--color-danger)]"
@@ -433,7 +512,7 @@ export default function HotelesPage() {
         </div>
       ) : null}
 
-      {state.ok ? (
+      {state.ok && !isPending ? (
         <DegradedProvidersNotice
           providers={state.providers}
           switchTo={currencySwitchSuggestion(
@@ -448,19 +527,21 @@ export default function HotelesPage() {
 
       {state.ok ? (
         hotelCount > 0 ? (
-          <HotelResults
-            hotels={state.hotels}
-            showProvider={state.showProviderInResults}
-            nonRefundableBlocked={state.nonRefundableBlocked === true}
-            criteria={state.criteria}
-            receivedAt={state.receivedAt}
-            clockOffsetMs={clockOffsetMs}
-            searchToken={searchToken}
-            searching={isPending}
-            onSearchAgain={searchAgain}
-            headingId={resultsHeadingId}
-          />
-        ) : (
+          <div hidden={isPending}>
+            <HotelResults
+              hotels={state.hotels}
+              showProvider={state.showProviderInResults}
+              nonRefundableBlocked={state.nonRefundableBlocked === true}
+              criteria={state.criteria}
+              receivedAt={state.receivedAt}
+              clockOffsetMs={clockOffsetMs}
+              searchToken={searchToken}
+              searching={isPending}
+              onSearchAgain={searchAgain}
+              headingId={resultsHeadingId}
+            />
+          </div>
+        ) : isPending ? null : (
           <EmptyResults providers={state.providers} />
         )
       ) : null}

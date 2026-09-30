@@ -242,7 +242,7 @@ function estimatedPenaltyViewOf(estimate: HotelCancellationEstimate, sale: Money
 // ───────────────────────── Qué impide enviarla ─────────────────────────
 
 const STALE_RETRY =
-  'Ese intento de cancelación ya no se puede reintentar: la reserva cambió desde que abriste el historial. Cerrá y revisá su estado actualizado.';
+  'Ese intento de cancelación ya no se puede reintentar: la reserva cambió desde que abriste el historial. Cierra y revisa su estado actualizado.';
 
 /**
  * Qué impide enviar la cancelación, con el historial recién leído, o `null` si nada.
@@ -284,7 +284,7 @@ const UNKNOWN: HotelCancelOutcome = {
   kind: 'unknown',
   title: 'No sabemos si la cancelación se envió',
   message:
-    'No recibimos la respuesta. No la vuelvas a cancelar: actualizá el estado de la reserva en unos minutos. Si salió, aparece como Cancelación en curso o Cancelada.',
+    'No recibimos la respuesta. No la vuelvas a cancelar: actualiza el estado de la reserva en unos minutos. Si salió, aparece como Cancelación en curso o Cancelada.',
 };
 
 /** Estados en que el pedido pudo haber llegado al proveedor aunque no haya respuesta. */
@@ -309,7 +309,7 @@ export function hotelCancelOutcomeOf(status: number, body: unknown): HotelCancel
         kind: 'rejected',
         title: 'El proveedor no aceptó la cancelación',
         message:
-          'La reserva sigue vigente. Revisá su política y, si hace falta, consultalo con soporte antes de volver a intentar.',
+          'La reserva sigue vigente. Revisa su política y, si hace falta, consúltalo con soporte antes de volver a intentar.',
       };
     }
     if (warnings.includes(CANCELLATION_STILL_RUNNING)) {
@@ -347,6 +347,6 @@ export function hotelCancelOutcomeOf(status: number, body: unknown): HotelCancel
     title: 'La cancelación no se completó',
     message:
       message ??
-      'El servidor no aceptó el pedido. Actualizá el estado de la reserva antes de volver a intentar.',
+      'El servidor no aceptó el pedido. Actualiza el estado de la reserva antes de volver a intentar.',
   };
 }

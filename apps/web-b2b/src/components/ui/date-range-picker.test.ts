@@ -17,9 +17,13 @@ import {
   nextRange,
   openDraft,
   pickerHint,
+  popoverPlacement,
   previewRange,
+  RANGE_TEXT,
+  rangeLengthLabel,
   rangeSummary,
   seleccionarDia,
+  spanNotice,
   todayIso,
   tripLength,
   tripLengthLabel,
@@ -63,10 +67,10 @@ describe('primer clic, segundo clic', () => {
   it('el calendario dice en cada paso qué fecha está esperando', () => {
     const conIda = nextRange(VACIO, '2026-09-12', IDA_VUELTA);
 
-    expect(pickerHint(VACIO, IDA_VUELTA)).toBe('Elija la fecha de ida');
-    expect(pickerHint(conIda, IDA_VUELTA)).toBe('Elija la fecha de vuelta');
+    expect(pickerHint(VACIO, IDA_VUELTA)).toBe('Elige la fecha de ida');
+    expect(pickerHint(conIda, IDA_VUELTA)).toBe('Elige la fecha de vuelta');
     expect(pickerHint(nextRange(conIda, '2026-09-19', IDA_VUELTA), IDA_VUELTA)).toBe(
-      'Elija la fecha de ida',
+      'Elige la fecha de ida',
     );
   });
 });
@@ -490,5 +494,211 @@ describe('seleccionarDia: sin «Aplicar», el calendario confirma solo', () => {
       start: '2026-10-14',
       end: '2026-10-14',
     });
+  });
+});
+
+/*
+ * Hoteles y autos usan el mismo calendario que vuelos: un solo campo, primer clic la primera
+ * fecha y segundo clic la segunda. Cambian las palabras, la cifra del rango y —en hoteles— la
+ * separación mínima: no se vende una estadía de cero noches.
+ */
+const ESTADIA: RangeRules = { mode: 'roundtrip', min: HOY, minSpan: 1 };
+const ALQUILER: RangeRules = { mode: 'roundtrip', min: HOY };
+
+describe('hoteles: entrada y salida en el mismo calendario', () => {
+  it('primer clic la entrada, segundo clic la salida, y el rango se confirma solo', () => {
+    const { draft, commit } = seleccionarDia(VACIO, '2026-10-12', ESTADIA);
+    expect(draft).toEqual({ start: '2026-10-12', end: null });
+    expect(commit).toBeNull();
+
+    expect(seleccionarDia(draft, '2026-10-15', ESTADIA).commit).toEqual({
+      start: '2026-10-12',
+      end: '2026-10-15',
+    });
+  });
+
+  it('mínimo una noche: tocar otra vez la entrada no cierra una estadía de cero noches', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+    const { draft, commit } = seleccionarDia(conEntrada, '2026-10-12', ESTADIA);
+
+    expect(draft).toEqual(conEntrada);
+    expect(commit).toBeNull();
+  });
+
+  it('la noche siguiente ya es una estadía válida', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+
+    expect(seleccionarDia(conEntrada, '2026-10-13', ESTADIA).commit).toEqual({
+      start: '2026-10-12',
+      end: '2026-10-13',
+    });
+  });
+
+  it('tocar una fecha anterior a la entrada rehace el rango desde ahí', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+
+    expect(nextRange(conEntrada, '2026-10-05', ESTADIA)).toEqual({
+      start: '2026-10-05',
+      end: null,
+    });
+  });
+
+  it('el hover sobre la misma entrada no anticipa un rango que no se puede elegir', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+
+    expect(previewRange(conEntrada, '2026-10-12', ESTADIA)).toEqual(conEntrada);
+    expect(previewRange(conEntrada, '2026-10-14', ESTADIA)).toEqual({
+      start: '2026-10-12',
+      end: '2026-10-14',
+    });
+  });
+
+  it('las fechas pasadas tampoco se eligen', () => {
+    expect(nextRange(VACIO, '2026-09-01', ESTADIA)).toEqual(VACIO);
+    expect(isDisabledDay('2026-09-09', ESTADIA)).toBe(true);
+  });
+
+  it('el calendario habla de entrada y salida', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+
+    expect(pickerHint(VACIO, ESTADIA, 'stay')).toBe('Elige la fecha de entrada');
+    expect(pickerHint(conEntrada, ESTADIA, 'stay')).toBe('Elige la fecha de salida');
+  });
+
+  it('la cifra de una estadía son noches, sin días', () => {
+    const estadia: DateRange = { start: '2026-10-12', end: '2026-10-15' };
+
+    expect(rangeLengthLabel(estadia, 'stay')).toBe('3 noches');
+    expect(rangeLengthLabel({ start: '2026-10-12', end: '2026-10-13' }, 'stay')).toBe('1 noche');
+    expect(rangeSummary(estadia, ESTADIA, 'stay')).toBe(
+      'Del 12 de octubre al 15 de octubre · 3 noches',
+    );
+  });
+
+  it('con la salida pendiente, el resumen dice cuál falta', () => {
+    expect(rangeSummary({ start: '2026-10-12', end: null }, ESTADIA, 'stay')).toBe(
+      'Entrada 12 de octubre · falta la fecha de salida',
+    );
+  });
+
+  it('el lector de pantalla oye entrada, salida y estadía', () => {
+    const estadia: DateRange = { start: '2026-10-12', end: '2026-10-15' };
+
+    expect(dayAriaLabel('2026-10-12', estadia, ESTADIA, 'stay')).toBe(
+      'lunes 12 de octubre de 2026, entrada',
+    );
+    expect(dayAriaLabel('2026-10-13', estadia, ESTADIA, 'stay')).toBe(
+      'martes 13 de octubre de 2026, dentro de la estadía',
+    );
+    expect(dayAriaLabel('2026-10-15', estadia, ESTADIA, 'stay')).toBe(
+      'jueves 15 de octubre de 2026, salida',
+    );
+  });
+
+  it('las marcas del día son de tres letras, como las de vuelos', () => {
+    expect(RANGE_TEXT.stay.startMark).toHaveLength(3);
+    expect(RANGE_TEXT.stay.endMark).toHaveLength(3);
+    expect(RANGE_TEXT.rental.startMark).toHaveLength(3);
+    expect(RANGE_TEXT.rental.endMark).toHaveLength(3);
+  });
+});
+
+describe('autos: recogida y devolución en el mismo calendario', () => {
+  it('se puede devolver el mismo día (la hora decide), con dos clics deliberados', () => {
+    const conRecogida: DateRange = { start: '2026-10-12', end: null };
+
+    expect(seleccionarDia(conRecogida, '2026-10-12', ALQUILER).commit).toEqual({
+      start: '2026-10-12',
+      end: '2026-10-12',
+    });
+  });
+
+  it('las palabras son las del formulario de autos', () => {
+    const conRecogida: DateRange = { start: '2026-10-12', end: null };
+
+    expect(pickerHint(VACIO, ALQUILER, 'rental')).toBe('Elige la fecha de recogida');
+    expect(pickerHint(conRecogida, ALQUILER, 'rental')).toBe('Elige la fecha de devolución');
+    expect(rangeSummary({ start: '2026-10-12', end: '2026-10-12' }, ALQUILER, 'rental')).toBe(
+      'El 12 de octubre · recogida y devolución el mismo día',
+    );
+  });
+
+  it('sin días propios: los pone el formulario, que sabe las horas', () => {
+    const alquiler: DateRange = { start: '2026-10-12', end: '2026-10-15' };
+
+    expect(rangeLengthLabel(alquiler, 'rental')).toBeNull();
+    expect(rangeSummary(alquiler, ALQUILER, 'rental')).toBe('Del 12 de octubre al 15 de octubre');
+    expect(rangeSummary(alquiler, ALQUILER, 'rental', '4 días')).toBe(
+      'Del 12 de octubre al 15 de octubre · 4 días',
+    );
+  });
+});
+
+describe('vuelos sigue igual con las piezas generalizadas', () => {
+  it('sin uso explícito, el control es el de vuelos', () => {
+    const viaje: DateRange = { start: '2026-09-12', end: '2026-09-19' };
+
+    expect(rangeLengthLabel(viaje)).toBe(tripLengthLabel(viaje));
+    expect(rangeSummary(viaje, IDA_VUELTA)).toBe(rangeSummary(viaje, IDA_VUELTA, 'trip'));
+    expect(RANGE_TEXT.trip.startMark).toBe('ida');
+    expect(RANGE_TEXT.trip.endMark).toBe('vta');
+  });
+
+  it('el regreso en el día sigue valiendo: vuelos no tiene separación mínima', () => {
+    const conIda: DateRange = { start: '2026-10-14', end: null };
+
+    expect(nextRange(conIda, '2026-10-14', IDA_VUELTA)).toEqual({
+      start: '2026-10-14',
+      end: '2026-10-14',
+    });
+  });
+});
+
+describe('dónde se abre el calendario', () => {
+  it('vuelos a 1280 px: cuelga del borde izquierdo del campo, corrido lo justo para no salirse', () => {
+    // El campo de fechas de vuelos va de x=625 a x=901: sin correrlo, el calendario de 656 px
+    // terminaba en 1281 y se salía de la ventana. Ahora se corre 9 px, nada más.
+    expect(popoverPlacement({ left: 625 }, 1280)).toEqual({ kind: 'popover', offset: -9 });
+  });
+
+  it('si entra desde el borde izquierdo del campo, no se corre', () => {
+    expect(popoverPlacement({ left: 480 }, 1280)).toEqual({ kind: 'popover', offset: 0 });
+  });
+
+  it('el campo de hoteles en la columna del medio a 1024 px: se corre hasta entrar entero', () => {
+    const placement = popoverPlacement({ left: 383 }, 1024);
+    expect(placement).toEqual({ kind: 'popover', offset: -23 });
+    // Borde derecho del calendario = 383 - 23 + 656 = 1016: 8 px de aire con la ventana.
+  });
+
+  it('si los dos meses no entran con aire a los lados, es la hoja de abajo, como en móvil', () => {
+    // Un teléfono acostado (667 px) o una tableta chica: colgado del campo se salía por la
+    // derecha y se llevaba el botón de cerrar.
+    expect(popoverPlacement({ left: 45 }, 667)).toEqual({ kind: 'sheet' });
+    expect(popoverPlacement({ left: 16 }, 375)).toEqual({ kind: 'sheet' });
+    expect(popoverPlacement({ left: 45 }, 672)).toEqual({ kind: 'popover', offset: -37 });
+  });
+});
+
+describe('spanNotice: por qué un toque no avanzó', () => {
+  it('hoteles: tocar otra vez la entrada con la salida pendiente lo explica', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+    expect(spanNotice(conEntrada, '2026-10-12', ESTADIA, 'stay')).toBe(
+      'La salida tiene que ser al menos una noche después de la entrada.',
+    );
+  });
+
+  it('un toque que sí avanza no dice nada', () => {
+    const conEntrada: DateRange = { start: '2026-10-12', end: null };
+    expect(spanNotice(conEntrada, '2026-10-13', ESTADIA, 'stay')).toBeNull();
+    // Una fecha anterior rehace el rango desde ahí: eso ya se ve.
+    expect(spanNotice(conEntrada, '2026-10-05', ESTADIA, 'stay')).toBeNull();
+    expect(spanNotice(VACIO, '2026-10-12', ESTADIA, 'stay')).toBeNull();
+  });
+
+  it('vuelos y autos no tienen separación mínima: el mismo día vale y no hay nada que explicar', () => {
+    const conIda: DateRange = { start: '2026-10-12', end: null };
+    expect(spanNotice(conIda, '2026-10-12', IDA_VUELTA)).toBeNull();
+    expect(spanNotice(conIda, '2026-10-12', ALQUILER, 'rental')).toBeNull();
   });
 });

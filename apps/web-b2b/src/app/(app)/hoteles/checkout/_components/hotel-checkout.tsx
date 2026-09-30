@@ -61,7 +61,7 @@ type PrebookState =
 
 const UNREACHABLE: PrebookActionResult = {
   ok: false,
-  error: 'No pudimos conectar para revalidar la tarifa. Revisá tu conexión e intentá de nuevo.',
+  error: 'No pudimos conectar para revalidar la tarifa. Revisa tu conexión e intenta de nuevo.',
   retryable: true,
 };
 
@@ -366,7 +366,7 @@ function PrebookReady({
         onExpiredChange={onExpiredChange}
         hotelLink={hotelLink}
       >
-        <p>Revisá la tarifa antes de cargar los huéspedes.</p>
+        <p>Revisa la tarifa antes de cargar los huéspedes.</p>
       </CheckoutExpiry>
 
       <FundingNotice view={funding} />
@@ -478,7 +478,7 @@ function MissingSelection() {
         No encontramos la tarifa elegida.
       </h1>
       <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-        Elegí la tarifa desde el detalle del hotel. La elección se recuerda en este navegador
+        Elige la tarifa desde el detalle del hotel. La elección se recuerda en este navegador
         durante una hora.
       </p>
       <Link

@@ -105,7 +105,7 @@ export function RatesRefundNoticeBox({ notice }: { notice: RatesRefundNotice | u
           </p>
           <p className="text-xs">
             Todas sus tarifas son no reembolsables y quien financia a tu agencia bloqueó ese tipo de
-            tarifa. Probá con otras fechas u otro hotel.
+            tarifa. Prueba con otras fechas u otro hotel.
           </p>
         </div>
       </div>
@@ -319,7 +319,7 @@ export function RatesNeedSearch() {
     <div className="px-4 py-8 text-center">
       <BedDouble aria-hidden="true" className="mx-auto mb-2 size-6 text-[var(--color-fg-subtle)]" />
       <p className="text-sm font-medium text-[var(--color-fg)]">
-        Para ver tarifas, abrí este hotel desde una búsqueda.
+        Para ver tarifas, abre este hotel desde una búsqueda.
       </p>
       <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
         Las tarifas dependen de las fechas, las habitaciones y la nacionalidad del pasajero
@@ -402,7 +402,7 @@ export function HotelDetailRates({
     const token = newSearchToken();
     if (!saveRateSelection(token, selection)) {
       toast.error(
-        'No pudimos guardar la tarifa elegida en este navegador. Revisá que no esté en modo privado o sin espacio e intentá de nuevo.',
+        'No pudimos guardar la tarifa elegida en este navegador. Revisa que no esté en modo privado o sin espacio e intenta de nuevo.',
       );
       return;
     }

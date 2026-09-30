@@ -2,6 +2,7 @@
 
 import { api } from '../../../lib/api';
 import { toCountryAlpha2 } from '../../../lib/countries';
+import { earliestTodayIso } from '../../../lib/earliest-today';
 import {
   SUGGESTIONS_UNAVAILABLE,
   parseSuggestionItems,
@@ -286,11 +287,6 @@ function asString(value: FormDataEntryValue | null): string {
   return typeof value === 'string' ? value : '';
 }
 
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** `destinationId` de una ciudad del catálogo local de un proveedor. El API revalida la forma. */
 const PROVIDER_DESTINATION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*:[A-Za-z0-9._-]{1,64}$/;
@@ -439,22 +435,26 @@ export async function searchHotelsAction(
   const currencyField = parseCurrencyField(asString(formData.get('currency')));
 
   // --- Validaciones de borde (el API revalida con Zod) ---
-  if (!DATE_RE.test(checkinDate)) return fallo('Ingresá una fecha de entrada válida.');
-  if (!DATE_RE.test(checkoutDate)) return fallo('Ingresá una fecha de salida válida.');
-  if (checkinDate < todayISO()) return fallo('La fecha de entrada no puede ser anterior a hoy.');
+  if (!DATE_RE.test(checkinDate)) return fallo('Ingresa una fecha de entrada válida.');
+  if (!DATE_RE.test(checkoutDate)) return fallo('Ingresa una fecha de salida válida.');
+  // El piso es el "hoy" más temprano del mundo, no la fecha del reloj del servidor (UTC): a las
+  // 21:00 de Bogotá el servidor ya está en mañana y rechazaba la entrada de esa misma noche.
+  if (checkinDate < earliestTodayIso()) {
+    return fallo('La fecha de entrada no puede ser anterior a hoy.');
+  }
   if (checkoutDate <= checkinDate) return fallo('La salida debe ser posterior a la entrada.');
-  if (rooms.length === 0) return fallo('Indicá al menos una habitación con un adulto.');
+  if (rooms.length === 0) return fallo('Indica al menos una habitación con un adulto.');
   if (hotelIds.length === 0 && destinationId === undefined) {
-    return fallo('Elegí un destino del autocompletado o indicá IDs de hotel.');
+    return fallo('Elige un destino del autocompletado o indica IDs de hotel.');
   }
   // Nunca un valor por defecto: hay proveedores que tarifan según la nacionalidad (RF-06).
   if (nationalityRaw.trim() === '') {
-    return fallo('Indicá la nacionalidad del pasajero principal.');
+    return fallo('Indica la nacionalidad del pasajero principal.');
   }
   if (guestNationality === undefined) {
-    return fallo('No reconocemos esa nacionalidad: elegila de la lista.');
+    return fallo('No reconocemos esa nacionalidad: elígela de la lista.');
   }
-  if (!currencyField.ok) return fallo('Elegí la moneda de la búsqueda de la lista.');
+  if (!currencyField.ok) return fallo('Elige la moneda de la búsqueda de la lista.');
   const { currency } = currencyField;
 
   const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms, guestNationality };

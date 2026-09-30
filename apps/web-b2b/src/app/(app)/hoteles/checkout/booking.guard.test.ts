@@ -151,7 +151,7 @@ describe('U-12 — los huéspedes por habitación', () => {
       'Entiendo que esta tarifa no es reembolsable: si se cancela, modifica o el pasajero no se presenta, se cobra el 100 %',
     );
     expect(html).toMatch(/se cobra el 100 % \(321,34\s(US\$|USD)\)/);
-    expect(html).toContain('revisá los nombres de los huéspedes y las fechas');
+    expect(html).toContain('revisa los nombres de los huéspedes y las fechas');
     expect(html).toMatch(
       /<input(?=[^>]*name="nonRefundableAcknowledged")(?=[^>]*aria-required="true")[^>]*>/,
     );

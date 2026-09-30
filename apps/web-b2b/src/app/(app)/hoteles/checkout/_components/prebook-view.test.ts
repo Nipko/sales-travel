@@ -357,7 +357,7 @@ describe('continueGate — qué falta para seguir', () => {
     ).toEqual({
       ok: false,
       reason:
-        'Resolvé la cartera de la agencia antes de cargar los huéspedes: esta reserva se rechazaría.',
+        'Resuelve la cartera de la agencia antes de cargar los huéspedes: esta reserva se rechazaría.',
     });
     // Vencida o "sólo con aéreo" se dice primero: con esas, la cartera no cambia nada.
     expect(
@@ -391,7 +391,7 @@ describe('continueGate — qué falta para seguir', () => {
     expect(gate).toEqual({
       ok: false,
       reason:
-        'Hablá con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
+        'Habla con quien te financia antes de cargar los huéspedes: esta reserva se rechazaría.',
     });
   });
 

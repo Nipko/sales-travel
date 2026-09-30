@@ -242,8 +242,8 @@ export function HotelResults({
               />
               <span>
                 Tu agencia no puede reservar tarifas no reembolsables: quien la financia las
-                bloqueó. Se muestran marcadas como no disponibles; filtrá por{' '}
-                <span className="font-medium">Solo reembolsables</span> para ver sólo las que podés
+                bloqueó. Se muestran marcadas como no disponibles; filtra por{' '}
+                <span className="font-medium">Solo reembolsables</span> para ver sólo las que puedes
                 vender.
               </span>
             </p>
@@ -382,7 +382,7 @@ function FilteredEmpty({
         Ningún hotel cumple todos los filtros.
       </p>
       <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-        La búsqueda trajo {total} hotel{total === 1 ? '' : 'es'}. Ampliá los filtros para verlos:
+        La búsqueda trajo {total} hotel{total === 1 ? '' : 'es'}. Amplía los filtros para verlos:
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         {suggestions.map((s) => (

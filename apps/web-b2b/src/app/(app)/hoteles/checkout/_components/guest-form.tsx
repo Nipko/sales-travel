@@ -90,7 +90,7 @@ function NameChangeNotice({ strict }: { strict: boolean }) {
       <p className="flex items-start gap-2 rounded-md border border-[var(--color-warning)]/60 bg-[var(--color-warning)]/10 px-3 py-2 text-xs text-[var(--color-fg)]">
         <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
         <span>
-          <strong className="font-semibold">Esta tarifa no admite cambio de nombre.</strong> Cargá
+          <strong className="font-semibold">Esta tarifa no admite cambio de nombre.</strong> Carga
           cada nombre tal como figura en el documento: después de reservar no se puede corregir.
         </span>
       </p>
@@ -98,7 +98,7 @@ function NameChangeNotice({ strict }: { strict: boolean }) {
   }
   return (
     <p className="text-[11px] text-[var(--color-fg-muted)]">
-      Cargá los nombres como figuran en el documento de cada huésped: el hotel puede no admitir
+      Carga los nombres como figuran en el documento de cada huésped: el hotel puede no admitir
       cambios después de reservar.
     </p>
   );

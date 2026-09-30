@@ -208,7 +208,7 @@ export function HotelOrderDetail({
       setReadResult(result);
       if (result.ok && result.tracking) onTrackingChange(result.tracking);
     } catch {
-      setReadResult({ ok: false, message: 'Error de conexión. Probá de nuevo en unos segundos.' });
+      setReadResult({ ok: false, message: 'Error de conexión. Prueba de nuevo en unos segundos.' });
     } finally {
       setReading(false);
     }
@@ -238,7 +238,7 @@ export function HotelOrderDetail({
           : { ok: false, text: 'La agencia no tiene un correo de salida configurado.' },
       );
     } catch {
-      setSendResult({ ok: false, text: 'Error de conexión. Probá de nuevo en unos segundos.' });
+      setSendResult({ ok: false, text: 'Error de conexión. Prueba de nuevo en unos segundos.' });
     } finally {
       setSending(false);
     }

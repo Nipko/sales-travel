@@ -210,3 +210,50 @@ export function searchSummaryView(c: CarSearchCriteria): SearchSummaryView {
     payment: PAYMENT_LABELS[v.paymentType ?? 'ppd'],
   };
 }
+
+/**
+ * Los días de alquiler de las fechas y horas elegidas, o `null` si no hay alquiler que contar:
+ * falta una fecha o la devolución no queda después de la recogida. Ese caso `buildSearchValues`
+ * lo rechaza, y `rentalDays` —con su mínimo de un día— lo mostraría como «1 día».
+ */
+export function rentalDaysOf(
+  range: { readonly start: string | null; readonly end: string | null },
+  pickUpTime: string,
+  dropOffTime: string,
+): number | null {
+  if (range.start === null || range.end === null) return null;
+  if (`${range.end}T${dropOffTime}` <= `${range.start}T${pickUpTime}`) return null;
+  return rentalDays({
+    pickUpDate: range.start,
+    dropOffDate: range.end,
+    pickUpHour: pickUpTime,
+    dropOffHour: dropOffTime,
+  });
+}
+
+/**
+ * El contador del calendario de autos. Con las fechas solas mentiría: del 22 a las 10:00 al 25 a
+ * las 11:00 son 4 días, no 3.
+ */
+export function rentalRangeLabel(
+  range: { readonly start: string | null; readonly end: string | null },
+  pickUpTime: string,
+  dropOffTime: string,
+): string | null {
+  const days = rentalDaysOf(range, pickUpTime, dropOffTime);
+  return days === null ? null : daysLabel(days);
+}
+
+/**
+ * Lo que se está buscando, en una línea, para la espera: «Aeropuerto El Dorado (BOG) · jue 22 oct
+ * 10:00 – dom 25 oct 10:00 · 3 días».
+ */
+export function carSearchEcho(c: CarSearchCriteria): string {
+  const v = c.values;
+  const place = c.dropoff
+    ? `${placeLabel(c.pickup)} → ${placeLabel(c.dropoff)}`
+    : placeLabel(c.pickup);
+  const from = `${formatDayShort(v.pickUpDate)} ${hourLabel(v.pickUpHour)}`;
+  const to = `${formatDayShort(v.dropOffDate)} ${hourLabel(v.dropOffHour)}`;
+  return `${place} · ${from} – ${to} · ${daysLabel(rentalDays(v))}`;
+}

@@ -1,7 +1,15 @@
 'use client';
 
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { cn } from '../../lib/cn';
 
 /* =============================================================================================
@@ -25,12 +33,100 @@ export const EMPTY_RANGE: DateRange = { start: null, end: null };
 
 export type TripMode = 'roundtrip' | 'oneway';
 
-/** Las dos reglas que gobiernan la selección: qué se pide y desde cuándo. */
+/** Las reglas que gobiernan la selección: qué se pide, desde cuándo y con qué separación. */
 export interface RangeRules {
   readonly mode: TripMode;
   /** Primer día seleccionable. Para este control, lo anterior no existe. */
   readonly min: IsoDate;
+  /**
+   * Días mínimos entre las dos fechas. 0 —el valor por omisión— admite el mismo día: el regreso
+   * en el día de un vuelo o un auto que se devuelve a la tarde. Un hotel pide al menos 1: no se
+   * vende una estadía de cero noches.
+   */
+  readonly minSpan?: number;
 }
+
+/**
+ * Para qué se eligen las fechas. El control es el mismo en vuelos, hoteles y autos —un solo
+ * calendario, primer clic la primera fecha y segundo clic la segunda—; cambian las palabras y
+ * la cifra que acompaña al rango.
+ */
+export type RangePurpose = 'trip' | 'stay' | 'rental';
+
+export interface RangeText {
+  /** Rótulo de cada mitad del disparador. */
+  readonly startLabel: string;
+  readonly endLabel: string;
+  /** Cómo se nombra cada fecha dentro de una frase: "Elige la fecha de {noun}". */
+  readonly startNoun: string;
+  readonly endNoun: string;
+  /** La marca de tres letras dentro del día elegido. */
+  readonly startMark: string;
+  readonly endMark: string;
+  /** Lo que muestra la segunda mitad sin fecha. */
+  readonly endPlaceholder: string;
+  /** Un día entre las dos fechas, para el lector de pantalla. */
+  readonly inside: string;
+  /** Las dos fechas en el mismo día, dicho como se vende. */
+  readonly sameDay: string;
+  /** Nombre del calendario abierto. */
+  readonly dialog: string;
+  /**
+   * Qué cifra acompaña al rango. Vuelos dice noches y días (el hotel se cotiza por noche y el
+   * seguro por día); hoteles, noches; autos, nada propio: sus días dependen de las horas, que el
+   * formulario conoce y pasa con `describeLength`.
+   */
+  readonly length: 'nights-days' | 'nights' | 'none';
+}
+
+export const RANGE_TEXT: Readonly<Record<RangePurpose, RangeText>> = {
+  trip: {
+    startLabel: 'Ida',
+    endLabel: 'Vuelta',
+    startNoun: 'ida',
+    endNoun: 'vuelta',
+    startMark: 'ida',
+    endMark: 'vta',
+    endPlaceholder: 'Agregar vuelta',
+    inside: 'dentro del viaje',
+    sameDay: 'ida y vuelta el mismo día',
+    dialog: 'Elegir fechas del viaje',
+    length: 'nights-days',
+  },
+  stay: {
+    startLabel: 'Entrada',
+    endLabel: 'Salida',
+    startNoun: 'entrada',
+    endNoun: 'salida',
+    startMark: 'ent',
+    endMark: 'sal',
+    endPlaceholder: 'Elige fecha',
+    inside: 'dentro de la estadía',
+    sameDay: 'entrada y salida el mismo día',
+    dialog: 'Elegir fechas de la estadía',
+    length: 'nights',
+  },
+  rental: {
+    startLabel: 'Recogida',
+    endLabel: 'Devolución',
+    startNoun: 'recogida',
+    endNoun: 'devolución',
+    startMark: 'rec',
+    endMark: 'dev',
+    endPlaceholder: 'Elige fecha',
+    inside: 'dentro del alquiler',
+    sameDay: 'recogida y devolución el mismo día',
+    dialog: 'Elegir fechas del alquiler',
+    length: 'none',
+  },
+};
+
+/** Separación mínima de cada uso: sólo el hotel exige una noche. */
+export const DEFAULT_MIN_SPAN: Readonly<Record<RangePurpose, number>> = {
+  trip: 0,
+  stay: 1,
+  rental: 0,
+};
 
 const MS_PER_DAY = 86_400_000;
 
@@ -204,12 +300,14 @@ export function clampToMin(day: IsoDate, rules: RangeRules): IsoDate {
  *
  * Tocar el mismo día de la ida sí cierra un rango de cero noches: el regreso en el día es un
  * itinerario real (los regionales de LATAM se venden así), no un error que haya que impedir.
+ * Con `minSpan` (el hotel pide una noche), una segunda fecha demasiado cerca se trata igual que
+ * una anterior: empieza de nuevo desde ahí, que en el mismo día es no cambiar nada.
  */
 export function nextRange(current: DateRange, day: IsoDate, rules: RangeRules): DateRange {
   if (isDisabledDay(day, rules)) return current;
   if (rules.mode === 'oneway') return { start: day, end: null };
   if (current.start === null || current.end !== null) return { start: day, end: null };
-  if (day < current.start) return { start: day, end: null };
+  if (daysBetween(current.start, day) < (rules.minSpan ?? 0)) return { start: day, end: null };
   return { start: current.start, end: day };
 }
 
@@ -267,6 +365,32 @@ export function tripLengthLabel(range: DateRange): string | null {
   return `${length.nights} ${length.nights === 1 ? 'noche' : 'noches'}`;
 }
 
+/** El contador según el uso. Autos no tiene uno propio: sus días dependen de las horas. */
+export function rangeLengthLabel(range: DateRange, purpose: RangePurpose = 'trip'): string | null {
+  return RANGE_TEXT[purpose].length === 'none' ? null : tripLengthLabel(range);
+}
+
+/**
+ * Por qué un toque no avanzó. Con separación mínima (el hotel pide una noche), tocar otra vez la
+ * entrada mientras falta la salida deja todo igual: sin esta frase no se ve ni se oye por qué.
+ * `null` cuando el toque sí hizo algo, o cuando no hay separación que respetar.
+ */
+export function spanNotice(
+  draft: DateRange,
+  day: IsoDate,
+  rules: RangeRules,
+  purpose: RangePurpose = 'trip',
+): string | null {
+  const span = rules.minSpan ?? 0;
+  if (rules.mode === 'oneway' || span <= 0) return null;
+  if (draft.start === null || draft.end !== null || isDisabledDay(day, rules)) return null;
+  const gap = daysBetween(draft.start, day);
+  if (gap < 0 || gap >= span) return null;
+  const text = RANGE_TEXT[purpose];
+  const nights = span === 1 ? 'una noche' : `${span} noches`;
+  return `La ${text.endNoun} tiene que ser al menos ${nights} después de la ${text.startNoun}.`;
+}
+
 /**
  * Lo que produce tocar un día: el borrador nuevo y, si la selección quedó COMPLETA, el rango a
  * confirmar ya — sin botón «Aplicar».
@@ -311,10 +435,15 @@ export function openDraft(value: DateRange, editing: RangeEdge, rules: RangeRule
 export type RangeEdge = 'start' | 'end';
 
 /** Qué fecha se está esperando ahora. Se deriva del borrador, con el criterio de `nextRange`. */
-export function pickerHint(draft: DateRange, rules: RangeRules): string {
-  if (rules.mode === 'oneway') return 'Elija la fecha de ida';
-  if (draft.start === null || draft.end !== null) return 'Elija la fecha de ida';
-  return 'Elija la fecha de vuelta';
+export function pickerHint(
+  draft: DateRange,
+  rules: RangeRules,
+  purpose: RangePurpose = 'trip',
+): string {
+  const text = RANGE_TEXT[purpose];
+  if (rules.mode === 'oneway') return `Elige la fecha de ${text.startNoun}`;
+  if (draft.start === null || draft.end !== null) return `Elige la fecha de ${text.startNoun}`;
+  return `Elige la fecha de ${text.endNoun}`;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -353,42 +482,68 @@ export function formatMonthTitle(iso: IsoDate): string {
  * Acá es donde el rango deja de depender del color: el papel de cada día —ida, vuelta, dentro
  * del viaje, no disponible— viaja como texto, no como un relleno naranja.
  */
-export function dayAriaLabel(day: IsoDate, range: DateRange, rules: RangeRules): string {
+export function dayAriaLabel(
+  day: IsoDate,
+  range: DateRange,
+  rules: RangeRules,
+  purpose: RangePurpose = 'trip',
+): string {
+  const text = RANGE_TEXT[purpose];
   const base = describeDay(day);
   if (isDisabledDay(day, rules)) return `${base}, no disponible`;
   if (rules.mode === 'oneway') {
-    return dayRole(day, range) === null ? base : `${base}, fecha de ida`;
+    return dayRole(day, range) === null ? base : `${base}, fecha de ${text.startNoun}`;
   }
   switch (dayRole(day, range)) {
     case 'both':
-      return `${base}, ida y vuelta el mismo día`;
+      return `${base}, ${text.sameDay}`;
     case 'start':
-      return `${base}, ida`;
+      return `${base}, ${text.startNoun}`;
     case 'end':
-      return `${base}, vuelta`;
+      return `${base}, ${text.endNoun}`;
     case 'inside':
-      return `${base}, dentro del viaje`;
+      return `${base}, ${text.inside}`;
     default:
       return base;
   }
 }
 
-/** Estado del rango en una frase. Va al pie del calendario y a la región `aria-live`. */
-export function rangeSummary(range: DateRange, rules: RangeRules): string {
+/**
+ * Estado del rango en una frase. Va al pie del calendario y a la región `aria-live`.
+ *
+ * `lengthLabel` reemplaza la cifra propia del uso: autos pasa sus días de alquiler, que se
+ * cuentan con las horas y no sólo con las fechas.
+ */
+export function rangeSummary(
+  range: DateRange,
+  rules: RangeRules,
+  purpose: RangePurpose = 'trip',
+  lengthLabel?: string | null,
+): string {
+  const text = RANGE_TEXT[purpose];
   if (range.start === null) return 'Sin fechas seleccionadas';
-  if (rules.mode === 'oneway') return `Ida: ${describeDay(range.start)}`;
+  if (rules.mode === 'oneway') return `${text.startLabel}: ${describeDay(range.start)}`;
 
   const length = tripLength(range);
   if (range.end === null || length === null) {
-    return `Ida ${formatDayMedium(range.start)} · falta la fecha de vuelta`;
+    return `${text.startLabel} ${formatDayMedium(range.start)} · falta la fecha de ${text.endNoun}`;
   }
   // "Del 3 al 3 de septiembre · 0 noches" es correcto y suena a error. Se dice como se vende.
   if (length.nights === 0) {
-    return `El ${formatDayMedium(range.start)} · ida y vuelta el mismo día`;
+    return `El ${formatDayMedium(range.start)} · ${text.sameDay}`;
   }
+  const dates = `Del ${formatDayMedium(range.start)} al ${formatDayMedium(range.end)}`;
+  if (lengthLabel) return `${dates} · ${lengthLabel}`;
   const nights = `${length.nights} ${length.nights === 1 ? 'noche' : 'noches'}`;
   const days = `${length.days} ${length.days === 1 ? 'día' : 'días'}`;
-  return `Del ${formatDayMedium(range.start)} al ${formatDayMedium(range.end)} · ${nights} (${days})`;
+  switch (text.length) {
+    case 'nights-days':
+      return `${dates} · ${nights} (${days})`;
+    case 'nights':
+      return `${dates} · ${nights}`;
+    default:
+      return dates;
+  }
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -466,6 +621,15 @@ export interface DateRangePickerProps {
   readonly onChange: (range: DateRange) => void;
   /** Primer día seleccionable. Por defecto, hoy. */
   readonly min?: IsoDate;
+  /** Vuelos, hoteles o autos: las palabras del control y la cifra del rango. Por defecto, vuelos. */
+  readonly purpose?: RangePurpose;
+  /** Días mínimos entre las dos fechas. Por defecto, el del uso (`DEFAULT_MIN_SPAN`). */
+  readonly minSpan?: number;
+  /**
+   * `lg`: el talón alto de vuelos, con el rótulo dentro de cada mitad. `md`: el alto de los
+   * campos de un formulario (hoteles, autos), con el rótulo afuera, como los demás campos.
+   */
+  readonly size?: 'lg' | 'md';
   /** Nombre del campo oculto de la ida, para enviar el formulario. */
   readonly startName?: string;
   readonly endName?: string;
@@ -473,29 +637,84 @@ export interface DateRangePickerProps {
   readonly endLabel?: string;
   /** id del disparador de la ida (permite mover el foco a este control desde el formulario). */
   readonly triggerId?: string;
+  /** id del disparador de la vuelta, para llevar el foco ahí cuando es ésa la que falta. */
+  readonly endTriggerId?: string;
+  /** El rótulo visible del campo, cuando va afuera (`size="md"`). */
+  readonly labelledBy?: string;
+  /** El formulario marcó las fechas como el problema. */
+  readonly invalid?: boolean;
+  /** El mensaje de error que describe el problema. */
+  readonly describedBy?: string;
+  /**
+   * La cifra del rango, cuando el formulario la sabe mejor que las fechas: los días de un
+   * alquiler dependen de las horas de recogida y devolución.
+   */
+  readonly describeLength?: (range: DateRange) => string | null;
   readonly className?: string;
 }
 
 const MONTHS_VISIBLE = 2;
+
+/** Ancho del calendario en escritorio (`sm:w-[41rem]`) y el aire mínimo contra el borde. */
+const POPOVER_WIDTH_PX = 656;
+const VIEWPORT_GUTTER_PX = 8;
+
+export type PopoverPlacement =
+  | { readonly kind: 'sheet' }
+  /** `offset`: píxeles desde el borde izquierdo del campo; negativo, corrido hacia la izquierda. */
+  | { readonly kind: 'popover'; readonly offset: number };
+
+/**
+ * Dónde se abre el calendario, medido al abrirlo. Si en la ventana no entran los dos meses con
+ * aire a los lados —un teléfono, uno acostado, una tableta chica, la pantalla partida— es la hoja
+ * de abajo, como en móvil: colgado del campo se salía por la derecha y se llevaba el botón de
+ * cerrar. Si entra, cuelga del borde izquierdo del campo, como siempre en vuelos, corrido sólo lo
+ * justo para no salirse de la ventana (el campo de hoteles va en la columna del medio).
+ */
+export function popoverPlacement(
+  field: { readonly left: number },
+  viewportWidth: number,
+  popoverWidth: number = POPOVER_WIDTH_PX,
+): PopoverPlacement {
+  if (viewportWidth < popoverWidth + 2 * VIEWPORT_GUTTER_PX) return { kind: 'sheet' };
+  const maxLeft = viewportWidth - VIEWPORT_GUTTER_PX - popoverWidth;
+  const left = Math.min(Math.max(field.left, VIEWPORT_GUTTER_PX), maxLeft);
+  return { kind: 'popover', offset: Math.round(left - field.left) };
+}
 
 export function DateRangePicker({
   mode,
   value,
   onChange,
   min,
+  purpose = 'trip',
+  minSpan,
+  size = 'lg',
   startName = 'departureDate',
   endName = 'returnDate',
-  startLabel = 'Ida',
-  endLabel = 'Vuelta',
+  startLabel,
+  endLabel,
   triggerId,
+  endTriggerId,
+  labelledBy,
+  invalid = false,
+  describedBy,
+  describeLength,
   className,
 }: DateRangePickerProps) {
   const autoId = useId();
   const startTriggerId = triggerId ?? `${autoId}-start`;
   const dialogId = `${autoId}-dialog`;
+  const text = RANGE_TEXT[purpose];
+  const startCaption = startLabel ?? text.startLabel;
+  const endCaption = endLabel ?? text.endLabel;
+  const span = minSpan ?? DEFAULT_MIN_SPAN[purpose];
 
   const floor = min ?? todayIso();
-  const rules = useMemo<RangeRules>(() => ({ mode, min: floor }), [mode, floor]);
+  const rules = useMemo<RangeRules>(
+    () => ({ mode, min: floor, minSpan: span }),
+    [mode, floor, span],
+  );
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RangeEdge>('start');
@@ -505,6 +724,14 @@ export function DateRangePicker({
     clampToMin(value.start ?? floor, rules),
   );
   const [hovered, setHovered] = useState<IsoDate | null>(null);
+  const [placement, setPlacement] = useState<PopoverPlacement>({ kind: 'popover', offset: 0 });
+  /** Por qué el último toque no avanzó (ver `spanNotice`). Va al pie, que es región viva. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * El rango confirmado, dicho en voz alta. Vive FUERA del calendario: el segundo clic lo cierra
+   * en el mismo evento, y una región viva que se desmonta al cambiar no anuncia nada.
+   */
+  const [announcement, setAnnouncement] = useState('');
 
   const rootRef = useRef<HTMLDivElement>(null);
   const startTriggerRef = useRef<HTMLButtonElement>(null);
@@ -536,6 +763,15 @@ export function DateRangePicker({
     setCursor(firstOfMonth(focus));
     setFocusedDay(focus);
     setHovered(null);
+    setNotice(null);
+    setAnnouncement('');
+    const rect = rootRef.current?.getBoundingClientRect();
+    // `clientWidth` y no `innerWidth`: la barra de desplazamiento de Windows no es lugar útil.
+    setPlacement(
+      rect
+        ? popoverPlacement(rect, document.documentElement.clientWidth)
+        : { kind: 'popover', offset: 0 },
+    );
     setOpen(true);
   }
 
@@ -592,8 +828,17 @@ export function DateRangePicker({
     const { draft: next, commit } = seleccionarDia(draft, day, rules);
     setDraft(next);
     setFocusedDay(day);
+    setNotice(spanNotice(draft, day, rules, purpose));
     if (commit === null) return;
     onChange(commit);
+    setAnnouncement(
+      rangeSummary(
+        commit,
+        rules,
+        purpose,
+        describeLength && commit.end !== null ? describeLength(commit) : undefined,
+      ),
+    );
     closePicker(true);
   }
 
@@ -616,17 +861,29 @@ export function DateRangePicker({
   function clearDraft() {
     setDraft(EMPTY_RANGE);
     setHovered(null);
+    setNotice(null);
     // El foco vuelve a la grilla: quien borró va a elegir de nuevo, no a salir.
     document.getElementById(dayCellId(focusedDay))?.focus({ preventScroll: true });
   }
 
+  const lengthOf = (range: DateRange) =>
+    describeLength ? describeLength(range) : rangeLengthLabel(range, purpose);
   const painted = hovered === null ? draft : previewRange(draft, hovered, rules);
-  const counter = tripLengthLabel(painted);
-  const summary = rangeSummary(draft, rules);
+  const counter = lengthOf(painted);
+  const summary = rangeSummary(
+    draft,
+    rules,
+    purpose,
+    describeLength && draft.end !== null ? describeLength(draft) : undefined,
+  );
+  const compact = size === 'md';
+  const sheet = placement.kind === 'sheet';
 
   return (
     <div
       ref={rootRef}
+      role={labelledBy ? 'group' : undefined}
+      aria-labelledby={labelledBy}
       className={cn('relative', className)}
       onKeyDown={(event) => {
         if (!open || event.key !== 'Escape') return;
@@ -643,6 +900,9 @@ export function DateRangePicker({
     >
       <input type="hidden" name={startName} value={value.start ?? ''} />
       {mode === 'roundtrip' ? <input type="hidden" name={endName} value={value.end ?? ''} /> : null}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
 
       {/*
         El disparador es un talón de ticket: dos mitades separadas por la perforación. Son dos
@@ -651,15 +911,21 @@ export function DateRangePicker({
       */}
       <div
         className={cn(
-          'flex h-14 items-stretch overflow-hidden rounded-xl border bg-[var(--color-surface)] shadow-[var(--shadow-xs)] transition-colors',
+          'flex items-stretch overflow-hidden border bg-[var(--color-surface)] shadow-[var(--shadow-xs)] transition-colors',
+          compact ? 'h-10 rounded-lg' : 'h-14 rounded-xl',
           open
             ? 'border-[var(--color-primary)]'
-            : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
+            : invalid
+              ? 'border-[var(--color-danger)]'
+              : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
         )}
       >
         <span
           aria-hidden="true"
-          className="hidden w-11 shrink-0 items-center justify-center border-r border-[var(--color-border)] text-[var(--color-fg-subtle)] sm:flex"
+          className={cn(
+            'shrink-0 items-center justify-center text-[var(--color-fg-subtle)]',
+            compact ? 'flex pl-3' : 'hidden w-11 border-r border-[var(--color-border)] sm:flex',
+          )}
         >
           <CalendarDays className="size-4" />
         </span>
@@ -667,12 +933,15 @@ export function DateRangePicker({
         <TriggerHalf
           ref={startTriggerRef}
           id={startTriggerId}
-          label={startLabel}
+          label={startCaption}
           day={value.start}
-          placeholder="Elija fecha"
+          placeholder={compact ? startCaption : 'Elige fecha'}
+          compact={compact}
           active={open && editing === 'start'}
           expanded={open}
           controls={dialogId}
+          invalid={invalid}
+          describedBy={describedBy}
           onClick={() => (open && editing === 'start' ? closePicker(true) : openPicker('start'))}
         />
 
@@ -680,16 +949,23 @@ export function DateRangePicker({
           <>
             <span
               aria-hidden="true"
-              className="my-2 w-px shrink-0 border-l border-dashed border-[var(--color-border-strong)]"
+              className={cn(
+                'w-px shrink-0 border-l border-dashed border-[var(--color-border-strong)]',
+                compact ? 'my-2.5' : 'my-2',
+              )}
             />
             <TriggerHalf
               ref={endTriggerRef}
-              label={endLabel}
+              id={endTriggerId}
+              label={endCaption}
               day={value.end}
-              placeholder="Agregar vuelta"
+              placeholder={compact ? endCaption : text.endPlaceholder}
+              compact={compact}
               active={open && editing === 'end'}
               expanded={open}
               controls={dialogId}
+              invalid={invalid}
+              describedBy={describedBy}
               onClick={() => (open && editing === 'end' ? closePicker(true) : openPicker('end'))}
             />
           </>
@@ -707,21 +983,38 @@ export function DateRangePicker({
           <div
             aria-hidden="true"
             onClick={() => closePicker(false)}
-            className="fixed inset-0 z-40 bg-[var(--color-navy-dark)]/25 sm:hidden"
+            className={cn(
+              'fixed inset-0 z-40 bg-[var(--color-navy-dark)]/25',
+              !sheet && 'sm:hidden',
+            )}
           />
           <div
             id={dialogId}
             role="dialog"
-            aria-label={mode === 'oneway' ? 'Elegir fecha de ida' : 'Elegir fechas del viaje'}
+            aria-label={mode === 'oneway' ? `Elegir fecha de ${text.startNoun}` : text.dialog}
+            // Como hoja tapa la página con el velo: el lector de pantalla no debe irse detrás.
+            aria-modal={sheet || undefined}
+            /*
+              Enfocable sin entrar al orden de Tab: un toque en lo que no es un botón ni un día
+              —el título del mes, el pie, un hueco de la semana— deja el foco acá, dentro del
+              control. Sin esto el foco caía al `body` y el `onBlur` de arriba cerraba el
+              calendario tirando la entrada ya elegida.
+            */
+            tabIndex={-1}
+            style={
+              placement.kind === 'popover'
+                ? ({ '--dp-offset': `${placement.offset}px` } as CSSProperties)
+                : undefined
+            }
             className={cn(
-              'fixed inset-x-2 bottom-2 z-50 flex max-h-[82vh] flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)]',
+              'fixed inset-x-2 bottom-2 z-50 flex max-h-[82vh] flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-lg)] outline-none',
               // `max-h` TAMBIÉN en escritorio. Antes era `sm:max-h-none`: el panel crecía sin
               // tope y, colgando del campo a media página, en un portátil de 14\" la última
               // semana y el pie con «Aplicar» quedaban por debajo del borde de la ventana. Sin
               // el botón a la vista no hay forma de saber cómo se cierra esto.
-              'sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-2 sm:w-[41rem]',
-              'sm:max-h-[calc(100dvh-11rem)]',
-              'origin-bottom animate-[scale-up_0.15s_cubic-bezier(0.16,1,0.3,1)_forwards] sm:origin-top',
+              !sheet &&
+                'sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-[var(--dp-offset)] sm:top-full sm:mt-2 sm:max-h-[calc(100dvh-11rem)] sm:w-[41rem] sm:origin-top',
+              'origin-bottom animate-[scale-up_0.15s_cubic-bezier(0.16,1,0.3,1)_forwards] motion-reduce:animate-none',
             )}
           >
             <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-3 py-2.5">
@@ -732,7 +1025,7 @@ export function DateRangePicker({
                 icon={<ChevronLeft className="size-4" />}
               />
               <p className="text-xs font-medium text-[var(--color-fg-muted)]">
-                {pickerHint(draft, rules)}
+                {pickerHint(draft, rules, purpose)}
               </p>
               <div className="flex items-center gap-1">
                 <NavButton
@@ -769,6 +1062,7 @@ export function DateRangePicker({
                     month={month}
                     painted={painted}
                     rules={rules}
+                    purpose={purpose}
                     focusedDay={focusedDay}
                     counter={counter}
                     today={floor}
@@ -785,9 +1079,12 @@ export function DateRangePicker({
               {/* El resumen es la versión en texto del rango: no hace falta ver el color. */}
               <p
                 aria-live="polite"
-                className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--color-fg-muted)]"
+                className={cn(
+                  'min-w-0 flex-1 text-[11px] leading-snug',
+                  notice ? 'font-medium text-[var(--color-fg)]' : 'text-[var(--color-fg-muted)]',
+                )}
               >
-                {summary}
+                {notice ?? summary}
               </p>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -812,22 +1109,32 @@ interface TriggerHalfProps {
   readonly label: string;
   readonly day: IsoDate | null;
   readonly placeholder: string;
+  readonly compact: boolean;
   readonly active: boolean;
   readonly expanded: boolean;
   readonly controls: string;
+  readonly invalid: boolean;
+  readonly describedBy?: string;
   readonly onClick: () => void;
   readonly ref?: React.Ref<HTMLButtonElement>;
 }
 
-/** Media entrada del talón: etiqueta chica arriba, fecha grande abajo. */
+/**
+ * Media entrada del talón. Alta (vuelos): etiqueta chica arriba, fecha grande abajo. Compacta
+ * (hoteles, autos): sólo la fecha, y sin fecha el rótulo de la mitad hace de marcador, que es lo
+ * que dice cuál es la entrada y cuál la salida antes de elegir.
+ */
 function TriggerHalf({
   id,
   label,
   day,
   placeholder,
+  compact,
   active,
   expanded,
   controls,
+  invalid,
+  describedBy,
   onClick,
   ref,
 }: TriggerHalfProps) {
@@ -844,22 +1151,51 @@ function TriggerHalf({
       aria-haspopup="dialog"
       aria-expanded={expanded}
       aria-controls={expanded ? controls : undefined}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       className={cn(
-        'flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3 text-left transition-colors',
+        'flex min-w-0 flex-1 flex-col justify-center text-left transition-colors',
+        // El aro de foco global va por fuera (`outline-offset: 2px`) y el talón lo recorta con su
+        // `overflow-hidden`: se ve sólo de costado. Hacia adentro se ve entero. Con `!` porque la
+        // regla global no está en una capa y ganaría a cualquier utilidad.
+        'focus-visible:-outline-offset-2!',
+        compact ? 'px-2.5' : 'gap-0.5 px-3',
         active ? 'bg-[var(--color-primary)]/6' : 'hover:bg-[var(--color-surface-muted)]',
       )}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--color-fg-subtle)]">
-        {label}
-      </span>
-      <span
-        className={cn(
-          'truncate text-[15px] font-semibold leading-tight',
-          day === null ? 'font-normal text-[var(--color-fg-subtle)]' : 'text-[var(--color-fg)]',
-        )}
-      >
-        {day === null ? placeholder : formatDayShort(day)}
-      </span>
+      {compact ? (
+        <>
+          <span className="sr-only">{label}: </span>
+          {/* Con fecha, lo que se lee en pantalla también forma parte del nombre: quien maneja
+              el equipo por voz dice lo que ve («sáb 3 oct»). Sin fecha, el marcador repite el
+              rótulo, que ya está en el nombre. */}
+          <span
+            aria-hidden={day === null || undefined}
+            className={cn(
+              'truncate text-sm',
+              day === null
+                ? 'text-[var(--color-fg-subtle)]'
+                : 'font-medium tabular-nums text-[var(--color-fg)]',
+            )}
+          >
+            {day === null ? placeholder : formatDayShort(day)}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--color-fg-subtle)]">
+            {label}
+          </span>
+          <span
+            className={cn(
+              'truncate text-[15px] font-semibold leading-tight',
+              day === null ? 'font-normal text-[var(--color-fg-subtle)]' : 'text-[var(--color-fg)]',
+            )}
+          >
+            {day === null ? placeholder : formatDayShort(day)}
+          </span>
+        </>
+      )}
       <span className="sr-only">{day === null ? 'sin fecha' : describeDay(day)}</span>
     </button>
   );
@@ -893,6 +1229,7 @@ interface MonthTableProps {
   readonly month: IsoDate;
   readonly painted: DateRange;
   readonly rules: RangeRules;
+  readonly purpose: RangePurpose;
   readonly focusedDay: IsoDate;
   readonly counter: string | null;
   readonly today: IsoDate;
@@ -906,6 +1243,7 @@ function MonthTable({
   month,
   painted,
   rules,
+  purpose,
   focusedDay,
   counter,
   today,
@@ -968,6 +1306,7 @@ function MonthTable({
                     id={dayCellId(day)}
                     painted={painted}
                     rules={rules}
+                    purpose={purpose}
                     focused={day === focusedDay}
                     isToday={day === today}
                     counter={counter}
@@ -992,6 +1331,7 @@ interface DayCellProps {
   readonly id: string;
   readonly painted: DateRange;
   readonly rules: RangeRules;
+  readonly purpose: RangePurpose;
   readonly focused: boolean;
   readonly isToday: boolean;
   readonly counter: string | null;
@@ -1008,6 +1348,7 @@ function DayCell({
   id,
   painted,
   rules,
+  purpose,
   focused,
   isToday,
   counter,
@@ -1044,7 +1385,7 @@ function DayCell({
       aria-selected={role !== null}
       aria-disabled={disabled || undefined}
       aria-current={isToday ? 'date' : undefined}
-      aria-label={dayAriaLabel(day, painted, rules)}
+      aria-label={dayAriaLabel(day, painted, rules, purpose)}
       tabIndex={focused && !disabled ? 0 : -1}
       onClick={(event) => onSelect(day, event.detail)}
       onKeyDown={(event) => onKeyDown(event, day)}
@@ -1090,13 +1431,18 @@ function DayCell({
           />
         ) : null}
 
-        {/* IDA / VTA en el propio extremo: el papel del día también se lee, no sólo se ve. */}
+        {/* IDA / VTA (ENT / SAL, REC / DEV) en el propio extremo: el papel del día también se
+            lee, no sólo se ve. */}
         {isEdge ? (
           <span
             aria-hidden="true"
             className="absolute bottom-0.5 text-[8px] font-bold uppercase leading-none tracking-[0.04em] text-[var(--color-primary-fg)]"
           >
-            {role === 'both' ? '↔' : role === 'start' ? 'ida' : 'vta'}
+            {role === 'both'
+              ? '↔'
+              : role === 'start'
+                ? RANGE_TEXT[purpose].startMark
+                : RANGE_TEXT[purpose].endMark}
           </span>
         ) : null}
       </span>

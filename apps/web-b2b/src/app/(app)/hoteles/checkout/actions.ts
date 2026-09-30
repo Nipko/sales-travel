@@ -32,10 +32,10 @@ export type PrebookActionResult =
     };
 
 const INVALID_REFERENCE =
-  'No reconocemos la tarifa elegida. Volvé al hotel y elegila de nuevo desde sus tarifas.';
+  'No reconocemos la tarifa elegida. Vuelve al hotel y elígela de nuevo desde sus tarifas.';
 
 const INCOMPLETE =
-  'La revalidación de la tarifa llegó incompleta, así que no se puede reservar con ella. Probá de nuevo.';
+  'La revalidación de la tarifa llegó incompleta, así que no se puede reservar con ella. Prueba de nuevo.';
 
 export async function prebookRateAction(reference: unknown): Promise<PrebookActionResult> {
   const ref = parseOfferReference(reference);
@@ -72,7 +72,7 @@ export async function prebookRateAction(reference: unknown): Promise<PrebookActi
 const ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ORDER_NOT_FOUND =
-  'No encontramos la reserva para consultar su estado. Buscala en Mis Reservas antes de volver a intentar.';
+  'No encontramos la reserva para consultar su estado. Búscala en Mis Reservas antes de volver a intentar.';
 
 export async function hotelOrderStatusAction(orderId: unknown): Promise<OrderStatusRead> {
   if (typeof orderId !== 'string' || !ORDER_ID_RE.test(orderId)) {

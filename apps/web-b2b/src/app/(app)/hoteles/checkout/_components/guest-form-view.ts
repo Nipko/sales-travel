@@ -274,20 +274,20 @@ export function guestNameProblem(raw: string): GuestNameProblem | undefined {
 }
 
 const NAME_MESSAGES: Readonly<Record<GuestNameProblem, (field: string) => string>> = {
-  required: (field) => `Completá el ${field}.`,
+  required: (field) => `Completa el ${field}.`,
   contains_digits: (field) => `El ${field} no puede tener números.`,
-  invalid_characters: () => 'Usá sólo letras, espacios, guiones o apóstrofos.',
+  invalid_characters: () => 'Usa sólo letras, espacios, guiones o apóstrofos.',
   too_short: () => 'Tiene que tener al menos 2 letras.',
   too_long: () => `Puede tener hasta ${NAME_MAX} caracteres.`,
 };
 
 const FIELD_NOUN = { firstName: 'nombre', lastName: 'apellido' } as const;
 
-export const TITLE_REQUIRED = 'Elegí el título.';
+export const TITLE_REQUIRED = 'Elige el título.';
 export const DUPLICATE_GUEST =
-  'Hay otro huésped con el mismo nombre y apellido: agregá un segundo nombre o un sufijo para distinguirlos.';
+  'Hay otro huésped con el mismo nombre y apellido: agrega un segundo nombre o un sufijo para distinguirlos.';
 export const AT_PROPERTY_REQUIRED =
-  'Confirmá que le mostraste al cliente los cargos a pagar en el hotel.';
+  'Confirma que le mostraste al cliente los cargos a pagar en el hotel.';
 
 function nameMessage(field: 'firstName' | 'lastName', problem: GuestNameProblem): string {
   return NAME_MESSAGES[problem](FIELD_NOUN[field]);
@@ -300,12 +300,12 @@ const COUNTRY_CODE_RE = /^\+?[1-9]\d{0,2}$/;
 const PHONE_NUMBER_RE = /^[\d\s().-]{4,20}$/;
 
 export const CONTACT_MESSAGES = {
-  emailRequired: 'Completá el email.',
-  emailInvalid: 'Revisá el formato del email (por ejemplo, nombre@dominio.com).',
-  countryCodeRequired: 'Completá el prefijo.',
+  emailRequired: 'Completa el email.',
+  emailInvalid: 'Revisa el formato del email (por ejemplo, nombre@dominio.com).',
+  countryCodeRequired: 'Completa el prefijo.',
   countryCodeInvalid: 'El prefijo tiene de 1 a 3 dígitos, por ejemplo +57.',
-  numberRequired: 'Completá el teléfono.',
-  numberInvalid: 'Usá sólo números, espacios o guiones (de 4 a 20 caracteres).',
+  numberRequired: 'Completa el teléfono.',
+  numberInvalid: 'Usa sólo números, espacios o guiones (de 4 a 20 caracteres).',
 } as const;
 
 // ───────────────────────── Validación ─────────────────────────
@@ -470,8 +470,8 @@ export function fieldErrorsFromGuestIssues(
 
 const FIELD_FALLBACKS: readonly (readonly [RegExp, string])[] = [
   [/^rooms\.\d+\.guests\.\d+\.title$/, TITLE_REQUIRED],
-  [/^rooms\.\d+\.guests\.\d+\.firstName$/, 'Revisá el nombre.'],
-  [/^rooms\.\d+\.guests\.\d+\.lastName$/, 'Revisá el apellido.'],
+  [/^rooms\.\d+\.guests\.\d+\.firstName$/, 'Revisa el nombre.'],
+  [/^rooms\.\d+\.guests\.\d+\.lastName$/, 'Revisa el apellido.'],
   [/^contact\.email$/, CONTACT_MESSAGES.emailInvalid],
   [/^contact\.phone\.countryCode$/, CONTACT_MESSAGES.countryCodeInvalid],
   [/^contact\.phone\.number$/, CONTACT_MESSAGES.numberInvalid],

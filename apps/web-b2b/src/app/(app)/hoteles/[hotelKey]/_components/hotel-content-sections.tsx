@@ -241,12 +241,12 @@ export function LocationCard({ view }: { view: HotelLocationView }) {
   const copy = () => {
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
     if (clipboard === undefined) {
-      toast.error('No pudimos copiar la dirección. Seleccionala y copiala a mano.');
+      toast.error('No pudimos copiar la dirección. Selecciónala y cópiala a mano.');
       return;
     }
     clipboard.writeText(text).then(
       () => toast.success('Dirección copiada.'),
-      () => toast.error('No pudimos copiar la dirección. Seleccionala y copiala a mano.'),
+      () => toast.error('No pudimos copiar la dirección. Selecciónala y cópiala a mano.'),
     );
   };
 

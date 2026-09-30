@@ -29,17 +29,17 @@ export function suggestionsQuery(raw: string): string | undefined {
 }
 
 export const SUGGESTIONS_UNAVAILABLE =
-  'No pudimos consultar los destinos en este momento. Probá de nuevo en unos segundos.';
+  'No pudimos consultar los destinos en este momento. Prueba de nuevo en unos segundos.';
 
 /** El motivo, en palabras del vendedor, de una consulta de destinos que no respondió. */
 export function suggestionsErrorMessage(status: number): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión para buscar destinos.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión para buscar destinos.';
   if (status === 403) return 'Tu usuario no tiene permiso para buscar destinos de hoteles.';
   if (status === 429) {
-    return 'Hubo demasiadas consultas seguidas. Esperá unos segundos y volvé a escribir.';
+    return 'Hubo demasiadas consultas seguidas. Espera unos segundos y vuelve a escribir.';
   }
   if (status === 503) {
-    return 'El buscador de destinos no está disponible ahora. Probá de nuevo en unos minutos; si sigue, avisá al administrador.';
+    return 'El buscador de destinos no está disponible ahora. Prueba de nuevo en unos minutos; si sigue, avisa al administrador.';
   }
   return SUGGESTIONS_UNAVAILABLE;
 }
@@ -102,6 +102,6 @@ export function destinationNotice(input: DestinationNoticeInput): DestinationNot
   if (input.itemsCount > 0) return undefined;
   return {
     kind: 'no-match',
-    text: `No hay ciudades que coincidan con «${q}». Probá con otro nombre.`,
+    text: `No hay ciudades que coincidan con «${q}». Prueba con otro nombre.`,
   };
 }

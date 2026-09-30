@@ -60,7 +60,7 @@ const CONTENT_UNREADABLE: HotelContentResult = {
 const RATES_UNREACHABLE: HotelDetailRatesResult = {
   ok: false,
   outcomes: [],
-  error: 'No pudimos conectar para traer las tarifas. Revisá tu conexión e intentá de nuevo.',
+  error: 'No pudimos conectar para traer las tarifas. Revisa tu conexión e intenta de nuevo.',
 };
 
 interface HotelDetailProps {

@@ -30,7 +30,7 @@ function UnknownHotel() {
         <Hotel aria-hidden="true" className="mx-auto mb-2 size-6 text-[var(--color-fg-subtle)]" />
         <h1 className="text-sm font-medium text-[var(--color-fg)]">No reconocemos ese hotel.</h1>
         <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-          El enlace está incompleto o no es de un hotel. Abrilo desde los resultados de una
+          El enlace está incompleto o no es de un hotel. Ábrelo desde los resultados de una
           búsqueda.
         </p>
         <Link

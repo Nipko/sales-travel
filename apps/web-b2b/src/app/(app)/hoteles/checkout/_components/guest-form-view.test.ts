@@ -156,7 +156,7 @@ describe('checkGuestDraft — todo lo que falta, en el orden de la pantalla', ()
     expect(check.ok).toBe(false);
     if (check.ok) return;
     expect(check.issues).toEqual([
-      { path: guestFieldPath(0, 2, 'firstName'), message: 'Completá el nombre.' },
+      { path: guestFieldPath(0, 2, 'firstName'), message: 'Completa el nombre.' },
     ]);
   });
 
@@ -243,8 +243,8 @@ describe('lo que rechaza el servidor vuelve a su campo', () => {
         { field: 'acceptedTotal.amountMinor', message: 'Expected number' },
       ]),
     ).toEqual({
-      'contact.email': 'Revisá el formato del email (por ejemplo, nombre@dominio.com).',
-      'rooms.0.guests.0.lastName': 'Revisá el apellido.',
+      'contact.email': 'Revisa el formato del email (por ejemplo, nombre@dominio.com).',
+      'rooms.0.guests.0.lastName': 'Revisa el apellido.',
     });
     expect(fieldErrorsFromValidation('x')).toEqual({});
   });

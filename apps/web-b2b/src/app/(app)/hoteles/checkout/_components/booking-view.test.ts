@@ -62,7 +62,7 @@ describe('classifyBookResponse — 201 y 202 (RF-22; D-TBO-09 A)', () => {
     expect(outcome).toMatchObject({ kind: 'tracking', orderId: ORDER_ID });
   });
 
-  it('201 fallida por el proveedor: 315 es "la tarifa venció, buscá de nuevo" (U-18)', () => {
+  it('201 fallida por el proveedor: 315 es "la tarifa venció, busca de nuevo" (U-18)', () => {
     const outcome = classifyBookResponse(
       201,
       summary({
@@ -136,7 +136,7 @@ describe('classifyBookResponse — errores', () => {
 
   it('sin el reconocimiento de cargos en el hotel, se marca la casilla (RF-10 CA-2)', () => {
     const outcome = classifyBookResponse(
-      ...apiError(400, { message: 'Confirmá…', reason: 'AT_PROPERTY_NOT_ACKNOWLEDGED' }),
+      ...apiError(400, { message: 'Confirma…', reason: 'AT_PROPERTY_NOT_ACKNOWLEDGED' }),
     );
     expect(outcome).toMatchObject({
       kind: 'fix',
@@ -187,13 +187,13 @@ describe('classifyBookResponse — errores', () => {
   it('un 400 de validación del API se ubica en los campos con nuestro texto', () => {
     const outcome = classifyBookResponse(
       ...apiError(400, {
-        message: 'Revisá los datos ingresados — contact.email: Invalid email',
+        message: 'Revisa los datos ingresados — contact.email: Invalid email',
         fields: [{ field: 'contact.email', message: 'Invalid email' }],
       }),
     );
     expect(outcome).toMatchObject({
       kind: 'fix',
-      message: 'Revisá los datos marcados y volvé a confirmar.',
+      message: 'Revisa los datos marcados y vuelve a confirmar.',
     });
   });
 
@@ -279,7 +279,7 @@ describe('classifyBookResponse — errores', () => {
   it('sin saldo en la cartera de la agencia: a Carteras, y después se puede volver a confirmar', () => {
     expect(
       classifyBookResponse(
-        ...apiError(409, { reason: 'PORTFOLIO_FUNDS_INSUFFICIENT', message: 'Cargá saldo.' }),
+        ...apiError(409, { reason: 'PORTFOLIO_FUNDS_INSUFFICIENT', message: 'Carga saldo.' }),
       ),
     ).toMatchObject({ kind: 'rejected', retry: true, action: 'portfolios' });
   });
@@ -318,7 +318,7 @@ describe('classifyBookResponse — errores', () => {
       const outcome = classifyBookResponse(...apiError(409, { reason }));
       expect(outcome).toMatchObject({
         kind: 'rejected',
-        message: 'Hablá con quien te financia antes de volver a intentarlo.',
+        message: 'Habla con quien te financia antes de volver a intentarlo.',
       });
       expect(outcome).not.toHaveProperty('action');
       expect(keepsAttempt(outcome)).toBe(false);
@@ -327,7 +327,7 @@ describe('classifyBookResponse — errores', () => {
 
   it('las carteras de la red ocupadas: nada se retuvo ni salió, se reintenta en unos segundos', () => {
     const message =
-      'Tu red está procesando otras reservas en este momento y no se retuvo saldo. Probá de nuevo en unos segundos.';
+      'Tu red está procesando otras reservas en este momento y no se retuvo saldo. Prueba de nuevo en unos segundos.';
     expect(
       classifyBookResponse(...apiError(409, { reason: 'PORTFOLIO_HOLD_BUSY', message })),
     ).toEqual({
@@ -341,12 +341,12 @@ describe('classifyBookResponse — errores', () => {
   it('la cuenta del proveedor con que se cotizó ya no está en la red: volver a buscar la tarifa', () => {
     expect(
       classifyBookResponse(
-        ...apiError(409, { reason: 'PORTFOLIO_HOLD_ACCOUNT_CHANGED', message: 'Volvé a buscar.' }),
+        ...apiError(409, { reason: 'PORTFOLIO_HOLD_ACCOUNT_CHANGED', message: 'Vuelve a buscar.' }),
       ),
     ).toEqual({
       kind: 'research',
       title: 'La cuenta del proveedor cambió.',
-      message: 'Volvé a buscar.',
+      message: 'Vuelve a buscar.',
     });
   });
 
@@ -356,6 +356,12 @@ describe('classifyBookResponse — errores', () => {
         ...apiError(422, { reason: 'AGENCY_CONTACT_MISSING', message: 'Configuralos.' }),
       ),
     ).toMatchObject({ kind: 'rejected', retry: true, action: 'agency' });
+  });
+
+  it('sin mensaje del API, el texto propio va en tú', () => {
+    expect(
+      classifyBookResponse(...apiError(422, { reason: 'AGENCY_CONTACT_MISSING' })),
+    ).toMatchObject({ message: 'Configúralo en Mi agencia para reservar hoteles.' });
   });
 
   it('el proveedor no respondió al revalidar (antes del Book): se puede volver a confirmar', () => {
@@ -383,10 +389,12 @@ describe('classifyBookResponse — errores', () => {
     expect(
       classifyBookResponse(...apiError(400, { message: 'Se requiere Idempotency-Key UUID.' })),
     ).toMatchObject({ kind: 'rejected', retry: true });
-    expect(classifyBookResponse(...apiError(403, { message: 'No tenés permiso.' }))).toMatchObject({
-      kind: 'rejected',
-      retry: false,
-    });
+    expect(classifyBookResponse(...apiError(403, { message: 'No tienes permiso.' }))).toMatchObject(
+      {
+        kind: 'rejected',
+        retry: false,
+      },
+    );
   });
 });
 
@@ -435,7 +443,7 @@ describe('bookGate — el botón de confirmar', () => {
     ).toEqual({ ok: false, reason: 'La cuenta del proveedor está bloqueada.' });
     expect(bookGate({ expired: false, submitting: false, repricedPending: true })).toMatchObject({
       ok: false,
-      reason: 'Aceptá el precio nuevo para confirmar la reserva.',
+      reason: 'Acepta el precio nuevo para confirmar la reserva.',
     });
   });
 });

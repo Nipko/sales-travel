@@ -271,3 +271,40 @@ export function HotelResultCard({
     </article>
   );
 }
+
+const BONE = 'animate-pulse rounded bg-[var(--color-surface-muted)]';
+
+/**
+ * La silueta de la tarjeta mientras llega la búsqueda. Copia su caja —foto, nombre y zona,
+ * etiquetas, precio con el botón— para que al llegar los hoteles la lista no salte. Si la tarjeta
+ * cambia de forma, esto cambia con ella.
+ */
+export function HotelResultSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="@container overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]"
+    >
+      <div className="flex flex-col @lg:flex-row">
+        <div className="aspect-[2/1] w-full animate-pulse bg-[var(--color-surface-muted)] @lg:aspect-auto @lg:min-h-44 @lg:w-56 @lg:shrink-0" />
+        <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 @2xl:flex-row @2xl:justify-between @2xl:gap-5">
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <div className={cn(BONE, 'h-4 w-3/5')} />
+            <div className={cn(BONE, 'h-3 w-20')} />
+            <div className={cn(BONE, 'h-3 w-2/5')} />
+            <div className="flex flex-wrap gap-1.5">
+              <div className={cn(BONE, 'h-5 w-20 rounded-md')} />
+              <div className={cn(BONE, 'h-5 w-28 rounded-md')} />
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col gap-2 border-t border-[var(--color-border)] pt-3 @2xl:w-48 @2xl:border-t-0 @2xl:pt-0">
+            <div className={cn(BONE, 'h-6 w-28 @2xl:ml-auto')} />
+            <div className={cn(BONE, 'h-3 w-20 @2xl:ml-auto')} />
+            <div className={cn(BONE, 'h-3 w-36 @2xl:ml-auto')} />
+            <div className={cn(BONE, 'mt-1 h-10 w-full rounded-lg')} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

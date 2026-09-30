@@ -114,20 +114,20 @@ export function prefillMessage(
     case 'crm-unknown':
       return {
         tone: 'error',
-        text: `La ficha de ${prefill.customerName} dice «${prefill.raw}», que no es un código de país: elegila en la lista.`,
+        text: `La ficha de ${prefill.customerName} dice «${prefill.raw}», que no es un código de país: elígela en la lista.`,
       };
     case 'crm-missing':
       return {
         tone: 'error',
-        text: `La ficha de ${prefill.customerName} no tiene nacionalidad: elegila en la lista.`,
+        text: `La ficha de ${prefill.customerName} no tiene nacionalidad: elígela en la lista.`,
       };
     case 'crm-unreadable':
       return {
         tone: 'error',
-        text: 'No pudimos leer la ficha del cliente: elegí la nacionalidad en la lista.',
+        text: 'No pudimos leer la ficha del cliente: elige la nacionalidad en la lista.',
       };
     case 'last-search':
-      return { tone: 'info', text: 'La de tu última búsqueda: cambiala si el pasajero es otro.' };
+      return { tone: 'info', text: 'La de tu última búsqueda: cámbiala si el pasajero es otro.' };
     case 'none':
       return undefined;
   }
@@ -222,7 +222,7 @@ export function NationalityField({ className }: { className?: string }) {
         className="h-10 shadow-[var(--shadow-xs)]"
       >
         <option value="" disabled>
-          Elegí un país
+          Elige un país
         </option>
         {options ? (
           <>

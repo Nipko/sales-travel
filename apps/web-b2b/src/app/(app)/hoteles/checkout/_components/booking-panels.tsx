@@ -136,7 +136,7 @@ export function ProgressPanel({
       {stopped ? (
         <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-[var(--color-fg)]">
-            La verificación sigue del lado del proveedor. Consultala cuando quieras; no la repitas.
+            La verificación sigue del lado del proveedor. Consúltala cuando quieras; no la repitas.
           </p>
           <div className="flex shrink-0 flex-wrap gap-2">
             <button
@@ -190,7 +190,7 @@ export function ConfirmedPanel({
         <div className="min-w-0">
           <PanelHeading headingRef={headingRef}>Reserva confirmada</PanelHeading>
           <p className="text-[11px] text-[var(--color-fg-muted)]">
-            El proveedor confirmó la reserva. La encontrás en Mis Reservas.
+            El proveedor confirmó la reserva. La encuentras en Mis Reservas.
           </p>
         </div>
       </div>
