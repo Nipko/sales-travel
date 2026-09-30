@@ -48,6 +48,12 @@ export async function forwardAction(
   return reply(await apiWithStatus(target.path, { method: 'POST' }));
 }
 
+/** Una lectura (GET) de la ruta del plan. */
+export async function forwardRead(target: TenantAdminProxyTarget): Promise<NextResponse> {
+  if (!target.ok) return NextResponse.json({ error: target.error }, { status: 400 });
+  return reply(await apiWithStatus(target.path));
+}
+
 /** Un cambio con cuerpo ya reconstruido campo por campo. */
 export async function forwardPlan(
   req: Request,

@@ -108,6 +108,38 @@ export function memberActionTarget(
   };
 }
 
+/** Forma de un rol (`tenant_admin`). Cuáles se pueden dar lo decide el API. */
+const ROLE_FORMAT = /^[a-z][a-z_]{0,31}$/;
+
+/**
+ * `GET /admin/memberships/impact`: qué arrastraría suspender una membership o cambiarle el rol (las
+ * invitaciones que se revocarían), para decirlo en la confirmación. La consulta se reconstruye
+ * parámetro por parámetro: el API rechaza los de más, y pide el estado o el rol, uno solo.
+ */
+export function membershipImpactTarget(query: {
+  get(name: string): string | null;
+}): TenantAdminProxyTarget {
+  const tenantId = query.get('tenantId') ?? '';
+  const userId = query.get('userId') ?? '';
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  if (!isUuid(userId)) return { ok: false, error: 'Miembro inválido.' };
+
+  const params = new URLSearchParams({
+    userId: userId.toLowerCase(),
+    tenantId: tenantId.toLowerCase(),
+  });
+  const status = query.get('status');
+  const role = query.get('role');
+  if (status !== null && role === null && STATUSES.includes(status)) {
+    params.set('status', status);
+  } else if (role !== null && status === null && ROLE_FORMAT.test(role)) {
+    params.set('role', role);
+  } else {
+    return { ok: false, error: 'Indica qué cambio simular: suspender o un rol.' };
+  }
+  return { ok: true, path: `/admin/memberships/impact?${params.toString()}` };
+}
+
 function nullableIntIn(value: unknown, min: number, max: number): number | null | undefined {
   if (value === null) return null;
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
