@@ -31,15 +31,15 @@ export type SwitchOutcome =
   | { kind: 'unexpected' };
 
 export const SWITCH_MESSAGES = {
-  suspended: 'Esa agencia está suspendida: no podés operar con ella por ahora.',
-  forbidden: 'Ya no tenés acceso a esa agencia. Actualizamos la lista.',
-  rateLimited: 'Hiciste muchos cambios seguidos. Esperá un minuto y probá de nuevo.',
-  unavailable: 'No pudimos conectar con el servidor. Probá de nuevo en unos segundos.',
-  unexpected: 'No pudimos cambiar de agencia. Probá de nuevo.',
-  invalidTarget: 'Elegí una agencia de la lista.',
-  releaseExpired: 'El permiso para liberar un puesto venció. Elegí la agencia de nuevo.',
+  suspended: 'Esa agencia está suspendida: no puedes operar con ella por ahora.',
+  forbidden: 'Ya no tienes acceso a esa agencia. Actualizamos la lista.',
+  rateLimited: 'Hiciste muchos cambios seguidos. Espera un minuto y prueba de nuevo.',
+  unavailable: 'No pudimos conectar con el servidor. Prueba de nuevo en unos segundos.',
+  unexpected: 'No pudimos cambiar de agencia. Prueba de nuevo.',
+  invalidTarget: 'Elige una agencia de la lista.',
+  releaseExpired: 'El permiso para liberar un puesto venció. Elige la agencia de nuevo.',
   releaseSessionGone:
-    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Elegí la agencia de nuevo.',
+    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Elige la agencia de nuevo.',
 } as const;
 
 function reasonOf(res: ApiResponse): unknown {

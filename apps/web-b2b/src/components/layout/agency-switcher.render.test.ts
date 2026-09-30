@@ -66,7 +66,7 @@ describe('selector de agencia: diálogo', () => {
     const labelledBy = /role="dialog"[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];
     expect(html).toContain(`<h2 id="${labelledBy}"`);
     expect(html).toContain('Cambiar de agencia');
-    expect(html).toMatch(/Operás como <span[^>]*>Viajes Andinos<\/span> · Manager/);
+    expect(html).toMatch(/Operas como <span[^>]*>Viajes Andinos<\/span> · Manager/);
   });
 
   it('una opción por agencia, en una lista enlazada al título', () => {

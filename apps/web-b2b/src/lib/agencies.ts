@@ -198,5 +198,5 @@ export function filterAgencies(options: readonly AgencyOption[], query: string):
 }
 
 export function switchedMessage(agencyName: string): string {
-  return `Ahora operás como ${agencyName}`;
+  return `Ahora operas como ${agencyName}`;
 }

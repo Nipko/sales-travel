@@ -27,7 +27,7 @@ describe('commandItems', () => {
       'Hoteles',
       'Proveedores (GDS)',
     ]);
-    expect(items[0]).toMatchObject({ kind: 'switch-agency', hint: 'Operás como Andinos' });
+    expect(items[0]).toMatchObject({ kind: 'switch-agency', hint: 'Operas como Andinos' });
     expect(items[3]).toMatchObject({ kind: 'navigate', hint: 'Administración', group: 'Ir a' });
   });
 
