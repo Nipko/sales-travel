@@ -660,7 +660,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
 /admin/incidents                 -- monitoreo + status page
-/admin/users                     -- usuarios cross-tenant
+/admin/users                     -- usuarios cross-tenant (sólo lectura: el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
 /admin/audit                     -- log global
 /admin/reports                   -- métricas de plataforma
