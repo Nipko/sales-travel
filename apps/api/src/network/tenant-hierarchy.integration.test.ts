@@ -6,6 +6,11 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { legacyTenant, platformRootId } from '../__fixtures__/platform-root.js';
 import { tenantHierarchyHttpError } from '../database/tenant-hierarchy-errors.js';
+import {
+  clearWalletHoldsOfTenants,
+  retainAsSuperuser,
+  settleAsSuperuser,
+} from '../portfolios/__fixtures__/wallet-hold-seed.js';
 
 /**
  * La jerarquía de tenants contra Postgres: la promoción de Planetour a raíz `platform` (0049), la
@@ -169,20 +174,40 @@ d('jerarquía de tenants (0049, 0050, 0051) contra Postgres', () => {
     return rows[0]!.id;
   }
 
-  /** Retiene saldo de la cartera del tenant para la orden (como `holdBooking`). */
-  async function hold(tenantId: string, orderId: string, userId: string): Promise<string> {
-    const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO agency_portfolios (tenant_id, currency) VALUES ($1, 'COP')
-       ON CONFLICT (tenant_id, currency) DO UPDATE SET currency = EXCLUDED.currency
-       RETURNING id`,
+  /**
+   * Retiene saldo de la cartera del tenant para la orden con `wallet_hold_retain` (0060), como la
+   * API: STH02 mira la retención registrada, no los asientos. El nodo queda en modo 'off' (retiene
+   * sólo quien vende) porque acá se prueba el movimiento, no la cascada. La función retiene una
+   * orden abierta o confirmada: una emitida o cancelada se retiene confirmada y recupera su estado.
+   */
+  async function hold(tenantId: string, orderId: string, userId: string): Promise<void> {
+    await pool.query(
+      `INSERT INTO agency_portfolios (tenant_id, currency, credit_limit_minor) VALUES ($1, 'USD', 1000000)
+       ON CONFLICT (tenant_id, currency) DO NOTHING`,
       [tenantId],
     );
     await pool.query(
-      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-       VALUES ($1, -100, 'BOOKING_HOLD', $2, $3)`,
-      [rows[0]!.id, orderId, userId],
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')
+       ON CONFLICT (tenant_id, user_id) DO NOTHING`,
+      [tenantId, userId],
     );
-    return rows[0]!.id;
+    await pool.query(
+      `INSERT INTO wallet_hold_policy (tenant_id, mode, reason) VALUES ($1, 'off', 'tenant-hierarchy: STH02')
+       ON CONFLICT (tenant_id) DO NOTHING`,
+      [tenantId],
+    );
+    const { rows } = await pool.query<{ status: string }>(
+      'SELECT status FROM orders WHERE id = $1',
+      [orderId],
+    );
+    const status = rows[0]!.status;
+    if (status !== 'confirmed') {
+      await pool.query(`UPDATE orders SET status = 'confirmed' WHERE id = $1`, [orderId]);
+    }
+    await retainAsSuperuser(pool, tenantId, orderId, userId);
+    if (status !== 'confirmed') {
+      await pool.query('UPDATE orders SET status = $2 WHERE id = $1', [orderId, status]);
+    }
   }
 
   beforeAll(async () => {
@@ -190,6 +215,7 @@ d('jerarquía de tenants (0049, 0050, 0051) contra Postgres', () => {
   });
 
   afterAll(async () => {
+    await clearWalletHoldsOfTenants(pool, tenants);
     await pool.query('DELETE FROM orders WHERE tenant_id = ANY($1::uuid[])', [tenants]);
     // parent_tenant_id es ON DELETE RESTRICT: de la hoja a la raíz.
     const { rows } = await pool.query<{ id: string }>(
@@ -545,7 +571,7 @@ d('jerarquía de tenants (0049, 0050, 0051) contra Postgres', () => {
       const sub = await tenant('w-s', 'subagency', ag);
       const vendedor = await user('w-v');
       const abierta = await order(sub, vendedor, 'confirmed', { checkout: 10 });
-      const cartera = await hold(sub, abierta, vendedor);
+      await hold(sub, abierta, vendedor);
 
       const err = await failure(move(ag, c2));
       expect(`${err.code}/${err.constraint}`).toBe('STH02/tenant_move_open_wallet_bookings');
@@ -553,11 +579,10 @@ d('jerarquía de tenants (0049, 0050, 0051) contra Postgres', () => {
       expect(tenantHierarchyHttpError(err)?.reason).toBe('TENANT_MOVE_OPEN_WALLET_BOOKINGS');
       expect((await node(ag)).parent).toBe(c1);
 
-      await pool.query(
-        `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-         VALUES ($1, 100, 'BOOKING_RELEASED', $2, $3)`,
-        [cartera, abierta, vendedor],
-      );
+      // Liberada por wallet_hold_settle: aunque la orden vuelva a figurar abierta, ya no bloquea.
+      await pool.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [abierta]);
+      expect(await settleAsSuperuser(pool, sub, abierta, vendedor, 'cancelled')).toBe('released');
+      await pool.query(`UPDATE orders SET status = 'confirmed' WHERE id = $1`, [abierta]);
       expect(await move(ag, c2)).toBe(2);
     });
 

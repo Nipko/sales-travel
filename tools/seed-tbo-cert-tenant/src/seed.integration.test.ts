@@ -135,6 +135,19 @@ d('runSeed contra Postgres', () => {
   afterAll(async () => {
     if (client === undefined) return;
     for (const id of createdTenants) {
+      // Las retenciones registradas (0060) son ON DELETE RESTRICT: primero ellas, después la orden.
+      await client
+        .query(
+          `DELETE FROM wallet_hold_levels WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = $1)`,
+          [id],
+        )
+        .catch(() => undefined);
+      await client
+        .query(
+          `DELETE FROM wallet_hold_groups WHERE order_id IN (SELECT id FROM orders WHERE tenant_id = $1)`,
+          [id],
+        )
+        .catch(() => undefined);
       await client.query('DELETE FROM orders WHERE tenant_id = $1', [id]).catch(() => undefined);
       await client.query('DELETE FROM tenants WHERE id = $1', [id]).catch(() => undefined);
     }
@@ -569,9 +582,13 @@ d('runSeed contra Postgres', () => {
       `legacy-held-${SUFFIX}@example.com`,
     ]);
     createdUsers.push(user!.id);
-    const [wallet] = await q<{ id: string }>(
-      `INSERT INTO agency_portfolios (tenant_id, currency) VALUES ($1, 'USD') RETURNING id`,
+    await q(
+      `INSERT INTO agency_portfolios (tenant_id, currency, credit_limit_minor) VALUES ($1, 'USD', 1000)`,
       [legacy],
+    );
+    await q(
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')`,
+      [legacy, user!.id],
     );
     const [order] = await q<{ id: string }>(
       `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers,
@@ -580,11 +597,19 @@ d('runSeed contra Postgres', () => {
        RETURNING id`,
       [legacy, user!.id],
     );
-    await client.query(
-      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-       VALUES ($1, -100, 'BOOKING_HOLD', $2, $3)`,
-      [wallet!.id, order!.id, user!.id],
-    );
+    // La retención sale de wallet_hold_retain, como la toma la API (0060): STH02 mira lo registrado.
+    const holdFunction = async (sql: string): Promise<void> => {
+      await client.query('BEGIN');
+      try {
+        await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [legacy]);
+        await client.query(sql, [order!.id, user!.id]);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      }
+    };
+    await holdFunction('SELECT * FROM wallet_hold_retain($1::uuid, $2::uuid)');
 
     const heldSettings = settings({ slug, email: `vendedor-legacy-held-${SUFFIX}@example.com` });
     const blocked = await runSeed(client, heldSettings, fakeHasher);
@@ -609,12 +634,11 @@ d('runSeed contra Postgres', () => {
     );
     expect(noMove).toHaveLength(0);
 
-    // Liberada la retención, la corrida siguiente lo cuelga de la plataforma.
-    await client.query(
-      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-       VALUES ($1, 100, 'BOOKING_RELEASED', $2, $3)`,
-      [wallet!.id, order!.id, user!.id],
-    );
+    // Liberada la retención (aunque la orden vuelva a figurar abierta), la corrida siguiente lo
+    // cuelga de la plataforma.
+    await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [order!.id]);
+    await holdFunction(`SELECT wallet_hold_settle($1::uuid, $2::uuid, 'cancelled')`);
+    await client.query(`UPDATE orders SET status = 'confirmed' WHERE id = $1`, [order!.id]);
     const retried = await runSeed(client, heldSettings, fakeHasher);
     expect(retried).toMatchObject({ tenantId: legacy, tenant: 'updated', placement: 'platform' });
     const [after] = await q<{ parent_tenant_id: string | null }>(

@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
+import { clearWalletHoldsOfTenants, seedOrder } from './__fixtures__/wallet-hold-seed.js';
 
 /**
  * Quién escribe en las carteras y en los depósitos informados (0052), como `app_user`: el rol con
@@ -206,6 +207,8 @@ d('carteras y depósitos informados bajo RLS (como app_user)', () => {
   });
 
   afterAll(async () => {
+    await clearWalletHoldsOfTenants(admin, tenants);
+    await admin.query('DELETE FROM orders WHERE tenant_id = ANY($1::uuid[])', [tenants]);
     const { rows } = await admin.query<{ id: string }>(
       'SELECT id FROM tenants WHERE id = ANY($1::uuid[]) ORDER BY nlevel(path) DESC',
       [tenants],
@@ -324,29 +327,73 @@ d('carteras y depósitos informados bajo RLS (como app_user)', () => {
       expect(ledger[0]!.n).toBe('1');
     });
 
-    it('sus reservas siguen reteniendo y liberando saldo sin usuario (withTenant)', async () => {
-      const order = randomUUID();
-      await as({ tenantId: agency }, async (c) => {
-        await c.query(
-          `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-           VALUES ($1, -5000, 'BOOKING_HOLD', $2, $3)`,
-          [wAgency, order, agencySeller],
-        );
-        await c.query(
-          'UPDATE agency_portfolios SET balance_minor = balance_minor - 5000 WHERE id = $1',
-          [wAgency],
-        );
-        await c.query(
-          `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
-           VALUES ($1, 5000, 'BOOKING_RELEASED', $2, $3)`,
-          [wAgency, order, agencySeller],
-        );
-        await c.query(
-          'UPDATE agency_portfolios SET balance_minor = balance_minor + 5000 WHERE id = $1',
-          [wAgency],
-        );
+    it('sus reservas retienen y liberan saldo sin usuario (withTenant), sólo por las funciones de 0060', async () => {
+      // A mano, ni el asiento de retención ni el saldo: desde 0060 son de wallet_hold_*.
+      expect(
+        await rule(
+          as({ tenantId: agency }, (c) =>
+            c.query(
+              `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
+               VALUES ($1, -5000, 'BOOKING_HOLD', $2, $3)`,
+              [wAgency, randomUUID(), agencySeller],
+            ),
+          ),
+        ),
+      ).toBe('42501/hold_entry_reserved');
+      expect(
+        await rule(
+          as({ tenantId: agency }, (c) =>
+            c.query(
+              'UPDATE agency_portfolios SET balance_minor = balance_minor - 5000 WHERE id = $1',
+              [wAgency],
+            ),
+          ),
+        ),
+      ).toBe('42501/portfolio_balance_reserved');
+
+      // Con su propia cuenta de proveedor la cadena de la red es vacía: retiene sólo la agencia.
+      const provider = `wrls-prov-${sfx}`;
+      const { rows: acc } = await admin.query<{ id: string }>(
+        `INSERT INTO provider_accounts (tenant_id, provider_code, credentials_enc, status)
+         VALUES ($1, $2, '\\x00'::bytea, 'active') RETURNING id`,
+        [agency, provider],
+      );
+      await admin.query('UPDATE agency_portfolios SET credit_limit_minor = 5000 WHERE id = $1', [
+        wAgency,
+      ]);
+      const orderId = await seedOrder(admin, {
+        tenantId: agency,
+        userId: agencySeller,
+        provider,
+        totalMinor: 5000,
+        currency: 'COP',
+        accountId: acc[0]!.id,
+        pricing: null,
       });
+      await admin.query(
+        `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', 'active')
+         ON CONFLICT (tenant_id, user_id) DO NOTHING`,
+        [agency, agencySeller],
+      );
+
+      await as({ tenantId: agency }, (c) =>
+        c.query('SELECT * FROM wallet_hold_retain($1::uuid, $2::uuid)', [orderId, agencySeller]),
+      );
+      expect((await walletRow(wAgency)).balance).toBe('-5000');
+
+      await admin.query(`UPDATE orders SET status = 'failed' WHERE id = $1`, [orderId]);
+      const outcome = await as({ tenantId: agency }, async (c) => {
+        const { rows } = await c.query<{ o: string }>(
+          `SELECT wallet_hold_settle($1::uuid, $2::uuid, 'failed') AS o`,
+          [orderId, agencySeller],
+        );
+        return rows[0]!.o;
+      });
+      expect(outcome).toBe('released');
       expect((await walletRow(wAgency)).balance).toBe('0');
+      await admin.query('UPDATE agency_portfolios SET credit_limit_minor = 0 WHERE id = $1', [
+        wAgency,
+      ]);
     });
 
     it('el libro no se reescribe ni se borra desde la aplicación', async () => {
