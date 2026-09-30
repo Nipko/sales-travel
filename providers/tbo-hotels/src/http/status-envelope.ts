@@ -12,10 +12,11 @@ import type { TboOperationSpec } from './operations';
  *
  * `Status.Description` no decide nada (01 §8.6): los textos de los ejemplos no coinciden con los de
  * la tabla. Se devuelve, recortada, para el log de las operaciones sin datos personales. La única
- * excepción es la de la fila que la pide (`emptyOnNoHotelsFound`, sólo TBOHotelCodeList): un 500
- * "No Hotels Found" con HTTP 2xx es la ciudad sin hoteles, observada en producción (01 §8.5), pero
- * sólo si llegó antes de `slowNoHotelsFoundMs`. El mismo texto a los ≈ 5 s es el plazo interno de
- * TBO vencido, no una ciudad vacía, y sigue siendo el `UPSTREAM` de su código.
+ * excepción es la de las filas que la piden (`emptyOnNoHotelsFound`: TBOHotelCodeList y
+ * HotelDetails): un 500 "No Hotels Found" con HTTP 2xx es un vacío observado en producción —la
+ * ciudad sin hoteles, el lote sin contenido en ese idioma (01 §8.5)—, pero sólo si llegó antes de
+ * `slowNoHotelsFoundMs`. El mismo texto a los ≈ 5 s es el plazo interno de TBO vencido, no un
+ * vacío, y sigue siendo el `UPSTREAM` de su código.
  */
 
 /** Los 12 códigos de la tabla de p. 8-10, en el orden del PDF, con su desenlace (01 §8.3). */
@@ -42,7 +43,7 @@ export const TBO_DESCRIPTION_LOG_MAX = 120;
 
 /**
  * `NO_AVAILABILITY` es el resultado vacío de una operación que lo admite: el 201 de Search y el 500
- * "No Hotels Found" de TBOHotelCodeList. Qué significa "vacío" lo decide quien llamó.
+ * "No Hotels Found" de TBOHotelCodeList y HotelDetails. Qué significa "vacío" lo decide quien llamó.
  */
 export type TboEnvelopeOutcome = 'SUCCESS' | 'NO_AVAILABILITY';
 

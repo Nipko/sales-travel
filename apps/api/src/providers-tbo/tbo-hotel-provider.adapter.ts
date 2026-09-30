@@ -36,6 +36,7 @@ import {
   classifyTboBookOutcome,
   compareTboRates,
   generateTboBookingReference,
+  resolveTboHotelDetails,
   tboHotelContentHash,
   type TboBookingByDate,
   type TboCatalogHotel,
@@ -575,10 +576,19 @@ export class TboHotelProviderAdapter
 
   /**
    * `HotelDetails` de un lote en UN idioma, para GUARDARLO en el catálogo (fotos de los resultados):
-   * cada contenido sale como fila de `hotel_content` con la huella del ACL, la misma del sync, y lo
-   * que TBO no devolvió sale en `missingHotelIds`. Por el cupo de fondo del limitador de la cuenta,
-   * como todo el contenido estático. Un lote de más de 13 códigos no sale: el builder del ACL lo
-   * rechaza antes del cable.
+   * cada contenido sale como fila de `hotel_content` con la huella del ACL, la misma del sync. Por
+   * el cupo de fondo del limitador de la cuenta, como todo el contenido estático. Un lote de más de
+   * 13 códigos no sale: el builder del ACL lo rechaza antes del cable.
+   *
+   * El lote se resuelve con `resolveTboHotelDetails` del ACL (docs/tbo/05 CE-23): lo que no vino en
+   * el idioma pedido se pide en inglés y vuelve como filas `en`; un lote que TBO contesta vacío
+   * entero se parte, con el tope por lote del ACL y el cupo por minuto de `allowExtraCall`, para
+   * encontrar los que sí tienen contenido. Lo confirmado sin contenido (en el idioma pedido y en
+   * inglés) sale en `missingHotelIds`, lo que quedó sin respuesta en `unresolvedHotelIds`, y lo que
+   * TBO no confirmó (`unconfirmed` del ACL) en ninguna de las dos. Si la PRIMERA llamada falla, se
+   * lanza su error tal cual, como antes; un fallo de las siguientes sólo deja sus hoteles sin
+   * resolver. Las de aislamiento van con UN intento: partir contra un TBO que falla sólo multiplica
+   * llamadas en el cupo de fondo, y lo que no alcanzó se vuelve a pedir en unos minutos.
    */
   async fetchHotelContents(
     hotelIds: readonly string[],
@@ -588,14 +598,36 @@ export class TboHotelProviderAdapter
   ): Promise<HotelContentBatch> {
     const content = this.#content;
     if (content === undefined) throw new TboContentClientMissingError();
-    const found = await content.getHotelDetails(hotelIds, lang, {
+    const call = {
       timeoutMs: options.timeoutMs,
-      maxAttempts: CATALOG_MAX_ATTEMPTS,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
+    };
+    const resolution = await resolveTboHotelDetails<unknown>(
+      hotelIds,
+      lang,
+      (codes, callLang, purpose) =>
+        content
+          .getHotelDetails(codes, callLang, {
+            ...call,
+            maxAttempts: purpose === 'isolation' ? 1 : CATALOG_MAX_ATTEMPTS,
+          })
+          .then(
+            (result) => ({ ok: true as const, result }),
+            (failure: unknown) => ({ ok: false as const, failure }),
+          ),
+      options.allowExtraCall === undefined ? {} : { allowIsolationCall: options.allowExtraCall },
+    );
+    if ('primaryFailure' in resolution) throw resolution.primaryFailure;
+    const { primary, fallback, isolation } = resolution.calls;
     return {
-      contents: found.contents.map(contentRecordOf),
-      missingHotelIds: [...found.missingHotelCodes],
+      contents: resolution.contents.map(contentRecordOf),
+      missingHotelIds: [...resolution.withoutContent],
+      unresolvedHotelIds: [...resolution.unresolved],
+      calls: { total: primary + fallback + isolation, fallback, isolation },
+      diagnostics: {
+        batchBreakers: resolution.batchBreakers.length,
+        untrustedResponses: resolution.untrustedResponses,
+      },
     };
   }
 

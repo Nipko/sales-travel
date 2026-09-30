@@ -941,15 +941,32 @@ describe('TBOHotelCodeList: 500 "No Hotels Found" es un resultado vacío, no un 
     expect(calls).toHaveLength(5);
   });
 
-  it.each(['cityList', 'hotelDetails'] as const)(
-    'en %s, sin evidencia, el mismo cuerpo es UPSTREAM y se reintenta',
-    async (op) => {
-      const { fetch, calls } = spyFetch(noHotelsFound());
-      const error = await apiError(client({ fetch }).send(op, { probe: 1 }));
-      expect(error.kind).toBe('UPSTREAM');
-      expect(calls).toHaveLength(TBO_OPERATIONS[op].maxAttempts);
-    },
-  );
+  it('en CityList, sin evidencia, el mismo cuerpo es UPSTREAM y se reintenta', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound());
+    const error = await apiError(client({ fetch }).send('cityList', { probe: 1 }));
+    expect(error.kind).toBe('UPSTREAM');
+    expect(calls).toHaveLength(TBO_OPERATIONS.cityList.maxAttempts);
+  });
+
+  it('en HotelDetails es el lote sin contenido (2026-09-30): vacío en UNA llamada, sin error', async () => {
+    const { fetch, calls } = spyFetch(noHotelsFound());
+    const { logger, calls: logs } = spyLogger();
+    const { metrics, calls: measured } = spyMetrics();
+    const result = await client({ fetch, logger, metrics }).send('hotelDetails', {
+      Hotelcodes: '1000000,1000001',
+      Language: 'ES',
+    });
+
+    expect(result).toMatchObject({ outcome: 'NO_AVAILABILITY', tboCode: 500, attempts: 1 });
+    expect(calls).toHaveLength(1);
+    expect(logs.filter((log) => log.level === 'warn' || log.level === 'error')).toEqual([]);
+    expect(JSON.stringify(logs)).not.toMatch(/"circuit"|"retry"/);
+    expect(measured.find((m) => m.name === 'tbo.http.requests')?.tags).toEqual({
+      op: 'hotelDetails',
+      kind: 'NO_AVAILABILITY',
+      tbo_code: '500',
+    });
+  });
 });
 
 describe('TBOHotelCodeList: un "No Hotels Found" lento es el plazo de TBO vencido (01 §8.5)', () => {
@@ -977,6 +994,27 @@ describe('TBOHotelCodeList: un "No Hotels Found" lento es el plazo de TBO vencid
       },
     };
   }
+
+  it('en HotelDetails, igual: lento se reintenta como UPSTREAM y el rápido que sigue es el vacío', async () => {
+    const { now, noHotelsFoundAfter } = tbo();
+    const { fetch, calls } = spyFetch(noHotelsFoundAfter(5_088), noHotelsFoundAfter(120));
+    const { logger, calls: logs } = spyLogger();
+    const result = await client({ fetch, now, logger, sleep: () => Promise.resolve() }).send(
+      'hotelDetails',
+      { Hotelcodes: '1000000', Language: 'ES' },
+    );
+
+    expect(result).toMatchObject({ outcome: 'NO_AVAILABILITY', attempts: 2 });
+    expect(calls).toHaveLength(2);
+    expect(logs.filter((log) => log.message === 'tbo.http.error').map((log) => log.meta)).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        kind: 'UPSTREAM',
+        circuit: 'COUNT',
+        reason: 'slow_no_hotels_found',
+      }),
+    ]);
+  });
 
   it('UPSTREAM con su motivo, backoff y COUNT; el reintento que trae hoteles es un éxito', async () => {
     // d121e5da en el log: 5.088 y 5.092 ms, y el tercer intento trajo hoteles.

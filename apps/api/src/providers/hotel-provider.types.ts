@@ -622,6 +622,13 @@ export interface HotelContentFetchOptions {
   readonly timeoutMs: number;
   /** Corta la espera entera, cola del limitador incluida. */
   readonly signal?: AbortSignal;
+  /**
+   * Cupo de las llamadas EXTRA de un lote: las que parten un lote que el proveedor contestó vacío
+   * entero para encontrar los hoteles que sí tienen contenido (TBO, docs/tbo/05 CE-23). Se consulta
+   * justo antes de cada una y `false` = esa llamada no sale. Sin él, sólo cuenta el tope por lote
+   * del proveedor. El respaldo en inglés no pasa por aquí: es parte de pedir el lote.
+   */
+  readonly allowExtraCall?: () => boolean;
 }
 
 /**
@@ -670,11 +677,46 @@ export interface HotelContentRecord {
   readonly contentHash: string;
 }
 
+/** Cuántas llamadas costó un lote de contenido, para el log. */
+export interface HotelContentBatchCalls {
+  readonly total: number;
+  /** En el idioma de respaldo (`en`), por los hoteles que no tenían el pedido. */
+  readonly fallback: number;
+  /** Para encontrar los hoteles con contenido de un lote que volvió vacío entero. */
+  readonly isolation: number;
+}
+
+/** Lo que el lote dejó ver del proveedor, para el log: sólo conteos. */
+export interface HotelContentBatchDiagnostics {
+  /** Hoteles que, solos, dejan vacío el lote entero (TBO: H2 observada, docs/tbo/05 CE-23). */
+  readonly batchBreakers: number;
+  /** Respuestas con elementos que el ACL descartó: lo que faltó en ellas no se confirmó. */
+  readonly untrustedResponses: number;
+}
+
 /** Lo que el proveedor respondió a un lote de contenido. */
 export interface HotelContentBatch {
+  /**
+   * Del idioma pedido y, de los hoteles que no lo tienen, del de respaldo (`en`): cada fila dice el
+   * suyo. Las fotos no dependen del idioma, así que una fila en inglés ya da la foto.
+   */
   readonly contents: readonly HotelContentRecord[];
-  /** Pedidos que no volvieron: el proveedor no tiene contenido de ese hotel (o no lo conoce). */
+  /**
+   * Sin contenido CONFIRMADO: el proveedor respondió sin ese hotel en el idioma pedido Y en el de
+   * respaldo (pedido en `en`, sólo en inglés), o no lo conoce. Nada dice de los demás idiomas.
+   */
   readonly missingHotelIds: readonly string[];
+  /**
+   * Sin respuesta final: un tope o un cupo de llamadas extra agotado, o una llamada extra que falló.
+   * No dicen nada del hotel: se vuelven a pedir pronto. Sin la lista, ninguno.
+   *
+   * Un pedido que no está en ninguna lista ni volvió con contenido quedó sin confirmar: el
+   * proveedor respondió sin él, pero no alcanza para decir que no tiene contenido.
+   */
+  readonly unresolvedHotelIds?: readonly string[];
+  /** Llamadas que costó el lote. Sin el dato, el log no las cuenta. */
+  readonly calls?: HotelContentBatchCalls;
+  readonly diagnostics?: HotelContentBatchDiagnostics;
 }
 
 /**

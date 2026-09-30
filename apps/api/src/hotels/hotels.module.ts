@@ -16,7 +16,11 @@ import { HotelBookingVerificationService } from './hotel-booking-verification.se
 import { HotelBookingVerificationStore } from './hotel-booking-verification.store.js';
 import { HotelBookingService } from './hotel-booking.service.js';
 import { HotelCatalogStore } from './hotel-catalog.store.js';
-import { HOTEL_CONTENT_CACHE, HotelContentService } from './hotel-content.service.js';
+import {
+  HOTEL_CONTENT_CACHE,
+  HOTEL_CONTENT_NONE_CACHE,
+  HotelContentService,
+} from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { HotelPrebookService } from './hotel-prebook.service.js';
 import {
@@ -83,6 +87,8 @@ import { HotelsService } from './hotels.service.js';
     HotelCatalogStore,
     { provide: HOTEL_SEARCH_CONTEXT_CACHE, useClass: MemoryCacheAdapter },
     { provide: HOTEL_CONTENT_CACHE, useClass: MemoryCacheAdapter },
+    // Otra instancia: los hoteles sin contenido (una semana) no se desalojan por las fichas.
+    { provide: HOTEL_CONTENT_NONE_CACHE, useClass: MemoryCacheAdapter },
   ],
   exports: [HotelBookingVerificationService, HcnTrackingService],
 })

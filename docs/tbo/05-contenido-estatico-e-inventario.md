@@ -59,6 +59,10 @@ estado: borrador
    local; y una etapa opt-in (E2A) baja las ciudades de todos los países, cuyos hoteles se cargan la primera vez que
    alguien las busca (§8.6). Cómo se opera en el VPS:
    [platform/13 §5](../platform/13-validacion-modelo-red.md#5-runbook-del-vps), pasos 10 a 12.
+10. **Lote sin contenido (APLICADO, 2026-09-30).** En producción `HotelDetails` contestó todos los lotes en `ES` con
+    HTTP 200 y `Status.Code` 500 "No Hotels Found", y las miniaturas no aparecían. Ese "No Hotels Found" rápido ya no
+    es un fallo (ni reintento ni breaker): lo que no vino se pide en inglés y se guarda como `en`, y un lote vacío
+    entero se parte para encontrar lo que sí tiene contenido (§2.6.4, CE-23).
 
 ---
 
@@ -306,7 +310,8 @@ cifras en [01](./01-autenticacion-conectividad-y-errores.md) §8.5):
 - **Coordenadas.** Cada hotel trae `Latitude` y `Longitude`, que ni la tabla ni el ejemplo documentan (pp. 66-69).
   El log registra nombres de claves, no valores, así que no se sabe su tipo: el ACL acepta número o string numérico,
   las usa si dan un punto válido y, si no, cae a `Map` (§3) → [Q-63](./10-preguntas-para-tbo.md#q-63). `HotelDetails`
-  no las trajo (E4 no corrió): allí siguen siendo claves desconocidas.
+  no las trajo: en su primera llamada real (2026-09-30) contestó "No Hotels Found" (§2.6.4), así que allí siguen
+  siendo claves desconocidas.
 
 ### 2.6 `HotelDetails` (POST, pp. 56-62)
 
@@ -432,6 +437,95 @@ función queda **apagada** hasta tener un fixture real capturado en test, y `Roo
 → [Q-65](./10-preguntas-para-tbo.md#q-65). El uso de `RoomID` en la oferta está en [02](./02-search-y-oferta-canonica.md).
 
 ---
+
+#### 2.6.4 Lote sin contenido: "No Hotels Found" (producción, 2026-09-30; CE-23)
+
+**Observado.** La primera vez que se llamó a `HotelDetails` contra TBO real fue desde las fotos de los resultados
+(`POST /hotels/content/batch`, §8.6): el sync nunca lo había llamado (E4 con 0 hoteles). Con lotes de 10 códigos de
+Colombia y `"Language": "ES"`, TBO contestó **siempre** HTTP 200 con `{"Status":{"Code":500,"Description":"No Hotels
+Found"}}`, en 95-320 ms. El cliente lo trataba como el `UPSTREAM` de cualquier 500: un reintento con backoff, `circuit:
+COUNT` en el log y `hotels.content_batch.lote_fallo`; no se guardaba nada en `hotel_content` y las miniaturas no
+aparecían. El ejemplo oficial de Postman ("Hotel Details") manda `"Language": "EN"` con 13 códigos; el PDF lista `ES`
+entre los idiomas (p. 58). Sin credenciales locales no se puede probar contra TBO, así que el arreglo sirve con las
+dos explicaciones posibles:
+
+- **H1: TBO no tiene contenido en ese idioma** para esos hoteles (el contenido de TBO es en inglés, INFERIDO).
+- **H2: un código sin contenido tumba el lote entero**, en vez de quedar fuera de un 200 (Q-62 c).
+
+**Regla (desde el 2026-09-30).**
+
+1. **No es un fallo.** Con HTTP 2xx y en menos de 4.500 ms (`TBO_SLOW_NO_HOTELS_FOUND_MS`, la misma regla de tiempo
+   que la ciudad sin hoteles, CE-21), el "No Hotels Found" de `HotelDetails` es un resultado tipado
+   `outcome: 'NO_HOTELS_FOUND'` con todos los códigos en `missingHotelCodes`: sin reintento, sin error, sin `COUNT`
+   para el breaker ni la racha del sync y sin `warn` (una línea `debug` `tbo.static.details_without_content`). Con
+   4.500 ms o más sigue siendo el `UPSTREAM` del 500, con reintento y `reason: "slow_no_hotels_found"`. Cualquier
+   otro 500 no cambia. La columna `emptyOnNoHotelsFound` de `TBO_OPERATIONS` queda encendida en `tboHotelCodeList` y
+   `hotelDetails`; ninguna otra operación cambió de clasificación.
+2. **Respaldo en inglés.** `resolveTboHotelDetails` del ACL pide en `EN` los códigos que no vinieron en el idioma
+   pedido (una llamada por lote) y ese contenido se guarda como `lang = 'en'`, `source = 'details'`.
+3. **Qué confirma cada respuesta.** Un código queda confirmado sin contenido en un idioma si faltó en un 200 de ese
+   idioma o si volvió "No Hotels Found" pedido solo. Un lote de varios que vuelve "No Hotels Found" no confirma nada
+   por sí mismo; lo deciden dos evidencias:
+
+   - **H2 descartada:** el respaldo en inglés volvió 200 sin algún código. En inglés un código sin contenido no tumbó
+     el lote, así que el vacío del idioma pedido es H1 y todos los que faltaron quedan confirmados sin ese idioma.
+   - **H2 observada:** al partir en inglés un lote vacío entero, una mitad trajo contenido. Los códigos que, solos,
+     vuelven "No Hotels Found" son los que tumban el lote (`batchBreakers`).
+
+   **Sin contenido** (`withoutContent`) es confirmado en el idioma pedido Y en inglés (pedido en `en`, sólo en
+   inglés). **Sin confirmar** (`unconfirmed`) es lo que TBO respondió sin contenido sin llegar a confirmarlo en los dos
+   idiomas: el idioma pedido sólo llegó en un lote vacío sin evidencia, o faltó en una respuesta con elementos que el
+   ACL descartó (`ITEM_SCHEMA`) o sin el contenedor, porque pudo ser el elemento que no se entendió
+   (`untrustedResponses`). **Sin resolver** (`unresolved`) es lo que no se llegó a preguntar o no contestó.
+
+4. **Aislamiento (H2).** Si el lote en inglés también vuelve "No Hotels Found" entero y tiene más de un código, se
+   parte en mitades, en profundidad, hasta encontrar los que tienen contenido. Sólo con **H2 observada**, los demás
+   códigos (los que trajeron inglés y los que faltaron en un 200 en inglés, que no tumban nada) se piden UNA vez más
+   en el idioma pedido, sin los que tumban el lote; si esa vuelta es un 200, lo que falta en ella y los que tumban el
+   lote quedan confirmados sin el idioma pedido. Sin evidencia de H2 no hay vuelta: con H1 sólo gastaría una llamada
+   que vuelve vacía. Topes: 10 llamadas de aislamiento por lote (`TBO_DETAILS_ISOLATION_DEFAULTS`: aislar un código
+   entre 10 o 13 cuesta 8, más esa vuelta); en el API, además, 12 por minuto **por cuenta**
+   (`HOTEL_CONTENT_EXTRA_CALLS_PER_MINUTE`, un 20 % del cupo de fondo de la cuenta, que comparten la ficha bajo
+   demanda y las lecturas de post-venta) y con UN intento cada una; en el sync, el 20 % del presupuesto de la corrida
+   (`E4_ISOLATION_BUDGET_SHARE`). Todo por el cupo de fondo del limitador. Lo que no alcanza queda **sin resolver**,
+   nunca confirmado. Una llamada extra que falla corta las siguientes del lote. El respaldo en inglés no pasa por el
+   tope por minuto: es una llamada por lote y sin él no hay fotos.
+5. **Lo que se recuerda (API).** Confirmado sin contenido: una semana, **por cuenta del proveedor** (`accountRef`, que
+   cambia al rotar la credencial) **y por idioma confirmado** (el pedido y `en`:
+   `hotels:content-none:<proveedor>@<cuenta>:<hotel>:<idioma>`). El lote deja de pedir un hotel en un idioma cuando
+   la cuenta confirmó ése y el inglés; la ficha, cuando confirmó el idioma que va a pedir. Lo que contestó una cuenta
+   (otro consolidador, otro entorno) no frena a otra, y un pedido en `en` o en `pt` no dice nada del español. Sin
+   confirmar: 6 h por idioma, como antes. Sin resolver: 2 min. Es memoria del proceso, en una instancia aparte
+   (`HOTEL_CONTENT_NONE_CACHE`) para que el ir y venir de las fichas no la desaloje: un deploy la vacía y esos
+   hoteles se vuelven a pedir una vez, y si llega a su techo (5.000 entradas) descarta lo más viejo. Cambiar de
+   entorno con el mismo usuario no cambia la cuenta: ahí hace falta reiniciar el API.
+6. **Lo que se recuerda (sync).** Nada entre corridas. Dentro de una corrida, un hotel con inglés guardado y vigente,
+   o que la corrida ya resolvió en inglés, no se vuelve a pedir en inglés; y un código que se vio tumbar un lote no va
+   en los lotes de los otros idiomas, así sus compañeros reciben su portugués en una llamada. Un hotel que sólo tiene
+   inglés se vuelve a pedir en español y portugués en cada corrida (una llamada por lote de 10 y por idioma, ya sin
+   respaldo), y como nunca tiene HotelDetails en esos idiomas queda entre los primeros. Pendiente: una marca
+   persistente de "sin contenido" por idioma, compartida por el API y el sync.
+7. **Lectura.** La ficha (`GET /hotels/content/…`), el lote de fotos y la foto principal de los resultados sirven el
+   idioma pedido y, si no existe, el inglés. Las fotos no dependen del idioma: la candidata sale de la fila que tenga
+   fotos, prefiriendo el idioma pedido. La ficha dice en qué idioma vino el texto (`lang` frente a `requestedLang`, y
+   `langFallback: true`) y la web ya muestra "La descripción de este hotel está disponible sólo en inglés.". Bajo
+   demanda, si el proveedor respondió sin el idioma pedido y el catálogo no tiene el detalle en inglés, la ficha pide
+   el inglés dentro del MISMO plazo de 6 s.
+8. **Diagnóstico sin PII.** Una línea `info` por lote: en el API, `hotels.content_batch.lote provider=… lang=es
+requested=10 found_es=0 found_en=9 none=1 unconfirmed=0 unresolved=0 fallback=yes calls=2 fallback_calls=1
+extra_calls=0 breakers=0 untrusted=0`; en el sync, `tbo.sync.content_batch` (sólo si algo no vino en el idioma
+   pedido en la primera llamada; si vino todo, en `debug`) con `withoutContent`, `unconfirmed`, `unresolved`,
+   `batchBreakers` y `untrustedResponses`, y los contadores `hotelsFromFallback`, `hotelsWithoutContent`,
+   `hotelsUnconfirmed`, `hotelsUnresolved`, `batchBreakers`, `fallbackCalls` e `isolationCalls` en el resumen de E4.
+   Sólo conteos; los códigos, que son de catálogo, sólo en `debug`.
+
+**Cómo leer el log en producción.** `breakers` es la evidencia directa: `breakers>0` es H2 (hay códigos que, solos,
+tumban el lote). `found_es=0 found_en=N fallback=yes breakers=0` en todos los lotes es H1: TBO no tiene español para
+esos hoteles; con `none>0` y `extra_calls=0`, el respaldo en inglés volvió 200 sin esos códigos, lo que descarta H2.
+`extra_calls>0` con `breakers=0` es un lote que tampoco tenía inglés (se partió sin encontrar nada) o que el tope
+cortó antes (`unresolved>0`). `untrusted>0` es un cambio del contrato de `HotelDetails` (elementos que el ACL no
+entendió): mirar el RS del lote. Cuál de las dos hipótesis es, y qué idiomas tienen contenido, se pregunta a TBO →
+[Q-62](./10-preguntas-para-tbo.md#q-62) y [Q-66](./10-preguntas-para-tbo.md#q-66).
 
 ## 3. Rarezas de tipos y política de normalización
 
@@ -660,6 +754,14 @@ Decisiones dentro de las etapas:
   0054, con las reglas del sync y sin `INSERT` ni `UPDATE` para `app_user`.
 - **`HotelDetails` y reintentos.** Son lecturas sin dinero: se permiten reintentos con backoff, a diferencia de
   Book y Cancel ([01](./01-autenticacion-conectividad-y-errores.md), [03](./03-prebook-y-book.md)).
+- **E4 y el lote sin contenido** (desde el 2026-09-30, §2.6.4). Cada lote se resuelve con `resolveTboHotelDetails`
+  por la puerta de la corrida: el "No Hotels Found" rápido no es un fallo (no suma a `errorsByCode` ni a la racha), lo
+  que no vino en ES o PT se pide en EN y se guarda como `en`, y un lote vacío entero se parte en EN con techo por
+  lote y por corrida (20 % de `TBO_SYNC_MAX_CALLS`). Las llamadas de respaldo y aislamiento cuentan en el
+  presupuesto como cualquier otra y van como `isolating`. Un hotel con inglés guardado y vigente, o que la corrida ya
+  resolvió en inglés, no se vuelve a pedir en inglés, ni como respaldo del portugués ni en su lote EN; un código que
+  se vio tumbar un lote no va en los lotes de los otros idiomas de la corrida. La partición por FALLO (400, 500,
+  timeout) de la llamada principal no cambió.
 
 ### 6.4 Presupuesto, reanudación y exclusión mutua
 
@@ -1058,14 +1160,17 @@ la búsqueda; (2) precarga por demanda; (3) cobertura global de ciudades; (4) im
 - **Fotos bajo demanda.** `POST /hotels/content/batch` (hasta 24 hoteles, Zod; no es una venta ni gasta cuota de
   búsqueda): lo que el catálogo tiene sale al instante; lo que falta se pide a `HotelDetails` en lotes de 10 (a lo
   sumo 20 hoteles por petición), sólo por hoteles del catálogo del proveedor que todavía no tienen contenido
-  `details`, con la cuenta de la agencia, por el cupo de fondo del limitador y por el circuito (pasiva: un
-  `HotelDetails` lento no corta las búsquedas de la red). Se guarda con `hotel_catalog_store_contents` (0054), con la
-  huella `tbo-content-v1` del ACL, la misma del sync. La respuesta espera 9 s como mucho: lo que no llegó sale
-  `pending` con `retryAfterMs` (3 s) y la llamada sigue y guarda. Cada ítem sale `ready` (con la foto), `pending` o
-  `none`. Un hotel sin contenido (o cuya fila la base rechazó) se recuerda 6 h y un lote fallido 2 min, para no
-  volver a pedirlos en cada pantalla. El log dice `hotels.content_batch.lote_fallo`,
-  `hotels.content_batch.filas_rechazadas` o `hotels.content_batch.guardar_fallo`, sólo con códigos y conteos. Con
-  el circuito abierto o TBO apagado no sale nada ni queda línea: esos hoteles salen `none`.
+  `details` en ningún idioma, con la cuenta de la agencia, por el cupo de fondo del limitador y por el circuito
+  (pasiva: un `HotelDetails` lento no corta las búsquedas de la red). Desde el 2026-09-30, lo que no viene en el
+  idioma pedido se trae en inglés y se guarda como `en`, y un lote vacío entero se parte (§2.6.4). Se guarda con
+  `hotel_catalog_store_contents` (0054), con la huella `tbo-content-v1` del ACL, la misma del sync. La respuesta
+  espera 9 s como mucho: lo que no llegó sale `pending` con `retryAfterMs` (3 s) y la llamada sigue y guarda. Cada
+  ítem sale `ready` (con la foto), `pending` o `none`. Un hotel que la cuenta confirmó sin contenido en el idioma
+  pedido y en inglés se recuerda una semana, por cuenta e idioma; uno sin confirmar o cuya fila la base rechazó, 6 h;
+  uno sin resolver (tope de llamadas extra) y un lote fallido, 2 min.
+  El log dice `hotels.content_batch.lote` (una línea `info` por lote, §2.6.4), `hotels.content_batch.lote_fallo`,
+  `hotels.content_batch.filas_rechazadas` o `hotels.content_batch.guardar_fallo`, sólo con conteos. Con el circuito
+  abierto o TBO apagado no sale nada ni queda línea: esos hoteles salen `none`.
 - **Resultados (web).** La lista se pinta con lo que trajo la búsqueda. Para las tarjetas sin foto, la pantalla pide
   `POST /api/hotels/content/batch` del panel, que rearma el cuerpo y lo reenvía al API con la sesión: en tandas de
   hasta 24 hoteles, en el orden en que se ven, dos tandas a la vez como mucho, hasta 3 intentos por hotel respetando
@@ -1171,13 +1276,13 @@ deduplicación cross-provider" (`packages/canonical/src/hotel.ts:38-45`), y cuan
 
 | Límite                               | Qué dice el contrato                                                                       | Postura                                                                                                                                                                                                                                                                                                                                                                                                             | Configuración                  |
 | ------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Códigos por llamada a `HotelDetails` | Nada. La tabla habla de un código (p. 58); la respuesta es array (p. 59); Postman manda 13 | Lote por defecto 10, nunca más de 13 hasta confirmar. Si el lote da 400, 500 o timeout, se parte en dos y se reintenta hasta llegar a 1; un código que falla solo se marca y se sigue                                                                                                                                                                                                                               | `TBO_SYNC_DETAILS_BATCH`       |
+| Códigos por llamada a `HotelDetails` | Nada. La tabla habla de un código (p. 58); la respuesta es array (p. 59); Postman manda 13 | Lote por defecto 10, nunca más de 13 hasta confirmar. Si el lote da 400, 500 o timeout, se parte en dos y se reintenta hasta llegar a 1; un código que falla solo se marca y se sigue. Un "No Hotels Found" rápido del lote entero no es un fallo: se pide el respaldo en inglés y, si también vuelve vacío, se parte en inglés con techo por lote (10 llamadas) y por minuto o por corrida (§2.6.4, CE-23)         | `TBO_SYNC_DETAILS_BATCH`       |
 | Paginación de `TBOHotelCodeList`     | Nada (pp. 65-69)                                                                           | Se asume respuesta completa. Guarda de sanidad antes de barrer (§6.5)                                                                                                                                                                                                                                                                                                                                               | `TBO_SYNC_SWEEP_MAX_DROP`      |
 | Tamaño de `hotelcodelist`            | Nada (p. 55)                                                                               | Timeout amplio, tope de bytes, frecuencia semanal. Si falla, E5 no desactiva nada                                                                                                                                                                                                                                                                                                                                   | `TBO_SYNC_CODELIST_TIMEOUT_MS` |
 | QPS                                  | 429 sin valor numérico (p. 9)                                                              | Límite propio conservador (1 req/s de partida), una sola conexión concurrente, backoff con jitter, corte tras N 429 seguidos                                                                                                                                                                                                                                                                                        | `TBO_SYNC_RPS`                 |
 | Timeouts de estáticos                | Nada (p. 8)                                                                                | Iniciales: 30 s `CountryList`/`CityList`, 60 s `TBOHotelCodeList`, 45 s `HotelDetails`, 180 s `hotelcodelist` (INFERIDO; medir en test). Son valores de configuración del sync: el de `HotelDetails` queda por debajo del techo de 60 s de `TBO_OPERATIONS`, porque la configuración solo puede acortar ([01](./01-autenticacion-conectividad-y-errores.md) §5.2; [08](./08-requisitos-maestro.md) RNF-01, §9 C-14) | por método                     |
 | Deltas                               | No existen (pp. 51-69)                                                                     | Refresco completo; `content_hash` para no reescribir contenido igual                                                                                                                                                                                                                                                                                                                                                | —                              |
-| Idiomas                              | AR, ES, PT, FR, ZH listados; `EN` solo en ejemplos (pp. 56, 58)                            | Pedir `ES`, `PT` y `EN` en mayúsculas. Si un idioma falla, se guarda EN y se muestra EN de fallback                                                                                                                                                                                                                                                                                                                 | `TBO_SYNC_LANGS`               |
+| Idiomas                              | AR, ES, PT, FR, ZH listados; `EN` solo en ejemplos (pp. 56, 58)                            | Pedir `ES`, `PT` y `EN` en mayúsculas. Lo que no viene en el idioma pedido se pide en `EN`, se guarda como `en` y se muestra de respaldo, marcado (`langFallback`). El 2026-09-30 TBO no dio nada en `ES` para los hoteles de Colombia (§2.6.4)                                                                                                                                                                     | `TBO_SYNC_LANGS`               |
 | Imágenes                             | Sin licencia, caducidad ni host live documentados (pp. 57, 62)                             | Se guarda la URL y no se copia. Se refresca con el contenido; si una imagen falla, placeholder. Desde el 2026-09-29 el navegador no la pide a TBO: pasa por el proxy propio del panel, con caché y sólo desde dominios de TBO (§8.6)                                                                                                                                                                                | —                              |
 | Estabilidad de códigos               | Nada                                                                                       | `hotel_id` y `provider_city_code` se tratan como estables; un hotel que cambia de ciudad se mueve por upsert                                                                                                                                                                                                                                                                                                        | —                              |
 
@@ -1241,6 +1346,7 @@ construir.
 | CE-20 | Base URL de test en `http://` pese a "should be secured with HTTPS"; Basic Auth por http viaja en claro                                                                                                                                                          | p. 7; Postman; Cert       | Ver [01](./01-autenticacion-conectividad-y-errores.md). El sync nunca manda credenciales live por http                                                                                                                                                                                            | → [Q-03](./10-preguntas-para-tbo.md#q-03)                                                                                                                                                                     |
 | CE-21 | Una ciudad sin hoteles llega como `Status.Code` 500 "No Hotels Found" (el código de `UNEXPECTED_ERROR`), no como un 200 con `Hotels` vacío; en 4 ciudades ese texto, siempre a los ≈ 5,09 s, se volvió lista con hoteles al reintentar                           | producción, 2026-09-29    | Lista vacía sin reintento solo en `TBOHotelCodeList` y si llegó en < 4.500 ms; más lento, `UPSTREAM` con reintento y la ciudad fallida si no se recupera (§2.5, §6.3); nunca barre una ciudad que tenía hoteles (§6.5)                                                                            | → [Q-08](./10-preguntas-para-tbo.md#q-08)                                                                                                                                                                     |
 | CE-22 | `TBOHotelCodeList` manda `Latitude` y `Longitude` por hotel, que el PDF no documenta (solo `Map`)                                                                                                                                                                | pp. 66-69; producción     | Número o string numérico; mandan sobre `Map` si dan un punto válido (§3)                                                                                                                                                                                                                          | → [Q-63](./10-preguntas-para-tbo.md#q-63)                                                                                                                                                                     |
+| CE-23 | `HotelDetails` contestó todos los lotes de 10 en `ES` con HTTP 200 y `Status.Code` 500 "No Hotels Found" en 95-320 ms; no se sabe si es que no hay contenido en español (H1) o que un código sin contenido tumba el lote (H2)                                    | producción, 2026-09-30    | Resultado tipado sin contenido si llegó en < 4.500 ms, sin reintento ni breaker; respaldo en `EN` guardado como `en`; lote vacío entero partido en `EN` con topes; confirmados sin contenido, una semana por cuenta e idioma (§2.6.4)                                                             | → [Q-62](./10-preguntas-para-tbo.md#q-62), [Q-66](./10-preguntas-para-tbo.md#q-66)                                                                                                                            |
 
 ---
 

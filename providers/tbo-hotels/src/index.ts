@@ -286,6 +286,7 @@ export type {
   TboHotelCodeListMapping,
   TboHotelContent,
   TboHotelDetailsMapping,
+  TboHotelDetailsOutcome,
   TboStaticDiagnostics,
   TboStaticNote,
   TboStaticRejection,
@@ -293,6 +294,24 @@ export type {
 
 // El lote de HotelDetails lo parte el sync (E4): necesita el techo y el tamaño por defecto.
 export { TBO_HOTEL_DETAILS_LIMITS } from './static/hotel-details.request.builder';
+
+// Un lote de HotelDetails hasta su respuesta final: respaldo en inglés y aislamiento del lote sin
+// contenido (05 CE-23). Lo usan el API (fotos de los resultados) y el sync (E4), con su manera de
+// llamar a TBO.
+export {
+  TBO_CONTENT_FALLBACK_LANG,
+  TBO_DETAILS_ISOLATION_DEFAULTS,
+  resolveTboHotelDetails,
+} from './static/hotel-details.resolver';
+export type {
+  TboDetailsCallPurpose,
+  TboDetailsCalls,
+  TboDetailsFetch,
+  TboDetailsFetchOutcome,
+  TboDetailsResolution,
+  TboDetailsResolveOptions,
+  TboFallbackKnowledge,
+} from './static/hotel-details.resolver';
 
 // La huella de `hotel_content`: la escriben el sync y el API (contenido bajo demanda), y una sola
 // función hace que una fila igual se reconozca venga de donde venga.

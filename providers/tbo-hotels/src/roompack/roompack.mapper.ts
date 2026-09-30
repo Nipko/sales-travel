@@ -121,6 +121,7 @@ export type TboPackOutcome =
 const ROOM_NAME_MAX = 500;
 const PROMOTION_MAX = 500;
 const ROOM_TYPE_ID_MAX = 64;
+const BED_OPTION_MAX = 200;
 const FEE_DESCRIPTION_MAX = 200;
 const INCLUSION_MAX = 2000;
 
@@ -387,17 +388,56 @@ function roomTypeIdFor(room: TboSearchRoom, j: number): string | undefined {
   return id;
 }
 
+/** Un texto de camas usable: con alguna letra (no un id suelto) y sin pasar el techo del contrato. */
+function bedText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length === 0 || text.length > BED_OPTION_MAX || !/\p{L}/u.test(text)) return undefined;
+  return text;
+}
+
+/**
+ * `BeddingGroup` (sin documentar, 02 §9.9) → las camas de cada habitación del pack. Sólo dos
+ * formas se leen, porque son las únicas en que se sabe a qué habitación va el texto: un texto con
+ * una sola habitación en el pack, o una lista de textos alineada con `Name`. Cualquier otra forma
+ * se ignora —nunca invalida el pack— y sólo se cuenta por su FORMA, nunca su valor, para saber qué
+ * manda TBO.
+ */
+function beddingFor(room: TboSearchRoom, scope: TboPackScope): readonly (string | undefined)[] {
+  const raw = room.BeddingGroup;
+  const rooms = room.Name.length;
+  if (raw === undefined || raw === null) return [];
+  let shape: 'text' | 'text_per_room' | 'other' = 'other';
+  let texts: (string | undefined)[] = [];
+  if (typeof raw === 'string' && rooms === 1) {
+    shape = 'text';
+    texts = [bedText(raw)];
+  } else if (
+    Array.isArray(raw) &&
+    raw.length === rooms &&
+    raw.every((v) => typeof v === 'string')
+  ) {
+    shape = 'text_per_room';
+    texts = raw.map(bedText);
+  }
+  scope.observer.count(`tbo.${scope.op}.bedding_group`, { op: scope.op, shape });
+  return texts;
+}
+
 function readRooms(room: TboSearchRoom, scope: TboPackScope): HotelRoom[] {
+  const bedding = beddingFor(room, scope);
   return room.Name.map((name, j) => {
     const promotions = promotionsFor(room, j);
     const roomTypeId = roomTypeIdFor(room, j);
     const occupancy = scope.rooms[j];
+    const bed = bedding[j];
     return {
       name: name.slice(0, ROOM_NAME_MAX),
       reference: j + 1,
       ...(roomTypeId === undefined ? {} : { roomTypeId }),
-      // TBO no informa camas aparte del nombre ("Luxury Room, 1 King Bed"): no se deducen.
-      bedOptions: [],
+      // Aparte del nombre ("Luxury Room, 1 King Bed"), TBO sólo informa camas en `BeddingGroup`:
+      // del nombre no se deducen.
+      bedOptions: bed === undefined ? [] : [bed],
       ...(occupancy === undefined
         ? {}
         : { occupancy: { adults: occupancy.adults, childrenAges: [...occupancy.childrenAges] } }),

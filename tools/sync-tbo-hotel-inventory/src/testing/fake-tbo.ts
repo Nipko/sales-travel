@@ -46,6 +46,13 @@ export interface FakeHotel {
 export interface FakeDetails {
   /** Códigos que vuelven fuera de la respuesta con `200`: TBO no dice por qué (Q-62). */
   readonly omit?: readonly string[];
+  /**
+   * Los `Language` con contenido (`ES`, `PT`, `EN`); sin valor, todos. Un lote del que no queda
+   * nada que devolver contesta "No Hotels Found", como TBO el 2026-09-30 (05 CE-23, H1).
+   */
+  readonly languages?: readonly string[];
+  /** Códigos que tumban el lote entero con "No Hotels Found" en cualquier idioma (H2, Q-62). */
+  readonly poison?: readonly string[];
   /** Claves crudas que pisan a las de la plantilla para ese código (un `script`, otro nombre). */
   readonly raw?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
@@ -223,7 +230,17 @@ function respond(
       const template = fixture.HotelDetails[0] ?? {};
       const language = typeof body?.['Language'] === 'string' ? body['Language'] : '';
       const omitted = new Set(world.details?.omit ?? []);
-      const hotels = requestedHotelCodes(body)
+      const requested = requestedHotelCodes(body);
+      const { languages, poison } = world.details ?? {};
+      if (languages !== undefined || poison !== undefined) {
+        const found = requested.filter(
+          (code) => !omitted.has(code) && (languages ?? [language]).includes(language),
+        );
+        if (found.length === 0 || requested.some((code) => poison?.includes(code) === true)) {
+          return tboNoHotelsFound();
+        }
+      }
+      const hotels = requested
         .filter((code) => !omitted.has(code))
         .map((code) => ({
           ...template,

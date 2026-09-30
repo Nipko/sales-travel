@@ -180,7 +180,8 @@ export class HotelsController {
 
   /**
    * Ficha de un hotel de UN proveedor: descripción, servicios, imágenes y horarios (PR-3.6). Sin
-   * contenido responde la ficha sin imágenes, no un error; en otro idioma, lo dice `lang`.
+   * contenido responde la ficha sin imágenes, no un error; en otro idioma, lo dicen `lang` y
+   * `langFallback`.
    */
   @Get('content/:providerCode/:hotelId')
   async content(

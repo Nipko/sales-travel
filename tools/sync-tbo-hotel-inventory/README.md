@@ -147,6 +147,23 @@ tocan esas ciudades (con la cadencia y el orden de siempre) y las demás del pa�
 sigue pidiendo la lista de ciudades por país. Un código que no está en `hotel_provider_city` para esos
 países no falla: sale en el log como `tbo.sync.cities_unknown`.
 
+### Contenido sin el idioma pedido (E4)
+
+El 2026-09-30 HotelDetails contestó todos los lotes en `ES` con "No Hotels Found"
+([docs/tbo/05 §2.6.4](../../docs/tbo/05-contenido-estatico-e-inventario.md#264-lote-sin-contenido-no-hotels-found-producción-2026-09-30-ce-23)).
+Ese "No Hotels Found" rápido no es un error: no suma a `errorsByCode` ni a la racha. Lo que no vino en
+`ES` o `PT` se pide en `EN` y se guarda como `en`; un hotel con inglés guardado y vigente, o ya
+resuelto en inglés en la corrida, no se vuelve a pedir en inglés. Un lote vacío entero se parte en
+inglés para encontrar lo que sí tiene contenido, con un techo de 10 llamadas por lote y del 20 % de
+`TBO_SYNC_MAX_CALLS` por corrida; un código que se vio tumbar un lote no va en los lotes de los otros
+idiomas de la corrida. El resumen de E4 cuenta `hotelsFromFallback`, `hotelsWithoutContent`,
+`hotelsUnconfirmed`, `hotelsUnresolved`, `batchBreakers`, `fallbackCalls` e `isolationCalls`, y cada
+lote que no vino entero en su idioma deja una línea `info` `tbo.sync.content_batch` con conteos.
+
+La corrida no guarda "sin contenido" de una a otra: un hotel que sólo tiene inglés se vuelve a pedir en
+`ES` y `PT` en cada corrida (una llamada por lote de 10 y por idioma, ya sin respaldo), y los que no
+tienen contenido en ningún idioma, también en `EN`.
+
 ## Stack de certificación
 
 La base del stack de certificación (`sales_travel_cert`) no la toca este workflow: el catálogo se baja

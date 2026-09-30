@@ -19,6 +19,7 @@ import {
   type TboFetch,
   type TboHttpDeps,
 } from './http/tbo-http.client';
+import { resolveTboHotelDetails, type TboDetailsFetch } from './static/hotel-details.resolver';
 import {
   TBO_STATIC_TIMEOUTS_MS,
   TboStaticContentClient,
@@ -750,5 +751,202 @@ describe('TboStaticContentClient: logs', () => {
     expect(log).not.toContain(PASSWORD);
     expect(log).not.toContain(USERNAME);
     expect(log).not.toMatch(/Sofitel|Holiday Inn|Abtal|West 48th|Nubian|Gershwin/);
+  });
+});
+
+describe('TboStaticContentClient: HotelDetails sin contenido (producción, 2026-09-30; 05 CE-23)', () => {
+  const observed = JSON.parse(
+    readFileSync(
+      join(__dirname, '__fixtures__', 'envelope', '83-500-no-hotels-found.json'),
+      'utf8',
+    ),
+  ) as { response: { bodyText: string } };
+  const detalle = fixture('hotel-details.p59.json') as {
+    Status: unknown;
+    HotelDetails: Record<string, unknown>[];
+  };
+  const plantilla = detalle.HotelDetails[0] ?? {};
+
+  interface DetailsCall {
+    readonly codes: string[];
+    readonly language: string;
+  }
+
+  /**
+   * Un HotelDetails de mentira: `tiene` dice qué códigos tienen contenido en cada `Language` y
+   * `malos` qué códigos tumban el lote entero (H2). Sin contenido contesta "No Hotels Found" con el
+   * cuerpo observado. Cada respuesta adelanta el reloj del cliente lo que diga `tarda` (en orden;
+   * 150 ms por defecto) y las primeras `vaciasAntes` son "No Hotels Found" pase lo que pase.
+   */
+  function detailsTbo(opts: {
+    readonly tiene: Readonly<Record<string, readonly string[]>>;
+    readonly malos?: readonly string[];
+    readonly tarda?: number[];
+    readonly vaciasAntes?: number;
+  }): { h: Harness; calls: DetailsCall[] } {
+    const calls: DetailsCall[] = [];
+    let clock = 0;
+    const fetch: TboFetch = (url, init) => {
+      const body = bodyOf({ url, init }) as { Hotelcodes: string; Language: string };
+      const codes = body.Hotelcodes.split(',');
+      calls.push({ codes, language: body.Language });
+      clock += opts.tarda?.shift() ?? 150;
+      const found = codes.filter((code) => opts.tiene[body.Language]?.includes(code));
+      const empty =
+        calls.length <= (opts.vaciasAntes ?? 0) ||
+        found.length === 0 ||
+        codes.some((code) => opts.malos?.includes(code));
+      if (empty) {
+        return Promise.resolve(
+          new Response(observed.response.bodyText, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        json({
+          Status: detalle.Status,
+          HotelDetails: found.map((code) => ({ ...plantilla, HotelCode: code })),
+        }),
+      );
+    };
+    return { h: harness(ROUTES, {}, { fetch, now: () => clock }), calls };
+  }
+
+  /** Cada llamada por el cliente real, con sus reintentos; un fallo vuelve como valor. */
+  function viaClient(client: TboStaticContentClient): TboDetailsFetch<unknown> {
+    return (codes, lang) =>
+      client.getHotelDetails(codes, lang, { maxAttempts: 2 }).then(
+        (result) => ({ ok: true as const, result }),
+        (failure: unknown) => ({ ok: false as const, failure }),
+      );
+  }
+
+  function logsOf(h: Harness): { level: string; message: string; meta: Record<string, unknown> }[] {
+    return h.logs.map(
+      (line) =>
+        JSON.parse(line) as { level: string; message: string; meta: Record<string, unknown> },
+    );
+  }
+
+  it('"No Hotels Found" rápido: resultado tipado en UNA llamada, sin error, reintento ni warn', async () => {
+    const { h, calls } = detailsTbo({ tiene: {} });
+
+    const result = await h.client.getHotelDetails(['1000000', '1000001'], 'es');
+
+    expect(calls).toEqual([{ codes: ['1000000', '1000001'], language: 'ES' }]);
+    expect(result).toMatchObject({
+      lang: 'es',
+      outcome: 'NO_HOTELS_FOUND',
+      contents: [],
+      hotels: [],
+      missingHotelCodes: ['1000000', '1000001'],
+      attempts: 1,
+    });
+    const logs = logsOf(h);
+    expect(logs.filter((log) => log.level === 'warn' || log.level === 'error')).toEqual([]);
+    // No hubo `TboApiError`: nada que el breaker cuente ni que la racha del sync sume.
+    expect(JSON.stringify(logs)).not.toMatch(/"circuit"|"retry"|tbo\.http\.error/);
+    expect(logs.find((log) => log.message === 'tbo.static.details_without_content')).toEqual({
+      level: 'debug',
+      message: 'tbo.static.details_without_content',
+      meta: {
+        provider: 'tbo-hotels',
+        op: 'hotelDetails',
+        lang: 'es',
+        hotelCodeCount: 2,
+        requestId: result.requestId,
+        tboCode: 500,
+        durationMs: result.durationMs,
+        attempt: 1,
+      },
+    });
+  });
+
+  it('un 200 sigue siendo `DETAILS`, con lo que no volvió en `missingHotelCodes`', async () => {
+    const { h } = detailsTbo({ tiene: { ES: ['1000000'] } });
+    const result = await h.client.getHotelDetails(['1000000', '1000001'], 'es');
+    expect(result).toMatchObject({ outcome: 'DETAILS', missingHotelCodes: ['1000001'] });
+  });
+
+  it('lento (≥ 4.500 ms): se reintenta como UPSTREAM y el reintento con contenido es un éxito', async () => {
+    const { h, calls } = detailsTbo({
+      tiene: { ES: ['1000000'] },
+      tarda: [5_088],
+      vaciasAntes: 1,
+    });
+
+    const result = await h.client.getHotelDetails(['1000000'], 'es');
+
+    expect(calls).toHaveLength(2);
+    expect(result).toMatchObject({ outcome: 'DETAILS', attempts: 2 });
+    expect(logsOf(h).filter((log) => log.message === 'tbo.http.error')).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        meta: expect.objectContaining({
+          attempt: 1,
+          durationMs: 5_088,
+          kind: 'UPSTREAM',
+          reason: 'slow_no_hotels_found',
+          circuit: 'COUNT',
+        }) as unknown,
+      }),
+    ]);
+  });
+
+  it('lento en todos los intentos: TboApiError UPSTREAM, nunca "sin contenido"', async () => {
+    const { h, calls } = detailsTbo({ tiene: {}, tarda: [5_090, 5_091] });
+    const error = await h.client
+      .getHotelDetails(['1000000'], 'es', { maxAttempts: 2 })
+      .catch((err: unknown) => err);
+    expect(calls).toHaveLength(2);
+    expect(error).toBeInstanceOf(TboApiError);
+    expect(error).toMatchObject({ kind: 'UPSTREAM', tboCode: 500 });
+  });
+
+  it('H1 — ES sin contenido, EN con contenido: el respaldo trae el lote en inglés', async () => {
+    const codes = ['1000000', '1000001', '1000002'];
+    const { h, calls } = detailsTbo({ tiene: { EN: codes } });
+
+    const r = await resolveTboHotelDetails(codes, 'es', viaClient(h.client));
+
+    expect(calls).toEqual([
+      { codes, language: 'ES' },
+      { codes, language: 'EN' },
+    ]);
+    expect(r).toMatchObject({ foundInLang: [], foundInFallback: codes, withoutContent: [] });
+    expect(r.contents.map((c) => [c.hotelId, c.lang, c.source])).toEqual(
+      codes.map((code) => [code, 'en', 'details']),
+    );
+    expect(r.contents[0]?.images.length).toBeGreaterThan(0);
+  });
+
+  it('H2 — un código malo tumba el lote: "No Hotels Found" junto, contenido por separado', async () => {
+    const codes = ['1000000', '1000001', '1000002', '1000003'];
+    const { h, calls } = detailsTbo({
+      tiene: { ES: codes.slice(0, 3), EN: codes.slice(0, 3) },
+      malos: ['1000003'],
+    });
+
+    const r = await resolveTboHotelDetails(codes, 'es', viaClient(h.client));
+
+    expect(calls.map((c) => [c.language, c.codes])).toEqual([
+      ['ES', codes],
+      ['EN', codes],
+      ['EN', codes.slice(0, 2)],
+      ['EN', codes.slice(2)],
+      ['EN', ['1000002']],
+      ['EN', ['1000003']],
+      ['ES', codes.slice(0, 3)],
+    ]);
+    expect(r).toMatchObject({
+      foundInLang: codes.slice(0, 3),
+      withoutContent: ['1000003'],
+      unresolved: [],
+      calls: { primary: 1, fallback: 1, isolation: 5 },
+    });
+    // Ni un reintento del cliente: cada "No Hotels Found" rápido es un valor, no un 500.
+    expect(logsOf(h).filter((log) => log.message === 'tbo.http.error')).toEqual([]);
   });
 });

@@ -140,7 +140,7 @@ export interface TboSendOptions<T> {
    */
   readonly responseSchema?: ZodType<T, ZodTypeDef, unknown>;
   /**
-   * Umbral del "No Hotels Found" de TBOHotelCodeList (01 §8.5); por defecto
+   * Umbral del "No Hotels Found" de TBOHotelCodeList y HotelDetails (01 §8.5); por defecto
    * `TBO_SLOW_NO_HOTELS_FOUND_MS`. Las filas sin esa excepción lo ignoran.
    */
   readonly slowNoHotelsFoundMs?: number;
@@ -159,8 +159,8 @@ interface TboHttpResultBase {
 
 /**
  * `NO_AVAILABILITY` es el vacío que la fila admite: el 201 de Search o el 500 "No Hotels Found" de
- * TBOHotelCodeList que llegó antes de `slowNoHotelsFoundMs` (`tboCode` dice cuál). No es un error,
- * así que no reintenta ni cuenta para el breaker.
+ * TBOHotelCodeList o HotelDetails que llegó antes de `slowNoHotelsFoundMs` (`tboCode` dice cuál).
+ * No es un error, así que no reintenta ni cuenta para el breaker.
  */
 export type TboHttpResult<T> =
   | (TboHttpResultBase & { readonly outcome: 'SUCCESS'; readonly data: T })
@@ -177,9 +177,11 @@ export const TBO_MAX_BACKOFF_MS = 4_000;
 export const TBO_MIN_RETRY_WINDOW_MS = 2_000;
 
 /**
- * Desde aquí, un "No Hotels Found" de TBOHotelCodeList no es la ciudad sin hoteles sino el plazo
- * interno de TBO vencido: `UPSTREAM`, con el reintento con backoff y el `COUNT` del breaker de
- * cualquier 500, y `reason: 'slow_no_hotels_found'` en el log (01 §8.5).
+ * Desde aquí, un "No Hotels Found" de TBOHotelCodeList o HotelDetails no es un vacío (la ciudad sin
+ * hoteles, el lote sin contenido) sino el plazo interno de TBO vencido: `UPSTREAM`, con el
+ * reintento con backoff y el `COUNT` del breaker de cualquier 500, y
+ * `reason: 'slow_no_hotels_found'` en el log (01 §8.5). HotelDetails usa el mismo umbral: sus
+ * "No Hotels Found" del 2026-09-30 llegaron en 95-320 ms (05 CE-23).
  *
  * Sale del log de la primera corrida del sync en producción (2026-09-29, 86 respuestas en 20
  * ciudades, `observed/tbo-hotel-code-list.no-hotels-found-timing.json`): las cuatro ciudades que en
