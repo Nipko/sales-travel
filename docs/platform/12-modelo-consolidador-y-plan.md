@@ -695,7 +695,7 @@ El modo se fija por red en `wallet_hold_policy`:
 - **Endurecimiento.** Con una tabla temporal, `app_user` podía sombrear `pg_roles` y hacerle creer a la guarda de 0052 que se saltaba la RLS. Desde 0060:
   - `current_role_bypasses_rls` tiene `search_path` fijo y califica `pg_catalog.pg_roles`;
   - `app_user` ya no crea tablas temporales ni objetos en `public`;
-  - toda función con `search_path = public` pasa a `pg_catalog, public, pg_temp`, y `migrations-search-path.test.ts` rechaza ese encabezado en cualquier migración posterior a 0053;
+  - toda función con `search_path = public`, o `SECURITY DEFINER` sin `search_path` propio, pasa a `pg_catalog, public, pg_temp`, y `migrations-search-path.test.ts` rechaza las dos cosas en cualquier migración posterior a 0053;
   - la migración falla si su rol no es superusuario ni `BYPASSRLS`.
 - **Borrados.** Borrar una orden o una cartera con retenciones registradas falla (23503), en vez de dejar plata varada.
 - **Mover un nodo.** `move_tenant_subtree` bloquea las carteras en el mismo orden. STH02 `tenant_move_open_wallet_bookings` cuenta los grupos abiertos del subárbol: `held` o `captured` con la orden activa, o `conflict` en cualquier estado. Una cascada liberada a medias ya no cuenta como liberada.

@@ -2290,9 +2290,9 @@ END $$;
 -- quien la llama) queda con el mismo. Las funciones de extensiones no se tocan.
 --
 -- Corre una vez, sobre lo que existe al migrar. Una migración que se aplique DESPUÉS (con otro
--- número, de otra rama) y vuelva a escribir `SET search_path = public` quedaría sin endurecer: por
--- eso apps/api/src/database/migrations-search-path.test.ts rechaza ese encabezado en toda migración
--- posterior a 0053.
+-- número, de otra rama) y vuelva a escribir `SET search_path = public`, o cree una SECURITY DEFINER
+-- sin search_path, quedaría sin endurecer: por eso apps/api/src/database/migrations-search-path.test.ts
+-- rechaza las dos cosas en toda migración posterior a 0053.
 DO $$
 DECLARE
   f RECORD;

@@ -604,7 +604,7 @@ Lleva a producción la retención en cascada ([12 §12](./12-modelo-consolidador
 **Antes de mergear:**
 
 - El PR de `feat/wallets-credit-cascade` tiene el CI en verde, incluidos los tests de integración contra Postgres real. `network-holds.concurrency.integration.test.ts` corre ahí por primera vez (con PGlite se salta). Si falla, es una señal real sobre el orden de bloqueo: no se silencia.
-- La rama trae `main` al día. `main` ya tiene las dos 0055 (#11 y #12), con encabezados `SET search_path = public` sin `pg_temp`, y `migrations-search-path.test.ts` los rechaza en toda migración posterior a 0053. En el mismo PR hay que pasarlos a `SET search_path = pg_catalog, public, pg_temp`. El runner registra cada migración por nombre de archivo, así que el cambio no vuelve a correr nada en producción. Allí esas funciones las endurece la sección 12 de 0060, que corre después.
+- La rama trae `main` al día (#11, #12 y #13, con 0054 y las dos 0055). Si `main` avanzó desde entonces, se vuelve a traer y se corren los checks. Las dos 0055 llegaron con encabezados `SET search_path = public` sin `pg_temp`, y en la rama ya dicen `SET search_path = pg_catalog, public, pg_temp`: `migrations-search-path.test.ts` rechaza lo otro en toda migración posterior a 0053, igual que una función `SECURITY DEFINER` sin `search_path`. El runner registra cada migración por nombre de archivo, así que el cambio no vuelve a correr nada en producción. Allí esas funciones las endurece la sección 12 de 0060, que corre después.
 - Hay un backup reciente de la base, como en el paso 1.
 - Guarda el estado de hoy, para comparar después:
 

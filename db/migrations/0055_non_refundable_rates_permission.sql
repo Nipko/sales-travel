@@ -55,7 +55,7 @@ COMMENT ON COLUMN tenant_booking_permissions.updated_at IS
 -- seeds y la consola del operador (que se saltan la RLS) pueden firmar a nombre de otro usuario.
 CREATE FUNCTION tenant_booking_permissions_guard() RETURNS trigger
 LANGUAGE plpgsql
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   actor_setting TEXT := current_setting('app.current_user_id', true);
@@ -144,7 +144,7 @@ REVOKE DELETE ON tenant_booking_permissions FROM app_user;
 CREATE FUNCTION non_refundable_rates_block(p_tenant_id UUID)
 RETURNS TEXT
 LANGUAGE plpgsql STABLE SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   result TEXT;
