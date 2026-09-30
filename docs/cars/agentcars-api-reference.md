@@ -12,12 +12,30 @@
 | Base URL **dev**    | `https://api.dev.agentcars.com/v2/sites`             |
 | Base URL **prod**   | `https://api.agentcars.com/v2/sites`                 |
 | Suggest URL         | `https://suggest.agentcars.com/suggest/`             |
-| Autenticación       | Query param `access-token` en cada request           |
+| Autenticación       | Cabecera `access-token` en cada request (ver abajo)  |
 | Formato default     | JSON                                                 |
 | Formato alternativo | Agregar `_format=xml` al query                       |
 | Idiomas             | `en`, `es`, `ja`, `ko`, `pt`, `de`, `fr`, `it`, `ar` |
 
-**Todas las peticiones necesitan:** `?access-token=<TOKEN>&source=<ISO2>`
+**Todas las peticiones necesitan:** el token y `source=<ISO2>`. AgentCars acepta el token en query
+(`?access-token=`, como la colección Postman) o en cabecera; el ACL lo manda en **cabecera** desde
+`66b3437` para que no quede en los access logs de ningún proxy.
+
+**La URL base es la raíz de la API, `https://<host>/v2/sites`**: a esa base se le concatena cada
+operación (`/get-matrix`, `/rates`…). La colección Postman publica sólo el host
+(`api_url = https://api.agentcars.com`) y escribe `/v2/sites` en cada request. El 2026-09-30 la cuenta
+de producción tenía la URL base sin `/v2/sites`: todas las llamadas iban a
+`https://api.agentcars.com/get-matrix`, AgentCars contestaba su página HTML de 404 ("Page not found.",
+Yii) y la búsqueda salía vacía con el mensaje equivocado de "sesión expirada". Desde entonces
+`normalizeAgentCarsBaseUrl` (`providers/agent-cars/src/config.ts`) completa `/v2/sites` si llega sólo el
+host o `/v2`, recorta una operación pegada al final y quita barras, query y fragmento; una ruta de
+proxy propia se respeta. Cómo distinguir los dos casos sin credenciales:
+
+| Respuesta                                          | Qué significa                                        |
+| -------------------------------------------------- | ---------------------------------------------------- |
+| `401` JSON "invalid credentials"                   | la ruta existe; el token falta o no vale             |
+| `404` **HTML** "Not Found (#404) / Page not found" | la ruta no existe: la URL base no es `…/v2/sites`    |
+| `404` JSON                                         | el API existe y no encontró el recurso (una reserva) |
 
 ---
 
@@ -483,6 +501,39 @@ BYOC). `source` (origen) lo completa el adapter desde la cuenta del tenant si no
 `AGENT_CARS_SOURCE` / `config.sourceCountry` de la cuenta.
 
 ---
+
+## 8.ter Errores al usuario (`apps/api/src/cars/agent-cars-errors.ts`)
+
+El filtro de excepciones devuelve `502` con un mensaje en español ("tú") según el status, el cuerpo y
+**la operación**: el mismo "not found" no dice lo mismo en una búsqueda que en una confirmación.
+
+- `404` HTML (ruta inexistente) → configuración: revisar la URL base.
+- "Not found"/vencido en `/get-rate-information` o `/confirmation` → la sesión de la tarifa (`uniqid`,
+  15 min) expiró. En `/get-matrix` nunca: ahí todavía no hay sesión.
+- Vacío o "not found" en `/get-matrix` → no hay autos para esos datos; en `/get-selection`, el auto ya
+  no está con esa tarifa.
+- "Not found" en `/my-reservation`, `/cancel`, `/release-reservation` → revisar apellido y código.
+
+El log guarda la URL llamada sin query (el token viaja en cabecera) y, de una página HTML, sólo su
+título y su motivo.
+
+## 8.quater Pantalla de autos (`apps/web-b2b/src/app/(app)/autos`)
+
+Rediseñada el 2026-09-30 con el esquema de hoteles:
+
+- **Buscador** que se pliega detrás de la barra de la búsqueda al llegar resultados ("Editar búsqueda").
+  Lugares por autocompletado (aeropuerto por IATA; ciudad como `City`/`City2` con coordenadas),
+  horarios cada 30 min, forma de pago y tipo de tarifa. La validación usa la hora del lugar de
+  recogida (`timezone` del suggest), no la del vendedor.
+- **Resultados** con filtros del lado del cliente y en la URL (precio total máximo, clase, transmisión,
+  pasajeros, kilometraje ilimitado, aire, arrendadora), hoja de filtros en el teléfono, orden y una
+  tira de clases con su precio "desde". Clase, transmisión y combustible salen del SIPP (ACRISS), no
+  del texto del proveedor. Tarjeta con foto, modelo "o similar", total del alquiler y precio por día.
+- **Conductor**: la tarifa vale 15 min y el contador está a la vista; al vencer, "Renovar tarifa"
+  repite la selección del mismo auto sin perder lo cargado. Extras, número de vuelo y ON HOLD (sólo
+  con más de 48 h al retiro, con el plazo para activarla). El reparto del precio no muestra el neto
+  del proveedor: lo del mostrador pasa tal cual y el markup va en lo que se cobra al reservar.
+- **Confirmación** con el código grande y copiable, el voucher a un toque y "Nueva búsqueda".
 
 ## 8. Endpoints resumen (colección Postman)
 
