@@ -1,6 +1,7 @@
 import { Loader2, Search } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
+import { RESULTS_GRID } from './filters-aside';
 
 /*
  * La espera de una búsqueda, igual en vuelos, hoteles y autos: el botón pasa a «Buscando…» y el
@@ -24,6 +25,42 @@ export const SEARCH_LOADING_MESSAGES = [
  * (7,5 s) y cada uno se muestra en su tercio: cambiar uno sin el otro los encima.
  */
 export const SEARCH_MESSAGE_MS = 2500;
+
+/**
+ * Tres mensajes que se turnan en un renglón fijo, uno encima del otro: nada se corre. Fuera del
+ * árbol accesible (los resume la región viva de quien los usa) y, con «reducir movimiento», sólo
+ * el primero y quieto. `search-message` está pensada para TRES mensajes.
+ */
+export function SearchMessages({
+  messages = SEARCH_LOADING_MESSAGES,
+  className,
+}: {
+  messages?: readonly [string, string, string];
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        'relative h-4 overflow-hidden text-xs leading-4 text-[var(--color-fg-subtle)]',
+        className,
+      )}
+    >
+      {messages.map((message, index) => (
+        <span
+          key={message}
+          style={searchMessageStyle(index)}
+          className={cn(
+            'absolute inset-0 truncate motion-safe:animate-search-message',
+            index > 0 && 'motion-reduce:hidden',
+          )}
+        >
+          {message}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 /** El retraso de cada mensaje dentro del ciclo: el segundo arranca cuando se va el primero. */
 export function searchMessageStyle(index: number): CSSProperties {
@@ -110,23 +147,7 @@ export function SearchLoading({
               <span className="text-[var(--color-fg-muted)]">{echo || subject}</span>
             </p>
             {/* Un renglón fijo: los mensajes se turnan encima unos de otros y nada se corre. */}
-            <div
-              aria-hidden="true"
-              className="relative mt-0.5 h-4 overflow-hidden text-xs leading-4 text-[var(--color-fg-subtle)]"
-            >
-              {SEARCH_LOADING_MESSAGES.map((message, index) => (
-                <span
-                  key={message}
-                  style={searchMessageStyle(index)}
-                  className={cn(
-                    'absolute inset-0 truncate motion-safe:animate-search-message',
-                    index > 0 && 'motion-reduce:hidden',
-                  )}
-                >
-                  {message}
-                </span>
-              ))}
-            </div>
+            <SearchMessages className="mt-0.5" />
             <span
               aria-hidden="true"
               className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--color-primary)]/10 motion-reduce:hidden"
@@ -153,7 +174,7 @@ const BONE = 'animate-pulse rounded bg-[var(--color-surface-muted)]';
  */
 export function ResultsSkeletonFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
+    <div className={RESULTS_GRID}>
       <div className="hidden space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] xl:block">
         <div className={cn(BONE, 'h-4 w-16')} />
         {[0, 1, 2].map((group) => (

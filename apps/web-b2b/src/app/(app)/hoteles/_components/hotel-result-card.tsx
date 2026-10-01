@@ -45,6 +45,11 @@ interface HotelResultCardProps {
   detailHref?: HotelDetailLink;
   /** La agencia no puede reservar no reembolsables: esas tarifas se marcan no disponibles. */
   nonRefundableBlocked?: boolean;
+  /**
+   * Llegó con el último "Ver más hoteles": con un orden que no es el de llegada, los nuevos se
+   * reparten entre los que ya estaban y la marca los deja ver de un vistazo.
+   */
+  fresh?: boolean;
 }
 
 export function HotelResultCard({
@@ -55,6 +60,7 @@ export function HotelResultCard({
   expiredCutoffMs,
   detailHref,
   nonRefundableBlocked = false,
+  fresh = false,
 }: HotelResultCardProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -80,9 +86,20 @@ export function HotelResultCard({
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 @2xl:flex-row @2xl:justify-between @2xl:gap-5">
           <div className="min-w-0 flex-1 space-y-2">
             <div>
-              <h3 className="text-[15px] font-semibold leading-snug tracking-tight text-[var(--color-fg)]">
-                {name}
-              </h3>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-[15px] font-semibold leading-snug tracking-tight text-[var(--color-fg)]">
+                  {name}
+                </h3>
+                {fresh ? (
+                  <span className="mt-px inline-flex shrink-0 items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-px text-[11px] font-medium text-[var(--color-fg)]">
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 rounded-full bg-[var(--color-primary)]"
+                    />
+                    Nuevo
+                  </span>
+                ) : null}
+              </div>
               {stars > 0 ? (
                 <p className="mt-0.5 flex items-center gap-0.5 text-[var(--color-accent)]">
                   {Array.from({ length: stars }, (_, i) => (

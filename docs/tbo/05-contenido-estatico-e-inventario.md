@@ -1206,7 +1206,10 @@ barra de la búsqueda (destino, fechas, noches, huéspedes, moneda, "Editar bús
 (precio total máximo, "Solo reembolsables", estrellas, régimen y, con la divulgación encendida, proveedor), en una
 hoja en el teléfono; estado vacío que propone qué ampliar; orden (recomendados, menor y mayor precio, más estrellas)
 en la URL; y tarjeta con foto grande, dirección en vez del ID técnico, etiquetas de régimen, cancelación, promoción y
-cargos en el hotel, precio por noche con el total y proveedor discreto. Las no reembolsables están en
+cargos en el hotel, precio por noche con el total y proveedor discreto. Desde el 2026-09-30 la lista se pinta de a 20 ("Mostrar
+20 más") y, al final, "Ver más hoteles" consulta el tramo siguiente del catálogo del destino y lo suma a la lista, con
+cuánto del destino se consultó ("Consultamos 100 de 420 hoteles de Cartagena de Indias."): la regla de los tramos y el
+orden por relevancia con foto están en [02 §4.4](./02-search-y-oferta-canonica.md#44-tramos-ver-más-hoteles-aplicado-2026-09-30). Las no reembolsables están en
 [03 §2.13](./03-prebook-y-book.md#213-tarifas-no-reembolsables-aplicado-2026-09-29).
 
 **Mapa: vista de lista, sin mapa embebido.** El botón "Mapa" lista los hoteles con los mismos filtros y el mismo

@@ -27,6 +27,11 @@ import {
   HOTEL_SEARCH_CONTEXT_CACHE,
   HotelSearchContextStore,
 } from './hotel-search-context.store.js';
+import {
+  HOTEL_SEARCH_PAGING_CACHE,
+  HotelSearchPagingMemoryCache,
+  HotelSearchPagingStore,
+} from './hotel-search-paging.store.js';
 import { HotelsController } from './hotels.controller.js';
 import { HotelsService } from './hotels.service.js';
 
@@ -37,7 +42,9 @@ import { HotelsService } from './hotels.service.js';
  * El contexto de búsqueda (RF-08) tiene su propia instancia del `CachePort` en memoria y no
  * comparte la de la caché de vuelos: el desalojo por tamaño de una no le quita a la otra
  * contextos que el PreBook necesita. El snapshot del PreBook vive en esa misma instancia: depende
- * del contexto, y un despliegue que pierde uno pierde el otro.
+ * del contexto, y un despliegue que pierde uno pierde el otro. Las búsquedas por tramos (los
+ * códigos que quedan por consultar de cada destino) tienen la suya: cientos de códigos por búsqueda
+ * no pueden desalojar los contextos.
  *
  * La reserva con el cuerpo neutral es una orden (PR-4.6): el intent llega de `OrdersModule`
  * (`ExternalOrderIntentService`). `AuditModule` es global y se importa igual para que la
@@ -76,6 +83,7 @@ import { HotelsService } from './hotels.service.js';
     HotelsService,
     DespegarHotelReservationsService,
     HotelSearchContextStore,
+    HotelSearchPagingStore,
     HotelPrebookSnapshotStore,
     HotelPrebookService,
     HotelBookingService,
@@ -86,6 +94,7 @@ import { HotelsService } from './hotels.service.js';
     HotelContentService,
     HotelCatalogStore,
     { provide: HOTEL_SEARCH_CONTEXT_CACHE, useClass: MemoryCacheAdapter },
+    { provide: HOTEL_SEARCH_PAGING_CACHE, useClass: HotelSearchPagingMemoryCache },
     { provide: HOTEL_CONTENT_CACHE, useClass: MemoryCacheAdapter },
     // Otra instancia: los hoteles sin contenido (una semana) no se desalojan por las fichas.
     { provide: HOTEL_CONTENT_NONE_CACHE, useClass: MemoryCacheAdapter },

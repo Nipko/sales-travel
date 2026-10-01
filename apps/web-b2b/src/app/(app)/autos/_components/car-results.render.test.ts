@@ -110,6 +110,13 @@ describe('CarResults', () => {
     expect(cards[0]).toMatch(money('180,00'));
     expect(cards[2]).toContain('Toyota RAV4 o similar');
   });
+
+  it('la fila de clases que corre de lado en el teléfono recorta lo que no entra', () => {
+    // Sin `relative`, los `sr-only` ", N autos" de las clases fuera de la fila tenían de bloque
+    // contenedor el `<main>`, que se corría de lado sobre un hueco en blanco.
+    const row = (html.match(/aria-label="Clases de auto" class="([^"]*)"/)?.[1] ?? '').split(' ');
+    expect(row).toEqual(expect.arrayContaining(['relative', 'overflow-x-auto']));
+  });
 });
 
 describe('CarCheckout', () => {

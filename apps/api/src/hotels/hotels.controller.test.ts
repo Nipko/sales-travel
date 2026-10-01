@@ -52,10 +52,12 @@ import {
   AllHotelProvidersFailedError,
   HotelProviderCapabilityError,
 } from './hotel-provider-errors.js';
+import { HotelSearchPagingExpiredError } from './hotel-search-paging.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
 import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
+  HotelAvailabilityMoreBodySchema,
   HotelBookBodySchema,
   HotelContentBatchBodySchema,
   HotelContentParamsSchema,
@@ -277,7 +279,7 @@ describe('POST /hotels/availability — snapshot', () => {
     });
   });
 
-  it('PR-0.5: el sobre CRECE: `{ hotels, providers, showProviderInResults, nonRefundableRates }`', async () => {
+  it('PR-0.5: el sobre CRECE: `{ hotels, providers, paging, showProviderInResults, nonRefundableRates }`', async () => {
     const b = banco();
     const body = pedidoValidado();
     const res = await b.controller.availability(USUARIO, body);
@@ -285,9 +287,12 @@ describe('POST /hotels/availability — snapshot', () => {
     expect(Object.keys(res)).toEqual([
       'hotels',
       'providers',
+      'paging',
       'showProviderInResults',
       'nonRefundableRates',
     ]);
+    // Los 4 hoteles del catálogo caben en un tramo de Despegar (50): no hay búsqueda por tramos.
+    expect(res.paging).toEqual({ page: 0, consulted: 4, total: 4, hasMore: false });
   });
 
   it('no reembolsables (e): el sobre dice si la agencia las puede reservar, sin filtrar ninguna tarifa', async () => {
@@ -359,6 +364,12 @@ describe('HotelsController — superficie HTTP', () => {
     ['suggestions', RequestMethod.GET, 'suggestions', [HotelSuggestQuerySchema]],
     ['currencies', RequestMethod.GET, 'currencies', []],
     ['availability', RequestMethod.POST, 'availability', [HotelAvailabilityInputSchema]],
+    [
+      'availabilityMore',
+      RequestMethod.POST,
+      'availability/more',
+      [HotelAvailabilityMoreBodySchema],
+    ],
     ['detail', RequestMethod.POST, 'detail', [HotelDetailInputSchema]],
     ['prebook', RequestMethod.POST, 'prebook', [HotelPrebookBodySchema]],
     ['payments', RequestMethod.GET, 'payments', [PaymentOptionsQuerySchema]],
@@ -385,7 +396,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas trece', () => {
+  it('no hay más rutas que esas catorce', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -394,6 +405,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(rutas.sort()).toEqual(
       [
         'availability',
+        'availabilityMore',
         'book',
         'bookingPermissions',
         'cancel',
@@ -411,7 +423,15 @@ describe('HotelsController — superficie HTTP', () => {
   });
 
   it('ningún handler fija `@HttpCode`: los POST contestan 201, como Nest por defecto', () => {
-    for (const nombre of ['availability', 'detail', 'prebook', 'book', 'cancel', 'recovery']) {
+    for (const nombre of [
+      'availability',
+      'availabilityMore',
+      'detail',
+      'prebook',
+      'book',
+      'cancel',
+      'recovery',
+    ]) {
       const codigo: unknown = Reflect.getMetadata(HTTP_CODE_METADATA, handler(nombre));
       expect(codigo).toBeUndefined();
     }
@@ -431,6 +451,17 @@ describe('HotelsController — tenant', () => {
     ['suggestions', (c, u) => c.suggestions(u, { q: 'bogo' })],
     ['currencies', (c, u) => c.currencies(u)],
     ['availability', (c, u) => c.availability(u, pedidoValidado())],
+    [
+      'availabilityMore',
+      (c, u) =>
+        c
+          .availabilityMore(u, { sessionId: '5b0e8d1c-2a4f-4c6e-9b7a-0d3e1f2a4b6c', page: 1 })
+          .catch((e: unknown) => {
+            // No hay una búsqueda por tramos guardada: basta con que el tenant se haya resuelto.
+            if (e instanceof HotelSearchPagingExpiredError) return undefined;
+            throw e;
+          }),
+    ],
     [
       'detail',
       (c, u) =>

@@ -132,6 +132,12 @@ export interface FakeHotelsDbOptions {
    * (el primer parámetro de la consulta) y uno ausente no tiene hoteles.
    */
   catalogo?: readonly string[] | Readonly<Record<string, readonly string[]>>;
+  /**
+   * Lo que Postgres calcularía con `count(*) over ()` en la consulta del catálogo, por
+   * `provider_code`: los activos del destino aunque pasen el `limit`. Sin él, la fila no lo trae y
+   * el servicio cuenta lo que llegó.
+   */
+  totalCatalogo?: Readonly<Record<string, number>>;
   /** Fila de `tenants`; `null` = el tenant no existe. */
   tenant?: FilaTenant | null;
   /**
@@ -332,10 +338,13 @@ export function fakeHotelsDb(opts: FakeHotelsDbOptions = {}): FakeHotelsDb {
       return filas;
     }
     switch (tablaDe(q)) {
-      case 'hotel_inventory':
-        return esFicha(q)
-          ? fichasDe(opts, q)
-          : catalogoDe(opts, q, importado).map((hotel_id) => ({ hotel_id }));
+      case 'hotel_inventory': {
+        if (esFicha(q)) return fichasDe(opts, q);
+        const total = opts.totalCatalogo?.[String(q.parameters[0])];
+        return catalogoDe(opts, q, importado).map((hotel_id) =>
+          total === undefined ? { hotel_id } : { hotel_id, catalog_total: String(total) },
+        );
+      }
       case 'hotel_destination_map':
         return mapaDe(opts, q);
       case 'hotel_match':

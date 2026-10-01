@@ -1,7 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { RESULTS_GRID } from './filters-aside';
 import {
+  ResultsSkeletonFrame,
   SEARCH_LOADING_MESSAGES,
   SEARCH_MESSAGE_MS,
   SearchButtonLabel,
@@ -110,5 +112,15 @@ describe('SearchButtonLabel', () => {
     );
     expect(html).toContain('Buscar autos');
     expect(html).not.toContain('Buscando');
+  });
+});
+
+describe('ResultsSkeletonFrame', () => {
+  it('la misma grilla que la lista: al llegar los resultados, la columna de filtros no salta', () => {
+    const html = renderToStaticMarkup(
+      createElement(ResultsSkeletonFrame, null, createElement('div', null, 'lista')),
+    );
+    expect(html.startsWith(`<div class="${RESULTS_GRID}">`)).toBe(true);
+    expect(RESULTS_GRID).toContain('xl:grid-cols-[16rem_minmax(0,1fr)]');
   });
 });

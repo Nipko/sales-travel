@@ -241,12 +241,13 @@ describe('HotelsService.resolveCityHotelIds', () => {
   it('PR-0.5: filtra por proveedor, ciudad y hoteles ACTIVOS, ordena por hotel_id y corta en el límite', async () => {
     // `active` es la baja lógica de 0041. Las filas de Despegar nacen activas y su baja sigue
     // siendo el borrado, así que para Despegar el resultado es el mismo que antes del filtro.
+    // Tramos: la misma consulta cuenta los activos del destino antes del `limit` ("100 de 420").
     const b = banco();
     await b.service.resolveCityHotelIds(CODIGO, CIUDAD, 50);
 
     const [q] = b.db.consultasA('hotel_inventory');
     expect(q?.sql).toBe(
-      'select "hotel_id" from "hotel_inventory" where "provider_code" = $1 and "city_id" = $2 and "active" = $3 order by "hotel_id" limit $4',
+      'select "hotel_id", count(*) over () as "catalog_total" from "hotel_inventory" where "provider_code" = $1 and "city_id" = $2 and "active" = $3 order by "hotel_id" limit $4',
     );
     expect(q?.parameters).toEqual([CODIGO, CIUDAD, true, 50]);
   });
@@ -258,11 +259,14 @@ describe('HotelsService.resolveCityHotelIds', () => {
     expect(b.db.consultasA('hotel_inventory')[0]?.parameters).toEqual([CODIGO, CIUDAD, true, 10]);
   });
 
-  it('PR-0.5: la búsqueda usa el límite que declara Despegar, 50', async () => {
-    const b = banco();
+  it('tramos: la búsqueda lee los códigos de los 20 tramos (50 × 20) y a Despegar le pide los primeros 50', async () => {
+    const catalogo = Array.from({ length: 120 }, (_, i) => String(1000 + i));
+    const b = banco({ catalogo });
     await b.service.searchAvailability(TENANT, entrada());
 
-    expect(b.db.consultasA('hotel_inventory')[0]?.parameters).toEqual([CODIGO, CIUDAD, true, 50]);
+    expect(b.db.consultasA('hotel_inventory')[0]?.parameters).toEqual([CODIGO, CIUDAD, true, 1000]);
+    const [pedido] = b.adapter.searchAvailability.mock.calls[0] ?? [];
+    expect(pedido?.hotelIds).toEqual(catalogo.slice(0, 50));
   });
 
   it('no reordena en JS: devuelve los IDs tal como los ordenó Postgres', async () => {
@@ -270,7 +274,10 @@ describe('HotelsService.resolveCityHotelIds', () => {
     // '10' va antes que '9'. El servicio confía en el SQL y no lo rehace.
     const b = banco({ catalogo: ['10', '9', '100'] });
 
-    expect(await b.service.resolveCityHotelIds(CODIGO, CIUDAD, 50)).toEqual(['10', '9', '100']);
+    expect(await b.service.resolveCityHotelIds(CODIGO, CIUDAD, 50)).toEqual({
+      hotelIds: ['10', '9', '100'],
+      total: 3,
+    });
   });
 });
 

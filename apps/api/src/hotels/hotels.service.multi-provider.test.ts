@@ -55,6 +55,13 @@ const STUB = 'stub-hotels';
 const CATALOGO_DESPEGAR = ['101', '205', '350', '412'];
 const CATALOGO_STUB = ['S-1', 'S-2'];
 
+/**
+ * El desempate del orden por relevancia (docs/tbo/02 §4.4): entre los de la misma categoría, los que
+ * ya tienen foto en el catálogo. Con los espacios del SQL colapsados.
+ */
+const CON_FOTO =
+  "exists (select 1 from hotel_content c where c.provider_code = hotel_inventory.provider_code and c.hotel_id = hotel_inventory.hotel_id and jsonb_typeof(c.images) = 'array' and jsonb_array_length(c.images) > 0)";
+
 function entrada(overrides: Partial<HotelAvailabilityInput> = {}): HotelAvailabilityInput {
   return {
     checkinDate: '2026-11-10',
@@ -165,11 +172,12 @@ describe('búsqueda combinada — cada proveedor con su catálogo', () => {
     const b = banco({ stubs: [s] });
     await b.service.searchAvailability(TENANT, entrada());
 
+    // Cada uno lee los códigos de sus 20 tramos (su límite × 20); su Search lleva el primero.
     const consultas = b.db.consultasA('hotel_inventory').map((q) => q.parameters);
     expect(consultas).toEqual(
       expect.arrayContaining([
-        [DESPEGAR, CIUDAD, true, 50],
-        [STUB, CIUDAD, true, 100],
+        [DESPEGAR, CIUDAD, true, 1000],
+        [STUB, CIUDAD, true, 2000],
       ]),
     );
     expect(b.despegar.searchAvailability.mock.calls[0]?.[0].hotelIds).toEqual(CATALOGO_DESPEGAR);
@@ -530,17 +538,18 @@ describe('búsqueda combinada — proveedor con ciudades propias (RF-33, RF-14; 
     await b.service.searchAvailability(TENANT, entrada());
 
     const suyas = b.db.consultasA('hotel_inventory').filter((q) => q.parameters[0] === STUB);
-    expect(suyas.map((q) => q.sql)).toEqual([
-      'select "hotel_id" from "hotel_inventory" where "provider_code" = $1 and "provider_city_code" in ($2, $3) and "active" = $4 order by "stars" desc nulls last, "hotel_id" limit $5',
+    expect(suyas.map((q) => q.sql.replace(/\s+/g, ' '))).toEqual([
+      `select "hotel_id", count(*) over () as "catalog_total" from "hotel_inventory" where "provider_code" = $1 and "provider_city_code" in ($2, $3) and "active" = $4 order by "stars" desc nulls last, ${CON_FOTO} desc, "hotel_id" limit $5`,
     ]);
-    expect(suyas[0]?.parameters).toEqual([STUB, 'C-150184', 'C-150185', true, 100]);
+    // Los códigos de sus 20 tramos; el Search lleva los primeros 100.
+    expect(suyas[0]?.parameters).toEqual([STUB, 'C-150184', 'C-150185', true, 2000]);
     expect(criterioDe(s).hotelIds).toEqual(CATALOGO_STUB);
-    // Despegar sigue con su ciudad, su orden por id y su límite de 50.
+    // Despegar sigue con su ciudad, su orden por id y su límite de 50 (× 20 tramos).
     expect(b.db.consultasA('hotel_inventory').map((q) => q.parameters)).toContainEqual([
       DESPEGAR,
       CIUDAD,
       true,
-      50,
+      1000,
     ]);
   });
 
@@ -588,7 +597,7 @@ describe('búsqueda combinada — proveedor con ciudades propias (RF-33, RF-14; 
 
     const [q] = b.db.consultasA('hotel_inventory');
     expect(q?.sql).toBe(
-      'select "hotel_id" from "hotel_inventory" where "provider_code" = $1 and "provider_city_code" in ($2) and "active" = $3 order by "hotel_id" limit $4',
+      'select "hotel_id", count(*) over () as "catalog_total" from "hotel_inventory" where "provider_code" = $1 and "provider_city_code" in ($2) and "active" = $3 order by "hotel_id" limit $4',
     );
     expect(q?.parameters).toEqual([STUB, 'C-1', true, 10]);
   });
@@ -597,8 +606,8 @@ describe('búsqueda combinada — proveedor con ciudades propias (RF-33, RF-14; 
     const b = banco();
     await b.service.resolveCityHotelIds(STUB, CIUDAD, 100, 'relevance');
 
-    expect(b.db.consultasA('hotel_inventory')[0]?.sql).toBe(
-      'select "hotel_id" from "hotel_inventory" where "provider_code" = $1 and "city_id" = $2 and "active" = $3 order by "stars" desc nulls last, "hotel_id" limit $4',
+    expect(b.db.consultasA('hotel_inventory')[0]?.sql.replace(/\s+/g, ' ')).toBe(
+      `select "hotel_id", count(*) over () as "catalog_total" from "hotel_inventory" where "provider_code" = $1 and "city_id" = $2 and "active" = $3 order by "stars" desc nulls last, ${CON_FOTO} desc, "hotel_id" limit $4`,
     );
   });
 

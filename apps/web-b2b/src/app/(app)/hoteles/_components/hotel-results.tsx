@@ -3,8 +3,15 @@
 import { Ban, List, MapPinned, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Select } from '../../../../components/ui/field';
+import { FiltersAside, RESULTS_GRID } from '../../../../components/ui/filters-aside';
 import { cn } from '../../../../lib/cn';
 import type { HotelOffer, HotelSearchCriteriaView } from '../actions';
+import {
+  RESULTS_PAGE_SIZE,
+  arrivalAnnouncement,
+  placeArrival,
+  type MoreState,
+} from './hotel-paging';
 import { HotelResultCard } from './hotel-result-card';
 import {
   ClearFiltersButton,
@@ -34,6 +41,7 @@ import {
   type ResultsView,
 } from './hotel-results-filters';
 import { HotelResultsMap } from './hotel-results-map';
+import { ResultsPager } from './hotel-results-pager';
 import { detailLinkForOffer } from './hotel-search-handoff';
 import { OfferExpiry } from './offer-expiry';
 import { useHotelPhotos } from './use-hotel-photos';
@@ -41,8 +49,9 @@ import { useHotelPhotos } from './use-hotel-photos';
 /*
  * Los resultados de una búsqueda de hoteles (propuesta aprobada del 2026-09-29): filtros a la
  * izquierda en pantallas anchas y en una hoja en el teléfono, orden, lista o ubicación, y las
- * tarjetas con foto. Filtros y orden corren sobre lo ya cargado, sin volver a buscar, y quedan en
- * la URL.
+ * tarjetas con foto. Filtros y orden corren sobre TODO lo ya cargado —también los tramos que se
+ * sumaron con "Ver más hoteles"—, sin volver a buscar, y quedan en la URL. La lista se pinta de a
+ * 20 y crece hacia abajo con "Mostrar 20 más" (hotel-paging.ts).
  */
 
 /** Espera antes de escribir la URL: Safari corta más de 100 `replaceState` en 30 s. */
@@ -96,7 +105,26 @@ interface HotelResultsProps {
   headingId?: string;
   /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
   nonRefundableBlocked?: boolean;
+  /** Los tramos de la búsqueda por destino: cuánto se consultó y cómo pedir más. */
+  more?: MoreState;
+  onLoadMore?: () => void;
 }
+
+/** Lleva el foco al título de la tarjeta `index` de la lista, si está pintada. */
+function focusResult(container: HTMLElement | null, index: number): void {
+  const item = container?.querySelector<HTMLElement>(`[data-result-index="${index}"]`);
+  const target = item?.querySelector<HTMLElement>('h3, a[href], button') ?? item;
+  if (!target) return;
+  // El título no es enfocable con el tabulador: sólo recibe el foco para que el lector de pantalla
+  // y el teclado sigan desde la primera tarjeta nueva.
+  if (!target.hasAttribute('tabindex') && target.tabIndex < 0) target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+  // La tarjeta entera y no sólo el título, con el margen de `scroll-mt-20`: sin él, una tarjeta
+  // que queda arriba (un tramo más barato con "Menor precio") se esconde bajo la barra fija.
+  (item ?? target).scrollIntoView({ block: 'nearest' });
+}
+
+function noop(): void {}
 
 export function HotelResults({
   hotels,
@@ -109,6 +137,8 @@ export function HotelResults({
   onSearchAgain,
   headingId: headingIdProp,
   nonRefundableBlocked = false,
+  more,
+  onLoadMore,
 }: HotelResultsProps) {
   const [state, update] = useResultsState();
   const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
@@ -136,7 +166,18 @@ export function HotelResults({
     [results, filters, showProvider],
   );
   const chips = activeFilterChips(filters, facets);
-  const order = useMemo(() => sorted.map((i) => i.hotel.key), [sorted]);
+
+  // Cuántas tarjetas se pintan. Vuelve a 20 con cada búsqueda y cada vez que cambia lo que se
+  // mira (filtros, orden, vista); un tramo que se suma a la misma búsqueda no lo reinicia.
+  const [visible, setVisible] = useState(RESULTS_PAGE_SIZE);
+  const viewKey = `${receivedAt ?? ''}|${state.sort}|${state.view}|${JSON.stringify(filters)}`;
+  const [shownFor, setShownFor] = useState(viewKey);
+  if (shownFor !== viewKey) {
+    setShownFor(viewKey);
+    setVisible(RESULTS_PAGE_SIZE);
+  }
+  const visibleItems = useMemo(() => sorted.slice(0, visible), [sorted, visible]);
+  const order = useMemo(() => visibleItems.map((i) => i.hotel.key), [visibleItems]);
   const photos = useHotelPhotos(results, order);
 
   const setFilters = useCallback(
@@ -150,23 +191,76 @@ export function HotelResults({
 
   const panel = <ResultsFiltersPanel facets={facets} filters={filters} onChange={setFilters} />;
 
+  // "Mostrar 20 más": la lista crece hacia abajo y el foco va a la primera tarjeta que el vendedor
+  // todavía no vio, sin mover lo que ya estaba mirando.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [focusIndex, setFocusIndex] = useState<number | undefined>(undefined);
+  const showMore = useCallback(() => {
+    setFocusIndex(visible);
+    setVisible(visible + RESULTS_PAGE_SIZE);
+  }, [visible]);
+
+  // Un tramo más ("Ver más hoteles") se reparte según el orden elegido: con "Recomendados" va al
+  // final, con "Menor precio" puede quedar arriba de todo (hotel-paging.ts, `placeArrival`). Nada de
+  // lo que ya se veía se esconde, el foco va al primer hotel NUEVO en el orden actual, los nuevos
+  // llevan "Nuevo" hasta el tramo siguiente y el anuncio cuenta los que cumplen los filtros.
+  const arrived = more?.arrived ?? 0;
+  const before = useRef({ arrived, total, visible: Math.min(visible, shown) });
+  const [newFrom, setNewFrom] = useState<number | undefined>(undefined);
+  const [arrivalText, setArrivalText] = useState('');
+  useEffect(() => {
+    const prev = before.current;
+    before.current = { arrived, total, visible: Math.min(visible, shown) };
+    if (arrived < prev.arrived) {
+      // Otra búsqueda: sus hoteles no son nuevos de nada.
+      setNewFrom(undefined);
+      setArrivalText('');
+      return;
+    }
+    if (arrived === prev.arrived) return;
+
+    const placement = placeArrival(
+      sorted.map((item) => item.hotel.index),
+      prev.total,
+      prev.visible,
+    );
+    setVisible((v) => Math.max(v, placement.visible));
+    setNewFrom(total > prev.total ? prev.total : undefined);
+    if (placement.firstNew !== undefined && placement.firstNew < placement.visible) {
+      setFocusIndex(placement.firstNew);
+    }
+    const sortLabel = RESULTS_SORTS.find((o) => o.value === state.sort)?.label;
+    setArrivalText(
+      arrivalAnnouncement({
+        added: total - prev.total,
+        matching: placement.matching,
+        ...(placement.interleaved && placement.firstNew !== undefined
+          ? { firstNewAt: placement.firstNew }
+          : {}),
+        ...(state.sort === 'recomendados' || sortLabel === undefined ? {} : { sortLabel }),
+        ...(more?.notice === undefined ? {} : { notice: more.notice }),
+        ended: more?.paging !== undefined && !more.paging.hasMore,
+      }),
+    );
+  });
+  useEffect(() => {
+    if (focusIndex === undefined) return;
+    setFocusIndex(undefined);
+    focusResult(listRef.current, focusIndex);
+  }, [focusIndex]);
+
   return (
     <section
       aria-labelledby={headingId}
       aria-busy={searching}
       className={cn('transition-opacity', searching && 'opacity-60')}
     >
-      <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
-        <aside
-          aria-label="Filtros"
-          className="hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] xl:sticky xl:top-4 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto"
+      <div className={RESULTS_GRID}>
+        <FiltersAside
+          headerAction={<ClearFiltersButton filters={filters} onClear={clearFilters} />}
         >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">Filtros</h2>
-            <ClearFiltersButton filters={filters} onClear={clearFilters} />
-          </div>
           {panel}
-        </aside>
+        </FiltersAside>
 
         <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -278,35 +372,55 @@ export function HotelResults({
             </ul>
           ) : null}
 
-          {shown === 0 ? (
-            <FilteredEmpty
-              total={total}
-              suggestions={wideningSuggestions(results, filters)}
-              onApply={setFilters}
-              onClear={clearFilters}
-            />
-          ) : state.view === 'mapa' ? (
-            <HotelResultsMap items={sorted} photos={photos} nights={criteria?.nights} />
-          ) : (
-            <div className="space-y-3">
-              {sorted.map((item) => (
-                <HotelResultCard
-                  key={item.hotel.key}
-                  item={item}
-                  photo={photos.get(item.hotel.key)}
-                  nights={criteria?.nights}
-                  rooms={criteria?.rooms}
-                  expiredCutoffMs={expiredCutoffMs}
-                  detailHref={
-                    searchToken === undefined
-                      ? undefined
-                      : detailLinkForOffer(item.hotel.offer, searchToken)
-                  }
-                  nonRefundableBlocked={nonRefundableBlocked}
-                />
-              ))}
-            </div>
-          )}
+          <div ref={listRef}>
+            {shown === 0 ? (
+              <FilteredEmpty
+                total={total}
+                suggestions={wideningSuggestions(results, filters)}
+                onApply={setFilters}
+                onClear={clearFilters}
+              />
+            ) : state.view === 'mapa' ? (
+              <HotelResultsMap items={visibleItems} photos={photos} nights={criteria?.nights} />
+            ) : (
+              <div className="space-y-3">
+                {visibleItems.map((item, index) => (
+                  <div key={item.hotel.key} data-result-index={index} className="scroll-mt-20">
+                    <HotelResultCard
+                      item={item}
+                      fresh={newFrom !== undefined && item.hotel.index >= newFrom}
+                      photo={photos.get(item.hotel.key)}
+                      nights={criteria?.nights}
+                      rooms={criteria?.rooms}
+                      expiredCutoffMs={expiredCutoffMs}
+                      detailHref={
+                        searchToken === undefined
+                          ? undefined
+                          : detailLinkForOffer(item.hotel.offer, searchToken)
+                      }
+                      nonRefundableBlocked={nonRefundableBlocked}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <ResultsPager
+            shown={shown}
+            visible={Math.min(visible, shown)}
+            onShowMore={showMore}
+            more={more}
+            destinationLabel={criteria?.destinationLabel}
+            onLoadMore={onLoadMore ?? noop}
+            onSearchAgain={onSearchAgain}
+            searching={searching}
+          />
+          {/* Lo que trajo el último "Ver más hoteles", contado sobre lo que se ve. Se vacía mientras
+              llega el siguiente: dos tramos con el mismo texto se anuncian igual. */}
+          <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+            {more?.status === 'loading' ? '' : arrivalText}
+          </p>
         </div>
       </div>
 

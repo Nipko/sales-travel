@@ -84,6 +84,20 @@ function panel(filters: ResultsFilters): string {
   );
 }
 
+describe('HotelResultCard — "Nuevo"', () => {
+  it('sólo los que llegaron con el último "Ver más hoteles" llevan la marca, fuera del título', () => {
+    const [item] = applyResultsFilters(resultHotelsOf([SOLO_NR], false, NOW), NO_FILTERS);
+    const nuevo = renderToStaticMarkup(
+      createElement(HotelResultCard, { item: item!, photo: undefined, fresh: true }),
+    );
+    expect(nuevo).toContain('Nuevo');
+    // El título dice sólo el nombre: el foco que llega a él no lee "Nuevo" como parte del hotel.
+    expect(nuevo).toMatch(/<h3[^>]*>Hotel Solo No Reembolsable<\/h3>/);
+
+    expect(card(SOLO_NR, false)).not.toContain('Nuevo');
+  });
+});
+
 describe('ResultsFiltersPanel', () => {
   it('"Solo reembolsables" sin hoteles que mostrar no se puede marcar', () => {
     const html = panel(NO_FILTERS);

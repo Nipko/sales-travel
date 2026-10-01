@@ -527,7 +527,8 @@ describe('POST /hotels/availability — una ciudad del catálogo local', () => {
 
     expect(b.db.consultasA('hotel_destination_map')).toEqual([]);
     const catalogos = b.db.consultasA('hotel_inventory');
-    expect(catalogos.map((q) => q.parameters)).toEqual([[TBO, CIUDAD_TBO, true, 100]]);
+    // Los códigos de los 20 tramos (100 × 20); el primer Search lleva los primeros 100.
+    expect(catalogos.map((q) => q.parameters)).toEqual([[TBO, CIUDAD_TBO, true, 2000]]);
     expect(catalogos[0]?.sql).toContain('"provider_city_code" in ($2)');
     expect(b.fetch).toHaveBeenCalledTimes(1);
     expect(cuerpoDe(b.fetch.mock.calls[0]?.[1])).toMatchObject({

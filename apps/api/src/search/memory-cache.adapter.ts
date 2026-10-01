@@ -10,6 +10,14 @@ interface Entry {
 const MAX_ENTRIES = 5_000;
 
 /**
+ * Cada cuánto, como mucho, una escritura barre lo vencido. Sin el barrido, una entrada que nadie
+ * vuelve a leer (una búsqueda que nadie retoma) sólo se iba al llenarse la caché: con el TTL
+ * cumplido seguía ocupando memoria —y, en los contextos de hoteles, datos del pasajero— hasta el
+ * próximo despliegue.
+ */
+const SWEEP_EVERY_MS = 60_000;
+
+/**
  * Adaptador de CachePort en memoria del proceso.
  *
  * `CachePort` existía desde el Sprint 0 sin ninguna implementación, así que no había
@@ -21,11 +29,18 @@ const MAX_ENTRIES = 5_000;
  * de esta interfaz. LO QUE NO SE PUEDE hacer sin Redis es escalar horizontalmente: con
  * dos instancias cada una tendría su propio caché y la tasa de acierto se partiría —
  * está anotado acá para que no sorprenda el día que se agregue una réplica.
+ *
+ * Una instancia que guarda entradas grandes baja su techo con una subclase que redefine
+ * {@link maxEntries} (p. ej. las búsquedas por tramos de hoteles).
  */
 @Injectable()
 export class MemoryCacheAdapter implements CachePort {
   private readonly logger = new Logger(MemoryCacheAdapter.name);
   private readonly store = new Map<string, Entry>();
+  private lastSweepAt = Date.now();
+
+  /** Techo de entradas de esta instancia. */
+  protected readonly maxEntries: number = MAX_ENTRIES;
 
   get<T>(key: string): Promise<T | null> {
     const hit = this.store.get(key);
@@ -38,8 +53,10 @@ export class MemoryCacheAdapter implements CachePort {
   }
 
   set<T>(key: string, value: T, ttlSeconds = 60): Promise<void> {
-    if (this.store.size >= MAX_ENTRIES) this.evict();
-    this.store.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+    const now = Date.now();
+    if (now - this.lastSweepAt >= SWEEP_EVERY_MS) this.sweep(now);
+    if (this.store.size >= this.maxEntries) this.evict();
+    this.store.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
     return Promise.resolve();
   }
 
@@ -57,15 +74,20 @@ export class MemoryCacheAdapter implements CachePort {
     return Promise.resolve();
   }
 
-  /** Purga lo vencido; si aún así está lleno, descarta el 10% más viejo. */
-  private evict(): void {
-    const now = Date.now();
+  /** Quita todo lo vencido. */
+  private sweep(now: number): void {
+    this.lastSweepAt = now;
     for (const [k, v] of this.store) {
       if (v.expiresAt <= now) this.store.delete(k);
     }
-    if (this.store.size < MAX_ENTRIES) return;
+  }
 
-    const toDrop = Math.ceil(MAX_ENTRIES * 0.1);
+  /** Purga lo vencido; si aún así está lleno, descarta el 10% más viejo. */
+  private evict(): void {
+    this.sweep(Date.now());
+    if (this.store.size < this.maxEntries) return;
+
+    const toDrop = Math.ceil(this.maxEntries * 0.1);
     let dropped = 0;
     for (const k of this.store.keys()) {
       this.store.delete(k);

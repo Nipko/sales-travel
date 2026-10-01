@@ -7,6 +7,7 @@ import {
   customerForHotelSearchAction,
   hotelSearchCurrenciesAction,
   hotelSearchWalletsAction,
+  loadMoreHotelsAction,
   searchHotelsAction,
   suggestDestinationsAction,
   type HotelSearchResult,
@@ -384,5 +385,128 @@ describe('customerForHotelSearchAction — prellenado desde el CRM', () => {
   it('una ficha que no se pudo leer devuelve null', async () => {
     apiMock.mockResolvedValue({ ok: false, error: { status: 404, message: 'Not Found' } });
     expect(await customerForHotelSearchAction(ID)).toBeNull();
+  });
+});
+
+describe('tramos de la búsqueda por destino (docs/tbo/02 §4.4)', () => {
+  const SESION = '5b0e8d1c-2a4f-4c6e-9b7a-0d3e1f2a4b6c';
+  const PAGING = {
+    sessionId: SESION,
+    page: 0,
+    consulted: 100,
+    total: 420,
+    hasMore: true,
+    nextBatch: 100,
+  };
+
+  it('la búsqueda trae cuánto del destino se consultó', async () => {
+    apiMock.mockResolvedValue({ ok: true, data: { hotels: [], providers: [], paging: PAGING } });
+    const res = await searchHotelsAction(INITIAL, form({}));
+    expect(res.paging).toEqual(PAGING);
+  });
+
+  it('un API anterior a los tramos no manda `paging`, y no se inventa', async () => {
+    const res = await searchHotelsAction(INITIAL, form({}));
+    expect(res).not.toHaveProperty('paging');
+  });
+
+  it('"Ver más hoteles" manda sólo la búsqueda y el tramo: el resto lo guardó el servidor', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: {
+        hotels: [{ hotelId: '7', roompacks: [] }],
+        providers: [{ code: 'tbo-hotels', status: 'ok', count: 1 }],
+        paging: { ...PAGING, page: 1, consulted: 200 },
+      },
+    });
+    const res = await loadMoreHotelsAction(SESION, 1);
+
+    const [ruta, init] = apiMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(ruta).toBe('/hotels/availability/more');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ sessionId: SESION, page: 1 });
+    expect(res).toEqual({
+      ok: true,
+      hotels: [{ hotelId: '7', roompacks: [] }],
+      providers: [{ code: 'tbo-hotels', status: 'ok', count: 1 }],
+      paging: { ...PAGING, page: 1, consulted: 200 },
+    });
+  });
+
+  it('un id de búsqueda que no es un UUID, o un tramo imposible, no llegan al API', async () => {
+    expect(await loadMoreHotelsAction('../hotels', 1)).toMatchObject({
+      ok: false,
+      reason: 'expired',
+    });
+    expect(await loadMoreHotelsAction(SESION, 0)).toMatchObject({ ok: false });
+    expect(await loadMoreHotelsAction(SESION, 1.5)).toMatchObject({ ok: false });
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('los rechazos del API llegan con su motivo y, si ya se cargó, con el tramo que sigue', async () => {
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: {
+        status: 409,
+        message: 'Esos hoteles ya se consultaron en esta búsqueda.',
+        reason: 'SEARCH_PAGE_NOT_NEXT',
+        details: { nextPage: 3 },
+      },
+    });
+    expect(await loadMoreHotelsAction(SESION, 2)).toEqual({
+      ok: false,
+      hotels: [],
+      providers: [],
+      error: 'Esos hoteles ya se consultaron en esta búsqueda.',
+      reason: 'not-next',
+      nextPage: 3,
+    });
+
+    // Con cuánto se consultó de verdad, para que la pantalla se ponga al día.
+    const paging = {
+      sessionId: SESION,
+      page: 2,
+      consulted: 300,
+      total: 420,
+      hasMore: true,
+      nextBatch: 100,
+    };
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: {
+        status: 409,
+        message: 'Esos hoteles ya se consultaron en esta búsqueda.',
+        reason: 'SEARCH_PAGE_NOT_NEXT',
+        details: { nextPage: 3, paging },
+      },
+    });
+    expect(await loadMoreHotelsAction(SESION, 2)).toMatchObject({
+      reason: 'not-next',
+      nextPage: 3,
+      paging,
+    });
+
+    // Un `paging` en otro rechazo no se toma: sólo el 409 de "no es el siguiente" lo trae.
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: {
+        status: 409,
+        message: 'Esta búsqueda ya no está vigente.',
+        reason: 'SEARCH_PAGING_EXPIRED',
+        details: { paging },
+      },
+    });
+    expect(await loadMoreHotelsAction(SESION, 2)).not.toHaveProperty('paging');
+
+    apiMock.mockResolvedValue({
+      ok: false,
+      error: { status: 502, message: 'Ningún proveedor de hoteles respondió.' },
+    });
+    expect(await loadMoreHotelsAction(SESION, 2)).toEqual({
+      ok: false,
+      hotels: [],
+      providers: [],
+      error: 'Ningún proveedor de hoteles respondió.',
+    });
   });
 });
