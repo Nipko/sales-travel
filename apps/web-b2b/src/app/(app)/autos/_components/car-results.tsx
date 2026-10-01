@@ -3,6 +3,7 @@
 import { SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Select } from '../../../../components/ui/field';
+import { FiltersAside, RESULTS_GRID } from '../../../../components/ui/filters-aside';
 import { FiltersSheet } from '../../../../components/ui/filters-sheet';
 import { cn } from '../../../../lib/cn';
 import type { CarOffer } from '../actions';
@@ -132,17 +133,12 @@ export function CarResults({
       aria-busy={searching}
       className={cn('transition-opacity', searching && 'opacity-60')}
     >
-      <div className="xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:items-start xl:gap-6">
-        <aside
-          aria-label="Filtros"
-          className="hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-xs)] xl:sticky xl:top-4 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto"
+      <div className={RESULTS_GRID}>
+        <FiltersAside
+          headerAction={<ClearFiltersButton filters={filters} onClear={clearFilters} />}
         >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">Filtros</h2>
-            <ClearFiltersButton filters={filters} onClear={clearFilters} />
-          </div>
           {panel}
-        </aside>
+        </FiltersAside>
 
         <div className="min-w-0 space-y-3">
           {/* Una sola fila en pantallas anchas (título a la izquierda, orden a la derecha); en el
@@ -291,7 +287,9 @@ function ClassStrip({
     <div
       role="group"
       aria-label="Clases de auto"
-      className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+      // `relative`: los `sr-only` de las clases que no entran en el teléfono quedaban a la derecha,
+      // fuera de la fila, y hacían que toda la página se corriera de lado sobre un hueco en blanco.
+      className="relative -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
     >
       {options.map((option) => {
         const active = selected.includes(option.value);

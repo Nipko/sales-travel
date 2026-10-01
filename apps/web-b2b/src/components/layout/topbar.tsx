@@ -31,7 +31,7 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-4 backdrop-blur-md sm:px-6 transition-all">
+    <header className="sticky top-0 z-30 flex h-[var(--app-topbar-height)] items-center justify-between border-b border-[var(--color-border)]/50 bg-[var(--color-surface)]/80 px-4 backdrop-blur-md sm:px-6 transition-all">
       {/* Izquierda: la agencia con la que se opera, y el cambio de agencia. */}
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <MobileNav role={role} tenantName={tenantName} tenantSlug={tenantSlug} logoUrl={logoUrl} />

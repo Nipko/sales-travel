@@ -16,6 +16,7 @@ import {
 } from '../providers/provider.types.js';
 import type { ProviderSearchSlice } from '../search/search-telemetry.service.js';
 import type { HotelMainImage } from './hotel-image-proxy.js';
+import type { HotelSearchPaging } from './hotel-search-paging.js';
 
 /*
  * Lo que la búsqueda de hoteles decide sin I/O: a quién no se le pregunta y por qué, puerta de
@@ -99,11 +100,13 @@ export type HotelSearchHotel = HotelOffer & { readonly mainImage?: HotelMainImag
 
 /**
  * Respuesta de la búsqueda. `hotels` conserva forma y orden de antes para un solo proveedor;
- * `providers` se AÑADE.
+ * `providers` se AÑADE, y `paging` también: cuántos hoteles del destino se consultaron y cómo pedir
+ * el tramo siguiente (hotel-search-paging.ts). Sólo en las búsquedas por destino.
  */
 export interface HotelSearchResponse {
   hotels: HotelSearchHotel[];
   providers: HotelProviderOutcome[];
+  paging?: HotelSearchPaging;
 }
 
 /** Motivos con el vocabulario del vendedor y del panel. Sin ids ni texto del proveedor. */

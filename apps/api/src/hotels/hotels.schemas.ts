@@ -8,6 +8,7 @@ import {
 } from '@sales-travel/validation';
 import { HOTEL_CONTENT_BATCH_MAX_HOTELS } from './hotel-content.service.js';
 import { PROVIDER_DESTINATION_INVALID, isProviderDestinationId } from './hotel-destination.js';
+import { HOTEL_SEARCH_MAX_PAGE_NUMBER } from './hotel-search-paging.js';
 import {
   HotelOfferReferenceSchema,
   type HotelOfferReference,
@@ -132,6 +133,18 @@ export const HotelAvailabilityInputSchema = z
     message: 'Indicá un destino o al menos un ID de hotel.',
     path: ['destinationId'],
   });
+
+/**
+ * `POST /hotels/availability/more`: el tramo siguiente de una búsqueda por destino (docs/tbo/02
+ * §4.4). Sólo la búsqueda y el tramo: fechas, ocupación, moneda y nacionalidad son las que guardó
+ * el servidor con el primero, y lo que venga de más se rechaza.
+ */
+export const HotelAvailabilityMoreBodySchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    page: z.number().int().min(1).max(HOTEL_SEARCH_MAX_PAGE_NUMBER),
+  })
+  .strict();
 
 export const HotelDetailInputSchema = z.object({
   hotelId: z.string().min(1),
@@ -431,6 +444,7 @@ export const RecoveryBodySchema = z.object({
 
 export type HotelSuggestQuery = z.infer<typeof HotelSuggestQuerySchema>;
 export type HotelAvailabilityInput = z.infer<typeof HotelAvailabilityInputSchema>;
+export type HotelAvailabilityMoreBody = z.infer<typeof HotelAvailabilityMoreBodySchema>;
 export type HotelDetailInput = z.infer<typeof HotelDetailInputSchema>;
 export type HotelContentParams = z.infer<typeof HotelContentParamsSchema>;
 export type HotelContentQuery = z.infer<typeof HotelContentQuerySchema>;

@@ -24,9 +24,11 @@ import {
 } from './actions';
 import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
+import { emptyWithMoreView, type MoreState } from './_components/hotel-paging';
 import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
 import { HotelResultSkeleton } from './_components/hotel-result-card';
 import { HotelResults } from './_components/hotel-results';
+import { ResultsPager } from './_components/hotel-results-pager';
 import {
   newSearchToken,
   saveSearchHandoff,
@@ -44,6 +46,7 @@ import {
 import { SearchSummaryBar } from './_components/search-summary-bar';
 import { searchWalletNotice, type SearchWallets } from './_components/search-wallet';
 import { searchingEcho, stayDatesProblem, type StayDatesProblem } from './_components/stay-dates';
+import { useMoreHotels } from './_components/use-more-hotels';
 
 const INITIAL: HotelSearchResult = {
   ok: false,
@@ -133,6 +136,8 @@ function DegradedProvidersNotice({
 
 export default function HotelesPage() {
   const [state, formAction, isPending] = useActionState(searchHotelsAction, INITIAL);
+  // Los tramos siguientes de la búsqueda ("Ver más hoteles"), sumados a lo que trajo el primero.
+  const { more, hotels: allHotels, loadMore } = useMoreHotels(state);
   // Entrada y salida en un solo calendario, como vuelos: primer clic la entrada, segundo la salida.
   const [dates, setDates] = useState<DateRange>(EMPTY_RANGE);
   const [datesProblem, setDatesProblem] = useState<string | null>(null);
@@ -176,7 +181,7 @@ export default function HotelesPage() {
       (document.getElementById(summaryId) ?? heading).scrollIntoView({ block: 'nearest' });
     });
   }, [state.receivedAt, resultsHeadingId, summaryId]);
-  const hasResults = state.ok && state.criteria !== undefined && state.hotels.length > 0;
+  const hasResults = state.ok && state.criteria !== undefined && allHotels.length > 0;
   const collapsed = hasResults && !editing;
   function toggleEditing() {
     const next = !editing;
@@ -329,7 +334,17 @@ export default function HotelesPage() {
   // efecto, el anterior abriría estos hoteles con las fechas y la nacionalidad de la otra.
   const searchToken = handoffToken?.forState === state ? handoffToken.token : undefined;
 
-  const hotelCount = state.hotels.length;
+  const hotelCount = allHotels.length;
+
+  // Si el primer tramo no trajo hoteles y "Ver más hoteles" sí, la lista aparece en lugar del
+  // estado vacío: el foco pasa a su título, que dice cuántos hay, como al llegar una búsqueda.
+  const hadHotels = useRef(hotelCount > 0);
+  useEffect(() => {
+    const had = hadHotels.current;
+    hadHotels.current = hotelCount > 0;
+    if (had || hotelCount === 0 || more.arrived === 0) return;
+    window.requestAnimationFrame(() => document.getElementById(resultsHeadingId)?.focus());
+  }, [hotelCount, more.arrived, resultsHeadingId]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 sm:space-y-5 sm:p-6">
@@ -529,7 +544,7 @@ export default function HotelesPage() {
         hotelCount > 0 ? (
           <div hidden={isPending}>
             <HotelResults
-              hotels={state.hotels}
+              hotels={allHotels}
               showProvider={state.showProviderInResults}
               nonRefundableBlocked={state.nonRefundableBlocked === true}
               criteria={state.criteria}
@@ -539,19 +554,59 @@ export default function HotelesPage() {
               searching={isPending}
               onSearchAgain={searchAgain}
               headingId={resultsHeadingId}
+              more={more}
+              onLoadMore={loadMore}
             />
           </div>
         ) : isPending ? null : (
-          <EmptyResults providers={state.providers} />
+          <div className="space-y-3">
+            <EmptyResults
+              providers={state.providers}
+              more={more}
+              destinationLabel={state.criteria?.destinationLabel}
+            />
+            <ResultsPager
+              shown={0}
+              visible={0}
+              more={more}
+              destinationLabel={state.criteria?.destinationLabel}
+              onLoadMore={loadMore}
+              onSearchAgain={searchAgain}
+              searching={isPending}
+            />
+          </div>
         )
       ) : null}
+
+      {/* Lo que pasó con el último "Ver más hoteles", para el lector de pantalla. Montada siempre:
+          la lista puede reemplazar al estado vacío justo cuando llega el tramo. */}
+      <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {state.ok && !isPending ? more.announcement : ''}
+      </p>
     </div>
   );
 }
 
-/** Sin hoteles (U-08): qué pasó, dicho de forma que el vendedor pueda repetírselo al cliente. */
-function EmptyResults({ providers }: { providers: HotelProviderOutcome[] }) {
-  const view = emptyResultsView(providers);
+/**
+ * Sin hoteles (U-08): qué pasó, dicho de forma que el vendedor pueda repetírselo al cliente. Si
+ * quedan hoteles del destino por consultar, "no hay disponibilidad" sería mentira: sólo no la hay
+ * en los que se consultaron.
+ */
+function EmptyResults({
+  providers,
+  more,
+  destinationLabel,
+}: {
+  providers: HotelProviderOutcome[];
+  more: MoreState;
+  destinationLabel?: string;
+}) {
+  const standard = emptyResultsView(providers);
+  const answered = providers.some((p) => p.status === 'ok' || p.status === 'empty');
+  const view =
+    more.paging?.hasMore === true && answered && degradedProviders(providers).length === 0
+      ? emptyWithMoreView(more.paging, destinationLabel)
+      : standard;
   return (
     <div
       role="status"

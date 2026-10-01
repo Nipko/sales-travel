@@ -301,12 +301,15 @@ describe('TBO en /hotels/availability — a quién y qué se le pide (RF-33, RF-
     const b = banco();
     await buscar(b);
 
+    // Los códigos de los 20 tramos de cada uno (50 × 20 y 100 × 20); cada Search lleva el primero.
     const catalogos = b.db.consultasA('hotel_inventory');
     expect(catalogos.map((q) => q.parameters)).toEqual([
-      [DESPEGAR, CIUDAD, true, 50],
-      [TBO, ...CIUDADES_TBO, true, 100],
+      [DESPEGAR, CIUDAD, true, 1000],
+      [TBO, ...CIUDADES_TBO, true, 2000],
     ]);
-    expect(catalogos[1]?.sql).toContain('order by "stars" desc nulls last, "hotel_id"');
+    expect(catalogos[1]?.sql.replace(/\s+/g, ' ')).toContain(
+      'order by "stars" desc nulls last, exists (select 1 from hotel_content c',
+    );
   });
 
   it('a TBO le llegan sus códigos del catálogo, en una llamada, con la nacionalidad del vendedor', async () => {

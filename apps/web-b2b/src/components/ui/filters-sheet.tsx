@@ -3,6 +3,7 @@
 import { X } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { useModalBehavior } from './dialog';
+import { ScrollFade } from './scroll-fade';
 
 /**
  * Los filtros de una pantalla de resultados en el teléfono: una hoja que sube desde abajo, con el
@@ -52,9 +53,9 @@ export function FiltersSheet({
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+        <ScrollFade className="min-h-0 flex-1" contentClassName="p-4" contain>
           {children}
-        </div>
+        </ScrollFade>
         <div className="border-t border-[var(--color-border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"

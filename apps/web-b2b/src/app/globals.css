@@ -213,6 +213,13 @@ body {
   height: 100%;
 }
 
+/* El alto de la barra de arriba del panel. La usa la barra y lo que se pega arriba dentro de
+   <main> para medir cuánto alto le queda (los filtros de resultados): sin el dato compartido,
+   cambiar la barra dejaba esos altos corridos. */
+:root {
+  --app-topbar-height: 3.5rem;
+}
+
 /* Evita el flash de tema claro antes de que hidrate React. */
 html {
   color-scheme: light;

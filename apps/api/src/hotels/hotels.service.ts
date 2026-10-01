@@ -11,6 +11,7 @@ import type {
   HotelSuggestPort,
 } from '@sales-travel/domain';
 import { CurrencyCodeSchema } from '@sales-travel/validation';
+import { randomUUID } from 'node:crypto';
 import { sql, type SelectQueryBuilder, type SqlBool } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
@@ -95,7 +96,34 @@ import {
   searchRateFactsOf,
   type HotelSearchContextPack,
 } from './hotel-search-context.store.js';
-import type { HotelAvailabilityInput, HotelDetailInput } from './hotels.schemas.js';
+import {
+  HOTEL_SEARCH_MAX_RECENT_PAGES,
+  HOTEL_SEARCH_PAGE_REPLAY_MS,
+  HOTEL_SEARCH_PAGING_MIN_LEFT_MS,
+  HOTEL_SEARCH_PAGING_TTL_MS,
+  advanceCursor,
+  catalogCapOf,
+  cursorHasMore,
+  nextSliceOf,
+  pagingSummary,
+  tramoResultOf,
+  type HotelPagingCursor,
+  type HotelSearchPaging,
+} from './hotel-search-paging.js';
+import {
+  HotelSearchPageNotNextError,
+  HotelSearchPagingExhaustedError,
+  HotelSearchPagingExpiredError,
+  HotelSearchPagingMemoryCache,
+  HotelSearchPagingStore,
+  type HotelPagedSearch,
+  type HotelSearchPagingSession,
+} from './hotel-search-paging.store.js';
+import type {
+  HotelAvailabilityInput,
+  HotelAvailabilityMoreBody,
+  HotelDetailInput,
+} from './hotels.schemas.js';
 
 /** Idioma del borde HTTP (el de Despegar, en mayúsculas) → idioma del contrato neutral. */
 const NEUTRAL_LANGUAGE = { EN: 'en', ES: 'es', PT: 'pt' } as const;
@@ -133,9 +161,23 @@ interface CityToLoad {
   readonly countryCode: string;
 }
 
-/** Qué hoteles se le piden a cada proveedor, o por qué no se le pregunta. */
+/**
+ * Los hoteles de un destino en el catálogo de un proveedor: los primeros en su orden, hasta el tope
+ * que se pidió, y cuántos activos tiene en total.
+ */
+export interface CatalogHotels {
+  readonly hotelIds: string[];
+  readonly total: number;
+}
+
+/**
+ * Qué hoteles se le piden a cada proveedor, o por qué no se le pregunta. Con `catalogTotal`, los
+ * `hotelIds` salen del catálogo del destino y son TODOS los que se consultan por tramos (hasta
+ * {@link catalogCapOf}); el primer tramo son los primeros `maxHotelsPerSearch`. Sin él, son los IDs
+ * que escribió el vendedor y van enteros en una sola búsqueda.
+ */
 type CatalogPlan =
-  | { readonly hotelIds: readonly string[] }
+  | { readonly hotelIds: readonly string[]; readonly catalogTotal?: number }
   | { readonly load: CityToLoad }
   | {
       readonly skip: 'catalog-empty' | 'no-destination-map' | 'foreign-hotel-ids';
@@ -187,14 +229,62 @@ interface FanOutState {
 }
 
 /**
- * Orden `relevance` del catálogo (docs/tbo/02 §4.3): más estrellas primero, sin estrellas al final
- * —`DESC` a secas los pondría PRIMERO, porque Postgres ordena los NULL como el valor más alto— y el
- * id como desempate, para que dos búsquedas iguales pidan los mismos hoteles.
+ * El hotel ya tiene alguna foto en el catálogo (`hotel_content`, cualquier idioma y origen): la
+ * tarjeta sale con ella y no con el marcador. Por la clave primaria de `hotel_content`.
+ */
+const HAS_PHOTO = sql<boolean>`exists (select 1 from hotel_content c
+   where c.provider_code = hotel_inventory.provider_code
+     and c.hotel_id = hotel_inventory.hotel_id
+     and jsonb_typeof(c.images) = 'array'
+     and jsonb_array_length(c.images) > 0)`;
+
+/**
+ * Orden `relevance` del catálogo (docs/tbo/02 §4.3 y §4.4), el que decide qué hoteles van en el
+ * PRIMER tramo: más estrellas primero, sin estrellas al final —`DESC` a secas los pondría PRIMERO,
+ * porque Postgres ordena los NULL como el valor más alto—; entre los de la misma categoría, los que
+ * ya tienen foto; y el id como desempate, para que dos búsquedas iguales pidan los mismos hoteles.
+ *
+ * La demanda por hotel no entra: no hay dónde leerla sin cruzar tenants (las órdenes van con RLS y
+ * `search_logs` cuenta ciudades, no hoteles).
  */
 function byRelevance<O>(
   query: SelectQueryBuilder<DB, 'hotel_inventory', O>,
 ): SelectQueryBuilder<DB, 'hotel_inventory', O> {
-  return query.orderBy('stars', sql`desc nulls last`).orderBy('hotel_id');
+  return query
+    .orderBy('stars', sql`desc nulls last`)
+    .orderBy(HAS_PHOTO, 'desc')
+    .orderBy('hotel_id');
+}
+
+/**
+ * La búsqueda que guardan los tramos: la misma, sin los IDs escritos a mano, con la moneda y el
+ * país de venta que usó el primer tramo. Si la búsqueda no los trajo, salieron de la agencia en ese
+ * momento: guardarlos resueltos hace que un cambio de la agencia a mitad de camino no busque los
+ * tramos siguientes en otra moneda y los mezcle en la misma lista.
+ */
+function pagedSearchOf(
+  input: HotelAvailabilityInput,
+  currency: string,
+  tenantCountry: string | undefined,
+): HotelPagedSearch {
+  const { hotelIds: _hotelIds, currency: _currency, ...search } = input;
+  const countryCode = input.countryCode ?? tenantCountry;
+  return { ...search, currency, ...(countryCode?.length === 2 ? { countryCode } : {}) };
+}
+
+/**
+ * La moneda o el markup de la agencia cambiaron desde el primer tramo: seguir mezclaría precios en
+ * otra moneda, o sin el markup que ahora corresponde, en la misma lista.
+ */
+const PAGING_STALE_MESSAGE =
+  'Tu agencia cambió su moneda o su markup desde esta búsqueda. Vuelve a buscar para ver más hoteles.';
+
+/** El último tramo pedido de una búsqueda: en vuelo, o ya respondido y repetible un rato. */
+interface RecentPage {
+  readonly page: number;
+  readonly response: Promise<HotelSearchResponse>;
+  /** Hasta cuándo se repite. Infinito mientras está en vuelo. */
+  until: number;
 }
 
 /** El proveedor resuelto, con su adapter ya estrechado al puerto de la operación. */
@@ -266,6 +356,21 @@ function withPricing<T extends HotelOffer>(
 }
 
 /**
+ * Las filas de la consulta del catálogo. `catalog_total` llega como texto (`bigint`); sin él —un
+ * doble de la base que no lo calcula— el total es lo que llegó.
+ */
+function catalogHotelsOf(
+  rows: readonly { hotel_id: string; catalog_total?: string | number | null }[],
+): CatalogHotels {
+  const hotelIds = rows.map((r) => r.hotel_id);
+  const total = Number(rows[0]?.catalog_total);
+  return {
+    hotelIds,
+    total: Number.isSafeInteger(total) && total >= hotelIds.length ? total : hotelIds.length,
+  };
+}
+
+/**
  * Búsqueda, sugerencias y detalle de hoteles sobre TODOS los proveedores habilitados para el
  * tenant, por el registry.
  *
@@ -299,7 +404,19 @@ export class HotelsService {
    */
   private readonly cityLoads = new Map<string, Promise<CityLoadResult>>();
 
+  /**
+   * El último tramo pedido de cada búsqueda, por tenant y búsqueda. En vuelo, un doble clic en
+   * "Ver más hoteles" espera EL MISMO Search, no dos; ya respondido, pedirlo otra vez durante
+   * {@link HOTEL_SEARCH_PAGE_REPLAY_MS} devuelve la misma respuesta sin consultar a nadie ni gastar
+   * cuota (la que se cortó en el camino). Es memoria del proceso a propósito: es un reintento de
+   * segundos, no estado de la búsqueda; con dos réplicas, el que cae en la otra es un 409 que dice
+   * cuánto se consultó, y la web se pone al día.
+   */
+  private readonly recentPages = new Map<string, RecentPage>();
+
   private readonly catalog: HotelCatalogStore;
+
+  private readonly pagingStore: HotelSearchPagingStore;
 
   constructor(
     private readonly registry: HotelProviderRegistry,
@@ -309,8 +426,11 @@ export class HotelsService {
     private readonly breaker: CircuitBreakerService,
     private readonly searchContexts: HotelSearchContextStore,
     @Optional() catalog?: HotelCatalogStore,
+    @Optional() pagingStore?: HotelSearchPagingStore,
   ) {
     this.catalog = catalog ?? new HotelCatalogStore(db);
+    this.pagingStore =
+      pagingStore ?? new HotelSearchPagingStore(new HotelSearchPagingMemoryCache());
   }
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -543,9 +663,14 @@ export class HotelsService {
         outcomes.push(ineligible);
         continue;
       }
+      // Del catálogo, sólo el primer tramo; los IDs escritos a mano, todos.
+      const first =
+        plan.catalogTotal === undefined
+          ? plan.hotelIds
+          : plan.hotelIds.slice(0, provider.searchProfile.maxHotelsPerSearch);
       callable.push({
         provider,
-        criteria: this.criteriaFor(input, plan.hotelIds, currency, defaults.countryCode),
+        criteria: this.criteriaFor(input, first, currency, defaults.countryCode),
       });
     }
 
@@ -568,12 +693,240 @@ export class HotelsService {
       (r) => telemetrySlices(r.providers, state.called, state.durations),
     );
 
-    return { ...result, hotels: result.hotels.map((o) => withPricing(o, rules, tenantId)) };
+    const paging = await this.startPaging(
+      tenantId,
+      pagedSearchOf(input, currency, defaults.countryCode),
+      callable,
+      resolved,
+      result.providers,
+    );
+    return {
+      ...result,
+      hotels: result.hotels.map((o) => withPricing(o, rules, tenantId)),
+      ...(paging === undefined ? {} : { paging }),
+    };
   }
 
   /**
-   * IDs de hotel del catálogo de UN proveedor para un destino, sólo activos, con el orden y el
-   * límite que declara el proveedor.
+   * El tramo siguiente de una búsqueda por destino (docs/tbo/02 §4.4): a cada proveedor que le
+   * quedan códigos, UN Search con los siguientes de su catálogo, con la búsqueda que guardó el
+   * primer tramo. Pasa por lo mismo que la búsqueda —moneda y markup, cuota, proveedores activos,
+   * circuito, limitador de ventas, contexto de cada Search para el PreBook y la telemetría— y
+   * responde el mismo sobre, con sólo los hoteles de este tramo.
+   *
+   * Sin repetir: sólo se acepta el tramo que sigue; un doble clic espera el mismo Search y el
+   * último tramo, pedido otra vez al rato, sale igual sin consultar a nadie ({@link recentPages}).
+   * Si fallaron todos los proveedores llamados, nada avanza y el mismo tramo se puede reintentar.
+   */
+  searchMoreAvailability(
+    tenantId: string,
+    body: HotelAvailabilityMoreBody,
+  ): Promise<HotelSearchResponse> {
+    const key = `${tenantId} ${body.sessionId}`;
+    this.forgetOldPages(Date.now());
+    const recent = this.recentPages.get(key);
+    if (recent !== undefined && recent.page === body.page) return recent.response;
+
+    const response = this.loadNextPage(tenantId, body);
+    // Otro tramo de la misma búsqueda mientras uno está en vuelo (una pestaña vieja): sale por su
+    // cuenta y no reemplaza al que está en vuelo.
+    if (recent !== undefined && recent.until === Number.POSITIVE_INFINITY) return response;
+
+    const entry: RecentPage = { page: body.page, response, until: Number.POSITIVE_INFINITY };
+    this.recentPages.delete(key);
+    this.recentPages.set(key, entry);
+    response.then(
+      () => {
+        entry.until = Date.now() + HOTEL_SEARCH_PAGE_REPLAY_MS;
+      },
+      () => {
+        // Un tramo que falló no se repite: se vuelve a intentar de verdad.
+        if (this.recentPages.get(key) === entry) this.recentPages.delete(key);
+      },
+    );
+    return response;
+  }
+
+  /** Olvida los tramos que ya no se repiten y, lleno el techo, los más viejos ya respondidos. */
+  private forgetOldPages(now: number): void {
+    for (const [key, entry] of this.recentPages) {
+      if (entry.until <= now) this.recentPages.delete(key);
+    }
+    for (const [key, entry] of this.recentPages) {
+      if (this.recentPages.size < HOTEL_SEARCH_MAX_RECENT_PAGES) break;
+      if (entry.until !== Number.POSITIVE_INFINITY) this.recentPages.delete(key);
+    }
+  }
+
+  private async loadNextPage(
+    tenantId: string,
+    { sessionId, page }: HotelAvailabilityMoreBody,
+  ): Promise<HotelSearchResponse> {
+    const session = await this.pagingStore.get(tenantId, sessionId);
+    // Sin tiempo para un Search entero, es como vencida: mejor que gastar una consulta y la cuota
+    // en un tramo cuya respuesta ya no se podría seguir.
+    if (session === undefined || session.expiresAt - Date.now() < HOTEL_SEARCH_PAGING_MIN_LEFT_MS) {
+      throw new HotelSearchPagingExpiredError();
+    }
+    if (page !== session.nextPage) {
+      throw new HotelSearchPageNotNextError(
+        session.nextPage,
+        pagingSummary(session.cursors, session.nextPage - 1, sessionId),
+      );
+    }
+    if (!session.cursors.some(cursorHasMore)) throw new HotelSearchPagingExhaustedError();
+
+    // Lo mismo que la búsqueda, en el mismo orden: moneda y markup antes de la cuota, y la cuota
+    // antes de salir a nadie. La moneda es la del primer tramo; las reglas se vuelven a leer
+    // (pudieron cambiar), y si la moneda ya no se puede usar o el markup ya no la admite, se pide
+    // buscar de nuevo en lugar de sumar precios en otra moneda a la misma lista.
+    const input = session.search;
+    const defaults = await this.tenantDefaults(tenantId);
+    const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
+    let currency: string;
+    try {
+      currency = resolveHotelSearchCurrency(input.currency, defaults.currency);
+      assertRulesPriceIn(rules, currency, defaults.currency);
+    } catch {
+      // Las dos sólo lanzan por eso: la moneda ya no se puede usar, o el markup fijo ya no la admite.
+      throw new HotelSearchPagingExpiredError(PAGING_STALE_MESSAGE);
+    }
+    await this.telemetry.assertWithinQuota(tenantId);
+
+    const { active, skipped, unavailable } = await this.registry.forTenant(tenantId);
+    const activeByCode = new Map(active.map((p) => [p.code, p]));
+    const state: FanOutState = {
+      outcomes: [],
+      contributed: [],
+      failed: [],
+      called: new Set(),
+      durations: new Map(),
+    };
+    const callable: CallablePlan[] = [];
+    const asked = new Map<string, number>();
+    for (const cursor of session.cursors) {
+      const slice = nextSliceOf(cursor);
+      if (slice.length === 0) continue;
+      const provider = activeByCode.get(cursor.code);
+      if (provider === undefined) {
+        // Lo apagaron o perdió la cuenta desde el primer tramo: se dice por qué y no se le pide más.
+        const off = skipped.find((s) => s.code === cursor.code);
+        const absent = unavailable.find((u) => u.code === cursor.code);
+        if (off !== undefined) {
+          state.outcomes.push(skippedOutcome(off.code, off.reason, SKIP_REASON_TEXT[off.reason]));
+        } else if (absent !== undefined) {
+          state.outcomes.push(unavailableOutcome(absent));
+        }
+        continue;
+      }
+      asked.set(cursor.code, slice.length);
+      callable.push({
+        provider,
+        criteria: this.criteriaFor(input, slice, currency, defaults.countryCode),
+      });
+    }
+
+    const destination = destinationOf(input.destinationId);
+    const result: HotelSearchResponse =
+      callable.length === 0
+        ? { hotels: [], providers: sortOutcomes(state.outcomes) }
+        : await this.telemetry.instrument(
+            {
+              tenantId,
+              vertical: 'hotels',
+              providerCodes: callable.map((c) => c.provider.code),
+              // Criterio REDUCIDO, como la búsqueda, y el tramo.
+              criteria: {
+                checkinDate: input.checkinDate,
+                checkoutDate: input.checkoutDate,
+                ...destinationCriteria(destination),
+                hotelCount: callable.reduce((n, c) => n + c.criteria.hotelIds.length, 0),
+                page,
+              },
+            },
+            () => this.runFanOut(tenantId, callable, currency, state, contentLanguageOf(input)),
+            (r) => r.hotels.length,
+            undefined,
+            (r) => telemetrySlices(r.providers, state.called, state.durations),
+          );
+
+    const outcomes = new Map(result.providers.map((o) => [o.code, o]));
+    const cursors = session.cursors.map((cursor): HotelPagingCursor => {
+      const count = asked.get(cursor.code);
+      if (count !== undefined) {
+        return advanceCursor(cursor, count, tramoResultOf(outcomes.get(cursor.code)));
+      }
+      return cursorHasMore(cursor) ? advanceCursor(cursor, 0, 'stop') : cursor;
+    });
+    const saved = await this.savePaging({ ...session, nextPage: page + 1, cursors });
+    return {
+      hotels: result.hotels.map((o) => withPricing(o, rules, tenantId)),
+      providers: result.providers,
+      paging: pagingSummary(cursors, page, saved ? sessionId : undefined),
+    };
+  }
+
+  /**
+   * Cuántos hoteles del destino dejó consultados el primer tramo y, si quedan, la búsqueda por
+   * tramos guardada para pedir los siguientes. `undefined` en una búsqueda sin catálogo (IDs
+   * escritos a mano, o ningún proveedor al que se le haya preguntado).
+   */
+  private async startPaging(
+    tenantId: string,
+    search: HotelPagedSearch,
+    callable: readonly CallablePlan[],
+    plans: ReadonlyMap<string, ResolvedPlan>,
+    outcomes: readonly HotelProviderOutcome[],
+  ): Promise<HotelSearchPaging | undefined> {
+    const cursors: HotelPagingCursor[] = [];
+    for (const { provider, criteria } of callable) {
+      const plan = plans.get(provider.code);
+      if (plan === undefined || !('hotelIds' in plan) || plan.catalogTotal === undefined) continue;
+      const cursor: HotelPagingCursor = {
+        code: provider.code,
+        hotelIds: [...plan.hotelIds],
+        catalogTotal: plan.catalogTotal,
+        consulted: 0,
+        pageSize: provider.searchProfile.maxHotelsPerSearch,
+        ...(provider.callPolicy === 'fallback' ? { fallback: true as const } : {}),
+      };
+      const outcome = outcomes.find((o) => o.code === provider.code);
+      cursors.push(advanceCursor(cursor, criteria.hotelIds.length, tramoResultOf(outcome)));
+    }
+    if (cursors.length === 0) return undefined;
+    if (!cursors.some(cursorHasMore)) return pagingSummary(cursors, 0, undefined);
+
+    const now = Date.now();
+    const session: HotelSearchPagingSession = {
+      tenantId,
+      sessionId: randomUUID(),
+      nextPage: 1,
+      createdAt: now,
+      expiresAt: now + HOTEL_SEARCH_PAGING_TTL_MS,
+      search,
+      cursors,
+    };
+    const saved = await this.savePaging(session);
+    return pagingSummary(cursors, 0, saved ? session.sessionId : undefined);
+  }
+
+  /**
+   * Guarda la búsqueda por tramos. Si no se puede, la búsqueda sale igual sin tramos siguientes:
+   * mejor que perder los hoteles que ya llegaron.
+   */
+  private async savePaging(session: HotelSearchPagingSession): Promise<boolean> {
+    try {
+      return await this.pagingStore.save(session);
+    } catch (err) {
+      this.logger.warn(`hotels.search_paging.no_guardada error=${failureClassOf(err)}`);
+      return false;
+    }
+  }
+
+  /**
+   * IDs de hotel del catálogo de UN proveedor para un destino, sólo activos, con el orden que
+   * declara el proveedor y hasta `limit`, y cuántos activos tiene el destino en total (para "100 de
+   * 420"): una sola consulta, con `count(*) over ()`, que Postgres calcula antes del `limit`.
    *
    * El orden tiene que ser determinista: sin `orderBy`, Postgres puede devolver las filas en
    * cualquier orden entre llamadas y dos búsquedas idénticas consultaban subconjuntos distintos
@@ -584,17 +937,17 @@ export class HotelsService {
     cityId: number,
     limit: number,
     order: HotelCatalogOrder = 'hotel_id',
-  ): Promise<string[]> {
+  ): Promise<CatalogHotels> {
     const query = this.db.db
       .selectFrom('hotel_inventory')
-      .select('hotel_id')
+      .select(['hotel_id', sql<string>`count(*) over ()`.as('catalog_total')])
       .where('provider_code', '=', providerCode)
       .where('city_id', '=', cityId)
       .where('active', '=', true);
     const rows = await (order === 'relevance' ? byRelevance(query) : query.orderBy('hotel_id'))
       .limit(limit)
       .execute();
-    return rows.map((r) => r.hotel_id);
+    return catalogHotelsOf(rows);
   }
 
   /**
@@ -628,17 +981,17 @@ export class HotelsService {
     cityCodes: readonly string[],
     limit: number,
     order: HotelCatalogOrder = 'hotel_id',
-  ): Promise<string[]> {
+  ): Promise<CatalogHotels> {
     const query = this.db.db
       .selectFrom('hotel_inventory')
-      .select('hotel_id')
+      .select(['hotel_id', sql<string>`count(*) over ()`.as('catalog_total')])
       .where('provider_code', '=', providerCode)
       .where('provider_city_code', 'in', [...cityCodes])
       .where('active', '=', true);
     const rows = await (order === 'relevance' ? byRelevance(query) : query.orderBy('hotel_id'))
       .limit(limit)
       .execute();
-    return rows.map((r) => r.hotel_id);
+    return catalogHotelsOf(rows);
   }
 
   /**
@@ -945,16 +1298,21 @@ export class HotelsService {
       }
       const result = await this.loadCity(tenantId, provider, plan.load);
       loads.push(result);
-      const hotelIds =
+      const found =
         result === 'loaded'
           ? await this.resolveProviderCityHotelIds(
               code,
               [plan.load.cityCode],
-              provider.searchProfile.maxHotelsPerSearch,
+              catalogCapOf(provider.searchProfile.maxHotelsPerSearch),
               provider.searchProfile.catalogOrder,
             )
-          : [];
-      resolved.set(code, hotelIds.length > 0 ? { hotelIds } : { skip: 'catalog-empty' });
+          : undefined;
+      resolved.set(
+        code,
+        found !== undefined && found.hotelIds.length > 0
+          ? { hotelIds: found.hotelIds, catalogTotal: found.total }
+          : { skip: 'catalog-empty' },
+      );
     }
     return { plans: resolved, loads };
   }
@@ -1272,39 +1630,45 @@ export class HotelsService {
     }
     if (destination === undefined) return { skip: 'catalog-empty' };
 
-    let hotelIds: string[];
+    // Todos los que se consultan por tramos, no sólo los del primero: guardarlos ahora deja fijo el
+    // orden de la búsqueda aunque el catálogo cambie mientras el vendedor carga más (una foto que
+    // llega sube un hotel en el orden, y con `offset` se repetiría uno y se saltaría otro).
+    const cap = catalogCapOf(searchProfile.maxHotelsPerSearch);
+    let found: CatalogHotels;
     if (destination.space === 'provider') {
       if (destination.providerCode !== code || searchProfile.idSpace !== 'provider') {
         return { skip: 'no-destination-map' };
       }
-      hotelIds = await this.resolveProviderCityHotelIds(
+      found = await this.resolveProviderCityHotelIds(
         code,
         [destination.cityCode],
-        searchProfile.maxHotelsPerSearch,
+        cap,
         searchProfile.catalogOrder,
       );
-      if (hotelIds.length === 0) {
+      if (found.hotelIds.length === 0) {
         const load = await this.cityToLoad(code, destination.cityCode);
         if (load !== undefined) return { load };
       }
     } else if (searchProfile.idSpace === 'provider') {
       const cityCodes = await this.resolveDestinationCityCodes(code, destination.cityId);
       if (cityCodes.length === 0) return { skip: 'no-destination-map' };
-      hotelIds = await this.resolveProviderCityHotelIds(
+      found = await this.resolveProviderCityHotelIds(
         code,
         cityCodes,
-        searchProfile.maxHotelsPerSearch,
+        cap,
         searchProfile.catalogOrder,
       );
     } else {
-      hotelIds = await this.resolveCityHotelIds(
+      found = await this.resolveCityHotelIds(
         code,
         destination.cityId,
-        searchProfile.maxHotelsPerSearch,
+        cap,
         searchProfile.catalogOrder,
       );
     }
-    return hotelIds.length > 0 ? { hotelIds } : { skip: 'catalog-empty' };
+    return found.hotelIds.length > 0
+      ? { hotelIds: found.hotelIds, catalogTotal: found.total }
+      : { skip: 'catalog-empty' };
   }
 
   /**

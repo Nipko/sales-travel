@@ -7,6 +7,7 @@ import {
   CancelBodySchema,
   GUEST_NATIONALITY_INVALID,
   HotelAvailabilityInputSchema,
+  HotelAvailabilityMoreBodySchema,
   HotelContentBatchBodySchema,
   HotelDetailInputSchema,
   HotelPrebookBodySchema,
@@ -593,5 +594,36 @@ describe('HotelContentBatchBodySchema (fotos de los resultados por lote)', () =>
     ]) {
       expect(HotelContentBatchBodySchema.safeParse(body).success).toBe(false);
     }
+  });
+});
+
+describe('HotelAvailabilityMoreBodySchema — el tramo siguiente (docs/tbo/02 §4.4)', () => {
+  const SESION = '5b0e8d1c-2a4f-4c6e-9b7a-0d3e1f2a4b6c';
+
+  it('sólo la búsqueda y el tramo', () => {
+    expect(HotelAvailabilityMoreBodySchema.parse({ sessionId: SESION, page: 1 })).toEqual({
+      sessionId: SESION,
+      page: 1,
+    });
+  });
+
+  it('nada de fechas, ocupación ni nacionalidad: las guardó el servidor con el primer tramo', () => {
+    expect(
+      HotelAvailabilityMoreBodySchema.safeParse({
+        sessionId: SESION,
+        page: 1,
+        guestNationality: 'CO',
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['un id que no es un UUID', { sessionId: 'hotels:*', page: 1 }],
+    ['el tramo 0, que es la búsqueda', { sessionId: SESION, page: 0 }],
+    ['un tramo con decimales', { sessionId: SESION, page: 1.5 }],
+    ['un tramo absurdo', { sessionId: SESION, page: 1_000 }],
+    ['un tramo en texto', { sessionId: SESION, page: '1' }],
+  ])('rechaza %s', (_caso, body) => {
+    expect(HotelAvailabilityMoreBodySchema.safeParse(body).success).toBe(false);
   });
 });

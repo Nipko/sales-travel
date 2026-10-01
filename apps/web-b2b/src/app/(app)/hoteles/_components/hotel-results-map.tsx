@@ -42,13 +42,17 @@ export function HotelResultsMap({
         </span>
       </p>
       <ul className="divide-y divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]">
-        {items.map((item) => {
+        {items.map((item, index) => {
           const { offer, stars, key } = item.hotel;
           const name = offer.name ?? `Hotel ${offer.hotelId}`;
           const cheapest = item.rates[0]?.row.sale;
           const perNight = cheapest ? (perNightOf(cheapest, nights) ?? cheapest) : undefined;
           return (
-            <li key={key} className="flex items-center gap-3 px-3 py-3 sm:px-4">
+            <li
+              key={key}
+              data-result-index={index}
+              className="flex scroll-mt-20 items-center gap-3 px-3 py-3 sm:px-4"
+            >
               <HotelPhoto
                 state={photos.get(key)}
                 sizes="64px"

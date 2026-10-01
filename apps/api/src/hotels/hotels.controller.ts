@@ -53,6 +53,7 @@ import { HotelsService } from './hotels.service.js';
 import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
+  HotelAvailabilityMoreBodySchema,
   HotelBookBodySchema,
   HotelContentBatchBodySchema,
   HotelContentParamsSchema,
@@ -66,6 +67,7 @@ import {
   isNeutralHotelPrebook,
   type CancelBody,
   type HotelAvailabilityInput,
+  type HotelAvailabilityMoreBody,
   type HotelBookBody,
   type HotelContentBatchBody,
   type HotelContentParams,
@@ -138,21 +140,22 @@ export class HotelsController {
     @Body(new ZodValidationPipe(HotelAvailabilityInputSchema)) body: HotelAvailabilityInput,
   ): Promise<HotelSearchEnvelope> {
     const tenantId = await this.tenant(userId);
+    return this.envelope(tenantId, this.hotels.searchAvailability(tenantId, body));
+  }
 
-    // El ajuste se resuelve en cada petición y fuera del servicio de búsqueda, como en vuelos:
-    // si algún día la búsqueda se cachea, el vendedor no puede seguir viendo la etiqueta vieja
-    // después de que el administrador la cambió. Un fallo al resolverlo responde `false`.
-    const [result, showProviderInResults, permission] = await Promise.all([
-      this.hotels.searchAvailability(tenantId, body),
-      this.disclosure.effective(tenantId),
-      this.nonRefundableRatesOrUndefined(tenantId),
-    ]);
-
-    return {
-      ...result,
-      showProviderInResults,
-      ...(permission === undefined ? {} : { nonRefundableRates: permission.effective }),
-    };
+  /**
+   * El tramo siguiente de una búsqueda por destino (docs/tbo/02 §4.4): el mismo sobre, con sólo
+   * los hoteles de ese tramo y `paging` al día. El cuerpo es `{ sessionId, page }`: la búsqueda la
+   * guardó el servidor con el primer tramo. Es otra búsqueda con precio, y cuenta en la cuota.
+   */
+  @SalesOperation()
+  @Post('availability/more')
+  async availabilityMore(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(HotelAvailabilityMoreBodySchema)) body: HotelAvailabilityMoreBody,
+  ): Promise<HotelSearchEnvelope> {
+    const tenantId = await this.tenant(userId);
+    return this.envelope(tenantId, this.hotels.searchMoreAvailability(tenantId, body));
   }
 
   /**
@@ -328,6 +331,28 @@ export class HotelsController {
     if (policy.effective === 'blocked') {
       throw new HotelNonRefundableBlockedError(DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE);
     }
+  }
+
+  /**
+   * El sobre de una búsqueda o de un tramo. El ajuste se resuelve en cada petición y fuera del
+   * servicio de búsqueda, como en vuelos: si algún día la búsqueda se cachea, el vendedor no puede
+   * seguir viendo la etiqueta vieja después de que el administrador la cambió. Un fallo al
+   * resolverlo responde `false`.
+   */
+  private async envelope(
+    tenantId: string,
+    search: Promise<HotelSearchResponse>,
+  ): Promise<HotelSearchEnvelope> {
+    const [result, showProviderInResults, permission] = await Promise.all([
+      search,
+      this.disclosure.effective(tenantId),
+      this.nonRefundableRatesOrUndefined(tenantId),
+    ]);
+    return {
+      ...result,
+      showProviderInResults,
+      ...(permission === undefined ? {} : { nonRefundableRates: permission.effective }),
+    };
   }
 
   /** El permiso para el sobre de la búsqueda: si no se puede leer, se omite y la búsqueda sigue. */
