@@ -58,6 +58,7 @@ export function AddExceptionDialog({
   const searchId = useId();
   const resultsId = useId();
   const reasonId = useId();
+  const formId = useId();
   // Elegir un tenant desmonta el buscador y "Cambiar" lo vuelve a montar: el foco va al control
   // que aparece, para no quedar en el <body> y escaparse de la trampa de foco del diálogo.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -114,9 +115,36 @@ export function AddExceptionDialog({
       onClose={close}
       title={`Agregar excepción de ${providerName}`}
       description="Aplica al tenant elegido y a toda su red, salvo a las agencias que tengan su propia excepción."
-      className="max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto"
+      className="max-w-lg"
+      footer={
+        <div className="space-y-3">
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
+            >
+              {error}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={close} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button
+              form={formId}
+              type="submit"
+              variant={copy?.destructive ? 'danger' : 'primary'}
+              disabled={saving || tenant === null || invalidReason !== undefined}
+            >
+              {saving ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
+              {saving ? 'Guardando…' : (copy?.confirmLabel ?? 'Agregar')}
+            </Button>
+          </div>
+        </div>
+      }
     >
       <form
+        id={formId}
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -230,29 +258,6 @@ export function AddExceptionDialog({
             {copy.description}
           </p>
         ) : null}
-
-        {error ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={close} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button
-            type="submit"
-            variant={copy?.destructive ? 'danger' : 'primary'}
-            disabled={saving || tenant === null || invalidReason !== undefined}
-          >
-            {saving ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
-            {saving ? 'Guardando…' : (copy?.confirmLabel ?? 'Agregar')}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );

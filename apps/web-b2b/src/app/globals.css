@@ -52,13 +52,21 @@
   --shadow-lg: 0 12px 28px oklch(0.13 0.04 250 / 0.07), 0 4px 12px oklch(0.13 0.04 250 / 0.03);
   --shadow-xl: 0 20px 40px oklch(0.13 0.04 250 / 0.12);
 
-  /* Animaciones */
-  --animate-fade-in-up: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* Animaciones.
+     Las que mueven (`transform`) van con `backwards` y nunca con `forwards` ni `both`: al terminar,
+     `forwards` deja puesto `transform: translateY(0)`, y un ancestro con transform pasa a ser el
+     marco de todo `position: fixed` de adentro. Así un modal abierto desde una página que entraba
+     con fade-in-up quedaba centrado en la página y no en la pantalla (el editor de credenciales de
+     /admin/proveedores abría fuera de la pantalla en el teléfono). `backwards` pinta el primer
+     cuadro durante el retraso y, al terminar, no deja nada: se ve igual. */
+  --animate-fade-in-up: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   --animate-orbit-glow: orbit-glow 12s ease-in-out infinite;
   /* Estas tres se usaban en carteras, cotizaciones y login pero nunca se definieron,
      así que Tailwind no generaba la utilidad y la animación no ocurría en silencio. */
   --animate-fade-in: fade-in 0.3s ease-out forwards;
-  --animate-scale-up: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-scale-up: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  /* El panel lateral de un formulario largo (components/ui/form-sheet) entra desde la derecha. */
+  --animate-sheet-in: sheet-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   --animate-spin-slow: spin 8s linear infinite;
   /* La espera de una búsqueda (vuelos, hoteles, autos): una línea que barre el aviso y tres
      mensajes que se turnan. `search-message` está pensada para TRES mensajes —cada uno visible
@@ -94,6 +102,17 @@
     to {
       opacity: 1;
       transform: scale(1);
+    }
+  }
+
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
     }
   }
 
@@ -228,6 +247,15 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) transparent;
+}
+
+/* El cuerpo con scroll de un diálogo o de un panel lateral: con cabecera y pie fijos es la única
+   zona que se desplaza, así que su barra tiene que verse. La global de arriba pinta el pulgar con
+   --color-border-strong (L 0.85 sobre blanco): en un formulario largo no se notaba que había más
+   campos abajo. Va fuera de las capas de Tailwind a propósito: la regla `*` tampoco está en una
+   capa, y una utilidad en capa pierde contra ella por mucha especificidad que tenga. */
+.scroll-panel {
+  scrollbar-color: color-mix(in oklch, var(--color-fg-subtle) 55%, transparent) transparent;
 }
 
 /* Form input base — used via className="form-input" */

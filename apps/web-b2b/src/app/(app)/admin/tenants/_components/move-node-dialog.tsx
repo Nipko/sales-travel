@@ -49,6 +49,7 @@ export function MoveNodeDialog({
   const [error, setError] = useState('');
   const groupName = useId();
   const summaryId = useId();
+  const formId = useId();
 
   const savingRef = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -82,7 +83,40 @@ export function MoveNodeDialog({
       onClose={close}
       title={`Mover ${node.name}`}
       description="Elegí el nuevo padre. El nodo se mueve con todo lo que cuelga de él."
-      className="max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto"
+      className="max-w-lg"
+      footer={
+        blocked !== undefined ? (
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={close}>
+              Cerrar
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {error ? (
+              <p
+                role="alert"
+                className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
+              >
+                {error}
+              </p>
+            ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={close} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button form={formId} type="submit" disabled={saving || target === undefined}>
+                {saving ? (
+                  <RefreshCw aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <MoveRight aria-hidden="true" />
+                )}
+                {saving ? 'Moviendo…' : 'Mover'}
+              </Button>
+            </div>
+          </div>
+        )
+      }
     >
       <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
         <span className="font-medium text-[var(--color-fg)]">Hoy:</span>{' '}
@@ -97,14 +131,10 @@ export function MoveNodeDialog({
           >
             {blocked}
           </p>
-          <div className="mt-5 flex justify-end">
-            <Button type="button" variant="secondary" onClick={close}>
-              Cerrar
-            </Button>
-          </div>
         </>
       ) : (
         <form
+          id={formId}
           onSubmit={(e) => {
             e.preventDefault();
             void confirm();
@@ -206,29 +236,6 @@ export function MoveNodeDialog({
               </ul>
             </section>
           ) : null}
-
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
-            >
-              {error}
-            </p>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={close} disabled={saving}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={saving || target === undefined}>
-              {saving ? (
-                <RefreshCw aria-hidden="true" className="animate-spin" />
-              ) : (
-                <MoveRight aria-hidden="true" />
-              )}
-              {saving ? 'Moviendo…' : 'Mover'}
-            </Button>
-          </div>
         </form>
       )}
     </Dialog>

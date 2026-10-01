@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, RefreshCw } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { useViewer } from '../../../../../components/layout/viewer-context';
 import { NodeKindPicker } from '../../../../../components/network/node-kind';
 import { Button } from '../../../../../components/ui/button';
@@ -65,6 +65,7 @@ export function CreateNodeDialog({
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState('');
+  const formId = useId();
   // Puestos e inactividad los fija sólo el superadmin; esta pantalla ya es suya, pero si alguna vez
   // la abre otro rol, los campos no aparecen y no viajan (el API respondería 403).
   const { superadmin } = useViewer();
@@ -139,9 +140,39 @@ export function CreateNodeDialog({
       onClose={close}
       title={title}
       description={description}
-      className="max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto"
+      className="max-w-lg"
+      footer={
+        <div className="space-y-3">
+          {serverError ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
+            >
+              {serverError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={close} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button form={formId} type="submit" disabled={saving}>
+              {saving ? (
+                <RefreshCw aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Plus aria-hidden="true" />
+              )}
+              {saving
+                ? 'Creando…'
+                : draft.kind === undefined
+                  ? 'Crear'
+                  : `Crear ${CREATABLE_KIND_LABEL[draft.kind].toLowerCase()}`}
+            </Button>
+          </div>
+        </div>
+      }
     >
       <form
+        id={formId}
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
@@ -319,33 +350,6 @@ export function CreateNodeDialog({
             )}
           </Field>
         </fieldset>
-
-        {serverError ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
-          >
-            {serverError}
-          </p>
-        ) : null}
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={close} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? (
-              <RefreshCw aria-hidden="true" className="animate-spin" />
-            ) : (
-              <Plus aria-hidden="true" />
-            )}
-            {saving
-              ? 'Creando…'
-              : draft.kind === undefined
-                ? 'Crear'
-                : `Crear ${CREATABLE_KIND_LABEL[draft.kind].toLowerCase()}`}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );

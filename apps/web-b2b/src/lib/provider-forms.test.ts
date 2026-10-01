@@ -5,6 +5,7 @@ import {
   accountCertainty,
   accountCertaintyNotice,
   accountConfigSummary,
+  accountDraftChanged,
   buildProviderAccountPayload,
   canOwnAccount,
   draftWarnings,
@@ -19,6 +20,7 @@ import {
   statusEnablesProvider,
   statusNotice,
   validateProviderDraft,
+  type AccountEditorDraft,
   type AccountSubmission,
   type DraftSections,
   type ProviderAccountStatus,
@@ -1129,5 +1131,66 @@ describe('TBO Holidays — nace en Sandbox y la pantalla lo explica', () => {
       'Entorno: Test (certificación)',
       `URL base: ${TBO_TEST_URL}`,
     ]);
+  });
+});
+
+describe('accountDraftChanged — cerrar el editor pierde algo', () => {
+  function opened(over: Partial<AccountEditorDraft> = {}): AccountEditorDraft {
+    return {
+      label: 'default',
+      status: 'active',
+      isInheritable: true,
+      sections: { credentials: {}, config: { environment: 'cert' } },
+      ...over,
+    };
+  }
+
+  it('recién abierto no hay nada que perder', () => {
+    expect(accountDraftChanged(sabre(), opened(), opened())).toBe(false);
+  });
+
+  it('una credencial tecleada es un cambio: no se precargan, cerrar la pierde', () => {
+    const after = opened({
+      sections: { credentials: { epr: '1234567' }, config: { environment: 'cert' } },
+    });
+    expect(accountDraftChanged(sabre(), opened(), after)).toBe(true);
+  });
+
+  it('una credencial de sólo espacios no es un cambio: no se mandaría', () => {
+    const after = opened({
+      sections: { credentials: { epr: '   ' }, config: { environment: 'cert' } },
+    });
+    expect(accountDraftChanged(sabre(), opened(), after)).toBe(false);
+  });
+
+  it('elegir en un select el valor que ya tenía por defecto no es un cambio', () => {
+    const before = opened({ sections: { credentials: {}, config: {} } });
+    const after = opened({ sections: { credentials: {}, config: { environment: 'cert' } } });
+    expect(accountDraftChanged(sabre(), before, after)).toBe(false);
+  });
+
+  it('cambiar la configuración, el estado, la herencia o la etiqueta sí lo es', () => {
+    const base = opened();
+    expect(
+      accountDraftChanged(
+        sabre(),
+        base,
+        opened({ sections: { credentials: {}, config: { environment: 'prod' } } }),
+      ),
+    ).toBe(true);
+    expect(accountDraftChanged(sabre(), base, opened({ status: 'sandbox' }))).toBe(true);
+    expect(accountDraftChanged(sabre(), base, opened({ isInheritable: false }))).toBe(true);
+    expect(accountDraftChanged(sabre(), base, opened({ label: 'otra' }))).toBe(true);
+  });
+
+  it('la etiqueta se compara normalizada, como se guarda', () => {
+    expect(accountDraftChanged(sabre(), opened(), opened({ label: '  default ' }))).toBe(false);
+  });
+
+  it('lo tecleado para otro proveedor no cuenta: no viaja en el guardado', () => {
+    const after = opened({
+      sections: { credentials: { apiKey: 'de-latam' }, config: { environment: 'cert' } },
+    });
+    expect(accountDraftChanged(sabre(), opened(), after)).toBe(false);
   });
 });

@@ -235,7 +235,7 @@ const SABRE: ProviderForm = {
       minLength: 3,
       maxLength: 4,
       placeholder: 'AB1C',
-      help: 'Dejalo vacío si el segundo PCC sólo sirve para entrar a Sabre Red CERT. Este campo queda reservado para una futura emisión real bajo un PCC distinto, operación que hoy no está habilitada.',
+      help: 'Déjalo vacío si el segundo PCC sólo sirve para entrar a Sabre Red CERT. Este campo queda reservado para una futura emisión real bajo un PCC distinto, operación que hoy no está habilitada.',
     },
   ],
   config: [
@@ -336,7 +336,7 @@ const SABRE: ProviderForm = {
       key: 'domain',
       label: 'Domain (opcional)',
       placeholder: 'AA',
-      help: 'Dejalo vacío salvo que Sabre te indique otro valor: por defecto se usa AA.',
+      help: 'Déjalo vacío salvo que Sabre te indique otro valor: por defecto se usa AA.',
     },
     {
       key: 'host',
@@ -703,6 +703,40 @@ export function buildProviderAccountPayload(
   return { credentials, config };
 }
 
+/** Lo que el editor de una cuenta tiene cargado en un momento dado. */
+export interface AccountEditorDraft {
+  /** Etiqueta en crudo, tal y como está en el estado del editor. */
+  readonly label: string;
+  readonly status: ProviderAccountStatus;
+  readonly isInheritable: boolean;
+  readonly sections: DraftSections;
+}
+
+function sameStrings(a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+
+/**
+ * ¿Cerrar el editor pierde algo? Es lo que decide si Escape o Cancelar piden confirmación.
+ *
+ * Se compara lo que se MANDARÍA y no lo tecleado: elegir en un select el valor que ya tenía por
+ * defecto, o escribir un espacio y borrarlo, no es un cambio, y pedir confirmación por eso enseña a
+ * descartar el aviso sin leerlo. Una credencial tecleada sí lo es siempre: no se precargan, así que
+ * cualquier credencial en el borrador es trabajo que se pierde al cerrar.
+ */
+export function accountDraftChanged(
+  form: ProviderForm,
+  before: AccountEditorDraft,
+  after: AccountEditorDraft,
+): boolean {
+  if (normalizeAccountLabel(before.label) !== normalizeAccountLabel(after.label)) return true;
+  if (before.status !== after.status || before.isInheritable !== after.isInheritable) return true;
+  const a = buildProviderAccountPayload(form, before.sections);
+  const b = buildProviderAccountPayload(form, after.sections);
+  return !sameStrings(a.credentials, b.credentials) || !sameStrings(a.config, b.config);
+}
+
 /* ---------- cartelería: estado y herencia ---------- */
 
 export type NoticeTone = 'warn' | 'ok' | 'muted';
@@ -1011,7 +1045,7 @@ function editMessage(
     return {
       tone: 'warn',
       title: `Con la etiqueta «${names.nextLabel}» esto deja de editar «${names.originalLabel}»`,
-      body: `El guardado va por agencia + proveedor + etiqueta, así que se crea una segunda cuenta de ${names.providerLabel} y «${names.originalLabel}» queda como está, con las credenciales que ya tenía. Para modificar «${names.originalLabel}», dejale su etiqueta.`,
+      body: `El guardado va por agencia + proveedor + etiqueta, así que se crea una segunda cuenta de ${names.providerLabel} y «${names.originalLabel}» queda como está, con las credenciales que ya tenía. Para modificar «${names.originalLabel}», déjale su etiqueta.`,
     };
   }
   return {
@@ -1284,7 +1318,7 @@ function listar(items: readonly string[]): string {
  */
 export function inheritableHelp(childCount: number): string {
   if (childCount <= 0) {
-    return 'Esta agencia todavía no tiene sub-agencias, así que hoy no cambia nada. Dejalo marcado y las que cuelgues después van a poder heredar estas credenciales si no cargan las suyas.';
+    return 'Esta agencia todavía no tiene sub-agencias, así que hoy no cambia nada. Déjalo marcado y las que cuelgues después van a poder heredar estas credenciales si no cargan las suyas.';
   }
   const sub = childCount === 1 ? 'su sub-agencia' : `sus ${childCount} sub-agencias`;
   // "pueden heredar", no "van a cotizar con": heredar es lo que se decide acá; cuál cuenta gana

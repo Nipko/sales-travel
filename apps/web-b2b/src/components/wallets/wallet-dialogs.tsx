@@ -1,7 +1,7 @@
 'use client';
 
 import { RefreshCw } from 'lucide-react';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../ui/button';
 import { Dialog } from '../ui/dialog';
 import { Field, Select, TextInput, Textarea } from '../ui/field';
@@ -54,7 +54,7 @@ import { ToneNotice } from './wallet-ui';
 
 type Submit<T> = (value: T) => Promise<string | undefined>;
 
-const DIALOG = 'max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto';
+const DIALOG = 'max-w-lg';
 
 /**
  * El marco común: título, formulario, error y botones. Mientras guarda no se cierra (ni con
@@ -93,10 +93,44 @@ function FormDialog({
   const close = useCallback(() => {
     if (!busyRef.current) onCloseRef.current();
   }, []);
+  const formId = useId();
 
   return (
-    <Dialog open onClose={close} title={title} description={description} className={DIALOG}>
+    <Dialog
+      open
+      onClose={close}
+      title={title}
+      description={description}
+      className={DIALOG}
+      footer={
+        <div className="space-y-3">
+          {error !== '' ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
+            >
+              {error}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" onClick={back ?? close} disabled={busy}>
+              {back !== undefined ? 'Volver' : 'Cancelar'}
+            </Button>
+            <Button
+              form={formId}
+              type="submit"
+              variant={destructive ? 'danger' : 'primary'}
+              disabled={busy}
+            >
+              {busy ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
+              {busy ? 'Guardando…' : submitLabel}
+            </Button>
+          </div>
+        </div>
+      }
+    >
       <form
+        id={formId}
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
@@ -105,23 +139,6 @@ function FormDialog({
         className="space-y-4"
       >
         {children}
-        {error !== '' ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/6 px-3 py-2 text-xs text-[var(--color-fg)]"
-          >
-            {error}
-          </p>
-        ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={back ?? close} disabled={busy}>
-            {back !== undefined ? 'Volver' : 'Cancelar'}
-          </Button>
-          <Button type="submit" variant={destructive ? 'danger' : 'primary'} disabled={busy}>
-            {busy ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
-            {busy ? 'Guardando…' : submitLabel}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );
