@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.6](https://github.com/Nipko/sales-travel/compare/v0.1.5...v0.1.6) (2026-10-01)
+
+
+### Features
+
+* **hotels:** ver más hoteles del destino por tramos y paginación de resultados ([fb523a4](https://github.com/Nipko/sales-travel/commit/fb523a4081cd0401327c4e1a80a2cf4b356f7d7a))
+
+
+### Bug Fixes
+
+* **web-b2b:** el cuerpo con scroll del diálogo y del panel queda posicionado ([8278540](https://github.com/Nipko/sales-travel/commit/8278540899653c8533f7544040fb0f19d550e437))
+* **web-b2b:** el final de los resultados no deja espacio en blanco y los filtros se leen enteros ([8620019](https://github.com/Nipko/sales-travel/commit/8620019945c617d5e29e29f8d2b4c18f8a2a4b8d))
+* **web-b2b:** la columna de filtros no parte el renglón con conteos de tres cifras ([a46cdcf](https://github.com/Nipko/sales-travel/commit/a46cdcffbc16db2e669637675efc7f69bffbdf5f))
+* **web-b2b:** las credenciales de proveedores en un panel con cabecera y pie fijos y un solo scroll ([fd9fa3a](https://github.com/Nipko/sales-travel/commit/fd9fa3a29251f08ddeb3fd3d4f23c811ec53a45f))
+* **web-b2b:** las credenciales de proveedores en un panel con cabecera y pie fijos y un solo scroll ([2ef785b](https://github.com/Nipko/sales-travel/commit/2ef785b00cfb6bc7aef31e1312f33e4d306e1ea6))
+* **web-b2b:** Mi Red recupera sus diálogos de credenciales tras el merge de main ([db548e2](https://github.com/Nipko/sales-travel/commit/db548e22fb2d61a8d6141e0c6e6e9c0b86930412))
+* **web-b2b:** sin franja blanca al final de los resultados y ver más hoteles por tramos ([bf146c7](https://github.com/Nipko/sales-travel/commit/bf146c7657380973c7ede6125ba5e96a55a10d89))
+
 ## [0.1.5](https://github.com/Nipko/sales-travel/compare/v0.1.4...v0.1.5) (2026-09-30)
 
 
