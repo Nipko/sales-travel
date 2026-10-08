@@ -167,21 +167,20 @@ const MONTHS_ES_SHORT = [
 ] as const;
 
 /*
-  La semana arranca el lunes y el fin de semana queda junto, a la derecha. No es una convención
-  heredada: casi todo viaje de ocio se ancla en un fin de semana, y con la semana partida entre
-  las dos puntas de la fila el vendedor tiene que leer dos veces para ver si el rango cubre uno.
+  La semana arranca el domingo, como en el calendario de pared y el del teléfono que usan en
+  Colombia, Perú y Brasil: es la grilla que el vendedor y su cliente ya tienen en la cabeza.
 */
 const WEEKDAYS_ES = [
+  'domingo',
   'lunes',
   'martes',
   'miércoles',
   'jueves',
   'viernes',
   'sábado',
-  'domingo',
 ] as const;
 
-const WEEKDAYS_ES_SHORT = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'] as const;
+const WEEKDAYS_ES_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'] as const;
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -242,9 +241,9 @@ export function daysBetween(from: IsoDate, to: IsoDate): number {
   return Math.round((utcOf(to) - utcOf(from)) / MS_PER_DAY);
 }
 
-/** Lunes = 0 … domingo = 6. */
+/** Domingo = 0 … sábado = 6. */
 export function weekdayIndex(iso: IsoDate): number {
-  return (new Date(utcOf(iso)).getUTCDay() + 6) % 7;
+  return new Date(utcOf(iso)).getUTCDay();
 }
 
 export function startOfWeek(iso: IsoDate): IsoDate {

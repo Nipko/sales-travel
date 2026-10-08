@@ -130,9 +130,9 @@ describe('mínimo: el pasado no se puede elegir, ni con el ratón ni con el tecl
     expect(focusAfterKey('2026-09-12', 'PageDown', IDA_VUELTA)).toBe('2026-10-12');
   });
 
-  it('Home y End van a los extremos de la semana, que empieza en lunes', () => {
-    expect(focusAfterKey('2026-09-16', 'Home', IDA_VUELTA)).toBe('2026-09-14');
-    expect(focusAfterKey('2026-09-16', 'End', IDA_VUELTA)).toBe('2026-09-20');
+  it('Home y End van a los extremos de la semana, que empieza en domingo', () => {
+    expect(focusAfterKey('2026-09-16', 'Home', IDA_VUELTA)).toBe('2026-09-13');
+    expect(focusAfterKey('2026-09-16', 'End', IDA_VUELTA)).toBe('2026-09-19');
   });
 
   it('clampToMin no toca lo que ya es válido', () => {
@@ -392,17 +392,17 @@ describe('calendario en español, sin depender del runtime', () => {
 });
 
 describe('la grilla del mes', () => {
-  it('empieza en lunes y deja huecos antes del día 1', () => {
+  it('empieza en domingo y deja huecos antes del día 1', () => {
     const semanas = monthMatrix(2026, 9); // 1/9/2026 es martes
 
     expect(semanas[0]).toEqual([
+      null,
       null,
       '2026-09-01',
       '2026-09-02',
       '2026-09-03',
       '2026-09-04',
       '2026-09-05',
-      '2026-09-06',
     ]);
   });
 
