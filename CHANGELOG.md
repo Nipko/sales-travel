@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/Nipko/sales-travel/compare/v0.1.6...v0.1.7) (2026-10-08)
+
+
+### Features
+
+* **web-b2b:** los calendarios empiezan la semana en domingo ([ed4e4fd](https://github.com/Nipko/sales-travel/commit/ed4e4fd9dfee9523ba73bcf3b96d69196413637a))
+
 ## [0.1.6](https://github.com/Nipko/sales-travel/compare/v0.1.5...v0.1.6) (2026-10-01)
 
 
