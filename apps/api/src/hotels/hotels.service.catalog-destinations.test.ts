@@ -491,7 +491,12 @@ describe('producción sin clave de Despegar: ausente, y la vertical sigue con TB
 
     expect(red).not.toHaveBeenCalled();
     expect(b.fetch).toHaveBeenCalledTimes(1);
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: CATALOGO_TBO.length });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: CATALOGO_TBO.length,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toMatchObject({
       status: 'unavailable',
       unavailableReason: 'no-credentials',
@@ -534,7 +539,12 @@ describe('POST /hotels/availability — una ciudad del catálogo local', () => {
     expect(cuerpoDe(b.fetch.mock.calls[0]?.[1])).toMatchObject({
       HotelCodes: CATALOGO_TBO.join(','),
     });
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: 2 });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: 2,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toMatchObject({
       status: 'skipped',
       skipReason: 'opt-in-disabled',

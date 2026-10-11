@@ -10,6 +10,7 @@ import { PricingService } from '../pricing/pricing.service.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import {
   supportsHotelPrebookContext,
+  type HotelAccountEnvironment,
   type HotelOfferInvalidation,
   type HotelPrebookWithContext,
   type HotelPriceDirection,
@@ -76,6 +77,11 @@ export interface HotelPrebookResponse {
    * La web pinta el aviso con el monto exacto y el Book exige `nonRefundableAcknowledged`.
    */
   readonly nonRefundable?: HotelNonRefundableTerms;
+  /**
+   * El entorno de la cuenta que revalidó la tarifa, si el proveedor lo declara. Con `test` el
+   * checkout avisa que la reserva no es real: no le asegura una habitación al cliente.
+   */
+  readonly providerEnvironment?: HotelAccountEnvironment;
 }
 
 const OPERATION = 'la revalidación de una tarifa de su búsqueda (se revalida con su flujo propio)';
@@ -267,6 +273,9 @@ export class HotelPrebookService {
       warnings: [...found.result.warnings],
       ...(funding === undefined ? {} : { funding }),
       ...(nonRefundable === undefined ? {} : { nonRefundable }),
+      ...(provider.accountEnvironment === undefined
+        ? {}
+        : { providerEnvironment: provider.accountEnvironment }),
     };
   }
 

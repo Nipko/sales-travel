@@ -6,6 +6,7 @@ import {
 } from '@sales-travel/canonical';
 import type { z } from '@sales-travel/validation';
 import type {
+  HotelAccountEnvironment,
   HotelOccupancyLimits,
   HotelSearchProfile,
 } from '../providers/hotel-provider.types.js';
@@ -88,6 +89,12 @@ export interface HotelProviderOutcome {
    * `status` son los de lo que respondió; `reason` dice qué faltó. Sólo presente en `true`.
    */
   readonly partial?: true;
+  /**
+   * El entorno de la cuenta con que respondió, si el proveedor lo declara. Sólo en `ok` y `empty`
+   * (también si fue `partial`): con `test`, la web avisa que sus tarifas no son habitaciones de
+   * verdad.
+   */
+  readonly accountEnvironment?: HotelAccountEnvironment;
 }
 
 /**
@@ -353,6 +360,19 @@ export function partialOutcome(
     partial: true,
     reason: outcome.reason === undefined ? reason : `${reason} ${outcome.reason}`,
   };
+}
+
+/**
+ * La parte de un proveedor con el entorno de su cuenta. Sólo si respondió con tarifas o sin ellas
+ * (`ok` o `empty`): un omitido o un caído no aporta tarifas de las que avisar.
+ */
+export function withAccountEnvironment(
+  outcome: HotelProviderOutcome,
+  environment: HotelAccountEnvironment | undefined,
+): HotelProviderOutcome {
+  if (environment === undefined) return outcome;
+  if (outcome.status !== 'ok' && outcome.status !== 'empty') return outcome;
+  return { ...outcome, accountEnvironment: environment };
 }
 
 // ───────────────────────── Contenido desde el catálogo ─────────────────────────

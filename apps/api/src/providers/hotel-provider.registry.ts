@@ -3,6 +3,8 @@ import { z } from '@sales-travel/validation';
 import {
   HOTEL_PROVIDER_FACTORIES,
   HOTEL_PROVIDER_FLAGS,
+  hasAccountEnvironment,
+  type HotelAccountEnvironment,
   type HotelOrderProviderRef,
   type HotelProviderAccountRef,
   type HotelProviderCapabilities,
@@ -70,6 +72,17 @@ function parsePolicyOverrides(raw: string): Record<string, CallPolicy> {
       return [pair.slice(0, idx).trim(), pair.slice(idx + 1).trim()] as const;
     });
   return PolicyOverridesSchema.parse(Object.fromEntries(entries));
+}
+
+/**
+ * El entorno de la cuenta con que sale el adapter, si lo declara. Va en todo proveedor resuelto
+ * —venta y post-venta— para que la web avise que una cuenta de prueba no reserva habitaciones de
+ * verdad.
+ */
+function accountEnvironmentOf(adapter: object): {
+  readonly accountEnvironment?: HotelAccountEnvironment;
+} {
+  return hasAccountEnvironment(adapter) ? { accountEnvironment: adapter.accountEnvironment } : {};
 }
 
 type HotelProviderResolutionOutcome =
@@ -215,6 +228,7 @@ export class HotelProviderRegistry {
       ...(resolved.accountOwnerTenantId === undefined
         ? {}
         : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
+      ...accountEnvironmentOf(resolved.adapter),
     };
   }
 
@@ -260,6 +274,7 @@ export class HotelProviderRegistry {
       ...(resolved.accountOwnerTenantId === undefined
         ? {}
         : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
+      ...accountEnvironmentOf(resolved.adapter),
     };
   }
 
@@ -432,6 +447,7 @@ export class HotelProviderRegistry {
         ...(resolved.accountOwnerTenantId === undefined
           ? {}
           : { accountOwnerTenantId: resolved.accountOwnerTenantId }),
+        ...accountEnvironmentOf(resolved.adapter),
       },
     };
   }
