@@ -329,6 +329,12 @@ describe('payload ATPCO', () => {
     ['fare basis en blanco', [{ fareBasisCode: '  ', segmentRefs: [0] }]],
     ['segmento fuera de la oferta', [{ fareBasisCode: 'Y1', segmentRefs: [2] }]],
     ['segmento repetido dentro del componente', [{ fareBasisCode: 'Y1', segmentRefs: [0, 0] }]],
+    // D1: texto libre que viajaría tal cual. Ninguna tarifa real lleva nueve dígitos seguidos.
+    ['fare basis con forma de PAN', [{ fareBasisCode: 'Y4111111111111111', segmentRefs: [0] }]],
+    [
+      'marca con forma de PAN',
+      [{ fareBasisCode: 'Y1', brand: { code: '4111111111111111' }, segmentRefs: [0] }],
+    ],
   ])('%s: el componente no viaja', (_caso, fareComponents) => {
     const body = payload(buildSabreGetSeatsRequest(latamOffer({ fareComponents }), criteria()));
     expect(body.fareComponents).toBeUndefined();

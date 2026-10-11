@@ -9,7 +9,9 @@ import type { FlightSearchCriteria, SearchContext } from './flight-search.port';
  * brazos. La lectura posterior a la reserva (por orden) es otro caso y no vive aquí.
  *
  * Un proveedor que no puede pintar el mapa lanza: un mapa vacío se leería como «no quedan
- * asientos», que es otra cosa.
+ * asientos», que es otra cosa. Por la misma razón, un tramo que el proveedor pinta con asientos
+ * libres pero sin ninguno vendible sale con `SeatMapSegment.displayOnly: true`, y quien lo muestre
+ * dice que la elección de asiento no está disponible, no que el avión está lleno.
  */
 export interface SeatMapPort {
   getSeatMap(offer: Offer, criteria: FlightSearchCriteria, ctx: SearchContext): Promise<SeatMap>;

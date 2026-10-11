@@ -245,15 +245,16 @@ describe('payload ATPCO (ejemplo oficial)', () => {
 
   it('ubica los dos mapas en los dos segmentos de la oferta, sin cambio de equipo', () => {
     expect(
-      map.segments.map(({ segmentRef, legIndex, changeOfGauge, cabins }) => ({
+      map.segments.map(({ segmentRef, legIndex, changeOfGauge, displayOnly, cabins }) => ({
         segmentRef,
         legIndex,
         changeOfGauge,
+        displayOnly,
         cabins: cabins.length,
       })),
     ).toEqual([
-      { segmentRef: 0, legIndex: 0, changeOfGauge: false, cabins: 1 },
-      { segmentRef: 1, legIndex: 0, changeOfGauge: false, cabins: 1 },
+      { segmentRef: 0, legIndex: 0, changeOfGauge: false, displayOnly: false, cabins: 1 },
+      { segmentRef: 1, legIndex: 0, changeOfGauge: false, displayOnly: false, cabins: 1 },
     ]);
     expect(result.droppedSeatMaps).toBe(0);
     expect(result.offerId).toBe('ih5d79946bb5lczk7mlj969ap0');
@@ -409,7 +410,9 @@ describe('NDC por offerId (ejemplo oficial)', () => {
       ndcContext(offer, {}),
     );
     expect(allSeats(orphan.seatMap).some((seat) => seat.available)).toBe(false);
-    expect(codes(orphan)).toEqual(['seat-offer-passenger-unknown']);
+    expect(codes(orphan)).toEqual(['seat-offer-passenger-unknown', 'seat-map-display-only']);
+    // 109 asientos libres y ninguno atribuible no es un avión lleno: el tramo lo dice.
+    expect(orphan.seatMap.segments[0]?.displayOnly).toBe(true);
   });
 
   it('un vuelo que no está en la oferta descarta el mapa entero', () => {
@@ -840,6 +843,53 @@ describe('ofertas de cada asiento', () => {
   });
 });
 
+describe('sólo exhibición frente a avión lleno', () => {
+  it('todos ocupados es un avión lleno: no es «sólo exhibición» ni se avisa', () => {
+    const body = minimal();
+    firstRowSeats(body).forEach((seat) => (seat['occupationStatusCode'] = 'O'));
+    const result = mapMinimal(body);
+    expect(allSeats(result.seatMap).some((seat) => seat.available)).toBe(false);
+    expect(result.seatMap.segments[0]?.displayOnly).toBe(false);
+    expect(codes(result)).toEqual([]);
+  });
+
+  it('libres pero sólo con displayOnlyItemRefIds: el tramo es de sólo exhibición', () => {
+    const body = minimal();
+    firstRowSeats(body).forEach((seat) => {
+      seat['displayOnlyItemRefIds'] = seat['offerItemRefIds'];
+      delete seat['offerItemRefIds'];
+    });
+    const result = mapMinimal(body);
+    expect(result.seatMap.segments[0]?.displayOnly).toBe(true);
+    expect(result.warnings).toEqual([
+      { code: 'seat-map-display-only', path: 'response.seatMaps.0' },
+    ]);
+    expect(SeatMapSchema.safeParse(result.seatMap).success).toBe(true);
+  });
+
+  it('libres sin ninguna oferta (la tarifa no deja elegir asiento) también', () => {
+    const body = minimal();
+    firstRowSeats(body).forEach((seat) => delete seat['offerItemRefIds']);
+    expect(mapMinimal(body).seatMap.segments[0]?.displayOnly).toBe(true);
+  });
+
+  it('un solo asiento vendible basta para que el tramo no sea de sólo exhibición', () => {
+    const body = minimal();
+    delete firstRowSeats(body)[0]!['offerItemRefIds'];
+    const result = mapMinimal(body);
+    expect(result.seatMap.segments[0]?.displayOnly).toBe(false);
+    expect(codes(result)).toEqual([]);
+  });
+
+  it('libres pero con restricción general (1) no cuentan: no hay nada que vender a nadie', () => {
+    const body = minimal();
+    const [first, second] = firstRowSeats(body);
+    addCode(first!, '1');
+    second!['occupationStatusCode'] = 'O';
+    expect(mapMinimal(body).seatMap.segments[0]?.displayOnly).toBe(false);
+  });
+});
+
 describe('layout', () => {
   it('sin cabinLayout usa columnIds y deduce los pasillos de los asientos', () => {
     const body = minimal();
@@ -1048,6 +1098,7 @@ describe('SeatMapSchema', () => {
       'dos mapas para el mismo avión del mismo segmento',
       (map) => map.segments.push(structuredClone(map.segments[0]!)),
     ],
+    ['sólo exhibición con un asiento vendible', (map) => (map.segments[0]!.displayOnly = true)],
   ])('rechaza %s', (_caso, mutate) => {
     const map = validMap();
     mutate(map);

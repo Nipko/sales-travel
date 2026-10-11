@@ -319,6 +319,7 @@ describe('SabreSeatMapAdapter — ATPCO por payload', () => {
     expect(okLog?.meta).toMatchObject({
       mode: 'payload',
       segments: 2,
+      displayOnlySegments: 0,
       droppedSeatMaps: 0,
       seats: 312,
       availableSeats: 312,
@@ -448,6 +449,34 @@ describe('SabreSeatMapAdapter — defensas', () => {
     expect(empty?.meta).toMatchObject({ warnings: { 'seat-map-segment-unmatched': 1 } });
   });
 
+  it('libres y ninguno atribuible: el tramo sale como sólo exhibición y se loguea en warn', async () => {
+    const h = wire({
+      [SABRE_GETSEATS_NDC_OFFER_PATH]: [ok(fixture('getseats-ndc-offer-id-200.json'))],
+    });
+    const offer = britishPricedOffer();
+    // Offer Price emitió otro id de pasajero que el que nombra el mapa: ninguna oferta se atribuye.
+    offer.provider.raw = {
+      ...offer.provider.raw,
+      [SABRE_RAW_KEYS.pricePassengerBindings]: [
+        {
+          pricePassengerId: 'PassengerX',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+          pricedPtc: 'ADT',
+        },
+      ],
+    };
+    const map = await h.port.getSeatMap(offer, criteria(1), CTX);
+
+    expect(map.segments.map((segment) => segment.displayOnly)).toEqual([true]);
+    expect(map.warnings).toEqual(['seat-offer-passenger-unknown', 'seat-map-display-only']);
+    const logged = h.logs.find((log) => log.message === 'sabre.seat_map.display_only');
+    expect(logged?.level).toBe('warn');
+    expect(logged?.meta).toMatchObject({ displayOnlySegments: 1, availableSeats: 0 });
+    expect(h.logs.some((log) => log.message === 'sabre.seat_map.ok')).toBe(false);
+  });
+
   it('si el PCC sólo tiene getseats v1, el error lo dice con nombre propio', async () => {
     const h = wire({
       [SABRE_GETSEATS_PAYLOAD_PATH]: [ok(fixture('getseats-payload-2pax-2seg-200.json'))],
@@ -457,5 +486,104 @@ describe('SabreSeatMapAdapter — defensas', () => {
     expect((error as SabreGetSeatsMappingError).issues[0]).toBe(
       'response.aLaCarteOffer:legacy_v1_contract',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// D1 — barrido de salida: un PAN inyectado en cualquier hoja de texto de la entrada no llega al
+// cable. Va aquí y no en `pan-egress.guard.test.ts` para no chocar con la otra línea de trabajo;
+// la regla es la misma: se miden los bytes que salen por `SabreHttpClient.postJson`.
+// ---------------------------------------------------------------------------------------------
+
+/** PAN de prueba público de la industria. No es de nadie. */
+const TEST_PAN = '4111111111111111';
+
+type LeafPath = readonly (string | number)[];
+
+function stringLeaves(value: unknown, path: LeafPath = []): LeafPath[] {
+  if (typeof value === 'string') return [path];
+  if (Array.isArray(value))
+    return value.flatMap((item, index) => stringLeaves(item, [...path, index]));
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, item]) => stringLeaves(item, [...path, key]));
+  }
+  return [];
+}
+
+function setLeaf(root: unknown, path: LeafPath, value: string): void {
+  let node = root as Record<string | number, unknown>;
+  for (const key of path.slice(0, -1)) node = node[key] as Record<string | number, unknown>;
+  node[path[path.length - 1]!] = value;
+}
+
+type Outcome = 'rejected' | 'dropped' | 'carried';
+
+/** Corre el adapter con el PAN en `path` y dice qué pasó en el cable. Nunca devuelve el valor. */
+async function sweepOne(
+  base: { offer: Offer; criteria: FlightSearchCriteria },
+  path: LeafPath,
+): Promise<Outcome> {
+  const input = structuredClone(base);
+  setLeaf(input, path, TEST_PAN);
+  const h = wire({
+    [SABRE_GETSEATS_PAYLOAD_PATH]: [ok(fixture('getseats-payload-200.json'))],
+    [SABRE_GETSEATS_NDC_OFFER_PATH]: [ok(fixture('getseats-ndc-offer-id-200.json'))],
+  });
+  try {
+    await h.adapter.getSeatMap(input.offer, input.criteria, CTX);
+  } catch {
+    // Que el mapa falle después del cable no importa aquí: se mide lo que salió.
+  }
+  if (h.calls.length === 0) return 'rejected';
+  return h.calls.some((call) => call.raw.includes(TEST_PAN)) ? 'carried' : 'dropped';
+}
+
+async function sweep(base: { offer: Offer; criteria: FlightSearchCriteria }) {
+  const outcomes = new Map<string, Outcome>();
+  for (const path of stringLeaves(base)) {
+    outcomes.set(path.join('.'), await sweepOne(base, path));
+  }
+  return outcomes;
+}
+
+/** Cada campo opcional que el builder puede mandar, relleno. */
+function maximalLatamOffer(): Offer {
+  const offer = latamOffer();
+  for (const segment of offer.itineraries!.flatMap((itinerary) => itinerary.segments)) {
+    segment.operatingCarrier = 'LA';
+    segment.operatingFlightNumber = segment.flightNumber;
+    segment.aircraft = '320';
+  }
+  offer.fareComponents = offer.fareComponents!.map((component) => ({
+    ...component,
+    brand: { code: 'EOU', name: 'LIGHT' },
+    bookingClasses: ['Y'],
+    origin: 'SCL',
+  }));
+  return offer;
+}
+
+describe('SabreSeatMapAdapter — D1: ningún PAN de la entrada llega al cable', () => {
+  it('payload: cada hoja de la oferta y los criterios se rechaza o se omite, ninguna viaja', async () => {
+    const outcomes = await sweep({ offer: maximalLatamOffer(), criteria: criteria(2, 1, 1) });
+    expect([...outcomes].filter(([, outcome]) => outcome === 'carried')).toEqual([]);
+    // El barrido no es hueco: las dos ramas que no viajan aparecen, y por las razones esperadas.
+    expect(outcomes.get('offer.itineraries.0.segments.0.carrier')).toBe('rejected');
+    expect(outcomes.get('offer.itineraries.0.segments.0.flightNumber')).toBe('rejected');
+    expect(outcomes.get('offer.fareComponents.0.fareBasisCode')).toBe('dropped');
+    expect(outcomes.get('offer.fareComponents.0.brand.code')).toBe('dropped');
+    expect(outcomes.get('offer.itineraries.0.segments.0.aircraft')).toBe('dropped');
+    expect(outcomes.size).toBeGreaterThan(30);
+  });
+
+  it('NDC: tampoco el offerId ni el binding de pasajeros sacan el PAN al cable', async () => {
+    const outcomes = await sweep({ offer: britishPricedOffer(), criteria: criteria(1) });
+    expect([...outcomes].filter(([, outcome]) => outcome === 'carried')).toEqual([]);
+    expect(outcomes.get(`offer.provider.raw.${SABRE_RAW_KEYS.priceOfferId}`)).toBe('rejected');
+    expect(
+      outcomes.get(
+        `offer.provider.raw.${SABRE_RAW_KEYS.pricePassengerBindings}.0.pricePassengerId`,
+      ),
+    ).toBe('dropped');
   });
 });

@@ -47,6 +47,11 @@ import { z } from 'zod';
  *
  * Un asiento sólo con `displayOnlyItemRefIds` no es comprable (`DisplayOnlyItem`, `:329-354`): no
  * tiene ofertas y sale como no disponible.
+ *
+ * Un mapa con asientos libres y NINGUNO vendible sale con `displayOnly: true`: es lo que se ve
+ * cuando la tarifa no deja elegir asiento, la cuenta de la agencia no está autorizada para la
+ * aerolínea (BYOC, docs/sabre/03 §4.2) o las ofertas no se atribuyen a ningún pasajero. Sin esa
+ * marca se pintaría como un avión lleno.
  */
 
 // ---------------------------------------------------------------------------
@@ -237,6 +242,11 @@ export type SabreGetSeatsWarningCode =
   | 'seat-map-duplicate'
   /** El mapa no deja ninguna cabina con filas. */
   | 'seat-map-empty'
+  /**
+   * El avión tiene asientos libres y ninguno se puede vender (sólo exhibición, sin ofertas o
+   * con ofertas que no se atribuyen a nadie). El segmento sale con `displayOnly: true`.
+   */
+  | 'seat-map-display-only'
   | 'cabin-code-unknown'
   /** Ni `cabinLayout.columns`, ni `columnIds`, ni asientos de los que deducirlas. */
   | 'cabin-columns-missing'
@@ -332,15 +342,25 @@ export function mapSabreGetSeatsResponse(
 
   const segments: SeatMapSegment[] = [];
   for (const entry of located) {
-    const cabins = mapCabins(entry, lookup, warnings);
+    const stats: CabinStats = { freeSeats: 0 };
+    const cabins = mapCabins(entry, lookup, warnings, stats);
     if (cabins.length === 0) {
       warnings.push({ code: 'seat-map-empty', path: entry.path });
       continue;
     }
+    // Asientos libres y ninguno vendible no es un avión lleno: sin esta marca el mapa se pinta
+    // todo en gris y el vendedor lee «no quedan asientos» cuando lo que pasa es que la tarifa, la
+    // cuenta o la atribución de ofertas no deja vender ninguno.
+    const sellable = cabins.some((cabin) =>
+      cabin.rows.some((row) => row.seats.some((seat) => seat.available)),
+    );
+    const displayOnly = stats.freeSeats > 0 && !sellable;
+    if (displayOnly) warnings.push({ code: 'seat-map-display-only', path: entry.path });
     segments.push({
       segmentRef: entry.segmentRef,
       legIndex: entry.legIndex,
       changeOfGauge: entry.changeOfGauge,
+      displayOnly,
       cabins,
     });
   }
@@ -609,15 +629,22 @@ function resolveOffers(
 // Cabinas, filas y asientos
 // ---------------------------------------------------------------------------
 
+/** Lo que el canónico no guarda por asiento pero el segmento necesita para su `displayOnly`. */
+interface CabinStats {
+  /** Asientos que llegan al canónico libres, operativos y sin restricción general. */
+  freeSeats: number;
+}
+
 function mapCabins(
   entry: LocatedSeatMap,
   lookup: Lookup,
   warnings: SabreGetSeatsWarning[],
+  stats: CabinStats,
 ): SeatMapCabin[] {
   const cabins: SeatMapCabin[] = [];
   (entry.node.cabinCompartments ?? []).forEach((compartment, index) => {
     const path = `${entry.path}.cabinCompartments.${String(index)}`;
-    const cabin = mapCabin(compartment, entry.node.segmentRef, lookup, path, warnings);
+    const cabin = mapCabin(compartment, entry.node.segmentRef, lookup, path, warnings, stats);
     if (cabin !== null) cabins.push(cabin);
   });
   return cabins;
@@ -629,6 +656,7 @@ function mapCabin(
   lookup: Lookup,
   path: string,
   warnings: SabreGetSeatsWarning[],
+  stats: CabinStats,
 ): SeatMapCabin | null {
   const rowsIn = compartment.seatRows ?? [];
   const layout = resolveColumns(compartment, rowsIn);
@@ -679,6 +707,7 @@ function mapCabin(
         return;
       }
       columnsTaken.add(column);
+      if (isFreeSeat(seatNode, codes)) stats.freeSeats += 1;
       seats.push(
         mapSeat({
           seatNode,
@@ -809,11 +838,7 @@ function mapSeat(input: SeatInput): Seat {
   if (codes.has(CODE.bassinet)) characteristics.push('BASSINET');
   if (codes.has(CODE.noRecline)) characteristics.push('NO_RECLINE');
 
-  const sellable =
-    seatNode.occupationStatusCode === STATUS_FREE &&
-    seatNode.isOperative !== false &&
-    !codes.has(CODE.restricted);
-  const offers = sellable ? input.offers() : [];
+  const offers = isFreeSeat(seatNode, codes) ? input.offers() : [];
 
   return {
     column,
@@ -823,6 +848,18 @@ function mapSeat(input: SeatInput): Seat {
     infantAllowed: !(exit || codes.has(CODE.noInfant)),
     offers,
   };
+}
+
+/**
+ * Libre, operativo y sin restricción general: el avión tiene ese asiento para alguien. Que se le
+ * pueda vender a uno de NUESTROS pasajeros lo deciden después sus ofertas.
+ */
+function isFreeSeat(seatNode: SeatNode, codes: ReadonlySet<string>): boolean {
+  return (
+    seatNode.occupationStatusCode === STATUS_FREE &&
+    seatNode.isOperative !== false &&
+    !codes.has(CODE.restricted)
+  );
 }
 
 function codesOf(characteristics: readonly { code: string }[] | undefined): Set<string> {

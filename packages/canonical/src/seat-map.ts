@@ -164,24 +164,47 @@ export const SeatMapCabinSchema = z
   });
 export type SeatMapCabin = z.infer<typeof SeatMapCabinSchema>;
 
-export const SeatMapSegmentSchema = z.object({
-  /**
-   * Índice sobre los segmentos de `Offer.itineraries`, aplanados en orden: el mismo eje que
-   * `FareComponent.segmentRefs`.
-   */
-  segmentRef: z.number().int().nonnegative(),
-  /**
-   * Avión dentro del segmento, base cero. Siempre 0 salvo con cambio de equipo, donde el mismo
-   * número de vuelo cambia de avión a mitad de camino y cada avión trae su propio mapa.
-   */
-  legIndex: z.number().int().nonnegative(),
-  /**
-   * El segmento cambia de avión. Quien reserve asiento en el primero tiene que reservar también
-   * en el segundo, o el pasajero queda sin asiento en la segunda mitad sin que nadie se entere.
-   */
-  changeOfGauge: z.boolean(),
-  cabins: z.array(SeatMapCabinSchema).min(1),
-});
+export const SeatMapSegmentSchema = z
+  .object({
+    /**
+     * Índice sobre los segmentos de `Offer.itineraries`, aplanados en orden: el mismo eje que
+     * `FareComponent.segmentRefs`.
+     */
+    segmentRef: z.number().int().nonnegative(),
+    /**
+     * Avión dentro del segmento, base cero. Siempre 0 salvo con cambio de equipo, donde el mismo
+     * número de vuelo cambia de avión a mitad de camino y cada avión trae su propio mapa.
+     */
+    legIndex: z.number().int().nonnegative(),
+    /**
+     * El segmento cambia de avión. Quien reserve asiento en el primero tiene que reservar también
+     * en el segundo, o el pasajero queda sin asiento en la segunda mitad sin que nadie se entere.
+     */
+    changeOfGauge: z.boolean(),
+    /**
+     * El avión tiene asientos libres pero ninguno se puede vender por este canal: la tarifa no
+     * deja elegir asiento antes del check-in, la cuenta de la agencia no está autorizada para esa
+     * aerolínea o las ofertas no se pudieron atribuir a ningún pasajero.
+     *
+     * NO es un avión lleno, y quien pinte el mapa no puede decir «no quedan asientos»: tiene que
+     * decir que la elección de asiento no está disponible. Un avión realmente lleno lleva `false`
+     * con todos sus asientos no disponibles.
+     */
+    displayOnly: z.boolean(),
+    cabins: z.array(SeatMapCabinSchema).min(1),
+  })
+  .superRefine((segment, ctx) => {
+    const sellable = segment.cabins.some((cabin) =>
+      cabin.rows.some((row) => row.seats.some((seat) => seat.available)),
+    );
+    if (segment.displayOnly && sellable) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['displayOnly'],
+        message: 'a display-only seat map cannot offer any seat',
+      });
+    }
+  });
 export type SeatMapSegment = z.infer<typeof SeatMapSegmentSchema>;
 
 export const SeatMapSchema = z

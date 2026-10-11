@@ -49,6 +49,13 @@ const FLIGHT_NUMBER = /^\d{1,4}$/;
 const LOCAL_ISO =
   /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
+/**
+ * `fareBasis` y `brandCode` son texto sin patrón en el contrato (`:650-681`): son los únicos
+ * campos del cuerpo por los que una tirada con forma de PAN llegaría al cable (D1). Ninguna tarifa
+ * ni marca real lleva nueve dígitos seguidos, así que el componente que los traiga se omite.
+ */
+const PAN_LIKE_DIGIT_RUN = /[0-9]{9,}/;
+
 const IdSchema = z.string().regex(SABRE_GETSEATS_ID_PATTERN);
 const FlightNumberSchema = z.number().int().min(1).max(9999);
 
@@ -310,7 +317,8 @@ interface PayloadFares {
  *
  * Un componente sin fare basis, con un `segmentRef` fuera de la oferta o que repite un segmento ya
  * asociado se omite entero: asociar una tarifa al segmento equivocado le hace a Sabre cotizar
- * asientos de otra tarifa.
+ * asientos de otra tarifa. También el que trae una tirada con forma de PAN en el fare basis o en
+ * la marca: es texto libre que viajaría tal cual.
  */
 function buildFareComponents(offer: Offer, segmentCount: number): PayloadFares {
   const components: PayloadFareComponent[] = [];
@@ -319,6 +327,8 @@ function buildFareComponents(offer: Offer, segmentCount: number): PayloadFares {
   for (const component of offer.fareComponents ?? []) {
     const fareBasis = component.fareBasisCode?.trim();
     if (fareBasis === undefined || fareBasis.length === 0) continue;
+    const brandCode = component.brand?.code?.trim();
+    if (PAN_LIKE_DIGIT_RUN.test(fareBasis) || PAN_LIKE_DIGIT_RUN.test(brandCode ?? '')) continue;
     const refs = component.segmentRefs;
     const unique = new Set(refs);
     if (
@@ -329,7 +339,6 @@ function buildFareComponents(offer: Offer, segmentCount: number): PayloadFares {
     }
 
     const fareComponentId = `${SABRE_GETSEATS_FARE_COMPONENT_ID_PREFIX}${String(components.length + 1)}`;
-    const brandCode = component.brand?.code?.trim();
     components.push({
       fareComponentId,
       fareBasis,

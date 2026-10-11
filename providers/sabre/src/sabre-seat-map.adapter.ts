@@ -116,12 +116,14 @@ export class SabreSeatMapAdapter implements SeatMapPort {
             warnings: [...new Set([...mapped.seatMap.warnings, 'seat-map-partial-unauthorized'])],
           };
 
+    const displayOnlySegments = seatMap.segments.filter((segment) => segment.displayOnly).length;
     const meta = {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,
       mode: plan.mode,
       segments: seatMap.segments.length,
+      displayOnlySegments,
       droppedSeatMaps: mapped.droppedSeatMaps,
       ...countSeats(seatMap),
       warnings: countSeatMapWarnings(mapped.warnings),
@@ -132,7 +134,13 @@ export class SabreSeatMapAdapter implements SeatMapPort {
       this.log('warn', 'sabre.seat_map.empty', meta);
       throw new SabreSeatMapEmptyError(mapped.droppedSeatMaps);
     }
-    this.log('debug', 'sabre.seat_map.ok', meta);
+    // Un tramo con asientos libres y ninguno vendible puede ser la tarifa, pero también una cuenta
+    // sin autorización o ids de pasajero que no casan: tiene que verse en el log sin subir a debug.
+    this.log(
+      displayOnlySegments > 0 ? 'warn' : 'debug',
+      displayOnlySegments > 0 ? 'sabre.seat_map.display_only' : 'sabre.seat_map.ok',
+      meta,
+    );
 
     return {
       seatMap,
