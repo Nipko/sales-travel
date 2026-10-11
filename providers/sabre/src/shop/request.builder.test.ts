@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import { SABRE_HOSTS, type SabreConfig } from '../config';
@@ -63,6 +65,58 @@ function collectValues(node: unknown, key: string): string[] {
   return entries.flatMap(([k, v]) =>
     k === key && typeof v === 'string' ? [v] : collectValues(v, key),
   );
+}
+
+/** Sube hasta la raíz del monorepo: vitest puede arrancar desde la raíz o desde el paquete. */
+function findRepoRoot(): string {
+  let dir = process.cwd();
+  for (;;) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error('no se encontró la raíz del monorepo');
+    dir = parent;
+  }
+}
+
+/**
+ * Fuentes de `TPA_Extensions.DataSources` y su `enum`, leídas de `bargain-finder-max-v5.yml`
+ * (`:6237-6262`) sin cargar un parser de YAML de 3,9 MB. El bloque es plano y de indentación fija,
+ * y `spec-manifest.test.ts` ya vigila que el `.yml` no cambie por debajo.
+ */
+function specDataSources(): ReadonlyMap<string, readonly string[]> {
+  const spec = readFileSync(
+    join(findRepoRoot(), 'docs', 'sabre', 'evidence', 'specs', 'bargain-finder-max-v5.yml'),
+    'utf8',
+  ).split(/\r?\n/);
+  const header = '    OTA_AirLowFareSearchRQ.TravelPreferences.TPA_Extensions.DataSources:';
+  const start = spec.findIndex((line) => line === header);
+  if (start < 0) throw new Error('no se encontró DataSources en el contrato de BFM v5');
+
+  const sources = new Map<string, string[]>();
+  let current: string[] | undefined;
+  let insideEnum = false;
+  for (const line of spec.slice(start + 1)) {
+    if (/^ {4}\S/.test(line)) break;
+    const property = /^ {8}([A-Za-z]+):\s*$/.exec(line);
+    if (property?.[1] !== undefined) {
+      current = [];
+      sources.set(property[1], current);
+      insideEnum = false;
+      continue;
+    }
+    if (/^ {10}enum:\s*$/.test(line)) {
+      insideEnum = true;
+      continue;
+    }
+    const value = /^ {12}- (.+)$/.exec(line);
+    if (insideEnum && current !== undefined && value?.[1] !== undefined) {
+      current.push(value[1].trim());
+      continue;
+    }
+    insideEnum = false;
+  }
+  if (sources.size === 0) throw new Error('DataSources sin propiedades en el contrato');
+  return sources;
 }
 
 describe('versión del servicio', () => {
@@ -250,6 +304,32 @@ describe('DataSources: ATPCO siempre, NDC sólo si la cuenta lo habilita, LCC fu
     expect(conNdc.TPA_Extensions).toEqual(sinNdc.TPA_Extensions);
     expect(conNdc.TravelerInfoSummary).toEqual(sinNdc.TravelerInfoSummary);
     expect(conNdc.POS).toEqual(sinNdc.POS);
+  });
+
+  it.each([
+    ['apagado por defecto', {}],
+    ['encendido por cuenta', { ndcContent: true }],
+  ] as const)(
+    'con NDC %s, cada fuente y cada valor existen en el contrato congelado',
+    (_caso, options) => {
+      // `Disable` en NDC es un valor que este builder nunca había mandado. El enum sale del `.yml`
+      // y no de memoria: una errata (`Disabled`) no la rechaza nadie hasta que Sabre responde.
+      const contrato = specDataSources();
+      const enviadas = build({}, {}, options).TravelPreferences.TPA_Extensions.DataSources;
+
+      expect(Object.keys(enviadas).sort()).toEqual([...contrato.keys()].sort());
+      for (const [fuente, valor] of Object.entries(enviadas)) {
+        expect(contrato.get(fuente)).toContain(valor);
+      }
+    },
+  );
+
+  it('el contrato declara las tres fuentes con Enable|Disable', () => {
+    expect(Object.fromEntries(specDataSources())).toEqual({
+      ATPCO: ['Enable', 'Disable'],
+      LCC: ['Enable', 'Disable'],
+      NDC: ['Enable', 'Disable'],
+    });
   });
 
   it('PreferNDCSourceOnTie va activo por defecto y es configurable', () => {
