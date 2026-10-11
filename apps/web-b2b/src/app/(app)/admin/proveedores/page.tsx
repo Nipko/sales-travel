@@ -480,8 +480,9 @@ export default function ProveedoresPage() {
           </strong>{' '}
           Las credenciales se cifran con estándar AES-GCM (32 bytes) y nunca se transmiten en claro
           al navegador. Cuando una cuenta se encuentra en estado{' '}
-          <strong className="text-emerald-700">Activo</strong>, el motor de cotización la incluye
-          automáticamente en cada búsqueda en paralelo.
+          <strong className="text-emerald-700">Activo</strong>, el motor de cotización la incluye en
+          cada búsqueda en paralelo, siempre que la plataforma tenga habilitado ese proveedor para
+          la agencia.
         </div>
       </div>
 

@@ -104,6 +104,7 @@ d('0080: Sabre apagado por defecto', () => {
 
   it('aplicada dos veces deja una sola fila global apagada, sin autor, y un solo evento', async () => {
     await antesDe0080(async (c) => {
+      const plataforma = await platformRootId(c);
       const eventosAntes = await eventos(c);
 
       await c.query(migracion);
@@ -115,13 +116,19 @@ d('0080: Sabre apagado por defecto', () => {
       expect(filas[0]?.reason).toContain('certificación');
       expect(await eventos(c)).toBe(eventosAntes + 1);
 
-      const { rows } = await c.query<{ actor_user_id: string | null; payload: unknown }>(
-        `SELECT actor_user_id, payload FROM domain_events
+      const { rows } = await c.query<{
+        tenant_id: string | null;
+        actor_user_id: string | null;
+        payload: unknown;
+      }>(
+        `SELECT tenant_id, actor_user_id, payload FROM domain_events
           WHERE aggregate_type = 'provider_enablement' AND aggregate_id = $1
             AND payload->>'source' = $2
           ORDER BY occurred_at DESC LIMIT 1`,
         [SABRE_PROVIDER_CODE, ORIGEN],
       );
+      // En la auditoría de la red de la plataforma, como los cambios que hace el superadmin.
+      expect(rows[0]?.tenant_id).toBe(plataforma);
       expect(rows[0]?.actor_user_id).toBeNull();
       expect(rows[0]?.payload).toEqual({
         providerCode: SABRE_PROVIDER_CODE,

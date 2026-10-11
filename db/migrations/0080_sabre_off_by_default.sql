@@ -26,7 +26,10 @@
 -- `updated_by` queda en NULL porque lo escribe un proceso, no una persona, igual que el seed del
 -- stack de certificación (tools/seed-tbo-cert-tenant). El rastro queda en `domain_events` con el
 -- mismo tipo que escribe la API, sin actor y con la migración como origen. Sólo si la fila se
--- insertó: una corrida que no cambia nada no deja evento.
+-- insertó: una corrida que no cambia nada no deja evento. Va al tenant de la plataforma, como los
+-- que escribe la API (ProviderEnablementService: el tenant del superadmin), para que se vea en la
+-- auditoría de la red de Planetour; un `tenant_id` NULL no lo lee nadie desde el panel (0029). En
+-- una base sin raíz `platform` (una base nueva) queda en NULL.
 --
 -- La post-venta de órdenes de Sabre ya hechas no se corta: el registry resuelve la post-venta sin
 -- mirar la habilitación (`FlightProviderRegistry.byCode`). Lo que se corta es la búsqueda (Sabre
@@ -45,7 +48,8 @@ WITH inserted AS (
 )
 INSERT INTO domain_events (tenant_id, actor_user_id, event_type, aggregate_type, aggregate_id, payload)
 SELECT
-  NULL,
+  -- 0050 garantiza una sola raíz `platform` (uq_tenants_single_platform): a lo sumo una fila.
+  (SELECT t.id FROM tenants t WHERE t.tenant_type = 'platform'),
   NULL,
   'platform.provider_enablement.updated',
   'provider_enablement',
