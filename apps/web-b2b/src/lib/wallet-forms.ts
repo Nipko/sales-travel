@@ -524,13 +524,32 @@ function reportLines(report: DepositReport): SummaryLine[] {
   ];
 }
 
-/** Aprobar un depósito informado: acredita ese monto en esa cartera, una sola vez. */
-export function approveReportSummary(report: DepositReport, nodeName: string): ActionSummary {
+/**
+ * Aprobar un depósito informado: acredita ese monto en esa cartera, una sola vez.
+ *
+ * `otherFinancier`: el nodo que financia a la agencia cuando no es quien aprueba (el superadmin
+ * aprobando desde la cola de la plataforma lo que financia un consolidador). El dinero llegó a la
+ * cuenta de ese nodo, no a la de quien aprueba.
+ */
+export function approveReportSummary(
+  report: DepositReport,
+  nodeName: string,
+  otherFinancier?: string,
+): ActionSummary {
   const amount = formatMinor(report.amountMinor, report.currency, report.exponent);
+  const credit = `Al aprobarlo se acreditan ${amount} en la cartera ${report.currency} de ${nodeName}.`;
   return {
     title: 'Aprobar el depósito informado',
-    description: `Verificá que el dinero llegó a tu cuenta. Al aprobarlo se acreditan ${amount} en la cartera ${report.currency} de ${nodeName}.`,
+    description:
+      otherFinancier === undefined
+        ? `Verifica que el dinero llegó a tu cuenta. ${credit}`
+        : `Verifica con ${otherFinancier} que el dinero llegó a su cuenta. ${credit}`,
     lines: reportLines(report),
+    ...(otherFinancier === undefined
+      ? {}
+      : {
+          warning: `A ${nodeName} la financia ${otherFinancier}: el dinero llegó a su cuenta, no a la tuya. Apruébalo sólo si ${otherFinancier} te confirmó que lo recibió.`,
+        }),
     confirmLabel: `Aprobar y acreditar ${amount}`,
     destructive: false,
   };

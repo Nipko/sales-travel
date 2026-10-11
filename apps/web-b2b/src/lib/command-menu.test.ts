@@ -86,7 +86,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
       (s) => s.label,
     );
 
-  it('un vendedor: sin Administración ni Super Admin', () => {
+  it('un vendedor: sin Administración ni Plataforma', () => {
     expect(labels('vendedor')).toEqual(['Operaciones', 'Gestión', 'Mi cuenta']);
   });
 
@@ -101,7 +101,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
 
   it('el superadmin ve todo, pero sin las pantallas de venta', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
-    expect(sections.map((s) => s.label)).toContain('Super Admin');
+    expect(sections.map((s) => s.label)).toContain('Plataforma');
     const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
     expect(operations).not.toContain('/hoteles');
     expect(operations).toContain('/reservas');
