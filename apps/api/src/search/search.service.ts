@@ -114,7 +114,7 @@ function splitByCurrency(
  */
 function currencyMismatchReason(rejected: readonly Offer[], expected: string): string {
   const devueltas = [...new Set(rejected.map((o) => o.total.currency))].sort().join(', ');
-  return `devolvió tarifas en ${devueltas} y esta agencia vende en ${expected}: no son cotizables. Revisá el punto de venta del proveedor en Mi Red → Credenciales.`;
+  return `devolvió tarifas en ${devueltas} y esta agencia vende en ${expected}: no son cotizables. Revisa el punto de venta del proveedor en Mi Red → Credenciales.`;
 }
 
 /**

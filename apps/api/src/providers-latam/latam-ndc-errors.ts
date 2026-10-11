@@ -22,10 +22,10 @@ export function humanizeLatamError(status: number, body: string): string {
   const m = detail.toLowerCase();
 
   if (status === 0) {
-    return 'No pudimos conectar con LATAM. Probá de nuevo en unos segundos.';
+    return 'No pudimos conectar con LATAM. Prueba de nuevo en unos segundos.';
   }
   if (status >= 500) {
-    return 'LATAM tuvo un problema interno. Probá de nuevo en unos minutos.';
+    return 'LATAM tuvo un problema interno. Prueba de nuevo en unos minutos.';
   }
 
   // Credenciales / token (incluye config faltante apiKey/apiSecret/agencyName y oauth 401/403).
@@ -40,16 +40,16 @@ export function humanizeLatamError(status: number, body: string): string {
     m.includes('required') ||
     m.includes('token')
   ) {
-    return 'Las credenciales de LATAM (API key/secret/agencia) son inválidas o faltan. Verificá en Mi Red → Credenciales → LATAM NDC.';
+    return 'Las credenciales de LATAM (API key/secret/agencia) son inválidas o faltan. Verifícalas en Mi Red → Credenciales → LATAM NDC.';
   }
 
   // Falta Travel Agent ID (mismo caso que el front maneja para operaciones de orden).
   if (m.includes('missing agent') || m.includes('403111009') || m.includes('travel agent')) {
-    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cargalo en Mi Red → Credenciales → LATAM NDC y reintentá.';
+    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cárgalo en Mi Red → Credenciales → LATAM NDC y reintenta.';
   }
 
   if (detail && detail.length <= 160) {
     return `LATAM rechazó la operación: ${detail}`;
   }
-  return 'No pudimos procesar la solicitud con LATAM. Revisá los datos e intentá nuevamente.';
+  return 'No pudimos procesar la solicitud con LATAM. Revisa los datos e inténtalo nuevamente.';
 }

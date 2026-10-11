@@ -111,9 +111,9 @@ export function notSentMessage(detail: string): string {
   if (/contactInfo\.phones/.test(detail)) partes.add('teléfono de contacto');
   if (/contactInfo\.emails/.test(detail)) partes.add('email de contacto');
   if (partes.size === 0) {
-    return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalidá el precio y volvé a intentar.';
+    return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalida el precio y vuelve a intentar.';
   }
-  return `La reserva no se envió a la aerolínea. Revisá ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
+  return `La reserva no se envió a la aerolínea. Revisa ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
 }
 
 /**
@@ -650,7 +650,7 @@ export class OrdersService {
     const revalidatedExpiry = Date.parse(checked.offer.expiresAt);
     if (!Number.isFinite(revalidatedExpiry) || revalidatedExpiry <= Date.now()) {
       throw new ConflictException(
-        'La oferta revalidada ya venció o no tiene una vigencia válida. Volvé a buscar antes de reservar.',
+        'La oferta revalidada ya venció o no tiene una vigencia válida. Vuelve a buscar antes de reservar.',
       );
     }
 
@@ -662,8 +662,8 @@ export class OrdersService {
     if (checked.priceChanged || changedMoney || changedFare) {
       throw new ConflictException(
         changedFare
-          ? 'La familia o la base tarifaria cambió. Revalidá la oferta y aceptá la nueva opción antes de reservar.'
-          : 'El precio cambió. Revalidá la oferta y aceptá el nuevo precio antes de reservar.',
+          ? 'La familia o la base tarifaria cambió. Revalida la oferta y acepta la nueva opción antes de reservar.'
+          : 'El precio cambió. Revalida la oferta y acepta el nuevo precio antes de reservar.',
       );
     }
 
@@ -1718,7 +1718,7 @@ export class OrdersService {
             ? 'La cancelación anterior quedó sin verificar. No se puede enviar otra cancelación hasta conciliar el estado con el proveedor.'
             : policy.retryable
               ? 'La cancelación anterior sólo puede continuarse desde su operación de reintento.'
-              : 'La cancelación anterior no es reintentable. Revisá el motivo antes de continuar.',
+              : 'La cancelación anterior no es reintentable. Revisa el motivo antes de continuar.',
         );
       }
       if (previous.status === 'pending') {

@@ -26,7 +26,6 @@ import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
-import type { PaymentData } from './payment-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
 import type { Offer } from '../actions';
 import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
@@ -312,7 +311,6 @@ export default function QuotationDetailPage() {
       countryDialingCode: string;
       areaCode: string;
     },
-    payment?: PaymentData,
   ) {
     if (!quotation) return;
     if (!canReserveAfterPriceCheck(priceStatus, verifying)) {
@@ -324,16 +322,14 @@ export default function QuotationDetailPage() {
       });
       return;
     }
-    const body: Record<string, unknown> = {
+    // Nunca lleva `payment`: createOrder no cobra y el API rechaza el campo (D1).
+    const body = {
       offer: quotation.selectedOffer,
       searchCriteria: quotation.searchCriteria,
       passengers,
       contactInfo,
       quotationId: quotation.id,
     };
-    if (payment) {
-      body.payment = payment;
-    }
     let res: Response;
     try {
       res = await fetch('/api/orders', {
@@ -441,7 +437,7 @@ export default function QuotationDetailPage() {
     } catch {
       setPriceStatus({
         kind: 'error',
-        message: 'No se pudo conectar para revalidar la tarifa. Intentá de nuevo.',
+        message: 'No se pudo conectar para revalidar la tarifa. Inténtalo de nuevo.',
       });
     } finally {
       setVerifying(false);
@@ -1066,8 +1062,6 @@ export default function QuotationDetailPage() {
         <div className="mt-5">
           <PassengerForm
             paxCount={searchCriteria.paxCount}
-            totalAmountMinor={selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor}
-            currency={selectedOffer.total.currency}
             customerName={customerName || undefined}
             contactEmail={customerEmail || undefined}
             contactPhone={customerPhone || undefined}

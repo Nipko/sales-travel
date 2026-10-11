@@ -103,12 +103,12 @@ export function quotationEmailHtml(input: {
         <span style="font-size:24px;font-weight:800;color:#18181b">${esc(price)}</span>
       </td></tr>
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">La tarifa está sujeta a disponibilidad y puede cambiar. Respondé este correo para confirmar tu reserva.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">La tarifa está sujeta a disponibilidad y puede cambiar. Responde este correo para confirmar tu reserva.</p>`;
 
   return {
     subject: `Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
     html: layout('Cotización de vuelo', body, input.brand),
-    text: `Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Respondé para reservar.`,
+    text: `Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Responde para reservar.`,
   };
 }
 
@@ -166,7 +166,7 @@ export function orderConfirmationEmailHtml(input: {
       ${paxNames ? row('Pasajeros', paxNames) : ''}
       ${row('Total', price)}
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guardá este correo. Para cambios o consultas, respondé a tu agencia.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guarda este correo. Para cambios o consultas, responde a tu agencia.</p>`;
 
   return {
     subject: `${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
@@ -284,7 +284,7 @@ export function hotelOrderConfirmationEmailHtml(input: {
       ${row('Total', price)}
       ${row('Cancelación', nonRefundable ? 'No reembolsable' : 'Según la política de la reserva')}
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guardá este correo. Para cambios o consultas, respondé a tu agencia.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guarda este correo. Para cambios o consultas, responde a tu agencia.</p>`;
 
   const lines = [
     `Reserva de hotel #${input.orderNumber}${input.locator ? ` · Localizador ${input.locator}` : ''}`,

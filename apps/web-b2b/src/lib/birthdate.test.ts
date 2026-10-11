@@ -98,7 +98,7 @@ describe('birthdateIssue: no regaña a nadie por ir a mitad de camino', () => {
 
   it('cuando está completa y mal, dice por qué', () => {
     expect(birthdateIssue('31/02/1990', HOY)).toBe('Esa fecha no existe.');
-    expect(birthdateIssue('01/01/1800', HOY)).toBe('Revisá el año.');
+    expect(birthdateIssue('01/01/1800', HOY)).toBe('Revisa el año.');
     expect(birthdateIssue('28/08/2026', HOY)).toBe('La fecha de nacimiento no puede ser futura.');
   });
 

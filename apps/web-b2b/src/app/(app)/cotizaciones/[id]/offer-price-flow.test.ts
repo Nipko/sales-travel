@@ -170,6 +170,8 @@ describe('reemplazo y compuerta de reserva', () => {
     for (const state of states) expect(canReserveAfterPriceCheck(state, false)).toBe(false);
     expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, false)).toBe(true);
     expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, true)).toBe(false);
-    expect(reservationGateMessage(null, false)).toContain('Verificá');
+    expect(reservationGateMessage(null, false)).toBe(
+      'Verifica el precio para habilitar la reserva.',
+    );
   });
 });

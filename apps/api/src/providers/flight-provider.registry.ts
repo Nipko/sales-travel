@@ -261,7 +261,7 @@ export class FlightProviderRegistry {
           absence: {
             code: factory.code,
             reason: 'incomplete-account',
-            detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Completala en Mi Red → Credenciales.`,
+            detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Complétala en Mi Red → Credenciales.`,
           },
         };
       }
@@ -301,7 +301,7 @@ export class FlightProviderRegistry {
       code: factory.code,
       reason: 'no-credentials',
       detail:
-        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
+        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
     };
   }
 }

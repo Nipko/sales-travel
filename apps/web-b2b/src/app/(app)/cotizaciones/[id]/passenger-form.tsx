@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
-import { PaymentForm, type PaymentData } from './payment-form';
 import { cn } from '../../../../lib/cn';
 import { splitFullName } from '../../../../lib/full-name';
 import {
@@ -49,12 +48,8 @@ interface ContactInfo {
   areaCode: string;
 }
 
-type PaymentMode = 'bnpl' | 'pay_now';
-
 interface PassengerFormProps {
   paxCount: PaxCount;
-  totalAmountMinor: number;
-  currency: string;
   /** Cliente/contacto único (vive en la página). Se usa como contacto de la reserva. */
   customerName?: string;
   contactEmail?: string;
@@ -62,13 +57,7 @@ interface PassengerFormProps {
   /** La reserva se habilita únicamente tras revalidar (y aceptar, si cambió el precio). */
   disabled?: boolean;
   disabledReason?: string;
-  /** Sólo debe activarse cuando el backend realmente cobra y confirma la emisión. */
-  paymentSupported?: boolean;
-  onSubmit: (
-    passengers: Passenger[],
-    contactInfo: ContactInfo,
-    payment?: PaymentData,
-  ) => Promise<void>;
+  onSubmit: (passengers: Passenger[], contactInfo: ContactInfo) => Promise<void>;
 }
 
 export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
@@ -194,19 +183,14 @@ function passengerLabel(pax: Passenger): string {
 
 export function PassengerForm({
   paxCount,
-  totalAmountMinor,
-  currency,
   customerName,
   contactEmail,
   contactPhone,
   disabled = false,
   disabledReason,
-  paymentSupported = false,
   onSubmit,
 }: PassengerFormProps) {
   const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('bnpl');
-  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // `attempted` activa el marcado de errores recién cuando el usuario intenta reservar.
@@ -306,9 +290,8 @@ export function PassengerForm({
     if (!phone) m.push('Teléfono de contacto (en "Cliente y contacto").');
     for (const p of passengers) {
       const issues = paxIssues(p);
-      if (issues.length) m.push(`${passengerLabel(p)}: completá ${issues.join(', ')}.`);
+      if (issues.length) m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.`);
     }
-    if (paymentMode === 'pay_now' && !paymentData) m.push('Completá los datos de pago.');
     return m;
   }
 
@@ -327,11 +310,7 @@ export function PassengerForm({
         countryDialingCode: '57',
         areaCode: '1',
       };
-      await onSubmit(
-        passengers.map(sinCamposEnBlanco),
-        contactInfo,
-        paymentMode === 'pay_now' ? (paymentData ?? undefined) : undefined,
-      );
+      await onSubmit(passengers.map(sinCamposEnBlanco), contactInfo);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear la reserva');
     } finally {
@@ -342,7 +321,7 @@ export function PassengerForm({
   return (
     <Card>
       <CardContent className="relative p-5">
-        {submitting && <BookingOverlay payNow={paymentMode === 'pay_now'} />}
+        {submitting && <BookingOverlay />}
         {disabled && disabledReason && (
           <div
             role="alert"
@@ -572,66 +551,29 @@ export function PassengerForm({
             })}
           </div>
 
-          {/* Payment mode selector */}
-          <div className="mt-6 border-t border-[var(--color-border)] pt-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Wallet className="size-4 text-[var(--color-primary)]" />
-              <h3 className="text-sm font-semibold text-[var(--color-fg)]">Método de pago</h3>
+          {/*
+            Sin cobro en este paso, y sin un solo campo de tarjeta: la reserva sale sin forma de
+            pago y el API rechaza `payment` en createOrder. Un formulario de tarjeta aquí sólo
+            serviría para que un PAN llegue a nuestro servidor (D1), que es justo lo que no se hace.
+          */}
+          <section
+            aria-labelledby="checkout-pago"
+            className="mt-6 border-t border-[var(--color-border)] pt-5"
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <Wallet className="size-4 text-[var(--color-primary)]" aria-hidden="true" />
+              <h3 id="checkout-pago" className="text-sm font-semibold text-[var(--color-fg)]">
+                Pago y emisión
+              </h3>
             </div>
-
-            <div className={cn('mb-4 grid gap-2', paymentSupported && 'grid-cols-2')}>
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentMode('bnpl');
-                  setPaymentData(null);
-                }}
-                className={cn(
-                  'rounded-lg border px-4 py-3 text-left transition-all',
-                  paymentMode === 'bnpl'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-                )}
-              >
-                <p className="text-xs font-medium text-[var(--color-fg)]">Reservar sin pago</p>
-                <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
-                  Genera PNR, pagar después
-                </p>
-              </button>
-              {paymentSupported && (
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('pay_now')}
-                  className={cn(
-                    'rounded-lg border px-4 py-3 text-left transition-all',
-                    paymentMode === 'pay_now'
-                      ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-2 ring-[var(--color-primary)]/20'
-                      : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]',
-                  )}
-                >
-                  <p className="text-xs font-medium text-[var(--color-fg)]">Pagar ahora</p>
-                  <p className="mt-0.5 text-[10px] text-[var(--color-fg-muted)]">
-                    Tarjeta de crédito
-                  </p>
-                </button>
-              )}
-            </div>
-
-            {!paymentSupported && (
-              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                Esta integración crea la reserva sin cobrar. Pago y emisión sólo se habilitarán
-                cuando el proveedor confirme esas operaciones en línea.
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3">
+              <p className="text-xs font-medium text-[var(--color-fg)]">Reserva sin cobro</p>
+              <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
+                Se crea el PNR sin cobrar nada. El pago y la emisión se hacen después desde
+                Reservas, cuando el proveedor los permite.
               </p>
-            )}
-
-            {paymentSupported && paymentMode === 'pay_now' && (
-              <PaymentForm
-                totalAmountMinor={totalAmountMinor}
-                currency={currency}
-                onPaymentChange={setPaymentData}
-              />
-            )}
-          </div>
+            </div>
+          </section>
 
           {/* Resumen de validación: qué falta, en claro */}
           {attempted && problems.length > 0 && (
@@ -663,11 +605,7 @@ export function PassengerForm({
               className="gap-2"
             >
               <Plane className="size-4" />
-              {submitting
-                ? 'Creando reserva…'
-                : paymentMode === 'pay_now'
-                  ? 'Pagar y crear reserva'
-                  : 'Crear reserva (BNPL)'}
+              {submitting ? 'Creando reserva…' : 'Crear reserva'}
             </Button>
           </div>
         </fieldset>
@@ -677,7 +615,7 @@ export function PassengerForm({
 }
 
 /** Overlay que bloquea el formulario mientras se crea la reserva (no editar a mitad del proceso). */
-function BookingOverlay({ payNow }: { payNow: boolean }) {
+function BookingOverlay() {
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-[var(--color-surface)]/80 backdrop-blur-sm">
       <div className="relative flex size-14 items-center justify-center">
@@ -685,9 +623,7 @@ function BookingOverlay({ payNow }: { payNow: boolean }) {
         <span className="absolute size-11 animate-spin rounded-full border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)]" />
         <Plane className="size-5 text-[var(--color-primary)]" />
       </div>
-      <p className="text-sm font-semibold text-[var(--color-fg)]">
-        {payNow ? 'Procesando pago y reserva…' : 'Creando tu reserva…'}
-      </p>
+      <p className="text-sm font-semibold text-[var(--color-fg)]">Creando tu reserva…</p>
       <p className="text-xs text-[var(--color-fg-muted)]">
         Confirmando con la aerolínea. No cierres ni recargues esta ventana.
       </p>

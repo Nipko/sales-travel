@@ -82,7 +82,7 @@ export function birthdateIssue(input: string, hoyIso: string): string | null {
   const mes = Number(digits.slice(2, 4));
   const anio = Number(digits.slice(4, 8));
 
-  if (anio < 1900) return 'Revisá el año.';
+  if (anio < 1900) return 'Revisa el año.';
   if (!esFechaReal(anio, mes, dia)) return 'Esa fecha no existe.';
   if (parseBirthdate(input, hoyIso) === null) return 'La fecha de nacimiento no puede ser futura.';
   return null;
