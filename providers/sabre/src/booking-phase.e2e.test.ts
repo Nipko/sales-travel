@@ -1329,9 +1329,14 @@ describe('PII: el cuerpo de reserva no sale por el log', () => {
     expect(at(outcome.providerRaw, 'issues.0.type')).toBe('UNABLE_TO_BOOK_SEAT');
   });
 
-  it('el eco del request dentro de un rechazo no saca nombres, fechas ni documentos', async () => {
+  it('el eco del request dentro de un rechazo no saca nombres, fechas, documentos ni contacto', async () => {
     // `CreateBookingResponse.request` es una copia íntegra del payload enviado (`:827`). Si el sobre
     // se rechaza, ese eco es lo que alimenta `SabreApiError`.
+    //
+    // El correo y el teléfono van con las claves PLURALES del contrato —`contactInfo.emails[]`,
+    // `travelers[].emails[]`, `travelers[].phones[].number`—, que son las que emite el builder.
+    // Hasta que `PII_KEYS` aprendió el plural, este mismo rechazo los publicaba en claro en
+    // `.message` y `.body`; quitar `emails`/`phones` de `redaction.ts` pone este test en rojo.
     const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoing()] });
 
     const error = await harness.create
@@ -1341,39 +1346,51 @@ describe('PII: el cuerpo de reserva no sale por el log', () => {
 
     expect(error).toBeInstanceOf(SabreApiError);
     const api = error as SabreApiError;
-    for (const value of [PII.givenName, PII.surname, PII.birthdate, PII.document]) {
+    for (const value of [
+      PII.givenName,
+      PII.surname,
+      PII.birthdate,
+      PII.document,
+      PII.email,
+      ECHOED_PHONE,
+    ]) {
       expect(api.message).not.toContain(value);
       expect(api.body).not.toContain(value);
     }
   });
 
-  it('HALLAZGO ABIERTO: las claves PLURALES del contrato (emails/phones) NO se redactan', async () => {
-    // ⚠️ Este test fija el comportamiento ACTUAL, que es un defecto REPORTADO, no un invariante que
-    // se quiera conservar. `redaction.ts` conoce `email`/`phone` en singular, pero los nombres que
-    // usa el contrato —y que este propio ACL construye— son `contactInfo.emails[]`,
-    // `travelers[].emails[]` y `travelers[].phones[].number`. Como `createBooking` y `getBooking`
-    // hacen eco de la request, un rechazo mete el correo y el teléfono del pasajero en
-    // `SabreApiError.message` y en `.body`.
-    //
-    // Cuando se cierre el hueco en `redaction.ts`, este test se pondrá rojo: hay que invertir las
-    // dos aserciones a `not.toContain` y moverlas al test de arriba, que es donde pertenecen.
-    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoing()] });
+  it('el contacto POR PASAJERO (`travelers[].emails[]`, `phones[].number`) tampoco sale', async () => {
+    // Cuerpo aparte, y corto, a propósito: el resumen del error tiene presupuesto de 300 caracteres
+    // y un pasajero de más al final del eco caería FUERA por truncado. Ahí el `not.toContain`
+    // pasaría por el corte, no por la redacción, y el test no probaría nada.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoingTravelerContact()] });
 
     const error = await harness.create
       .createBooking(orderRequest(shopOffer()), CTX)
       .then(() => null)
       .catch((caught: unknown) => caught);
 
+    expect(error).toBeInstanceOf(SabreApiError);
     const api = error as SabreApiError;
-    expect(api.body).toContain(PII.email);
-    expect(api.body).toContain('+5115550142');
+    for (const value of [SECOND_EMAIL, SECOND_PHONE]) {
+      expect(api.message).not.toContain(value);
+      expect(api.body).not.toContain(value);
+    }
+    // Sanidad: lo que no es PII sigue en el resumen, así que el eco SÍ entró en la ventana.
+    expect(api.body).toContain('"passengerCode":"ADT"');
   });
 });
 
+/** Teléfono de contacto tal y como lo normaliza el builder (`^\+?[0-9]+$`): sin espacios ni guiones. */
+const ECHOED_PHONE = '+5115550142';
+/** Contacto del segundo pasajero, bajo `travelers[]` en vez de `contactInfo`. */
+const SECOND_EMAIL = 'jorge.mamani@example.com';
+const SECOND_PHONE = '+5119998877';
+
 /**
  * Un rechazo del proveedor que hace eco del cuerpo de reserva con los NOMBRES DE CAMPO DEL
- * CONTRATO. La forma importa: `emails`/`phones` en plural son las que emite el builder, y son
- * justamente las que el redactor no conoce.
+ * CONTRATO. La forma importa: `emails`/`phones` en plural son las que emite el builder, y fueron
+ * las que el redactor no conocía hasta esta ronda.
  */
 function rejectionEchoing(): Reply {
   return {
@@ -1381,13 +1398,32 @@ function rejectionEchoing(): Reply {
     body: {
       errors: [{ category: 'BAD_REQUEST', type: 'REQUIRED_FIELD_MISSING' }],
       request: {
-        contactInfo: { emails: [PII.email], phones: ['+5115550142'] },
+        contactInfo: { emails: [PII.email], phones: [ECHOED_PHONE] },
         travelers: [
           {
             givenName: PII.givenName,
             surname: PII.surname,
             birthDate: PII.birthdate,
             identityDocuments: [{ documentNumber: PII.document }],
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** El mismo eco, con el contacto colgando del pasajero: es donde lo pone `travelers[]` del contrato. */
+function rejectionEchoingTravelerContact(): Reply {
+  return {
+    status: 400,
+    body: {
+      errors: [{ category: 'BAD_REQUEST', type: 'REQUIRED_FIELD_MISSING' }],
+      request: {
+        travelers: [
+          {
+            passengerCode: 'ADT',
+            emails: [SECOND_EMAIL],
+            phones: [{ number: SECOND_PHONE, label: 'MOBILE' }],
           },
         ],
       },

@@ -477,10 +477,11 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   /**
    * Construye los cuatro adapters del ACL sobre UN token y UN cliente HTTP.
    *
-   * `SabreFlightSearchAdapter` fabrica su propio cliente, pero acepta que le inyecten el proveedor
-   * de tokens; así los cuatro comparten el ATK, que es lo que importa: el TAM Pool es un límite
-   * **por contrato de agencia** y cuatro adapters autenticando por su cuenta lo agotan
-   * (docs/sabre/01 §7.1).
+   * Los cuatro comparten el ATK, que es lo que importa: el TAM Pool es un límite **por contrato de
+   * agencia** y cuatro adapters autenticando por su cuenta lo agotan (docs/sabre/01 §7.1). Y
+   * comparten el CLIENTE, búsqueda incluida, porque el semáforo de `maxConcurrentRequests` vive en
+   * él: con un cliente propio, la búsqueda tendría su cupo aparte y la cuenta podría tener el doble
+   * de llamadas en vuelo que su límite.
    */
   private buildAdapters(
     cfg: SabreConfig,
@@ -513,12 +514,16 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       search: new SabreFlightSearchAdapter(cfg, {
         cacheNamespace: ownerTenantId,
         tokens,
+        http,
         logger,
         shopOptions: shopOptions.options,
       }),
       price: new SabreOfferRevalidationRouter(ndcPrice, atpcoPrice),
-      create: new SabreOrderCreateAdapter(cfg, http),
-      manage: new SabreOrderManageAdapter(cfg, http),
+      // Con logger, como los demás: sin él `sabre.createBooking`, `sabre.getBooking` y
+      // `sabre.cancelBooking` no se emitían nunca, y son las únicas trazas de una reserva con su
+      // desenlace, la política pedida y los conteos. Llevan códigos y conteos, nunca PNR ni PII.
+      create: new SabreOrderCreateAdapter(cfg, http, { logger }),
+      manage: new SabreOrderManageAdapter(cfg, http, { logger }),
     };
   }
 
@@ -644,8 +649,10 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       agencyIata: str(g['agencyIata']),
       domain: str(g['domain']),
       applicationId: str(g['applicationId']),
-      sabreGroup: str(g['sabreGroup']),
-      sabreCurrentCity: str(g['sabreCurrentCity']),
+      // Las dos mitades, como `homePcc`: la spec de la bóveda los declara `encrypted-or-config`, y
+      // leerlos sólo de `config` dejaba sin cabecera de grupo a la cuenta que los guardó cifrados.
+      sabreGroup: str(c['sabreGroup']) ?? str(g['sabreGroup']),
+      sabreCurrentCity: str(c['sabreCurrentCity']) ?? str(g['sabreCurrentCity']),
     });
   }
 }

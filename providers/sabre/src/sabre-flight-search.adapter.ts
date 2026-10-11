@@ -140,6 +140,14 @@ export interface SabreFlightSearchDeps {
   shopOptions?: SabreShopOptions;
   /** Sustituye al `SabreTokenService` por defecto. Sólo para tests. */
   tokens?: SabreTokenProvider;
+  /**
+   * Cliente HTTP de la cuenta, si quien construye ya tiene uno. El semáforo de concurrencia vive en
+   * el cliente: con un cliente propio, la búsqueda tendría su cupo aparte del de price/create/
+   * manage y la cuenta podría llegar al doble de llamadas en vuelo que su límite. Con él, `fetch`,
+   * `logger`, `now`, `sleep`, `jitter` y `uuid` de estas deps no se aplican al cliente: son los del
+   * cliente inyectado.
+   */
+  http?: SabreHttpClient;
 }
 
 /**
@@ -226,14 +234,16 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
         ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
         ...(deps.cacheNamespace === undefined ? {} : { cacheNamespace: deps.cacheNamespace }),
       });
-    this.http = new SabreHttpClient(cfg, this.tokens, {
-      ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
-      ...(deps.logger === undefined ? {} : { logger: deps.logger }),
-      ...(deps.now === undefined ? {} : { now: deps.now }),
-      ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
-      ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
-      ...(deps.uuid === undefined ? {} : { uuid: deps.uuid }),
-    });
+    this.http =
+      deps.http ??
+      new SabreHttpClient(cfg, this.tokens, {
+        ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+        ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+        ...(deps.now === undefined ? {} : { now: deps.now }),
+        ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
+        ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
+        ...(deps.uuid === undefined ? {} : { uuid: deps.uuid }),
+      });
   }
 
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {

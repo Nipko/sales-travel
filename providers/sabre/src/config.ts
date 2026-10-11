@@ -171,6 +171,10 @@ export function sabreRequestTimeoutMs(cfg: SabreConfig): number {
   return cfg.requestTimeoutMs ?? SABRE_DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
+export function sabreMaxConcurrentRequests(cfg: SabreConfig): number {
+  return cfg.maxConcurrentRequests ?? SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS;
+}
+
 export function sabreConversationIdPrefix(cfg: SabreConfig): string {
   return cfg.conversationIdPrefix ?? SABRE_DEFAULT_CONVERSATION_ID_PREFIX;
 }

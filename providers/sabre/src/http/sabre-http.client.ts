@@ -5,6 +5,7 @@ import {
   hasUsableSabreCredentials,
   missingSabreCredentials,
   sabreConversationIdPrefix,
+  sabreMaxConcurrentRequests,
   sabreRequestTimeoutMs,
   sabreUrl,
   type SabreConfig,
@@ -120,6 +121,8 @@ export interface SabreResult<T> {
   partialOutcome: readonly SabreIssue[];
 }
 
+type SabreAttemptOutcome<T> = { result: SabreResult<T> } | { error: SabreApiError };
+
 export interface SabreHttpDeps {
   fetch?: SabreFetch;
   logger?: LoggerPort;
@@ -133,6 +136,119 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * El fallo de una espera en cola que venció. Es la clase `THROTTLED` de siempre —«es cuota, no
+ * caída»—, con dos decisiones que no se pueden dejar al default:
+ *
+ * - `circuit: 'IGNORE'`: la saturación es NUESTRA, de esta cuenta, y no dice nada de la salud de
+ *   Sabre. Contarla abriría el circuito del proveedor para toda la red por un pico de una agencia.
+ * - `postJson` no la reintenta aunque la llamada sea idempotente: la espera ya gastó el timeout
+ *   entero de la petición, y volver a la cola sólo duplicaría lo que el vendedor espera.
+ */
+const SABRE_QUEUE_TIMEOUT_FAILURE: SabreFailureClass = Object.freeze({
+  kind: 'THROTTLED',
+  retry: 'RETRY_BACKOFF',
+  circuit: 'IGNORE',
+  disableAccount: false,
+  operatorAlert: false,
+  reason:
+    'cola del semáforo por cuenta vencida: todas las llamadas de la cuenta seguían en vuelo. Es cuota local, no caída: no abre circuito',
+});
+
+/**
+ * La espera en cola venció antes de que se liberara un hueco.
+ *
+ * Es un `SabreApiError` —el filtro y `humanizeSabreError` lo traducen como cualquier `THROTTLED`—
+ * con `sentToProvider`, que es el contrato neutral con el que `apps/api` distingue «no salió» de
+ * «salió y no sé qué pasó» (lo leen la política de reintento de cancelaciones y la de hoteles). Es
+ * `false` sólo si NINGÚN intento de esta llamada llegó al cable: un reintento de una lectura que
+ * vence en cola ya mandó el primero, y ahí no se puede afirmar que no salió.
+ */
+class SabreQueueTimeoutError extends SabreApiError {
+  readonly sentToProvider: boolean;
+
+  constructor(
+    path: string,
+    detail: { conversationId: string; maxConcurrent: number; timeoutMs: number; sent: boolean },
+  ) {
+    super(
+      0,
+      `cola local vencida tras ${String(detail.timeoutMs)} ms con ${String(detail.maxConcurrent)} llamadas en vuelo`,
+      path,
+      { failure: SABRE_QUEUE_TIMEOUT_FAILURE, conversationId: detail.conversationId },
+    );
+    this.sentToProvider = detail.sent;
+  }
+}
+
+interface SabreConcurrencySlot {
+  readonly release: () => void;
+  /** `true` si hubo que esperar a que otra llamada liberara su hueco. */
+  readonly queued: boolean;
+}
+
+/**
+ * Semáforo de UNA cuenta (RNF-04).
+ *
+ * El límite de Sabre es de CONCURRENCIA por contrato de agencia, no de TPS («Active token count is
+ * exceeded», `help/errors.txt`), y pasarse no siempre vuelve como un 429 limpio: el cupo agotado
+ * también llega como `401 invalid_client` (`AUTH_POOL` en `../errors`), ambiguo con una credencial
+ * mala. Por eso la cola vive aquí, en el cliente que comparten los adapters de una cuenta, y no en
+ * cada adapter.
+ *
+ * - **FIFO, con traspaso directo.** Quien libera le entrega su hueco al primero de la cola sin
+ *   pasar por `active--`/`active++`: no hay ventana en la que una llamada recién llegada se cuele
+ *   delante de quien ya esperaba.
+ * - **La espera tiene el mismo tope que la petición.** Una búsqueda no puede quedarse colgada en la
+ *   cola más de lo que se le permite colgar en el cable.
+ * - **Liberar es idempotente.** Hoy hay un solo sitio que libera, en un `finally`, así que esto es
+ *   endurecimiento y no lleva test propio: una segunda llamada no puede regalar un hueco que no
+ *   existe y romper el límite.
+ *
+ * Lo fijan los tests de «semáforo» de `sabre-http.client.test.ts`, todos por `postJson`: con el
+ * límite en infinito o en 1, sin el `finally` o sin sacar de la cola a quien venció, se ponen rojos.
+ */
+class SabreConcurrencyGate {
+  private active = 0;
+  private readonly waiting: Array<(slot: SabreConcurrencySlot) => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  /** `null` = venció la espera sin que se liberara un hueco. */
+  acquire(timeoutMs: number): Promise<SabreConcurrencySlot | null> {
+    if (this.active < this.limit) {
+      this.active++;
+      return Promise.resolve({ release: this.releaser(), queued: false });
+    }
+
+    return new Promise((resolve) => {
+      // `grant` lee `timer` cuando se la llama, nunca antes: sólo `releaser` la invoca, y para
+      // entonces la línea del `setTimeout` de abajo ya se ejecutó y `timer` existe.
+      const grant = (slot: SabreConcurrencySlot): void => {
+        clearTimeout(timer);
+        resolve(slot);
+      };
+      const timer = setTimeout(() => {
+        const index = this.waiting.indexOf(grant);
+        if (index >= 0) this.waiting.splice(index, 1);
+        resolve(null);
+      }, timeoutMs);
+      this.waiting.push(grant);
+    });
+  }
+
+  private releaser(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.waiting.shift();
+      if (next === undefined) this.active--;
+      else next({ release: this.releaser(), queued: true });
+    };
+  }
+}
+
+/**
  * Cliente JSON de Sabre.
  *
  * Hace tres cosas que un `fetch` pelado no hace y sin las cuales el ACL es inseguro:
@@ -142,6 +258,9 @@ const defaultSleep = (ms: number): Promise<void> =>
  * 2. **Nunca loguea el header `Authorization`, el body ni el texto del proveedor.** Sólo path,
  *    status, duración, `Conversation-ID` y `category`/`type`/`fieldPath` de los problemas.
  * 3. **Nunca reintenta una operación con dinero**, ni siquiera si quien llama se equivoca.
+ * 4. **Nunca tiene más de `maxConcurrentRequests` peticiones en vuelo.** El semáforo es de la
+ *    INSTANCIA, y una instancia es una cuenta: el factory de `apps/api` construye un solo cliente
+ *    por cuenta y se lo pasa a los cinco adapters, búsqueda incluida.
  */
 export class SabreHttpClient {
   private readonly fetchImpl: SabreFetch;
@@ -149,6 +268,7 @@ export class SabreHttpClient {
   private readonly jitter: () => number;
   private readonly now: () => number;
   private readonly uuid: () => string;
+  private readonly gate: SabreConcurrencyGate;
 
   constructor(
     private readonly cfg: SabreConfig,
@@ -160,6 +280,7 @@ export class SabreHttpClient {
     this.jitter = deps.jitter ?? Math.random;
     this.now = deps.now ?? (() => Date.now());
     this.uuid = deps.uuid ?? randomUUID;
+    this.gate = new SabreConcurrencyGate(sabreMaxConcurrentRequests(cfg));
   }
 
   async postJson<T = unknown>(
@@ -181,11 +302,27 @@ export class SabreHttpClient {
     const retriesAllowed = options.idempotent === true && !moneyOperation;
     const maxAttempts = retriesAllowed ? SABRE_MAX_ATTEMPTS : 1;
 
+    const timeoutMs = options.timeoutMs ?? sabreRequestTimeoutMs(this.cfg);
+
     let reauthUsed = false;
     let attempt = 1;
+    let dispatched = false;
 
     for (;;) {
-      const outcome = await this.attempt<T>(path, body, conversationId, options);
+      // El hueco se pide por INTENTO y se devuelve antes del backoff: dormir con un hueco tomado
+      // bloquearía a las demás llamadas de la cuenta sin estar usando a Sabre.
+      const release = await this.acquireSlot(path, conversationId, timeoutMs, {
+        moneyOperation,
+        attempt,
+        dispatched,
+      });
+      let outcome: SabreAttemptOutcome<T>;
+      try {
+        outcome = await this.attempt<T>(path, body, conversationId, options);
+      } finally {
+        release();
+      }
+      dispatched = true;
       if ('result' in outcome) return outcome.result;
 
       const { error } = outcome;
@@ -217,12 +354,61 @@ export class SabreHttpClient {
     }
   }
 
+  /**
+   * Espera un hueco del semáforo de la cuenta y devuelve con qué soltarlo.
+   *
+   * Si la espera vence, lanza {@link SabreQueueTimeoutError} DIRECTAMENTE, sin pasar por el bucle
+   * de reintentos de `postJson`: ver {@link SABRE_QUEUE_TIMEOUT_FAILURE}. Se loguea con su propio
+   * mensaje porque no es un fallo de Sabre —el proveedor no se enteró— y quien calibra
+   * `maxConcurrentRequests` necesita contarlas aparte de los `sabre.http.error`.
+   */
+  private async acquireSlot(
+    path: string,
+    conversationId: string,
+    timeoutMs: number,
+    context: { moneyOperation: boolean; attempt: number; dispatched: boolean },
+  ): Promise<() => void> {
+    const maxConcurrent = sabreMaxConcurrentRequests(this.cfg);
+    const started = this.now();
+    const slot = await this.gate.acquire(timeoutMs);
+
+    if (slot === null) {
+      const error = new SabreQueueTimeoutError(path, {
+        conversationId,
+        maxConcurrent,
+        timeoutMs,
+        sent: context.dispatched,
+      });
+      this.log('warn', 'sabre.http.cola_vencida', {
+        path,
+        conversationId,
+        moneyOperation: context.moneyOperation,
+        attempt: context.attempt,
+        maxConcurrent,
+        timeoutMs,
+        sentToProvider: context.dispatched,
+        ...error.toLogMeta(),
+      });
+      throw error;
+    }
+
+    if (slot.queued) {
+      this.log('debug', 'sabre.http.en_cola', {
+        path,
+        conversationId,
+        maxConcurrent,
+        waitedMs: this.now() - started,
+      });
+    }
+    return slot.release;
+  }
+
   private async attempt<T>(
     path: string,
     body: unknown,
     conversationId: string,
     options: SabreRequestOptions,
-  ): Promise<{ result: SabreResult<T> } | { error: SabreApiError }> {
+  ): Promise<SabreAttemptOutcome<T>> {
     const token = await this.tokens.getToken();
     const controller = new AbortController();
     const timeoutMs = options.timeoutMs ?? sabreRequestTimeoutMs(this.cfg);
