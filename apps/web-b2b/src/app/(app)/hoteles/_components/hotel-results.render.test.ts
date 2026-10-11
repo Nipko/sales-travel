@@ -245,6 +245,7 @@ function rates(
     rooms?: number;
     detailHref?: HotelDetailLink;
     showProvider?: boolean;
+    testAccountCodes?: ReadonlySet<string>;
   } = {},
 ): string {
   const showProvider = extra.showProvider ?? false;
@@ -259,6 +260,7 @@ function rates(
       ...(extra.nights === undefined ? {} : { nights: extra.nights }),
       ...(extra.rooms === undefined ? {} : { rooms: extra.rooms }),
       ...(extra.detailHref === undefined ? {} : { detailHref: extra.detailHref }),
+      ...(extra.testAccountCodes === undefined ? {} : { testAccountCodes: extra.testAccountCodes }),
     }),
   );
 }
@@ -547,6 +549,58 @@ describe('HotelResultRates — habitaciones por tipo', () => {
     expect(groupHeadings(html)).toEqual(['h4:Doble estándar']);
     expect(html).toContain('TBO Holidays');
     expect(html).toContain('Despegar Hotels');
+  });
+});
+
+describe('cuenta de prueba — la etiqueta «Prueba» en cada plan', () => {
+  const PRUEBA = new Set(['tbo-hotels']);
+  const MIXTO: HotelOffer = {
+    ...TBO_HOTEL,
+    roompacks: [
+      tarifaTbo('T', 690_000_00),
+      tarifa('D', 700_000_00, { provider: { name: 'despegar-hotels', offerRef: 'D-REF' } }),
+    ],
+  };
+
+  /** Las filas de plan pintadas, con lo que dice cada una. */
+  function planItems(html: string): string[] {
+    return html.match(/<li class="grid[^"]*">.*?<\/li>/g) ?? [];
+  }
+
+  it('sólo los planes del proveedor de prueba, aunque la pastilla del proveedor esté oculta', () => {
+    const html = rates(MIXTO, { nights: 3, testAccountCodes: PRUEBA });
+    expect(html).not.toContain('Proveedor: ');
+    const items = planItems(html);
+    expect(items).toHaveLength(2);
+    expect(items.filter((li) => li.includes('>Prueba</span>'))).toHaveLength(1);
+    // La de TBO es la de 690.000 por la estadía; la de Despegar, la de 700.000.
+    expect(items.find((li) => li.includes('>Prueba</span>'))).toMatch(/Total 690\.000/);
+  });
+
+  it('con la divulgación encendida va junto a la pastilla de TBO Holidays', () => {
+    const html = rates(MIXTO, { nights: 3, showProvider: true, testAccountCodes: PRUEBA });
+    expect(html).toMatch(/TBO Holidays<\/span><span[^>]*>.*?Prueba<\/span>/);
+  });
+
+  it('sin cuentas de prueba no hay etiqueta', () => {
+    expect(rates(MIXTO, { nights: 3 })).not.toContain('>Prueba</span>');
+  });
+
+  it('la tarjeta la lleva también junto al precio, si la tarifa del precio es de prueba', () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelResultCard, {
+        item: itemOf(TBO_HOTEL),
+        photo: undefined,
+        nights: 3,
+        rooms: 1,
+        stay: STAY,
+        searchToken: SEARCH_TOKEN,
+        showProvider: false,
+        testAccountCodes: PRUEBA,
+      }),
+    );
+    expect(html).toContain('>Prueba</span>');
+    expect(card(TBO_HOTEL, false)).not.toContain('>Prueba</span>');
   });
 });
 

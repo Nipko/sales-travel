@@ -267,3 +267,30 @@ describe('HotelDetailRates — por tipo de habitación', () => {
     expect(html).not.toMatch(/>Reservar</);
   });
 });
+
+describe('HotelDetailRates — cuenta de prueba', () => {
+  it('con la cuenta de prueba de TBO, el aviso va arriba de las tarifas y cada plan dice «Prueba»', () => {
+    const roompacks = [tarifa('A', 400_00, 'Doble'), tarifa('B', 450_00, 'Doble', { board: 'BB' })];
+    const html = detailRates(roompacks, {
+      outcomes: [
+        {
+          ref: { provider: 'tbo-hotels', hotelId: '1' },
+          offer: { hotelId: '1', roompacks },
+          accountEnvironment: 'test',
+        },
+      ],
+    });
+    // Sin divulgación (el banco la tiene apagada) el aviso no nombra al proveedor.
+    expect(html).toContain(
+      'Algunas tarifas vienen de una cuenta de prueba de un proveedor: puedes reservarlas para probar el flujo, pero no son habitaciones reales para un cliente.',
+    );
+    expect(html.indexOf('cuenta de prueba de un proveedor')).toBeLessThan(html.indexOf('<section'));
+    expect(html.match(/>Prueba<\/span>/g)).toHaveLength(2);
+  });
+
+  it('sin entorno de prueba, ni aviso ni etiqueta', () => {
+    const html = detailRates([tarifa('A', 400_00, 'Doble')]);
+    expect(html).not.toContain('cuenta de prueba');
+    expect(html).not.toContain('>Prueba</span>');
+  });
+});

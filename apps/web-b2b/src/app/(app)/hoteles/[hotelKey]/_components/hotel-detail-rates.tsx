@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../../../../lib/cn';
 import type { HotelRoompack } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
+import { testAccountView } from '../../_components/hotel-provider-view';
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
 import { isRateExpired, OfferExpiry } from '../../_components/offer-expiry';
@@ -22,6 +23,7 @@ import { RateBookAction } from '../../_components/rate-book-action';
 import type { RateRefundability } from '../../_components/rate-refundability';
 import { roomTypesCountText } from '../../_components/room-type-groups';
 import { RoomTypeList } from '../../_components/room-type-list';
+import { TestAccountNotice } from '../../_components/test-account-notice';
 import { useBookRate } from '../../_components/use-book-rate';
 import type { HotelDetailRatesResult } from '../actions';
 import {
@@ -365,6 +367,19 @@ export function HotelDetailRates({
   );
   const expired = (row: HotelRateRow) =>
     expiredCutoffMs !== undefined && isRateExpired(row.expiresAt, expiredCutoffMs);
+  // El detalle no trae `providers[]`: cada proveedor dice el entorno de su cuenta en su parte.
+  const testAccount = useMemo(
+    () =>
+      testAccountView(
+        (rates?.outcomes ?? []).map((o) => ({
+          code: o.ref.provider,
+          accountEnvironment: o.accountEnvironment,
+          count: o.offer?.roompacks.length ?? 0,
+        })),
+        showProvider,
+      ),
+    [rates, showProvider],
+  );
   const blocked = rates?.nonRefundableBlocked === true;
   // Con la hora en que llegaron las tarifas (detailRatesView): una reembolsable cuyo 100 % ya rige
   // es no reembolsable, y si la agencia no las puede reservar, no se ofrecen.
@@ -432,6 +447,7 @@ export function HotelDetailRates({
               completa
             </p>
           </OfferExpiry>
+          <TestAccountNotice view={testAccount} />
           <RatesRefundNoticeBox notice={refundNotice} />
           {provisional ? (
             <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
@@ -448,6 +464,7 @@ export function HotelDetailRates({
               variant="detail"
               isExpired={(plan) => expired(plan.row)}
               isUnavailable={unavailable}
+              testAccountCodes={testAccount.codes}
               planNotice={({ row, refund }) => {
                 const seller = row.pack.provider?.name;
                 const note =

@@ -18,6 +18,7 @@ import {
 import type { HotelRateRow } from './hotel-rate-view';
 import { refundLine, type RateRefundability } from './rate-refundability';
 import { type RoomSlot, type RoomTypeGroup } from './room-type-groups';
+import { TestAccountTag } from './test-account-notice';
 
 /*
  * Las habitaciones de un hotel por tipo, cada una con sus planes de tarifa: la misma lista en la
@@ -62,6 +63,8 @@ export interface RoomTypeListProps<T extends RoomPlan> {
   readonly planDetails?: (plan: T) => ReactNode;
   /** La foto del tipo de habitación; por defecto, el icono de una cama. */
   readonly photo?: (group: RoomTypeGroup<T>) => ReactNode;
+  /** Proveedores con cuenta de prueba: sus planes llevan la etiqueta «Prueba». */
+  readonly testAccountCodes?: ReadonlySet<string>;
 }
 
 export function RoomTypeList<T extends RoomPlan>({
@@ -129,6 +132,7 @@ function RoomTypeSection<T extends RoomPlan>({
   planNotice,
   planDetails,
   photo,
+  testAccountCodes,
 }: SectionProps<T>) {
   const [expanded, setExpanded] = useState(false);
   const titleId = useId();
@@ -194,6 +198,7 @@ function RoomTypeSection<T extends RoomPlan>({
             nights={nights}
             expired={isExpired(plan)}
             unavailable={isUnavailable?.(plan) ?? false}
+            testAccount={testAccountCodes?.has(plan.row.pack.provider?.name ?? '') ?? false}
             action={planAction(plan)}
             notice={planNotice?.(plan)}
             details={planDetails?.(plan)}
@@ -265,6 +270,7 @@ function PlanItem<T extends RoomPlan>({
   nights,
   expired,
   unavailable,
+  testAccount,
   action,
   notice,
   details,
@@ -273,6 +279,7 @@ function PlanItem<T extends RoomPlan>({
   nights: number | undefined;
   expired: boolean;
   unavailable: boolean;
+  testAccount: boolean;
   action: ReactNode;
   notice: ReactNode;
   details: ReactNode;
@@ -293,6 +300,7 @@ function PlanItem<T extends RoomPlan>({
           {row.board}
         </span>
         <ProviderPill label={row.providerLabel} />
+        {testAccount ? <TestAccountTag /> : null}
         {expired ? <ExpiredTag /> : null}
       </div>
 

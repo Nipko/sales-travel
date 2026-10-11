@@ -12,6 +12,7 @@ import {
   placeArrival,
   type MoreState,
 } from './hotel-paging';
+import type { TestAccountView } from './hotel-provider-view';
 import { HotelResultCard } from './hotel-result-card';
 import {
   ClearFiltersButton,
@@ -44,6 +45,7 @@ import { HotelResultsMap } from './hotel-results-map';
 import { ResultsPager } from './hotel-results-pager';
 import { detailLinkForOffer, stayOfCriteria } from './hotel-search-handoff';
 import { OfferExpiry } from './offer-expiry';
+import { TestAccountNotice } from './test-account-notice';
 import { useHotelPhotos } from './use-hotel-photos';
 
 /*
@@ -108,6 +110,8 @@ interface HotelResultsProps {
   /** Los tramos de la búsqueda por destino: cuánto se consultó y cómo pedir más. */
   more?: MoreState;
   onLoadMore?: () => void;
+  /** Qué tarifas vienen de una cuenta de prueba: aviso arriba y etiqueta en cada plan. */
+  testAccount?: TestAccountView;
 }
 
 /** Lleva el foco al título de la tarjeta `index` de la lista, si está pintada. */
@@ -139,6 +143,7 @@ export function HotelResults({
   nonRefundableBlocked = false,
   more,
   onLoadMore,
+  testAccount,
 }: HotelResultsProps) {
   const [state, update] = useResultsState();
   const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
@@ -346,6 +351,8 @@ export function HotelResults({
             </p>
           ) : null}
 
+          <TestAccountNotice view={testAccount} />
+
           {/* Al tocar un filtro el título cambia, pero un título no se anuncia: esta región sí.
               Montada desde el principio y con el mismo texto, no dice nada hasta que cambia. */}
           <p aria-live="polite" aria-atomic="true" className="sr-only">
@@ -410,6 +417,7 @@ export function HotelResults({
                       stay={stay}
                       searchToken={searchToken}
                       showProvider={showProvider}
+                      testAccountCodes={testAccount?.codes}
                     />
                   </div>
                 ))}

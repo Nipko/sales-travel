@@ -5,10 +5,11 @@ import { useId } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { Card } from '../../../../../components/ui/card';
 import { Checkbox } from '../../../../../components/ui/field';
-import type { Money } from '../../actions';
+import type { HotelAccountEnvironment, Money } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
 import { OwnMarginLine, stayLabel } from '../../_components/hotel-rate-item';
 import type { AtHotelCharge, HotelRateRow } from '../../_components/hotel-rate-view';
+import { TestBookingNotice } from '../../_components/test-account-notice';
 import type { BookGate } from './booking-view';
 import { paymentNote } from './funding-view';
 import { NonRefundableAck } from './non-refundable-notice';
@@ -39,6 +40,7 @@ export function BookingConfirm({
   onNonRefundableAcknowledgedChange,
   nonRefundableError,
   ownAccount = false,
+  providerEnvironment,
   gate,
   onConfirm,
   onBack,
@@ -59,6 +61,8 @@ export function BookingConfirm({
   nonRefundableError: string | undefined;
   /** Se reserva con la cuenta propia de la agencia en el proveedor (el PreBook lo dijo). */
   ownAccount?: boolean;
+  /** El entorno de la cuenta que va a reservar (PreBook): con `test`, el aviso junto al botón. */
+  providerEnvironment?: HotelAccountEnvironment;
   gate: BookGate;
   onConfirm: () => void;
   onBack: () => void;
@@ -148,6 +152,8 @@ export function BookingConfirm({
         <Wallet aria-hidden="true" className="mt-px size-3 shrink-0" />
         {paymentNote(ownAccount)}
       </p>
+
+      <TestBookingNotice environment={providerEnvironment} />
 
       <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
         {gate.reason ? (

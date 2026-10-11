@@ -521,6 +521,7 @@ export function BookingStep({
                 onNonRefundableAcknowledgedChange={handleNonRefundableAcknowledged}
                 nonRefundableError={errors[NON_REFUNDABLE_FIELD]}
                 ownAccount={bookedWithOwnAccount(prebook.funding)}
+                providerEnvironment={prebook.providerEnvironment}
                 gate={gate}
                 onConfirm={confirm}
                 onBack={onBack}

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { HotelProviderOutcome, HotelRoompack } from '../actions';
-import { degradedProviders, emptyResultsView, rateProviderLabel } from './hotel-provider-view';
+import {
+  degradedProviders,
+  emptyResultsView,
+  rateProviderLabel,
+  testAccountView,
+} from './hotel-provider-view';
 
 /**
  * RF-40 del lado de la pantalla de hoteles: "me tiene que mostrar de dónde es".
@@ -179,5 +184,59 @@ describe('emptyResultsView — U-08, sin disponibilidad', () => {
     ]);
     expect(view.hint).toMatch(/Proveedores \(GDS\)/);
     expect(view.hint).toMatch(/sólo los reactiva la plataforma/);
+  });
+});
+
+describe('testAccountView — las tarifas de una cuenta de prueba', () => {
+  const tbo: HotelProviderOutcome = {
+    code: 'tbo-hotels',
+    status: 'ok',
+    count: 4,
+    accountEnvironment: 'test',
+  };
+  const despegar: HotelProviderOutcome = { code: 'despegar-hotels', status: 'ok', count: 3 };
+
+  it('con la divulgación encendida nombra al proveedor de prueba, con su nombre legible', () => {
+    const view = testAccountView([despegar, tbo], true);
+    expect([...view.codes]).toEqual(['tbo-hotels']);
+    expect(view.providerLabel).toBe('TBO Holidays');
+  });
+
+  it('con la divulgación apagada no lo nombra, pero sus tarifas siguen marcadas', () => {
+    const view = testAccountView([despegar, tbo], false);
+    expect([...view.codes]).toEqual(['tbo-hotels']);
+    expect(view).not.toHaveProperty('providerLabel');
+  });
+
+  it('una cuenta de producción, o un API que no dice el entorno, no marca nada', () => {
+    expect(testAccountView([{ ...tbo, accountEnvironment: 'live' }], true).codes.size).toBe(0);
+    expect(testAccountView([despegar], true).codes.size).toBe(0);
+    expect(testAccountView([], true)).toEqual({ codes: new Set() });
+  });
+
+  it('uno de prueba que respondió sin hoteles no tiene tarifas a la vista de las que avisar', () => {
+    const vacio: HotelProviderOutcome = { ...tbo, status: 'empty', count: 0 };
+    expect(testAccountView([vacio], true).codes.size).toBe(0);
+    // En un tramo siguiente sí aportó: con eso alcanza.
+    expect([...testAccountView([vacio, tbo], true).codes]).toEqual(['tbo-hotels']);
+  });
+
+  it('con más de un proveedor de prueba, el aviso no elige a uno: habla de «un proveedor»', () => {
+    const otro: HotelProviderOutcome = { ...tbo, code: 'otro-hotels' };
+    const view = testAccountView([tbo, otro], true);
+    expect([...view.codes]).toEqual(['tbo-hotels', 'otro-hotels']);
+    expect(view).not.toHaveProperty('providerLabel');
+  });
+
+  it('la ficha pasa una parte por proveedor con el entorno del detalle y cuántas tarifas dio', () => {
+    const view = testAccountView(
+      [{ code: 'tbo-hotels', accountEnvironment: 'test', count: 2 }],
+      true,
+    );
+    expect(view.providerLabel).toBe('TBO Holidays');
+    expect(
+      testAccountView([{ code: 'tbo-hotels', accountEnvironment: 'test', count: 0 }], true).codes
+        .size,
+    ).toBe(0);
   });
 });
