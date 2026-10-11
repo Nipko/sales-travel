@@ -76,6 +76,8 @@ describe('DepositReportQueueQuerySchema', () => {
     ['un tenant que no es uuid', { tenantId: 'abc' }],
     ['una búsqueda vacía', { q: '   ' }],
     ['una búsqueda larguísima', { q: 'x'.repeat(101) }],
+    ['una búsqueda con un NUL (Postgres la rechazaría con un 500)', { q: 'TRX\u00001' }],
+    ['una búsqueda con un salto de línea', { q: 'TRX\n1' }],
     ['un cursor roto', { cursor: 'abc' }],
     ['un límite de más', { limit: '101' }],
     ['un límite cero', { limit: '0' }],

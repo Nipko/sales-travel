@@ -19,6 +19,7 @@ import {
   SEARCH_MAX_LENGTH,
   STATUS_TABS,
   appendPage,
+  emptiesLoadedPage,
   emptyCopy,
   financierLabel,
   otherFinancierOf,
@@ -177,8 +178,12 @@ export function DepositApprovalsPanel() {
     }
     setResolving(null);
     toast.success(resolvedMessage(kind, report));
-    setList((s) => (s.status === 'ready' ? { ...s, data: withoutReport(s.data, report) } : s));
     notifyPendingDepositsChanged();
+    if (list.status === 'ready' && emptiesLoadedPage(list.data, report.id)) {
+      void load(filters, 'initial');
+      return undefined;
+    }
+    setList((s) => (s.status === 'ready' ? { ...s, data: withoutReport(s.data, report) } : s));
     void reloadCounts();
     return undefined;
   }
@@ -480,6 +485,7 @@ function Segmented<T extends string>({
                   )}
                 >
                   {option.count}
+                  <span className="sr-only"> por aprobar</span>
                 </span>
               ) : null}
             </label>

@@ -56,6 +56,7 @@ function listPlan(search: URLSearchParams): WalletProxyPlan {
   const q = search.get('q')?.trim();
   if (q !== undefined && q !== '') {
     if (q.length > SEARCH_MAX_LENGTH) return BAD_FILTER('La búsqueda es demasiado larga.');
+    if (/\p{Cc}/u.test(q)) return BAD_FILTER('La búsqueda tiene caracteres no válidos.');
     out.set('q', q);
   }
 

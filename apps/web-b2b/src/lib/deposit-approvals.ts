@@ -207,7 +207,12 @@ export function approvalsSearch(filters: ApprovalsFilters, cursor?: string | nul
   if (filters.currency !== 'all' && isCurrencyCode(filters.currency)) {
     params.set('currency', filters.currency);
   }
-  const q = filters.q.trim().slice(0, SEARCH_MAX_LENGTH);
+  // Un tabulador pegado en la búsqueda no rompe la lista: el API rechaza los caracteres de control.
+  const q = filters.q
+    .replace(/\p{Cc}+/gu, ' ')
+    .trim()
+    .slice(0, SEARCH_MAX_LENGTH)
+    .trim();
   if (q !== '') params.set('q', q);
   if (cursor !== undefined && cursor !== null && cursor !== '') params.set('cursor', cursor);
   return params.toString();
@@ -245,6 +250,14 @@ export function withoutReport(
         : [{ ...t, count: left, amountMinor: Math.max(0, t.amountMinor - report.amountMinor) }];
     }),
   };
+}
+
+/**
+ * ¿Sacar este informe deja la lista vacía con páginas por cargar? Entonces hay que releer desde el
+ * principio: el vacío diría "no hay depósitos por aprobar" con otros esperando detrás de "Cargar más".
+ */
+export function emptiesLoadedPage(view: DepositApprovals, reportId: string): boolean {
+  return view.nextCursor !== null && view.reports.every((r) => r.id === reportId);
 }
 
 // ───────────────────────────── Textos ─────────────────────────────
@@ -351,13 +364,13 @@ export function emptyCopy(filters: ApprovalsFilters): EmptyCopy {
   if (filters.status === 'approved') {
     return {
       title: 'Todavía no hay depósitos aprobados.',
-      text: 'Cuando apruebes uno, queda acá con quién lo aprobó y cuándo.',
+      text: 'Cuando apruebes uno, queda aquí con quién lo aprobó y cuándo.',
     };
   }
   if (filters.status === 'rejected') {
     return {
       title: 'No hay depósitos rechazados.',
-      text: 'Cuando rechaces uno, queda acá con el motivo que vio la agencia.',
+      text: 'Cuando rechaces uno, queda aquí con el motivo que vio la agencia.',
     };
   }
   if (filters.financedBy === 'network') {
@@ -368,7 +381,7 @@ export function emptyCopy(filters: ApprovalsFilters): EmptyCopy {
   }
   return {
     title: 'No hay depósitos por aprobar.',
-    text: 'Cuando una agencia informe una transferencia, aparece acá para que la verifiques contra el extracto.',
+    text: 'Cuando una agencia informe una transferencia, aparece aquí para que la verifiques contra el extracto.',
   };
 }
 

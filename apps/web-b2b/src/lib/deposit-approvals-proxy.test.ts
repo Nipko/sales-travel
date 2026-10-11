@@ -37,6 +37,7 @@ describe('depositApprovalsPlan: la cola', () => {
     ['una moneda rota', 'currency=dollar'],
     ['un nodo que no es uuid', 'tenantId=abc'],
     ['una búsqueda larguísima', `q=${'x'.repeat(101)}`],
+    ['una búsqueda con un NUL', 'q=TRX%001'],
     ['un cursor con caracteres raros', 'cursor=a%2Fb'],
     ['un límite fuera de rango', 'limit=101'],
     ['un límite que no es número', 'limit=1e2'],

@@ -4,6 +4,7 @@ import {
   STALE_AFTER_MS,
   appendPage,
   approvalsErrorMessage,
+  emptiesLoadedPage,
   approvalsSearch,
   emptyCopy,
   financierLabel,
@@ -159,6 +160,14 @@ describe('approvalsSearch', () => {
     expect(new URLSearchParams(q).get('q')).toHaveLength(100);
     expect(approvalsSearch({ ...DEFAULT_APPROVALS_FILTERS, q: '   ' }, null)).not.toContain('q=');
   });
+
+  it('los caracteres de control de la búsqueda se vuelven espacios (el API los rechaza)', () => {
+    const search = (q: string) =>
+      new URLSearchParams(approvalsSearch({ ...DEFAULT_APPROVALS_FILTERS, q })).get('q');
+    expect(search('TRX\t1')).toBe('TRX 1');
+    expect(search('\u0000Sur\u0007')).toBe('Sur');
+    expect(search('\t\n')).toBeNull();
+  });
 });
 
 describe('appendPage', () => {
@@ -208,6 +217,13 @@ describe('withoutReport', () => {
 
   it('uno que no está en la vista no cambia nada', () => {
     expect(withoutReport(view, { id: 'otro', currency: 'COP', amountMinor: 1 })).toBe(view);
+  });
+
+  it('vaciar lo cargado con páginas por cargar pide releer; si no quedan páginas, no', () => {
+    expect(emptiesLoadedPage({ ...view, reports: [a] }, a.id)).toBe(true);
+    expect(emptiesLoadedPage({ ...view, reports: [a] }, b.id)).toBe(false);
+    expect(emptiesLoadedPage(view, a.id)).toBe(false);
+    expect(emptiesLoadedPage({ ...view, reports: [a], nextCursor: null }, a.id)).toBe(false);
   });
 });
 

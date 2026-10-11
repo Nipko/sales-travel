@@ -76,7 +76,14 @@ export const DepositReportQueueQuerySchema = z
     financedBy: z.enum(['platform', 'network']).optional(),
     currency: IsoCurrencySchema.optional(),
     tenantId: Uuid.optional(),
-    q: z.string().trim().min(1).max(100).optional(),
+    // Sin caracteres de control: un NUL llega a Postgres como 22021 y sería un 500, no un 400.
+    q: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .refine((v) => !/\p{Cc}/u.test(v), { message: 'la búsqueda tiene caracteres no válidos' })
+      .optional(),
     cursor: z
       .string()
       .max(200)
