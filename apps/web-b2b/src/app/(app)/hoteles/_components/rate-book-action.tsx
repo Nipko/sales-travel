@@ -19,6 +19,7 @@ export function RateBookAction({
   expired,
   unavailableForAgency,
   onBook,
+  hotelName,
   className,
 }: {
   row: HotelRateRow;
@@ -27,6 +28,11 @@ export function RateBookAction({
   /** No reembolsable y la agencia no las puede reservar: ya lo dice la etiqueta de la fila. */
   unavailableForAgency: boolean;
   onBook: () => void;
+  /**
+   * En el listado, el hotel de la tarifa: el lector de pantalla que recorre los botones de la página
+   * oye varios «Reservar» de varios hoteles. En el detalle sobra: todos son del mismo hotel.
+   */
+  hotelName?: string;
   className?: string;
 }) {
   if (unavailableForAgency) return null;
@@ -49,6 +55,7 @@ export function RateBookAction({
         Reservar
         <span className="sr-only">
           : {row.board}, {row.rooms}, {formatMoney(row.sale)}
+          {hotelName ? `, en ${hotelName}` : null}
         </span>
       </Button>
     </div>

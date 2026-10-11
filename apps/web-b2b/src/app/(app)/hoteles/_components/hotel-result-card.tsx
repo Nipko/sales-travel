@@ -49,10 +49,14 @@ interface HotelResultCardProps {
   detailHref?: HotelDetailLink;
   /** La agencia no puede reservar no reembolsables: esas tarifas se marcan no disponibles. */
   nonRefundableBlocked?: boolean;
-  /** La estadía de la búsqueda: sin ella no hay qué llevar al checkout. */
-  stay?: HotelStay;
+  /**
+   * La estadía de la búsqueda: sin ella no hay qué llevar al checkout. Obligatoria aunque pueda
+   * faltar, como `photo`: si la lista dejara de pasarla, ninguna tarifa se podría reservar y nada
+   * lo avisaría.
+   */
+  stay: HotelStay | undefined;
   /** La búsqueda de la que salió la tarjeta, para volver a ella desde el checkout. */
-  searchToken?: string;
+  searchToken: string | undefined;
   /** El ajuste de divulgación con el que respondió la búsqueda (RF-40). */
   showProvider: boolean;
   /**
@@ -310,6 +314,7 @@ export function HotelResultRates({
   showProvider: boolean;
 }) {
   const { offer } = item.hotel;
+  const hotelName = offer.name ?? `Hotel ${offer.hotelId}`;
   const hotelKey = useMemo(() => encodeHotelKey(hotelRefsOf(offer)), [offer]);
   // Sin `factsFor`: el listado no sabe con qué nombre conoce al hotel cada proveedor de una tarjeta
   // agrupada (RF-34), así que la reserva lleva el nombre y la dirección de la tarjeta.
@@ -355,6 +360,7 @@ export function HotelResultRates({
                 expired={expired}
                 unavailableForAgency={unavailable}
                 onBook={() => book(rate.row)}
+                hotelName={hotelName}
               />
             </RateItem>
           );

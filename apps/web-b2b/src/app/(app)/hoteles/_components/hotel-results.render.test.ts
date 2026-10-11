@@ -91,6 +91,8 @@ function card(offer: HotelOffer, showProvider: boolean): string {
       photo: undefined,
       nights: 3,
       rooms: 1,
+      stay: undefined,
+      searchToken: undefined,
       showProvider,
     }),
   );
@@ -141,6 +143,8 @@ describe('HotelResultCard — "Nuevo"', () => {
         item: itemOf(SOLO_NR),
         photo: undefined,
         fresh: true,
+        stay: undefined,
+        searchToken: undefined,
         showProvider: false,
       }),
     );
@@ -260,7 +264,10 @@ describe('HotelResultRates — Reservar desde la tarjeta', () => {
     const buttons = bookButtons(html);
     expect(buttons).toHaveLength(2);
     expect(buttons.some((b) => b.includes('disabled'))).toBe(false);
-    expect(buttons[0]).toMatch(/: Solo alojamiento, Doble estándar, 690\.000(,00)?\s*COP/);
+    // Con el hotel: en la página hay varios «Reservar» de varios hoteles.
+    expect(buttons[0]).toMatch(
+      /: Solo alojamiento, Doble estándar, 690\.000(,00)?\s*COP, en Hotel Plaza TBO<\/span>/,
+    );
     expect(html).toContain(
       'Las condiciones de cancelación exactas y el precio final se confirman al revisar la tarifa, antes de cargar los huéspedes.',
     );
