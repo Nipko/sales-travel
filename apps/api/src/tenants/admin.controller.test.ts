@@ -259,9 +259,7 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
 
   it('fuera de la red, 403', async () => {
     const { controller, service } = invitaciones(undefined);
-    await expect(invitar(controller, 'vendedor')).rejects.toThrow(
-      'target tenant is outside your network',
-    );
+    await expect(invitar(controller, 'vendedor')).rejects.toThrow('Ese nodo no está en tu red.');
     expect(service.invite).not.toHaveBeenCalled();
   });
 
@@ -291,6 +289,74 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
     const { controller, service } = invitaciones('superadmin');
     await invitar(controller, 'tenant_admin');
     expect(service.invite).toHaveBeenCalled();
+  });
+});
+
+describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => {
+  it('sobre sí mismo', async () => {
+    const { controller } = banco({ roleOver: 'tenant_admin' });
+    const yo = { userId: ACTOR, tenantId: NODO };
+
+    await expect(controller.changeRole(ACTOR, { ...yo, role: 'vendedor' })).rejects.toThrow(
+      'no puedes cambiar tu propio rol',
+    );
+    await expect(
+      controller.setMembershipStatus(ACTOR, { ...yo, status: 'suspended' }),
+    ).rejects.toThrow('no puedes cambiar el estado de tu propia membresía');
+    await expect(
+      controller.membershipImpact(ACTOR, { ...yo, status: 'suspended' }),
+    ).rejects.toThrow('no puedes cambiar tu propia membresía');
+    const plataforma = banco({ superadmin: true });
+    await expect(
+      plataforma.controller.setUserStatus(ACTOR, { userId: ACTOR, status: 'suspended' }),
+    ).rejects.toThrow('no puedes suspender tu propio usuario');
+  });
+
+  it('fuera de la red, sin membresía en el nodo o sin ser superadmin', async () => {
+    const cambio = { userId: OTRO, tenantId: NODO, role: 'vendedor' as const };
+
+    await expect(
+      banco({ roleOver: undefined }).controller.changeRole(ACTOR, cambio),
+    ).rejects.toThrow('No administras este nodo.');
+    await expect(
+      banco({ roleOver: 'tenant_admin', membresia: undefined }).controller.changeRole(
+        ACTOR,
+        cambio,
+      ),
+    ).rejects.toThrow('Ese usuario no es miembro de este nodo.');
+    await expect(banco({ superadmin: false }).controller.listTenants(ACTOR)).rejects.toThrow(
+      'Esta acción es sólo para el superadmin.',
+    );
+  });
+
+  it('el último administrador activo del nodo', async () => {
+    // La misma lectura doble devuelve la membership y el conteo de admins restantes (cero).
+    const { controller } = banco({
+      roleOver: 'tenant_admin',
+      membresia: { id: 'm-9', role: 'admin', count: '0' } as { id: string; role: Role },
+    });
+
+    await expect(
+      controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'suspended' }),
+    ).rejects.toThrow(
+      'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
+    );
+  });
+
+  it('invitaciones: rango y nodo', async () => {
+    const network = {
+      roleOver: vi.fn(() => Promise.resolve('admin' as Role)),
+      isSuperadmin: vi.fn(() => Promise.resolve(false)),
+    };
+    const controller = new InvitationsController(
+      { invite: vi.fn() } as unknown as InvitationsService,
+      network as unknown as NetworkService,
+    );
+
+    await expect(
+      controller.invite(ACTOR, { email: 'x@example.com', tenantId: NODO, role: 'admin' }),
+    ).rejects.toThrow('no puedes invitar con un rol igual o superior al tuyo');
+    await expect(controller.list(ACTOR)).rejects.toThrow('Indica el nodo.');
   });
 });
 

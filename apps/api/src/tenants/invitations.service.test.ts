@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { voseoIn } from '../__fixtures__/voseo.js';
 import { escapeHtml, invitationEmailHtml, plainText } from './invitations.service.js';
 
 const LINK = 'https://app.planetour.cloud/invitacion?token=abc_DEF-123';
@@ -7,14 +8,14 @@ describe('correo de invitación: el nombre del nodo no inyecta HTML', () => {
   it('un nombre con un enlace sale como texto, no como markup', () => {
     const html = invitationEmailHtml(
       LINK,
-      'Viajes <a href="https://evil.example/login">Verificá tu cuenta</a>',
+      'Viajes <a href="https://evil.example/login">Verifica tu cuenta</a>',
       7,
     );
 
     expect(html).not.toContain('<a href="https://evil.example');
     expect(html).not.toContain('evil.example/login">');
     expect(html).toContain(
-      'Te invitaron a Viajes &lt;a href=&quot;https://evil.example/login&quot;&gt;Verificá tu cuenta&lt;/a&gt;',
+      'Te invitaron a Viajes &lt;a href=&quot;https://evil.example/login&quot;&gt;Verifica tu cuenta&lt;/a&gt;',
     );
     // El único enlace del correo es el de la invitación.
     expect(html.match(/<a /g)).toHaveLength(1);
@@ -31,6 +32,15 @@ describe('correo de invitación: el nombre del nodo no inyecta HTML', () => {
     expect(escapeHtml(`Tom & Jerry's <b>"viajes"</b>`)).toBe(
       'Tom &amp; Jerry&#39;s &lt;b&gt;&quot;viajes&quot;&lt;/b&gt;',
     );
+  });
+
+  it('va en tú: aceptar, elegir la contraseña e ignorar si no se esperaba', () => {
+    const html = invitationEmailHtml(LINK, 'Viajes Sur', 7);
+    expect(html).toContain(
+      'Acepta la invitación y elige tu contraseña. El enlace vence en 7 días.',
+    );
+    expect(html).toContain('Si no esperabas esta invitación, ignora este correo.');
+    expect(voseoIn(html)).toEqual([]);
   });
 
   it('el asunto y el texto plano no llevan saltos de línea ni caracteres de control', () => {

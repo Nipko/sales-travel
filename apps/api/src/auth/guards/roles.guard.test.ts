@@ -125,7 +125,7 @@ describe('RolesGuard — operaciones de venta', () => {
       expect(forbidden.getStatus()).toBe(403);
       expect(forbidden.reason).toBe('PLATFORM_ROLE_CANNOT_SELL');
       expect(forbidden.message).toBe(
-        'El superadministrador no vende: usá un usuario de una sucursal',
+        'El superadministrador no vende: usa un usuario de una sucursal',
       );
     },
   );

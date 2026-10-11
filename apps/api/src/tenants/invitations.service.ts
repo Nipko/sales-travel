@@ -6,6 +6,7 @@ import { PasswordService } from '../auth/password.service.js';
 import { canGrantRole, isAssignableRole } from '../auth/roles.js';
 import type { DB, Role } from '../database/database.types.js';
 import { DatabaseService } from '../database/database.service.js';
+import { escapeHtml, plainText } from '../mail/mail-text.js';
 import { MailerService } from '../mail/mailer.service.js';
 import {
   invitationDefect,
@@ -15,6 +16,9 @@ import {
 } from './invitation-validity.js';
 import { InvitationNotPendingError } from './onboarding.errors.js';
 import { RoleNotGrantableError } from './tenant-admin.policy.js';
+
+// Antes vivían aquí; se reexportan para quien todavía los importe desde este módulo.
+export { escapeHtml, plainText } from '../mail/mail-text.js';
 
 const INVITE_TTL_DAYS = 7;
 
@@ -108,7 +112,7 @@ export class InvitationsService {
           .where('memberships.tenant_id', '=', tenantId)
           .executeTakeFirst(),
     );
-    if (existingMember) throw new ConflictException('ese email ya pertenece a este tenant');
+    if (existingMember) throw new ConflictException('Ese correo ya es miembro de este nodo.');
 
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60_000);
@@ -253,7 +257,7 @@ export class InvitationsService {
         to: email,
         subject: `Te invitaron a ${tenantName}`,
         html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
-        text: `Te invitaron a ${tenantName}. Aceptá la invitación acá (vence en ${INVITE_TTL_DAYS} días): ${link}`,
+        text: `Te invitaron a ${tenantName}. Acepta la invitación aquí (vence en ${INVITE_TTL_DAYS} días): ${link}`,
       });
     } catch {
       // Best-effort: la invitación queda creada y se puede reenviar.
@@ -497,31 +501,6 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/**
- * Escapa un valor para interpolarlo en HTML, en texto o dentro de un atributo entre comillas.
- *
- * El nombre del nodo lo elige su propio admin (PATCH /tenants/:id/config sólo valida el largo) y la
- * invitación sale con la identidad de la plataforma a cualquier email: sin escapar, una agencia
- * metía enlaces o markup en un correo legítimo, que es phishing servido.
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/**
- * Texto de una sola línea para el asunto y el cuerpo en texto plano: sin caracteres de control. Un
- * salto de línea en el asunto es la puerta a inyectar cabeceras si algún día el correo no pasa por
- * un cliente que las codifique.
- */
-export function plainText(value: string): string {
-  return value.replace(/\p{Cc}+/gu, ' ').trim();
-}
-
 export function invitationEmailHtml(link: string, tenantName: string, ttlDays: number): string {
   const name = escapeHtml(tenantName);
   const href = escapeHtml(link);
@@ -533,13 +512,13 @@ export function invitationEmailHtml(link: string, tenantName: string, ttlDays: n
         <tr><td>
           <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Te invitaron a ${name}</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#52525b">
-            Aceptá la invitación y elegí tu contraseña. El enlace vence en ${ttlDays} días.
+            Acepta la invitación y elige tu contraseña. El enlace vence en ${ttlDays} días.
           </p>
           <a href="${href}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
             Aceptar invitación
           </a>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#71717a">
-            Si no esperabas esta invitación, ignorá este correo.<br>
+            Si no esperabas esta invitación, ignora este correo.<br>
             <span style="color:#4f46e5;word-break:break-all">${href}</span>
           </p>
         </td></tr>

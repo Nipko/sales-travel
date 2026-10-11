@@ -214,7 +214,7 @@ export class TenantsService {
       adminEmail === undefined ? undefined : initialAdminRole(tenantType, actorRole);
     if (adminEmail !== undefined && adminRole === undefined) {
       throw new RoleNotGrantableError(
-        'Tu rol no alcanza para darle un admin al nodo nuevo: crealo sin admin y pedíselo a tu red.',
+        'Tu rol no alcanza para darle un admin al nodo nuevo: créalo sin admin y pídeselo a tu red.',
       );
     }
 

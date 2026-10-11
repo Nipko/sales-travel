@@ -68,9 +68,9 @@ export class PasswordResetService {
     try {
       await this.mailer.sendToTenant(tenant?.tenant_id ?? null, {
         to: email,
-        subject: 'Restablecé tu contraseña · PlaneTour',
+        subject: 'Restablece tu contraseña · PlaneTour',
         html: resetEmailHtml(link, TOKEN_TTL_MINUTES),
-        text: `Restablecé tu contraseña entrando a este enlace (vence en ${TOKEN_TTL_MINUTES} minutos): ${link}`,
+        text: `Restablece tu contraseña entrando a este enlace (vence en ${TOKEN_TTL_MINUTES} minutos): ${link}`,
       });
     } catch {
       // Best-effort: no revelamos fallos de envío al cliente (seguiría siendo un oráculo).
@@ -204,7 +204,7 @@ function resetEmailHtml(link: string, ttlMinutes: number): string {
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:32px">
         <tr><td>
-          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Restablecé tu contraseña</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Restablece tu contraseña</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#52525b">
             Recibimos un pedido para cambiar tu contraseña. El enlace vence en ${ttlMinutes} minutos.
           </p>
@@ -212,7 +212,7 @@ function resetEmailHtml(link: string, ttlMinutes: number): string {
             Elegir contraseña nueva
           </a>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#71717a">
-            Si no pediste esto, ignorá este correo: tu contraseña no cambia.<br>
+            Si no pediste esto, ignora este correo: tu contraseña no cambia.<br>
             <span style="color:#4f46e5;word-break:break-all">${link}</span>
           </p>
         </td></tr>

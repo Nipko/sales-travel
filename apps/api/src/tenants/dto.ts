@@ -9,7 +9,7 @@ import { CREATABLE_TENANT_TYPES } from './tenant-admin.policy.js';
  * las invitaciones.
  */
 export const AssignableRoleSchema = z.enum(ASSIGNABLE_ROLES, {
-  errorMap: () => ({ message: `rol no asignable: usá uno de ${ASSIGNABLE_ROLES.join(', ')}` }),
+  errorMap: () => ({ message: `rol no asignable: usa uno de ${ASSIGNABLE_ROLES.join(', ')}` }),
 });
 
 export const ChangeRoleSchema = z.object({
@@ -107,7 +107,7 @@ export const UpdateSeatsSchema = z
   })
   .strict()
   .refine((v) => v.concurrentSeats !== undefined || v.idleTimeoutMinutes !== undefined, {
-    message: 'indicá qué cambiar: concurrentSeats o idleTimeoutMinutes (null = heredar)',
+    message: 'indica qué cambiar: concurrentSeats o idleTimeoutMinutes (null = heredar)',
   });
 export type UpdateSeatsDto = z.infer<typeof UpdateSeatsSchema>;
 
@@ -191,7 +191,7 @@ export const UpdateTenantSchema = z
   })
   .strict()
   .refine((v) => v.status !== undefined || v.isBranch !== undefined || v.tenantType !== undefined, {
-    message: 'indicá qué cambiar: status, isBranch o tenantType',
+    message: 'indica qué cambiar: status, isBranch o tenantType',
   });
 export type UpdateTenantDto = z.infer<typeof UpdateTenantSchema>;
 

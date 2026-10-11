@@ -44,11 +44,11 @@ export class InvitationsController {
     // quien es consolidator_admin en su red y admin en otra no invita tenant_admins en la segunda.
     const actorRole = await this.network.roleOver(userId, body.tenantId);
     if (actorRole === undefined) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     // No se puede invitar a alguien con rango igual o superior al propio.
     if (!canGrantRole(actorRole, body.role)) {
-      throw new ForbiddenException('no podés invitar con un rol igual o superior al tuyo');
+      throw new ForbiddenException('no puedes invitar con un rol igual o superior al tuyo');
     }
 
     return this.invitations.invite({
@@ -63,11 +63,11 @@ export class InvitationsController {
   @Get()
   async list(@CurrentUser() userId: string | undefined, @Query('tenantId') tenantId?: string) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId es obligatorio');
+    if (!tenantId) throw new ForbiddenException('Indica el nodo.');
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     return { invitations: await this.invitations.listPending(userId, tenantId) };
   }
@@ -80,11 +80,11 @@ export class InvitationsController {
     @Query('tenantId') tenantId?: string,
   ) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId es obligatorio');
+    if (!tenantId) throw new ForbiddenException('Indica el nodo.');
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     return this.invitations.revoke(userId, tenantId, id);
   }
@@ -104,7 +104,7 @@ export class InvitationsController {
 
     const actorRole = await this.network.roleOver(userId, tenantId);
     if (actorRole === undefined) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     return this.invitations.resend({ actorUserId: userId, actorRole, tenantId, invitationId: id });
   }

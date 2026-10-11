@@ -107,7 +107,7 @@ export class AdminController {
     if (!userId) throw new UnauthorizedException();
     // Sin esto, un `admin` podía promoverse a consolidator_admin dentro de su propio nodo.
     if (body.userId === userId) {
-      throw new ForbiddenException('no podés cambiar tu propio rol');
+      throw new ForbiddenException('no puedes cambiar tu propio rol');
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
@@ -165,7 +165,7 @@ export class AdminController {
   ): Promise<{ invitationsToRevoke: number }> {
     if (!userId) throw new UnauthorizedException();
     if (query.userId === userId) {
-      throw new ForbiddenException('no puedes cambiar tu propia membership');
+      throw new ForbiddenException('no puedes cambiar tu propia membresía');
     }
 
     const actorRole = await this.actorRoleOver(userId, query.tenantId);
@@ -319,7 +319,7 @@ export class AdminController {
   ) {
     if (!userId) throw new UnauthorizedException();
     if (body.userId === userId) {
-      throw new ForbiddenException('no podés cambiar el estado de tu propia membership');
+      throw new ForbiddenException('no puedes cambiar el estado de tu propia membresía');
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
@@ -391,7 +391,7 @@ export class AdminController {
   ) {
     const actor = await this.assertSuperadmin(userId);
     if (body.userId === actor) {
-      throw new ForbiddenException('no podés suspender tu propio usuario');
+      throw new ForbiddenException('no puedes suspender tu propio usuario');
     }
 
     const effects = await this.db.withRequestContext(
@@ -447,7 +447,7 @@ export class AdminController {
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst(),
     );
-    if (!target) throw new ForbiddenException('membership not found in this tenant');
+    if (!target) throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
     return target;
   }
 
@@ -457,7 +457,7 @@ export class AdminController {
    */
   private static assertWritten(result: { numUpdatedRows: bigint }): void {
     if (result.numUpdatedRows === 0n) {
-      throw new ForbiddenException('membership not found in this tenant');
+      throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
     }
   }
 
@@ -511,7 +511,7 @@ export class AdminController {
   private async actorRoleOver(
     actorUserId: string,
     tenantId: string,
-    outsideMessage = 'not authorized to manage this tenant',
+    outsideMessage = 'No administras este nodo.',
   ): Promise<Role> {
     const role = await this.network.roleOver(actorUserId, tenantId);
     if (role === undefined) throw new ForbiddenException(outsideMessage);
@@ -548,7 +548,7 @@ export class AdminController {
     );
     if (Number(remaining?.count ?? 0) === 0) {
       throw new ForbiddenException(
-        'es el último administrador activo del tenant: asigná otro antes de suspenderlo',
+        'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
       );
     }
   }
@@ -559,7 +559,8 @@ export class AdminController {
    */
   private async assertSuperadmin(
     userId: string | undefined,
-    denied: () => ForbiddenException = () => new ForbiddenException('superadmin access required'),
+    denied: () => ForbiddenException = () =>
+      new ForbiddenException('Esta acción es sólo para el superadmin.'),
   ): Promise<string> {
     if (!userId) throw new UnauthorizedException();
     if (!(await this.network.isSuperadmin(userId))) throw denied();
