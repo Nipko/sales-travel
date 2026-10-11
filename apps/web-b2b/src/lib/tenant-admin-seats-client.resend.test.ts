@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resendInvitation, sendInvitation } from './tenant-admin-seats-client';
+import { resendInvitation, revokeInvitation, sendInvitation } from './tenant-admin-seats-client';
 
 const TENANT = '33333333-3333-4333-8333-333333333333';
 const INVITATION = '44444444-4444-4444-8444-444444444444';
@@ -55,7 +55,29 @@ describe('resendInvitation', () => {
     });
   });
 
-  it('sesión vencida y respuesta ilegible', async () => {
+  it('si ya no está pendiente lo marca (gone), para recargar la fila vieja', async () => {
+    respond(404, {
+      error: 'Esa invitación ya no está pendiente en este nodo.',
+      reason: 'INVITATION_NOT_PENDING',
+    });
+    expect(await resendInvitation(TENANT, INVITATION)).toEqual({
+      ok: false,
+      message: 'Esa invitación ya no está pendiente en este nodo.',
+      gone: true,
+    });
+
+    // Otro rechazo (el rango) no la da por desaparecida.
+    respond(403, {
+      error: 'No puedes reenviar una invitación con un rol igual o superior al tuyo.',
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    expect(await resendInvitation(TENANT, INVITATION)).toEqual({
+      ok: false,
+      message: 'No puedes reenviar una invitación con un rol igual o superior al tuyo.',
+    });
+  });
+
+  it('sesión vencida, sin conexión y respuesta ilegible', async () => {
     respond(401, {});
     expect(await resendInvitation(TENANT, INVITATION)).toMatchObject({
       ok: false,
@@ -63,6 +85,55 @@ describe('resendInvitation', () => {
     });
     respond(200, { ok: true });
     expect(await resendInvitation(TENANT, INVITATION)).toMatchObject({ ok: false });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    );
+    expect(await resendInvitation(TENANT, INVITATION)).toMatchObject({
+      ok: false,
+      message: /conectar/,
+    });
+  });
+});
+
+describe('revokeInvitation', () => {
+  it('pega al proxy del nodo con POST', async () => {
+    const fetchMock = respond(200, { ok: true });
+    expect(await revokeInvitation(TENANT, INVITATION)).toEqual({ ok: true, data: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/invitations/${INVITATION}/revoke?tenantId=${TENANT}`,
+      { method: 'POST', cache: 'no-store' },
+    );
+  });
+
+  it('el rango: el mensaje del API tal cual, sin darla por desaparecida', async () => {
+    respond(403, {
+      error: 'No puedes revocar una invitación con un rol igual o superior al tuyo.',
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    expect(await revokeInvitation(TENANT, INVITATION)).toEqual({
+      ok: false,
+      message: 'No puedes revocar una invitación con un rol igual o superior al tuyo.',
+    });
+  });
+
+  it('si ya no estaba pendiente lo marca (gone); sin mensaje, el genérico', async () => {
+    respond(404, {
+      error: 'Esa invitación ya no está pendiente en este nodo.',
+      reason: 'INVITATION_NOT_PENDING',
+    });
+    expect(await revokeInvitation(TENANT, INVITATION)).toEqual({
+      ok: false,
+      message: 'Esa invitación ya no está pendiente en este nodo.',
+      gone: true,
+    });
+
+    respond(500, {});
+    expect(await revokeInvitation(TENANT, INVITATION)).toEqual({
+      ok: false,
+      message: 'No pudimos revocar la invitación. Inténtalo de nuevo.',
+    });
   });
 });
 

@@ -12,24 +12,32 @@ import {
 } from '../../../../../lib/invitation-notice';
 import { resendInvitation, sendInvitation } from '../../../../../lib/tenant-admin-seats-client';
 import { inputClass, selectClass } from './field-classes';
+import { roleLabel } from './roles';
 
 /** La invitación pendiente que el API encontró para ese correo en el nodo (409). */
 interface PendingMatch {
   readonly email: string;
   readonly invitationId: string;
+  /** Su rol, si está en la lista que Equipo ya cargó. */
+  readonly role: string | undefined;
 }
 
 /**
  * El aviso de que ya hay una invitación pendiente para el correo, con "Reenviar la invitación":
  * invitar otra vez dejaría a la persona con dos enlaces, y lo que sirve es mandarle uno nuevo.
+ *
+ * Reenviar conserva el rol con que se emitió, que puede no ser el que se eligió ahora: el aviso lo
+ * dice (con el rol, si se conoce), para que nadie reenvíe sin querer un rol más alto o más bajo.
  */
 export function PendingInvitationNotice({
   email,
+  role,
   resending,
   onResend,
   buttonRef,
 }: {
   email: string;
+  role?: string | undefined;
   resending: boolean;
   onResend: () => void;
   buttonRef?: React.Ref<HTMLButtonElement>;
@@ -41,7 +49,10 @@ export function PendingInvitationNotice({
     >
       <p className="font-medium">{pendingInvitationMessage(email)}</p>
       <p className="text-[var(--color-fg-muted)]">
-        Reenviarla le manda un enlace nuevo, que vence en 7 días, y deja sin efecto el anterior.
+        {role === undefined
+          ? 'Reenviarla le manda un enlace nuevo con el mismo rol, que vence en 7 días, y deja sin efecto el anterior.'
+          : `Está pendiente como ${roleLabel(role)}. Reenviarla le manda un enlace nuevo con ese rol, que vence en 7 días, y deja sin efecto el anterior.`}{' '}
+        Para darle otro rol, revoca esa invitación y vuelve a invitar a la persona.
       </p>
       <Button
         ref={buttonRef}
@@ -71,12 +82,15 @@ export function InviteDialog({
   tenantId,
   tenantName,
   roles,
+  pendingRoleOf,
   onClose,
   onDone,
 }: {
   tenantId: string;
   tenantName: string | undefined;
   roles: readonly { readonly value: string; readonly label: string; readonly hint: string }[];
+  /** El rol de una invitación pendiente del nodo, si está en la lista ya cargada. */
+  pendingRoleOf: (invitationId: string) => string | undefined;
   onClose: () => void;
   onDone: (kind: InvitationKind, email: string, issued: IssuedInvitation) => void;
 }) {
@@ -110,7 +124,11 @@ export function InviteDialog({
         return;
       }
       if (res.pendingInvitationId !== undefined) {
-        setPending({ email: address, invitationId: res.pendingInvitationId });
+        setPending({
+          email: address,
+          invitationId: res.pendingInvitationId,
+          role: pendingRoleOf(res.pendingInvitationId),
+        });
         return;
       }
       setError(res.message);
@@ -129,6 +147,8 @@ export function InviteDialog({
         onDone('resent', pending.email, res.data);
         return;
       }
+      // La aceptaron o la revocaron entre el 409 y el reenvío: ya no choca, se puede invitar.
+      if (res.gone) setPending(null);
       setError(res.message);
     } finally {
       setSending(false);
@@ -195,6 +215,7 @@ export function InviteDialog({
         {pending !== null ? (
           <PendingInvitationNotice
             email={pending.email}
+            role={pending.role}
             resending={sending}
             onResend={() => void resendPending()}
             buttonRef={resendButton}

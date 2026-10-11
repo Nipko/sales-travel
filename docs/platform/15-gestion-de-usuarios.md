@@ -139,7 +139,13 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
   por campo, `reason` hasta la pantalla y 400 (no 500) ante un JSON roto. De los `details` del API
   sólo pasa `invitationId`.
 - "Invitar usuario" vive en `invite-dialog.tsx`. Ante el 409 muestra "Ya hay una invitación pendiente
-  para {correo}." con **Reenviar la invitación**, que reenvía la existente.
+  para {correo}." con **Reenviar la invitación**, que reenvía la existente. Reenviar conserva el rol
+  con que se emitió, que puede no ser el elegido ahora: el aviso lo dice ("Está pendiente como
+  {rol}", si la fila está en la lista cargada) y que para darle otro rol hay que revocarla e invitar
+  de nuevo.
+- Reenviar o revocar una invitación que ya no está pendiente (404 `INVITATION_NOT_PENDING`: la
+  aceptaron o la revocaron desde otra sesión) muestra el mensaje y recarga la lista, para que la fila
+  vieja no quede.
 - Con `emailSent: false` el aviso es una advertencia: "Creamos la invitación, pero no pudimos enviar
   el correo. Revisa el correo configurado para este nodo y reenvíala." (al reenviar: "Generamos un
   enlace nuevo, pero…"). Al crear un nodo: "Creamos el nodo y la invitación de su admin, pero no

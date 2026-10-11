@@ -350,6 +350,8 @@ export function TeamPanel({
     const res = await revokeInvitation(tenantId, invitation.id);
     if (!res.ok) {
       setActionError(res.message);
+      // Ya no estaba pendiente (la aceptaron o la revocaron desde otra sesión): la fila quedó vieja.
+      if (res.gone) await load(true);
       return;
     }
     toast.success(`Revocamos la invitación a ${invitation.email}.`);
@@ -364,6 +366,7 @@ export function TeamPanel({
       const res = await resendInvitation(tenantId, invitation.id);
       if (!res.ok) {
         setActionError(res.message);
+        if (res.gone) await load(true);
         return;
       }
       notify(invitationNotice('resent', invitation.email, res.data, new Date()));
@@ -539,6 +542,11 @@ export function TeamPanel({
           tenantId={tenantId}
           tenantName={selectedName}
           roles={grantableRoles(INVITABLE_ROLES, actor)}
+          pendingRoleOf={(id) =>
+            invitations.status === 'ready'
+              ? invitations.items.find((i) => i.id === id)?.role
+              : undefined
+          }
           onClose={() => setShowInvite(false)}
           onDone={invitationIssued}
         />

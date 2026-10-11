@@ -432,7 +432,22 @@ describe('PendingInvitationNotice: la invitación ya pendiente se ofrece reenvia
     expect(html).toContain('Ya hay una invitación pendiente para beto@agencia.co.');
     expect(html).toContain('Reenviar la invitación');
     expect(html).not.toContain('disabled=""');
+    // Sin la fila en la lista, igual dice que reenviar conserva el rol y cómo cambiarlo.
+    expect(html).toContain('con el mismo rol');
+    expect(html).toContain('Para darle otro rol, revoca esa invitación');
     expect(voseoIn(html)).toEqual([]);
+
+    const withRole = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        role: 'admin',
+        resending: false,
+        onResend: () => {},
+      }),
+    );
+    expect(withRole).toContain('Está pendiente como Manager.');
+    expect(withRole).toContain('un enlace nuevo con ese rol');
+    expect(voseoIn(withRole)).toEqual([]);
 
     const busy = renderToStaticMarkup(
       createElement(PendingInvitationNotice, {

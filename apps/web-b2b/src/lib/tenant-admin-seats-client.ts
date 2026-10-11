@@ -162,16 +162,51 @@ export function loadInvitations(tenantId: string): Promise<Loaded<PendingInvitat
   );
 }
 
-/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
-export function revokeInvitation(tenantId: string, invitationId: string): Promise<Loaded<true>> {
-  return call(
-    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
-    accepted,
-    (status, message) =>
-      status === 401
+/**
+ * Lo que devuelven reenviar y revocar. `gone`: la invitación ya no está pendiente (la aceptaron o la
+ * revocaron desde otra sesión), así que la fila de la lista quedó vieja y hay que recargarla.
+ */
+export type InvitationActionResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly message: string; readonly gone?: true };
+
+/** Reenviar o revocar una invitación: el error, con el mensaje del API tal cual. Nunca lanza. */
+async function invitationAction<T>(
+  url: string,
+  parse: (value: unknown) => T | undefined,
+  fallback: string,
+): Promise<InvitationActionResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', cache: 'no-store' });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
         ? 'Tu sesión venció. Vuelve a iniciar sesión.'
-        : message?.trim() || 'No pudimos revocar la invitación. Inténtalo de nuevo.',
+        : errorOf(body)?.trim() || fallback;
+    return body?.['reason'] === 'INVITATION_NOT_PENDING'
+      ? { ok: false, message, gone: true }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parse(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
+}
+
+/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
+export function revokeInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<InvitationActionResult<true>> {
+  return invitationAction(
+    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
+    accepted,
+    'No pudimos revocar la invitación. Inténtalo de nuevo.',
   );
 }
 
@@ -182,15 +217,11 @@ export function revokeInvitation(tenantId: string, invitationId: string): Promis
 export function resendInvitation(
   tenantId: string,
   invitationId: string,
-): Promise<Loaded<IssuedInvitation>> {
-  return call(
+): Promise<InvitationActionResult<IssuedInvitation>> {
+  return invitationAction(
     `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
     parseIssuedInvitation,
-    (status, message) =>
-      status === 401
-        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
-        : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
+    'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
 }
 
