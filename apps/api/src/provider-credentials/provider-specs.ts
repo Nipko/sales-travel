@@ -172,6 +172,7 @@ const SABRE: ProviderSpec = {
     'brandLadderRounds',
     'upsellLimit',
     'multipleFares',
+    'ndcContent',
     'allowCardBinPricing',
     'mock',
   ],

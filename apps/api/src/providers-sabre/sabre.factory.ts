@@ -65,17 +65,20 @@ export const SABRE_PROVIDER_CODE = 'sabre';
 const SABRE_DEFAULT_ENVIRONMENT: SabreEnvironment = 'cert';
 
 /**
- * Las cuatro palancas comerciales de BFM que una cuenta puede declarar en su `config`.
+ * Las palancas comerciales de BFM que una cuenta puede declarar en su `config`.
  *
  * Se guardan planas porque el formulario BYOC trabaja con campos escalares. El objeto tipado que
  * consume el ACL se reconstruye acá, en el borde del factory, para que un POST directo no pueda
  * colar strings o valores fuera de rango hasta el request de Sabre.
+ *
+ * `ndcContent` es la quinta: pide contenido NDC a Sabre, que el ACL todavía descarta al mapear.
  */
 const SABRE_ACCOUNT_SHOP_OPTION_KEYS = [
   'brandedFares',
   'brandLadderRounds',
   'upsellLimit',
   'multipleFares',
+  'ndcContent',
 ] as const;
 
 export interface SabreAccountShopOptionsResult {
@@ -94,11 +97,36 @@ function integerConfigValue(value: unknown): unknown {
 }
 
 /**
+ * Convierte el texto de un `select` booleano. Sólo `"true"` y `"false"`, que son los valores que
+ * ofrece el formulario; un booleano de verdad (POST directo) pasa tal cual.
+ *
+ * No es `Boolean(value)`: `"false"` es una cadena no vacía y encendería lo que se pidió apagar.
+ * Cualquier otra cosa sigue de largo para que el esquema la rechace y caiga al conjunto
+ * conservador.
+ */
+function booleanConfigValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false') return false;
+  return value;
+}
+
+function shopOptionConfigValue(
+  key: (typeof SABRE_ACCOUNT_SHOP_OPTION_KEYS)[number],
+  value: unknown,
+): unknown {
+  if (key === 'brandLadderRounds' || key === 'upsellLimit') return integerConfigValue(value);
+  if (key === 'ndcContent') return booleanConfigValue(value);
+  return value;
+}
+
+/**
  * `provider_accounts.config` → opciones de shop validadas.
  *
- * Ante cualquier entrada inválida se vuelve al conjunto conservador del ACL (`single`, sin MFPI
- * y sin rondas pagadas) y se entregan sólo los nombres de campo para el log. No se hace coerción
- * permisiva: `2.5`, `-1` o una palabra desconocida no pueden cambiar la petición real.
+ * Ante cualquier entrada inválida se vuelve al conjunto conservador del ACL (`single`, sin MFPI,
+ * sin rondas pagadas y sin NDC) y se entregan sólo los nombres de campo para el log. No se hace
+ * coerción permisiva: `2.5`, `-1` o una palabra desconocida no pueden cambiar la petición real.
  */
 export function sabreShopOptionsFromAccountConfig(
   config: Readonly<Record<string, unknown>>,
@@ -107,8 +135,7 @@ export function sabreShopOptionsFromAccountConfig(
   for (const key of SABRE_ACCOUNT_SHOP_OPTION_KEYS) {
     const value = config[key];
     if (value === undefined) continue;
-    candidate[key] =
-      key === 'brandLadderRounds' || key === 'upsellLimit' ? integerConfigValue(value) : value;
+    candidate[key] = shopOptionConfigValue(key, value);
   }
 
   const parsed = SabreShopOptionsSchema.safeParse(candidate);

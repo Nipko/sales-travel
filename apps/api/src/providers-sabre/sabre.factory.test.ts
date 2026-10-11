@@ -223,7 +223,7 @@ describe('SabreProviderFactory — entorno', () => {
 });
 
 describe('SabreProviderFactory — shopOptions por cuenta', () => {
-  it('sin configuración aplica single, cero rondas pagadas y MFPI apagado', () => {
+  it('sin configuración aplica single, cero rondas pagadas, MFPI apagado y sin NDC', () => {
     const parsed = sabreShopOptionsFromAccountConfig({});
     expect(parsed.invalidFields).toEqual([]);
     expect(parsed.options).toMatchObject({
@@ -231,15 +231,17 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 0,
       upsellLimit: 3,
       multipleFares: 'off',
+      ndcContent: false,
     });
   });
 
-  it('convierte los valores numéricos del formulario y conserva las cuatro palancas', () => {
+  it('convierte los valores del formulario y conserva las cinco palancas', () => {
     const parsed = sabreShopOptionsFromAccountConfig({
       brandedFares: 'upsell',
       brandLadderRounds: '2',
       upsellLimit: '5',
       multipleFares: 'with-baggage',
+      ndcContent: 'true',
     });
     expect(parsed.invalidFields).toEqual([]);
     expect(parsed.options).toMatchObject({
@@ -247,8 +249,31 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 2,
       upsellLimit: 5,
       multipleFares: 'with-baggage',
+      ndcContent: true,
     });
   });
+
+  it.each([
+    ['el texto "true" del select', 'true', true],
+    ['el texto "false" del select', 'false', false],
+    ['el texto con espacios del borde', ' true ', true],
+    ['un booleano de un POST directo', true, true],
+    ['un false de un POST directo', false, false],
+  ] as const)('ndcContent acepta %s', (_caso, valor, esperado) => {
+    const parsed = sabreShopOptionsFromAccountConfig({ ndcContent: valor });
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.options.ndcContent).toBe(esperado);
+  });
+
+  it.each([['TRUE'], ['1'], ['on'], ['sí'], [1], ['']])(
+    'ndcContent=%j no se adivina: cae al conjunto conservador, con NDC apagado',
+    (valor) => {
+      const parsed = sabreShopOptionsFromAccountConfig({ ndcContent: valor, brandedFares: 'off' });
+      expect(parsed.invalidFields).toEqual(['ndcContent']);
+      // Conservador ENTERO, no sólo NDC: también vuelve `brandedFares` a su default.
+      expect(parsed.options).toMatchObject({ ndcContent: false, brandedFares: 'single' });
+    },
+  );
 
   it('una entrada manipulada cae al conjunto conservador y sólo revela nombres de campo', () => {
     const parsed = sabreShopOptionsFromAccountConfig({
@@ -256,11 +281,13 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: '2.5',
       upsellLimit: '-1',
       multipleFares: 'todo',
+      ndcContent: 'encendidisimo',
     });
     expect(parsed.invalidFields).toEqual([
       'brandLadderRounds',
       'brandedFares',
       'multipleFares',
+      'ndcContent',
       'upsellLimit',
     ]);
     expect(parsed.options).toMatchObject({
@@ -268,11 +295,14 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 0,
       upsellLimit: 3,
       multipleFares: 'off',
+      ndcContent: false,
     });
     expect(JSON.stringify(parsed)).not.toContain('todas-siempre');
+    expect(JSON.stringify(parsed)).not.toContain('encendidisimo');
   });
 
-  it('pasa las opciones parseadas al adapter que construye el request BFM', async () => {
+  /** Busca con la cuenta indicada y devuelve los cuerpos de shop que salieron por `fetch`. */
+  async function shopBodiesFor(config: Record<string, unknown>): Promise<string[]> {
     const shopBodies: string[] = [];
     vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
       if (String(input).includes('/v2/auth/token')) {
@@ -295,18 +325,7 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
     });
 
     try {
-      const factory = factoryWith(() =>
-        Promise.resolve(
-          resolved({
-            config: {
-              brandedFares: 'upsell',
-              brandLadderRounds: '2',
-              upsellLimit: '5',
-              multipleFares: 'with-baggage',
-            },
-          }),
-        ),
-      );
+      const factory = factoryWith(() => Promise.resolve(resolved({ config })));
       const adapter = await factory.forTenant('t1');
       await adapter.search(
         {
@@ -321,12 +340,41 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+    return shopBodies;
+  }
 
-    const firstRequest = shopBodies[0] ?? '';
+  it('pasa las opciones parseadas al adapter que construye el request BFM', async () => {
+    const [firstRequest = ''] = await shopBodiesFor({
+      brandedFares: 'upsell',
+      brandLadderRounds: '2',
+      upsellLimit: '5',
+      multipleFares: 'with-baggage',
+      ndcContent: 'true',
+    });
+
     expect(firstRequest).toContain('"SingleBrandedFare":true');
     expect(firstRequest).toContain('"MultipleBrandedFares":true');
     expect(firstRequest).toContain('"UpsellLimit":5');
     expect(firstRequest).toContain('"FlexibleFares"');
+    expect(firstRequest).toContain(
+      '"DataSources":{"NDC":"Enable","ATPCO":"Enable","LCC":"Disable"}',
+    );
+  });
+
+  it('una cuenta que no dice nada de NDC no lo pide a Sabre', async () => {
+    const bodies = await shopBodiesFor({});
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(body).toContain('"DataSources":{"NDC":"Disable","ATPCO":"Enable","LCC":"Disable"}');
+    }
+  });
+
+  it('el "false" del formulario apaga NDC: no lo enciende por ser una cadena no vacía', async () => {
+    const bodies = await shopBodiesFor({ ndcContent: 'false' });
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) expect(body).toContain('"NDC":"Disable"');
   });
 });
 

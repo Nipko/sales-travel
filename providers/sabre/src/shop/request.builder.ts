@@ -216,16 +216,42 @@ export const SABRE_BRAND_LADDER_DEFAULT = 0;
 export const SABRE_BRAND_LADDER_MAX = 4;
 
 /**
- * Interruptores de fuente. `NDC` y `ATPCO` van habilitados **a la vez**: son propiedades
- * independientes del mismo objeto, sin `oneOf` ni `maxProperties` que lo impidan (`v5.yml:6237`),
- * y BFM consulta ambas fuentes en UNA sola llamada — sumar Sabre al fan-out cuesta 1 request, no 3.
- * `LCC` queda fuera de alcance en Ola 1 (docs/sabre/02 §4.1 y §4.2).
+ * ¿Se le pide a Sabre contenido NDC? NO, salvo que la cuenta lo encienda.
+ *
+ * El mapper todavía no convierte una oferta NDC en `Offer`: la descarta con `ndc-content-skipped`
+ * (`shop/response.mapper.ts`, `mapPricingInformation`). Pedirla era pagar en latencia y en tamaño
+ * de respuesta por tarifas que el vendedor nunca llegaba a ver. Se enciende por cuenta cuando el
+ * mapper NDC esté certificado, o para capturar evidencia en CERT.
+ */
+export const SABRE_NDC_CONTENT_DEFAULT = false;
+
+/**
+ * Interruptores de fuente (`v5.yml:6237`), tal como salen cuando la cuenta no dice nada.
+ *
+ * Son propiedades independientes del mismo objeto, sin `oneOf` ni `maxProperties`: BFM puede
+ * consultar ATPCO y NDC en UNA sola llamada, y sumar Sabre al fan-out cuesta 1 request, no 3.
+ *
+ * - `ATPCO` siempre encendido: es el contenido que el mapper sabe convertir en `Offer`.
+ * - `NDC` apagado por defecto. Lo enciende sólo `ndcContent`; ver {@link SABRE_NDC_CONTENT_DEFAULT}.
+ * - `LCC` fuera de alcance en Ola 1 (docs/sabre/02 §4.1 y §4.2).
+ *
+ * Nunca se manda este objeto tal cual: el builder arma uno nuevo por petición con
+ * {@link dataSourcesFor}, para que encender NDC en una cuenta no lo encienda en las demás.
  */
 export const SABRE_DATA_SOURCES = {
-  NDC: 'Enable',
+  NDC: 'Disable',
   ATPCO: 'Enable',
   LCC: 'Disable',
 } as const;
+
+/** El enum del contrato para cada fuente (`v5.yml:6240-6262`). */
+export type SabreSourceSwitch = 'Enable' | 'Disable';
+
+export interface SabreDataSources {
+  readonly NDC: SabreSourceSwitch;
+  readonly ATPCO: typeof SABRE_DATA_SOURCES.ATPCO;
+  readonly LCC: typeof SABRE_DATA_SOURCES.LCC;
+}
 
 /**
  * `Baggage.RequestType: "C"` = franquicia **y cargos**, no sólo franquicia (`v5.yml:5885`, enum
@@ -322,7 +348,7 @@ export interface SabreTravelPreferences {
   VendorPref?: [{ Code: string; PreferLevel: 'Only'; Type: 'Marketing' }];
   Baggage: typeof SABRE_BAGGAGE_REQUEST;
   TPA_Extensions: {
-    DataSources: typeof SABRE_DATA_SOURCES;
+    DataSources: SabreDataSources;
     PreferNDCSourceOnTie: { Value: boolean };
     NumTrips: { Number: number };
     /** Ausente salvo que se pida MFPI. Ver {@link SABRE_MULTIPLE_FARES_MODES}. */
@@ -432,6 +458,17 @@ export const SabreShopOptionsSchema = z.object({
     .max(SABRE_BRAND_LADDER_MAX)
     .default(SABRE_BRAND_LADDER_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
+  /**
+   * `DataSources.NDC`: `Enable` sólo con `true`. Ver {@link SABRE_NDC_CONTENT_DEFAULT}.
+   *
+   * Booleano estricto: el texto `"true"` del formulario lo convierte el borde que lee la cuenta,
+   * no este esquema. Una coerción aquí haría que `"false"` —una cadena no vacía— encendiera NDC.
+   *
+   * Apagarlo no toca `MultipleSourcePerItinerary`, que sigue fijo. Sí puede cambiar qué
+   * alternativas ATPCO devuelve Sabre en una ruta donde antes competían con las NDC; eso se
+   * comprueba con las capturas de CERT, no se supone.
+   */
+  ndcContent: z.boolean().default(SABRE_NDC_CONTENT_DEFAULT),
 });
 
 export type SabreShopOptions = z.input<typeof SabreShopOptionsSchema>;
@@ -571,7 +608,10 @@ function buildTravelPreferences(
   const prefs: SabreTravelPreferences = {
     Baggage: SABRE_BAGGAGE_REQUEST,
     TPA_Extensions: {
-      DataSources: SABRE_DATA_SOURCES,
+      DataSources: dataSourcesFor(opts.ndcContent),
+      // Se sigue mandando con NDC apagado: sin NDC no hay empate que desempatar, pero la colección
+      // ya lo manda en un caso igual —el workflow LCC-only, `Workflows / 5` (docs/sabre/02 §4.2)—
+      // y quitarlo a la vez que se apaga NDC sería cambiar dos cosas del request en un solo paso.
       PreferNDCSourceOnTie: { Value: opts.preferNdcSourceOnTie },
       NumTrips: { Number: opts.numTrips },
     },
@@ -603,6 +643,11 @@ function buildTravelPreferences(
     ];
   }
   return prefs;
+}
+
+/** Un objeto nuevo por petición: {@link SABRE_DATA_SOURCES} es compartido y no se toca. */
+function dataSourcesFor(ndcContent: boolean): SabreDataSources {
+  return { ...SABRE_DATA_SOURCES, NDC: ndcContent ? 'Enable' : 'Disable' };
 }
 
 /**

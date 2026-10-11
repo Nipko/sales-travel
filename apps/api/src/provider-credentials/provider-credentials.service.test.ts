@@ -113,6 +113,7 @@ describe('listSafe — `config` no sale verbatim', () => {
           brandLadderRounds: '2',
           upsellLimit: '3',
           multipleFares: 'off',
+          ndcContent: 'false',
         },
         credentials: { epr: EPR, password: PASSWORD, homePcc: 'AB1C' },
       },
@@ -124,6 +125,8 @@ describe('listSafe — `config` no sale verbatim', () => {
       brandLadderRounds: '2',
       upsellLimit: '3',
       multipleFares: 'off',
+      // Sin estar en la lista blanca, el panel no podría precargarlo al editar y lo perdería.
+      ndcContent: 'false',
     });
     expect(cuenta?.redactedConfigKeys).toEqual([]);
     expect(cuenta?.configVerified).toBe(true);

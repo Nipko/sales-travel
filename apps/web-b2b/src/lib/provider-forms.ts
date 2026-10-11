@@ -309,6 +309,18 @@ const SABRE: ProviderForm = {
       help: 'MFPI es una capacidad distinta de las marcas y también puede requerir habilitación por PCC. Al activarlo se piden dos grupos: tarifa base y tarifa con pieza facturada.',
     },
     {
+      // Apagado por defecto: el ACL todavía descarta las ofertas NDC al mapear, así que pedirlas
+      // sólo suma latencia y tamaño de respuesta. Lo lee `sabreShopOptionsFromAccountConfig`.
+      key: 'ndcContent',
+      label: 'Contenido NDC (experimental)',
+      defaultValue: 'false',
+      options: [
+        { value: 'false', label: 'Apagado (recomendado)' },
+        { value: 'true', label: 'Encendido' },
+      ],
+      help: 'Pide tarifas NDC a Sabre. Déjalo apagado: la plataforma todavía no muestra esas tarifas.',
+    },
+    {
       key: 'agencyIata',
       label: 'IATA de la agencia (opcional)',
       placeholder: '12345678',

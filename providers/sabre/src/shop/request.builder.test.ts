@@ -4,6 +4,7 @@ import { SABRE_HOSTS, type SabreConfig } from '../config';
 import { SabreConfigError } from '../errors';
 import {
   SABRE_BFM_VERSION,
+  SABRE_DATA_SOURCES,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -174,6 +175,8 @@ describe('MultipleSourcePerItinerary es constante, no opción', () => {
     ['con tier 200ITINS', { itineraryTier: '200ITINS' }],
     ['con numTrips 1', { numTrips: 1 }],
     ['sin preferencia NDC en empate', { preferNdcSourceOnTie: false }],
+    ['con contenido NDC', { ndcContent: true }],
+    ['sin contenido NDC', { ndcContent: false }],
   ];
 
   it.each(optionCases)('%s sigue valiendo true', (_name, options) => {
@@ -183,13 +186,70 @@ describe('MultipleSourcePerItinerary es constante, no opción', () => {
   });
 });
 
-describe('DataSources: NDC y ATPCO a la vez, LCC fuera', () => {
-  it('las tres propiedades viajan con su valor de Ola 1', () => {
+describe('DataSources: ATPCO siempre, NDC sólo si la cuenta lo habilita, LCC fuera', () => {
+  it('por defecto NO pide NDC: el mapper lo descartaría y se paga en latencia y payload', () => {
     expect(build().TravelPreferences.TPA_Extensions.DataSources).toEqual({
-      NDC: 'Enable',
+      NDC: 'Disable',
       ATPCO: 'Enable',
       LCC: 'Disable',
     });
+  });
+
+  it('con ndcContent pide NDC y ATPCO en la misma llamada', () => {
+    expect(
+      build({}, {}, { ndcContent: true }).TravelPreferences.TPA_Extensions.DataSources,
+    ).toEqual({ NDC: 'Enable', ATPCO: 'Enable', LCC: 'Disable' });
+  });
+
+  it('ndcContent false explícito es lo mismo que no decir nada', () => {
+    expect(
+      build({}, {}, { ndcContent: false }).TravelPreferences.TPA_Extensions.DataSources,
+    ).toEqual(build().TravelPreferences.TPA_Extensions.DataSources);
+  });
+
+  it('el valor llega así al cable, no sólo al objeto', () => {
+    const encendido = JSON.stringify(
+      buildSabreShopRequest(criteria(), cfg(), { ndcContent: true }),
+    );
+    const apagado = JSON.stringify(buildSabreShopRequest(criteria(), cfg()));
+    expect(encendido).toContain('"DataSources":{"NDC":"Enable","ATPCO":"Enable","LCC":"Disable"}');
+    expect(apagado).toContain('"DataSources":{"NDC":"Disable","ATPCO":"Enable","LCC":"Disable"}');
+  });
+
+  it('encender NDC en una petición no lo enciende en la siguiente: el default no se muta', () => {
+    const encendida = build({}, {}, { ndcContent: true });
+    const siguiente = build();
+    expect(encendida.TravelPreferences.TPA_Extensions.DataSources.NDC).toBe('Enable');
+    expect(siguiente.TravelPreferences.TPA_Extensions.DataSources.NDC).toBe('Disable');
+    expect(SABRE_DATA_SOURCES.NDC).toBe('Disable');
+    expect(encendida.TravelPreferences.TPA_Extensions.DataSources).not.toBe(SABRE_DATA_SOURCES);
+  });
+
+  it.each([['true'], ['Enable'], [1], [null]])(
+    'ndcContent=%j no es un booleano: falla con error tipado y sin repetir el valor',
+    (valor) => {
+      const options = { ndcContent: valor } as unknown as SabreShopOptions;
+      let mensaje = '';
+      try {
+        build({}, {}, options);
+      } catch (err) {
+        expect(err).toBeInstanceOf(SabreConfigError);
+        mensaje = (err as Error).message;
+      }
+      expect(mensaje).toContain('ndcContent');
+      expect(mensaje).not.toContain('Enable');
+    },
+  );
+
+  it('ndcContent no cambia nada fuera de DataSources.NDC', () => {
+    const conNdc = build({}, {}, { ndcContent: true });
+    const sinNdc = build();
+    const { DataSources: _a, ...restoConNdc } = conNdc.TravelPreferences.TPA_Extensions;
+    const { DataSources: _b, ...restoSinNdc } = sinNdc.TravelPreferences.TPA_Extensions;
+    expect(restoConNdc).toEqual(restoSinNdc);
+    expect(conNdc.TPA_Extensions).toEqual(sinNdc.TPA_Extensions);
+    expect(conNdc.TravelerInfoSummary).toEqual(sinNdc.TravelerInfoSummary);
+    expect(conNdc.POS).toEqual(sinNdc.POS);
   });
 
   it('PreferNDCSourceOnTie va activo por defecto y es configurable', () => {
