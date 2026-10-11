@@ -99,6 +99,25 @@ describe('puestos: rutas del API', () => {
       error: 'Miembro inválido.',
     });
   });
+
+  it('enviar el enlace para restablecer la contraseña y desbloquear', () => {
+    expect(memberActionTarget(ID, USER, 'send-password-reset')).toEqual({
+      ok: true,
+      path: `/tenants/${ID.toLowerCase()}/members/${USER}/send-password-reset`,
+    });
+    expect(memberActionTarget(ID, USER, 'unlock')).toEqual({
+      ok: true,
+      path: `/tenants/${ID.toLowerCase()}/members/${USER}/unlock`,
+    });
+    expect(memberActionTarget(ID, '../reset-mfa', 'unlock')).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
+    });
+    expect(memberActionTarget('x', USER, 'send-password-reset')).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+  });
 });
 
 describe('membershipImpactTarget: GET /admin/memberships/impact', () => {

@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   ANONYMOUS_ACTOR,
   MFA_REQUIRED_ROLES,
+  accessSuspended,
   canActOn,
   demotes,
   grantableRoles,
   invitationOrigin,
+  isLocked,
   memberAccess,
   memberActionCopy,
   memberActionDoneMessage,
   memberActionError,
+  memberActionNoticeTone,
+  memberMenuGroups,
   memberStatus,
   mfaState,
   parseInvitations,
@@ -327,5 +331,129 @@ describe('textos de las acciones', () => {
   it('el error de carga no es un "no hay usuarios"', () => {
     expect(teamLoadError(403)).toMatch(/permiso/);
     expect(teamLoadError(500)).toMatch(/No pudimos cargar/);
+  });
+});
+
+describe('enviar el enlace para restablecer la contraseña y desbloquear', () => {
+  const NOW = Date.parse('2026-10-11T12:00:00.000Z');
+
+  it('los textos de "Enviar enlace": a quién, que vence, que invalida los anteriores y que el admin no ve nada', () => {
+    const copy = memberActionCopy('send-password-reset', member());
+    expect(copy).toEqual({
+      label: 'Enviar enlace para restablecer contraseña',
+      title: 'Enviar a Ana Pérez un enlace para restablecer su contraseña',
+      description:
+        'Le enviamos a ana@agencia.co un enlace para que elija una contraseña nueva. Vence en 60 minutos y deja sin efecto los enlaces anteriores. Tú no ves el enlace ni la contraseña, y la actual sigue funcionando hasta que la cambie.',
+      confirmLabel: 'Enviar enlace',
+      done: 'Le enviamos a Ana Pérez un enlace para elegir una contraseña nueva. Vence en 1 hora.',
+    });
+  });
+
+  it('los textos de "Desbloquear cuenta": qué no cambia y qué hacer si no reconoce los intentos', () => {
+    const copy = memberActionCopy('unlock', member({ name: null }));
+    expect(copy.label).toBe('Desbloquear cuenta');
+    expect(copy.title).toBe('Desbloquear a ana@agencia.co');
+    expect(copy.description).toMatch(/No cambia su contraseña ni su 2FA/);
+    expect(copy.description).toMatch(/envíale un enlace para restablecer la contraseña/);
+    expect(copy.confirmLabel).toBe('Desbloquear');
+    expect(copy.done).toBe('Desbloqueamos la cuenta de ana@agencia.co.');
+  });
+
+  it('parseMemberActionResult lee `sent` y `unlocked` si son booleanos', () => {
+    expect(parseMemberActionResult({ sent: false, expiresAt: '2026-10-11T13:00:00Z' })).toEqual({
+      revoked: undefined,
+      sent: false,
+      unlocked: undefined,
+    });
+    expect(parseMemberActionResult({ unlocked: true })).toMatchObject({ unlocked: true });
+    expect(parseMemberActionResult({ sent: 'sí', unlocked: 1 })).toMatchObject({
+      sent: undefined,
+      unlocked: undefined,
+    });
+  });
+
+  it('el aviso: enviado, correo que no salió (advertencia), desbloqueado o ya no lo estaba', () => {
+    const ana = member();
+    const sent = { revoked: undefined, sent: true };
+    const notSent = { revoked: undefined, sent: false };
+    expect(memberActionDoneMessage('send-password-reset', ana, sent)).toBe(
+      'Le enviamos a Ana Pérez un enlace para elegir una contraseña nueva. Vence en 1 hora.',
+    );
+    expect(memberActionNoticeTone('send-password-reset', sent)).toBe('success');
+    expect(memberActionDoneMessage('send-password-reset', ana, notSent)).toBe(
+      'Generamos el enlace, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo e inténtalo de nuevo.',
+    );
+    expect(memberActionNoticeTone('send-password-reset', notSent)).toBe('warning');
+
+    expect(memberActionDoneMessage('unlock', ana, { revoked: undefined, unlocked: true })).toBe(
+      'Desbloqueamos la cuenta de Ana Pérez.',
+    );
+    expect(memberActionDoneMessage('unlock', ana, { revoked: undefined, unlocked: false })).toBe(
+      'Ana Pérez ya no estaba bloqueado.',
+    );
+    expect(memberActionNoticeTone('unlock', { revoked: undefined, unlocked: false })).toBe(
+      'success',
+    );
+  });
+
+  it('el 409 y el 429 muestran el motivo del API, o uno propio si no vino', () => {
+    const suspended =
+      'Su acceso a este nodo está suspendido: reactívalo antes de enviarle el enlace.';
+    expect(memberActionError(409, suspended)).toBe(suspended);
+    expect(memberActionError(409, '')).toMatch(/suspendido/);
+    const limited =
+      'Ya se enviaron varios enlaces a esta persona hace poco. Espera 15 minutos antes de enviar otro.';
+    expect(memberActionError(429, limited)).toBe(limited);
+    expect(memberActionError(429, undefined)).toMatch(/Espera unos minutos/);
+  });
+
+  it('bloqueado sólo con un bloqueo vigente; acceso suspendido en la plataforma o en el nodo', () => {
+    expect(isLocked(member({ lockedUntil: '2026-10-11T12:10:00.000Z' }), NOW)).toBe(true);
+    expect(isLocked(member({ lockedUntil: '2026-10-11T11:59:00.000Z' }), NOW)).toBe(false);
+    expect(isLocked(member({ lockedUntil: null }), NOW)).toBe(false);
+    expect(isLocked(member({ lockedUntil: undefined }), NOW)).toBe(false);
+
+    expect(accessSuspended(member())).toBe(false);
+    expect(accessSuspended(member({ userStatus: 'suspended' }))).toBe(true);
+    expect(accessSuspended(member({ membershipStatus: 'suspended' }))).toBe(true);
+  });
+
+  it('el menú: Acceso (enlace y, si está bloqueado, desbloquear) y Seguridad', () => {
+    const groups = memberMenuGroups(member({ mfaEnabled: true }), NOW);
+    expect(groups.map((g) => g.heading)).toEqual(['Acceso', 'Seguridad']);
+    expect(groups[0]?.items).toEqual([
+      {
+        action: 'send-password-reset',
+        label: 'Enviar enlace para restablecer contraseña',
+        disabled: false,
+      },
+    ]);
+    expect(groups[1]?.items.map((i) => [i.action, i.disabled])).toEqual([
+      ['revoke-sessions', false],
+      ['reset-mfa', false],
+    ]);
+
+    const locked = memberMenuGroups(member({ lockedUntil: '2026-10-11T12:10:00.000Z' }), NOW);
+    expect(locked[0]?.items.map((i) => i.action)).toEqual(['send-password-reset', 'unlock']);
+  });
+
+  it('con el acceso suspendido, "Enviar enlace" se ve deshabilitado y dice por qué', () => {
+    for (const patch of [{ userStatus: 'suspended' }, { membershipStatus: 'suspended' }]) {
+      const [access] = memberMenuGroups(member(patch), NOW);
+      expect(access?.items[0]).toEqual({
+        action: 'send-password-reset',
+        label: 'Enviar enlace para restablecer contraseña (acceso suspendido)',
+        disabled: true,
+      });
+    }
+  });
+
+  it('sin 2FA activo, "Restablecer 2FA" se ve deshabilitado', () => {
+    const [, security] = memberMenuGroups(member({ mfaEnabled: false }), NOW);
+    expect(security?.items[1]).toEqual({
+      action: 'reset-mfa',
+      label: 'Restablecer 2FA (no lo tiene activo)',
+      disabled: true,
+    });
   });
 });

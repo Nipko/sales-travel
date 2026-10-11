@@ -23,6 +23,7 @@ import {
   grantableRoles,
   memberActionCopy,
   memberActionDoneMessage,
+  memberActionNoticeTone,
   memberName,
   roleChangeCopy,
   statusChangeCopy,
@@ -305,7 +306,8 @@ export function TeamPanel({
       title: copy.title,
       description: copy.description,
       confirmLabel: copy.confirmLabel,
-      destructive: true,
+      // Enviar el enlace y desbloquear le devuelven el acceso, no se lo cortan: confirmación neutra.
+      destructive: action !== 'send-password-reset' && action !== 'unlock',
     });
     if (!ok) return;
     setActionError('');
@@ -318,7 +320,9 @@ export function TeamPanel({
       failOn(member, res.message);
       return;
     }
-    toast.success(memberActionDoneMessage(action, member, res.data));
+    const notify =
+      memberActionNoticeTone(action, res.data) === 'warning' ? toast.warning : toast.success;
+    notify(memberActionDoneMessage(action, member, res.data));
     await Promise.all([load(true), reloadSeats(true)]);
   }
 

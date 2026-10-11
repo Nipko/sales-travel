@@ -154,6 +154,31 @@ describe('runMemberAction', () => {
     expect(res.ok ? res.data.revoked : 'error').toBeUndefined();
   });
 
+  it('enviar el enlace: si el correo no salió lo dice; el 429 trae el motivo del API', async () => {
+    const fetchMock = respond(200, { sent: false, expiresAt: '2026-10-11T13:00:00.000Z' });
+    const res = await runMemberAction(TENANT, 'u1', 'send-password-reset');
+    expect(res.ok ? res.data.sent : 'error').toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tenants/${TENANT}/members/u1/send-password-reset`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    respond(429, {
+      error: 'Ya se enviaron varios enlaces a esta persona hace poco.',
+      reason: 'PASSWORD_RESET_RATE_LIMITED',
+    });
+    expect(await runMemberAction(TENANT, 'u1', 'send-password-reset')).toEqual({
+      ok: false,
+      message: 'Ya se enviaron varios enlaces a esta persona hace poco.',
+    });
+  });
+
+  it('desbloquear: ya no estaba bloqueado', async () => {
+    respond(200, { unlocked: false });
+    const res = await runMemberAction(TENANT, 'u1', 'unlock');
+    expect(res.ok ? res.data.unlocked : 'error').toBe(false);
+  });
+
   it('una página HTML de error no rompe con un error de parser', async () => {
     respond(502, '<!DOCTYPE html><html></html>');
     const res = await runMemberAction(TENANT, 'u1', 'reset-mfa');

@@ -1,3 +1,4 @@
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +11,7 @@ import {
 } from '../../../../../lib/tenant-admin-team';
 import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
-import { MemberList, type MemberRowError } from './member-list';
+import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
 import { SeatsCard, type SeatsState } from './seats-ui';
 
 /*
@@ -265,6 +266,71 @@ describe('MemberList', () => {
     for (const html of [members([]), members('error'), members(list)]) {
       expect(voseoIn(html)).toEqual([]);
     }
+  });
+});
+
+/** El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). */
+function actionsMenu(member: NetworkMember): string {
+  return renderToStaticMarkup(
+    createElement(
+      DropdownMenu.Root,
+      { open: true, modal: false },
+      createElement(DropdownMenu.Trigger, null, 'Acciones'),
+      createElement(
+        DropdownMenu.Content,
+        null,
+        createElement(MemberActionItems, {
+          member,
+          now: Date.now(),
+          onPick: (run: () => void) => run,
+          onSetStatus: () => {},
+          onAction: () => {},
+        }),
+      ),
+    ),
+  );
+}
+
+function parsedMember(patch: Record<string, unknown> = {}): NetworkMember {
+  const member = parseMembers({ users: [{ ...MEMBER, ...patch }] })?.[0];
+  if (member === undefined) throw new Error('fixture inválida');
+  return member;
+}
+
+describe('MemberActionItems: el menú de acciones de un miembro', () => {
+  it('agrupa Acceso y Seguridad con encabezados que nombran cada grupo', () => {
+    const html = actionsMenu(parsedMember());
+    const groups = [...html.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)];
+    expect(groups).toHaveLength(2);
+    for (const [i, heading] of ['Acceso', 'Seguridad'].entries()) {
+      const id = groups[i]?.[1] ?? '';
+      expect(html).toMatch(new RegExp(`id="${id}"[^>]*>${heading}</div>`));
+    }
+    expect(html.indexOf('Enviar enlace para restablecer contraseña')).toBeLessThan(
+      html.indexOf('Cerrar sus sesiones'),
+    );
+    expect(html.indexOf('Restablecer 2FA')).toBeLessThan(html.indexOf('Suspender'));
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('"Desbloquear cuenta" aparece sólo con un bloqueo vigente', () => {
+    expect(actionsMenu(parsedMember())).toContain('Desbloquear cuenta');
+    expect(actionsMenu(parsedMember({ lockedUntil: null }))).not.toContain('Desbloquear cuenta');
+    const expired = parsedMember({ lockedUntil: new Date(Date.now() - 60_000).toISOString() });
+    expect(actionsMenu(expired)).not.toContain('Desbloquear cuenta');
+  });
+
+  it('con el acceso suspendido, "Enviar enlace" queda deshabilitado y dice por qué', () => {
+    const sendItem = (html: string) =>
+      html.split('<div role="menuitem"').find((item) => item.includes('Enviar enlace')) ?? '';
+    for (const patch of [{ membershipStatus: 'suspended' }, { userStatus: 'suspended' }]) {
+      const item = sendItem(actionsMenu(parsedMember(patch)));
+      expect(item).toMatch(/^ aria-disabled="true"/);
+      expect(item).toContain('Enviar enlace para restablecer contraseña (acceso suspendido)');
+    }
+    expect(sendItem(actionsMenu(parsedMember()))).not.toContain('aria-disabled');
+    expect(actionsMenu(parsedMember())).not.toContain('(acceso suspendido)');
+    expect(actionsMenu(parsedMember({ membershipStatus: 'suspended' }))).toContain('Reactivar');
   });
 });
 

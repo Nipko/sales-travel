@@ -92,9 +92,12 @@ export function seatReleaseTarget(tenantId: string, sessionId: string): TenantAd
   };
 }
 
-export type MemberActionPath = 'reset-mfa' | 'revoke-sessions';
+export type MemberActionPath = 'reset-mfa' | 'revoke-sessions' | 'send-password-reset' | 'unlock';
 
-/** `POST /tenants/:id/members/:userId/(reset-mfa|revoke-sessions)`. */
+/**
+ * `POST /tenants/:id/members/:userId/<acción>`: restablecer su 2FA, cerrar sus sesiones, enviarle el
+ * enlace para restablecer su contraseña o desbloquearle la cuenta. Ninguna lleva cuerpo.
+ */
 export function memberActionTarget(
   tenantId: string,
   userId: string,
