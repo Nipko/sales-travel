@@ -113,8 +113,8 @@ export function validateNodeDraft(
   seats?: SeatFieldsPolicy,
 ): Partial<Record<DraftField, string>> {
   const errors: Partial<Record<DraftField, string>> = {};
-  if (draft.kind === undefined) errors.kind = 'Elegí qué tipo de nodo crear.';
-  if (draft.parentTenantId === '') errors.parentTenantId = 'Elegí de qué nodo cuelga.';
+  if (draft.kind === undefined) errors.kind = 'Elige qué tipo de nodo crear.';
+  if (draft.parentTenantId === '') errors.parentTenantId = 'Elige de qué nodo cuelga.';
   const name = draft.name.trim();
   if (name.length < 2) errors.name = 'El nombre necesita al menos 2 caracteres.';
   else if (name.length > 120) errors.name = 'El nombre admite hasta 120 caracteres.';

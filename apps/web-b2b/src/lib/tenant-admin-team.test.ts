@@ -318,8 +318,8 @@ describe('textos de las acciones', () => {
     expect(memberActionError(403, undefined)).toMatch(/superadmin/);
     expect(memberActionError(401, 'x')).toMatch(/sesión venció/);
     expect(memberActionError(404, '')).toMatch(/ya no está/);
-    expect(memberActionError(400, 'No podés hacerlo sobre vos mismo.')).toBe(
-      'No podés hacerlo sobre vos mismo.',
+    expect(memberActionError(400, 'No puedes hacerlo sobre ti mismo.')).toBe(
+      'No puedes hacerlo sobre ti mismo.',
     );
     expect(memberActionError(500, '')).toMatch(/unos minutos/);
   });

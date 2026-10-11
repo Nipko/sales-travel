@@ -145,7 +145,7 @@ describe('puestos e inactividad en el alta (sólo superadmin)', () => {
 
   it('bajo la plataforma, vacío es un error', () => {
     const errors = validateNodeDraft(draft(), { seatsRequired: true });
-    expect(errors.concurrentSeats).toMatch(/Indicá cuántos/);
+    expect(errors.concurrentSeats).toMatch(/Indica cuántos/);
     expect(validateNodeDraft(draft({ concurrentSeats: '5' }), { seatsRequired: true })).toEqual({});
   });
 
@@ -156,7 +156,7 @@ describe('puestos e inactividad en el alta (sólo superadmin)', () => {
       seatsRequired: false,
     });
     expect(errors.concurrentSeats).toMatch(/entre 1 y/);
-    expect(errors.idleTimeoutMinutes).toMatch(/Elegí uno/);
+    expect(errors.idleTimeoutMinutes).toMatch(/Elige uno/);
   });
 
   it('viajan sólo si tienen valor', () => {

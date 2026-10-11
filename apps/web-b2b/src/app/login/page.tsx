@@ -57,7 +57,7 @@ export default async function LoginPage({
             La plataforma de turismo más moderna y potente de LATAM.
           </p>
           <p className="text-sm leading-relaxed text-slate-300">
-            Gestioná reservas, cotizaciones y vuelos en tiempo récord. Conectate con múltiples GDS y
+            Gestiona reservas, cotizaciones y vuelos en tiempo récord. Conéctate con múltiples GDS y
             herramientas de inteligencia artificial para impulsar las ventas de tu agencia.
           </p>
         </div>
@@ -91,7 +91,7 @@ export default async function LoginPage({
           <LoginFlow next={next} motivo={motivo} idleMinutes={idleMinutes} />
 
           <p className="text-sm text-[var(--color-fg-muted)]">
-            ¿No podés ingresar? Pedile ayuda al administrador de tu agencia.
+            ¿No puedes ingresar? Pídele ayuda al administrador de tu agencia.
           </p>
         </div>
       </section>

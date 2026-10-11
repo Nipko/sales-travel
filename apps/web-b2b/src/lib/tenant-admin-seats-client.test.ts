@@ -33,7 +33,7 @@ describe('loadMembers: un error nunca es un equipo vacío', () => {
     respond(403, { users: [] });
     expect(await loadMembers(TENANT)).toEqual({
       ok: false,
-      message: 'No tenés permiso para ver el equipo de este nodo.',
+      message: 'No tienes permiso para ver el equipo de este nodo.',
     });
   });
 
@@ -95,7 +95,7 @@ describe('puestos', () => {
 
   it('loadSeats: 403 dice que no administra el nodo', async () => {
     respond(403, { error: '' });
-    expect(await loadSeats(TENANT)).toMatchObject({ ok: false, message: /No administrás/ });
+    expect(await loadSeats(TENANT)).toMatchObject({ ok: false, message: /No administras/ });
   });
 
   it('releaseSeat: POST a la ruta del proxy', async () => {
@@ -128,10 +128,10 @@ describe('puestos', () => {
 
 describe('runMemberAction', () => {
   it('el 403 muestra el motivo del API', async () => {
-    respond(403, { error: 'Pertenece a otra red que no administrás.', reason: 'X' });
+    respond(403, { error: 'Pertenece a otra red que no administras.', reason: 'X' });
     expect(await runMemberAction(TENANT, 'u1', 'reset-mfa')).toEqual({
       ok: false,
-      message: 'No lo pudimos hacer: Pertenece a otra red que no administrás.',
+      message: 'No lo pudimos hacer: Pertenece a otra red que no administras.',
     });
   });
 
@@ -185,7 +185,7 @@ describe('loadMembershipImpact', () => {
   });
 
   it('un error o una respuesta rara vuelve como error, no como cero', async () => {
-    respond(403, { error: 'no administrás este nodo' });
+    respond(403, { error: 'no administras este nodo' });
     expect(await loadMembershipImpact(TENANT, USER, { status: 'suspended' })).toMatchObject({
       ok: false,
     });

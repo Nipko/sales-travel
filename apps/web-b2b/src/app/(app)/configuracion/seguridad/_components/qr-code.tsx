@@ -69,7 +69,7 @@ export function QrCode({
   if (!matrix) {
     return (
       <p role="alert" className="text-xs text-[var(--color-danger)]">
-        No pudimos dibujar el código QR. Ingresá la clave a mano.
+        No pudimos dibujar el código QR. Ingresa la clave a mano.
       </p>
     );
   }

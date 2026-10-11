@@ -15,7 +15,10 @@ import {
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
+import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
 import { cn } from '../../../lib/cn';
+import { seesAdministration } from '../../../lib/nav';
+import { TeamCard } from './_components/team-card';
 
 // --- Types ---
 interface TenantConfig {
@@ -58,6 +61,9 @@ const COLOR_PRESETS = [
 // --- Page ---
 export default function ConfiguracionPage() {
   const [activeTab, setActiveTab] = useState<TabId>('general');
+  // Equipo sólo para quien administra la agencia activa: al resto no le sirve de nada.
+  const admin = seesAdministration(useAgencySwitcher().current?.role);
+  const tabs = admin ? TABS : TABS.filter((tab) => tab.id !== 'team');
   const [branding, setBranding] = useState<Branding>({
     logoUrl: null,
     primaryColor: null,
@@ -181,7 +187,7 @@ export default function ConfiguracionPage() {
 
       {/* Tabs - Segmented Control Moderno */}
       <div className="flex gap-1 rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-surface-muted)]/80 p-1 shadow-[var(--shadow-xs)]">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
@@ -226,7 +232,7 @@ export default function ConfiguracionPage() {
           />
         )}
         {activeTab === 'domain' && <DomainTab config={config} />}
-        {activeTab === 'team' && <TeamTab />}
+        {activeTab === 'team' && admin && <TeamCard />}
       </div>
     </div>
   );
@@ -660,31 +666,6 @@ function DomainTab({ config }: { config: TenantConfig }) {
               />
             </FormField>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Team Tab ---
-function TeamTab() {
-  return (
-    <Card className="border border-[var(--color-border)]/50 shadow-[var(--shadow-sm)] rounded-xl overflow-hidden">
-      <CardContent className="p-6 space-y-6">
-        <SectionHeader
-          title="Miembros de su equipo"
-          description="Gestione los agentes de venta, administradores y personal autorizado que tienen acceso a este portal."
-        />
-
-        <div className="rounded-xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 px-6 py-12 text-center">
-          <Users className="mx-auto mb-3.5 size-8 text-[var(--color-fg-subtle)]" />
-          <p className="text-xs font-bold text-[var(--color-fg-muted)]">
-            Módulo de Gestión de Usuarios
-          </p>
-          <p className="mt-1 text-[10px] text-[var(--color-fg-subtle)] leading-relaxed max-w-sm mx-auto">
-            Habilite cuentas para sus vendedores, configure markups individuales y controle roles.
-            Disponible próximamente.
-          </p>
         </div>
       </CardContent>
     </Card>

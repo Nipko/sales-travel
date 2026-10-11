@@ -81,6 +81,6 @@ describe('QrCode', () => {
       createElement(QrCode, { value: 'x'.repeat(5000), label: 'QR' }),
     );
     expect(broken).toContain('role="alert"');
-    expect(broken).toContain('Ingresá la clave a mano');
+    expect(broken).toContain('Ingresa la clave a mano');
   });
 });

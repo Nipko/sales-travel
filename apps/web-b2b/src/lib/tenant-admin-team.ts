@@ -394,7 +394,7 @@ export function memberActionCopy(
         requiresMfa(member.role)
           ? 'Como su rol lo exige, al próximo ingreso tiene que configurarlo de nuevo antes de seguir.'
           : 'Al próximo ingreso entra sólo con su contraseña y puede volver a activarlo.'
-      } Hacelo sólo si confirmaste que es la persona (por ejemplo, perdió el teléfono).`,
+      } Hazlo sólo si confirmaste que es la persona (por ejemplo, perdió el teléfono).`,
       confirmLabel: 'Restablecer 2FA',
       done: `Restablecimos el 2FA de ${name}. Se cerraron sus sesiones.`,
     };
@@ -451,24 +451,24 @@ export function memberActionDoneMessage(
  * quién pedírselo.
  */
 export function memberActionError(status: number, message: string | undefined): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   const text = message?.trim() ?? '';
   if (status === 403) {
     return text !== ''
       ? `No lo pudimos hacer: ${text}`
-      : 'No tenés permiso para hacer esto con este miembro. Pedíselo a quien administra todos sus nodos o al superadmin.';
+      : 'No tienes permiso para hacer esto con este miembro. Pídeselo a quien administra todos sus nodos o al superadmin.';
   }
-  if (status === 404) return text || 'Ese miembro ya no está en este nodo. Recargá la lista.';
+  if (status === 404) return text || 'Ese miembro ya no está en este nodo. Recarga la lista.';
   if (text !== '') return text;
   return status >= 500
-    ? 'No pudimos completar la acción. Probá de nuevo en unos minutos.'
+    ? 'No pudimos completar la acción. Inténtalo de nuevo en unos minutos.'
     : 'No pudimos completar la acción.';
 }
 
 /** El error de carga del equipo, distinto de "no hay nadie". */
 export function teamLoadError(status: number): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
-  if (status === 403) return 'No tenés permiso para ver el equipo de este nodo.';
-  if (status === 404) return 'No encontramos ese nodo. Elegí otro de la lista.';
-  return 'No pudimos cargar el equipo. Probá de nuevo.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if (status === 403) return 'No tienes permiso para ver el equipo de este nodo.';
+  if (status === 404) return 'No encontramos ese nodo. Elige otro de la lista.';
+  return 'No pudimos cargar el equipo. Inténtalo de nuevo.';
 }

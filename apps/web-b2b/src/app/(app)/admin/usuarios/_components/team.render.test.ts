@@ -8,6 +8,7 @@ import {
   teamActorOf,
   type NetworkMember,
 } from '../../../../../lib/tenant-admin-team';
+import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
 import { MemberList, type MemberRowError } from './member-list';
 import { SeatsCard, type SeatsState } from './seats-ui';
@@ -88,7 +89,8 @@ describe('SeatsCard', () => {
     expect(html).toContain('203.0.113.7');
     expect(html).toContain('aria-label="Desconectar a Ana Pérez"');
     expect(html).not.toContain('aria-label="Desconectar a Yo"');
-    expect(html).toContain('Vos');
+    expect(html).toContain('>Tú</span>');
+    expect(voseoIn(html)).toEqual([]);
   });
 
   it('sin límite: sin barra', () => {
@@ -113,7 +115,7 @@ describe('SeatsCard', () => {
       }),
     });
     expect(html).toContain('Este nodo no cuenta puestos');
-    expect(html).toContain('no ocupan puesto y no se listan acá');
+    expect(html).toContain('no ocupan puesto y no se listan aquí');
     expect(html).not.toMatch(/Nadie de este nodo|\(0\)|0 personas|conectadas? ahora/);
   });
 
@@ -121,9 +123,9 @@ describe('SeatsCard', () => {
     const empty = seatsCard({ status: 'ready', view: seatsView({ sessions: [], inUse: 0 }) });
     expect(empty).toContain('Ocupan un puesto ahora (0)');
     expect(empty).toContain('Nadie de este nodo ocupa un puesto ahora.');
-    const error = seatsCard({ status: 'error', message: 'No administrás este nodo.' });
+    const error = seatsCard({ status: 'error', message: 'No administras este nodo.' });
     expect(error).toContain('role="alert"');
-    expect(error).toContain('No administrás este nodo.');
+    expect(error).toContain('No administras este nodo.');
     expect(error).toContain('Reintentar');
     expect(error).not.toContain('Nadie de este nodo');
   });
@@ -153,7 +155,10 @@ function members(
 ): string {
   const state =
     items === 'error'
-      ? ({ status: 'error', message: 'No tenés permiso para ver el equipo de este nodo.' } as const)
+      ? ({
+          status: 'error',
+          message: 'No tienes permiso para ver el equipo de este nodo.',
+        } as const)
       : items === 'loading'
         ? ({ status: 'loading' } as const)
         : ({ status: 'ready', items } as const);
@@ -179,14 +184,14 @@ describe('MemberList', () => {
   it('un error no se muestra como "no tiene usuarios"', () => {
     const html = members('error');
     expect(html).toContain('role="alert"');
-    expect(html).toContain('No tenés permiso');
+    expect(html).toContain('No tienes permiso');
     expect(html).not.toContain('no tiene usuarios');
   });
 
   it('vacío con llamado a invitar', () => {
     const html = members([]);
     expect(html).toContain('Esta agencia no tiene usuarios todavía.');
-    expect(html).toContain('Invitá a tu primer vendedor');
+    expect(html).toContain('Invita a tu primer vendedor');
   });
 
   it('columnas nuevas: último acceso, 2FA pendiente, bloqueo; con etiquetas para el teléfono', () => {
@@ -208,7 +213,7 @@ describe('MemberList', () => {
       parseMembers({
         users: [MEMBER, { ...MEMBER, userId: 'u3', name: 'Carla', email: 'carla@agencia.co' }],
       }) ?? [];
-    const message = 'No lo pudimos hacer: También pertenece a una agencia que no administrás.';
+    const message = 'No lo pudimos hacer: También pertenece a una agencia que no administras.';
     const html = members(list, { userId: 'u3', message });
     // '<li ' y no '<li': el ícono de alerta dibuja <line>.
     const rows = html.split('<li ').slice(1);
@@ -252,7 +257,14 @@ describe('MemberList', () => {
     const list = parseMembers({ users: [{ ...MEMBER, userId: 'me', name: 'Yo' }] }) ?? [];
     const html = members(list);
     expect(html).not.toContain('Acciones sobre Yo');
-    expect(html).toContain('Vos');
+    expect(html).toContain('>Tú</span>');
+  });
+
+  it('el primer pintado va en tú: vacío, error y lista', () => {
+    const list = parseMembers({ users: [MEMBER, { ...MEMBER, userId: 'me', name: 'Yo' }] }) ?? [];
+    for (const html of [members([]), members('error'), members(list)]) {
+      expect(voseoIn(html)).toEqual([]);
+    }
   });
 });
 

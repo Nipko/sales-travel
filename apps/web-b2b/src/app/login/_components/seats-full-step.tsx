@@ -67,7 +67,7 @@ export function SeatsFullStep({
     const device = session.device ? ` en ${describeDevice(session.device)}` : '';
     const ok = await confirm({
       title: `¿Desconectar a ${sessionDisplayName(session)}?`,
-      description: `Se cierra su sesión${device} y entrás vos con ese puesto. Lo que no haya guardado se pierde.`,
+      description: `Se cierra su sesión${device} y entras tú con ese puesto. Lo que no haya guardado se pierde.`,
       confirmLabel: RELEASE_BUTTON_LABEL,
     });
     if (!ok) return;
@@ -106,7 +106,7 @@ export function SeatsFullStep({
           <input type="hidden" name="releaseToken" value={release.token} />
 
           <p id={listLabelId} className="text-sm text-[var(--color-fg-muted)]">
-            Como administrás {tenant}, podés desconectar a alguien y entrar con su puesto.
+            Como administras {tenant}, puedes desconectar a alguien y entrar con su puesto.
           </p>
 
           {release.sessions.length > 0 ? (
@@ -125,7 +125,8 @@ export function SeatsFullStep({
             </ul>
           ) : (
             <p className="text-sm text-[var(--color-fg)]">
-              No encontramos sesiones que puedas cerrar desde acá. Probá de nuevo en unos minutos.
+              No encontramos sesiones que puedas cerrar desde aquí. Inténtalo de nuevo en unos
+              minutos.
             </p>
           )}
           <PendingAnnouncer pending={pending} label="Desconectando y entrando…" />
@@ -134,7 +135,8 @@ export function SeatsFullStep({
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-[var(--color-fg)]">
             Un puesto se libera cuando alguien cierra sesión o deja de usar el panel por un rato.
-            Pedile a un administrador de {tenant} que libere uno, o probá de nuevo en unos minutos.
+            Pídele a un administrador de {tenant} que libere uno, o inténtalo de nuevo en unos
+            minutos.
           </p>
           <Button type="button" onClick={onBack} className="h-11 w-full font-semibold sm:h-10">
             Volver a intentar

@@ -309,7 +309,7 @@ describe('afterMfa', () => {
   });
 
   // Cada código fallido suma al bloqueo de la cuenta: agotar el desafío es quedar bloqueado. Decir
-  // "venció, ingresá la contraseña" hacía que la contraseña correcta pareciera incorrecta 15 min.
+  // "venció, ingresa la contraseña" hacía que la contraseña correcta pareciera incorrecta 15 min.
   it('sin intentos, vuelve a la contraseña avisando del bloqueo (no hay bucle)', () => {
     expect(afterMfa({ kind: 'mfa-invalid', attemptsLeft: 0 }, ctx)).toEqual({
       step: 'credentials',
@@ -464,7 +464,7 @@ describe('códigos', () => {
   it('intentos restantes en singular y plural', () => {
     expect(mfaInvalidMessage(1)).toBe('El código no es correcto. Te queda 1 intento.');
     expect(mfaInvalidMessage(4)).toBe('El código no es correcto. Te quedan 4 intentos.');
-    expect(mfaInvalidMessage(null)).toBe('El código no es correcto. Probá de nuevo.');
+    expect(mfaInvalidMessage(null)).toBe('El código no es correcto. Inténtalo de nuevo.');
   });
 });
 

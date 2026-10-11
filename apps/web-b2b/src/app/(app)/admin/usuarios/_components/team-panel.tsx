@@ -159,7 +159,7 @@ export function TeamPanel({
         status: 'error',
         message:
           res.status === 403
-            ? 'No administrás ningún nodo de la red.'
+            ? 'No administras ningún nodo de la red.'
             : 'No pudimos cargar tu red de agencias.',
       });
       return;
@@ -259,7 +259,7 @@ export function TeamPanel({
       );
       await Promise.all([load(true), reloadSeats(true)]);
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setBusyUserId(null);
     }
@@ -293,7 +293,7 @@ export function TeamPanel({
       );
       await load(true);
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setBusyUserId(null);
     }
@@ -326,7 +326,7 @@ export function TeamPanel({
     const ok = await confirm({
       title: `Revocar la invitación a ${invitation.email}`,
       description:
-        'El enlace que le enviamos deja de funcionar. Si después querés sumarlo, tenés que invitarlo de nuevo.',
+        'El enlace que le enviamos deja de funcionar. Si después quieres sumarlo, tienes que invitarlo de nuevo.',
       confirmLabel: 'Revocar',
       destructive: true,
     });
@@ -457,7 +457,7 @@ export function TeamPanel({
         <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-10 text-center">
           <Users aria-hidden="true" className="mx-auto mb-2 size-6 text-[var(--color-fg-subtle)]" />
           <p className="text-sm font-medium text-[var(--color-fg)]">
-            No administrás ningún nodo de la red.
+            No administras ningún nodo de la red.
           </p>
         </div>
       ) : null}
@@ -566,7 +566,7 @@ function InviteDialog({
       }
       onSent(email.trim());
     } catch {
-      setError('No pudimos conectar con el servidor. Probá de nuevo.');
+      setError('No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setSending(false);
     }
@@ -621,7 +621,7 @@ function InviteDialog({
             ))}
           </select>
           <p id="inv-role-hint" className="text-xs text-[var(--color-fg-muted)]">
-            {hint ?? 'No podés invitar con un rol igual o superior al tuyo.'}
+            {hint ?? 'No puedes invitar con un rol igual o superior al tuyo.'}
           </p>
         </div>
 

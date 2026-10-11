@@ -58,8 +58,8 @@ export interface CreatedNode {
   };
 }
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 /** Los mensajes del API que todavía salen en inglés, dichos para el superadmin. */
 const KNOWN_MESSAGES: Readonly<Record<string, string>> = {
@@ -73,13 +73,13 @@ export function tenantAdminErrorMessage(
   message: string | undefined,
   kind: 'read' | 'write',
 ): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   const text = message?.trim() ?? '';
   if (text !== '') return KNOWN_MESSAGES[text] ?? text;
   if (status === 403) return 'Sólo el superadmin de la plataforma puede armar y corregir la red.';
   return kind === 'write'
-    ? 'No se pudo guardar el cambio. Probá de nuevo.'
-    : 'No se pudo cargar la red. Probá de nuevo.';
+    ? 'No se pudo guardar el cambio. Inténtalo de nuevo.'
+    : 'No se pudo cargar la red. Inténtalo de nuevo.';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

@@ -42,11 +42,11 @@ export default async function SeguridadPage({
       // Una lista vacía por un error decía "0 sesiones activas", que nunca es cierto: la actual
       // siempre existe.
       sessionsError={
-        sessionsRes.ok ? undefined : 'No pudimos cargar tus sesiones abiertas. Recargá la página.'
+        sessionsRes.ok ? undefined : 'No pudimos cargar tus sesiones abiertas. Recarga la página.'
       }
       trustedDevices={trustedDevices}
       trustedDevicesError={
-        devicesRes.ok ? undefined : 'No pudimos cargar los equipos de confianza. Recargá la página.'
+        devicesRes.ok ? undefined : 'No pudimos cargar los equipos de confianza. Recarga la página.'
       }
       email={email}
       now={Date.now()}

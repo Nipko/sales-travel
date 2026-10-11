@@ -447,10 +447,10 @@ describe('textos de la cuenta regresiva', () => {
 
   it('aviso de vencimiento con la hora local', () => {
     expect(expiryWarningText(Date.parse('2026-09-29T18:40:00Z'), 'UTC')).toBe(
-      'Tu sesión vence a las 18:40; guardá tu trabajo.',
+      'Tu sesión vence a las 18:40; guarda tu trabajo.',
     );
     expect(expiryWarningText(Date.parse('2026-09-29T18:40:00Z'), 'America/Bogota')).toBe(
-      'Tu sesión vence a las 13:40; guardá tu trabajo.',
+      'Tu sesión vence a las 13:40; guarda tu trabajo.',
     );
   });
 });

@@ -27,8 +27,8 @@ import {
  * vacía: esa confusión es la que hacía decir "Esta agencia no tiene usuarios" ante un 403.
  */
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -71,11 +71,11 @@ function seg(id: string): string {
 
 /** El 403 de la vista de puestos es de permiso sobre el nodo, no de superadmin. */
 function seatsReadError(status: number, message: string | undefined): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
-  if (status === 403) return 'No administrás este nodo: no podés ver sus puestos.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if (status === 403) return 'No administras este nodo: no puedes ver sus puestos.';
   // El texto de un 404 puede ser el "Cannot GET …" de la ruta: no se muestra.
   if (status === 404) return 'No encontramos los puestos de este nodo.';
-  return message?.trim() || 'No pudimos cargar los puestos. Probá de nuevo.';
+  return message?.trim() || 'No pudimos cargar los puestos. Inténtalo de nuevo.';
 }
 
 export function loadSeats(tenantId: string): Promise<Loaded<SeatsView>> {
@@ -156,7 +156,7 @@ export function loadMembers(tenantId: string): Promise<Loaded<NetworkMember[]>> 
 export function loadInvitations(tenantId: string): Promise<Loaded<PendingInvitation[]>> {
   return call(`/api/invitations?tenantId=${seg(tenantId)}`, {}, parseInvitations, (status) =>
     status === 403
-      ? 'No tenés permiso para ver las invitaciones de este nodo.'
+      ? 'No tienes permiso para ver las invitaciones de este nodo.'
       : 'No pudimos cargar las invitaciones pendientes.',
   );
 }
@@ -169,8 +169,8 @@ export function revokeInvitation(tenantId: string, invitationId: string): Promis
     accepted,
     (status, message) =>
       status === 401
-        ? 'Tu sesión venció. Volvé a iniciar sesión.'
-        : message?.trim() || 'No pudimos revocar la invitación. Probá de nuevo.',
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : message?.trim() || 'No pudimos revocar la invitación. Inténtalo de nuevo.',
   );
 }
 

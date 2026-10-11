@@ -172,7 +172,7 @@ describe('tenantAdminProxyReply', () => {
       tenantAdminProxyReply(
         json(403, {
           statusCode: 403,
-          message: 'No administrás todos los nodos de este usuario.',
+          message: 'No administras todos los nodos de este usuario.',
           reason: 'MEMBER_OUTSIDE_SCOPE',
           details: { secret: 'x' },
         }),
@@ -180,7 +180,7 @@ describe('tenantAdminProxyReply', () => {
     ).toEqual({
       status: 403,
       body: {
-        error: 'No administrás todos los nodos de este usuario.',
+        error: 'No administras todos los nodos de este usuario.',
         reason: 'MEMBER_OUTSIDE_SCOPE',
       },
     });

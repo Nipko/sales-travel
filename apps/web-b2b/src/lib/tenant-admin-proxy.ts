@@ -52,7 +52,7 @@ export function tenantUpdatePlan(tenantId: string, raw: unknown): TenantAdminPro
     body['tenantType'] = tenantType;
   }
   if (Object.keys(body).length === 0) {
-    return { ok: false, error: 'Indicá qué cambiar: estado, sucursal o tipo.' };
+    return { ok: false, error: 'Indica qué cambiar: estado, sucursal o tipo.' };
   }
   return { ok: true, path: `/admin/tenants/${tenantId.toLowerCase()}`, body };
 }
@@ -62,7 +62,7 @@ export function tenantMovePlan(tenantId: string, raw: unknown): TenantAdminProxy
   if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
   const parentTenantId = asRecord(raw)?.['parentTenantId'];
   if (typeof parentTenantId !== 'string' || !isTenantId(parentTenantId)) {
-    return { ok: false, error: 'Elegí el nuevo padre del nodo.' };
+    return { ok: false, error: 'Elige el nuevo padre del nodo.' };
   }
   return {
     ok: true,

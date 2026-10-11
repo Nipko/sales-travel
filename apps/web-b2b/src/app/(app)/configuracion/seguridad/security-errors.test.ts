@@ -103,7 +103,7 @@ describe('failureMessage', () => {
       /Demasiados intentos/,
     );
     expect(failureMessage({ status: 403, message: 'Forbidden resource' }, 'other')).toBe(
-      'No tenés permiso para hacer esto.',
+      'No tienes permiso para hacer esto.',
     );
     expect(failureMessage({ status: 500, message: 'db exploded' }, 'other')).toMatch(
       /No pudimos completar/,

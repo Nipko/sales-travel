@@ -6,7 +6,7 @@ import { SalesBlockedBanner, SalesBlockedNotice } from './sales-blocked';
 describe('SalesBlockedNotice: la pantalla de venta del superadmin', () => {
   it('dice que el superadmin no vende y a dónde ir', () => {
     const html = renderToStaticMarkup(createElement(SalesBlockedNotice));
-    expect(html).toContain('El superadministrador no vende: usá un usuario de una sucursal');
+    expect(html).toContain('El superadministrador no vende: usa un usuario de una sucursal');
     expect(html).toContain('<h1');
     expect(html).toContain('href="/admin/tenants"');
     expect(html).toContain('href="/reservas"');
@@ -19,7 +19,7 @@ describe('SalesBlockedBanner: dentro de Mis Reservas', () => {
       createElement(SalesBlockedBanner, null, 'Acá consultás y cancelás lo ya vendido.'),
     );
     expect(html).toContain('role="note"');
-    expect(html).toContain('El superadministrador no vende: usá un usuario de una sucursal.');
+    expect(html).toContain('El superadministrador no vende: usa un usuario de una sucursal.');
     expect(html).toContain('Acá consultás y cancelás lo ya vendido.');
   });
 });

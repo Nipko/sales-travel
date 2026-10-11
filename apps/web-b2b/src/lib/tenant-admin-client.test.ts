@@ -98,13 +98,13 @@ describe('tenantAdminErrorMessage', () => {
 
   it('sesión vencida y errores sin texto', () => {
     expect(tenantAdminErrorMessage(401, 'x', 'read')).toBe(
-      'Tu sesión venció. Volvé a iniciar sesión.',
+      'Tu sesión venció. Vuelve a iniciar sesión.',
     );
     expect(tenantAdminErrorMessage(500, '', 'read')).toBe(
-      'No se pudo cargar la red. Probá de nuevo.',
+      'No se pudo cargar la red. Inténtalo de nuevo.',
     );
     expect(tenantAdminErrorMessage(500, undefined, 'write')).toBe(
-      'No se pudo guardar el cambio. Probá de nuevo.',
+      'No se pudo guardar el cambio. Inténtalo de nuevo.',
     );
   });
 });

@@ -189,7 +189,7 @@ export function MemberList({
           </p>
           <Button size="sm" className="mt-4" onClick={onInvite}>
             <UserPlus aria-hidden="true" />
-            Invitá a tu primer vendedor
+            Invita a tu primer vendedor
           </Button>
         </div>
       ) : filtered.length === 0 ? (
@@ -277,7 +277,7 @@ function MemberRow({
           <span className="truncate">{name}</span>
           {self ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
-              Vos
+              Tú
             </span>
           ) : null}
         </p>
