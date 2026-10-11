@@ -618,6 +618,13 @@ describe('la cadena completa: price → createBooking → getBooking → cancelB
     for (const path of [SABRE_CHECK_FLIGHT_TICKETS_PATH, SABRE_CANCEL_BOOKING_PATH]) {
       expect(at(harness.bodyAt(path), 'confirmationId')).toBe(PNR);
     }
+
+    // Los desenlaces LIMPIOS van en `info`: producción arranca Nest sin `debug`, y en `debug` la
+    // traza de una reserva confirmada, su lectura de cierre y su cancelación no llegaban nunca.
+    for (const message of ['sabre.createBooking', 'sabre.getBooking', 'sabre.cancelBooking']) {
+      const line = harness.logs.find((call) => call.message === message);
+      expect(line?.level, message).toBe('info');
+    }
   });
 
   it('createBooking no devuelve firma: modificar exige encadenar getBooking', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import {
   OrderCreateNotSentError,
@@ -677,6 +677,47 @@ describe('saga de creación — intent durable antes del proveedor', () => {
       uncertain: false,
       reason: 'rejected-before-send',
     });
+  });
+
+  it('una llamada cortada antes de salir (`sentToProvider: false`) libera la cotización', async () => {
+    // El cupo de concurrencia de la cuenta seguía lleno cuando venció la espera: el proveedor no
+    // recibió nada. Escalarla como incierta mandaba a buscar en el PCC un PNR que no existe.
+    const noSalio = Object.assign(new Error(`cola vencida para ${DOCUMENTO}`), {
+      sentToProvider: false,
+    });
+    noSalio.name = 'SabreApiError';
+    const b = banco({ createThrows: noSalio });
+
+    let thrown: unknown;
+    try {
+      await b.orders.createOrder(TENANT, USER, dto());
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HttpException);
+    expect((thrown as HttpException).getStatus()).toBe(429);
+    const response = (thrown as HttpException).getResponse();
+    expect(response).toMatchObject({ orderId: 'order-1', retryForbidden: false });
+    expect(JSON.stringify(response)).not.toContain('reconciliationRequired');
+    expect(JSON.stringify(response)).not.toContain(DOCUMENTO);
+    expect(b.fila()).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.audit.first(ORDER_EVENTS.createFailed)?.payload).toMatchObject({
+      uncertain: false,
+      reason: 'not-dispatched',
+      errorName: 'SabreApiError',
+    });
+    expect(b.audit.dump()).not.toContain(DOCUMENTO);
+  });
+
+  it('`sentToProvider: true` sigue siendo incierta: sólo el `false` explícito libera', async () => {
+    const salio = Object.assign(new Error('timeout'), { sentToProvider: true });
+    const b = banco({ createThrows: salio });
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(b.fila()).toMatchObject({ status: 'pending' });
   });
 
   it('si el proveedor responde pero falla el CAS, devuelve intent + PNR y no intenta cerrar', async () => {

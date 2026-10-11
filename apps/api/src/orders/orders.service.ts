@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -112,6 +114,18 @@ export function notSentMessage(detail: string): string {
     return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalidá el precio y volvé a intentar.';
   }
   return `La reserva no se envió a la aerolínea. Revisá ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
+}
+
+/**
+ * ¿Quien lanzó afirma que la llamada NO salió al proveedor? Sólo `false` explícito: ausente o
+ * cualquier otro valor es «no se sabe», y eso sigue siendo una creación incierta.
+ */
+function sentNothing(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { sentToProvider?: unknown }).sentToProvider === false
+  );
 }
 
 export function summarizeIssues(issues: ProviderIssue[]): string | null {
@@ -716,6 +730,9 @@ export class OrdersService {
       if (err instanceof OrderCreateNotSentError) {
         await this.rejectNotSent(tenantId, userId, provider.code, intent, err);
       }
+      if (sentNothing(err)) {
+        await this.rejectNotDispatched(tenantId, userId, provider.code, intent, err);
+      }
       // Una excepción NO es un `FAILED`. Un `FAILED` es el proveedor diciendo "no reservé nada";
       // un timeout es el proveedor no diciendo nada, y la reserva puede existir.
       const decision = decideAfterCreateThrew();
@@ -786,6 +803,54 @@ export class OrdersService {
       orderId: intent.id,
       retryForbidden: false,
     });
+  }
+
+  /**
+   * La llamada se cortó ANTES de salir (`sentToProvider: false`): el cupo de concurrencia de la
+   * cuenta seguía lleno al vencer la espera, o el breaker la frenó. Es el mismo contrato neutral
+   * que ya leen la política de reintento de cancelaciones y la reserva de hoteles.
+   *
+   * No hay reserva que conciliar, así que la cotización se libera como en {@link rejectNotSent}.
+   * Escalarla como `create-uncertain` mandaba a buscar en el PCC un PNR que no existe y bloqueaba
+   * la cotización con «No vuelvas a reservar». Sale como 429 y no como 503: el navegador lee
+   * cualquier 5xx como desenlace desconocido (`isAmbiguousCreateHttpStatus`), y aquí sí se sabe.
+   */
+  private async rejectNotDispatched(
+    tenantId: string,
+    userId: string,
+    providerCode: string,
+    intent: OrderRow,
+    err: unknown,
+  ): Promise<never> {
+    await this.intents.failBeforeProvider(tenantId, intent);
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.createFailed,
+        tenantId,
+        actorUserId: userId,
+        aggregateType: 'order',
+        aggregateId: intent.id,
+        payload: {
+          provider: providerCode,
+          reason: 'not-dispatched',
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+          uncertain: false,
+        },
+      });
+    } catch {
+      // Nada salió al proveedor: perder este evento no abre ninguna reserva fantasma.
+    }
+    throw new HttpException(
+      {
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        error: 'Too Many Requests',
+        message:
+          'La reserva no se envió a la aerolínea: el proveedor está atendiendo otras consultas de tu red. La cotización sigue disponible; intenta nuevamente en unos segundos.',
+        orderId: intent.id,
+        retryForbidden: false,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */

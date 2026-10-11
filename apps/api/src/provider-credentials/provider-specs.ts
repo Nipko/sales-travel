@@ -177,6 +177,7 @@ const SABRE: ProviderSpec = {
     'upsellLimit',
     'multipleFares',
     'allowCardBinPricing',
+    'maxConcurrentRequests',
   ],
 };
 

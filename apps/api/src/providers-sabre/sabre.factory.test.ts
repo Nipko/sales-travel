@@ -681,13 +681,18 @@ function pedidoDeReserva(): OrderCreateRequest {
   };
 }
 
-/** Las líneas que llegan al `Logger` de Nest, en el formato `mensaje {meta}` de `loggerPort`. */
+/**
+ * Las líneas que llegan al `Logger` de Nest, en el formato `mensaje {meta}` de `loggerPort`, en los
+ * niveles que PRODUCCIÓN conserva: `main.ts` arranca Nest con `['log', 'warn', 'error']`. `debug`
+ * se silencia sin capturarse, porque contarlo daba por emitida una traza que en producción se
+ * descarta (así pasó con el éxito de createBooking, getBooking y cancelBooking).
+ */
 function capturarLog(): string[] {
   const lineas: string[] = [];
   const capturar = (...args: unknown[]): void => {
     lineas.push(String(args[0]));
   };
-  vi.spyOn(Logger.prototype, 'debug').mockImplementation(capturar);
+  vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
   vi.spyOn(Logger.prototype, 'log').mockImplementation(capturar);
   vi.spyOn(Logger.prototype, 'warn').mockImplementation(capturar);
   vi.spyOn(Logger.prototype, 'error').mockImplementation(capturar);
@@ -907,6 +912,50 @@ describe('SabreProviderFactory — el cupo de concurrencia es de la CUENTA, bús
 
     cable.soltarTodo();
     await Promise.all([...busquedas, reserva, ajena]);
+  });
+
+  it('el cupo CONTRACTUAL de la cuenta sale de `config.maxConcurrentRequests`, también como texto', async () => {
+    capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: '2' } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    // Dos, no el default de cuatro: el número del contrato manda.
+    expect(cable.abiertas()).toEqual([RUTA_SHOP, RUTA_SHOP]);
+
+    cable.soltar(RUTA_SHOP);
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(2);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
+  });
+
+  it('un `maxConcurrentRequests` inválido se avisa y deja el default, sin tumbar la cuenta', async () => {
+    const lineas = capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: 0 } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3, 4, 5].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(4);
+    expect(lineas.some((l) => l.includes('config.maxConcurrentRequests inválida'))).toBe(true);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
   });
 });
 

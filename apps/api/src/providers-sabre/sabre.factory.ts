@@ -132,6 +132,9 @@ export function sabreShopOptionsFromAccountConfig(
  */
 const AllowCardBinPricingSchema = z.boolean().optional();
 
+/** Mismo dominio que `SabreConfigSchema.maxConcurrentRequests`: entero positivo. */
+const MaxConcurrentRequestsSchema = z.number().int().positive();
+
 /**
  * La postura de D1 escrita una sola vez: no se tarifica con datos de tarjeta.
  *
@@ -434,7 +437,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // traduce a "proveedor no habilitado". Atraparla aquí para caer a env es exactamente lo
     // que este factory NO hace.
     const resolved = await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE);
-    const cfg = this.toConfig(resolved.credentials, resolved.config);
+    const cfg = this.toConfig(resolved.credentials, resolved.config, resolved.ownerTenantId);
 
     // Puerta de credenciales, ANTES de construir nada. Hasta esta tanda esta comprobación
     // vivía después de instanciar el ACL y dejaba pasar un caso: la cuenta que declaraba
@@ -629,7 +632,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   private toConfig(
     credentials: Record<string, unknown>,
     config: Record<string, unknown>,
+    ownerTenantId: string,
   ): SabreConfig {
+    const maxConcurrentRequests = this.maxConcurrentRequests(config, ownerTenantId);
     const c = credentials;
     const g = config;
     const environment = g['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
@@ -653,7 +658,31 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       // leerlos sólo de `config` dejaba sin cabecera de grupo a la cuenta que los guardó cifrados.
       sabreGroup: str(c['sabreGroup']) ?? str(g['sabreGroup']),
       sabreCurrentCity: str(c['sabreCurrentCity']) ?? str(g['sabreCurrentCity']),
+      ...(maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests }),
     });
+  }
+
+  /**
+   * `config.maxConcurrentRequests`: el cupo de concurrencia CONTRACTUAL de la cuenta (RNF-04,
+   * docs/sabre/01 §5.2). Lo fija el contrato con Sabre y no se conoce de antemano (P-02), así que
+   * tiene que poder ajustarse sin redesplegar: sin leerlo de aquí, toda cuenta quedaba en el
+   * default defensivo y una red entera heredando una credencial compartía cuatro huecos.
+   *
+   * Un valor inválido NO tumba la cuenta: se avisa con el nombre del campo y se usa el default.
+   * `parseSabreConfig` lanzaría, y una errata en un número dejaría a Sabre fuera de la búsqueda.
+   */
+  private maxConcurrentRequests(
+    config: Record<string, unknown>,
+    ownerTenantId: string,
+  ): number | undefined {
+    const raw = config['maxConcurrentRequests'];
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const parsed = MaxConcurrentRequestsSchema.safeParse(integerConfigValue(raw));
+    if (parsed.success) return parsed.data;
+    this.logger.warn(
+      `config.maxConcurrentRequests inválida en la cuenta de Sabre de ${ownerTenantId}: se ignora y se usa el cupo por defecto`,
+    );
+    return undefined;
   }
 }
 

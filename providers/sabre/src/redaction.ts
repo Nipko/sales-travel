@@ -1057,8 +1057,15 @@ export function redactMeta(meta: Record<string, unknown>): Record<string, unknow
   return redactValue(meta) as Record<string, unknown>;
 }
 
-/** Los dos niveles que el ACL usa. `info`/`error` no se abren hasta que haya un caso que los pida. */
-export type SabreLogLevel = 'debug' | 'warn';
+/**
+ * Los niveles que el ACL usa. `error` no se abre hasta que haya un caso que lo pida.
+ *
+ * `info` existe por las escrituras y lecturas de una reserva (`sabre.createBooking`,
+ * `sabre.getBooking`, `sabre.cancelBooking`): el API de producción arranca con el `Logger` de Nest
+ * en `log`/`warn`/`error` (`apps/api/src/main.ts`), así que un desenlace limpio logueado en `debug`
+ * no llegaba nunca, y la única traza de una reserva CONFIRMADA era ninguna.
+ */
+export type SabreLogLevel = 'debug' | 'info' | 'warn';
 
 /**
  * **El ÚNICO sitio del paquete donde se llama a un método de `LoggerPort`.**
