@@ -106,4 +106,11 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(operations).not.toContain('/hoteles');
     expect(operations).toContain('/reservas');
   });
+
+  it('Plataforma arranca por el Resumen, que es donde entra el superadmin', () => {
+    const sections = navSections('superadmin', { platformUser: true, superadmin: true });
+    const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
+    expect(platform[0]).toMatchObject({ label: 'Resumen', href: '/admin/plataforma/resumen' });
+    expect(platform.map((i) => i.href)).toContain('/admin/plataforma/aprobaciones');
+  });
 });

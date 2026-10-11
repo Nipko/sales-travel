@@ -960,7 +960,9 @@ GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado
                                          -- conciliación, invitaciones) y señales de proveedores.
                                          -- Sólo lee; las funciones platform_overview_* exigen en la
                                          -- base que quien pide sea el superadmin y sólo devuelven
-                                         -- agregados.
+                                         -- agregados. En el panel: /admin/plataforma/resumen, adonde
+                                         -- entra el superadmin al abrir `/` (BFF /api/admin/overview
+                                         -- ?period=today|7d|30d|month, traducido a días de Bogotá).
 GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status

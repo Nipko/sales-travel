@@ -8,6 +8,7 @@ import {
   Home,
   Hotel,
   KeyRound,
+  LayoutDashboard,
   Lock,
   MapPin,
   Network,
@@ -66,6 +67,7 @@ export const accountNav: NavItem[] = [
 
 /** La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. */
 export const superAdminNav: NavItem[] = [
+  { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
   {
     label: 'Aprobaciones',
     href: '/admin/plataforma/aprobaciones',

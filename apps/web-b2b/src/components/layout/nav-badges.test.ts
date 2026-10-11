@@ -19,8 +19,7 @@ describe('contadores del menú', () => {
 
 describe('sección Plataforma del menú', () => {
   it('Aprobaciones abre la consola y lleva el contador de depósitos', () => {
-    expect(superAdminNav[0]).toMatchObject({
-      label: 'Aprobaciones',
+    expect(superAdminNav.find((i) => i.label === 'Aprobaciones')).toMatchObject({
       href: '/admin/plataforma/aprobaciones',
       badge: 'pendingDeposits',
     });
