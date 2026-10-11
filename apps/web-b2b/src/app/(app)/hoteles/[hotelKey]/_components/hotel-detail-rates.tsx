@@ -15,18 +15,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../../../../lib/cn';
 import type { HotelRoompack } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
-import { RateItem } from '../../_components/hotel-rate-item';
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
 import { isRateExpired, OfferExpiry } from '../../_components/offer-expiry';
 import { RateBookAction } from '../../_components/rate-book-action';
-import { rateRefundability, type RateRefundability } from '../../_components/rate-refundability';
+import type { RateRefundability } from '../../_components/rate-refundability';
+import { roomTypesCountText } from '../../_components/room-type-groups';
+import { RoomTypeList } from '../../_components/room-type-list';
 import { useBookRate } from '../../_components/use-book-rate';
 import type { HotelDetailRatesResult } from '../actions';
 import {
   detailRatesView,
   emptyRatesView,
   ratesRefundNotice,
+  type DetailRatePlan,
   type FailedProvider,
   type RatesRefundNotice,
 } from './hotel-detail-view';
@@ -36,12 +38,15 @@ import {
   sellingHotelNote,
   uniformNightPrice,
   type HotelFacts,
+  type NightPrice,
+  type RatePolicyView,
 } from './hotel-rate-detail-view';
 
 /*
  * Las tarifas del hotel para la estadía de la búsqueda (D-TBO-19 A): una búsqueda nueva de este
  * solo hotel en cada proveedor que lo vende, con las políticas por tramos y el precio por noche
- * "sujetos a confirmación". El PreBook los confirma.
+ * "sujetos a confirmación". El PreBook los confirma. Se pintan por tipo de habitación, como en la
+ * tarjeta del listado, y cada plan abre sus tramos en «Ver condiciones».
  *
  * Una no reembolsable (declarada, o con el 100 % ya vigente) dice cuánto se pierde con su monto
  * (pedido del 2026-09-29, punto b); si quien financia a la agencia las bloqueó, se marca como no
@@ -124,26 +129,21 @@ export function RatesRefundNoticeBox({ notice }: { notice: RatesRefundNotice | u
   );
 }
 
-/** Tramos de la política, precio por noche y con qué nombre se reserva: lo que suma el detalle. */
-function RateDetailExtras({
-  pack,
+/**
+ * Lo que una tarifa de la ficha dice a la vista, sin abrir «Ver condiciones»: cuánto se pierde si
+ * es no reembolsable (pedido del 2026-09-29, punto b) y con qué nombre figura el hotel en la reserva
+ * cuando lo vende otro proveedor.
+ */
+function RateDetailNotice({
   sale,
   refund,
-  checkinDate,
-  nights,
   sellingNote,
 }: {
-  pack: HotelRoompack;
   sale: HotelRateRow['sale'];
   refund: RateRefundability;
-  checkinDate: string;
-  nights: number;
   sellingNote: string | undefined;
 }) {
-  const policy = ratePolicyView(pack);
-  const perNight = nightlySale(pack, checkinDate, nights);
-  const uniform = perNight === undefined ? undefined : uniformNightPrice(perNight);
-
+  if (refund.refundable && !sellingNote) return null;
   return (
     <>
       {!refund.refundable ? (
@@ -164,7 +164,36 @@ function RateDetailExtras({
           {sellingNote}
         </p>
       ) : null}
+    </>
+  );
+}
 
+/** Tramos de la política y precio por noche de una tarifa; `undefined` si no hay ninguno. */
+interface RateDetailParts {
+  readonly policy?: RatePolicyView;
+  readonly perNight?: readonly NightPrice[];
+}
+
+function rateDetailParts(
+  pack: HotelRoompack,
+  checkinDate: string,
+  nights: number,
+): RateDetailParts | undefined {
+  const policy = ratePolicyView(pack);
+  const perNight = nightlySale(pack, checkinDate, nights);
+  if (policy === undefined && perNight === undefined) return undefined;
+  return {
+    ...(policy === undefined ? {} : { policy }),
+    ...(perNight === undefined ? {} : { perNight }),
+  };
+}
+
+/** Lo que la ficha suma dentro de «Ver condiciones»: los tramos y el precio por noche. */
+function RateDetailExtras({ parts: { policy, perNight } }: { parts: RateDetailParts }) {
+  const uniform = perNight === undefined ? undefined : uniformNightPrice(perNight);
+
+  return (
+    <>
       {policy ? (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2.5 py-1.5 text-[11px] text-[var(--color-fg)]">
           <p className="flex items-center gap-1 font-medium">
@@ -207,12 +236,13 @@ function RateDetailExtras({
           </span>
         </p>
       ) : null}
+      {/* Ya dentro de «Ver condiciones»: el desglose va abierto, sin otro desplegable. */}
       {perNight !== undefined && uniform === undefined ? (
-        <details className="group text-[11px] text-[var(--color-fg-muted)]">
-          <summary className="inline-flex cursor-pointer items-center gap-1 rounded font-medium text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+        <div className="text-[11px] text-[var(--color-fg-muted)]">
+          <p className="flex items-center gap-1 font-medium text-[var(--color-fg)]">
             <Moon aria-hidden="true" className="size-3 shrink-0" />
             Precio por noche (aprox., sujeto a confirmación)
-          </summary>
+          </p>
           <ul className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3">
             {perNight.map((n, i) => (
               <li key={i} className="flex justify-between gap-2">
@@ -223,7 +253,7 @@ function RateDetailExtras({
               </li>
             ))}
           </ul>
-        </details>
+        </div>
       ) : null}
     </>
   );
@@ -323,14 +353,22 @@ export function HotelDetailRates({
   }, [receivedAt]);
 
   const view = useMemo(
-    () => (rates === undefined ? undefined : detailRatesView(rates, showProvider)),
-    [rates, showProvider],
+    () =>
+      rates === undefined
+        ? undefined
+        : detailRatesView(
+            rates,
+            showProvider,
+            (row) => expiredCutoffMs !== undefined && isRateExpired(row.expiresAt, expiredCutoffMs),
+          ),
+    [rates, showProvider, expiredCutoffMs],
   );
   const expired = (row: HotelRateRow) =>
     expiredCutoffMs !== undefined && isRateExpired(row.expiresAt, expiredCutoffMs);
-  // Con la hora en que llegaron las tarifas: una reembolsable cuyo 100 % ya rige es no reembolsable.
-  const refundOf = (row: HotelRateRow) => rateRefundability(row.pack, receivedAt);
   const blocked = rates?.nonRefundableBlocked === true;
+  // Con la hora en que llegaron las tarifas (detailRatesView): una reembolsable cuyo 100 % ya rige
+  // es no reembolsable, y si la agencia no las puede reservar, no se ofrecen.
+  const unavailable = (plan: DetailRatePlan) => blocked && !plan.refund.refundable;
 
   const { canBook, book } = useBookRate({
     hotelKey,
@@ -368,7 +406,10 @@ export function HotelDetailRates({
 
   const count = view.rows.length;
   const provisional = view.rows.some((r) => r.pack.cancellation.policySource !== 'prebook-final');
-  const refundNotice = ratesRefundNotice(view.rows.map(refundOf), blocked);
+  const refundNotice = ratesRefundNotice(
+    view.groups.flatMap((g) => g.plans.map((p) => p.refund)),
+    blocked,
+  );
   return (
     <div
       aria-busy={loading}
@@ -387,7 +428,8 @@ export function HotelDetailRates({
             searching={loading}
           >
             <p>
-              {count} tarifa{count === 1 ? '' : 's'} · precios de venta por la estadía completa
+              {roomTypesCountText(view.groups.length, count)} · precios de venta por la estadía
+              completa
             </p>
           </OfferExpiry>
           <RatesRefundNoticeBox notice={refundNotice} />
@@ -398,40 +440,39 @@ export function HotelDetailRates({
               revisar la tarifa, antes de reservar.
             </p>
           ) : null}
-          <ul className="-mx-4 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
-            {view.rows.map((row) => {
-              const seller = row.pack.provider?.name;
-              const note =
-                seller === undefined ? undefined : sellingHotelNote(facts.get(seller), shownFacts);
-              const refund = refundOf(row);
-              const unavailable = blocked && !refund.refundable;
-              return (
-                <RateItem
-                  key={row.key}
-                  row={row}
-                  expired={expired(row)}
-                  refund={refund}
-                  unavailableForAgency={unavailable}
-                >
-                  <RateDetailExtras
-                    pack={row.pack}
-                    sale={row.sale}
-                    refund={refund}
-                    checkinDate={stay.checkinDate}
-                    nights={nights}
-                    sellingNote={note}
-                  />
+          <div className="-mx-4 border-t border-[var(--color-border)]">
+            <RoomTypeList
+              groups={view.groups}
+              nights={nights}
+              roomsCount={stay.rooms.length}
+              variant="detail"
+              isExpired={(plan) => expired(plan.row)}
+              isUnavailable={unavailable}
+              planNotice={({ row, refund }) => {
+                const seller = row.pack.provider?.name;
+                const note =
+                  seller === undefined
+                    ? undefined
+                    : sellingHotelNote(facts.get(seller), shownFacts);
+                return <RateDetailNotice sale={row.sale} refund={refund} sellingNote={note} />;
+              }}
+              planDetails={({ row }) => {
+                const parts = rateDetailParts(row.pack, stay.checkinDate, nights);
+                return parts === undefined ? null : <RateDetailExtras parts={parts} />;
+              }}
+              planAction={(plan) =>
+                unavailable(plan) ? null : (
                   <RateBookAction
-                    row={row}
-                    bookable={canBook(row)}
-                    expired={expired(row)}
-                    unavailableForAgency={unavailable}
-                    onBook={() => book(row)}
+                    row={plan.row}
+                    bookable={canBook(plan.row)}
+                    expired={expired(plan.row)}
+                    unavailableForAgency={false}
+                    onBook={() => book(plan.row)}
                   />
-                </RateItem>
-              );
-            })}
-          </ul>
+                )
+              }
+            />
+          </div>
         </>
       )}
     </div>

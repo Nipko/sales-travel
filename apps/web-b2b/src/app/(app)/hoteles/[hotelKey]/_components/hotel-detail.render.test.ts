@@ -1,15 +1,22 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hotelImageProxyUrl } from '../../../../../lib/hotel-image-proxy';
+import type { HotelRoompack } from '../../actions';
+import type { HotelStay } from '../../_components/hotel-search-handoff';
+import type { HotelDetailRatesResult } from '../actions';
 import { LocationCard } from './hotel-content-sections';
-import { RatesRefundNoticeBox } from './hotel-detail-rates';
+import { HotelDetailRates, RatesRefundNoticeBox } from './hotel-detail-rates';
 import { GallerySkeleton, HotelGallery } from './hotel-gallery';
 
 /*
  * La ficha en su primer pintado: la galería sólo por el proxy propio y navegable con el teclado,
- * la ubicación sin mapa embebido y el aviso de un hotel sin tarifas reembolsables.
+ * la ubicación sin mapa embebido, el aviso de un hotel sin tarifas reembolsables y las tarifas por
+ * tipo de habitación, cada plan con sus condiciones.
  */
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
 const SOURCES = [1, 2, 3].map(
   (n) => `https://api.tbotechnology.in/imageresource.aspx?img=hotel-${n}.jpg`,
@@ -116,5 +123,147 @@ describe('RatesRefundNoticeBox', () => {
     expect(renderToStaticMarkup(createElement(RatesRefundNoticeBox, { notice: undefined }))).toBe(
       '',
     );
+  });
+});
+
+// ───────────────────────── Tarifas por tipo de habitación ─────────────────────────
+
+const STAY: HotelStay = {
+  checkinDate: '2026-11-10',
+  checkoutDate: '2026-11-12',
+  rooms: [{ adults: 2, childrenAges: [] }],
+  guestNationality: 'CO',
+  refundableOnly: false,
+};
+
+function tarifa(
+  id: string,
+  saleMinor: number,
+  name: string,
+  extra: Partial<HotelRoompack> = {},
+  roomTypeId?: string,
+): HotelRoompack {
+  return {
+    id,
+    provider: { name: 'tbo-hotels', offerRef: `${id}-REF`, raw: { searchId: 'srch_1' } },
+    board: 'RO',
+    rooms: [
+      {
+        name,
+        reference: 1,
+        bedOptions: [],
+        occupancy: { adults: 2, childrenAges: [] },
+        ...(roomTypeId === undefined ? {} : { roomTypeId }),
+      },
+    ],
+    cancellation: {
+      refundable: true,
+      status: 'partially_refundable',
+      rules: [],
+      policySource: 'search-indicative',
+    },
+    price: { total: { amountMinor: saleMinor, currency: 'USD' }, taxesDetail: [] },
+    ...extra,
+  };
+}
+
+const CON_TRAMOS: Partial<HotelRoompack> = {
+  cancellation: {
+    refundable: true,
+    status: 'partially_refundable',
+    policySource: 'search-indicative',
+    rules: [
+      {
+        type: 'Percentage',
+        penaltyPercentage: 100,
+        fromLocalDateTime: '2026-11-08T00:00:00',
+      },
+    ],
+  },
+};
+
+const NO_REEMBOLSABLE: Partial<HotelRoompack> = {
+  cancellation: { refundable: false, status: 'non_refundable', rules: [] },
+};
+
+function detailRates(
+  roompacks: HotelRoompack[],
+  extra: Partial<HotelDetailRatesResult> = {},
+): string {
+  return renderToStaticMarkup(
+    createElement(HotelDetailRates, {
+      hotelKey: 'dGJvLWhvdGVsc34x',
+      searchToken: undefined,
+      stay: STAY,
+      nights: 2,
+      showProvider: false,
+      rates: {
+        ok: true,
+        outcomes: [
+          { ref: { provider: 'tbo-hotels', hotelId: '1' }, offer: { hotelId: '1', roompacks } },
+        ],
+        receivedAt: Date.UTC(2026, 9, 11, 12, 0, 0),
+        ...extra,
+      },
+      loading: false,
+      onReload: () => undefined,
+      facts: new Map(),
+      shownFacts: { name: 'Hotel Plaza' },
+    }),
+  );
+}
+
+describe('HotelDetailRates — por tipo de habitación', () => {
+  it('cuenta tipos y tarifas, y cada tipo es una sección con su h3 bajo «Tarifas»', () => {
+    const html = detailRates([
+      tarifa('D1', 400_00, 'Deluxe King', {}, '77'),
+      tarifa('D2', 450_00, 'DELUXE KING', { board: 'BB' }),
+      tarifa('S', 300_00, 'Superior Twin', {}, '88'),
+    ]);
+    expect(html).toContain(
+      '2 tipos de habitación · 3 tarifas · precios de venta por la estadía completa',
+    );
+    const headings = [
+      ...html.matchAll(
+        /<section aria-labelledby="([^"]+)"[^>]*>.*?<h3 id="\1"[^>]*>([^<]*)<\/h3>/g,
+      ),
+    ].map((m) => m[2]);
+    expect(headings).toEqual(['Superior Twin', 'Deluxe King']);
+    expect(html).toContain('2 adultos');
+    // «desde» sólo con más de un plan: el tipo de un solo plan dice su precio a secas.
+    expect(html).toMatch(/<p[^>]*><span[^>]*>150,00\s*US\$<\/span> por noche/);
+    expect(html).toMatch(/desde <span[^>]*>200,00\s*US\$<\/span> por noche/);
+    // Un «Reservar» por plan, sin el nombre del hotel: en la ficha todos son del mismo.
+    const buttons = html.match(
+      /<button[^>]*>Reservar<span class="sr-only">[^<]*<\/span><\/button>/g,
+    );
+    expect(buttons).toHaveLength(3);
+    expect(buttons?.[0]).not.toContain(', en ');
+  });
+
+  it('los tramos de la política van en «Ver condiciones» del plan', () => {
+    const html = detailRates([tarifa('A', 400_00, 'Doble', CON_TRAMOS)]);
+    expect(html).toMatch(
+      /<details[^>]*><summary[^>]*>Ver condiciones<span class="sr-only">: Solo alojamiento, 400,00\s*US\$<\/span>/,
+    );
+    expect(html).toMatch(/<details.*Cancelación.*Desde el 8 nov 2026, 00:00:.*<\/details>/);
+  });
+
+  it('sin tramos ni nada que agregar, el plan no ofrece «Ver condiciones»', () => {
+    expect(detailRates([tarifa('A', 400_00, 'Doble')])).not.toContain('Ver condiciones');
+  });
+
+  it('una no reembolsable dice a la vista cuánto se pierde, fuera de «Ver condiciones»', () => {
+    const html = detailRates([tarifa('A', 400_00, 'Doble', NO_REEMBOLSABLE)]);
+    const visible = html.replace(/<details.*?<\/details>/g, '');
+    expect(visible).toMatch(/se cobra el 100 %: <span[^>]*>400,00\s*US\$<\/span>/);
+  });
+
+  it('bloqueadas para la agencia: se marcan y no se ofrece reservarlas', () => {
+    const html = detailRates([tarifa('A', 400_00, 'Doble', NO_REEMBOLSABLE)], {
+      nonRefundableBlocked: true,
+    });
+    expect(html).toContain('No disponible para tu agencia');
+    expect(html).not.toMatch(/>Reservar</);
   });
 });

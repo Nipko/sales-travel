@@ -19,20 +19,26 @@ import { formatMoney } from './hotel-format';
 import { encodeHotelKey, hotelRefsOf } from './hotel-key';
 import { HotelPhoto } from './hotel-photo';
 import type { PhotoState } from './hotel-photos';
-import { ExpiredTag, OwnMarginLine, ProviderPill, RateItem, RefundTag } from './hotel-rate-item';
+import { ExpiredTag, OwnMarginLine, ProviderPill, RefundTag } from './hotel-rate-item';
 import type { FilteredHotel, ResultRate } from './hotel-results-filters';
 import type { HotelDetailLink, HotelStay } from './hotel-search-handoff';
 import { isRateExpired } from './offer-expiry';
 import { RateBookAction } from './rate-book-action';
+import { roomTypeGroups, roomTypesCountText } from './room-type-groups';
+import { RoomTypeList } from './room-type-list';
 import { useBookRate } from './use-book-rate';
 
 /*
  * La tarjeta de un hotel en los resultados (propuesta aprobada del 2026-09-29): foto grande, zona,
  * las etiquetas que importan antes de abrir nada —régimen, cancelación, promoción, cargos en el
  * hotel—, el precio por noche grande con el total de la estadía, y el proveedor discreto cuando la
- * divulgación está encendida (RF-40). Las tarifas se despliegan en la misma tarjeta, cada una con
- * su «Reservar»; la ficha completa se abre en otra pestaña para no perder la lista.
+ * divulgación está encendida (RF-40). Las habitaciones se despliegan en la misma tarjeta, por tipo,
+ * cada una con sus planes y su «Reservar»; la ficha completa se abre en otra pestaña para no perder
+ * la lista.
  */
+
+/** Cuántos tipos de habitación se ven en la tarjeta; el resto, en la ficha. */
+export const CARD_ROOM_TYPES = 3;
 
 const CHIP =
   'inline-flex max-w-full items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-px text-xs font-medium text-[var(--color-fg)]';
@@ -88,8 +94,11 @@ export function HotelResultCard({
   const summary = hotelCardSummary(item, nights, expired);
   const { headline } = summary;
   const count = item.rates.length;
+  // Cuántos tipos hay no depende de qué venció: eso sólo cambia el «desde» de cada uno.
+  const roomTypes = useMemo(() => roomTypeGroups(item.rates).length, [item.rates]);
   const stars = item.hotel.stars;
   const stayText = stayShortLabel(nights, rooms);
+  const countId = useId();
 
   return (
     <article className="@container overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
@@ -247,15 +256,22 @@ export function HotelResultCard({
                   onClick={() => setOpen((o) => !o)}
                   aria-expanded={open}
                   aria-controls={panelId}
+                  aria-describedby={countId}
                   className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2"
                 >
-                  {open ? 'Ocultar tarifas' : `Ver ${count} tarifa${count === 1 ? '' : 's'}`}
+                  {open ? 'Ocultar habitaciones' : 'Ver habitaciones'}
                   <ChevronDown
                     aria-hidden="true"
                     className={cn('size-4 transition-transform', open && 'rotate-180')}
                   />
                   <span className="sr-only"> de {name}</span>
                 </button>
+                <p
+                  id={countId}
+                  className="text-center text-[11px] text-[var(--color-fg-muted)] @2xl:text-right"
+                >
+                  {roomTypesCountText(roomTypes, count)}
+                </p>
                 {/* En otra pestaña: los resultados se quedan donde estaban para comparar con el
                     siguiente hotel, sin volver a buscar. */}
                 {detailHref ? (
@@ -281,6 +297,9 @@ export function HotelResultCard({
           <HotelResultRates
             item={item}
             isExpired={expired}
+            nights={nights}
+            rooms={rooms}
+            detailHref={detailHref}
             nonRefundableBlocked={nonRefundableBlocked}
             stay={stay}
             searchToken={searchToken}
@@ -293,14 +312,17 @@ export function HotelResultCard({
 }
 
 /**
- * Las tarifas desplegadas de una tarjeta, cada una con su «Reservar»: se va al checkout desde el
- * listado, con las mismas compuertas que en la ficha. El Search del listado no trae las políticas
- * por tramos (D-TBO-19 A); el PreBook del checkout da las finales antes de cargar los huéspedes,
- * y la nota de arriba lo dice.
+ * Las habitaciones desplegadas de una tarjeta, por tipo (hasta `CARD_ROOM_TYPES`; el resto, en la
+ * ficha), cada plan con su «Reservar»: se va al checkout desde el listado, con las mismas
+ * compuertas que en la ficha. El Search del listado no trae las políticas por tramos (D-TBO-19 A);
+ * el PreBook del checkout da las finales antes de cargar los huéspedes, y la nota de arriba lo dice.
  */
 export function HotelResultRates({
   item,
   isExpired,
+  nights,
+  rooms,
+  detailHref,
   nonRefundableBlocked = false,
   stay,
   searchToken,
@@ -308,11 +330,17 @@ export function HotelResultRates({
 }: {
   item: FilteredHotel;
   isExpired: (rate: ResultRate) => boolean;
+  nights?: number;
+  rooms?: number;
+  /** La ficha, donde están todos los tipos de habitación; sin ella, se despliegan acá. */
+  detailHref?: HotelDetailLink;
   nonRefundableBlocked?: boolean;
   stay: HotelStay | undefined;
   searchToken: string | undefined;
   showProvider: boolean;
 }) {
+  const [allTypes, setAllTypes] = useState(false);
+  const listId = useId();
   const { offer } = item.hotel;
   const hotelName = offer.name ?? `Hotel ${offer.hotelId}`;
   const hotelKey = useMemo(() => encodeHotelKey(hotelRefsOf(offer)), [offer]);
@@ -332,6 +360,8 @@ export function HotelResultRates({
     nonRefundableBlocked && !rate.refund.refundable;
   // La nota habla de lo que pasa al reservar: sin ninguna tarifa que se pueda reservar, sobra.
   const anyBookable = item.rates.some((rate) => canBook(rate.row) && !unavailableForAgency(rate));
+  const groups = roomTypeGroups(item.rates, isExpired);
+  const hiddenTypes = groups.length - CARD_ROOM_TYPES;
 
   return (
     <>
@@ -342,30 +372,60 @@ export function HotelResultRates({
           tarifa, antes de cargar los huéspedes.
         </p>
       ) : null}
-      <ul className="divide-y divide-[var(--color-border)]">
-        {item.rates.map((rate) => {
-          const expired = isExpired(rate);
-          const unavailable = unavailableForAgency(rate);
-          return (
-            <RateItem
-              key={rate.row.key}
-              row={rate.row}
-              refund={rate.refund}
-              expired={expired}
-              unavailableForAgency={unavailable}
-            >
+      <div id={listId}>
+        <RoomTypeList
+          groups={groups}
+          nights={nights}
+          roomsCount={rooms}
+          variant="card"
+          maxGroups={allTypes ? undefined : CARD_ROOM_TYPES}
+          isExpired={isExpired}
+          isUnavailable={unavailableForAgency}
+          planAction={(rate) =>
+            unavailableForAgency(rate) ? null : (
               <RateBookAction
                 row={rate.row}
                 bookable={canBook(rate.row)}
-                expired={expired}
-                unavailableForAgency={unavailable}
+                expired={isExpired(rate)}
+                unavailableForAgency={false}
                 onBook={() => book(rate.row)}
                 hotelName={hotelName}
               />
-            </RateItem>
-          );
-        })}
-      </ul>
+            )
+          }
+        />
+      </div>
+      {hiddenTypes > 0 ? (
+        <div className="border-t border-[var(--color-border)] px-4 py-3">
+          {detailHref ? (
+            <Link
+              href={detailHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded text-xs font-medium text-[var(--color-fg)] underline decoration-[var(--color-border-strong)] underline-offset-4 hover:decoration-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            >
+              Ver los {groups.length} tipos de habitación en la ficha
+              <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="sr-only"> de {hotelName} (se abre en otra pestaña)</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAllTypes((all) => !all)}
+              aria-expanded={allTypes}
+              aria-controls={listId}
+              className="inline-flex items-center gap-1 rounded text-xs font-medium text-[var(--color-fg)] underline decoration-[var(--color-border-strong)] underline-offset-4 hover:decoration-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            >
+              {allTypes ? 'Ver menos tipos' : 'Ver todos los tipos'}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn('size-3.5 transition-transform', allTypes && 'rotate-180')}
+              />
+              <span className="sr-only"> de habitación de {hotelName}</span>
+            </button>
+          )}
+        </div>
+      ) : null}
       {item.hiddenRates > 0 ? (
         <p className="border-t border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-2 text-[11px] text-[var(--color-fg-muted)]">
           {item.hiddenRates === 1

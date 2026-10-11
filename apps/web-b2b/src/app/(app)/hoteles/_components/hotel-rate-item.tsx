@@ -11,9 +11,10 @@ import {
 } from './rate-refundability';
 
 /*
- * La fila de UNA tarifa de hotel, la misma en la tarjeta del listado y en el detalle del hotel:
- * misma pastilla de proveedor y misma regla (RF-40 CA 4), mismo precio de venta y mismos cargos en
- * el hotel. El detalle le suma lo suyo por `children`.
+ * Las piezas de UNA tarifa de hotel, las mismas en la tarjeta del listado, en el detalle del hotel
+ * y en el checkout: misma pastilla de proveedor y misma regla (RF-40 CA 4), mismo precio de venta y
+ * mismos cargos en el hotel. El listado y el detalle las arman por tipo de habitación
+ * (room-type-list); la fila entera, `RateItem`, es la de la tarifa elegida en el checkout.
  */
 
 /**
@@ -121,7 +122,7 @@ export function OwnMarginLine({ row }: { row: HotelRateRow }) {
  * Lo que se paga en el hotel, aparte del total (U-07): cada cargo con su importe y su moneda,
  * sin sumarlos. Va en su propio recuadro para que nadie lo lea como parte del precio.
  */
-function AtHotelCharges({ row }: { row: HotelRateRow }) {
+export function AtHotelCharges({ row }: { row: HotelRateRow }) {
   if (row.atHotel.length === 0) return null;
   return (
     <div className="rounded-md border border-[var(--color-warning)]/50 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-fg)]">
@@ -142,15 +143,27 @@ function AtHotelCharges({ row }: { row: HotelRateRow }) {
   );
 }
 
-function RateExtras({ row }: { row: HotelRateRow }) {
+/**
+ * Lo que incluye la tarifa: inclusiones, traslados y suplementos ya en el precio, y sus
+ * promociones salvo `withPromotions={false}` (la lista por tipo de habitación ya las muestra como
+ * etiqueta).
+ */
+export function RateExtras({
+  row,
+  withPromotions = true,
+}: {
+  row: HotelRateRow;
+  withPromotions?: boolean;
+}) {
   const lines: string[] = [];
   if (row.inclusion) lines.push(`Incluye: ${row.inclusion}`);
   if (row.transfers) lines.push('Traslados incluidos');
   for (const inc of row.included) lines.push(`Incluido en el precio: ${inc}`);
-  if (lines.length === 0 && row.promotions.length === 0) return null;
+  const promotions = withPromotions ? row.promotions : [];
+  if (lines.length === 0 && promotions.length === 0) return null;
   return (
     <div className="space-y-0.5 text-[11px] text-[var(--color-fg-muted)]">
-      {row.promotions.map((p) => (
+      {promotions.map((p) => (
         <p key={p} className="flex items-start gap-1 text-[var(--color-fg)]">
           <Gift aria-hidden="true" className="mt-px size-3 shrink-0" />
           {p}
