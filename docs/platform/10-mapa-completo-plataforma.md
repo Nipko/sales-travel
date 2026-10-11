@@ -799,6 +799,8 @@ POST   /auth/change-password             -- devuelve token nuevo: la sesión act
 GET    /tenants/:id/seats                -- uso del cupo y conectados del subárbol (admin del nodo)
 POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
+POST   /tenants/:id/members/:userId/send-password-reset -- { sent, expiresAt }; nunca el enlace · 409 · 429 (doc 15)
+POST   /tenants/:id/members/:userId/unlock  -- { unlocked }: levanta el bloqueo por intentos fallidos (doc 15)
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 

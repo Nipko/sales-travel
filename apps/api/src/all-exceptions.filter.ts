@@ -160,7 +160,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return 'No tienes una membresía activa para acceder. Pide acceso al administrador de tu agencia.';
     if (m === 'unauthorized') return 'Tu sesión expiró o no iniciaste sesión. Vuelve a ingresar.';
     if (m === 'forbidden') return 'No tienes permiso para realizar esta acción.';
-    if (m === 'too many requests')
+    // El 429 de @nestjs/throttler dice "ThrottlerException: Too Many Requests": con `===` llegaba
+    // en inglés a la pantalla (Equipo lo muestra tal cual).
+    if (m === 'too many requests' || m.endsWith(': too many requests'))
       return 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
     // Mensaje ya en español o específico del negocio: se respeta.
     return raw || 'No pudimos procesar la solicitud.';

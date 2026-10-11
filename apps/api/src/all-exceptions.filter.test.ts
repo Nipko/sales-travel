@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
   type ArgumentsHost,
 } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { voseoIn } from './__fixtures__/voseo.js';
@@ -223,6 +224,12 @@ describe('AllExceptionsFilter — los mensajes que traduce van en tú', () => {
     [
       'demasiados intentos',
       new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS),
+      'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
+    ],
+    [
+      // Lo que lanza de verdad el @Throttle (p. ej. enviar el enlace de contraseña desde Equipo).
+      'el 429 del throttler',
+      new ThrottlerException(),
       'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
     ],
   ] as const)('%s', (_label, err, text) => {
