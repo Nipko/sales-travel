@@ -298,6 +298,11 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
   ),
   ...noVenta(
+    'el superadmin ve en una cola los depósitos informados de toda la red (sólo lectura)',
+    'GET /admin/deposit-reports',
+    'GET /admin/deposit-reports/pending-count',
+  ),
+  ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
     'GET /tenants/:tenantId/booking-permissions',
     'PUT /tenants/:tenantId/booking-permissions',
