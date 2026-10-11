@@ -2,17 +2,17 @@
 
 import { ClipboardCheck, RefreshCw, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { NodeKindBadge } from '../../../../../../components/network/node-kind';
 import { Button } from '../../../../../../components/ui/button';
 import { Select, TextInput } from '../../../../../../components/ui/field';
+import { SegmentedControl } from '../../../../../../components/ui/segmented-control';
 import {
   ApproveReportDialog,
   RejectReportDialog,
 } from '../../../../../../components/wallets/wallet-dialogs';
 import { EmptyState, ToneBadge, ToneNotice } from '../../../../../../components/wallets/wallet-ui';
-import { cn } from '../../../../../../lib/cn';
 import {
   DEFAULT_APPROVALS_FILTERS,
   SCOPE_HINT,
@@ -231,7 +231,7 @@ export function DepositApprovalsPanel() {
       </header>
 
       <div className="mb-5 space-y-3">
-        <Segmented
+        <SegmentedControl
           legend="Estado de los depósitos"
           options={STATUS_TABS}
           value={filters.status}
@@ -239,11 +239,12 @@ export function DepositApprovalsPanel() {
         />
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 space-y-1.5">
-            <Segmented
+            <SegmentedControl
               legend="De quién es el dinero"
               options={scopes}
               value={filters.financedBy}
               onChange={(value: FinancedByFilter) => setFilter('financedBy', value)}
+              countLabel="por aprobar"
             />
             <p className="max-w-prose text-xs text-[var(--color-fg-muted)]">
               {SCOPE_HINT[filters.financedBy]}
@@ -431,68 +432,6 @@ export function DepositApprovalsPanel() {
         />
       ) : null}
     </div>
-  );
-}
-
-/**
- * Un grupo de radios con aspecto de control segmentado: se recorre con las flechas, como cualquier
- * grupo de radios, y la opción marcada se lee sin depender del color.
- */
-function Segmented<T extends string>({
-  legend,
-  options,
-  value,
-  onChange,
-}: {
-  legend: string;
-  options: readonly { readonly value: T; readonly label: string; readonly count?: number }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  const name = useId();
-  return (
-    <fieldset className="min-w-0">
-      <legend className="sr-only">{legend}</legend>
-      <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5">
-        {options.map((option) => {
-          const checked = option.value === value;
-          return (
-            <label
-              key={option.value}
-              className={cn(
-                'relative inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-[var(--color-primary)]',
-                checked
-                  ? 'bg-[var(--color-surface-muted)] text-[var(--color-fg)] shadow-[var(--shadow-xs)]'
-                  : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              <input
-                type="radio"
-                name={name}
-                value={option.value}
-                checked={checked}
-                onChange={() => onChange(option.value)}
-                className="sr-only"
-              />
-              {option.label}
-              {option.count !== undefined ? (
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
-                    option.count > 0
-                      ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-                      : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
-                  )}
-                >
-                  {option.count}
-                  <span className="sr-only"> por aprobar</span>
-                </span>
-              ) : null}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
   );
 }
 
