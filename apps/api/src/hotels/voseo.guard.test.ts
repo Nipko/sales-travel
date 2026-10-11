@@ -7,9 +7,10 @@ import { describe, expect, it } from 'vitest';
  *
  * Los mensajes de error del API llegan tal cual a la pantalla (el filtro global publica `message`),
  * así que un "Volvé a buscar" en un error de TBO es un "Volvé a buscar" en el checkout. Se recorre
- * todo `hotels/` y `providers-tbo/`, más los archivos de otras carpetas cuyos mensajes ve el
- * checkout de hoteles (cartera, intents de orden, registry y tipos de proveedor) y el 403 del
- * superadmin. Comentarios incluidos: citan textos de pantalla y se copian de ahí.
+ * todo `hotels/`, `providers-tbo/` y `providers-despegar/`, más los archivos de otras carpetas
+ * cuyos mensajes ve el checkout de hoteles (cartera, intents de orden, registry y tipos de
+ * proveedor, el breaker, la validación Zod y el filtro global de errores) y el 403 del superadmin.
+ * Comentarios incluidos: citan textos de pantalla y se copian de ahí.
  *
  * El espejo web vive en `apps/web-b2b/src/app/(app)/hoteles/voseo.guard.test.ts`.
  */
@@ -26,9 +27,10 @@ function raizDeFuentes(): string {
 
 const SRC = raizDeFuentes();
 
-const CARPETAS = ['hotels', 'providers-tbo'] as const;
+const CARPETAS = ['hotels', 'providers-tbo', 'providers-despegar'] as const;
 
 const ARCHIVOS_SUELTOS = [
+  'all-exceptions.filter.ts',
   'auth/sales-operation-errors.ts',
   'orders/external-order-intent.service.ts',
   'orders/order-create-intent.store.ts',
@@ -36,6 +38,8 @@ const ARCHIVOS_SUELTOS = [
   'portfolios/portfolio-errors.ts',
   'providers/hotel-provider.registry.ts',
   'providers/provider.types.ts',
+  'search/circuit-breaker.service.ts',
+  'zod/zod-validation.pipe.ts',
 ] as const;
 
 /**
@@ -43,7 +47,7 @@ const ARCHIVOS_SUELTOS = [
  * case dentro de "probábamos" ni "elegí" dentro de "elegíamos".
  */
 const VOSEO =
-  /(?<!\p{L})(usá|probá|volvé|elegí|revisá|intentá|reintentá|cargá|avisá|avisale|pedile|pedíselos?|completala|cargalas|configuralos|quitá|confirmalo|elegila|indicá|informá|contactá|buscá|tenés|podés|querés|armás|corregís|creala|sumale|verificá|verificalos|confirmá|confirmalas|agregá|revisala|revisalas|consultá|completá|generá|recordale|entendés|indicala|esperá)(?!\p{L})/iu;
+  /(?<!\p{L})(usá|probá|volvé|elegí|revisá|intentá|reintentá|cargá|avisá|avisale|pedile|pedíselos?|completala|cargalas|configuralos|quitá|confirmalo|elegila|indicá|informá|contactá|buscá|tenés|podés|querés|armás|corregís|creala|sumale|verificá|verificalos|confirmá|confirmalas|agregá|revisala|revisalas|consultá|completá|generá|recordale|entendés|indicala|esperá|pedí|ingresá|seleccioná|escribí|fijate|asegurate|hacé|hacelo|poné|recargá|aceptá|copiá|pegá|asigná|entrá|perdés|necesitás|sabés|vos)(?!\p{L})/iu;
 
 function fuentes(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -79,6 +83,8 @@ describe('hoteles — textos en tú, sin voseo', () => {
       'Configuralos en Mi agencia',
       'usá un usuario de una sucursal',
       'si no tenés permiso',
+      'Pedí uno nuevo',
+      'Podés reintentar',
     ]) {
       expect(VOSEO.test(voseo), voseo).toBe(true);
     }
@@ -92,6 +98,8 @@ describe('hoteles — textos en tú, sin voseo', () => {
       'si no tienes permiso',
       'no esperábamos este estado',
       'la tarifa elegida',
+      'Pide uno nuevo',
+      'Puedes reintentar',
     ]) {
       expect(VOSEO.test(tu), tu).toBe(false);
     }

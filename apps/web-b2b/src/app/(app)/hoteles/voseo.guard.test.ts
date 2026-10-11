@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 /*
  * Los textos que ve el vendedor en hoteles van en "tú" neutro, nunca en voseo. Se recorre toda la
- * pantalla de hoteles, las librerías propias de hoteles y el aviso del superadmin, que es lo que ve
- * cuando entra a /hoteles. Comentarios incluidos: citan textos de pantalla y se copian de ahí.
+ * pantalla de hoteles, las librerías propias de hoteles, el aviso del superadmin (lo que ve cuando
+ * entra a /hoteles) y lo genérico que también sale en hoteles: los mensajes de conexión de
+ * `lib/api.ts` y `lib/read-json.ts` y las pantallas de error. Comentarios incluidos: citan textos
+ * de pantalla y se copian de ahí.
  *
  * El espejo del API vive en `apps/api/src/hotels/voseo.guard.test.ts`, con la misma expresión.
  */
@@ -15,15 +17,19 @@ const HOTELS_DIR = fileURLToPath(new URL('.', import.meta.url));
 const SRC = fileURLToPath(new URL('../../../', import.meta.url));
 
 const ARCHIVOS_SUELTOS = [
+  'app/(app)/error.tsx',
+  'app/global-error.tsx',
   'components/layout/sales-blocked.tsx',
+  'lib/api.ts',
   'lib/hotel-book.ts',
   'lib/hotel-content-batch.ts',
   'lib/hotel-image-proxy.ts',
+  'lib/read-json.ts',
   'lib/viewer.ts',
 ] as const;
 
 const VOSEO =
-  /(?<!\p{L})(usá|probá|volvé|elegí|revisá|intentá|reintentá|cargá|avisá|avisale|pedile|pedíselos?|completala|cargalas|configuralos|quitá|confirmalo|elegila|indicá|informá|contactá|buscá|tenés|podés|querés|armás|corregís|creala|sumale|verificá|verificalos|confirmá|confirmalas|agregá|revisala|revisalas|consultá|completá|generá|recordale|entendés|indicala|esperá)(?!\p{L})/iu;
+  /(?<!\p{L})(usá|probá|volvé|elegí|revisá|intentá|reintentá|cargá|avisá|avisale|pedile|pedíselos?|completala|cargalas|configuralos|quitá|confirmalo|elegila|indicá|informá|contactá|buscá|tenés|podés|querés|armás|corregís|creala|sumale|verificá|verificalos|confirmá|confirmalas|agregá|revisala|revisalas|consultá|completá|generá|recordale|entendés|indicala|esperá|pedí|ingresá|seleccioná|escribí|fijate|asegurate|hacé|hacelo|poné|recargá|aceptá|copiá|pegá|asigná|entrá|perdés|necesitás|sabés|vos)(?!\p{L})/iu;
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -47,10 +53,24 @@ function voseoEn(files: readonly string[]): string[] {
 
 describe('hoteles — textos en tú, sin voseo', () => {
   it('la expresión reconoce el voseo y deja pasar el tú', () => {
-    for (const voseo of ['Recordale al huésped', 'usá un usuario', 'creala y sumale', 'armás']) {
+    for (const voseo of [
+      'Recordale al huésped',
+      'usá un usuario',
+      'creala y sumale',
+      'armás',
+      'Podés reintentar',
+      'Esperá unos segundos y probá de nuevo',
+    ]) {
       expect(VOSEO.test(voseo), voseo).toBe(true);
     }
-    for (const tu of ['Recuérdale al huésped', 'usa un usuario', 'créala y súmale', 'armas']) {
+    for (const tu of [
+      'Recuérdale al huésped',
+      'usa un usuario',
+      'créala y súmale',
+      'armas',
+      'Puedes reintentar',
+      'Espera unos segundos y prueba de nuevo',
+    ]) {
       expect(VOSEO.test(tu), tu).toBe(false);
     }
   });

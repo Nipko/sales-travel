@@ -238,7 +238,7 @@ export class CircuitBreakerService {
       throw new BreakerRejectionError(
         providerCode,
         'account-circuit',
-        `${providerCode} rechazó la cuenta con la que opera esta agencia y sus consultas quedan en pausa unos minutos. Revisá las credenciales en Mi Red → Credenciales o avisale a quien las administra.`,
+        `${providerCode} rechazó la cuenta con la que opera esta agencia y sus consultas quedan en pausa unos minutos. Revisa las credenciales en Mi Red → Credenciales o avísale a quien las administra.`,
       );
     }
 
@@ -249,7 +249,7 @@ export class CircuitBreakerService {
         throw new BreakerRejectionError(
           providerCode,
           'provider-circuit',
-          `${providerCode} no está respondiendo. Reintentá en unos segundos.`,
+          `${providerCode} no está respondiendo. Inténtalo de nuevo en unos segundos.`,
         );
       }
       // Vencida la ventana, se deja pasar UNA llamada de sonda. Una pasiva pasa sin serlo: su

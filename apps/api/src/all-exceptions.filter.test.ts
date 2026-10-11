@@ -187,7 +187,7 @@ describe('AllExceptionsFilter — motivo máquina', () => {
     expect(cuerpo(r)).toEqual({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'Ocurrió un error inesperado. Intentá de nuevo en unos minutos.',
+      message: 'Ocurrió un error inesperado. Inténtalo de nuevo en unos minutos.',
     });
   });
 });

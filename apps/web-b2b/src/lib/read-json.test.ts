@@ -68,7 +68,7 @@ describe('describeNonJson: cada familia de estado pide una acción distinta', ()
 
   it('un servidor caído invita a reintentar, que ahí sí corresponde', () => {
     for (const status of [502, 503]) {
-      expect(describeNonJson(status, '<!DOCTYPE html>')).toContain('probá de nuevo');
+      expect(describeNonJson(status, '<!DOCTYPE html>')).toContain('prueba de nuevo');
     }
   });
 
