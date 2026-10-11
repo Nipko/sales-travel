@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { VOSEO_WORDS, voseoIn } from './__fixtures__/voseo.js';
@@ -8,11 +8,15 @@ import { VOSEO_WORDS, voseoIn } from './__fixtures__/voseo.js';
  * panel y a los correos. Van en "tú" neutro (decisión del founder): este guarda falla con
  * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite.
  *
+ * Además del filtro global y del pipe de Zod: traducen el 401/403/429 y envuelven cada 400 de
+ * validación, así que su texto también llega a /verificar, al alta por invitación y a Equipo.
+ *
  * Los tests quedan afuera: arman nombres de nodo hostiles y otros textos de prueba a propósito.
  */
 
 const SRC_DIR = __dirname;
-const SCANNED_DIRS = ['auth', 'tenants'];
+/** Carpetas y archivos sueltos que se recorren, relativos a `src/`. */
+const SCANNED = ['auth', 'tenants', 'zod', 'all-exceptions.filter.ts'];
 
 /**
  * Líneas que pueden llevar una de las palabras sin ser voseo (`archivo` relativo a `src/` con `/`,
@@ -20,12 +24,13 @@ const SCANNED_DIRS = ['auth', 'tenants'];
  */
 const ALLOWED: readonly { file: string; line: string }[] = [];
 
-function sources(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return sources(path);
-    return name.endsWith('.ts') && !name.endsWith('.test.ts') ? [path] : [];
-  });
+function isSource(name: string): boolean {
+  return name.endsWith('.ts') && !name.endsWith('.test.ts');
+}
+
+function sources(path: string): string[] {
+  if (!statSync(path).isDirectory()) return isSource(path) ? [path] : [];
+  return readdirSync(path).flatMap((name) => sources(join(path, name)));
 }
 
 function allowed(file: string, line: string): boolean {
@@ -33,15 +38,18 @@ function allowed(file: string, line: string): boolean {
 }
 
 describe('los textos del acceso, las invitaciones y Equipo van en tú', () => {
-  const files = SCANNED_DIRS.flatMap((dir) => sources(join(SRC_DIR, dir)));
+  const files = SCANNED.flatMap((p) => sources(join(SRC_DIR, p)));
 
   it('recorre las carpetas de verdad', () => {
+    for (const p of SCANNED) expect(existsSync(join(SRC_DIR, p)), p).toBe(true);
     expect(files.length).toBeGreaterThan(20);
     expect(files.some((f) => f.endsWith(`${sep}auth-errors.ts`))).toBe(true);
     expect(files.some((f) => f.endsWith(`${sep}invitations.service.ts`))).toBe(true);
+    expect(files.some((f) => f.endsWith(`${sep}zod-validation.pipe.ts`))).toBe(true);
+    expect(files.some((f) => f.endsWith(`${sep}all-exceptions.filter.ts`))).toBe(true);
   });
 
-  it('ningún archivo de auth/ ni de tenants/ usa voseo', () => {
+  it('ningún archivo recorrido usa voseo', () => {
     const offenders: string[] = [];
     for (const file of files) {
       const rel = relative(SRC_DIR, file).split(sep).join('/');

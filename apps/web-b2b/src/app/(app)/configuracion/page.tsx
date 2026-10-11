@@ -60,10 +60,13 @@ const COLOR_PRESETS = [
 
 // --- Page ---
 export default function ConfiguracionPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+  const [selectedTab, setSelectedTab] = useState<TabId>('general');
   // Equipo sólo para quien administra la agencia activa: al resto no le sirve de nada.
   const admin = seesAdministration(useAgencySwitcher().current?.role);
   const tabs = admin ? TABS : TABS.filter((tab) => tab.id !== 'team');
+  // Si cambia a una agencia donde no administra con Equipo abierto, vuelve a General en vez de
+  // quedarse con la pestaña desaparecida y el contenido en blanco.
+  const activeTab: TabId = selectedTab === 'team' && !admin ? 'general' : selectedTab;
   const [branding, setBranding] = useState<Branding>({
     logoUrl: null,
     primaryColor: null,
@@ -193,8 +196,11 @@ export default function ConfiguracionPage() {
             <button
               key={tab.id}
               type="button"
+              // En el teléfono la etiqueta visible se oculta: sin esto el botón no tiene nombre.
+              aria-label={tab.label}
+              aria-pressed={activeTab === tab.id}
               onClick={() => {
-                setActiveTab(tab.id);
+                setSelectedTab(tab.id);
                 setMessage(null);
               }}
               className={cn(
@@ -204,7 +210,7 @@ export default function ConfiguracionPage() {
                   : 'text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]',
               )}
             >
-              <Icon className="size-3.5 shrink-0" />
+              <Icon aria-hidden="true" className="size-3.5 shrink-0" />
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           );

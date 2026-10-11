@@ -1,12 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
   HttpStatus,
   Logger,
+  UnauthorizedException,
   type ArgumentsHost,
 } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import { voseoIn } from './__fixtures__/voseo.js';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
+import { ZodValidationPipe } from './zod/zod-validation.pipe.js';
 import { BreakerRejectionError } from './search/circuit-breaker.service.js';
 import {
   HotelOfferNotInSearchError,
@@ -187,8 +193,60 @@ describe('AllExceptionsFilter — motivo máquina', () => {
     expect(cuerpo(r)).toEqual({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'Ocurrió un error inesperado. Intentá de nuevo en unos minutos.',
+      message: 'Ocurrió un error inesperado. Inténtalo de nuevo en unos minutos.',
     });
+  });
+});
+
+/**
+ * Estos textos los traduce el filtro y llegan tal cual a /verificar, al login, a Equipo y a los
+ * formularios de contraseña: van en tú, como el resto del acceso.
+ */
+describe('AllExceptionsFilter — los mensajes que traduce van en tú', () => {
+  it.each([
+    [
+      'enlace de verificación vencido',
+      new UnauthorizedException('invalid or expired verification token'),
+      'El enlace de verificación es inválido o expiró. Pide uno nuevo.',
+    ],
+    [
+      'sin membresía activa',
+      new ForbiddenException('user has no active membership'),
+      'No tienes una membresía activa para acceder. Pide acceso al administrador de tu agencia.',
+    ],
+    [
+      '401 sin texto',
+      new UnauthorizedException(),
+      'Tu sesión expiró o no iniciaste sesión. Vuelve a ingresar.',
+    ],
+    ['403 sin texto', new ForbiddenException(), 'No tienes permiso para realizar esta acción.'],
+    [
+      'demasiados intentos',
+      new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS),
+      'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
+    ],
+  ] as const)('%s', (_label, err, text) => {
+    const r = respuesta();
+    new AllExceptionsFilter().catch(err, r.host);
+    expect(cuerpo(r)['message']).toBe(text);
+    expect(voseoIn(text)).toEqual([]);
+  });
+
+  it('el 400 de validación también: "Revisa los datos ingresados"', () => {
+    const r = respuesta();
+    let rejected: unknown;
+    try {
+      new ZodValidationPipe(
+        z.object({ email: z.string().email('indica un correo válido') }),
+      ).transform({ email: 'x' });
+    } catch (err) {
+      rejected = err;
+    }
+    new AllExceptionsFilter().catch(rejected, r.host);
+    expect(cuerpo(r)['message']).toBe(
+      'Revisa los datos ingresados — email: indica un correo válido',
+    );
+    expect(voseoIn(String(cuerpo(r)['message']))).toEqual([]);
   });
 });
 

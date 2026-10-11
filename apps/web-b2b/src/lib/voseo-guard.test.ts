@@ -26,6 +26,8 @@ const SCANNED = [
   'app/api/session',
   'components/auth',
   'components/layout',
+  // El "no pudimos conectar" de cada pedido al API: llega al acceso y a Equipo.
+  'lib/api.ts',
   'lib/read-json.ts',
   'lib/session-reasons.ts',
   'lib/viewer.ts',

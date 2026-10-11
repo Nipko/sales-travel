@@ -203,7 +203,7 @@ export async function api<T>(
         // «Unexpected token '<', "<!DOCTYPE "... is not valid JSON» — un mensaje que no se
         // parece en nada a «no se pudo conectar», que es lo que realmente había pasado.
         status: SERVICIO_NO_DISPONIBLE,
-        message: 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.',
+        message: 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
       },
     };
   }
@@ -213,7 +213,7 @@ export async function api<T>(
  * Lo que respondió el API, con su estado y su cuerpo tal cual.
  *
  * `api()` no alcanza para una reserva de hotel (docs/tbo/03 §4.5 punto 6; 08 RF-22): en éxito
- * devuelve sólo el cuerpo, así que un `202` ("sigue en curso, consultá la orden") llegaba al
+ * devuelve sólo el cuerpo, así que un `202` ("sigue en curso, consulta la orden") llegaba al
  * navegador igual que un `201`; y en error conserva sólo `message`, así que se perdían el precio
  * nuevo de un `409`, la orden existente de un doble envío y las marcas `retryForbidden` y
  * `reconciliationRequired`, que son las que dicen que NO hay que repetir la reserva.
@@ -261,7 +261,7 @@ export async function apiWithStatus(path: string, init: RequestInit = {}): Promi
     return {
       kind: 'unreachable',
       status: SERVICIO_NO_DISPONIBLE,
-      message: 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.',
+      message: 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
     };
   }
 
