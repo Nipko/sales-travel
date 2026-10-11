@@ -1,4 +1,5 @@
 import { Controller, HttpCode, Param, Post, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
@@ -37,5 +38,33 @@ export class MemberSupportController {
   ): Promise<{ revoked: number }> {
     if (!userId) throw new UnauthorizedException();
     return this.support.revokeSessions(userId, tenantId, targetUserId);
+  }
+
+  /**
+   * Le envía un enlace de un solo uso para que elija una contraseña nueva. La respuesta dice si el
+   * correo salió y cuándo vence el enlace; nunca trae el enlace ni el token.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post(':id/members/:userId/send-password-reset')
+  @HttpCode(200)
+  async sendPasswordReset(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Param('userId', new ZodValidationPipe(UuidParamSchema)) targetUserId: string,
+  ): Promise<{ sent: boolean; expiresAt: string }> {
+    if (!userId) throw new UnauthorizedException();
+    return this.support.sendPasswordReset(userId, tenantId, targetUserId);
+  }
+
+  /** Levanta el bloqueo por intentos fallidos. No toca contraseña, 2FA ni estado. */
+  @Post(':id/members/:userId/unlock')
+  @HttpCode(200)
+  async unlock(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Param('userId', new ZodValidationPipe(UuidParamSchema)) targetUserId: string,
+  ): Promise<{ unlocked: boolean }> {
+    if (!userId) throw new UnauthorizedException();
+    return this.support.unlock(userId, tenantId, targetUserId);
   }
 }

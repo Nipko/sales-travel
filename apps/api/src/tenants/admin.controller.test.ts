@@ -391,7 +391,12 @@ describe('RolesGuard con la metadata REAL del controlador', () => {
 describe('SeatsController y MemberSupportController: sin sesión no llegan al servicio', () => {
   it('401 y el servicio no se entera', async () => {
     const seats = { view: vi.fn(), release: vi.fn() };
-    const support = { resetMfa: vi.fn(), revokeSessions: vi.fn() };
+    const support = {
+      resetMfa: vi.fn(),
+      revokeSessions: vi.fn(),
+      sendPasswordReset: vi.fn(),
+      unlock: vi.fn(),
+    };
     const seatsCtl = new SeatsController(seats as unknown as SeatsService);
     const supportCtl = new MemberSupportController(support as unknown as MemberSupportService);
 
@@ -403,6 +408,12 @@ describe('SeatsController y MemberSupportController: sin sesión no llegan al se
       UnauthorizedException,
     );
     await expect(supportCtl.revokeSessions(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.sendPasswordReset(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.unlock(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
     for (const fn of [...Object.values(seats), ...Object.values(support)]) {
@@ -421,6 +432,36 @@ describe('SeatsController y MemberSupportController: sin sesión no llegan al se
     await seatsCtl.release(ACTOR, NODO, OTRO);
     expect(seats.view).toHaveBeenCalledWith(ACTOR, NODO);
     expect(seats.release).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+  });
+
+  it('enviar el enlace y desbloquear: el actor y los ids llegan tal cual, la respuesta también', async () => {
+    const support = {
+      sendPasswordReset: vi.fn(() =>
+        Promise.resolve({ sent: true, expiresAt: '2026-10-11T13:00:00.000Z' }),
+      ),
+      unlock: vi.fn(() => Promise.resolve({ unlocked: false })),
+    };
+    const supportCtl = new MemberSupportController(support as unknown as MemberSupportService);
+
+    expect(await supportCtl.sendPasswordReset(ACTOR, NODO, OTRO)).toEqual({
+      sent: true,
+      expiresAt: '2026-10-11T13:00:00.000Z',
+    });
+    expect(await supportCtl.unlock(ACTOR, NODO, OTRO)).toEqual({ unlocked: false });
+    expect(support.sendPasswordReset).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+    expect(support.unlock).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+  });
+
+  it('enviar el enlace tiene su propio límite por minuto', () => {
+    const handler = Object.getOwnPropertyDescriptor(
+      MemberSupportController.prototype,
+      'sendPasswordReset',
+    )?.value as unknown;
+    expect(typeof handler).toBe('function');
+    const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', handler as object) as unknown;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler as object) as unknown;
+    expect(limit).toBe(10);
+    expect(ttl).toBe(60_000);
   });
 });
 

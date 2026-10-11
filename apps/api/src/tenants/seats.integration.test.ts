@@ -5,6 +5,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import { AuditService } from '../audit/audit.service.js';
+import type { PasswordResetService } from '../auth/password-reset.service.js';
 import type { PasswordService } from '../auth/password.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
@@ -76,7 +77,9 @@ d('puestos, Equipo y soporte a miembros, contra Postgres', () => {
   const network = new NetworkService(database);
   const audit = new AuditService(database);
   const seats = new SeatsService(database, network, audit);
-  const support = new MemberSupportService(database, network, audit);
+  // Estos casos no envían enlaces para restablecer la contraseña: los cubre
+  // member-support.integration.test.ts.
+  const support = new MemberSupportService(database, network, audit, {} as PasswordResetService);
   const password = {
     hash: (p: string) => Promise.resolve(`hash-de-prueba-${p.length}`),
   } as unknown as PasswordService;

@@ -1,8 +1,11 @@
 import type { HttpException } from '@nestjs/common';
+import type { CompiledQuery, Transaction } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
+import { scriptedKysely } from '../__fixtures__/scripted-kysely.js';
 import type { AuditService } from '../audit/audit.service.js';
+import type { PasswordResetService } from '../auth/password-reset.service.js';
 import type { DatabaseService } from '../database/database.service.js';
-import type { Role } from '../database/database.types.js';
+import type { DB, MembershipStatus, Role } from '../database/database.types.js';
 import type { NetworkService } from '../network/network.service.js';
 import { MemberSupportService } from './member-support.service.js';
 
@@ -10,43 +13,73 @@ const ACTOR = '99999999-9999-4999-8999-999999999999';
 const TARGET = '88888888-8888-4888-8888-888888888888';
 const NODO = '11111111-1111-4111-8111-111111111111';
 const OTRA_RED = '33333333-3333-4333-8333-333333333333';
+const TOKEN = 'token-en-claro-que-nunca-sale';
+const EXPIRES = new Date('2026-10-11T13:00:00.000Z');
 
 /**
  * El orden de la autorización con dobles: qué se decide sin leer nada, qué se lee con quién en el
  * contexto y que la acción no corre si la regla dice que no. La regla en sí está en
- * tenant-admin.policy.test.ts; contra Postgres, en seats.integration.test.ts.
+ * tenant-admin.policy.test.ts; contra Postgres, en seats.integration.test.ts y
+ * member-support.integration.test.ts.
  */
 interface Banco {
   routeRole?: Role | undefined;
-  inRoute?: { tenant_id: string; role: Role } | undefined;
+  inRoute?: { tenant_id: string; role: Role; status?: MembershipStatus } | undefined;
   active?: Array<{ tenant_id: string; role: Role }>;
   actorRoles?: Array<[string, Role]>;
+  /**
+   * Las filas de cada consulta de la acción (la 3ª transacción). Sin esto, la acción devuelve 0 sin
+   * consultar nada: alcanza para los casos que sólo miran la autorización.
+   */
+  respond?: (q: CompiledQuery) => unknown[];
+  mailOk?: boolean;
 }
 
 function banco(opts: Banco = {}) {
   // `in` y no defaults de destructuring: pasar `undefined` a propósito es parte de los casos.
   const routeRole = 'routeRole' in opts ? opts.routeRole : 'tenant_admin';
-  const inRoute = 'inRoute' in opts ? opts.inRoute : { tenant_id: NODO, role: 'vendedor' };
+  const inRoute =
+    'inRoute' in opts ? opts.inRoute : { tenant_id: NODO, role: 'vendedor', status: 'active' };
   const active = opts.active ?? [{ tenant_id: NODO, role: 'vendedor' }];
   const actorRoles = opts.actorRoles ?? [[NODO, 'tenant_admin']];
   const network = {
     roleOver: vi.fn(() => Promise.resolve(routeRole)),
     rolesOver: vi.fn(() => Promise.resolve(new Map(actorRoles))),
   };
+  const respond = opts.respond;
+  const k = scriptedKysely(
+    respond ??
+      ((q) => {
+        throw new Error(`consulta no prevista: ${q.sql}`);
+      }),
+  );
   // 1ª lectura: la membership en el nodo de la ruta; 2ª: las activas del objetivo; 3ª: la acción.
+  const action = vi.fn(<T>(_ctx: unknown, fn: (trx: Transaction<DB>) => Promise<T>) =>
+    respond ? k.db.transaction().execute(fn) : Promise.resolve(0),
+  );
   const db = {
     withRequestContext: vi
       .fn()
       .mockResolvedValueOnce(inRoute)
       .mockResolvedValueOnce(active)
-      .mockResolvedValueOnce(0),
+      .mockImplementationOnce(action),
+  };
+  const audit = {
+    emitWithin: vi.fn(() => Promise.resolve()),
+    emit: vi.fn(() => Promise.resolve()),
+  };
+  const resets = {
+    issueToken: vi.fn(() => Promise.resolve({ token: TOKEN, expiresAt: EXPIRES })),
+    resetLink: vi.fn((token: string) => `https://panel.example/restablecer?token=${token}`),
+    sendResetEmail: vi.fn(() => Promise.resolve(opts.mailOk ?? true)),
   };
   const service = new MemberSupportService(
     db as unknown as DatabaseService,
     network as unknown as NetworkService,
-    { emitWithin: vi.fn() } as unknown as AuditService,
+    audit as unknown as AuditService,
+    resets as unknown as PasswordResetService,
   );
-  return { service, network, db };
+  return { service, network, db, audit, resets, k };
 }
 
 async function motivo(p: Promise<unknown>): Promise<string> {
@@ -145,5 +178,212 @@ describe('MemberSupportService: el orden de la autorización', () => {
 
     expect(await motivo(service.revokeSessions(ACTOR, NODO, TARGET))).toBe('ok');
     expect(db.withRequestContext).toHaveBeenCalledTimes(3);
+  });
+});
+
+/** Lo que contesta la base dentro de la transacción de "Enviar enlace". */
+function envio(
+  opts: { user?: { email: string; status: string } | undefined; recent?: number } = {},
+) {
+  const user = 'user' in opts ? opts.user : { email: 'beto@agencia.co', status: 'active' };
+  const recent = opts.recent ?? 0;
+  return (q: CompiledQuery): unknown[] => {
+    if (q.sql.startsWith('select "email", "status" from "users"')) return user ? [user] : [];
+    if (q.sql.includes('from "password_reset_tokens"')) return [{ n: String(recent) }];
+    if (q.sql.includes('from "tenants"')) return [{ name: 'Agencia Norte' }];
+    throw new Error(`consulta no prevista: ${q.sql}`);
+  };
+}
+
+describe('MemberSupportService.sendPasswordReset', () => {
+  it('reusa la autorización: uno mismo, fuera de la red y de rango igual o superior son 403', async () => {
+    const self = banco({ respond: envio() });
+    expect(await motivo(self.service.sendPasswordReset(ACTOR, NODO, ACTOR))).toBe(
+      '403/MEMBER_SELF_ACTION',
+    );
+    expect(self.db.withRequestContext).not.toHaveBeenCalled();
+
+    const outside = banco({
+      respond: envio(),
+      active: [
+        { tenant_id: NODO, role: 'vendedor' },
+        { tenant_id: OTRA_RED, role: 'vendedor' },
+      ],
+    });
+    expect(await motivo(outside.service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '403/MEMBER_OUTSIDE_NETWORK',
+    );
+
+    const outranked = banco({
+      respond: envio(),
+      inRoute: { tenant_id: NODO, role: 'tenant_admin', status: 'active' },
+      active: [{ tenant_id: NODO, role: 'tenant_admin' }],
+    });
+    expect(await motivo(outranked.service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '403/ROLE_NOT_GRANTABLE',
+    );
+
+    for (const b of [self, outside, outranked]) {
+      expect(b.resets.issueToken).not.toHaveBeenCalled();
+      expect(b.resets.sendResetEmail).not.toHaveBeenCalled();
+      expect(b.audit.emitWithin).not.toHaveBeenCalled();
+    }
+  });
+
+  it('con su acceso al nodo suspendido es 409 y no emite nada', async () => {
+    const { service, db, resets } = banco({
+      respond: envio(),
+      inRoute: { tenant_id: NODO, role: 'vendedor', status: 'suspended' },
+    });
+
+    expect(await motivo(service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '409/MEMBERSHIP_SUSPENDED',
+    );
+    expect(db.withRequestContext).toHaveBeenCalledTimes(2);
+    expect(resets.issueToken).not.toHaveBeenCalled();
+  });
+
+  it('con la cuenta suspendida en la plataforma es 409 y no emite nada', async () => {
+    const { service, resets, audit } = banco({
+      respond: envio({ user: { email: 'beto@agencia.co', status: 'suspended' } }),
+    });
+
+    expect(await motivo(service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '409/MEMBER_ACCOUNT_SUSPENDED',
+    );
+    expect(resets.issueToken).not.toHaveBeenCalled();
+    expect(resets.sendResetEmail).not.toHaveBeenCalled();
+    expect(audit.emitWithin).not.toHaveBeenCalled();
+  });
+
+  it('con 3 enlaces en los últimos 15 minutos es 429; con 2, sale el tercero', async () => {
+    const limited = banco({ respond: envio({ recent: 3 }) });
+    expect(await motivo(limited.service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '429/PASSWORD_RESET_RATE_LIMITED',
+    );
+    expect(limited.resets.issueToken).not.toHaveBeenCalled();
+    const count = limited.k.queries.find((q) => q.sql.includes('from "password_reset_tokens"'));
+    expect(count?.sql).toContain('"user_id" = $1');
+    expect(count?.sql).toContain('created_at > now() - make_interval(mins => $2)');
+    expect(count?.parameters).toEqual([TARGET, 15]);
+
+    const third = banco({ respond: envio({ recent: 2 }) });
+    expect(await motivo(third.service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe('ok');
+  });
+
+  it('emite el enlace invalidando los anteriores, lo audita en la transacción y envía después', async () => {
+    const { service, db, resets, audit, k } = banco({ respond: envio() });
+
+    const res = await service.sendPasswordReset(ACTOR, NODO, TARGET);
+
+    expect(res).toEqual({ sent: true, expiresAt: EXPIRES.toISOString() });
+    // Ni el token ni el enlace llegan al admin.
+    expect(JSON.stringify(res)).not.toContain(TOKEN);
+    expect(JSON.stringify(res)).not.toContain('restablecer');
+
+    expect(db.withRequestContext).toHaveBeenNthCalledWith(
+      3,
+      { userId: ACTOR },
+      expect.any(Function),
+    );
+    // La fila del usuario queda tomada: dos envíos en paralelo se ordenan para el límite.
+    expect(k.queries[0]?.sql).toMatch(/from "users" where "id" = \$1 for no key update$/);
+    expect(resets.issueToken).toHaveBeenCalledWith(expect.anything(), TARGET, {
+      invalidatePrevious: true,
+    });
+    expect(audit.emitWithin).toHaveBeenCalledWith(expect.anything(), {
+      eventType: 'auth.password_reset.sent_by_admin',
+      tenantId: NODO,
+      actorUserId: ACTOR,
+      aggregateType: 'user',
+      aggregateId: TARGET,
+      payload: { targetUserId: TARGET, expiresAt: EXPIRES.toISOString() },
+    });
+    // El evento no lleva el token.
+    expect(JSON.stringify(audit.emitWithin.mock.calls)).not.toContain(TOKEN);
+
+    expect(resets.sendResetEmail).toHaveBeenCalledWith(
+      NODO,
+      'beto@agencia.co',
+      `https://panel.example/restablecer?token=${TOKEN}`,
+      'admin',
+      'Agencia Norte',
+    );
+    // El correo sale con la transacción ya cerrada (el enlace y su rastro existen).
+    const auditOrder = audit.emitWithin.mock.invocationCallOrder[0]!;
+    const sendOrder = resets.sendResetEmail.mock.invocationCallOrder[0]!;
+    expect(sendOrder).toBeGreaterThan(auditOrder);
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('si el correo no sale: sent:false y el fallo queda auditado', async () => {
+    const { service, audit } = banco({ respond: envio(), mailOk: false });
+
+    expect(await service.sendPasswordReset(ACTOR, NODO, TARGET)).toEqual({
+      sent: false,
+      expiresAt: EXPIRES.toISOString(),
+    });
+    expect(audit.emit).toHaveBeenCalledWith({
+      eventType: 'auth.password_reset.email_failed',
+      tenantId: NODO,
+      actorUserId: ACTOR,
+      aggregateType: 'user',
+      aggregateId: TARGET,
+      payload: { targetUserId: TARGET, via: 'admin' },
+    });
+  });
+
+  it('si el usuario desapareció entre la autorización y la acción, 404', async () => {
+    const { service, resets } = banco({ respond: envio({ user: undefined }) });
+    expect(await motivo(service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '404/MEMBER_NOT_FOUND',
+    );
+    expect(resets.issueToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('MemberSupportService.unlock', () => {
+  const LOCKED_UNTIL = new Date('2026-10-11T12:15:00.000Z');
+  const desbloqueo =
+    (row: { locked_until: Date } | undefined) =>
+    (q: CompiledQuery): unknown[] => {
+      if (q.sql.includes('WITH prev AS')) return row ? [row] : [];
+      throw new Error(`consulta no prevista: ${q.sql}`);
+    };
+
+  it('reusa la autorización: sobre uno mismo es 403 sin consultar nada', async () => {
+    const { service, db } = banco({ respond: desbloqueo(undefined) });
+    expect(await motivo(service.unlock(ACTOR, NODO, ACTOR))).toBe('403/MEMBER_SELF_ACTION');
+    expect(db.withRequestContext).not.toHaveBeenCalled();
+  });
+
+  it('si no estaba bloqueado: unlocked:false y sin auditoría', async () => {
+    const { service, audit } = banco({ respond: desbloqueo(undefined) });
+
+    expect(await service.unlock(ACTOR, NODO, TARGET)).toEqual({ unlocked: false });
+    expect(audit.emitWithin).not.toHaveBeenCalled();
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('si estaba bloqueado: unlocked:true y el evento con el bloqueo que levantó', async () => {
+    const { service, audit, k } = banco({ respond: desbloqueo({ locked_until: LOCKED_UNTIL }) });
+
+    expect(await service.unlock(ACTOR, NODO, TARGET)).toEqual({ unlocked: true });
+    expect(audit.emitWithin).toHaveBeenCalledWith(expect.anything(), {
+      eventType: 'auth.lockout.cleared_by_admin',
+      tenantId: NODO,
+      actorUserId: ACTOR,
+      aggregateType: 'user',
+      aggregateId: TARGET,
+      payload: { targetUserId: TARGET, lockedUntil: LOCKED_UNTIL.toISOString() },
+    });
+
+    // Sólo el contador y el bloqueo vigente: ni contraseña, ni 2FA, ni estado.
+    expect(k.queries).toHaveLength(1);
+    const update = k.queries[0];
+    expect(update?.sql).toMatch(/SET failed_login_attempts = 0,\s+locked_until = NULL/);
+    expect(update?.sql).toContain('prev.locked_until > now()');
+    expect(update?.sql).not.toMatch(/password|mfa|status/i);
+    expect(update?.parameters).toEqual([TARGET, TARGET]);
   });
 });
