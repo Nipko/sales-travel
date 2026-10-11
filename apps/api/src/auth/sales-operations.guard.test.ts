@@ -303,6 +303,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/deposit-reports/pending-count',
   ),
   ...noVenta(
+    'el Resumen de la plataforma: agregados de toda la red para el superadmin (sólo lectura)',
+    'GET /admin/overview',
+  ),
+  ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
     'GET /tenants/:tenantId/booking-permissions',
     'PUT /tenants/:tenantId/booking-permissions',

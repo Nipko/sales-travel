@@ -949,6 +949,18 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ### Admin (superadmin)
 
 ```
+GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
+                                         -- 30 días por defecto, hasta 366. tenantId = el subárbol de
+                                         -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
+                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- confirmadas, red (nodos, personas, sesiones vivas),
+                                         -- carteras (cupo, deuda, exposición de Planetour), lo que
+                                         -- espera a una persona (depósitos, post-venta fallida o
+                                         -- trabada, hoteles sin verificar, retenciones en conflicto,
+                                         -- conciliación, invitaciones) y señales de proveedores.
+                                         -- Sólo lee; las funciones platform_overview_* exigen en la
+                                         -- base que quien pide sea el superadmin y sólo devuelven
+                                         -- agregados.
 GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status

@@ -42,17 +42,28 @@ const LEGACY_PROVIDER_VERTICAL: Readonly<Record<string, string>> = {
   assistcard: 'assistance',
 };
 
+/** Las verticales que distinguen los reportes. */
+export type SalesVertical = 'flights' | 'hotels' | 'cars' | 'assistance';
+
+function isSalesVertical(value: string | null | undefined): value is SalesVertical {
+  return value !== null && value !== undefined && Object.hasOwn(VERTICAL_LABELS, value);
+}
+
 /**
- * Etiqueta de la vertical de una orden: la que la fila declara en `search_criteria.vertical` y, si
- * no la declara, la de su proveedor. Lo que no dice nada sigue contando como vuelo, que es la única
+ * La vertical de una orden: la que la fila declara en `search_criteria.vertical` y, si no la
+ * declara, la de su proveedor. Lo que no dice nada sigue contando como vuelo, que es la única
  * vertical cuyas órdenes no escriben el campo; antes también caía ahí una reserva de hotel de un
  * proveedor que no estuviera en la lista.
  */
-export function salesVerticalLabel(provider: string, declaredVertical: string | null): string {
-  const declared = declaredVertical === null ? undefined : VERTICAL_LABELS[declaredVertical];
-  if (declared !== undefined) return declared;
+export function salesVertical(provider: string, declaredVertical: string | null): SalesVertical {
+  if (isSalesVertical(declaredVertical)) return declaredVertical;
   const legacy = LEGACY_PROVIDER_VERTICAL[provider];
-  return (legacy === undefined ? undefined : VERTICAL_LABELS[legacy]) ?? 'Vuelos';
+  return isSalesVertical(legacy) ? legacy : 'flights';
+}
+
+/** Etiqueta de la vertical de una orden (ver {@link salesVertical}). */
+export function salesVerticalLabel(provider: string, declaredVertical: string | null): string {
+  return VERTICAL_LABELS[salesVertical(provider, declaredVertical)] ?? 'Vuelos';
 }
 
 @Injectable()
