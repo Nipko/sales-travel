@@ -32,6 +32,11 @@ export class InvitationsController {
     private readonly network: NetworkService,
   ) {}
 
+  /**
+   * Con throttle: cada invitación manda un correo desde la cuenta del nodo, y un admin (o una sesión
+   * robada) no puede usarla para llenar buzones ajenos.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post()
   async invite(
@@ -61,9 +66,11 @@ export class InvitationsController {
 
   @Roles(...AGENCY_ADMIN_ROLES)
   @Get()
-  async list(@CurrentUser() userId: string | undefined, @Query('tenantId') tenantId?: string) {
+  async list(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+  ) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('Indica el nodo.');
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
@@ -72,27 +79,31 @@ export class InvitationsController {
     return { invitations: await this.invitations.listPending(userId, tenantId) };
   }
 
+  /**
+   * Revoca una invitación pendiente. Como reenviar, el rango se mide sobre el nodo de la invitación:
+   * el servicio lo compara con su rol.
+   */
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post(':id/revoke')
   async revoke(
     @CurrentUser() userId: string | undefined,
-    @Param('id') id: string,
-    @Query('tenantId') tenantId?: string,
+    @Param('id', new ZodValidationPipe(UuidParamSchema)) id: string,
+    @Query('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
   ) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('Indica el nodo.');
 
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
+    const actorRole = await this.network.roleOver(userId, tenantId);
+    if (actorRole === undefined) {
       throw new ForbiddenException('Ese nodo no está en tu red.');
     }
-    return this.invitations.revoke(userId, tenantId, id);
+    return this.invitations.revoke(userId, actorRole, tenantId, id);
   }
 
   /**
    * Reenvía una invitación pendiente con un enlace nuevo (el anterior deja de valer). El rango se
    * mide sobre el nodo de la invitación, como al invitar: el servicio lo compara con su rol.
    */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post(':id/resend')
   async resend(

@@ -292,6 +292,42 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
   });
 });
 
+describe('InvitationsController.revoke: el rango se mide sobre el nodo de la invitación', () => {
+  const INVITACION = '44444444-4444-4444-8444-444444444444';
+
+  function revocar(roleOver: Role | undefined) {
+    const service = { revoke: vi.fn(() => Promise.resolve({ ok: true as const })) };
+    const network = { roleOver: vi.fn(() => Promise.resolve(roleOver)) };
+    const controller = new InvitationsController(
+      service as unknown as InvitationsService,
+      network as unknown as NetworkService,
+    );
+    return { controller, service, network };
+  }
+
+  it('fuera de la red, 403 sin llegar al servicio', async () => {
+    const { controller, service } = revocar(undefined);
+    await expect(controller.revoke(ACTOR, INVITACION, NODO)).rejects.toThrow(
+      'Ese nodo no está en tu red.',
+    );
+    expect(service.revoke).not.toHaveBeenCalled();
+  });
+
+  it('le pasa al servicio el rol con que administra el nodo', async () => {
+    const { controller, service, network } = revocar('admin');
+    await controller.revoke(ACTOR, INVITACION, NODO);
+    expect(network.roleOver).toHaveBeenCalledWith(ACTOR, NODO);
+    expect(service.revoke).toHaveBeenCalledWith(ACTOR, 'admin', NODO, INVITACION);
+  });
+
+  it('sin sesión, 401', async () => {
+    const { controller } = revocar('admin');
+    await expect(controller.revoke(undefined, INVITACION, NODO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+});
+
 describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => {
   it('sobre sí mismo', async () => {
     const { controller } = banco({ roleOver: 'tenant_admin' });
@@ -356,7 +392,6 @@ describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => 
     await expect(
       controller.invite(ACTOR, { email: 'x@example.com', tenantId: NODO, role: 'admin' }),
     ).rejects.toThrow('no puedes invitar con un rol igual o superior al tuyo');
-    await expect(controller.list(ACTOR)).rejects.toThrow('Indica el nodo.');
   });
 });
 

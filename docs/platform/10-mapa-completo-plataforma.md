@@ -812,6 +812,9 @@ PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que
 PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
 POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
+POST   /invitations                      -- { id, expiresAt, emailSent } · 409 INVITATION_ALREADY_PENDING con details.invitationId (0066, doc 15)
+POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace nuevo y 7 días más
+POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING
 ```
 
 ### Tenant

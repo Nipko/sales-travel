@@ -49,12 +49,20 @@ export interface NetworkNode extends TenantState {
  * Qué pasó con el admin inicial, que siempre se invita (docs/platform/14):
  * - `invited`: la invitación quedó pendiente y salió el correo; acepta y elige su contraseña. Lo
  *   mismo tenga o no cuenta en la plataforma: la respuesta no lo delata.
+ * - `invited_email_failed`: la invitación quedó pendiente pero el correo no salió (no hay correo
+ *   configurado para el nodo o el envío falló); se reenvía desde Equipo cuando el correo funcione.
  * - `invite_failed`: el nodo se creó pero la invitación no; se invita desde Equipo.
  */
-export type InitialAdminOutcome = 'invited' | 'invite_failed';
+export type InitialAdminOutcome = 'invited' | 'invited_email_failed' | 'invite_failed';
 
 export type InitialAdmin =
-  | { email: string; role: Role; status: 'invited'; invitationId: string; expiresAt: Date }
+  | {
+      email: string;
+      role: Role;
+      status: 'invited' | 'invited_email_failed';
+      invitationId: string;
+      expiresAt: Date;
+    }
   | { email: string; role: Role; status: 'invite_failed' };
 
 export interface CreatedTenant {
@@ -278,7 +286,7 @@ export class TenantsService {
         admin: {
           email: adminEmail,
           role: adminRole,
-          status: 'invited',
+          status: invitation.emailSent ? 'invited' : 'invited_email_failed',
           invitationId: invitation.id,
           expiresAt: invitation.expiresAt,
         },

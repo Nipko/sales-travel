@@ -14,13 +14,41 @@ import {
   type InvitationBacking,
   type InvitationDefect,
 } from './invitation-validity.js';
-import { InvitationNotPendingError } from './onboarding.errors.js';
+import { InvitationAlreadyPendingError, InvitationNotPendingError } from './onboarding.errors.js';
 import { RoleNotGrantableError } from './tenant-admin.policy.js';
 
 // Antes vivían aquí; se reexportan para quien todavía los importe desde este módulo.
 export { escapeHtml, plainText } from '../mail/mail-text.js';
 
 const INVITE_TTL_DAYS = 7;
+
+/** El índice de 0066: una invitación pendiente por correo y nodo. */
+const PENDING_UNIQUE_INDEX = 'uq_user_invitations_pending';
+
+/** Lo que devuelven invitar y reenviar. Ni el token ni el enlace: ésos viajan sólo en el correo. */
+export interface IssuedInvitation {
+  id: string;
+  expiresAt: Date;
+  /**
+   * `false` si el correo no salió (no hay correo configurado para el nodo o el envío falló). La
+   * invitación queda creada igual y se reenvía; Equipo se lo dice al admin en vez de "enviada".
+   */
+  emailSent: boolean;
+}
+
+/** ¿El error es el 23505 del índice de 0066, de dos invitaciones simultáneas al mismo correo? */
+function isPendingDuplicate(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { code, constraint } = err as { code?: unknown; constraint?: unknown };
+  return code === '23505' && constraint === PENDING_UNIQUE_INDEX;
+}
+
+function newLink(): { token: string; expiresAt: Date } {
+  return {
+    token: randomBytes(32).toString('base64url'),
+    expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60_000),
+  };
+}
 
 export interface PendingInvitation {
   id: string;
@@ -92,58 +120,79 @@ export class InvitationsService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Crea la invitación y manda el correo. La autorización jerárquica la valida el controller. */
+  /**
+   * Crea la invitación y manda el correo. La autorización jerárquica la valida el controller.
+   *
+   * Si ya hay una pendiente para ese correo en el nodo (vencida o no), 409 con su id: lo que sirve es
+   * reenviarla, no sumar otro enlace vigente. El índice de 0066 respalda la regla cuando dos pedidos
+   * llegan a la vez; su 23505 sale como el mismo 409.
+   *
+   * La invitación y su UserInvited van en una transacción; el correo sale después, con la invitación
+   * ya escrita, y `emailSent` dice si salió.
+   */
   async invite(params: {
     actorUserId: string;
     tenantId: string;
     email: string;
     role: Role;
-  }): Promise<{ id: string; expiresAt: Date }> {
+  }): Promise<IssuedInvitation> {
     const { actorUserId, tenantId, email, role } = params;
+    const { token, expiresAt } = newLink();
 
-    const existingMember = await this.db.withRequestContext(
-      { userId: actorUserId, tenantId },
-      (trx) =>
-        trx
+    const id = await this.db
+      .withRequestContext({ userId: actorUserId, tenantId }, async (trx) => {
+        const existingMember = await trx
           .selectFrom('memberships')
           .innerJoin('users', 'users.id', 'memberships.user_id')
           .select('memberships.id')
           .where('users.email', '=', email)
           .where('memberships.tenant_id', '=', tenantId)
-          .executeTakeFirst(),
-    );
-    if (existingMember) throw new ConflictException('Ese correo ya es miembro de este nodo.');
+          .executeTakeFirst();
+        if (existingMember) throw new ConflictException('Ese correo ya es miembro de este nodo.');
 
-    const token = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60_000);
+        const pending = await pendingFor(trx, tenantId, email);
+        if (pending) throw new InvitationAlreadyPendingError(pending.id);
 
-    const row = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
-      trx
-        .insertInto('user_invitations')
-        .values({
-          tenant_id: tenantId,
-          email,
-          role,
-          token_hash: sha256(token),
-          invited_by: actorUserId,
-          expires_at: expiresAt,
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow(),
-    );
+        const row = await trx
+          .insertInto('user_invitations')
+          .values({
+            tenant_id: tenantId,
+            email,
+            role,
+            token_hash: sha256(token),
+            invited_by: actorUserId,
+            expires_at: expiresAt,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await this.audit.emitWithin(trx, {
+          eventType: 'UserInvited',
+          tenantId,
+          actorUserId,
+          aggregateType: 'invitation',
+          aggregateId: row.id,
+          payload: { email, role },
+        });
+        return row.id;
+      })
+      .catch(async (err: unknown): Promise<never> => {
+        if (!isPendingDuplicate(err)) throw err;
+        // Otro pedido la creó entre la lectura y el insert: se ofrece reenviar la que ganó.
+        const winner = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
+          pendingFor(trx, tenantId, email),
+        );
+        throw new InvitationAlreadyPendingError(winner?.id);
+      });
 
-    await this.sendInvitationEmail(tenantId, email, token);
-
-    await this.audit.emit({
-      eventType: 'UserInvited',
-      tenantId,
+    const emailSent = await this.sendInvitationEmail({
       actorUserId,
-      aggregateType: 'invitation',
-      aggregateId: row.id,
-      payload: { email, role },
+      tenantId,
+      invitationId: id,
+      email,
+      token,
+      via: 'invite',
     });
-
-    return { id: row.id, expiresAt };
+    return { id, expiresAt, emailSent };
   }
 
   /** Invitaciones pendientes del tenant. La RLS de 0028 ya acota al subárbol administrado. */
@@ -191,23 +240,14 @@ export class InvitationsService {
     actorRole: Role;
     tenantId: string;
     invitationId: string;
-  }): Promise<{ id: string; expiresAt: Date }> {
+  }): Promise<IssuedInvitation> {
     const { actorUserId, actorRole, tenantId, invitationId } = params;
-    const token = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60_000);
+    const { token, expiresAt } = newLink();
 
     const invitation = await this.db.withRequestContext(
       { userId: actorUserId, tenantId },
       async (trx) => {
-        const pending = await trx
-          .selectFrom('user_invitations')
-          .select(['id', 'email', 'role', 'invited_by'])
-          .where('id', '=', invitationId)
-          .where('tenant_id', '=', tenantId)
-          .where('accepted_at', 'is', null)
-          .where('revoked_at', 'is', null)
-          .forUpdate()
-          .executeTakeFirst();
+        const pending = await lockPending(trx, tenantId, invitationId);
         if (!pending) throw new InvitationNotPendingError();
         if (!canGrantRole(actorRole, pending.role)) {
           throw new RoleNotGrantableError(
@@ -236,12 +276,33 @@ export class InvitationsService {
       },
     );
 
-    await this.sendInvitationEmail(tenantId, invitation.email, token);
-    return { id: invitation.id, expiresAt };
+    const emailSent = await this.sendInvitationEmail({
+      actorUserId,
+      tenantId,
+      invitationId: invitation.id,
+      email: invitation.email,
+      token,
+      via: 'resend',
+    });
+    return { id: invitation.id, expiresAt, emailSent };
   }
 
-  /** El correo con el enlace. Best-effort: si falla, la invitación queda y se reenvía. */
-  private async sendInvitationEmail(tenantId: string, email: string, token: string): Promise<void> {
+  /**
+   * El correo con el enlace. Devuelve si salió: el mailer nunca lanza, contesta `false` si no hay
+   * correo configurado para el nodo o el envío falló. La invitación queda igual y se reenvía.
+   *
+   * Un correo que no salió queda en la auditoría (best-effort) con el id de la invitación y nunca la
+   * dirección: el id alcanza para encontrarla y el evento no suma PII.
+   */
+  private async sendInvitationEmail(params: {
+    actorUserId: string;
+    tenantId: string;
+    invitationId: string;
+    email: string;
+    token: string;
+    via: 'invite' | 'resend';
+  }): Promise<boolean> {
+    const { actorUserId, tenantId, invitationId, email, token, via } = params;
     const tenant = await this.db.db
       .selectFrom('tenants')
       .select('name')
@@ -252,33 +313,62 @@ export class InvitationsService {
     const link = `${base}/invitacion?token=${encodeURIComponent(token)}`;
     const tenantName = plainText(tenant?.name ?? '') || 'la plataforma';
 
-    try {
-      await this.mailer.sendToTenant(tenantId, {
-        to: email,
-        subject: `Te invitaron a ${tenantName}`,
-        html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
-        text: `Te invitaron a ${tenantName}. Acepta la invitación aquí (vence en ${INVITE_TTL_DAYS} días): ${link}`,
+    const sent = await this.mailer.sendToTenant(tenantId, {
+      to: email,
+      subject: `Te invitaron a ${tenantName}`,
+      html: invitationEmailHtml(link, tenantName, INVITE_TTL_DAYS),
+      text: `Te invitaron a ${tenantName}. Acepta la invitación aquí (vence en ${INVITE_TTL_DAYS} días): ${link}`,
+    });
+    if (!sent) {
+      await this.audit.emit({
+        eventType: 'UserInvitationEmailFailed',
+        tenantId,
+        actorUserId,
+        aggregateType: 'invitation',
+        aggregateId: invitationId,
+        payload: { invitationId, via },
       });
-    } catch {
-      // Best-effort: la invitación queda creada y se puede reenviar.
     }
+    return sent;
   }
 
-  async revoke(actorUserId: string, tenantId: string, invitationId: string): Promise<{ ok: true }> {
-    await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
-      trx
+  /**
+   * Revoca una invitación pendiente del nodo. Como reenviar, exige el rango que pide emitirla con ese
+   * rol, medido con `actorRole` (el rol con que el actor administra el nodo, lo resuelve el
+   * controller): un admin no deja sin efecto la invitación de un tenant_admin.
+   *
+   * Lectura con bloqueo, cambio y UserInvitationRevoked en una transacción: una invitación que ya no
+   * está pendiente (aceptada, revocada, de otro nodo o inexistente) es 404 y no deja rastro, y una
+   * aceptación en paralelo espera a la revocación o la revocación a ella.
+   */
+  async revoke(
+    actorUserId: string,
+    actorRole: Role,
+    tenantId: string,
+    invitationId: string,
+  ): Promise<{ ok: true }> {
+    await this.db.withRequestContext({ userId: actorUserId, tenantId }, async (trx) => {
+      const pending = await lockPending(trx, tenantId, invitationId);
+      if (!pending) throw new InvitationNotPendingError();
+      if (!canGrantRole(actorRole, pending.role)) {
+        throw new RoleNotGrantableError(
+          'No puedes revocar una invitación con un rol igual o superior al tuyo.',
+        );
+      }
+
+      await trx
         .updateTable('user_invitations')
-        .set({ revoked_at: new Date() })
-        .where('id', '=', invitationId)
-        .where('tenant_id', '=', tenantId)
-        .execute(),
-    );
-    await this.audit.emit({
-      eventType: 'UserInvitationRevoked',
-      tenantId,
-      actorUserId,
-      aggregateType: 'invitation',
-      aggregateId: invitationId,
+        .set({ revoked_at: sql<Date>`now()` })
+        .where('id', '=', pending.id)
+        .execute();
+      await this.audit.emitWithin(trx, {
+        eventType: 'UserInvitationRevoked',
+        tenantId,
+        actorUserId,
+        aggregateType: 'invitation',
+        aggregateId: pending.id,
+        payload: { role: pending.role, cause: 'manual' },
+      });
     });
     return { ok: true };
   }
@@ -499,6 +589,39 @@ export class InvitationsService {
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+/** La invitación pendiente (vencida o no) de ese correo en el nodo, si la hay. La acota la RLS de 0028. */
+function pendingFor(
+  trx: Transaction<DB>,
+  tenantId: string,
+  email: string,
+): Promise<{ id: string } | undefined> {
+  return trx
+    .selectFrom('user_invitations')
+    .select('id')
+    .where('tenant_id', '=', tenantId)
+    .where('email', '=', email)
+    .where('accepted_at', 'is', null)
+    .where('revoked_at', 'is', null)
+    .executeTakeFirst();
+}
+
+/** La invitación pendiente del nodo, con la fila tomada hasta el final de la transacción. */
+function lockPending(
+  trx: Transaction<DB>,
+  tenantId: string,
+  invitationId: string,
+): Promise<{ id: string; email: string; role: Role; invited_by: string | null } | undefined> {
+  return trx
+    .selectFrom('user_invitations')
+    .select(['id', 'email', 'role', 'invited_by'])
+    .where('id', '=', invitationId)
+    .where('tenant_id', '=', tenantId)
+    .where('accepted_at', 'is', null)
+    .where('revoked_at', 'is', null)
+    .forUpdate()
+    .executeTakeFirst();
 }
 
 export function invitationEmailHtml(link: string, tenantName: string, ttlDays: number): string {
