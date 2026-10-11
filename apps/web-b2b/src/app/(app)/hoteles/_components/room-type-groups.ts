@@ -152,12 +152,16 @@ function only<V>(values: ReadonlySet<V> | undefined): V | undefined {
   return value;
 }
 
-/** Los ids de tipo que cada nombre normalizado tiene dentro de cada proveedor. */
+/**
+ * Los ids de tipo que cada nombre normalizado tiene dentro de cada proveedor. Un nombre vacío no
+ * entra: no identifica nada, y una habitación sin nombre ni id no hereda el id de otra sin nombre
+ * (sería fusionar de más y, con TBO-07, ponerle la foto de otra habitación).
+ */
 function idsByName(rates: readonly GroupableRate[]): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   for (const { row } of rates) {
     for (const slot of row.roomSlots) {
-      if (slot.roomTypeId === undefined) continue;
+      if (slot.roomTypeId === undefined || slot.nameKey.length === 0) continue;
       const key = `${scopeOf(row)}${SEP}${slot.nameKey}`;
       const ids = out.get(key) ?? new Set<string>();
       ids.add(slot.roomTypeId);

@@ -341,6 +341,15 @@ describe('roomTypeGroups — casos borde', () => {
     expect(roomDisplayName({ name: '' })).toBe('Habitación');
   });
 
+  it('una habitación sin nombre ni id no hereda el id de otra sin nombre', () => {
+    const groups = roomTypeGroups(
+      plans(pack('ID', 100_00, [room('', { roomTypeId: '1' })]), pack('SIN', 200_00, [room('')])),
+    );
+    expect(groups.map(ids)).toEqual([['ID'], ['SIN']]);
+    expect(groups[1]!.slots[0]?.roomTypeId).toBeUndefined();
+    expect(groups[1]!.slots[0]?.roomTypeIds).toEqual({});
+  });
+
   it('sin tarifas, sin grupos', () => {
     expect(roomTypeGroups([])).toEqual([]);
   });
