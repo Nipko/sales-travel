@@ -275,7 +275,7 @@ export default function QuotationDetailPage() {
           ? { ok: true, text: `Cotización enviada a ${data.to ?? customerEmail}` }
           : {
               ok: false,
-              text: 'No hay correo configurado para enviar. Configurá el email de la agencia (Mi Red → Email) o el del sistema.',
+              text: 'No hay correo configurado para enviar. Configura el email de la agencia (Mi Red → Email) o el del sistema.',
             },
       );
     } catch {

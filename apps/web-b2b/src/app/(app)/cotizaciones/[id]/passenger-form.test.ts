@@ -95,7 +95,10 @@ describe('PassengerForm — el checkout de vuelos no pide tarjeta (D1)', () => {
     for (const file of ['./passenger-form.tsx', './page.tsx']) {
       const source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
       expect(source, file).not.toMatch(/payment-form/);
-      expect(source, file).not.toMatch(/\bpayment\s*[?:]|body\.payment/);
+      // Sin comentarios, que sí explican por qué no hay `payment`: en el código no puede quedar
+      // ni el campo (tampoco abreviado, `{ ...body, payment }`) ni los tipos de la tarjeta.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      expect(code, file).not.toMatch(/payment/i);
     }
   });
 });
