@@ -45,15 +45,24 @@ export interface NewNodeInput {
   readonly idleTimeoutMinutes?: number;
 }
 
-/** Qué pasó con el admin inicial (TenantsService.create): siempre se invita. */
-export type InitialAdminOutcome = 'invited' | 'invite_failed';
+/**
+ * Qué pasó con el admin inicial (TenantsService.create): siempre se invita. `invited_email_failed`:
+ * la invitación quedó pendiente pero el correo no salió; se reenvía desde Equipo.
+ */
+export type InitialAdminOutcome = 'invited' | 'invited_email_failed' | 'invite_failed';
+
+const OUTCOMES: readonly string[] = ['invited', 'invited_email_failed', 'invite_failed'];
+
+function isOutcome(value: string | undefined): value is InitialAdminOutcome {
+  return value !== undefined && OUTCOMES.includes(value);
+}
 
 export interface CreatedNode {
   readonly tenant: TenantStateView;
   readonly admin?: {
     readonly email: string;
     readonly status: InitialAdminOutcome;
-    /** Cuándo vence la invitación (ISO); sólo si salió. */
+    /** Cuándo vence la invitación (ISO); sólo si se creó. */
     readonly expiresAt?: string;
   };
 }
@@ -155,14 +164,13 @@ export function parseCreatedNode(value: unknown): CreatedNode | undefined {
   const email = str(admin?.['email']);
   const status = str(admin?.['status']);
   const expiresAt = str(admin?.['expiresAt']);
-  const outcome = status === 'invited' || status === 'invite_failed' ? status : undefined;
-  if (email === undefined || outcome === undefined) return { tenant };
+  if (email === undefined || !isOutcome(status)) return { tenant };
   return {
     tenant,
     admin:
-      outcome === 'invited' && expiresAt !== undefined
-        ? { email, status: outcome, expiresAt }
-        : { email, status: outcome },
+      status !== 'invite_failed' && expiresAt !== undefined
+        ? { email, status, expiresAt }
+        : { email, status },
   };
 }
 

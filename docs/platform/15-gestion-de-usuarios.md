@@ -24,9 +24,9 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 
 | Acción                                                               | Dónde                                     | Quién puede                                                                     | Estado                                              |
 | -------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Invitar a alguien a un nodo                                          | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                            | Hecho (doc 14)                                      |
-| Reenviar una invitación (token nuevo, 7 días)                        | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                           | Hecho (doc 14); avisar si el correo no salió: USR-8 |
-| Revocar una invitación                                               | Equipo → Invitaciones                     | Admin del nodo; superadmin                                                      | Hecho; validar rango y entrada: USR-8               |
+| Invitar a alguien a un nodo (una pendiente por correo y nodo)        | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                            | **Hecho (doc 14, USR-8)**                           |
+| Reenviar una invitación (token nuevo, 7 días)                        | Equipo → Invitaciones / Invitar (409)     | Admin del nodo que supere el rol invitado; superadmin                           | **Hecho (doc 14, USR-8)**: avisa si el correo falla |
+| Revocar una invitación                                               | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                           | **Hecho (USR-8)**                                   |
 | Cambiar el rol en un nodo                                            | Equipo → fila                             | Admin del nodo que supere el rol actual y el nuevo; superadmin. Nunca el propio | Hecho                                               |
 | Suspender / reactivar el acceso a un nodo                            | Equipo → acciones                         | Admin del nodo que supere su rol; superadmin. Nunca el propio                   | Hecho (PR #14)                                      |
 | Cerrar todas sus sesiones                                            | Equipo → acciones → Seguridad             | Soporte a un miembro                                                            | Hecho                                               |
@@ -97,3 +97,65 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 - Web: `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts`, `tenant-admin-team.test.ts`,
   `tenant-admin-seats-client.test.ts` y `team.render.test.ts` (menú agrupado, "Desbloquear cuenta"
   sólo con bloqueo).
+
+## Invitaciones confiables (USR-8)
+
+### Base
+
+- `0066_invitation_pending_unique.sql`: una invitación pendiente (ni aceptada ni revocada, venza o
+  no) por correo y nodo, con el índice único parcial `uq_user_invitations_pending` sobre
+  `(tenant_id, email)` (`email` es CITEXT: no distingue mayúsculas). Antes del índice limpia las
+  duplicadas que ya existían: de cada grupo deja la del enlace más reciente (`expires_at`, que es el
+  último envío más 7 días) y revoca las demás, cada una con su `UserInvitationRevoked`
+  (`{ cause: 'duplicate_cleanup', role, source }`, sin actor). Los enlaces revocados dejan de
+  funcionar; el que queda sigue vigente y se puede reenviar.
+
+### API
+
+- `POST /invitations` → `200 { id, expiresAt, emailSent }`. La invitación y su `UserInvited` van en
+  una transacción; el correo sale después. Si ya hay una pendiente para ese correo en el nodo, 409
+  `INVITATION_ALREADY_PENDING` ("Ya hay una invitación pendiente para ese correo en este nodo:
+  reenvíala.") con `details.invitationId`; la carrera que pierde contra el índice (23505) sale como el
+  mismo 409, con el id de la que ganó.
+- `POST /invitations/:id/resend?tenantId=` → `200 { id, expiresAt, emailSent }`.
+- Si el correo no sale (no hay correo configurado para el nodo o el envío falló): `emailSent: false`
+  y `UserInvitationEmailFailed` (`{ invitationId, via: 'invite' | 'resend' }`), nunca la dirección.
+- `POST /invitations/:id/revoke?tenantId=`: `:id` y `tenantId` pasan por Zod; el rango se mide con
+  el rol con que el actor administra el nodo (403 "Ese nodo no está en tu red." si no lo administra).
+  En una transacción: toma la fila (`FOR UPDATE`), 404 `INVITATION_NOT_PENDING` sin rastro si ya no
+  está pendiente, 403 `ROLE_NOT_GRANTABLE` si el rol invitado es igual o superior al del actor, y
+  `UserInvitationRevoked` (`{ role, cause: 'manual' }`) junto con el cambio.
+- `GET /invitations?tenantId=` valida el nodo con Zod.
+- Throttle de 20 por minuto en `POST /invitations` y `/:id/resend`.
+- Alta de un nodo: si el correo al admin inicial no sale, `admin.status` es `invited_email_failed`,
+  con `invitationId` y `expiresAt`.
+
+### Panel
+
+- Las rutas `/api/invitations` (GET y POST), `/api/invitations/[id]/resend`, `/revoke`,
+  `/api/admin/memberships/role` y `/status` pasan por los planes de `lib/tenant-admin-proxy.ts`
+  (`invitationsListTarget`, `invitePlan`, `invitationActionTarget`, `membershipRolePlan`,
+  `membershipStatusPlan`): chequeo de mismo origen, ids y roles validados, cuerpo reconstruido campo
+  por campo, `reason` hasta la pantalla y 400 (no 500) ante un JSON roto. De los `details` del API
+  sólo pasa `invitationId`.
+- "Invitar usuario" vive en `invite-dialog.tsx`. Ante el 409 muestra "Ya hay una invitación pendiente
+  para {correo}." con **Reenviar la invitación**, que reenvía la existente.
+- Con `emailSent: false` el aviso es una advertencia: "Creamos la invitación, pero no pudimos enviar
+  el correo. Revisa el correo configurado para este nodo y reenvíala." (al reenviar: "Generamos un
+  enlace nuevo, pero…"). Al crear un nodo: "Creamos el nodo y la invitación de su admin, pero no
+  pudimos enviar el correo. Reenvíala desde Equipo cuando el correo funcione."
+- Una invitación vencida lleva la marca **Vencida** y **Reenviar** sigue habilitado (y destacado).
+
+### Tests
+
+- `apps/api/src/tenants/invitations.service.test.ts`: 409 con el id, carrera del 23505, otra
+  violación que no se disfraza, `emailSent: false` auditado sin la dirección, revocar: 404 sin
+  rastro, 403 por rango y evento en la transacción.
+- `apps/api/src/tenants/onboarding-invitation.integration.test.ts` (se salta sin `PGHOST`): 409 con
+  vencida y otra mayúscula, el índice que frena una carrera real (insert bloqueado por otra
+  transacción), la limpieza de 0066 corrida tal cual dentro de una transacción que se deshace,
+  revocar con rango, alta de nodo con `invited_email_failed`.
+- Web: `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts` (mismo origen y JSON roto
+  en las cinco rutas), `tenant-admin-seats-client.resend.test.ts`, `invitation-notice.test.ts`,
+  `tenant-admin-client.test.ts`, `tenant-admin-form.test.ts` y `team.render.test.ts` (Vencida, aviso
+  de la pendiente).

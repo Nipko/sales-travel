@@ -1,3 +1,4 @@
+import { parseIssuedInvitation, type IssuedInvitation } from './invitation-notice';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
 import { tenantAdminErrorMessage } from './tenant-admin-client';
@@ -174,27 +175,67 @@ export function revokeInvitation(tenantId: string, invitationId: string): Promis
   );
 }
 
-/** `{ id, expiresAt }` del reenvío. `undefined` si la forma no es la esperada. */
-function parseResent(value: unknown): { expiresAt: string } | undefined {
-  const expiresAt = asRecord(value)?.['expiresAt'];
-  return typeof expiresAt === 'string' ? { expiresAt } : undefined;
-}
-
 /**
  * Reenviar una invitación: enlace nuevo (el anterior deja de valer) y 7 días más. Devuelve el nuevo
- * vencimiento; el error, el mensaje del API tal cual.
+ * vencimiento y si el correo salió; el error, el mensaje del API tal cual.
  */
 export function resendInvitation(
   tenantId: string,
   invitationId: string,
-): Promise<Loaded<{ expiresAt: string }>> {
+): Promise<Loaded<IssuedInvitation>> {
   return call(
     `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
     { method: 'POST' },
-    parseResent,
+    parseIssuedInvitation,
     (status, message) =>
       status === 401
         ? 'Tu sesión venció. Vuelve a iniciar sesión.'
         : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
+}
+
+/** Lo que pide el formulario de "Invitar usuario". */
+export interface InvitationRequest {
+  readonly email: string;
+  readonly tenantId: string;
+  readonly role: string;
+}
+
+/**
+ * El resultado de invitar. Si ya había una pendiente para ese correo en el nodo, el error trae su id
+ * (`pendingInvitationId`), para ofrecer reenviarla en vez de crear otra.
+ */
+export type InvitationResult =
+  | { readonly ok: true; readonly data: IssuedInvitation }
+  | { readonly ok: false; readonly message: string; readonly pendingInvitationId?: string };
+
+/** Invitar a alguien a un nodo. Nunca lanza. */
+export async function sendInvitation(input: InvitationRequest): Promise<InvitationResult> {
+  let res: Response;
+  try {
+    res = await fetch('/api/invitations', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : errorOf(body)?.trim() || 'No pudimos enviar la invitación. Inténtalo de nuevo.';
+    const pendingInvitationId = asRecord(body?.['details'])?.['invitationId'];
+    return body?.['reason'] === 'INVITATION_ALREADY_PENDING' &&
+      typeof pendingInvitationId === 'string'
+      ? { ok: false, message, pendingInvitationId }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parseIssuedInvitation(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
 }

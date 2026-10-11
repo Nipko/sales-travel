@@ -113,6 +113,28 @@ describe('createdMessage', () => {
     expect(msg.detail).toMatch(/invítalo desde Equipo/);
   });
 
+  it('invitado sin correo: lo dice como advertencia y manda a reenviarla desde Equipo', () => {
+    const msg = createdMessage(
+      {
+        tenant,
+        admin: {
+          email: 'ana@andes.co',
+          status: 'invited_email_failed',
+          expiresAt: '2026-10-06T15:00:00.000Z',
+        },
+      },
+      'agency',
+      'Andes',
+      'Planetour S.A.S',
+    );
+    expect(msg).toEqual({
+      title: 'Agencia Andes creada bajo Planetour S.A.S.',
+      detail:
+        'Creamos el nodo y la invitación de su admin, pero no pudimos enviar el correo. Reenvíala desde Equipo cuando el correo funcione.',
+      warn: true,
+    });
+  });
+
   it('invitado: a quién, cuándo vence y dónde reenviarla', () => {
     const msg = createdMessage(
       {

@@ -74,6 +74,37 @@ describe('parseCreatedNode: POST /admin/tenants', () => {
     });
   });
 
+  it('invitado sin correo: la invitación existe (con su vencimiento) pero el correo no salió', () => {
+    expect(
+      parseCreatedNode({
+        tenant,
+        admin: {
+          email: 'a@b.co',
+          role: 'tenant_admin',
+          status: 'invited_email_failed',
+          invitationId: 'inv',
+          expiresAt: '2026-10-18T15:00:00.000Z',
+        },
+      })?.admin,
+    ).toEqual({
+      email: 'a@b.co',
+      status: 'invited_email_failed',
+      expiresAt: '2026-10-18T15:00:00.000Z',
+    });
+  });
+
+  it('la invitación que no se creó no trae vencimiento; un estado desconocido se ignora', () => {
+    expect(
+      parseCreatedNode({
+        tenant,
+        admin: { email: 'a@b.co', status: 'invite_failed', expiresAt: '2026-10-18T15:00:00.000Z' },
+      })?.admin,
+    ).toEqual({ email: 'a@b.co', status: 'invite_failed' });
+    expect(parseCreatedNode({ tenant, admin: { email: 'a@b.co', status: 'linked' } })).toEqual({
+      tenant: expect.any(Object),
+    });
+  });
+
   it('sin admin', () => {
     expect(parseCreatedNode({ tenant })).toEqual({ tenant: expect.any(Object) });
   });

@@ -160,8 +160,8 @@ export function nodeDraftPayload(draft: NodeDraft): NewNodeInput | undefined {
 }
 
 /**
- * El aviso al terminar el alta, con lo que pasó con el admin: invitado y cuándo vence, o que la
- * invitación no salió. Las dos se resuelven en Equipo (reenviar o invitar).
+ * El aviso al terminar el alta, con lo que pasó con el admin: invitado y cuándo vence, invitado sin
+ * correo, o que la invitación no se creó. Todas se resuelven en Equipo (reenviar o invitar).
  */
 export function createdMessage(
   created: CreatedNode,
@@ -185,6 +185,13 @@ export function createdMessage(
         warn: false,
       };
     }
+    case 'invited_email_failed':
+      return {
+        title,
+        detail:
+          'Creamos el nodo y la invitación de su admin, pero no pudimos enviar el correo. Reenvíala desde Equipo cuando el correo funcione.',
+        warn: true,
+      };
     case 'invite_failed':
       return {
         title,

@@ -2,7 +2,6 @@
 
 import { Send, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui/button';
-import { cn } from '../../../../../lib/cn';
 import { invitationExpiry } from '../../../../../lib/invitation-expiry';
 import { exactTime } from '../../../../../lib/tenant-admin-format';
 import { invitationOrigin, type PendingInvitation } from '../../../../../lib/tenant-admin-team';
@@ -11,7 +10,9 @@ import { useNow } from './seats-ui';
 
 /**
  * Las invitaciones pendientes del nodo, con quién las mandó, cuándo vencen y cómo reenviarlas (enlace
- * nuevo y 7 días más, también a una que ya venció).
+ * nuevo y 7 días más, también a una que ya venció). Una vencida lleva la marca "Vencida" y sigue con
+ * "Reenviar": es la única forma de que la persona reciba un enlace que funcione, porque invitar otra
+ * vez al mismo correo choca con ella.
  */
 export function InvitationList({
   items,
@@ -42,17 +43,20 @@ export function InvitationList({
           return (
             <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
               <div className="min-w-0">
-                <p className="truncate text-sm text-[var(--color-fg)]">{i.email}</p>
+                <p className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm text-[var(--color-fg)]">{i.email}</span>
+                  {expiry?.expired ? (
+                    <span className="shrink-0 rounded-full border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5 px-2 py-0.5 text-[11px] font-medium text-[var(--color-danger)]">
+                      Vencida
+                    </span>
+                  ) : null}
+                </p>
                 <p className="text-xs text-[var(--color-fg-muted)]">
                   {roleLabel(i.role)}
-                  {expiry ? (
+                  {expiry && !expiry.expired ? (
                     <>
                       {' · '}
-                      <span
-                        className={cn(expiry.expired && 'font-medium text-[var(--color-danger)]')}
-                      >
-                        {expiry.label}
-                      </span>
+                      <span>{expiry.label}</span>
                     </>
                   ) : null}
                 </p>
@@ -68,7 +72,7 @@ export function InvitationList({
               </div>
               <div className="flex items-center gap-1">
                 <Button
-                  variant="ghost"
+                  variant={expiry?.expired ? 'secondary' : 'ghost'}
                   size="sm"
                   disabled={resendingId === i.id}
                   onClick={() => onResend(i)}

@@ -11,6 +11,7 @@ import {
 } from '../../../../../lib/tenant-admin-team';
 import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
+import { PendingInvitationNotice } from './invite-dialog';
 import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
 import { SeatsCard, type SeatsState } from './seats-ui';
 
@@ -398,8 +399,10 @@ describe('InvitationList', () => {
         resendingId: null,
       }),
     );
-    expect(idle).toContain('venció');
+    expect(idle).toContain('>Vencida</span>');
     expect(idle).toContain('>Reenviar<');
+    expect(idle).not.toMatch(/<button[^>]* disabled=""[^>]*aria-label="Reenviar/);
+    expect(idle).not.toContain('vence en');
 
     const busy = renderToStaticMarkup(
       createElement(InvitationList, {
@@ -411,7 +414,34 @@ describe('InvitationList', () => {
     );
     expect(busy).toContain('Reenviando…');
     expect(busy).toMatch(
-      /<button[^>]*disabled[^>]*aria-label="Reenviar la invitación a tarde@gmail.com"/,
+      /<button[^>]* disabled=""[^>]*aria-label="Reenviar la invitación a tarde@gmail.com"/,
     );
+  });
+});
+
+describe('PendingInvitationNotice: la invitación ya pendiente se ofrece reenviar', () => {
+  it('dice para quién y ofrece "Reenviar la invitación", que espera mientras sale', () => {
+    const html = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        resending: false,
+        onResend: () => {},
+      }),
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain('Ya hay una invitación pendiente para beto@agencia.co.');
+    expect(html).toContain('Reenviar la invitación');
+    expect(html).not.toContain('disabled=""');
+    expect(voseoIn(html)).toEqual([]);
+
+    const busy = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        resending: true,
+        onResend: () => {},
+      }),
+    );
+    expect(busy).toContain('Reenviando…');
+    expect(busy).toMatch(/<button[^>]* disabled=""/);
   });
 });

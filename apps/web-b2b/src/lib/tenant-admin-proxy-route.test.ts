@@ -121,3 +121,136 @@ describe('las rutas de enviar el enlace y desbloquear', () => {
     });
   });
 });
+
+describe('las rutas de invitaciones y de memberships: mismo origen y cuerpo reconstruido', () => {
+  const TENANT = '0b6f6a52-7a47-4c8e-9a3b-1a2b3c4d5e6f';
+  const MEMBER = '99999999-8888-4777-8666-555555555555';
+  const INVITATION = '44444444-4444-4444-8444-444444444444';
+
+  function request(
+    method: 'POST' | 'PATCH',
+    url: string,
+    headers: Record<string, string>,
+    body?: string,
+  ): Request {
+    return new Request(`https://app.test${url}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...headers },
+      ...(body === undefined ? {} : { body }),
+    });
+  }
+  const SAME = { 'sec-fetch-site': 'same-origin' };
+  const CROSS = { 'sec-fetch-site': 'same-site' };
+
+  it('invitar: reenvía el cuerpo campo por campo y el 409 trae el id de la pendiente', async () => {
+    const { POST } = await import('../app/api/invitations/route');
+    const body = JSON.stringify({
+      email: ' beto@agencia.co ',
+      tenantId: TENANT,
+      role: 'vendedor',
+      extra: 1,
+    });
+
+    expect((await POST(request('POST', '/api/invitations', SAME, body))).status).toBe(200);
+    expect(mocks.apiWithStatus).toHaveBeenCalledWith('/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'beto@agencia.co', tenantId: TENANT, role: 'vendedor' }),
+    });
+
+    mocks.apiWithStatus.mockResolvedValue({
+      kind: 'json',
+      status: 409,
+      body: {
+        message: 'Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.',
+        reason: 'INVITATION_ALREADY_PENDING',
+        details: { invitationId: INVITATION },
+      },
+    });
+    const conflict = await POST(request('POST', '/api/invitations', SAME, body));
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({
+      error: 'Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.',
+      reason: 'INVITATION_ALREADY_PENDING',
+      details: { invitationId: INVITATION },
+    });
+  });
+
+  it('invitar: un JSON roto es 400, no 500, y no llega al API', async () => {
+    const { POST } = await import('../app/api/invitations/route');
+    const res = await POST(request('POST', '/api/invitations', SAME, '{"email":'));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'La invitación no se pudo leer.' });
+    expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+  });
+
+  it('listar: el nodo se valida antes de componer la consulta', async () => {
+    const { GET } = await import('../app/api/invitations/route');
+    const ok = await GET(new Request(`https://app.test/api/invitations?tenantId=${TENANT}`));
+    expect(ok.status).toBe(200);
+    expect(mocks.apiWithStatus).toHaveBeenCalledWith(`/invitations?tenantId=${TENANT}`);
+
+    mocks.apiWithStatus.mockClear();
+    const raro = await GET(
+      new Request('https://app.test/api/invitations?tenantId=x%26role%3Dsuperadmin'),
+    );
+    expect(raro.status).toBe(400);
+    expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['resend', () => import('../app/api/invitations/[id]/resend/route')],
+    ['revoke', () => import('../app/api/invitations/[id]/revoke/route')],
+  ])('%s: sólo desde el panel y con ids que no componen otra ruta', async (action, load) => {
+    const { POST } = await load();
+    const url = `/api/invitations/${INVITATION}/${action}?tenantId=${TENANT}`;
+    const params = (id = INVITATION) => ({ params: Promise.resolve({ id }) });
+
+    expect((await POST(request('POST', url, SAME), params())).status).toBe(200);
+    expect(mocks.apiWithStatus).toHaveBeenCalledWith(
+      `/invitations/${INVITATION}/${action}?tenantId=${TENANT}`,
+      { method: 'POST' },
+    );
+
+    mocks.apiWithStatus.mockClear();
+    expect((await POST(request('POST', url, CROSS), params())).status).toBe(403);
+    expect((await POST(request('POST', url, SAME), params('../../admin'))).status).toBe(400);
+    expect(
+      (await POST(request('POST', `/api/invitations/${INVITATION}/${action}`, SAME), params()))
+        .status,
+    ).toBe(400);
+    expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'role',
+      () => import('../app/api/admin/memberships/role/route'),
+      { userId: MEMBER, tenantId: TENANT, role: 'vendedor' },
+    ],
+    [
+      'status',
+      () => import('../app/api/admin/memberships/status/route'),
+      { userId: MEMBER, tenantId: TENANT, status: 'suspended' },
+    ],
+  ])(
+    'membership %s: sólo desde el panel, cuerpo reconstruido y JSON roto = 400',
+    async (kind, load, change) => {
+      const { PATCH } = await load();
+      const url = `/api/admin/memberships/${kind}`;
+
+      const ok = await PATCH(
+        request('PATCH', url, SAME, JSON.stringify({ ...change, extra: true })),
+      );
+      expect(ok.status).toBe(200);
+      expect(mocks.apiWithStatus).toHaveBeenCalledWith(`/admin/memberships/${kind}`, {
+        method: 'PATCH',
+        body: JSON.stringify(change),
+      });
+
+      mocks.apiWithStatus.mockClear();
+      expect((await PATCH(request('PATCH', url, CROSS, JSON.stringify(change)))).status).toBe(403);
+      expect((await PATCH(request('PATCH', url, SAME, 'no-json'))).status).toBe(400);
+      expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+    },
+  );
+});

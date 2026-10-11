@@ -143,6 +143,95 @@ export function membershipImpactTarget(query: {
   return { ok: true, path: `/admin/memberships/impact?${params.toString()}` };
 }
 
+/** Tope de un correo (RFC 5321) y su forma mínima. Si es una dirección válida lo decide el API. */
+const EMAIL_MAX = 254;
+const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+$/;
+
+/** `GET /invitations?tenantId=`: las invitaciones pendientes del nodo. */
+export function invitationsListTarget(tenantId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  const params = new URLSearchParams({ tenantId: tenantId.toLowerCase() });
+  return { ok: true, path: `/invitations?${params.toString()}` };
+}
+
+/**
+ * `POST /invitations`: a quién, a qué nodo y con qué rol. El correo va recortado; el API lo pasa a
+ * minúsculas y decide qué roles se pueden dar.
+ */
+export function invitePlan(raw: unknown): TenantAdminProxyPlan {
+  const input = asRecord(raw);
+  if (input === undefined) return { ok: false, error: 'La invitación no se pudo leer.' };
+  const { email, tenantId, role } = input;
+  const address = typeof email === 'string' ? email.trim() : '';
+  if (address.length > EMAIL_MAX || !EMAIL_FORMAT.test(address)) {
+    return { ok: false, error: 'Escribe un correo válido.' };
+  }
+  if (typeof tenantId !== 'string' || !isTenantId(tenantId)) {
+    return { ok: false, error: 'Nodo inválido.' };
+  }
+  if (typeof role !== 'string' || !ROLE_FORMAT.test(role)) {
+    return { ok: false, error: 'Elige el rol de la invitación.' };
+  }
+  return {
+    ok: true,
+    path: '/invitations',
+    body: { email: address, tenantId: tenantId.toLowerCase(), role },
+  };
+}
+
+export type InvitationActionPath = 'resend' | 'revoke';
+
+/** `POST /invitations/:id/<acción>?tenantId=`: reenviar o revocar una invitación pendiente. */
+export function invitationActionTarget(
+  invitationId: string,
+  tenantId: string,
+  action: InvitationActionPath,
+): TenantAdminProxyTarget {
+  if (!isUuid(invitationId)) return { ok: false, error: 'Invitación inválida.' };
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  const params = new URLSearchParams({ tenantId: tenantId.toLowerCase() });
+  return {
+    ok: true,
+    path: `/invitations/${invitationId.toLowerCase()}/${action}?${params.toString()}`,
+  };
+}
+
+/** El miembro y el nodo de un cambio sobre una membership. */
+function membershipTarget(
+  input: Record<string, unknown>,
+): { userId: string; tenantId: string } | { error: string } {
+  const { userId, tenantId } = input;
+  if (typeof tenantId !== 'string' || !isTenantId(tenantId)) return { error: 'Nodo inválido.' };
+  if (!isUuid(userId)) return { error: 'Miembro inválido.' };
+  return { userId: userId.toLowerCase(), tenantId: tenantId.toLowerCase() };
+}
+
+/** `PATCH /admin/memberships/role`: el rol nuevo de un miembro en un nodo. */
+export function membershipRolePlan(raw: unknown): TenantAdminProxyPlan {
+  const input = asRecord(raw);
+  if (input === undefined) return { ok: false, error: 'El cambio no se pudo leer.' };
+  const target = membershipTarget(input);
+  if ('error' in target) return { ok: false, error: target.error };
+  const role = input['role'];
+  if (typeof role !== 'string' || !ROLE_FORMAT.test(role)) {
+    return { ok: false, error: 'Elige el rol nuevo.' };
+  }
+  return { ok: true, path: '/admin/memberships/role', body: { ...target, role } };
+}
+
+/** `PATCH /admin/memberships/status`: suspender o reactivar el acceso de un miembro a un nodo. */
+export function membershipStatusPlan(raw: unknown): TenantAdminProxyPlan {
+  const input = asRecord(raw);
+  if (input === undefined) return { ok: false, error: 'El cambio no se pudo leer.' };
+  const target = membershipTarget(input);
+  if ('error' in target) return { ok: false, error: target.error };
+  const status = input['status'];
+  if (typeof status !== 'string' || !STATUSES.includes(status)) {
+    return { ok: false, error: 'El estado tiene que ser activo o suspendido.' };
+  }
+  return { ok: true, path: '/admin/memberships/status', body: { ...target, status } };
+}
+
 function nullableIntIn(value: unknown, min: number, max: number): number | null | undefined {
   if (value === null) return null;
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
@@ -188,9 +277,19 @@ export interface TenantAdminProxyReply {
 }
 
 /**
+ * De los `details` de un error del API, sólo los que usa el panel, uno por uno: hoy el id de la
+ * invitación pendiente (409 INVITATION_ALREADY_PENDING), para ofrecer reenviarla. Lo demás no pasa,
+ * aunque el API lo declare publicable: un campo nuevo tiene que sumarse acá a propósito.
+ */
+function panelDetails(value: unknown): { invitationId: string } | undefined {
+  const invitationId = asRecord(value)?.['invitationId'];
+  return isUuid(invitationId) ? { invitationId: invitationId.toLowerCase() } : undefined;
+}
+
+/**
  * Lo que la ruta del panel le devuelve al navegador. En éxito, el cuerpo del API tal cual; en
- * error, `{ error, reason? }`: el mensaje (ya en castellano) para mostrar y el motivo máquina para
- * decidir, nunca el cuerpo crudo.
+ * error, `{ error, reason?, details? }`: el mensaje (ya en castellano) para mostrar, el motivo
+ * máquina para decidir y los detalles que usa el panel ({@link panelDetails}), nunca el cuerpo crudo.
  */
 export function tenantAdminProxyReply(res: ApiResponse): TenantAdminProxyReply {
   if (res.kind !== 'json') {
@@ -204,6 +303,7 @@ export function tenantAdminProxyReply(res: ApiResponse): TenantAdminProxyReply {
   const r = asRecord(res.body);
   const message = r?.['message'];
   const reason = r?.['reason'];
+  const details = panelDetails(r?.['details']);
   const text = (
     Array.isArray(message)
       ? message.filter((m): m is string => typeof m === 'string').join('. ')
@@ -216,6 +316,7 @@ export function tenantAdminProxyReply(res: ApiResponse): TenantAdminProxyReply {
     body: {
       error: text.length > MAX_MESSAGE ? '' : text,
       ...(typeof reason === 'string' && MACHINE_REASON.test(reason) ? { reason } : {}),
+      ...(details === undefined ? {} : { details }),
     },
   };
 }

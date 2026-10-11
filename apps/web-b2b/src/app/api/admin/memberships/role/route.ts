@@ -1,14 +1,8 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { membershipRolePlan } from '../../../../../lib/tenant-admin-proxy';
+import { forwardPlan } from '../../../../../lib/tenant-admin-proxy-route';
 
-export async function PATCH(req: Request) {
-  const body = (await req.json()) as unknown;
-  const res = await api<unknown>('/admin/memberships/role', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  }
-  return NextResponse.json(res.data);
+/** Cambia el rol de un miembro en un nodo. Quién puede y qué rol lo decide el API. */
+export async function PATCH(req: Request): Promise<NextResponse> {
+  return forwardPlan(req, membershipRolePlan(await req.json().catch(() => undefined)), 'PATCH');
 }

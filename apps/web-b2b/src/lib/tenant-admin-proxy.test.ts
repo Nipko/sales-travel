@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { ApiResponse } from './api';
 import {
   currentSessionIdOf,
+  invitationActionTarget,
+  invitationsListTarget,
+  invitePlan,
   markCurrentSession,
   memberActionTarget,
   membershipImpactTarget,
+  membershipRolePlan,
+  membershipStatusPlan,
   seatPolicyPlan,
   seatReleaseTarget,
   seatsViewTarget,
@@ -209,6 +214,29 @@ describe('tenantAdminProxyReply', () => {
     });
   });
 
+  it('de los details, sólo el id de la invitación pendiente (en minúsculas)', () => {
+    const pending = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
+    expect(
+      tenantAdminProxyReply(
+        json(409, {
+          message: 'Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.',
+          reason: 'INVITATION_ALREADY_PENDING',
+          details: { invitationId: pending, email: 'beto@agencia.co' },
+        }),
+      ),
+    ).toEqual({
+      status: 409,
+      body: {
+        error: 'Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.',
+        reason: 'INVITATION_ALREADY_PENDING',
+        details: { invitationId: pending.toLowerCase() },
+      },
+    });
+    expect(
+      tenantAdminProxyReply(json(409, { message: 'x', details: { invitationId: '../x' } })).body,
+    ).toEqual({ error: 'x' });
+  });
+
   it('sin JSON: el mensaje que ya armó apiWithStatus', () => {
     expect(
       tenantAdminProxyReply({ kind: 'unreachable', status: 503, message: 'Sin conexión' }),
@@ -259,5 +287,114 @@ describe('sesión propia en la vista de puestos', () => {
     expect(
       currentSessionIdOf({ kind: 'json', status: 200, body: { sessionId: 'x' } }),
     ).toBeUndefined();
+  });
+});
+
+describe('invitaciones: rutas y cuerpo del API', () => {
+  const INVITATION = '44444444-4444-4444-8444-444444444444';
+
+  it('invitePlan reconstruye el cuerpo: correo recortado, nodo en minúsculas y sin campos de más', () => {
+    expect(
+      invitePlan({ email: '  Beto@Agencia.co ', tenantId: ID, role: 'vendedor', isAdmin: true }),
+    ).toEqual({
+      ok: true,
+      path: '/invitations',
+      body: { email: 'Beto@Agencia.co', tenantId: ID.toLowerCase(), role: 'vendedor' },
+    });
+  });
+
+  it('invitePlan rechaza un cuerpo ilegible, un correo sin forma, un nodo raro o un rol con otra forma', () => {
+    expect(invitePlan(undefined)).toEqual({ ok: false, error: 'La invitación no se pudo leer.' });
+    expect(invitePlan([])).toMatchObject({ ok: false });
+    const base = { email: 'beto@agencia.co', tenantId: ID, role: 'vendedor' };
+    expect(invitePlan({ ...base, email: 'beto' })).toEqual({
+      ok: false,
+      error: 'Escribe un correo válido.',
+    });
+    expect(invitePlan({ ...base, email: 'a b@c.co' }).ok).toBe(false);
+    expect(invitePlan({ ...base, email: `${'a'.repeat(250)}@c.co` }).ok).toBe(false);
+    expect(invitePlan({ ...base, email: 42 }).ok).toBe(false);
+    expect(invitePlan({ ...base, tenantId: '../admin' })).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+    expect(invitePlan({ ...base, role: 'Super Admin' })).toEqual({
+      ok: false,
+      error: 'Elige el rol de la invitación.',
+    });
+    expect(invitePlan({ ...base, role: undefined }).ok).toBe(false);
+  });
+
+  it('invitationsListTarget: el nodo validado y en la consulta', () => {
+    expect(invitationsListTarget(ID)).toEqual({
+      ok: true,
+      path: `/invitations?tenantId=${ID.toLowerCase()}`,
+    });
+    expect(invitationsListTarget('x&role=superadmin')).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+  });
+
+  it('invitationActionTarget: reenviar y revocar, sólo con ids que no componen otra ruta', () => {
+    expect(invitationActionTarget(INVITATION.toUpperCase(), ID, 'resend')).toEqual({
+      ok: true,
+      path: `/invitations/${INVITATION}/resend?tenantId=${ID.toLowerCase()}`,
+    });
+    expect(invitationActionTarget(INVITATION, ID, 'revoke')).toMatchObject({
+      path: `/invitations/${INVITATION}/revoke?tenantId=${ID.toLowerCase()}`,
+    });
+    expect(invitationActionTarget('../../admin', ID, 'revoke')).toEqual({
+      ok: false,
+      error: 'Invitación inválida.',
+    });
+    expect(invitationActionTarget(INVITATION, '', 'resend')).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+  });
+});
+
+describe('memberships: rol y estado', () => {
+  const MEMBER = '99999999-8888-4777-8666-555555555555';
+
+  it('membershipRolePlan reconstruye el cuerpo y valida ids y la forma del rol', () => {
+    expect(
+      membershipRolePlan({ userId: MEMBER.toUpperCase(), tenantId: ID, role: 'admin', x: 1 }),
+    ).toEqual({
+      ok: true,
+      path: '/admin/memberships/role',
+      body: { userId: MEMBER, tenantId: ID.toLowerCase(), role: 'admin' },
+    });
+    expect(membershipRolePlan(null)).toEqual({ ok: false, error: 'El cambio no se pudo leer.' });
+    expect(membershipRolePlan({ userId: MEMBER, tenantId: 'x', role: 'admin' })).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+    expect(membershipRolePlan({ userId: 'x', tenantId: ID, role: 'admin' })).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
+    });
+    expect(membershipRolePlan({ userId: MEMBER, tenantId: ID, role: 'ADMIN' })).toEqual({
+      ok: false,
+      error: 'Elige el rol nuevo.',
+    });
+  });
+
+  it('membershipStatusPlan sólo admite activo o suspendido', () => {
+    expect(membershipStatusPlan({ userId: MEMBER, tenantId: ID, status: 'suspended' })).toEqual({
+      ok: true,
+      path: '/admin/memberships/status',
+      body: { userId: MEMBER, tenantId: ID.toLowerCase(), status: 'suspended' },
+    });
+    expect(membershipStatusPlan({ userId: MEMBER, tenantId: ID, status: 'invited' })).toEqual({
+      ok: false,
+      error: 'El estado tiene que ser activo o suspendido.',
+    });
+    expect(membershipStatusPlan('suspended')).toMatchObject({ ok: false });
+    expect(membershipStatusPlan({ userId: MEMBER, status: 'active' })).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
   });
 });
