@@ -266,7 +266,7 @@ d('la retención elige la cartera por la moneda de la tarifa (API como app_user)
       status: 'blocked',
       currency: 'EUR',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en EUR: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en EUR: pídele a quien te financia que la habilite.',
     });
     expect(await wallets()).toEqual(before);
   });

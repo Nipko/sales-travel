@@ -139,13 +139,13 @@ const FALLBACK_CURRENCY = 'USD';
 const FALLBACK_MIN_HOTELS = 5;
 
 const CATALOG_EMPTY_MESSAGE =
-  'El catálogo de hoteles de ese destino todavía no está sincronizado. Probá con otra ciudad o avisá al administrador.';
+  'El catálogo de hoteles de ese destino todavía no está sincronizado. Prueba con otra ciudad o avísale al administrador.';
 
 export const CITY_WITHOUT_HOTELS_MESSAGE =
-  'Esa ciudad no tiene hoteles disponibles por ahora. Probá con una ciudad cercana.';
+  'Esa ciudad no tiene hoteles disponibles por ahora. Prueba con una ciudad cercana.';
 
 export const CITY_LOAD_FAILED_MESSAGE =
-  'No pudimos traer los hoteles de esa ciudad en este momento. Probá de nuevo en unos minutos.';
+  'No pudimos traer los hoteles de esa ciudad en este momento. Prueba de nuevo en unos minutos.';
 
 /**
  * Plazo de cada intento de traer los hoteles de una ciudad nueva (TBOHotelCodeList tarda 1-5 s) y

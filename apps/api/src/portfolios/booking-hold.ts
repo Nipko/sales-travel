@@ -86,17 +86,17 @@ interface RejectionContext {
 
 const MESSAGES: Readonly<Record<BookingHoldRejection, (ctx: RejectionContext) => string>> = {
   PORTFOLIO_CURRENCY_NOT_ENABLED: (ctx) =>
-    `La agencia no tiene cartera en ${ctx.amountCurrency}: pedile a quien te financia que la habilite.`,
+    `La agencia no tiene cartera en ${ctx.amountCurrency}: pídele a quien te financia que la habilite.`,
   PORTFOLIO_INACTIVE: (ctx) =>
-    `La cartera en ${ctx.amountCurrency} de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pedile a quien te financia que la reactive.`,
+    `La cartera en ${ctx.amountCurrency} de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pídele a quien te financia que la reactive.`,
   PORTFOLIO_FUNDS_INSUFFICIENT: (ctx) =>
-    `La cartera en ${ctx.amountCurrency} de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informá un depósito en Cartera B2B o pedile más cupo a quien te financia.`,
+    `La cartera en ${ctx.amountCurrency} de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informa un depósito en Cartera B2B o pídele más cupo a quien te financia.`,
   PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED: (ctx) =>
-    `Tu red todavía no opera en ${ctx.amountCurrency}, así que no se puede retener saldo para esta reserva. Pedile a quien te financia que lo habilite.`,
+    `Tu red todavía no opera en ${ctx.amountCurrency}, así que no se puede retener saldo para esta reserva. Pídele a quien te financia que lo habilite.`,
   PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE: (ctx) =>
-    `Tu red no tiene cupo disponible en ${ctx.amountCurrency} para esta reserva. Pedile a quien te financia que lo revise.`,
+    `Tu red no tiene cupo disponible en ${ctx.amountCurrency} para esta reserva. Pídele a quien te financia que lo revise.`,
   PORTFOLIO_NETWORK_COST_UNAVAILABLE: () =>
-    'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avisale a quien te financia.',
+    'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avísale a quien te financia.',
 };
 
 /**
@@ -137,7 +137,7 @@ export class PortfolioHoldBusyError extends ConflictException {
 
   constructor() {
     super(
-      'Tu red está procesando otras reservas en este momento y no se retuvo saldo. Probá de nuevo en unos segundos.',
+      'Tu red está procesando otras reservas en este momento y no se retuvo saldo. Prueba de nuevo en unos segundos.',
     );
     this.name = 'PortfolioHoldBusyError';
   }
@@ -153,7 +153,7 @@ export class PortfolioReleaseBusyError extends ConflictException {
 
   constructor() {
     super(
-      'Tu red está procesando otras reservas en este momento y todavía no se liberó el saldo retenido de esta reserva. El estado de la reserva no cambia por esto: probá de nuevo en unos segundos para terminar de liberarlo.',
+      'Tu red está procesando otras reservas en este momento y todavía no se liberó el saldo retenido de esta reserva. El estado de la reserva no cambia por esto: prueba de nuevo en unos segundos para terminar de liberarlo.',
     );
     this.name = 'PortfolioReleaseBusyError';
   }
@@ -168,7 +168,7 @@ export class PortfolioHoldAccountChangedError extends ConflictException {
 
   constructor() {
     super(
-      'La cuenta del proveedor con que se cotizó esta reserva ya no está activa en tu red, así que no se retuvo saldo. Volvé a buscar la tarifa.',
+      'La cuenta del proveedor con que se cotizó esta reserva ya no está activa en tu red, así que no se retuvo saldo. Vuelve a buscar la tarifa.',
     );
     this.name = 'PortfolioHoldAccountChangedError';
   }

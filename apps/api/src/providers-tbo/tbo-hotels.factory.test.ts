@@ -325,7 +325,7 @@ describe('dueño de la cuenta: sólo plataforma o consolidador mientras Q-77 sig
     expect(ausente?.code).toBe('tbo-hotels');
     expect(ausente?.reason).toBe('no-credentials');
     expect(ausente?.detail).toContain('cuenta del consolidador');
-    expect(ausente?.detail).toContain('Quitá la cuenta de TBO de esta agencia');
+    expect(ausente?.detail).toContain('Quita la cuenta de TBO de esta agencia');
     // Se mira el DUEÑO de la cuenta resuelta, que aquí es la propia agencia.
     expect(b.ownerTenantType).toHaveBeenCalledWith(AGENCIA);
     expect(fetch).not.toHaveBeenCalled();
@@ -701,7 +701,7 @@ describe('humanizeError', () => {
     });
 
     expect(factory.humanizeError(err, { credentialSource: 'inherited' })).toContain(
-      'Avisale al consolidador',
+      'Avísale al consolidador',
     );
     expect(factory.humanizeError(err, { credentialSource: 'own' })).toContain(
       'Mi Red → Credenciales → TBO Hoteles',

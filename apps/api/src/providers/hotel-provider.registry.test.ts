@@ -289,7 +289,7 @@ describe('HotelProviderRegistry', () => {
           code: 'despegar-hotels',
           reason: 'no-credentials',
           detail:
-            'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
+            'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
         },
       ]);
       // La post-venta de una reserva de Despegar tampoco sale sin clave: 400 que lo dice, no un 401

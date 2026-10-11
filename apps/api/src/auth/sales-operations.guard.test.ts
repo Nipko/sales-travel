@@ -561,7 +561,7 @@ describe('RolesGuard con la metadata REAL de cada venta', () => {
         expect(err, role).toBeInstanceOf(PlatformRoleCannotSellError);
         expect((err as PlatformRoleCannotSellError).getStatus()).toBe(403);
         expect((err as PlatformRoleCannotSellError).message).toBe(
-          'El superadministrador no vende: usá un usuario de una sucursal',
+          'El superadministrador no vende: usa un usuario de una sucursal',
         );
       }
     },
@@ -632,7 +632,7 @@ describe('la respuesta HTTP del 403', () => {
     expect(json).toHaveBeenCalledWith({
       statusCode: 403,
       error: 'Forbidden',
-      message: 'El superadministrador no vende: usá un usuario de una sucursal',
+      message: 'El superadministrador no vende: usa un usuario de una sucursal',
       reason: 'PLATFORM_ROLE_CANNOT_SELL',
     });
   });

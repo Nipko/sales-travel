@@ -213,7 +213,7 @@ export function ConfirmedPanel({
           <div className="rounded-md border border-[var(--color-warning)]/50 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-fg)]">
             <p className="flex items-center gap-1 font-medium">
               <Receipt aria-hidden="true" className="size-3 shrink-0" />
-              Recordale al huésped lo que paga en el hotel
+              Recuérdale al huésped lo que paga en el hotel
             </p>
             <ul className="mt-0.5 space-y-0.5">
               {atHotel.map((c, i) => (

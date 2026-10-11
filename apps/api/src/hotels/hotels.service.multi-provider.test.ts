@@ -797,7 +797,7 @@ describe('búsqueda combinada — nacionalidad y topes de un proveedor como TBO 
       count: 0,
       skipReason: 'guest-nationality-missing',
       reason:
-        'Cotiza según la nacionalidad del pasajero principal: indicala en la búsqueda para ver sus tarifas.',
+        'Cotiza según la nacionalidad del pasajero principal: indícala en la búsqueda para ver sus tarifas.',
     });
     expect(parteDe(res.providers, DESPEGAR)).toEqual({ code: DESPEGAR, status: 'ok', count: 3 });
     expect(proveedoresDe(res.hotels)).toEqual([DESPEGAR]);

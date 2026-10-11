@@ -93,7 +93,7 @@ describe('searchEligibilitySkip — a quién no se le pregunta (RF-06, PR-2.4)',
       count: 0,
       skipReason: 'guest-nationality-missing',
       reason:
-        'Cotiza según la nacionalidad del pasajero principal: indicala en la búsqueda para ver sus tarifas.',
+        'Cotiza según la nacionalidad del pasajero principal: indícala en la búsqueda para ver sus tarifas.',
     });
   });
 
@@ -211,7 +211,7 @@ describe('respondedOutcome — parte de un proveedor que respondió', () => {
       count: 0,
       skipReason: 'currency-mismatch',
       reason:
-        'Cotiza en USD y esta búsqueda es en COP: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.',
+        'Cotiza en USD y esta búsqueda es en COP: sus tarifas no se pueden mostrar sin convertir la moneda. Revisa la moneda de la cuenta del proveedor en Mi Red → Credenciales.',
       droppedForCurrency: 1,
       droppedCurrencies: ['USD'],
     });
@@ -277,13 +277,13 @@ describe('outcomes armados', () => {
 
   it('un ausente lleva su motivo del registry y, si lo hay, el detalle para el vendedor', () => {
     expect(
-      unavailableOutcome({ code: 'alfa', reason: 'no-credentials', detail: 'Cargalas en Mi Red.' }),
+      unavailableOutcome({ code: 'alfa', reason: 'no-credentials', detail: 'Cárgalas en Mi Red.' }),
     ).toEqual({
       code: 'alfa',
       status: 'unavailable',
       count: 0,
       unavailableReason: 'no-credentials',
-      reason: 'Cargalas en Mi Red.',
+      reason: 'Cárgalas en Mi Red.',
     });
     expect(unavailableOutcome({ code: 'beta', reason: 'incomplete-account' })).toEqual({
       code: 'beta',

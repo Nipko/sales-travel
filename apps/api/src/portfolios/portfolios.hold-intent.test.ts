@@ -99,7 +99,7 @@ describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin 
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect((err as BookingHoldRejectedError).reason).toBe('PORTFOLIO_CURRENCY_NOT_ENABLED');
     expect((err as BookingHoldRejectedError).message).toBe(
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     );
     expect(b.bank.state.entries).toHaveLength(0);
     expect(b.bank.reports).toEqual([]);
@@ -139,7 +139,7 @@ describe('PortfoliosService.assertBookingHoldAffordable: el control previo, sin 
 
     expect(err).toMatchObject({ reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE' });
     expect((err as BookingHoldRejectedError).message).toBe(
-      'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+      'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     );
     expect(b.bank.reports).toEqual([{ tenantId: SUBAGENCIA, orderId: ORDEN }]);
     expect(b.bank.state.entries).toHaveLength(0);
@@ -216,19 +216,19 @@ describe('PortfoliosService.previewBookingHold: el aviso del PreBook, antes de c
       'sin cartera en esa moneda',
       { currency: 'COP' },
       'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     ],
     [
       'con la cartera suspendida',
       { status: 'suspended' },
       'PORTFOLIO_INACTIVE',
-      'La cartera en USD de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pedile a quien te financia que la reactive.',
+      'La cartera en USD de la agencia está suspendida, así que no se puede retener el saldo para reservar. Pídele a quien te financia que la reactive.',
     ],
     [
       'sin saldo ni cupo',
       { balance_minor: 34_011 },
       'PORTFOLIO_FUNDS_INSUFFICIENT',
-      'La cartera en USD de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informá un depósito en Cartera B2B o pedile más cupo a quien te financia.',
+      'La cartera en USD de la agencia no tiene saldo ni cupo suficiente para esta reserva. Informa un depósito en Cartera B2B o pídele más cupo a quien te financia.',
     ],
   ])(
     '%s: bloqueado con el motivo y el texto de la reserva, sin saldo ni cupo',
@@ -255,7 +255,7 @@ describe('PortfoliosService.previewBookingHold: el aviso del PreBook, antes de c
       currency: 'USD',
       reason: 'PORTFOLIO_NETWORK_COST_UNAVAILABLE',
       message:
-        'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avisale a quien te financia.',
+        'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avísale a quien te financia.',
     });
   });
 

@@ -567,7 +567,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       currency: 'USD',
       reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
       message:
-        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 
@@ -599,7 +599,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       status: 'blocked',
       currency: 'USD',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 
@@ -1232,7 +1232,7 @@ describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
 
     expect((err as TboApiError).kind).toBe('INSUFFICIENT_BALANCE');
     expect(humanizeTboError(err, { credentialSource: 'inherited' })).toBe(
-      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avisale al consolidador.',
+      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avísale al consolidador.',
     );
     expect(b.emit.mock.calls).toEqual([
       [

@@ -159,7 +159,7 @@ export class HotelPrebookSnapshotUnavailableError extends ServiceUnavailableExce
 
   constructor() {
     super(
-      'No pudimos preparar la reserva de esta tarifa. Volvé a revalidarla; si se repite, avisá al administrador.',
+      'No pudimos preparar la reserva de esta tarifa. Vuelve a revalidarla; si se repite, avísale al administrador.',
     );
     this.name = 'HotelPrebookSnapshotUnavailableError';
   }

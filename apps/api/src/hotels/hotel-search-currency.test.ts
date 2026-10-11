@@ -93,7 +93,7 @@ describe('assertRulesPriceIn — un markup fijo no se suma en otra moneda', () =
     const e = error as HotelSearchCurrencyMarkupError;
     expect(e.getStatus()).toBe(HttpStatus.CONFLICT);
     expect(e.message).toBe(
-      'El markup de hoteles de tu red incluye un monto fijo, que está en COP, y no se puede sumar a tarifas en USD sin convertir la moneda. Buscá en COP, o pedí que ese markup se configure como porcentaje.',
+      'El markup de hoteles de tu red incluye un monto fijo, que está en COP, y no se puede sumar a tarifas en USD sin convertir la moneda. Busca en COP, o pide que ese markup se configure como porcentaje.',
     );
   });
 
