@@ -1966,6 +1966,9 @@ Sin detalle, Search no trae políticas; TBO recomienda buscar sin detalle y decl
   reembolsables.
 - **(C) Siempre con detalle.** Contradice el Key Point 2 y hace las respuestas más pesadas y lentas.
 
+**Desde 2026-10** también se reserva desde el listado (botón «Reservar» en cada tarifa de la tarjeta), sin pasar por las
+políticas indicativas del detalle: las políticas finales las sigue dando el PreBook, antes de cargar los huéspedes.
+
 **Bloquea:** RF-05, RF-11. **Consolida:** [02](./02-search-y-oferta-canonica.md) D02-6.
 
 #### D-TBO-20 — ¿Qué pasa si el precio cambia entre la búsqueda y la reserva?

@@ -42,7 +42,7 @@ import {
 } from './hotel-results-filters';
 import { HotelResultsMap } from './hotel-results-map';
 import { ResultsPager } from './hotel-results-pager';
-import { detailLinkForOffer } from './hotel-search-handoff';
+import { detailLinkForOffer, stayOfCriteria } from './hotel-search-handoff';
 import { OfferExpiry } from './offer-expiry';
 import { useHotelPhotos } from './use-hotel-photos';
 
@@ -166,6 +166,9 @@ export function HotelResults({
     [results, filters, showProvider],
   );
   const chips = activeFilterChips(filters, facets);
+  // La estadía viaja con cada tarifa elegida: el checkout no depende de que la búsqueda siga
+  // recordada en este navegador (hotel-rate-selection.ts).
+  const stay = useMemo(() => (criteria ? stayOfCriteria(criteria) : undefined), [criteria]);
 
   // Cuántas tarjetas se pintan. Vuelve a 20 con cada búsqueda y cada vez que cambia lo que se
   // mira (filtros, orden, vista); un tramo que se suma a la misma búsqueda no lo reinicia.
@@ -381,7 +384,12 @@ export function HotelResults({
                 onClear={clearFilters}
               />
             ) : state.view === 'mapa' ? (
-              <HotelResultsMap items={visibleItems} photos={photos} nights={criteria?.nights} />
+              <HotelResultsMap
+                items={visibleItems}
+                photos={photos}
+                nights={criteria?.nights}
+                searchToken={searchToken}
+              />
             ) : (
               <div className="space-y-3">
                 {visibleItems.map((item, index) => (
@@ -399,6 +407,9 @@ export function HotelResults({
                           : detailLinkForOffer(item.hotel.offer, searchToken)
                       }
                       nonRefundableBlocked={nonRefundableBlocked}
+                      stay={stay}
+                      searchToken={searchToken}
+                      showProvider={showProvider}
                     />
                   </div>
                 ))}

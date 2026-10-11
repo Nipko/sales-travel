@@ -1,22 +1,60 @@
-import { createElement } from 'react';
+import { createElement, type ButtonHTMLAttributes } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HotelOffer, HotelRoompack } from '../actions';
-import { HotelResultCard } from './hotel-result-card';
+import { encodeHotelKey } from './hotel-key';
+import { HotelResultCard, HotelResultRates } from './hotel-result-card';
+import { RATE_SELECTION_STORAGE_KEY, parseRateSelections } from './hotel-rate-selection';
 import {
   NO_FILTERS,
   applyResultsFilters,
   resultHotelsOf,
   resultsFacets,
+  type FilteredHotel,
+  type ResultRate,
   type ResultsFilters,
 } from './hotel-results-filters';
 import { ResultsFiltersPanel } from './hotel-results-filters-panel';
+import { HotelResultsMap } from './hotel-results-map';
+import { detailLinkForOffer, type HotelStay } from './hotel-search-handoff';
 
 /*
  * La tarjeta y el panel de filtros en su primer pintado: lo que el vendedor no puede pasar por alto
  * de una tarifa no reembolsable (pedido del founder del 2026-09-29) y que la divulgación de
  * proveedor se respeta.
+ *
+ * Sin navegador, el clic en «Reservar» se hace con el manejador que recibió el botón: el botón del
+ * design system se reemplaza por uno que lo anota y pinta lo mismo que importa acá.
  */
+
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  toastError: vi.fn(),
+  clicks: [] as Array<() => void>,
+}));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('../../../../components/ui/button', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    Button: ({
+      onClick,
+      className: _className,
+      size: _size,
+      variant: _variant,
+      ...rest
+    }: ButtonHTMLAttributes<HTMLButtonElement> & { size?: string; variant?: string }) => {
+      if (onClick) mocks.clicks.push(() => onClick({} as never));
+      return h('button', rest);
+    },
+  };
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  mocks.clicks.length = 0;
+});
 
 const NOW = Date.UTC(2026, 8, 29, 12, 0, 0);
 const noop = () => undefined;
@@ -41,10 +79,20 @@ const SOLO_NR: HotelOffer = {
   roompacks: [tarifa('A', 690_000_00), tarifa('B', 750_000_00, { board: 'BB' })],
 };
 
-function card(offer: HotelOffer, showProvider: boolean): string {
+function itemOf(offer: HotelOffer, showProvider = false): FilteredHotel {
   const [item] = applyResultsFilters(resultHotelsOf([offer], showProvider, NOW), NO_FILTERS);
+  return item!;
+}
+
+function card(offer: HotelOffer, showProvider: boolean): string {
   return renderToStaticMarkup(
-    createElement(HotelResultCard, { item: item!, photo: undefined, nights: 3, rooms: 1 }),
+    createElement(HotelResultCard, {
+      item: itemOf(offer, showProvider),
+      photo: undefined,
+      nights: 3,
+      rooms: 1,
+      showProvider,
+    }),
   );
 }
 
@@ -64,7 +112,9 @@ describe('HotelResultCard', () => {
     expect(html).toMatch(/Total 3 noches:.*690\.000(,00)?\s*COP/);
     expect(html).toContain('Calle 10 # 5-72, La Candelaria');
     expect(html).not.toContain('ID 1');
-    expect(html).toContain('Ver 2 habitaciones');
+    // Cuenta tarifas, no habitaciones: el botón dice lo que despliega.
+    expect(html).toContain('Ver 2 tarifas');
+    expect(html).not.toContain('habitaciones</');
   });
 
   it('sin divulgación no hay pastilla de proveedor; con ella, la de la tarifa del precio', () => {
@@ -86,9 +136,13 @@ function panel(filters: ResultsFilters): string {
 
 describe('HotelResultCard — "Nuevo"', () => {
   it('sólo los que llegaron con el último "Ver más hoteles" llevan la marca, fuera del título', () => {
-    const [item] = applyResultsFilters(resultHotelsOf([SOLO_NR], false, NOW), NO_FILTERS);
     const nuevo = renderToStaticMarkup(
-      createElement(HotelResultCard, { item: item!, photo: undefined, fresh: true }),
+      createElement(HotelResultCard, {
+        item: itemOf(SOLO_NR),
+        photo: undefined,
+        fresh: true,
+        showProvider: false,
+      }),
     );
     expect(nuevo).toContain('Nuevo');
     // El título dice sólo el nombre: el foco que llega a él no lee "Nuevo" como parte del hotel.
@@ -119,5 +173,215 @@ describe('ResultsFiltersPanel', () => {
     const html = panel(NO_FILTERS);
     expect(html).toContain('type="range"');
     expect(html).toContain('aria-valuetext="Sin tope"');
+  });
+});
+
+// ───────────────────────── Reservar desde el listado ─────────────────────────
+
+const SEARCH_ID = 'srch_01J9ZK4Q';
+const SEARCH_TOKEN = '6f1c2b9e-1d2a-4c3b-9e8f-0a1b2c3d4e5f';
+const STAY: HotelStay = {
+  checkinDate: '2026-11-10',
+  checkoutDate: '2026-11-13',
+  rooms: [{ adults: 2, childrenAges: [] }],
+  guestNationality: 'CO',
+  refundableOnly: false,
+};
+
+/** Una tarifa de TBO tal como la deja el API: con el contexto de su búsqueda para el PreBook. */
+function tarifaTbo(
+  id: string,
+  saleMinor: number,
+  extra: Partial<HotelRoompack> = {},
+): HotelRoompack {
+  return tarifa(id, saleMinor, {
+    provider: { name: 'tbo-hotels', offerRef: `${id}-REF`, raw: { searchId: SEARCH_ID } },
+    ...extra,
+  });
+}
+
+const REFUNDABLE = {
+  refundable: true,
+  status: 'fully_refundable',
+  rules: [],
+} as const satisfies HotelRoompack['cancellation'];
+
+const TBO_HOTEL: HotelOffer = {
+  hotelId: '1',
+  name: 'Hotel Plaza TBO',
+  stars: 4,
+  address: 'Carrera 7 # 12-30',
+  roompacks: [
+    tarifaTbo('A', 690_000_00, { cancellation: REFUNDABLE }),
+    tarifaTbo('B', 750_000_00, { board: 'BB' }),
+  ],
+};
+
+function memoryStorage({ failOnWrite = false } = {}) {
+  const data = new Map<string, string>();
+  return {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      if (failOnWrite) throw new Error('QuotaExceededError');
+      data.set(key, value);
+    },
+    removeItem: (key: string) => void data.delete(key),
+  };
+}
+
+function rates(
+  offer: HotelOffer,
+  extra: {
+    isExpired?: (rate: ResultRate) => boolean;
+    nonRefundableBlocked?: boolean;
+    stay?: HotelStay;
+  } = {},
+): string {
+  return renderToStaticMarkup(
+    createElement(HotelResultRates, {
+      item: itemOf(offer),
+      isExpired: extra.isExpired ?? (() => false),
+      nonRefundableBlocked: extra.nonRefundableBlocked ?? false,
+      stay: 'stay' in extra ? extra.stay : STAY,
+      searchToken: SEARCH_TOKEN,
+      showProvider: false,
+    }),
+  );
+}
+
+/** Los botones «Reservar» pintados, con su atributo `disabled` si lo llevan. */
+function bookButtons(html: string): string[] {
+  return html.match(/<button[^>]*>Reservar<span class="sr-only">[^<]*<\/span><\/button>/g) ?? [];
+}
+
+describe('HotelResultRates — Reservar desde la tarjeta', () => {
+  it('la tarjeta de TBO desplegada tiene un «Reservar» por tarifa, con la tarifa en su nombre', () => {
+    const html = rates(TBO_HOTEL);
+    const buttons = bookButtons(html);
+    expect(buttons).toHaveLength(2);
+    expect(buttons.some((b) => b.includes('disabled'))).toBe(false);
+    expect(buttons[0]).toMatch(/: Solo alojamiento, Doble estándar, 690\.000(,00)?\s*COP/);
+    expect(html).toContain(
+      'Las condiciones de cancelación exactas y el precio final se confirman al revisar la tarifa, antes de cargar los huéspedes.',
+    );
+  });
+
+  it('el clic guarda la tarifa en "hoteles:tarifas" y va al checkout', () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('window', { localStorage: storage });
+
+    rates(TBO_HOTEL);
+    expect(mocks.clicks).toHaveLength(2);
+    mocks.clicks[0]!();
+
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+    const href = mocks.push.mock.calls[0]?.[0] as string;
+    const token = /^\/hoteles\/checkout\?tarifa=([^&]+)$/.exec(href)?.[1];
+    expect(token).toBeDefined();
+    const saved = parseRateSelections(storage.getItem(RATE_SELECTION_STORAGE_KEY))[token!];
+    expect(saved).toMatchObject({
+      reference: { providerCode: 'tbo-hotels', searchId: SEARCH_ID, offerRef: 'A-REF' },
+      hotelKey: encodeHotelKey([{ provider: 'tbo-hotels', hotelId: '1' }]),
+      searchToken: SEARCH_TOKEN,
+      stay: STAY,
+      hotel: { name: 'Hotel Plaza TBO', address: 'Carrera 7 # 12-30' },
+      shownSale: { amountMinor: 690_000_00, currency: 'COP' },
+    });
+  });
+
+  it('sin almacenamiento, avisa y se queda en la lista', () => {
+    vi.stubGlobal('window', { localStorage: memoryStorage({ failOnWrite: true }) });
+
+    rates(TBO_HOTEL);
+    mocks.clicks[0]!();
+
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('una tarifa sin contexto de búsqueda (Despegar) dice que no se reserva desde el panel', () => {
+    const html = rates({
+      ...TBO_HOTEL,
+      roompacks: [tarifaTbo('A', 690_000_00), tarifa('D', 700_000_00)],
+    });
+    expect(bookButtons(html)).toHaveLength(1);
+    expect(html).toContain('Esta tarifa todavía no se puede reservar desde el panel.');
+  });
+
+  it('sin la estadía de la búsqueda, ninguna se lleva al checkout ni sale la nota', () => {
+    const html = rates(TBO_HOTEL, { stay: undefined });
+    expect(bookButtons(html)).toHaveLength(0);
+    expect(html).not.toContain('antes de cargar los huéspedes');
+  });
+
+  it('la tarifa vencida sale con el botón deshabilitado', () => {
+    const html = rates(TBO_HOTEL, { isExpired: (r) => r.row.pack.id === 'B' });
+    const [a, b] = bookButtons(html);
+    expect(a).not.toContain('disabled');
+    expect(b).toContain('disabled=""');
+    expect(html).toContain('Vencida');
+  });
+
+  it('con las no reembolsables bloqueadas, esas no tienen botón y se marcan', () => {
+    const html = rates(TBO_HOTEL, { nonRefundableBlocked: true });
+    expect(bookButtons(html)).toHaveLength(1);
+    expect(html).toContain('No disponible para tu agencia');
+  });
+
+  it('si todas quedan bloqueadas, tampoco sale la nota de qué pasa al reservar', () => {
+    const html = rates(
+      { ...TBO_HOTEL, roompacks: [tarifaTbo('B', 750_000_00)] },
+      { nonRefundableBlocked: true },
+    );
+    expect(bookButtons(html)).toHaveLength(0);
+    expect(html).not.toContain('antes de cargar los huéspedes');
+  });
+});
+
+describe('HotelResultCard — botones', () => {
+  it('«Ver hotel y habitaciones» como botón secundario, en otra pestaña', () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelResultCard, {
+        item: itemOf(TBO_HOTEL),
+        photo: undefined,
+        nights: 3,
+        rooms: 1,
+        detailHref: detailLinkForOffer(TBO_HOTEL, SEARCH_TOKEN),
+        stay: STAY,
+        searchToken: SEARCH_TOKEN,
+        showProvider: false,
+      }),
+    );
+    expect(html).toContain('Ver 2 tarifas');
+    expect(html).toMatch(
+      /<a [^>]*target="_blank"[^>]*>Ver hotel y habitaciones<svg[^>]*>.*?<\/svg><span class="sr-only"> Hotel Plaza TBO \(se abre en otra pestaña\)<\/span><\/a>/,
+    );
+    expect(html).toContain(`busqueda=${SEARCH_TOKEN}`);
+    // Plegada no pinta las tarifas: el «Reservar» aparece al desplegarlas.
+    expect(bookButtons(html)).toHaveLength(0);
+  });
+});
+
+describe('HotelResultsMap', () => {
+  it('cada hotel lleva a su ficha con «Ver hotel», en otra pestaña', () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelResultsMap, {
+        items: [itemOf(TBO_HOTEL)],
+        photos: new Map(),
+        nights: 3,
+        searchToken: SEARCH_TOKEN,
+      }),
+    );
+    expect(html).toMatch(/<a [^>]*href="\/hoteles\/[^"?]+\?busqueda=[^"]+"[^>]*>Ver hotel<svg/);
+    expect(html).toContain(
+      '<span class="sr-only"> Hotel Plaza TBO (se abre en otra pestaña)</span>',
+    );
+  });
+
+  it('sin la búsqueda de origen no ofrece la ficha: no sabría qué estadía cotizar', () => {
+    const html = renderToStaticMarkup(
+      createElement(HotelResultsMap, { items: [itemOf(TBO_HOTEL)], photos: new Map(), nights: 3 }),
+    );
+    expect(html).not.toContain('Ver hotel');
   });
 });
