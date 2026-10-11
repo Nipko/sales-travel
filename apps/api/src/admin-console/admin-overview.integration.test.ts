@@ -605,9 +605,46 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
   it('los helpers no se exponen a app_user', async () => {
     for (const call of [
       'SELECT * FROM platform_console_scope(NULL)',
-      'SELECT platform_console_require_superadmin()',
+      `SELECT platform_console_check_period(now() - interval '1 day', now())`,
     ]) {
-      await expect(appPool.query(call), call).rejects.toMatchObject({ code: '42501' });
+      const error = await appPool.query(call).then(
+        () => undefined,
+        (e: unknown) => e as { code?: string; message?: string },
+      );
+      expect(error?.code, call).toBe('42501');
+      expect(error?.message, call).toMatch(/^permission denied for function/);
     }
+    // Llamada sin usuario, la guarda daría 42501 aunque tuviera GRANT: se mira el privilegio.
+    const { rows } = await admin.query<{ proname: string; app_exec: boolean; secdef: boolean }>(
+      `SELECT p.proname, has_function_privilege('app_user', p.oid, 'EXECUTE') AS app_exec,
+              p.prosecdef AS secdef
+         FROM pg_catalog.pg_proc p
+        WHERE p.pronamespace = 'public'::regnamespace
+          AND (p.proname LIKE 'platform\\_console\\_%' OR p.proname LIKE 'platform\\_overview\\_%')
+        ORDER BY p.proname`,
+    );
+    const exposed = rows.filter((r) => r.app_exec).map((r) => r.proname);
+    expect(exposed).toEqual(
+      expect.arrayContaining([
+        'platform_console_is_superadmin',
+        'platform_overview_attention',
+        'platform_overview_network',
+        'platform_overview_orders',
+        'platform_overview_post_sale',
+        'platform_overview_quotations',
+        'platform_overview_top_nodes',
+        'platform_overview_trend',
+        'platform_overview_wallets',
+      ]),
+    );
+    for (const helper of [
+      'platform_console_check_period',
+      'platform_console_require_superadmin',
+      'platform_console_scope',
+    ]) {
+      expect(rows.find((r) => r.proname === helper)).toMatchObject({ app_exec: false });
+    }
+    // Lo que app_user ejecuta corre con su dueño; los helpers, sólo dentro de esas funciones.
+    expect(rows.filter((r) => r.app_exec && !r.secdef).map((r) => r.proname)).toEqual([]);
   });
 });

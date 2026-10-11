@@ -24,6 +24,14 @@ export const OVERVIEW_TOP_NODES = 10;
  */
 export const OVERVIEW_RECENT_DAYS = 30;
 
+/**
+ * Los años que se pueden pedir. Fuera de ellos no hay ventas que leer, y en los bordes del
+ * calendario de JS el período se rompería en silencio: `Date.UTC` lee los años 0-99 como 1900-1999
+ * y un día después del año 9999 deja de ser `AAAA-MM-DD`.
+ */
+export const OVERVIEW_MIN_YEAR = 2000;
+export const OVERVIEW_MAX_YEAR = 2100;
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 86_400_000;
 
@@ -38,9 +46,17 @@ export function isCalendarDate(value: string): boolean {
   );
 }
 
+function inYearRange(value: string): boolean {
+  const year = Number(value.slice(0, 4));
+  return year >= OVERVIEW_MIN_YEAR && year <= OVERVIEW_MAX_YEAR;
+}
+
 const CalendarDate = z
   .string()
   .regex(ISO_DATE, { message: 'la fecha va como AAAA-MM-DD' })
+  .refine(inYearRange, {
+    message: `la fecha tiene que caer entre ${OVERVIEW_MIN_YEAR} y ${OVERVIEW_MAX_YEAR}`,
+  })
   .refine(isCalendarDate, { message: 'esa fecha no existe' });
 
 const Uuid = z

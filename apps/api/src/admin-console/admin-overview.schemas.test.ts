@@ -3,6 +3,8 @@ import { InvalidOverviewPeriodError } from './admin-console.errors.js';
 import {
   AdminOverviewQuerySchema,
   OVERVIEW_MAX_DAYS,
+  OVERVIEW_MAX_YEAR,
+  OVERVIEW_MIN_YEAR,
   addDays,
   isCalendarDate,
   periodDays,
@@ -34,6 +36,29 @@ describe('AdminOverviewQuerySchema', () => {
     ['un campo de más', { currency: 'COP' }],
   ])('rechaza %s', (_caso, query) => {
     expect(AdminOverviewQuerySchema.safeParse(query).success).toBe(false);
+  });
+
+  it.each([
+    // `Date.UTC` lee el año 50 como 1950: sin el rango, "esa fecha no existe".
+    ['un año de dos cifras', { from: '0050-01-01' }],
+    ['un año anterior a la plataforma', { to: '1999-12-31' }],
+    // Un día después del 9999-12-31 ya no es AAAA-MM-DD y el período se leería al revés.
+    ['el último año del calendario', { from: '9999-12-20' }],
+  ])('rechaza %s con el rango de años', (_caso, query) => {
+    const result = AdminOverviewQuerySchema.safeParse(query);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.message)).toContain(
+      `la fecha tiene que caer entre ${OVERVIEW_MIN_YEAR} y ${OVERVIEW_MAX_YEAR}`,
+    );
+  });
+
+  it('acepta los años de los bordes', () => {
+    expect(
+      AdminOverviewQuerySchema.parse({
+        from: `${OVERVIEW_MIN_YEAR}-01-01`,
+        to: `${OVERVIEW_MAX_YEAR}-12-31`,
+      }),
+    ).toEqual({ from: `${OVERVIEW_MIN_YEAR}-01-01`, to: `${OVERVIEW_MAX_YEAR}-12-31` });
   });
 });
 
