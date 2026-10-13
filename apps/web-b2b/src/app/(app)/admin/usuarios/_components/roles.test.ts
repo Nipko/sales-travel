@@ -1,8 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { grantableRoles, requiresMfa, teamActorOf } from '../../../../../lib/tenant-admin-team';
-import { INVITABLE_ROLES, ROLE_CONFIG, invitableRolesIn } from './roles';
+import {
+  grantableRoles,
+  requiresMfa,
+  roleChangeCopy,
+  teamActorOf,
+} from '../../../../../lib/tenant-admin-team';
+import { INVITABLE_ROLES, ROLE_CONFIG, invitableRolesIn, offeredRoleLabel } from './roles';
 
 /**
  * ASSIGNABLE_ROLES del API (`apps/api/src/auth/roles.ts`), leído como texto: web-b2b no depende del
@@ -64,5 +69,30 @@ describe('el admin de consolidador', () => {
       expect(roles, String(type)).not.toContain('consolidator_admin');
       expect(roles).toHaveLength(INVITABLE_ROLES.length - 1);
     }
+  });
+});
+
+describe('offeredRoleLabel — el nombre de la opción elegida, no el de la insignia', () => {
+  it('cada rol ofrecido se nombra como en el selector', () => {
+    for (const { value, label } of INVITABLE_ROLES) expect(offeredRoleLabel(value)).toBe(label);
+  });
+
+  it('un rol que no se ofrece cae en el de la insignia', () => {
+    expect(offeredRoleLabel('superadmin')).toBe('Superadmin');
+    expect(offeredRoleLabel('platform_admin')).toBe('Plataforma');
+    expect(offeredRoleLabel('desconocido')).toBe('desconocido');
+  });
+
+  it('la confirmación de un ascenso no confunde el rol con el tipo de nodo', () => {
+    const member = {
+      name: 'Ana Pérez',
+      email: 'ana@agencia.co',
+      role: 'vendedor',
+      mfaEnabled: false,
+    };
+    const copy = roleChangeCopy(member, 'consolidator_admin', offeredRoleLabel);
+    expect(copy.confirmLabel).toBe('Promover a Admin de consolidador');
+    expect(copy.description).toMatch(/^Pasa de Vendedor a Admin de consolidador en este nodo\./);
+    expect(copy.description).not.toMatch(/a Consolidador/);
   });
 });

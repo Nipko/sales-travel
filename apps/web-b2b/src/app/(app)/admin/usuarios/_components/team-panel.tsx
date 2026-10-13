@@ -42,7 +42,7 @@ import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
 import { InviteDialog } from './invite-dialog';
 import { MemberList, type MemberRowError } from './member-list';
-import { invitableRolesIn, roleLabel } from './roles';
+import { invitableRolesIn, offeredRoleLabel } from './roles';
 import { SeatsCard, useSeatsView } from './seats-ui';
 
 /**
@@ -280,7 +280,7 @@ export function TeamPanel({
     if (role === member.role) return;
     const revoking = demotes(member.role, role) ? await invitationsToRevoke(member, { role }) : 0;
     const ok = await confirm({
-      ...roleChangeCopy(member, role, roleLabel, revoking),
+      ...roleChangeCopy(member, role, offeredRoleLabel, revoking),
       destructive: false,
     });
     if (!ok) return;
@@ -300,7 +300,7 @@ export function TeamPanel({
       }
       const done = await readJson<unknown>(res);
       toast.success(
-        `${memberName(member)} ahora es ${roleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
+        `${memberName(member)} ahora es ${offeredRoleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
       );
       await load(true);
     } catch {

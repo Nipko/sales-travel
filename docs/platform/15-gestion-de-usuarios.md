@@ -510,6 +510,9 @@ tocar la base.
 - `admin/usuarios/_components/roles.ts`: _Admin de consolidador_ entra en `INVITABLE_ROLES` (entre
   _Admin_ y _Cliente_, la escala de menor a mayor) con su aviso de 2FA. `grantableRoles` lo deja sólo
   a quien lo supera: en la práctica, el superadmin.
+- `offeredRoleLabel(rol)`: la confirmación de un cambio de rol, su aviso de éxito y el de una
+  invitación pendiente nombran el rol como la opción del selector (_Admin de consolidador_), no como
+  la insignia (_Consolidador_), que en "Promover a Consolidador" se lee como el tipo de nodo.
 - `invitableRolesIn(tipo)`: el de consolidador se ofrece sólo si el nodo elegido en Equipo es un
   consolidador, tanto al invitar como en el selector de rol de cada fila (Equipo calcula la lista una
   vez y se la pasa a los dos). En una agencia su descripción no sería cierta y en la raíz
@@ -528,7 +531,8 @@ tocar la base.
   cada rol tiene etiqueta; el aviso de 2FA aparece justo en los roles que lo exigen; sólo el
   superadmin da el de consolidador y sólo en un consolidador.
 - `team.render.test.ts`: la fila ofrece _Admin de consolidador_ al superadmin en un consolidador, no
-  en una agencia ni a un admin de consolidador.
+  en una agencia ni a un admin de consolidador; la invitación pendiente dice _Admin de consolidador_.
+  En `roles.test.ts`, además, la confirmación de ese ascenso con `offeredRoleLabel`.
 - `node-section-nav.render.test.ts` y `node-users-link.render.test.ts`: la pestaña y el enlace llevan
   a `/admin/usuarios?tenant=<id>`, la pestaña nunca es la sección actual y el nombre accesible del
   enlace (singular, cero, nombre escapado).

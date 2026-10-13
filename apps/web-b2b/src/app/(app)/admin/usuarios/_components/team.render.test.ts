@@ -478,6 +478,16 @@ describe('PendingInvitationNotice: la invitación ya pendiente se ofrece reenvia
     expect(withRole).toContain('Está pendiente como Manager.');
     expect(withRole).toContain('un enlace nuevo con ese rol');
     expect(voseoIn(withRole)).toEqual([]);
+    // El rol como lo nombra el selector del diálogo: "Consolidador" se lee como tipo de nodo.
+    const consolidator = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        role: 'consolidator_admin',
+        resending: false,
+        onResend: () => {},
+      }),
+    );
+    expect(consolidator).toContain('Está pendiente como Admin de consolidador.');
 
     const busy = renderToStaticMarkup(
       createElement(PendingInvitationNotice, {
