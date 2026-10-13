@@ -1,11 +1,13 @@
-import { Armchair, Plug, Wallet } from 'lucide-react';
+import { Armchair, Plug, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '../../../../../../lib/cn';
+import { teamHrefFor } from '../../../../../../lib/tenant-admin-team';
 
+/** Las secciones que se pintan con esta barra. Usuarios no: lleva a Equipo, abierto en el nodo. */
 export type NodeSection = 'providers' | 'wallets' | 'seats';
 
 const SECTIONS: readonly {
-  readonly id: NodeSection;
+  readonly id: NodeSection | 'users';
   readonly label: string;
   readonly icon: typeof Plug;
   readonly href: (tenantId: string) => string;
@@ -18,9 +20,13 @@ const SECTIONS: readonly {
     icon: Armchair,
     href: (id) => `/admin/tenants/${id}/puestos`,
   },
+  { id: 'users', label: 'Usuarios', icon: Users, href: teamHrefFor },
 ];
 
-/** Las secciones de un nodo en Gestión de Agencias: proveedores, carteras y puestos y sesión. */
+/**
+ * Las secciones de un nodo en Gestión de Agencias: proveedores, carteras, puestos y sesión, y sus
+ * usuarios (en Equipo).
+ */
 export function NodeSectionNav({ tenantId, current }: { tenantId: string; current: NodeSection }) {
   return (
     <nav aria-label="Secciones del nodo" className="mb-6 border-b border-[var(--color-border)]">

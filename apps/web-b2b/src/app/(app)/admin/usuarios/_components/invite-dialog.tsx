@@ -12,7 +12,7 @@ import {
 } from '../../../../../lib/invitation-notice';
 import { resendInvitation, sendInvitation } from '../../../../../lib/tenant-admin-seats-client';
 import { inputClass, selectClass } from './field-classes';
-import { roleLabel } from './roles';
+import { offeredRoleLabel } from './roles';
 
 /** La invitación pendiente que el API encontró para ese correo en el nodo (409). */
 interface PendingMatch {
@@ -51,7 +51,7 @@ export function PendingInvitationNotice({
       <p className="text-[var(--color-fg-muted)]">
         {role === undefined
           ? 'Reenviarla le manda un enlace nuevo con el mismo rol, que vence en 7 días, y deja sin efecto el anterior.'
-          : `Está pendiente como ${roleLabel(role)}. Reenviarla le manda un enlace nuevo con ese rol, que vence en 7 días, y deja sin efecto el anterior.`}{' '}
+          : `Está pendiente como ${offeredRoleLabel(role)}. Reenviarla le manda un enlace nuevo con ese rol, que vence en 7 días, y deja sin efecto el anterior.`}{' '}
         Para darle otro rol, revoca esa invitación y vuelve a invitar a la persona.
       </p>
       <Button

@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { SeatReleaseExpiredError, SeatsFullError } from './auth-errors.js';
 import { AuthService, type AuthResult, type LoginResult } from './auth.service.js';
@@ -61,7 +62,8 @@ d('auth premium contra Postgres, como app_user', () => {
   const trusted = new TrustedDeviceService(database);
   const mfa = new MfaService(database, new TotpService(), password, audit, attempts);
   const mailer = { sendToTenant: () => Promise.resolve() } as unknown as MailerService;
-  const reset = new PasswordResetService(database, password, mailer, audit, sessions);
+  const notices = { notify: vi.fn() } as unknown as SecurityNoticeService;
+  const reset = new PasswordResetService(database, password, mailer, audit, sessions, notices);
   const auth = new AuthService(
     database,
     jwt,

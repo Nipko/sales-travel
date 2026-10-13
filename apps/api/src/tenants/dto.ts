@@ -127,6 +127,22 @@ export const PLATFORM_USERS_PAGE_SIZE = 50;
 export const DIRECTORY_ROLES = [...ASSIGNABLE_ROLES, 'superadmin'] as const;
 
 /**
+ * El texto de una búsqueda de las listas de la plataforma. El NUL no entra en un texto de Postgres:
+ * sin el `refine`, la búsqueda respondía 500.
+ */
+const SearchTextSchema = z
+  .string()
+  .trim()
+  .min(1, 'escribe algo para buscar')
+  .max(100)
+  .refine((v) => !v.includes('\u0000'), 'la búsqueda tiene un carácter inválido');
+
+/** El `nextCursor` de la página anterior de una lista de la plataforma. */
+const PageCursorSchema = z
+  .string()
+  .refine((raw) => decodePlatformUsersCursor(raw) !== undefined, 'cursor inválido');
+
+/**
  * El directorio de usuarios de toda la plataforma (GET /admin/users, sólo superadmin). Todos los
  * filtros se combinan; `role` y `tenantId` juntos piden una membership con ese rol en el subárbol de
  * ese nodo. Parámetros de más son 400.
@@ -136,14 +152,7 @@ export const DIRECTORY_ROLES = [...ASSIGNABLE_ROLES, 'superadmin'] as const;
  */
 export const ListPlatformUsersQuerySchema = z
   .object({
-    // El NUL no entra en un texto de Postgres: sin esto, la búsqueda respondía 500.
-    q: z
-      .string()
-      .trim()
-      .min(1, 'escribe algo para buscar')
-      .max(100)
-      .refine((v) => !v.includes('\u0000'), 'la búsqueda tiene un carácter inválido')
-      .optional(),
+    q: SearchTextSchema.optional(),
     status: z.enum(['active', 'suspended']).optional(),
     role: z
       .enum(DIRECTORY_ROLES, {
@@ -160,15 +169,51 @@ export const ListPlatformUsersQuerySchema = z
     locked: FlagSchema.optional(),
     neverLoggedIn: FlagSchema.optional(),
     /** El `nextCursor` de la página anterior. Lo lee el servicio (decodePlatformUsersCursor). */
-    cursor: z
-      .string()
-      .refine((raw) => decodePlatformUsersCursor(raw) !== undefined, 'cursor inválido')
-      .optional(),
+    cursor: PageCursorSchema.optional(),
     /** Sin valor, {@link PLATFORM_USERS_PAGE_SIZE}. */
     limit: intInRange(1, 100).optional(),
   })
   .strict();
 export type ListPlatformUsersQuery = z.infer<typeof ListPlatformUsersQuerySchema>;
+
+/**
+ * Qué invitaciones sin aceptar ni revocar lista la plataforma: las que todavía sirven (`pending`), las
+ * vencidas (`expired`) o las dos (`all`).
+ */
+export const PLATFORM_INVITATION_STATES = ['pending', 'expired', 'all'] as const;
+export type PlatformInvitationState = (typeof PLATFORM_INVITATION_STATES)[number];
+
+/** Invitaciones por página de la lista de la plataforma si no se pide otro tamaño. */
+export const PLATFORM_INVITATIONS_PAGE_SIZE = 50;
+
+/**
+ * Las invitaciones sin aceptar de toda la red (GET /admin/invitations, sólo superadmin). Sin `state`
+ * son las pendientes: el servicio pone el valor por defecto, porque un `.default()` acá haría que la
+ * entrada y la salida del esquema no coincidan (ZodValidationPipe). `q` busca en el correo; `tenantId`
+ * acota al nodo con todo su subárbol. El cursor es el del directorio: `{ createdAt, id }` de la
+ * última fila. Parámetros de más son 400.
+ */
+export const ListPlatformInvitationsQuerySchema = z
+  .object({
+    state: z
+      .enum(PLATFORM_INVITATION_STATES, {
+        errorMap: () => ({
+          message: `estado inválido: usa uno de ${PLATFORM_INVITATION_STATES.join(', ')}`,
+        }),
+      })
+      .optional(),
+    q: SearchTextSchema.optional(),
+    tenantId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase())
+      .optional(),
+    cursor: PageCursorSchema.optional(),
+    /** Sin valor, {@link PLATFORM_INVITATIONS_PAGE_SIZE}. */
+    limit: intInRange(1, 100).optional(),
+  })
+  .strict();
+export type ListPlatformInvitationsQuery = z.infer<typeof ListPlatformInvitationsQuerySchema>;
 
 /**
  * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET

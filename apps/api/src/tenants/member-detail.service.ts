@@ -10,6 +10,7 @@ import type {
   TenantType,
   UserStatus,
 } from '../database/database.types.js';
+import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { currentContext } from '../request-context/request-context.js';
 import {
@@ -174,6 +175,7 @@ export class MemberDetailService {
     private readonly db: DatabaseService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
+    private readonly notices: SecurityNoticeService,
   ) {}
 
   /**
@@ -243,7 +245,8 @@ export class MemberDetailService {
    *   persona, no un puesto, y un admin no le corta la sesión a otro de su rango (doc 15).
    *
    * La revocación y `auth.session.revoked_by_admin` van en una transacción. 404 si se cerró entre la
-   * lectura y la revocación.
+   * lectura y la revocación. Después del commit, la persona recibe el aviso `session_revoked` por el
+   * correo del nodo de la ruta.
    */
   async revokeSession(
     actorUserId: string,
@@ -300,6 +303,7 @@ export class MemberDetailService {
       return true;
     });
     if (!revoked) throw new AdminSessionNotFoundError();
+    this.notices.notify('session_revoked', { userId: targetUserId, tenantId });
     return { ok: true };
   }
 

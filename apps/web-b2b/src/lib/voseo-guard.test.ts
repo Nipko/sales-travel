@@ -27,6 +27,7 @@ const SCANNED = [
   'app/api/invitations',
   'app/api/session',
   'app/api/admin/users',
+  'app/api/admin/invitations',
   'components/auth',
   'components/layout',
   // El "no pudimos conectar" de cada pedido al API: llega al acceso y a Equipo.
@@ -37,6 +38,10 @@ const SCANNED = [
   // Plataforma → Usuarios: el directorio de toda la red y la suspensión de una cuenta.
   'lib/platform-users.ts',
   'lib/platform-users-proxy.ts',
+  // Plataforma → Usuarios → Invitaciones: las invitaciones sin aceptar de toda la red.
+  'lib/platform-invitations.ts',
+  // La ficha de un usuario, desde Equipo y desde el directorio.
+  'lib/member-detail.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

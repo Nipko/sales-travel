@@ -310,6 +310,11 @@ export function teamActorOf(
   };
 }
 
+/** Equipo abierto en ese nodo. Un id fuera de la red de quien mira, Equipo lo ignora. */
+export function teamHrefFor(tenantId: string): string {
+  return `/admin/usuarios?${new URLSearchParams({ tenant: tenantId }).toString()}`;
+}
+
 export function isSelf(actor: TeamActor, member: Pick<NetworkMember, 'userId'>): boolean {
   return actor.userId !== null && actor.userId === member.userId;
 }

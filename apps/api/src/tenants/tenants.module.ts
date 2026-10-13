@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { NetworkModule } from '../network/network.module.js';
 import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
+import { AdminInvitationsController } from './admin-invitations.controller.js';
+import { AdminInvitationsService } from './admin-invitations.service.js';
 import { AdminController } from './admin.controller.js';
 import { InvitationsController } from './invitations.controller.js';
 import { InvitationsService } from './invitations.service.js';
@@ -23,6 +25,7 @@ import { TenantsService } from './tenants.service.js';
     SeatsController,
     MemberSupportController,
     MemberDetailController,
+    AdminInvitationsController,
   ],
   providers: [
     InvitationsService,
@@ -31,6 +34,7 @@ import { TenantsService } from './tenants.service.js';
     MemberSupportService,
     PlatformUsersService,
     MemberDetailService,
+    AdminInvitationsService,
   ],
 })
 export class TenantsModule {}

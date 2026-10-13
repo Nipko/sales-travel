@@ -7,6 +7,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { PasswordReuseError } from './auth-errors.js';
 import { passwordResetEmail } from './password-reset-email.js';
 import {
@@ -92,6 +93,7 @@ function banco(opts: Banco = {}) {
   for (const answer of opts.verify ?? []) verify.mockResolvedValueOnce(answer);
   const password = { hash: vi.fn(() => Promise.resolve('hash-nuevo')), verify };
   const sessions = { revokeAllForUser: vi.fn(() => Promise.resolve(1)) };
+  const notices = { notify: vi.fn() };
   const withRequestContext = vi.fn(
     <T>(_ctx: unknown, fn: (trx: Transaction<DB>) => Promise<T>): Promise<T> =>
       k.db.transaction().execute(fn),
@@ -102,12 +104,13 @@ function banco(opts: Banco = {}) {
     mailer as unknown as MailerService,
     audit as unknown as AuditService,
     sessions as unknown as SessionService,
+    notices as unknown as SecurityNoticeService,
   );
   const inserted = () => {
     const q = k.queries.find((x) => x.sql.startsWith('insert into "password_reset_tokens"'));
     return q?.parameters ?? [];
   };
-  return { service, k, mailer, audit, inserted, sessions, withRequestContext };
+  return { service, k, mailer, audit, inserted, sessions, notices, withRequestContext };
 }
 
 afterEach(() => {
@@ -408,7 +411,7 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
   });
 
   it('reset con el cambio forzado: la misma contraseña de antes es PASSWORD_REUSED y no cambia nada', async () => {
-    const { service, k, sessions, audit } = banco({
+    const { service, k, sessions, audit, notices } = banco({
       cuenta: { ...REQUERIDA, password_hash: 'hash-viejo' },
       verify: [true],
     });
@@ -423,6 +426,7 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
     expect(k.queries.some((q) => q.sql.startsWith('update "users"'))).toBe(false);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(audit.emit).not.toHaveBeenCalled();
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 
   it('reset con el cambio forzado y una contraseña distinta: la acepta', async () => {
@@ -447,6 +451,7 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
   });
 
   it('reset con un enlace que no existe, ya usado o vencido: 400 sin tocar al usuario', async () => {
+    const notices = { notify: vi.fn() };
     const k = scriptedKysely((q: CompiledQuery) => {
       if (q.sql.includes('"password_reset_tokens"')) return [];
       throw new Error(`consulta no prevista: ${q.sql}`);
@@ -457,12 +462,14 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
       {} as MailerService,
       {} as AuditService,
       {} as SessionService,
+      notices as unknown as SecurityNoticeService,
     );
 
     await expect(service.reset('token-desconocido', 'una-contraseña-nueva-larga')).rejects.toThrow(
       'el enlace de restablecimiento es inválido o venció',
     );
     expect(k.queries.some((q) => q.sql.includes('"users"'))).toBe(false);
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 
   it('change: igual en el cambio autenticado', async () => {
@@ -480,6 +487,71 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
     const at = columns.findIndex((c) => c.startsWith('"password_reset_required_at"'));
     expect(at).toBeGreaterThanOrEqual(0);
     expect(update?.parameters[at]).toBeNull();
+  });
+});
+
+describe('reset y change: la persona se entera por su correo de que la contraseña cambió', () => {
+  it('reset: UN aviso, sin nodo de por medio, después de cerrar sus sesiones y auditar', async () => {
+    const { service, notices, sessions, audit } = banco();
+
+    await service.reset('token-del-correo', 'una-contraseña-nueva-larga');
+
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('password_changed', {
+      userId: USER,
+      tenantId: null,
+    });
+    const notifyOrder = notices.notify.mock.invocationCallOrder[0]!;
+    expect(notifyOrder).toBeGreaterThan(sessions.revokeAllForUser.mock.invocationCallOrder[0]!);
+    expect(notifyOrder).toBeGreaterThan(audit.emit.mock.invocationCallOrder[0]!);
+  });
+
+  it('change: UN aviso después del cambio autenticado', async () => {
+    const { service, notices, audit } = banco({
+      user: { id: USER, status: 'active', password_hash: 'hash-viejo' },
+      verify: [true, false],
+    });
+
+    await service.change(USER, 'la-actual', 'una-contraseña-nueva-larga');
+
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('password_changed', {
+      userId: USER,
+      tenantId: null,
+    });
+    expect(notices.notify.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      audit.emit.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('change rechazado (la actual no es, o la nueva es la misma): sin aviso', async () => {
+    const actualMal = banco({
+      user: { id: USER, status: 'active', password_hash: 'hash-viejo' },
+      verify: [false],
+    });
+    await expect(
+      actualMal.service.change(USER, 'otra', 'una-contraseña-nueva-larga'),
+    ).rejects.toThrow('la contraseña actual no es correcta');
+    expect(actualMal.notices.notify).not.toHaveBeenCalled();
+
+    const misma = banco({
+      user: { id: USER, status: 'active', password_hash: 'hash-viejo' },
+      verify: [true, true],
+    });
+    await expect(misma.service.change(USER, 'la-actual', 'la-actual')).rejects.toThrow(
+      'la contraseña nueva debe ser distinta de la actual',
+    );
+    expect(misma.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('pedir el enlace o recordarlo al ingresar no es un cambio: sin aviso', async () => {
+    const pedir = banco();
+    await pedir.service.request('ana@agencia.co');
+    expect(pedir.notices.notify).not.toHaveBeenCalled();
+
+    const recordar = banco();
+    await recordar.service.remindRequiredReset(USER);
+    expect(recordar.notices.notify).not.toHaveBeenCalled();
   });
 });
 

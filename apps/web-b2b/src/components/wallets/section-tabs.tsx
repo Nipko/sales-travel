@@ -53,7 +53,13 @@ export function SectionTabs<K extends string>({
       // Si aun así no entran, se desplazan de lado sin barra: la pestaña cortada en el borde dice
       // que hay más. `relative`, para que el `sr-only` del contador de una pestaña que no entra
       // se recorte acá y no haga correr de lado la página entera.
-      className="relative flex gap-4 overflow-x-auto border-b border-[var(--color-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      //
+      // `scrollbarWidth` va en línea: la regla `*` de globals.css (barra fina) no está en una capa
+      // y le gana a cualquier utilidad, así que `[scrollbar-width:none]` no la ocultaba. Y sin
+      // `overflow-y-hidden`, el `-mb-px` de las pestañas desbordaba un píxel hacia abajo y Windows
+      // pintaba una barra vertical junto a ellas.
+      className="relative flex gap-4 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] [&::-webkit-scrollbar]:hidden"
+      style={{ scrollbarWidth: 'none' }}
     >
       {tabs.map((tab, index) => {
         const selected = tab.id === value;
@@ -106,11 +112,17 @@ export function SectionTabPanel<K extends string>({
   id,
   idPrefix,
   hidden,
+  keepMounted = false,
   children,
 }: {
   id: K;
   idPrefix: string;
   hidden: boolean;
+  /**
+   * Oculto, deja el contenido montado: al volver a la pestaña siguen sus filtros, lo que ya cargó y
+   * su posición, en vez de pedir todo de nuevo.
+   */
+  keepMounted?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -123,7 +135,7 @@ export function SectionTabPanel<K extends string>({
       // El panel entra en el orden de tabulación: su foco tiene que verse (WCAG 2.4.7).
       className="mt-4 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
     >
-      {hidden ? null : children}
+      {hidden && !keepMounted ? null : children}
     </div>
   );
 }

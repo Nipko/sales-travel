@@ -6,6 +6,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { PasswordResetService } from '../auth/password-reset.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import type { NetworkService } from '../network/network.service.js';
 import { MemberSupportService } from './member-support.service.js';
 
@@ -76,13 +77,15 @@ function banco(opts: Banco = {}) {
     resetLink: vi.fn((token: string) => `https://panel.example/restablecer?token=${token}`),
     sendResetEmail: vi.fn(() => Promise.resolve(opts.mailOk ?? true)),
   };
+  const notices = { notify: vi.fn() };
   const service = new MemberSupportService(
     db as unknown as DatabaseService,
     network as unknown as NetworkService,
     audit as unknown as AuditService,
     resets as unknown as PasswordResetService,
+    notices as unknown as SecurityNoticeService,
   );
-  return { service, network, db, audit, resets, k };
+  return { service, network, db, audit, resets, notices, k };
 }
 
 async function motivo(p: Promise<unknown>): Promise<string> {
@@ -543,5 +546,110 @@ describe('MemberSupportService.unlock', () => {
     expect(update?.sql).toContain('prev.locked_until > now()');
     expect(update?.sql).not.toMatch(/password|mfa|status/i);
     expect(update?.parameters).toEqual([TARGET, TARGET]);
+  });
+});
+
+describe('MemberSupportService: la persona se entera por su correo', () => {
+  /** La transacción de restablecer el 2FA, de cerrar sesiones o de desbloquear. */
+  const accion =
+    (opts: { revoked?: number; lockedUntil?: Date | null } = {}) =>
+    (q: CompiledQuery): unknown[] => {
+      if (q.sql.startsWith('select "mfa_enabled_at" from "users"')) {
+        return [{ mfa_enabled_at: new Date() }];
+      }
+      if (q.sql.includes('admin_reset_user_mfa')) return [];
+      if (q.sql.includes('revoke_user_sessions')) return [{ revoked: opts.revoked ?? 2 }];
+      if (q.sql.includes('WITH prev AS')) {
+        const lockedUntil = opts.lockedUntil === undefined ? new Date() : opts.lockedUntil;
+        return lockedUntil === null ? [] : [{ locked_until: lockedUntil }];
+      }
+      throw new Error(`consulta no prevista: ${q.sql}`);
+    };
+
+  it.each([
+    [
+      'restablecer el 2FA',
+      'mfa_reset',
+      (s: MemberSupportService) => s.resetMfa(ACTOR, NODO, TARGET),
+    ],
+    [
+      'cerrar sus sesiones',
+      'sessions_revoked',
+      (s: MemberSupportService) => s.revokeSessions(ACTOR, NODO, TARGET),
+    ],
+    ['desbloquear', 'unlocked', (s: MemberSupportService) => s.unlock(ACTOR, NODO, TARGET)],
+  ])('%s: UN aviso, después del commit y por el nodo de la ruta', async (_q, kind, call) => {
+    const { service, audit, notices } = banco({ respond: accion() });
+    // Mientras la transacción sigue abierta, todavía no hubo aviso.
+    audit.emitWithin.mockImplementationOnce(() => {
+      expect(notices.notify).not.toHaveBeenCalled();
+      return Promise.resolve();
+    });
+
+    await call(service);
+
+    expect(audit.emitWithin).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith(kind, { userId: TARGET, tenantId: NODO });
+  });
+
+  it('sin sesiones abiertas no hay nada que contarle; sin bloqueo vigente, tampoco', async () => {
+    const sinSesiones = banco({ respond: accion({ revoked: 0 }) });
+    expect(await sinSesiones.service.revokeSessions(ACTOR, NODO, TARGET)).toEqual({ revoked: 0 });
+    expect(sinSesiones.notices.notify).not.toHaveBeenCalled();
+
+    const sinBloqueo = banco({ respond: accion({ lockedUntil: null }) });
+    expect(await sinBloqueo.service.unlock(ACTOR, NODO, TARGET)).toEqual({ unlocked: false });
+    expect(sinBloqueo.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('ningún rechazo avisa: uno mismo, fuera del nodo, sin membership, otra red o sin rango', async () => {
+    const casos: Array<{ b: ReturnType<typeof banco>; target: string }> = [
+      { b: banco({ respond: accion() }), target: ACTOR },
+      { b: banco({ respond: accion(), routeRole: undefined }), target: TARGET },
+      { b: banco({ respond: accion(), inRoute: undefined }), target: TARGET },
+      {
+        b: banco({
+          respond: accion(),
+          active: [
+            { tenant_id: NODO, role: 'vendedor' },
+            { tenant_id: OTRA_RED, role: 'vendedor' },
+          ],
+        }),
+        target: TARGET,
+      },
+      {
+        b: banco({
+          respond: accion(),
+          inRoute: { tenant_id: NODO, role: 'tenant_admin', status: 'active' },
+          active: [{ tenant_id: NODO, role: 'tenant_admin' }],
+        }),
+        target: TARGET,
+      },
+    ];
+    for (const { b, target } of casos) {
+      expect(await motivo(b.service.resetMfa(ACTOR, NODO, target))).not.toBe('ok');
+      expect(b.notices.notify).not.toHaveBeenCalled();
+    }
+  });
+
+  it('si la auditoría falla, la transacción se deshace y no hay aviso', async () => {
+    const { service, audit, notices } = banco({ respond: accion() });
+    audit.emitWithin.mockRejectedValueOnce(new Error('el evento no entró'));
+
+    await expect(service.resetMfa(ACTOR, NODO, TARGET)).rejects.toThrow('el evento no entró');
+    expect(notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('enviar el enlace y forzar el cambio no suman otro aviso: su correo ya lo es', async () => {
+    const enviar = banco({ respond: envio() });
+    await enviar.service.sendPasswordReset(ACTOR, NODO, TARGET);
+    expect(enviar.resets.sendResetEmail).toHaveBeenCalledTimes(1);
+    expect(enviar.notices.notify).not.toHaveBeenCalled();
+
+    const forzar = banco({ respond: envio() });
+    await forzar.service.requirePasswordReset(ACTOR, NODO, TARGET);
+    expect(forzar.resets.sendResetEmail).toHaveBeenCalledTimes(1);
+    expect(forzar.notices.notify).not.toHaveBeenCalled();
   });
 });

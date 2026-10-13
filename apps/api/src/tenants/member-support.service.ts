@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { PasswordResetService } from '../auth/password-reset.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus } from '../database/database.types.js';
+import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import {
   MemberAccountSuspendedError,
@@ -37,6 +38,10 @@ export const RESET_LINKS_WINDOW_MINUTES = 15;
  *
  * Nadie elige la contraseña de otro (docs/platform/14): el admin sólo dispara el correo con el enlace,
  * que llega al buzón de la persona. No ve el enlace ni el token, y la respuesta no los trae.
+ *
+ * La persona se entera de cada cambio por su correo: el de restablecer su 2FA, cerrarle las sesiones
+ * o desbloquearla es un aviso de SecurityNoticeService que sale después del commit, y sólo si algo
+ * cambió; el del enlace (enviado o forzado) ya es ese aviso.
  */
 @Injectable()
 export class MemberSupportService {
@@ -45,6 +50,7 @@ export class MemberSupportService {
     private readonly network: NetworkService,
     private readonly audit: AuditService,
     private readonly resets: PasswordResetService,
+    private readonly notices: SecurityNoticeService,
   ) {}
 
   /**
@@ -75,6 +81,7 @@ export class MemberSupportService {
         payload: { targetUserId, hadMfa: Boolean(user?.mfa_enabled_at) },
       });
     });
+    this.notices.notify('mfa_reset', { userId: targetUserId, tenantId });
     return { ok: true };
   }
 
@@ -101,6 +108,8 @@ export class MemberSupportService {
       });
       return count;
     });
+    // Sin sesiones abiertas no le cerramos nada: el aviso diría algo que no pasó.
+    if (revoked > 0) this.notices.notify('sessions_revoked', { userId: targetUserId, tenantId });
     return { revoked };
   }
 
@@ -288,6 +297,7 @@ export class MemberSupportService {
       });
       return true;
     });
+    if (unlocked) this.notices.notify('unlocked', { userId: targetUserId, tenantId });
     return { unlocked };
   }
 

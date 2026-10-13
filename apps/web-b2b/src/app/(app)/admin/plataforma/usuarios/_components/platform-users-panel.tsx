@@ -14,12 +14,27 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../../components/ui/button';
 import { useConfirm } from '../../../../../../components/ui/dialog';
 import { Field, Select, TextInput } from '../../../../../../components/ui/field';
+import {
+  SectionTabPanel,
+  SectionTabs,
+  useTabsId,
+} from '../../../../../../components/wallets/section-tabs';
 import { cn } from '../../../../../../lib/cn';
+import {
+  ACTION_CANCELLED,
+  ACTION_DONE,
+  memberFromDetail,
+  supportMembership,
+  syncPlatformUser,
+  type MemberDetailView,
+  type SheetActionOutcome,
+} from '../../../../../../lib/member-detail';
+import { loadPendingInvitationCount } from '../../../../../../lib/platform-invitations';
 import {
   accountStatus,
   chipPressed,
@@ -45,13 +60,23 @@ import {
 } from '../../../../../../lib/platform-users';
 import { DIRECTORY_ROLES } from '../../../../../../lib/platform-users-proxy';
 import { exactTime } from '../../../../../../lib/tenant-admin-format';
-import { MFA_STATE_HINT, MFA_STATE_LABEL } from '../../../../../../lib/tenant-admin-team';
+import {
+  MFA_STATE_HINT,
+  MFA_STATE_LABEL,
+  teamHrefFor,
+  type MemberAction,
+  type NetworkMember,
+} from '../../../../../../lib/tenant-admin-team';
 import type { NetworkNode } from '../../../../../../lib/tenant-network';
+import { SupportActionGroups } from '../../../usuarios/_components/member-list';
+import { MemberNameButton, MemberSheet } from '../../../usuarios/_components/member-sheet';
 import { roleLabel } from '../../../usuarios/_components/roles';
 import { useNow } from '../../../usuarios/_components/seats-ui';
+import { supportMember } from '../../../usuarios/_components/support-action';
+import { PlatformInvitations, SEARCH_DEBOUNCE_MS, useDebounced } from './platform-invitations';
 
-/** Lo que se espera después de la última tecla antes de buscar. */
-const SEARCH_DEBOUNCE_MS = 300;
+/** Las pestañas de la pantalla: las personas, o las invitaciones que nadie aceptó todavía. */
+type PanelTab = 'users' | 'invitations';
 
 export type DirectoryState =
   | { readonly status: 'loading' }
@@ -99,15 +124,6 @@ const MFA_STYLE = {
   'not-required': 'text-[var(--color-fg-muted)]',
 } as const;
 
-function useDebounced<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 /** La etiqueta de un dato: visible en la tarjeta del teléfono, sólo para lectores en escritorio. */
 function CellLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -119,11 +135,30 @@ function CellLabel({ children }: { children: React.ReactNode }) {
 
 /**
  * Plataforma → Usuarios: todas las personas de la red, en todos los nodos. Buscar, filtrar, ver sus
- * nodos y roles, y suspender o reactivar la cuenta en toda la plataforma.
+ * nodos y roles, y suspender o reactivar la cuenta en toda la plataforma. En otra pestaña, las
+ * invitaciones que nadie aceptó todavía (platform-invitations.tsx).
  *
  * `viewerId`: quien mira, para no ofrecerle suspenderse a sí mismo (el API lo rechaza igual).
+ * `viewerEmail`: el suyo, que pasa a respaldar una invitación que reenvía.
+ *
+ * Las dos pestañas quedan montadas al cambiar: cada una conserva sus filtros y lo que cargó. La de
+ * invitaciones se monta recién la primera vez que se abre; hasta entonces su contador sale de un
+ * pedido aparte, que se repite cada vez que una invitación cambia.
  */
-export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
+export function PlatformUsersPanel({
+  viewerId,
+  viewerEmail = null,
+}: {
+  viewerId: string | null;
+  viewerEmail?: string | null;
+}) {
+  const tabsId = useTabsId();
+  const [tab, setTab] = useState<PanelTab>('users');
+  const [invitationsOpened, setInvitationsOpened] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState<number | null>(null);
+  // Sube cuando suspender una cuenta revocó invitaciones: la pestaña Invitaciones vuelve a pedirlas.
+  const [invitationsRevision, setInvitationsRevision] = useState(0);
+  const countRequest = useRef(0);
   const [confirm, confirmDialog] = useConfirm();
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Omit<DirectoryFilters, 'q'>>({});
@@ -134,6 +169,8 @@ export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
   const [nodes, setNodes] = useState<NodesState>({ status: 'loading' });
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<RowError | null>(null);
+  // La persona cuya ficha está abierta.
+  const [sheetId, setSheetId] = useState<string | null>(null);
 
   const query = useMemo<DirectoryFilters>(() => ({ ...filters, q }), [filters, q]);
   // Una respuesta de filtros viejos (la persona siguió escribiendo) no pinta encima de la nueva.
@@ -168,6 +205,23 @@ export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
   useEffect(() => {
     void loadNodes();
   }, [loadNodes]);
+
+  // Sin el número, la pestaña dice sólo "Invitaciones": no inventa un cero. Con dos acciones
+  // seguidas salen dos pedidos; sólo pinta el último, para que uno viejo no lo pise.
+  const loadPendingCount = useCallback(async () => {
+    const asked = ++countRequest.current;
+    const res = await loadPendingInvitationCount();
+    if (res.ok && asked === countRequest.current) setPendingInvitations(res.data);
+  }, []);
+
+  useEffect(() => {
+    void loadPendingCount();
+  }, [loadPendingCount]);
+
+  function selectTab(next: PanelTab) {
+    setTab(next);
+    if (next === 'invitations') setInvitationsOpened(true);
+  }
 
   async function loadMore() {
     if (state.status !== 'ready' || state.nextCursor === null) return;
@@ -204,7 +258,23 @@ export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
     );
   }
 
-  async function setStatus(user: PlatformUser, status: 'active' | 'suspended') {
+  /** La ficha se volvió a leer: su fila dice lo mismo (bloqueo, 2FA, sesiones, estado). */
+  function syncFromDetail(detail: MemberDetailView) {
+    setState((s) =>
+      s.status === 'ready' ? { ...s, users: s.users.map((u) => syncPlatformUser(u, detail)) } : s,
+    );
+  }
+
+  /** Una acción pedida desde la fila: si falla, el motivo va en su fila. */
+  async function fromRow(user: PlatformUser, outcome: Promise<SheetActionOutcome>) {
+    const out = await outcome;
+    if (out.status === 'failed') setRowError({ userId: user.id, message: out.message });
+  }
+
+  async function setStatus(
+    user: PlatformUser,
+    status: 'active' | 'suspended',
+  ): Promise<SheetActionOutcome> {
     const suspending = status === 'suspended';
     setRowError(null);
     let copy = reactivateCopy(user);
@@ -216,24 +286,45 @@ export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
       copy = suspendCopy(user, impact.ok ? impact.data : null);
     }
     const ok = await confirm({ ...copy, destructive: suspending });
-    if (!ok) return;
+    if (!ok) return ACTION_CANCELLED;
 
     setBusyUserId(user.id);
     const res = await setPlatformUserStatus(user.id, status);
     setBusyUserId(null);
-    if (!res.ok) {
-      setRowError({ userId: user.id, message: res.message });
-      return;
-    }
+    if (!res.ok) return { status: 'failed', message: res.message };
     replaceUser({
       ...user,
       status: res.data.status,
       activeSessions: res.data.status === 'suspended' ? 0 : user.activeSessions,
     });
+    // Suspender revoca las invitaciones que emitió: la otra pestaña y su número no pueden seguir
+    // mostrándolas.
+    if (res.data.revokedInvitations > 0) {
+      setInvitationsRevision((r) => r + 1);
+      void loadPendingCount();
+    }
     toast.success(statusDoneMessage(user, res.data));
+    return ACTION_DONE;
+  }
+
+  /**
+   * Soporte desde la ficha (enviar el enlace, desbloquear, cerrar sus sesiones…), por uno de sus
+   * nodos: el superadmin puede por cualquiera, y el API exige que tenga membership en ése.
+   */
+  function supportAction(
+    tenantId: string,
+    member: NetworkMember,
+    action: MemberAction,
+  ): Promise<SheetActionOutcome> {
+    return supportMember(confirm, tenantId, member, action, (busy) =>
+      setBusyUserId(busy ? member.userId : null),
+    );
   }
 
   const filtered = hasFilters({ ...filters, q: '' }) || q.trim() !== '';
+  const sheetUser =
+    state.status === 'ready' ? state.users.find((u) => u.id === sheetId) : undefined;
+  const sheetSelf = viewerId !== null && sheetId === viewerId;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-5 sm:py-8">
@@ -247,37 +338,113 @@ export function PlatformUsersPanel({ viewerId }: { viewerId: string | null }) {
         </p>
       </header>
 
-      <DirectoryFiltersBar
-        search={search}
-        filters={filters}
-        nodes={nodes}
-        onSearch={setSearch}
-        onFilters={setFilters}
-        onRetryNodes={() => void loadNodes()}
-        onClear={() => {
-          setSearch('');
-          setFilters({});
-        }}
-        canClear={filtered}
-      />
+      <div>
+        <SectionTabs<PanelTab>
+          idPrefix={tabsId}
+          label="Usuarios de la plataforma"
+          value={tab}
+          onChange={selectTab}
+          tabs={[
+            { id: 'users', label: 'Usuarios' },
+            {
+              id: 'invitations',
+              label: 'Invitaciones',
+              count: pendingInvitations ?? undefined,
+              countLabel: pendingInvitations === 1 ? 'pendiente' : 'pendientes',
+            },
+          ]}
+        />
 
-      <DirectoryResults
-        state={state}
-        viewerId={viewerId}
-        busyUserId={busyUserId}
-        rowError={rowError}
-        filtered={filtered}
-        loadingMore={loadingMore}
-        moreError={moreError}
-        onRetry={() => void load()}
-        onLoadMore={() => void loadMore()}
-        onDismissError={() => setRowError(null)}
-        onClearFilters={() => {
-          setSearch('');
-          setFilters({});
-        }}
-        onSetStatus={(u, s) => void setStatus(u, s)}
-      />
+        <SectionTabPanel id="users" idPrefix={tabsId} hidden={tab !== 'users'} keepMounted>
+          <div className="space-y-5">
+            <DirectoryFiltersBar
+              search={search}
+              filters={filters}
+              nodes={nodes}
+              onSearch={setSearch}
+              onFilters={setFilters}
+              onRetryNodes={() => void loadNodes()}
+              onClear={() => {
+                setSearch('');
+                setFilters({});
+              }}
+              canClear={filtered}
+            />
+
+            <DirectoryResults
+              state={state}
+              viewerId={viewerId}
+              busyUserId={busyUserId}
+              rowError={rowError}
+              filtered={filtered}
+              loadingMore={loadingMore}
+              moreError={moreError}
+              onRetry={() => void load()}
+              onLoadMore={() => void loadMore()}
+              onDismissError={() => setRowError(null)}
+              onClearFilters={() => {
+                setSearch('');
+                setFilters({});
+              }}
+              onOpen={(u) => setSheetId(u.id)}
+              onSetStatus={(u, s) => void fromRow(u, setStatus(u, s))}
+            />
+          </div>
+        </SectionTabPanel>
+
+        <SectionTabPanel
+          id="invitations"
+          idPrefix={tabsId}
+          hidden={tab !== 'invitations'}
+          keepMounted
+        >
+          {invitationsOpened ? (
+            <PlatformInvitations
+              nodes={nodes}
+              viewerEmail={viewerEmail}
+              revision={invitationsRevision}
+              onRetryNodes={() => void loadNodes()}
+              onChanged={() => void loadPendingCount()}
+            />
+          ) : null}
+        </SectionTabPanel>
+      </div>
+
+      {sheetId !== null ? (
+        <MemberSheet
+          key={sheetId}
+          source={{ kind: 'platform', userId: sheetId }}
+          fallbackName={sheetUser ? platformUserName(sheetUser) : ''}
+          fallbackEmail={sheetUser?.email}
+          self={sheetSelf}
+          busy={busyUserId === sheetId}
+          canRevokeSessions={!sheetSelf}
+          renderMenu={(detail, { pick, run, now }) => (
+            <PlatformSheetMenuItems
+              detail={detail}
+              now={now}
+              onPick={pick}
+              onAction={(tenantId, member, action) =>
+                run(() => supportAction(tenantId, member, action))
+              }
+              onSetStatus={
+                sheetUser === undefined
+                  ? undefined
+                  : (status) => run(() => setStatus(sheetUser, status))
+              }
+            />
+          )}
+          unlockAction={(detail) => {
+            // Sin nodos no hay por dónde: el API pide una membership en el nodo de la ruta.
+            const node = supportMembership(detail);
+            return node === undefined
+              ? undefined
+              : () => supportAction(node.tenantId, memberFromDetail(detail, node), 'unlock');
+          }}
+          onDetail={syncFromDetail}
+          onClose={() => setSheetId(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -426,6 +593,7 @@ export function DirectoryResults({
   onLoadMore,
   onDismissError,
   onClearFilters,
+  onOpen,
   onSetStatus,
 }: {
   state: DirectoryState;
@@ -439,6 +607,8 @@ export function DirectoryResults({
   onLoadMore: () => void;
   onDismissError: () => void;
   onClearFilters: () => void;
+  /** Abre la ficha de la persona. Sin él, el nombre es sólo texto. */
+  onOpen?: (user: PlatformUser) => void;
   onSetStatus: (user: PlatformUser, status: 'active' | 'suspended') => void;
 }) {
   const now = useNow();
@@ -518,6 +688,7 @@ export function DirectoryResults({
                 busy={busyUserId === u.id}
                 error={rowError?.userId === u.id ? rowError.message : undefined}
                 onDismissError={onDismissError}
+                onOpen={onOpen === undefined ? undefined : () => onOpen(u)}
                 onSetStatus={(status) => onSetStatus(u, status)}
               />
             ))}
@@ -550,6 +721,7 @@ function PlatformUserRow({
   busy,
   error,
   onDismissError,
+  onOpen,
   onSetStatus,
 }: {
   user: PlatformUser;
@@ -558,6 +730,7 @@ function PlatformUserRow({
   busy: boolean;
   error: string | undefined;
   onDismissError: () => void;
+  onOpen: (() => void) | undefined;
   onSetStatus: (status: 'active' | 'suspended') => void;
 }) {
   const name = platformUserName(user);
@@ -577,7 +750,11 @@ function PlatformUserRow({
     >
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-fg)]">
-          <span className="truncate">{name}</span>
+          {onOpen !== undefined ? (
+            <MemberNameButton name={name} onOpen={onOpen} />
+          ) : (
+            <span className="truncate">{name}</span>
+          )}
           {self ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
               Tú
@@ -712,6 +889,79 @@ const ITEM =
   'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium text-[var(--color-fg)] outline-none transition-colors data-[highlighted]:bg-[var(--color-surface-muted)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50';
 
 const SEPARATOR = 'my-1 h-px bg-[var(--color-border)]';
+
+const MENU_LABEL = 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-[var(--color-fg-subtle)]';
+
+/**
+ * El menú "Acciones" de la ficha en el directorio: el soporte de Equipo (Acceso, Seguridad) por uno
+ * de sus nodos, la cuenta en toda la plataforma (suspender o reactivar) y "Ver en Equipo". Sin nodos
+ * no hay soporte: esas acciones van por un nodo donde tenga membership.
+ */
+export function PlatformSheetMenuItems({
+  detail,
+  now,
+  onPick,
+  onAction,
+  onSetStatus,
+}: {
+  detail: MemberDetailView;
+  now: number;
+  onPick: (run: () => void) => () => void;
+  onAction: (tenantId: string, member: NetworkMember, action: MemberAction) => void;
+  /** Suspender o reactivar la cuenta; sin él, no se ofrece. */
+  onSetStatus: ((status: 'active' | 'suspended') => void) | undefined;
+}) {
+  const headingId = useId();
+  const node = supportMembership(detail);
+  const member = node === undefined ? undefined : memberFromDetail(detail, node);
+  const first = detail.memberships[0];
+  const href = first === undefined ? undefined : teamHrefFor(first.tenantId);
+  const suspended = detail.user.status === 'suspended';
+  return (
+    <>
+      {node !== undefined && member !== undefined ? (
+        <SupportActionGroups
+          member={member}
+          now={now}
+          onPick={onPick}
+          onAction={(action) => onAction(node.tenantId, member, action)}
+        />
+      ) : null}
+      {onSetStatus !== undefined ? (
+        <>
+          {node !== undefined ? <DropdownMenu.Separator className={SEPARATOR} /> : null}
+          <DropdownMenu.Group aria-labelledby={headingId}>
+            <DropdownMenu.Label id={headingId} className={MENU_LABEL}>
+              Cuenta
+            </DropdownMenu.Label>
+            <DropdownMenu.Item
+              className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
+              onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
+            >
+              {suspended ? (
+                <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+              ) : (
+                <UserMinus aria-hidden="true" className="size-4" />
+              )}
+              {suspended ? 'Reactivar cuenta' : 'Suspender en toda la plataforma'}
+            </DropdownMenu.Item>
+          </DropdownMenu.Group>
+        </>
+      ) : null}
+      {href !== undefined ? (
+        <>
+          <DropdownMenu.Separator className={SEPARATOR} />
+          <DropdownMenu.Item asChild className={ITEM}>
+            <Link href={href}>
+              <Users aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+              Ver en Equipo
+            </Link>
+          </DropdownMenu.Item>
+        </>
+      ) : null}
+    </>
+  );
+}
 
 /**
  * Lo de adentro del menú de una persona: "Ver en Equipo" y suspender o reactivar la cuenta (nunca

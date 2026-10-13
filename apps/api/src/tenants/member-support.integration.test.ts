@@ -11,6 +11,7 @@ import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { MemberSupportService } from './member-support.service.js';
 
@@ -93,14 +94,16 @@ d('enlace para restablecer la contraseña y desbloqueo desde Equipo, contra Post
   const network = new NetworkService(database);
   const audit = new AuditService(database);
   const sessions = new SessionService(database, audit);
+  const notices = { notify: vi.fn() } as unknown as SecurityNoticeService;
   const resets = new PasswordResetService(
     database,
     password,
     mailer as unknown as MailerService,
     audit,
     sessions,
+    notices,
   );
-  const support = new MemberSupportService(database, network, audit, resets);
+  const support = new MemberSupportService(database, network, audit, resets, notices);
 
   let agency: string;
   let admin: string;
@@ -248,6 +251,7 @@ d('enlace para restablecer la contraseña y desbloqueo desde Equipo, contra Post
         network,
         new AuditoriaQueFalla(database),
         resets,
+        notices,
       );
       await expect(failing.sendPasswordReset(admin, agency, target)).rejects.toThrow(
         'el evento no entró',

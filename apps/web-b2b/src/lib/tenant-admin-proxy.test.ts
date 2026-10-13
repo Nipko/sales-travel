@@ -7,6 +7,9 @@ import {
   invitePlan,
   markCurrentSession,
   memberActionTarget,
+  memberAuditTarget,
+  memberDetailTarget,
+  memberSessionRevokeTarget,
   membershipImpactTarget,
   membershipRolePlan,
   membershipStatusPlan,
@@ -17,6 +20,7 @@ import {
   tenantAdminProxyReply,
   tenantMovePlan,
   tenantUpdatePlan,
+  userAuditQuery,
 } from './tenant-admin-proxy';
 
 const ID = '0B6F6A52-7A47-4C8E-9A3B-1A2B3C4D5E6F';
@@ -462,5 +466,74 @@ describe('networkAuditTarget: GET /tenants/network/audit', () => {
       ok: false,
       error: 'Persona inválida.',
     });
+  });
+});
+
+describe('la ficha de un miembro: GET, historial y cerrar una sesión', () => {
+  const MEMBER = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
+  const SESSION = 'FFFFFFFF-1111-4222-8333-444444444444';
+  const CURSOR = 'eyJvY2N1cnJlZEF0IjoiMjAyNi0xMC0xM1QxMjowMDowMFoifQ';
+  const base = `/tenants/${ID.toLowerCase()}/members/${MEMBER.toLowerCase()}`;
+
+  it('GET de la ficha con los ids en minúsculas; un id raro no compone otra ruta', () => {
+    expect(memberDetailTarget(ID, MEMBER)).toEqual({ ok: true, path: base });
+    expect(memberDetailTarget('../admin', MEMBER)).toEqual({ ok: false, error: 'Nodo inválido.' });
+    expect(memberDetailTarget(ID, 'users/status')).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
+    });
+  });
+
+  it('cerrar una sesión: los tres ids tienen que ser UUID', () => {
+    expect(memberSessionRevokeTarget(ID, MEMBER, SESSION)).toEqual({
+      ok: true,
+      path: `${base}/sessions/${SESSION.toLowerCase()}/revoke`,
+    });
+    expect(memberSessionRevokeTarget(ID, MEMBER, '../../unlock')).toEqual({
+      ok: false,
+      error: 'Sesión inválida.',
+    });
+    expect(memberSessionRevokeTarget(ID, 'x', SESSION).ok).toBe(false);
+    expect(memberSessionRevokeTarget('x', MEMBER, SESSION).ok).toBe(false);
+  });
+
+  it('el historial reconstruye el cursor y el tamaño, y nada más', () => {
+    const q = (params: Record<string, string> | [string, string][]) => new URLSearchParams(params);
+    expect(memberAuditTarget(ID, MEMBER, q({}))).toEqual({ ok: true, path: `${base}/audit` });
+    expect(memberAuditTarget(ID, MEMBER, q({ limit: '030', before: CURSOR }))).toEqual({
+      ok: true,
+      path: `${base}/audit?before=${CURSOR}&limit=30`,
+    });
+    for (const params of [
+      { extra: '1' } as Record<string, string>,
+      { limit: '0' },
+      { limit: '101' },
+      { limit: '5.5' },
+      { before: 'con espacio' },
+      { before: 'x'.repeat(201) },
+      { tenantId: ID },
+    ]) {
+      expect(memberAuditTarget(ID, MEMBER, q(params)), JSON.stringify(params)).toEqual({
+        ok: false,
+        error: 'La consulta del historial no es válida. Recarga la página.',
+      });
+    }
+    expect(
+      memberAuditTarget(
+        ID,
+        MEMBER,
+        q([
+          ['before', CURSOR],
+          ['before', 'otro'],
+        ]),
+      ).ok,
+    ).toBe(false);
+    expect(memberAuditTarget(ID, 'ana', q({}))).toEqual({ ok: false, error: 'Miembro inválido.' });
+  });
+
+  it('userAuditQuery: vacío es "sin parámetros", lo que no se entiende es undefined', () => {
+    expect(userAuditQuery(new URLSearchParams())).toBe('');
+    expect(userAuditQuery(new URLSearchParams({ limit: '100' }))).toBe('limit=100');
+    expect(userAuditQuery(new URLSearchParams({ q: 'x' }))).toBeUndefined();
   });
 });
