@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IMPACT_UNAVAILABLE,
   heldLabel,
-  lastSaleLabel,
+  lastOrderLabel,
   nodeDepositsHref,
   nodeReasonError,
   parseNodeImpact,
@@ -28,6 +28,7 @@ function statsPayload(extra: Record<string, unknown> = {}) {
     liveSessions: 3,
     activeUsers: 4,
     orders30d: 12,
+    sales30d: 9,
     lastOrderAt: '2026-10-10T15:00:00.000Z',
     openOrders: 2,
     pendingDepositReports: 1,
@@ -82,6 +83,8 @@ describe('parseNodeStatsList: GET /admin/tenants/stats', () => {
       nodes: [
         statsPayload({ tenantId: OTHER }),
         statsPayload({ orders30d: '12' }),
+        // Sin las ventas (un API anterior): la fila no se inventa un cero.
+        statsPayload({ sales30d: undefined }),
         statsPayload({ held: [{ currency: 'pesos', amountMinor: 1 }] }),
         statsPayload({ seatLimit: -1 }),
         statsPayload({ lastOrderAt: 7 }),
@@ -153,11 +156,11 @@ describe('la fila de la red', () => {
     expect(seatsCell({ seatLimit: 0, seatsUsed: 0 })).toBeNull();
   });
 
-  it('la última venta, relativa; sin ventas, "Nunca"', () => {
-    expect(lastSaleLabel('2026-10-10T15:00:00.000Z', NOW)).toBe('hace 3 días');
-    expect(lastSaleLabel('2026-10-13T14:59:30.000Z', NOW)).toBe('hace un momento');
-    expect(lastSaleLabel(null, NOW)).toBe('Nunca');
-    expect(lastSaleLabel('no es una fecha', NOW)).toBe('Nunca');
+  it('la última reserva, relativa; sin ninguna, "Nunca"', () => {
+    expect(lastOrderLabel('2026-10-10T15:00:00.000Z', NOW)).toBe('hace 3 días');
+    expect(lastOrderLabel('2026-10-13T14:59:30.000Z', NOW)).toBe('hace un momento');
+    expect(lastOrderLabel(null, NOW)).toBe('Nunca');
+    expect(lastOrderLabel('no es una fecha', NOW)).toBe('Nunca');
   });
 
   it('los depósitos por aprobar, en singular y plural; sin ninguno, nada', () => {

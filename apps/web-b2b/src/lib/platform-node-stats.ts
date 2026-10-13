@@ -9,7 +9,7 @@ import { formatMinor, isCurrencyCode, isUuid, type Tone } from './wallets';
 
 /**
  * Agencias en números (`GET /admin/tenants/stats` y `GET /admin/tenants/:id/impact`): la lectura de
- * las respuestas, lo que muestra cada fila de la red (puestos, ventas, última venta, depósitos por
+ * las respuestas, lo que muestra cada fila de la red (puestos, ventas, última reserva, depósitos por
  * aprobar) y los textos del diálogo que suspende o reactiva un nodo. Sin I/O.
  *
  * Nunca se suman montos de monedas distintas: lo retenido va por moneda.
@@ -30,8 +30,11 @@ export interface NodeStats {
   readonly seatsUsed: number | null;
   readonly liveSessions: number;
   readonly activeUsers: number;
+  /** Órdenes de 30 días en cualquier estado (fallidas y canceladas incluidas): actividad. */
   readonly orders30d: number;
-  /** ISO 8601, o `null` si nunca vendió. */
+  /** Ventas de 30 días: confirmadas o emitidas, como las cuenta el Resumen. */
+  readonly sales30d: number;
+  /** La última reserva, en cualquier estado: ISO 8601, o `null` si nunca reservó. */
   readonly lastOrderAt: string | null;
   readonly openOrders: number;
   readonly pendingDepositReports: number;
@@ -112,6 +115,7 @@ function parseNodeStats(value: unknown): NodeStats | undefined {
     liveSessions: count(r['liveSessions']),
     activeUsers: count(r['activeUsers']),
     orders30d: count(r['orders30d']),
+    sales30d: count(r['sales30d']),
     openOrders: count(r['openOrders']),
     pendingDepositReports: count(r['pendingDepositReports']),
     pendingInvitations: count(r['pendingInvitations']),
@@ -128,6 +132,7 @@ function parseNodeStats(value: unknown): NodeStats | undefined {
     liveSessions: numbers.liveSessions ?? 0,
     activeUsers: numbers.activeUsers ?? 0,
     orders30d: numbers.orders30d ?? 0,
+    sales30d: numbers.sales30d ?? 0,
     lastOrderAt,
     openOrders: numbers.openOrders ?? 0,
     pendingDepositReports: numbers.pendingDepositReports ?? 0,
@@ -219,8 +224,11 @@ export function seatsCell(stats: Pick<NodeStats, 'seatLimit' | 'seatsUsed'>): Se
 /** Lo que se lee sin cupo propio. */
 export const SHARED_SEATS_LABEL = 'Comparte el cupo de su red';
 
-/** "hace 3 días", "ayer"; sin ventas, "Nunca". */
-export function lastSaleLabel(lastOrderAt: string | null, now: number): string {
+/**
+ * La última reserva, en cualquier estado: "hace 3 días", "ayer"; sin ninguna, "Nunca". No se llama
+ * "última venta" porque una reserva fallida o cancelada también cuenta.
+ */
+export function lastOrderLabel(lastOrderAt: string | null, now: number): string {
   if (lastOrderAt === null) return 'Nunca';
   const since = sinceLabel(lastOrderAt, now);
   return since === '' ? 'Nunca' : since;

@@ -272,7 +272,9 @@ d('Agencias en números (admin_node_stats de 0075 como app_user)', () => {
       liveSessions: 1,
       // tenant_admin; la membership suspendida no cuenta.
       activeUsers: 1,
+      // Una orden pendiente: es actividad, no una venta.
       orders30d: 1,
+      sales30d: 0,
       openOrders: 1,
       pendingDepositReports: 0,
       pendingInvitations: 0,
@@ -283,6 +285,7 @@ d('Agencias en números (admin_node_stats de 0075 como app_user)', () => {
       seatLimit: null,
       seatsUsed: null,
       orders30d: 0,
+      sales30d: 0,
       lastOrderAt: null,
       held: [{ currency: 'COP', exponent: 2, amountMinor: 800 }],
     });
@@ -290,10 +293,16 @@ d('Agencias en números (admin_node_stats de 0075 como app_user)', () => {
       liveSessions: 0,
       // El usuario suspendido no cuenta.
       activeUsers: 1,
+      // La cancelada cuenta como orden de 30 días, no como venta.
+      orders30d: 1,
+      sales30d: 0,
       openOrders: 0,
       pendingDepositReports: 1,
     });
     expect(of(sub)).toMatchObject({
+      // La confirmada y la emitida (en USD): dos ventas.
+      orders30d: 2,
+      sales30d: 2,
       openOrders: 2,
       pendingInvitations: 1,
       held: [{ currency: 'USD', exponent: 2, amountMinor: 2500 }],

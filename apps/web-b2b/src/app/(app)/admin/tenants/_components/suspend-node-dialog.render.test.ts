@@ -8,7 +8,7 @@ import { NodeStatusDialog, SuspendNodeDialog, type ImpactState } from './suspend
 
 /*
  * Agencias: suspender o reactivar un nodo con motivo, viendo antes a quién afecta, y los números de
- * cada fila (puestos, ventas, última venta, depósitos por aprobar). Se prueba lo que se pinta; las
+ * cada fila (puestos, ventas, última reserva, depósitos por aprobar). Se prueba lo que se pinta; las
  * reglas y los textos, en lib/platform-node-stats.
  */
 
@@ -164,6 +164,7 @@ function stats(extra: Partial<Extract<RowStats, { status: 'ready' }>['node']> = 
       liveSessions: 3,
       activeUsers: 4,
       orders30d: 12,
+      sales30d: 9,
       lastOrderAt: '2026-10-10T15:00:00.000Z',
       openOrders: 1,
       pendingDepositReports: 0,
@@ -175,13 +176,14 @@ function stats(extra: Partial<Extract<RowStats, { status: 'ready' }>['node']> = 
 }
 
 describe('la fila de la red: puestos, ventas y depósitos', () => {
-  it('las columnas: puestos, ventas de 30 días y última venta', () => {
+  it('las columnas: puestos, ventas de 30 días (las confirmadas, no las órdenes) y última reserva', () => {
     const plain = text(renderToStaticMarkup(createElement(NodeStatsColumns, { stats: stats() })));
     expect(plain).toContain('Puestos');
     expect(plain).toContain('3/5');
     expect(plain).toContain('3 de 5 puestos en uso');
-    expect(plain).toContain('Ventas 30 d 12');
-    expect(plain).toContain('Última venta hace 3 días');
+    expect(plain).toContain('Ventas 30 d 9');
+    expect(plain).not.toContain('Ventas 30 d 12');
+    expect(plain).toContain('Última reserva hace 3 días');
   });
 
   it('al 90 % o más, los puestos van en ámbar y dicen "al límite" (no sólo el color)', () => {
@@ -196,17 +198,23 @@ describe('la fila de la red: puestos, ventas y depósitos', () => {
     expect(calm).not.toMatch(/color-warning/);
   });
 
-  it('sin cupo propio, "—" con su explicación; sin ventas, "Nunca"', () => {
+  it('sin cupo propio, "—" con su explicación; sin reservas, "Nunca"', () => {
     const plain = text(
       renderToStaticMarkup(
         createElement(NodeStatsLine, {
-          stats: stats({ seatLimit: null, seatsUsed: null, orders30d: 0, lastOrderAt: null }),
+          stats: stats({
+            seatLimit: null,
+            seatsUsed: null,
+            orders30d: 0,
+            sales30d: 0,
+            lastOrderAt: null,
+          }),
         }),
       ),
     );
     expect(plain).toContain('Comparte el cupo de su red');
     expect(plain).toContain('Ventas 30 d 0');
-    expect(plain).toContain('Última venta Nunca');
+    expect(plain).toContain('Última reserva Nunca');
   });
 
   it('cargando, las columnas guardan su lugar; sin números, la línea del teléfono no se pinta', () => {

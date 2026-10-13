@@ -196,6 +196,7 @@ describe('Agencias: suspender con motivo y los números de cada nodo', () => {
             liveSessions: 5,
             activeUsers: 6,
             orders30d: 0,
+            sales30d: 0,
             lastOrderAt: null,
             openOrders: 0,
             pendingDepositReports: 2,

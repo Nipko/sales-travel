@@ -1,12 +1,22 @@
 import { type ExecutionContext } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type CompiledQuery,
+  type DatabaseConnection,
+  type QueryResult,
+} from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
-import type { DatabaseService } from '../database/database.service.js';
-import type { Role } from '../database/database.types.js';
+import { DatabaseService } from '../database/database.service.js';
+import type { DB, Role } from '../database/database.types.js';
 import type { NetworkService } from '../network/network.service.js';
 import {
   ADMIN_SUPERADMIN_DB_DENIAL,
@@ -64,6 +74,7 @@ describe('foldNodeStats: una fila de admin_node_stats() a la vista', () => {
           pending_deposit_reports: '1',
           pending_invitations: '2',
         }),
+        '7',
       ),
     ).toEqual({
       tenantId: NODO,
@@ -72,6 +83,7 @@ describe('foldNodeStats: una fila de admin_node_stats() a la vista', () => {
       liveSessions: 3,
       activeUsers: 4,
       orders30d: 12,
+      sales30d: 7,
       lastOrderAt: '2026-10-12T15:00:00.000Z',
       openOrders: 2,
       pendingDepositReports: 1,
@@ -83,9 +95,24 @@ describe('foldNodeStats: una fila de admin_node_stats() a la vista', () => {
     });
   });
 
-  it('sin cupo propio, puestos en null; sin ventas, la última venta en null', () => {
+  it('sin cupo propio, puestos en null; sin reservas, la última en null y ninguna venta', () => {
     const view = foldNodeStats(fila(NODO));
-    expect(view).toMatchObject({ seatLimit: null, seatsUsed: null, lastOrderAt: null, held: [] });
+    expect(view).toMatchObject({
+      seatLimit: null,
+      seatsUsed: null,
+      lastOrderAt: null,
+      sales30d: 0,
+      held: [],
+    });
+  });
+
+  it('las ventas son las confirmadas o emitidas, no las órdenes de 30 días en cualquier estado', () => {
+    // 5 órdenes (fallidas y canceladas incluidas), 2 ventas; sin fila de ventas, ninguna.
+    expect(foldNodeStats(fila(NODO, { orders_30d: '5' }), '2')).toMatchObject({
+      orders30d: 5,
+      sales30d: 2,
+    });
+    expect(foldNodeStats(fila(NODO, { orders_30d: '5' }), undefined).sales30d).toBe(0);
   });
 
   it('una fecha ilegible no se inventa: queda en null', () => {
@@ -159,6 +186,54 @@ describe('foldImpact: el subárbol sumado', () => {
       liveSessions: 0,
       held: [],
     });
+  });
+});
+
+describe('AdminTenantsService.stats: las ventas de admin_sales_summary junto a cada nodo', () => {
+  /** Un driver que contesta cada consulta sin Postgres y guarda el SQL que recibiría. */
+  class DriverQueContesta extends DummyDriver {
+    constructor(private readonly responder: (q: CompiledQuery) => unknown[]) {
+      super();
+    }
+
+    override async acquireConnection(): Promise<DatabaseConnection> {
+      const base = await super.acquireConnection();
+      return {
+        executeQuery: <R>(q: CompiledQuery): Promise<QueryResult<R>> =>
+          Promise.resolve({ rows: this.responder(q) as R[] }),
+        streamQuery: (q, chunkSize) => base.streamQuery(q, chunkSize),
+      };
+    }
+  }
+
+  it('suma las confirmadas de los últimos 30 días por nodo; un nodo sin fila de ventas, 0', async () => {
+    const consultas: string[] = [];
+    const database = new DatabaseService();
+    database.db = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () =>
+          new DriverQueContesta((q) => {
+            consultas.push(q.sql);
+            if (q.sql.includes('admin_node_stats')) {
+              return [fila(NODO, { orders_30d: '4' }), fila(HIJO, { orders_30d: '1' })];
+            }
+            if (q.sql.includes('admin_sales_summary')) return [{ tenant_id: NODO, n: '3' }];
+            return [];
+          }),
+        createIntrospector: (k) => new PostgresIntrospector(k),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+
+    const nodes = await new AdminTenantsService(database).stats(USUARIO);
+    expect(nodes.map((n) => [n.tenantId, n.orders30d, n.sales30d])).toEqual([
+      [NODO, 4, 3],
+      [HIJO, 1, 0],
+    ]);
+    const ventas = consultas.find((q) => q.includes('admin_sales_summary'));
+    expect(ventas).toContain("admin_sales_summary(now() - interval '30 days', now())");
+    expect(ventas).toContain('sum(s.confirmed_count)');
   });
 });
 

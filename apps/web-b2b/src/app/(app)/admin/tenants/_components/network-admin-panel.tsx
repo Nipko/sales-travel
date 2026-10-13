@@ -76,7 +76,7 @@ type StatsState =
   | {
       readonly status: 'ready';
       readonly byId: ReadonlyMap<string, NodeStats>;
-      /** Desde cuándo se mide "Última venta": el momento en que se leyeron. */
+      /** Desde cuándo se mide "Última reserva": el momento en que se leyeron. */
       readonly at: number;
     };
 

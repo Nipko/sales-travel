@@ -15,6 +15,10 @@ import { currencyExponent } from '../portfolios/wallet-currency.js';
  * dependa de estas lecturas: si fallan, el árbol se sigue viendo y se corrige.
  *
  * Nunca se suman monedas distintas: lo retenido va por moneda, con su exponente.
+ *
+ * Las ventas son las del Resumen y Reportes: reservas confirmadas o emitidas (`admin_sales_summary`).
+ * `orders_30d` y `last_order_at` de `admin_node_stats()` cuentan órdenes en cualquier estado, las
+ * fallidas y canceladas incluidas: sirven como actividad, no como ventas.
  */
 
 /** `pg` devuelve BIGINT y NUMERIC como texto. */
@@ -53,8 +57,14 @@ export interface NodeStatsView {
   seatsUsed: number | null;
   liveSessions: number;
   activeUsers: number;
+  /** Órdenes creadas en 30 días, en cualquier estado (fallidas y canceladas incluidas). */
   orders30d: number;
-  /** ISO 8601, o `null` si nunca vendió. */
+  /**
+   * Ventas de 30 días: órdenes creadas en 30 días que hoy están confirmadas o emitidas, como las
+   * cuenta el Resumen.
+   */
+  sales30d: number;
+  /** La última reserva, en cualquier estado: ISO 8601, o `null` si nunca reservó. */
   lastOrderAt: string | null;
   /** Órdenes pending, confirmed o ticketed. */
   openOrders: number;
@@ -136,7 +146,11 @@ export function foldHeld(values: readonly unknown[]): HeldAmountView[] {
     .sort(byCurrency);
 }
 
-export function foldNodeStats(row: NodeStatsRow): NodeStatsView {
+/**
+ * Un nodo a la vista. `sales30d` viene aparte (`admin_sales_summary`): un nodo sin ventas no tiene
+ * fila ahí.
+ */
+export function foldNodeStats(row: NodeStatsRow, sales30d: DbNumber = 0): NodeStatsView {
   return {
     tenantId: row.tenant_id,
     seatLimit: toNullableNumber(row.seat_limit),
@@ -144,6 +158,7 @@ export function foldNodeStats(row: NodeStatsRow): NodeStatsView {
     liveSessions: toNumber(row.live_sessions),
     activeUsers: toNumber(row.active_users),
     orders30d: toNumber(row.orders_30d),
+    sales30d: toNumber(sales30d),
     lastOrderAt: isoOf(row.last_order_at),
     openOrders: toNumber(row.open_orders),
     pendingDepositReports: toNumber(row.pending_deposit_reports),
@@ -180,12 +195,21 @@ export function foldImpact(
 export class AdminTenantsService {
   constructor(private readonly db: DatabaseService) {}
 
-  /** Cada nodo de la red en números, en el orden de `path`. Sólo lee: no audita. */
+  /**
+   * Cada nodo de la red en números, en el orden de `path`. Sólo lee: no audita. Las ventas de 30
+   * días salen de `admin_sales_summary` (confirmadas o emitidas), que también exige al superadmin.
+   */
   async stats(actorUserId: string): Promise<NodeStatsView[]> {
     try {
       return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
         const { rows } = await sql<NodeStatsRow>`SELECT * FROM admin_node_stats()`.execute(trx);
-        return rows.map(foldNodeStats);
+        const sales = await sql<{ tenant_id: string; n: DbNumber }>`
+          SELECT s.tenant_id, sum(s.confirmed_count) AS n
+            FROM admin_sales_summary(now() - interval '30 days', now()) s
+           GROUP BY s.tenant_id
+        `.execute(trx);
+        const salesOf = new Map(sales.rows.map((r) => [r.tenant_id, r.n]));
+        return rows.map((row) => foldNodeStats(row, salesOf.get(row.tenant_id)));
       });
     } catch (err) {
       rethrowAdminDbError(err);

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { cn } from '../../../../../lib/cn';
 import {
   SHARED_SEATS_LABEL,
-  lastSaleLabel,
+  lastOrderLabel,
   nodeDepositsHref,
   pendingDepositsLabel,
   seatsCell,
@@ -20,15 +20,15 @@ export type RowStats =
 interface StatsText {
   readonly seats: ReturnType<typeof seatsCell>;
   readonly sales: string;
-  readonly lastSale: string;
+  readonly lastOrder: string;
 }
 
 function textOf(stats: RowStats): StatsText | null {
   if (stats.status !== 'ready' || stats.node === undefined) return null;
   return {
     seats: seatsCell(stats.node),
-    sales: String(stats.node.orders30d),
-    lastSale: lastSaleLabel(stats.node.lastOrderAt, stats.at),
+    sales: String(stats.node.sales30d),
+    lastOrder: lastOrderLabel(stats.node.lastOrderAt, stats.at),
   };
 }
 
@@ -71,7 +71,8 @@ const PLACEHOLDER = (
 );
 
 /**
- * Puestos, ventas de 30 días y última venta en columnas de ancho fijo, alineadas entre filas.
+ * Puestos, ventas de 30 días (confirmadas o emitidas) y la última reserva en columnas de ancho fijo,
+ * alineadas entre filas.
  * Sólo en pantallas anchas; en el teléfono va {@link NodeStatsLine}.
  */
 export function NodeStatsColumns({ stats }: { stats: RowStats }) {
@@ -94,8 +95,8 @@ export function NodeStatsColumns({ stats }: { stats: RowStats }) {
         <dd className="mt-0.5 text-xs tabular-nums text-[var(--color-fg)]">{value(text?.sales)}</dd>
       </div>
       <div className="min-w-0">
-        <dt className="text-[10px] font-medium text-[var(--color-fg-subtle)]">Última venta</dt>
-        <dd className="mt-0.5 truncate text-xs text-[var(--color-fg)]">{value(text?.lastSale)}</dd>
+        <dt className="text-[10px] font-medium text-[var(--color-fg-subtle)]">Última reserva</dt>
+        <dd className="mt-0.5 truncate text-xs text-[var(--color-fg)]">{value(text?.lastOrder)}</dd>
       </div>
     </dl>
   );
@@ -118,8 +119,8 @@ export function NodeStatsLine({ stats }: { stats: RowStats }) {
         <dd className="tabular-nums text-[var(--color-fg)]">{text.sales}</dd>
       </div>
       <div className="flex items-center gap-1">
-        <dt>Última venta</dt>
-        <dd className="text-[var(--color-fg)]">{text.lastSale}</dd>
+        <dt>Última reserva</dt>
+        <dd className="text-[var(--color-fg)]">{text.lastOrder}</dd>
       </div>
     </dl>
   );
