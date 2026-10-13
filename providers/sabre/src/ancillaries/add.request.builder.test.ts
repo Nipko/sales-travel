@@ -332,6 +332,10 @@ describe('SabreAncillaryAddRequestSchema — estricto', () => {
       (b: Json) => ((b['ancillaries'] as Json[])[0]!['isDisplayOnly'] = true),
     ],
     [
+      'un servicio que el pasajero ya tiene',
+      (b: Json) => ((item(b)['details'] as Json)['isAvailable'] = true),
+    ],
+    [
       'un importe negativo',
       (b: Json) => {
         const unit = ((item(b)['price'] as Json)['unitPrices'] as Json[])[0]!;

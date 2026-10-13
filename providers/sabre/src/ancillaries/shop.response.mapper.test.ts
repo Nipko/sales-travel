@@ -490,6 +490,23 @@ describe('mapSabreAncillaryShopResponse — venta por código', () => {
     expect(offer.sellable).toBe(true);
   });
 
+  it('isAvailable: true es «el pasajero ya lo tiene»: se muestra y no se vende otra vez', () => {
+    // El `/add` de la ayuda de Sabre agrega un ítem con `isAvailable: false`: `false` es lo normal
+    // en lo que se compra, y `true` («exists and is available to consume», `:1870-1873`) es lo que
+    // ya está en la reserva.
+    const raw = shop();
+    const gts = ancillaries(raw).find((a) => a['subCode'] === 'GTS')!['id'];
+    const target = items(raw).filter(
+      (entry) => (entry['details'] as Json)['ancillaryReferenceId'] === gts,
+    );
+    expect(target).toHaveLength(1);
+    (target[0]!['details'] as Json)['isAvailable'] = true;
+    const offer = only(map(raw), 'GTS');
+    expect(offer.sellable).toBe(false);
+    expect(offer.notSellableReason).toBe('NO_BOOKING_REQUIRED');
+    expect(only(map(), 'GTS').sellable).toBe(true);
+  });
+
   it('isDisplayOnly gana sobre cualquier otro motivo', () => {
     expect(
       withAncillary({ isDisplayOnly: true, bookingMethod: { value: 'ContactAirline' } })

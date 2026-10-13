@@ -255,7 +255,22 @@ export class SabreHttpClient {
     }
 
     const durationMs = this.now() - started;
-    const text = await res.text();
+    // `fetch` resuelve con las CABECERAS: el cuerpo todavía puede cortarse (socket reseteado, proxy
+    // que cierra a medias). Para entonces la petición ya llegó y, en una escritura, puede haberse
+    // aplicado. Sin esta captura el corte salía como un `TypeError` crudo, que los adapters leen
+    // como «no salió nada» —y quien reintenta un alta cobra dos veces—. Es un fallo de transporte
+    // (status 0): una lectura lo reintenta y una escritura queda en duda. El texto es nuestro, nunca
+    // el del error, que no sabemos qué arrastra.
+    let text: string;
+    try {
+      text = await res.text();
+    } catch {
+      return {
+        error: new SabreApiError(0, 'respuesta cortada antes de leer el cuerpo', path, {
+          conversationId,
+        }),
+      };
+    }
     let payload: unknown = null;
     try {
       payload = JSON.parse(text) as unknown;

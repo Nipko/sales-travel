@@ -83,7 +83,8 @@ const OfferItemSchema = z
         type: z.literal('AncillaryOfferItem'),
         ancillaryReferenceId: OpaqueIdSchema,
         quantity: z.number().int().positive().optional(),
-        isAvailable: z.boolean().optional(),
+        /** `true` = el pasajero ya lo tiene, y eso no se vende (`shop.response.mapper.ts`). */
+        isAvailable: z.literal(false).optional(),
         sectorPortionIndicator: z.enum(E.sectorPortion).optional(),
       })
       .strict(),

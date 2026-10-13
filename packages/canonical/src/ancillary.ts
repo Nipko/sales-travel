@@ -57,7 +57,8 @@ export type AncillaryPassengerOffer = z.infer<typeof AncillaryPassengerOfferSche
  *
  * - `DISPLAY_ONLY`: el proveedor lo marca sólo para mostrar.
  * - `CONTACT_AIRLINE`: se compra hablando con la aerolínea.
- * - `NO_BOOKING_REQUIRED`: no hay nada que reservar (ya viene con la tarifa).
+ * - `NO_BOOKING_REQUIRED`: no hay nada que reservar (ya viene con la tarifa, o el proveedor dice
+ *   que el pasajero ya lo tiene y agregarlo lo cobraría dos veces).
  * - `REQUIRES_DETAILS`: exige datos del pasajero (texto libre o estructurado) que esta versión no
  *   recoge; agregarlo sin ellos falla.
  * - `PRICE_NOT_INFORMED`: al menos un pasajero tiene precio ilegible.

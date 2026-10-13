@@ -838,7 +838,7 @@ function mapOfferItem(raw: unknown, ic: ItemContext): SabreAncillaryOfferBinding
     warn('included-without-free-of-charge-rule');
   }
 
-  const notSellableReason = notSellableReasonOf(ancillary, passengers);
+  const notSellableReason = notSellableReasonOf(item, ancillary, passengers);
   const semanticKey = semanticKeyOf(item, ancillary, segmentRefs, passengerRefByIndex, ic);
   const pricedKey = pricedKeyOf(semanticKey, passengers);
   const serviceOfferItemId = `${SABRE_ANCILLARY_OFFER_REF_VERSION}.${digest(semanticKey)}.${digest(pricedKey)}`;
@@ -996,14 +996,24 @@ function amountToMinor(amount: number | string): number | null {
 // Venta, categoría e identidad
 // ---------------------------------------------------------------------------
 
-/** Primer motivo que aplica, en orden de lo más definitivo a lo más circunstancial. */
+/**
+ * Primer motivo que aplica, en orden de lo más definitivo a lo más circunstancial.
+ *
+ * `details.isAvailable: true` es «el servicio EXISTE y está disponible para consumir»
+ * (`AncillaryOfferItem`, `:1870-1873`): el pasajero ya lo tiene. No es «hay cupo»: el único ítem que
+ * Sabre agrega en su propia ayuda (el `/add` de `help/…/1.0-index.txt`) lleva `isAvailable: false`.
+ * Venderlo otra vez es cobrar dos veces lo mismo, así que no se vende; si CERT (SAB-21) muestra lo
+ * contrario, se ve en seguida —el catálogo sale sin nada vendible—, y el cobro doble no se vería.
+ */
 function notSellableReasonOf(
+  item: SabreAncillaryShopOfferItem,
   ancillary: SabreAncillaryShopAncillary,
   passengers: readonly { readonly charge: AncillaryCharge }[],
 ): AncillaryNotSellableReason | undefined {
   if (ancillary.isDisplayOnly === true) return 'DISPLAY_ONLY';
   if (ancillary.bookingMethod?.value === 'ContactAirline') return 'CONTACT_AIRLINE';
   if (ancillary.bookingMethod?.value === 'NoBookingRequired') return 'NO_BOOKING_REQUIRED';
+  if (item.details.isAvailable === true) return 'NO_BOOKING_REQUIRED';
   if ((ancillary.bundledAncillaryRefs?.length ?? 0) > 0) return 'UNSUPPORTED';
   if (requiresDetails(ancillary)) return 'REQUIRES_DETAILS';
   if (passengers.some((entry) => entry.charge.type === 'NOT_INFORMED')) {

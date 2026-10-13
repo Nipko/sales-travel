@@ -88,7 +88,11 @@ interface WireCall {
   readonly headers: Record<string, string>;
 }
 
-type Reply = { readonly status: number; readonly body: unknown } | { readonly network: true };
+type Reply =
+  | { readonly status: number; readonly body: unknown }
+  | { readonly network: true }
+  /** Llegan las cabeceras con este status y el cuerpo se corta a medias. */
+  | { readonly cut: number };
 
 const ok = (body: unknown): Reply => ({ status: 200, body });
 
@@ -125,6 +129,15 @@ function wire(
       throw new Error(`el ACL llamó a ${path}, que este test no preparó (o ya agotó)`);
     }
     if ('network' in next) return Promise.reject(new Error('socket hang up'));
+    if ('cut' in next) {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"results":[{"ancillaryId":"anc'));
+          controller.error(new TypeError('terminated'));
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: next.cut }));
+    }
     return Promise.resolve(new Response(JSON.stringify(next.body), { status: next.status }));
   };
 
@@ -531,6 +544,22 @@ describe('SabreAncillaryAdapter.addAncillaries — lo que se rechaza por línea,
     expect(h.calls).toHaveLength(1);
   });
 
+  it('lo que la reserva ya tiene al volver a consultar (isAvailable) no se cobra otra vez', async () => {
+    // Otra pestaña, o un alta anterior que quedó en duda, ya lo agregó: Sabre lo devuelve con
+    // `isAvailable: true` y el mismo precio. Mandarlo otra vez lo cobraría dos veces.
+    const choice = await selection('GTS', [0]);
+    const fresh = shopFixture();
+    const gts = (fresh['ancillaries'] as Json[]).find((a) => a['subCode'] === 'GTS')!['id'];
+    for (const item of (fresh['offers'] as Json[])[0]!['items'] as Json[]) {
+      const details = item['details'] as Json;
+      if (details['ancillaryReferenceId'] === gts) details['isAvailable'] = true;
+    }
+    const h = wire({ [SABRE_ANCILLARIES_SHOP_PATH]: [ok(fresh)] });
+    const result = await h.port.addAncillaries(ORDER, [choice], CTX);
+    expect(result.failed.map((line) => line.reason)).toEqual(['NOT_SELLABLE']);
+    expect(h.pathsCalled()).toEqual([SABRE_ANCILLARIES_SHOP_PATH]);
+  });
+
   it('un pasajero no elegible no frena al que sí: PARTIAL', async () => {
     const choice = await selection('GTS', [0, 1]);
     const h = wire({
@@ -611,6 +640,16 @@ describe('SabreAncillaryAdapter.addAncillaries — escritura sin reintentos (SAB
     const { result, addCalls } = await addWith({ network: true });
     expect(addCalls).toHaveLength(1);
     expect(result.outcome).toBe('UNVERIFIED');
+  });
+
+  it('un 200 cuyo cuerpo se corta: el alta llegó y puede estar aplicada → UNVERIFIED, no lanza', async () => {
+    // `fetch` resuelve con las cabeceras. Si el corte saliera como excepción, el puerto diría «no
+    // se escribió nada» sobre un alta que Sabre pudo aplicar, y el reintento la cobraría dos veces.
+    const { result, addCalls } = await addWith({ cut: 200 });
+    expect(addCalls).toHaveLength(1);
+    expect(result.outcome).toBe('UNVERIFIED');
+    expect(result.unverified.map((line) => line.passengerIndex)).toEqual([0, 1]);
+    expect(result.failed).toEqual([]);
   });
 
   it('un 401 no se reintenta ni re-autentica: rechazo antes de ejecutar → FAILED', async () => {
@@ -770,6 +809,15 @@ describe('SabreAncillaryAdapter.removeAncillaries', () => {
     const result = await h.port.removeAncillaries(ORDER, ['12'], CTX);
     expect(h.calls).toHaveLength(1);
     expect(result).toMatchObject({ outcome: 'UNVERIFIED', unverified: ['12'], failed: [] });
+  });
+
+  it('un 200 cuyo cuerpo se corta queda en duda, sin lanzar ni reintentar', async () => {
+    const h = wire({
+      [SABRE_ANCILLARIES_REMOVE_PATH]: [{ cut: 200 }, ok(removeFixture())],
+    });
+    const result = await h.port.removeAncillaries(ORDER, ['12', '17'], CTX);
+    expect(h.calls).toHaveLength(1);
+    expect(result).toMatchObject({ outcome: 'UNVERIFIED', unverified: ['12', '17'], failed: [] });
   });
 
   it('un 400 es rechazo: FAILED', async () => {
