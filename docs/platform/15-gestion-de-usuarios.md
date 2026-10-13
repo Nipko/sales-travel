@@ -44,7 +44,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Ver el historial de una persona y la actividad de la red                       | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                               | **Hecho (USR-6)**: Actividad filtrable; el historial en la ficha es USR-7 |
 | Invitar o promover a un admin de consolidador                                  | Equipo, en un nodo consolidador           | Superadmin                                                                                | **Hecho (USR-9)**: no se ofrece en la raíz ni en agencias                 |
 | Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
-| Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | Pendiente (USR-10)                                                        |
+| Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
 | Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
 | Avisarle por correo cada cambio de seguridad hecho por un admin                | Automático                                | —                                                                                         | Pendiente (USR-12)                                                        |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | Pendiente (USR-13; founder D1 = C)                                        |
@@ -536,3 +536,56 @@ tocar la base.
 - `node-section-nav.render.test.ts` y `node-users-link.render.test.ts`: la pestaña y el enlace llevan
   a `/admin/usuarios?tenant=<id>`, la pestaña nunca es la sección actual y el nombre accesible del
   enlace (singular, cero, nombre escapado).
+
+## Filtros del equipo y columna Alta (USR-10)
+
+Sólo panel: el equipo de un nodo ya llega entero de `GET /tenants/network/users` y es chico, así
+que los filtros corren en el navegador, sin otra consulta ni cambios de API.
+
+### Panel
+
+- `lib/team-filters.ts` (sin I/O, con `now` explícito): los predicados `pendingMfa` (su rol en el
+  nodo exige 2FA y no lo activó, el mismo "2FA pendiente" de la fila), `locked` (bloqueo vigente),
+  `neverLoggedIn` (`lastLoginAt` null; si el API no manda el dato no se cuenta), `suspended` (en el
+  nodo o en toda la plataforma) y `resetPending`; `byRole`; la búsqueda por nombre o correo (salió
+  de `member-list.tsx`); los conteos; el orden por último acceso y la URL.
+- **Filtros rápidos**: _Todos_, _2FA pendiente (n)_, _Bloqueados (n)_, _Nunca ingresaron (n)_ y
+  _Cambio de contraseña pendiente (n)_. Uno a la vez (tocar el elegido vuelve a _Todos_). El número
+  de cada chip se cuenta con la búsqueda, el rol y "Ocultar suspendidos" ya aplicados: es el de filas
+  que deja al elegirla. Son botones con `aria-pressed` dentro de un grupo "Filtrar miembros"; en el
+  teléfono van en una fila que se desliza de lado (en tres renglones empujaban la lista fuera de la
+  pantalla).
+- **Rol** (_Todos los roles_ y los roles que hay en el nodo, del más alto al más bajo, con el nombre
+  del selector de la fila) y **Ocultar suspendidos (n)**, que se suman al filtro rápido.
+- **Orden por último acceso**: en pantalla ancha, el título de la columna es un botón que alterna
+  más reciente → más antiguo → sin ordenar (el del API, por alta en el nodo). Quien nunca ingresó
+  cuenta como el acceso más antiguo. La lista no es una tabla (en el teléfono cada miembro es una
+  tarjeta), así que el orden no va en `aria-sort`, que sólo vale en un encabezado de tabla: lo dice el
+  nombre del botón ("Último acceso, más reciente primero"). En el teléfono, donde no hay títulos de
+  columna, el orden se elige con "Ordenar por" en la barra.
+- **Columna Alta**: hace cuánto se sumó al nodo (la membership, no la cuenta), con la fecha exacta
+  al pasar el mouse. Se suma desde `xl`: entre `md` y `lg`, con la barra lateral, una séptima columna
+  dejaba "Nunca ingresó" sin lugar. La grilla cambia de seis a siete columnas en el mismo punto que la
+  celda y su título aparecen.
+- **Lista vacía**: si la búsqueda sola no deja a nadie, "Ningún usuario coincide con la búsqueda."; si
+  son los filtros, "Nadie coincide con estos filtros." con _Quitar filtros_ (también en la barra
+  mientras haya alguno puesto). Quitar filtros conserva el orden y devuelve el foco a _Todos_, porque
+  el botón que se tocó desaparece. El título dice "Miembros (3 de 12)" y un `role="status"` anuncia
+  cuántos se ven.
+- **URL**: `?filtro=2fa-pendiente|bloqueados|nunca-ingresaron|cambio-de-contrasena`, `?rol=<rol>`,
+  `?suspendidos=ocultos` y `?orden=acceso-reciente|acceso-antiguo`, sin tocar los demás parámetros;
+  lo que está por defecto no se escribe y un valor desconocido se ignora. Se leen al montar y se
+  escriben con `replaceState` (con espera, por el límite de Safari). Equipo también escribe
+  `?tenant=` al elegir otro nodo, así una recarga o un enlace abren el mismo nodo con los mismos
+  filtros.
+
+### Tests
+
+- `lib/team-filters.test.ts`: cada predicado (también sin el dato del API), los filtros combinados,
+  que el número de cada chip sea el de filas que deja, el orden con quien nunca ingresó y los empates,
+  la URL de ida y vuelta (nombres legibles, valores por defecto no escritos, `?tenant=` intacto,
+  valores desconocidos ignorados) y el `?tenant=` que escribe Equipo.
+- `team.render.test.ts`: la barra con sus conteos y `aria-pressed`, un filtro rápido, rol y
+  suspendidos juntos, la lista vacía por filtros y por búsqueda, el orden y el nombre del botón, la
+  columna Alta (relativa, exacta en el `title`, sólo desde `xl`), sin barra mientras carga, con error
+  o sin miembros, y todo en tú.
