@@ -21,6 +21,8 @@ import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
 import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
+import { FlightTicketIssueService } from './ticket-issue.service.js';
+import { TicketIssueStore } from './ticket-issue.store.js';
 
 /**
  * La post-venta de las órdenes de hotel (PR-5.2) necesita el registry de hoteles y el breaker, que
@@ -43,6 +45,9 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
  * `SuperadminGuard`. Su post-venta (`AdminOrderActionsService`) usa los mismos servicios que
  * Reservas de la agencia: el reenvío de la confirmación (`OrderConfirmationService`) y las
  * capacidades de cada proveedor (`OrderCapabilitiesService`), que antes vivían en su controlador.
+ *
+ * La emisión de tiquetes (SAB-08) la pide el controlador y la ejecuta `PostSaleModule` desde la
+ * cola: `FlightTicketIssueService` se exporta para el worker y el barrido.
  */
 @Module({
   imports: [
@@ -71,6 +76,8 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
     StaleCancelClaimStore,
     StaleCancelClaimService,
     BookingHoldLedger,
+    TicketIssueStore,
+    FlightTicketIssueService,
   ],
   exports: [
     OrdersService,
@@ -80,6 +87,7 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
     HotelOrderCancellationStore,
     StaleCancelClaimService,
     BookingHoldLedger,
+    FlightTicketIssueService,
   ],
 })
 export class OrdersModule {}

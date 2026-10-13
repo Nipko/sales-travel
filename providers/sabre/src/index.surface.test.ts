@@ -31,6 +31,10 @@ import * as ancillaryShopRequest from './ancillaries/shop.request.builder';
 import * as ancillaryShopResponse from './ancillaries/shop.response.mapper';
 import * as ancillaryAdapter from './sabre-ancillary.adapter';
 import * as documentStatus from './ticketing/document-status';
+import * as canonicalJson from './canonical-json';
+import * as fulfillRequest from './ticketing/fulfill.request.builder';
+import * as fulfillResponse from './ticketing/fulfill.response.mapper';
+import * as ticketingAdapter from './sabre-ticketing.adapter';
 
 /**
  * La SONDA del entry público: que lo que `src/index.ts` publica sea **el mismo objeto** que el
@@ -116,6 +120,11 @@ const PROBED: readonly ProbedModule[] = [
   { name: 'sabre-ancillary.adapter', module: ancillaryAdapter },
   // Estado de tiquetes y EMD (SAB-05).
   { name: 'ticketing/document-status', module: documentStatus },
+  // Emisión sin tarjeta (SAB-07).
+  { name: 'canonical-json', module: canonicalJson },
+  { name: 'ticketing/fulfill.request.builder', module: fulfillRequest },
+  { name: 'ticketing/fulfill.response.mapper', module: fulfillResponse },
+  { name: 'sabre-ticketing.adapter', module: ticketingAdapter },
 ];
 
 describe('el entry público republica los módulos, no copias de ellos', () => {
@@ -182,6 +191,7 @@ describe('los adapters de pricing y orden son alcanzables desde el entry', () =>
     ['SabreOrderManageAdapter', orderManageAdapter.SabreOrderManageAdapter],
     ['SabreSeatMapAdapter', seatMapAdapter.SabreSeatMapAdapter],
     ['SabreAncillaryAdapter', ancillaryAdapter.SabreAncillaryAdapter],
+    ['SabreTicketingAdapter', ticketingAdapter.SabreTicketingAdapter],
   ])('%s', (_label, value) => {
     const published = Object.values(index as unknown as Record<string, unknown>);
     expect(published).toContain(value);

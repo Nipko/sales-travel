@@ -39,3 +39,33 @@ export const PayOrderSchema = z.object({
   payment: z.record(z.unknown()),
 });
 export type PayOrderInput = z.infer<typeof PayOrderSchema>;
+
+/**
+ * Pedir la emisión de una reserva. El total y la moneda son los que el vendedor tenía en pantalla
+ * al confirmar: si la orden ya dice otra cosa, no se emite (409). Sin forma de pago: la decide la
+ * cuenta del proveedor (CASH, ON_ACCOUNT o INVOICE) y nunca es una tarjeta (D1). `strict` por lo
+ * mismo que `CreateOrderSchema`: un `payment` que se descarta en silencio parece cobrado.
+ */
+export const IssueOrderSchema = z
+  .object({
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type IssueOrderInput = z.infer<typeof IssueOrderSchema>;
+
+/**
+ * ¿El total guardado de la orden es el que el vendedor vio? `orders.total_amount` es BIGINT (0023)
+ * y `pg` entrega BIGINT como TEXTO (`'34012'`), aunque `OrderRow` lo declare `number`: comparado
+ * con `!==` contra el número del cuerpo, toda emisión salía con «el total cambió». Se compara el
+ * valor entero, venga como número o como texto; cualquier otra forma no coincide.
+ */
+export function isSameMinorAmount(stored: unknown, expected: number): boolean {
+  if (!Number.isSafeInteger(expected)) return false;
+  if (typeof stored === 'number') return stored === expected;
+  if (typeof stored === 'bigint') return stored === BigInt(expected);
+  if (typeof stored === 'string' && /^-?\d{1,19}$/.test(stored)) {
+    return BigInt(stored) === BigInt(expected);
+  }
+  return false;
+}

@@ -8,10 +8,12 @@ import {
   type CancelRetryJob,
   type CompensateJob,
   type HcnCheckJob,
+  type IssueTicketsJob,
   type ReconcileProviderAccountJob,
   type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
+  type VerifyIssueJob,
 } from '../queue/post-sale-queue.service.js';
 import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import { redisConnection } from '../queue/redis-connection.js';
@@ -19,6 +21,7 @@ import { ReconciliationService } from '../reconciliation/reconciliation.service.
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { OrdersService } from './orders.service.js';
 import { PostSaleSweeper } from './post-sale-sweeper.js';
+import { FlightTicketIssueService } from './ticket-issue.service.js';
 
 /** El barrido no lleva datos: lee lo vencido de Postgres. */
 export type PostSaleSweepJob = Record<string, never>;
@@ -31,6 +34,8 @@ export type PostSaleJob =
   | VerifyCancellationJob
   | HcnCheckJob
   | ReconcileProviderAccountJob
+  | IssueTicketsJob
+  | VerifyIssueJob
   | PostSaleSweepJob;
 
 /** A quién le toca cada job. Cada uno decide con sus funciones puras; el worker sólo enruta. */
@@ -41,6 +46,7 @@ export interface PostSaleJobHandlers {
   readonly hcn: Pick<HcnTrackingService, 'runJob'>;
   readonly reconciliation: Pick<ReconciliationService, 'runJob' | 'runDaily'>;
   readonly sweeper: Pick<PostSaleSweeper, 'run'>;
+  readonly ticketIssues: Pick<FlightTicketIssueService, 'runIssueById' | 'runVerifyJob'>;
 }
 
 /** Cuántos intentos lleva el job en BullMQ: `made` son los fallidos antes de éste. */
@@ -106,6 +112,18 @@ export async function runPostSaleJob(
     case POST_SALE_JOBS.sweeper:
       await handlers.sweeper.run();
       return;
+    case POST_SALE_JOBS.issue: {
+      // Un solo intento (la cola no lo repite): todo desenlace después del write-ahead queda en la
+      // operación, y lo que falle antes lo retoma el barrido. Nunca hay una segunda emisión.
+      const { tenantId, orderId, operationId, actorUserId } = data as IssueTicketsJob;
+      await handlers.ticketIssues.runIssueById(tenantId, orderId, operationId, actorUserId);
+      return;
+    }
+    case POST_SALE_JOBS.verifyIssue:
+      // Sólo lee. El payload viene de Redis y lo valida el servicio; un fallo de la lectura lanza y
+      // la cola repite ESTA lectura.
+      await handlers.ticketIssues.runVerifyJob(data, { final: attempt.made + 1 >= attempt.max });
+      return;
     default:
       throw new Error(`job de post-venta desconocido: '${name}'`);
   }
@@ -142,8 +160,17 @@ export class PostSaleWorker implements OnModuleInit, OnModuleDestroy {
     hotelCancellations: HotelOrderCancellationService,
     hcn: HcnTrackingService,
     reconciliation: ReconciliationService,
+    ticketIssues: FlightTicketIssueService,
   ) {
-    this.handlers = { orders, hotelBookings, hotelCancellations, hcn, reconciliation, sweeper };
+    this.handlers = {
+      orders,
+      hotelBookings,
+      hotelCancellations,
+      hcn,
+      reconciliation,
+      sweeper,
+      ticketIssues,
+    };
   }
 
   onModuleInit(): void {

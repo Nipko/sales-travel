@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TICKET_DOCUMENT_STATUSES } from '@sales-travel/domain';
+import { TICKET_DOCUMENT_STATUSES, type TicketDocument } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import {
   SABRE_TICKET_STATUS_CODES,
   SABRE_TICKET_STATUS_CODE_PATTERN,
   classifySabreTicketStatus,
+  mergeSabreTicketDocuments,
   sabreDocumentStatusRank,
+  sabrePrimaryDocumentNumber,
 } from './document-status';
 
 /**
@@ -99,5 +101,55 @@ describe('sabreDocumentStatusRank — dos observaciones del mismo documento', ()
     for (const status of TICKET_DOCUMENT_STATUSES) {
       expect(Number.isInteger(sabreDocumentStatusRank(status)), status).toBe(true);
     }
+  });
+});
+
+describe('sabrePrimaryDocumentNumber — el número que se guarda, compartido por lectura y emisión', () => {
+  it.each([
+    ['0016802004060', '0016802004060'],
+    ['1609786952746/47', '1609786952746'],
+    ['0167489825830', '0167489825830'],
+  ])('%s → %s', (raw, primary) => {
+    expect(sabrePrimaryDocumentNumber(raw)).toBe(primary);
+  });
+
+  it.each(['016-7489825830', '0167489825830-31', '123456789', 'X1', '', '12345678901234567'])(
+    '%j no es un número que se pueda guardar',
+    (raw) => {
+      expect(sabrePrimaryDocumentNumber(raw)).toBeUndefined();
+    },
+  );
+});
+
+describe('mergeSabreTicketDocuments — dos lecturas del mismo documento', () => {
+  const doc = (overrides: Partial<TicketDocument>): TicketDocument => ({
+    number: '0016802004060',
+    kind: 'TICKET',
+    status: 'ISSUED',
+    ...overrides,
+  });
+
+  it('uno por número; el pasajero se conserva de la lectura que lo trae', () => {
+    expect(
+      mergeSabreTicketDocuments([doc({ providerStatusCode: 'TE' })], [doc({ travelerIndex: 0 })]),
+    ).toEqual([doc({ travelerIndex: 0 })]);
+    expect(
+      mergeSabreTicketDocuments([doc({ travelerIndex: 1 })], [doc({ providerStatusCode: 'TE' })]),
+    ).toEqual([doc({ travelerIndex: 1, providerStatusCode: 'TE' })]);
+  });
+
+  it('gana el estado de mayor rango, venga de donde venga', () => {
+    expect(
+      mergeSabreTicketDocuments([doc({ status: 'VOIDED' })], [doc({ status: 'ISSUED' })]),
+    ).toEqual([doc({ status: 'VOIDED' })]);
+    expect(
+      mergeSabreTicketDocuments([doc({ status: 'ISSUED' })], [doc({ status: 'UNKNOWN' })]),
+    ).toEqual([doc({ status: 'ISSUED' })]);
+  });
+
+  it('números distintos se suman en el orden en que llegaron', () => {
+    expect(
+      mergeSabreTicketDocuments([doc({})], [doc({ number: '0016802004061' })]).map((d) => d.number),
+    ).toEqual(['0016802004060', '0016802004061']);
   });
 });

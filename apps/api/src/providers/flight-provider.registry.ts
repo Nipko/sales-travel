@@ -203,6 +203,28 @@ export class FlightProviderRegistry {
   }
 
   /**
+   * El proveedor de una orden ya hecha para una operación que sigue siendo VENTA sobre ella: emitir
+   * sus tiquetes. Sale con la cuenta de la reserva, como {@link forOrder}, y además se corta si la
+   * plataforma apagó el proveedor para el tenant: apagar un proveedor frena las ventas nuevas, y
+   * emitir es la que compromete el dinero. Consultar y cancelar lo vendido siguen por
+   * {@link forOrder}, que no mira la habilitación.
+   *
+   * @throws ProviderDisabledByPlatformError (400) si la plataforma lo apagó, sin tocar la bóveda.
+   * @throws ProviderOrderAccountUnavailableError (409) si la cuenta de la reserva ya no está.
+   */
+  async forOrderSale(
+    tenantId: string,
+    order: OrderProviderRef,
+  ): Promise<ResolvedProvider<FlightProviderAdapter>> {
+    const factory = this.factories.find((f) => f.code === order.provider);
+    if (factory === undefined) throw new ProviderNotAvailableError(order.provider);
+    if (isDisabledByPlatform(await this.flags.decisionFor(tenantId, factory.code))) {
+      throw new ProviderDisabledByPlatformError(factory.code);
+    }
+    return this.forOrder(tenantId, order);
+  }
+
+  /**
    * ¿Las órdenes de este proveedor guardan la cuenta con la que se reservaron? Sólo si su factory
    * sabe volver a operar con ella ({@link forOrder}): grabar una cuenta que después nadie puede
    * resolver dejaría a la reserva sin post-venta.

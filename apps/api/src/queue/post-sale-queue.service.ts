@@ -39,6 +39,17 @@ export const POST_SALE_JOBS = {
   reconcileAccount: 'reconcile-provider-account',
   /** El disparo diario que encola una conciliación por cuenta (D-TBO-29 A). */
   reconcileAccounts: 'reconcile-provider-accounts',
+  /**
+   * Emitir los tiquetes de una reserva (SAB-08). UN intento y nunca reintentos de la cola: la
+   * emisión es dinero irreversible y un reintento ciego es un segundo juego de tiquetes. La
+   * garantía contra la doble emisión no es este job sino la operación durable (0083 + write-ahead).
+   */
+  issue: 'issue',
+  /**
+   * Una relectura de una emisión en duda (a los 2, 10 y 30 minutos). Sólo lee: la emisión nunca se
+   * reenvía desde la cola, que sí reintenta ESTA lectura ante un fallo de transporte.
+   */
+  verifyIssue: 'verify-issue',
 } as const;
 
 export type PostSaleJobName = (typeof POST_SALE_JOBS)[keyof typeof POST_SALE_JOBS];
@@ -145,6 +156,28 @@ export interface ReconcileProviderAccountJob {
   requestedBy?: string;
 }
 
+/**
+ * Emitir los tiquetes de una orden. Sin datos personales ni importes: qué orden y qué operación; lo
+ * demás se lee de Postgres, que es quien decide si la emisión sigue pendiente.
+ */
+export interface IssueTicketsJob {
+  tenantId: string;
+  orderId: string;
+  /** La operación `issue` de `order_operations`: es el tercer segmento del `jobId`. */
+  operationId: string;
+  /** Quién la pidió. Viaja para que los eventos del worker conserven el actor. */
+  actorUserId?: string;
+}
+
+/** Una relectura de una emisión en duda: qué operación y qué paso del calendario. */
+export interface VerifyIssueJob {
+  tenantId: string;
+  orderId: string;
+  operationId: string;
+  /** Índice del paso (0, 1, 2): el último es el que escala si sigue sin verse emitida. */
+  step: number;
+}
+
 export interface PostSaleEnqueueOptions {
   /** Milisegundos antes de que el job pueda correr (p. ej. la relectura a 120 s de un Book incierto). */
   delayMs?: number;
@@ -217,6 +250,20 @@ export function hcnCheckJobId(data: HcnCheckJob): string {
 /** Una conciliación por cuenta y por turno: `reconcile-provider-account:<cuenta>:<turno>`. */
 export function reconcileAccountJobId(data: ReconcileProviderAccountJob): string {
   return postSaleJobId(POST_SALE_JOBS.reconcileAccount, data.accountId, data.slot);
+}
+
+/** Una emisión por operación: `issue:<orderId>:<operationId>`. */
+export function issueTicketsJobId(data: IssueTicketsJob): string {
+  return postSaleJobId(POST_SALE_JOBS.issue, data.orderId, data.operationId);
+}
+
+/** Una relectura por operación y paso: `verify-issue:<orderId>:<operationId>-<paso>`. */
+export function verifyIssueJobId(data: VerifyIssueJob): string {
+  return postSaleJobId(
+    POST_SALE_JOBS.verifyIssue,
+    data.orderId,
+    `${data.operationId}-${data.step}`,
+  );
 }
 
 /**
@@ -333,6 +380,26 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Encola la emisión de una orden con UN solo intento y sin backoff: si el job falla, la cola no lo
+   * repite. Lo que quede a medias lo resuelve la operación durable —un job que encuentra la emisión
+   * ya mandada sólo relee— y, si el job se pierde, el barrido de post-venta.
+   */
+  async enqueueIssue(data: IssueTicketsJob): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.issue, data, issueTicketsJobId(data), {}, { attempts: 1 });
+  }
+
+  /**
+   * Encola una relectura de una emisión en duda, con el retardo hasta su hora. Los `attempts` de la
+   * cola repiten ESA lectura ante un fallo de transporte; nunca reenvían la emisión.
+   */
+  async enqueueVerifyIssue(
+    data: VerifyIssueJob,
+    options: PostSaleEnqueueOptions = {},
+  ): Promise<boolean> {
+    return this.add(POST_SALE_JOBS.verifyIssue, data, verifyIssueJobId(data), options);
+  }
+
+  /**
    * Encola la conciliación de una cuenta. Los `attempts` de la cola repiten la corrida ante un fallo
    * de transporte; cada intento es una corrida registrada aparte.
    */
@@ -402,6 +469,7 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
     data: object,
     jobId: string | undefined,
     { delayMs }: PostSaleEnqueueOptions,
+    { attempts = 5 }: { readonly attempts?: number } = {},
   ): Promise<boolean> {
     if (!this.queue) return false;
     if (delayMs !== undefined && !isValidDelayMs(delayMs)) {
@@ -410,8 +478,8 @@ export class PostSaleQueueService implements OnModuleInit, OnModuleDestroy {
     }
     try {
       await this.queue.add(name, data, {
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 10_000 },
+        attempts,
+        ...(attempts > 1 ? { backoff: { type: 'exponential', delay: 10_000 } } : {}),
         removeOnComplete: 100,
         removeOnFail: 500,
         ...(jobId === undefined ? {} : { jobId }),

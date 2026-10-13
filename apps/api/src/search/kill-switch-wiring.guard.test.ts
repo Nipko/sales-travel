@@ -28,6 +28,9 @@ const GOBIERNO: Readonly<Record<string, string>> = {
   TBO_ROOM_DETAILS: join(__dirname, '..', 'providers-tbo', 'tbo-hotels.factory.ts'),
   // Contenido por habitación de la ficha (TBO-06): `on` por defecto, `off` no sale al proveedor.
   HOTEL_ROOM_CONTENT: join(__dirname, '..', 'hotels', 'hotel-room-content.config.ts'),
+  // Las operaciones de Sabre que mueven dinero (SAB-08): sin esta línea, encenderlas desde las
+  // variables del repo no llegaría al contenedor, y apagarlas tampoco.
+  SABRE_OPERATIONS: join(__dirname, '..', 'providers-sabre', 'sabre.factory.ts'),
 };
 
 /** El bloque del servicio `api`: desde `  api:` hasta el siguiente servicio del mismo nivel. */
@@ -60,6 +63,12 @@ describe('kill-switch y opt-in cableados hasta el contenedor `api` (G13)', () =>
 
   it.each(Object.keys(GOBIERNO))('%s: deploy.yml la escribe en el .env', (variable) => {
     expect(env).toMatch(new RegExp(`^\\s+${variable}=`, 'm'));
+  });
+
+  it('SABRE_OPERATIONS no trae valor por defecto: vacío es "nada encendido" (SAB-08)', () => {
+    // Un default encendería la emisión de tiquetes en cada despliegue sin que nadie lo pidiera.
+    expect(env).toMatch(/^\s+SABRE_OPERATIONS=\$\{\{ vars\.SABRE_OPERATIONS \}\}\s*$/m);
+    expect(api).toMatch(/^ {6}SABRE_OPERATIONS: \$\{SABRE_OPERATIONS:-\}\s*$/m);
   });
 
   it('el kill-switch no trae valor por defecto: vacío es "nada apagado"', () => {

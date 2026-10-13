@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Logger, NotFoundException } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import { OrderCreateNotSentError, type OrderCreateRequest } from '@sales-travel/domain';
@@ -21,15 +23,21 @@ import {
   ProviderOrderAccountUnavailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
+  supportsTicketing,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
 import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
 import { SabreOperationNotSupportedError } from './sabre-errors.js';
 import {
+  SABRE_OPERATIONS,
   SABRE_PROVIDER_CODE,
+  SABRE_RECEIVED_FROM,
   SabreOfferRevalidationRouter,
+  SabreOperationsConfigError,
   SabreProviderFactory,
+  parseSabreOperations,
   sabreShopOptionsFromAccountConfig,
+  sabreTicketingSettingsFromAccountConfig,
 } from './sabre.factory.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 
@@ -574,6 +582,8 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
       pay: false,
       services: false,
       reshop: false,
+      // La emisión está cableada, pero nace apagada: sin `SABRE_OPERATIONS` no se ofrece.
+      issue: false,
     });
   });
 
@@ -1046,6 +1056,205 @@ describe('SabreProviderFactory — las trazas de una reserva llegan al log de pr
   });
 });
 
+describe('SabreProviderFactory — política de emisión por cuenta', () => {
+  it('sin configuración: con plazo, 2 h de margen, CASH y la hora de Bogotá', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({});
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.settings).toEqual({
+      policy: 'TICKETING_TIME_LIMIT',
+      leadHours: 2,
+      formOfPayment: 'CASH',
+      pccTimeZone: 'America/Bogota',
+    });
+  });
+
+  it('convierte los valores del formulario a la configuración del ACL', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '6',
+      ticketingFormOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    });
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.settings).toEqual({
+      policy: 'FUTURE_TICKETING',
+      leadHours: 6,
+      formOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    });
+  });
+
+  it('cada valor inválido vuelve a SU default y sólo se nombra el campo', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '2.5',
+      ticketingFormOfPayment: 'PAYMENTCARD',
+      pccTimeZone: 'Marte/Base_Alfa',
+    });
+    expect(parsed.invalidFields).toEqual([
+      'pccTimeZone',
+      'ticketingFormOfPayment',
+      'ticketingLeadHours',
+    ]);
+    // La política válida se conserva: un margen mal escrito no devuelve la cuenta a «con plazo».
+    expect(parsed.settings).toEqual({
+      policy: 'FUTURE_TICKETING',
+      leadHours: 2,
+      formOfPayment: 'CASH',
+      pccTimeZone: 'America/Bogota',
+    });
+    expect(JSON.stringify(parsed)).not.toContain('PAYMENTCARD');
+    expect(JSON.stringify(parsed)).not.toContain('Marte');
+  });
+
+  it.each([['-1'], ['73'], ['dos'], [''], [2.5], [true]])(
+    'ticketingLeadHours=%j no se adivina: vuelve a 2 h',
+    (valor) => {
+      const parsed = sabreTicketingSettingsFromAccountConfig({ ticketingLeadHours: valor });
+      expect(parsed.invalidFields).toEqual(['ticketingLeadHours']);
+      expect(parsed.settings.leadHours).toBe(2);
+    },
+  );
+
+  it.each([['TODAY'], ['ALREADY_TICKETED'], ['future_ticketing']])(
+    'ticketingPolicy=%j no es una política que la cuenta pueda elegir',
+    (valor) => {
+      const parsed = sabreTicketingSettingsFromAccountConfig({ ticketingPolicy: valor });
+      expect(parsed.invalidFields).toEqual(['ticketingPolicy']);
+      expect(parsed.settings.policy).toBe('TICKETING_TIME_LIMIT');
+    },
+  );
+
+  /** Reserva por el adapter del factory y devuelve el body de `createBooking` que salió. */
+  async function bookingBodyFor(
+    account: Partial<ResolvedProviderAccount>,
+    audited: boolean,
+  ): Promise<{ body: Record<string, unknown>; audit?: Readonly<Record<string, unknown>> }> {
+    const bodies: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta !== RUTA_CREATE) throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+      if (typeof init?.body === 'string') bodies.push(init.body);
+      return respuesta({
+        confirmationId: PNR,
+        booking: {
+          bookingId: PNR,
+          flights: [{ itemId: '1', flightStatusCode: 'HK', flightStatusName: 'Confirmed' }],
+        },
+      });
+    });
+
+    const pedido = pedidoDeReserva();
+    // Un plazo de Flight Check lejano, para que el cálculo no dependa del día en que corre el test.
+    const conPlazo: OrderCreateRequest = {
+      ...pedido,
+      offer: {
+        ...pedido.offer,
+        provider: {
+          ...pedido.offer.provider,
+          raw: { flightCheckPaymentTimeLimit: '2030-01-01T05:00:00.000Z' },
+        },
+      },
+    };
+    try {
+      const adapter = await factoryWith(() => Promise.resolve(resolved(account))).forTenant('t1');
+      const ctx = { tenantId: 't1', requestId: 'req-emision' };
+      let audit: Readonly<Record<string, unknown>> | undefined;
+      if (audited) {
+        if (!supportsAuditedCreate(adapter)) throw new Error('sin creación auditada');
+        audit = (await adapter.createOrderAudited(conPlazo, ctx)).audit;
+      } else {
+        await adapter.createOrder(conPlazo, ctx);
+      }
+      const [body] = bodies;
+      if (body === undefined) throw new Error('createBooking no salió');
+      return {
+        body: JSON.parse(body) as Record<string, unknown>,
+        ...(audit === undefined ? {} : { audit }),
+      };
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it.each([
+    ['la creación auditada', true],
+    ['la creación del puerto', false],
+  ] as const)(
+    '%s sale con la política de la cuenta y firmada por la plataforma',
+    async (_c, auditada) => {
+      const { body } = await bookingBodyFor({}, auditada);
+
+      expect(body['receivedFrom']).toBe(SABRE_RECEIVED_FROM);
+      expect(body['agency']).toEqual({
+        ticketingPolicy: 'TICKETING_TIME_LIMIT',
+        // 05:00 UTC menos 2 h = 03:00 UTC = 22:00 del 31 de diciembre en Bogotá.
+        ticketingTimeLimitPolicy: {
+          airlineCode: 'AA',
+          ticketingDate: '2029-12-31',
+          ticketingTime: '22:00',
+        },
+      });
+      // D1: la reserva sigue con CASH, nunca con tarjeta.
+      expect(body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+    },
+  );
+
+  it('el margen y la zona de la cuenta llegan al plazo, y el evento cita la política', async () => {
+    const { body, audit } = await bookingBodyFor(
+      { config: { ticketingLeadHours: '0', pccTimeZone: 'America/Sao_Paulo' } },
+      true,
+    );
+
+    expect(body['agency']).toMatchObject({
+      ticketingTimeLimitPolicy: { ticketingDate: '2030-01-01', ticketingTime: '02:00' },
+    });
+    expect(audit).toMatchObject({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingDeadlineSource: 'PROVIDER',
+    });
+  });
+
+  it('emisión futura con PCC de emisión en la cuenta: la reserva queda para esa oficina', async () => {
+    const { body, audit } = await bookingBodyFor(
+      {
+        config: { ticketingPolicy: 'FUTURE_TICKETING' },
+        credentials: { epr: EPR, password: PASSWORD, homePcc: HOME_PCC, ticketingPcc: 'T1CK' },
+      },
+      true,
+    );
+
+    expect(body['agency']).toEqual({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+    });
+    expect(audit).toMatchObject({ ticketingPolicy: 'FUTURE_TICKETING' });
+    // El evento no nombra oficinas.
+    expect(JSON.stringify(audit)).not.toContain('T1CK');
+  });
+
+  it('una configuración inválida reserva con los defaults y lo avisa sin el valor', async () => {
+    const lineas = capturarLog();
+    try {
+      const { body } = await bookingBodyFor(
+        { config: { ticketingLeadHours: '999', ticketingFormOfPayment: 'PAYMENTCARD' } },
+        false,
+      );
+      expect(body['agency']).toMatchObject({ ticketingPolicy: 'TICKETING_TIME_LIMIT' });
+      expect(body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+
+      const aviso = lineas.find((l) => l.startsWith('configuración de emisión de Sabre inválida'));
+      expect(aviso).toContain('ticketingFormOfPayment');
+      expect(aviso).toContain('ticketingLeadHours');
+      expect(aviso).not.toContain('999');
+      expect(aviso).not.toContain('PAYMENTCARD');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
+
 describe('SabreProviderFactory — el cupo de concurrencia es de la CUENTA, búsqueda incluida', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1505,5 +1714,205 @@ d('SabreProviderFactory — jerarquía consolidador → agencia → sub-agencia'
     }
     await db.onModuleDestroy();
     await pool.end();
+  });
+});
+
+/**
+ * La emisión de tiquetes (SAB-08) y `SABRE_OPERATIONS`. Por la puerta pública del factory, con
+ * `fetch` interceptado: lo que sale es lo que saldría en producción. Sabre no se llama.
+ */
+describe('SabreProviderFactory — SABRE_OPERATIONS', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('vacía o sin definir no enciende nada', () => {
+    expect([...parseSabreOperations(undefined)]).toEqual([]);
+    expect([...parseSabreOperations('')]).toEqual([]);
+    expect([...parseSabreOperations(' , ')]).toEqual([]);
+  });
+
+  it('lee la lista separada por comas, sin importar espacios ni repetidos', () => {
+    expect([...parseSabreOperations(' issue, void ,issue')].sort()).toEqual(['issue', 'void']);
+    expect([...parseSabreOperations(SABRE_OPERATIONS.join(','))].sort()).toEqual(
+      [...SABRE_OPERATIONS].sort(),
+    );
+  });
+
+  it.each([['isue'], ['Issue'], ['issue,refound'], ['todo']])(
+    '%j no se adivina: lanza nombrando lo que no reconoce',
+    (raw) => {
+      let error: unknown;
+      try {
+        parseSabreOperations(raw);
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(SabreOperationsConfigError);
+      const invalid = (error as SabreOperationsConfigError).invalid;
+      expect(invalid.length).toBeGreaterThan(0);
+      expect(invalid).not.toContain('issue');
+    },
+  );
+
+  it('un valor inválido tumba la construcción del factory: el arranque falla ruidoso', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue,anular');
+    expect(() => factoryWith(() => Promise.resolve(resolved()))).toThrow(
+      SabreOperationsConfigError,
+    );
+  });
+
+  it('con `issue` encendida, la capacidad `issue` sale en true y el adapter sabe emitir', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue');
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities.issue).toBe(true);
+    expect(supportsTicketing(await factory.forTenant('t1'))).toBe(true);
+  });
+
+  it('`void` sola no enciende la emisión', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'void');
+    expect(factoryWith(() => Promise.resolve(resolved())).capabilities.issue).toBe(false);
+  });
+});
+
+describe('SabreProviderFactory — la emisión está CABLEADA al ACL, sin tarjeta', () => {
+  const RUTA_FULFILL = '/v1/trip/orders/fulfillFlightTickets';
+  const EMISION = JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'providers',
+        'sabre',
+        'src',
+        '__fixtures__',
+        'fulfill-atpco-cash-200.json',
+      ),
+      'utf8',
+    ),
+  ) as Record<string, unknown>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  /** Emite por el adapter del factory y devuelve lo que salió al cable. */
+  async function emitir(account: Partial<ResolvedProviderAccount> = {}, operations = 'issue') {
+    vi.stubEnv('SABRE_OPERATIONS', operations);
+    const rutas: string[] = [];
+    const emisiones: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_GET) {
+        return respuesta({
+          bookingId: PNR,
+          isCancelable: true,
+          flights: [
+            {
+              itemId: '1',
+              confirmationId: 'AB123',
+              airlineCode: 'AV',
+              sourceType: 'ATPCO',
+              flightStatusCode: 'HK',
+              flightStatusName: 'Confirmed',
+            },
+          ],
+        });
+      }
+      if (ruta === RUTA_FULFILL) {
+        if (typeof init?.body === 'string') {
+          emisiones.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return respuesta(EMISION);
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved(account))).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+    const result = await adapter
+      .issueTickets(PNR, { tenantId: 't1', requestId: 'req-emision' }, { travelerCount: 1 })
+      .catch((error: unknown) => error);
+    return { result, rutas, emisiones };
+  }
+
+  it('lee la reserva, emite UNA vez con CASH y devuelve el desenlace del puerto', async () => {
+    const { result, rutas, emisiones } = await emitir();
+
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_FULFILL]);
+    expect(emisiones).toHaveLength(1);
+    const cuerpo = emisiones[0]!;
+    expect(cuerpo).toMatchObject({
+      confirmationId: PNR,
+      formsOfPayment: [{ type: 'CASH' }],
+      acceptPriceChanges: false,
+    });
+    expect(cuerpo).not.toHaveProperty('targetPcc');
+    // D1: ninguna forma de tarjeta sale por la emisión.
+    expect(JSON.stringify(cuerpo)).not.toMatch(/card|PAYMENTCARD|cvv|payer/i);
+    expect(result).toMatchObject({ formOfPaymentType: 'CASH' });
+    expect((result as { idempotencyKey?: unknown }).idempotencyKey).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('la forma de pago es la de la cuenta (ON_ACCOUNT), nunca la del llamador', async () => {
+    const { emisiones, result } = await emitir({
+      config: { ticketingFormOfPayment: 'ON_ACCOUNT' },
+    });
+
+    expect(emisiones[0]).toMatchObject({ formsOfPayment: [{ type: 'ON_ACCOUNT' }] });
+    expect(result).toMatchObject({ formOfPaymentType: 'ON_ACCOUNT' });
+  });
+
+  it('una forma de pago con tarjeta en la cuenta no llega: cae a CASH', async () => {
+    const { emisiones } = await emitir({ config: { ticketingFormOfPayment: 'PAYMENTCARD' } });
+    expect(emisiones[0]).toMatchObject({ formsOfPayment: [{ type: 'CASH' }] });
+  });
+
+  it('la oficina de emisión sólo con la emisión futura: entonces emite el PCC de emisión', async () => {
+    const credenciales = {
+      epr: EPR,
+      password: PASSWORD,
+      homePcc: HOME_PCC,
+      ticketingPcc: 't1ck',
+      sabreGroup: 'GRP1',
+    };
+
+    const conPlazo = await emitir({ credentials: credenciales });
+    expect(conPlazo.emisiones[0]).not.toHaveProperty('targetPcc');
+
+    const futura = await emitir({
+      credentials: credenciales,
+      config: { ticketingPolicy: 'FUTURE_TICKETING' },
+    });
+    expect(futura.emisiones[0]).toMatchObject({ targetPcc: 'T1CK' });
+  });
+
+  it('con `issue` fuera de SABRE_OPERATIONS rechaza antes de tocar la red', async () => {
+    const { result, rutas } = await emitir({}, 'void');
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('las condiciones de los tiquetes salen por checkFlightTickets aun con la emisión apagada', async () => {
+    const rutas: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      return respuesta({ timestamp: '2026-10-13T12:00:00', tickets: [] });
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+
+    const condiciones = await adapter.checkTickets(PNR, { tenantId: 't1' });
+
+    expect(rutas).toEqual([RUTA_TOKEN, '/v1/trip/orders/checkFlightTickets']);
+    expect(condiciones).toMatchObject({ tickets: [], cancelOffers: [] });
   });
 });

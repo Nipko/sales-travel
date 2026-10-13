@@ -1,0 +1,29 @@
+{
+  "timestamp": "2024-04-15T07:57:29",
+  "tickets": [
+    {
+      "number": "0015752129518",
+      "date": "2024-04-15",
+      "travelerGivenName": "John",
+      "travelerSurname": "Drake",
+      "payment": {
+        "total": "1708.23",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TO"
+    },
+    {
+      "number": "0015752129519",
+      "date": "2024-04-15",
+      "travelerGivenName": "Jill",
+      "travelerSurname": "Drake",
+      "payment": {
+        "total": "1708.23",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TO"
+    }
+  ]
+}

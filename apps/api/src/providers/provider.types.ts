@@ -13,6 +13,7 @@ import type {
   OrderCreateResult,
   OrderManagePort,
   SearchContext,
+  TicketingPort,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
@@ -121,6 +122,16 @@ export function supportsAuditedCancel<T extends object>(
 }
 
 /**
+ * ¿Este adapter sabe emitir los tiquetes de una reserva (`TicketingPort`)? Por presencia de los dos
+ * métodos, como {@link supportsAuditedCreate}. Que el adapter sepa emitir no quiere decir que la
+ * emisión esté encendida: eso lo dice la capacidad `issue` del factory.
+ */
+export function supportsTicketing<T extends object>(adapter: T): adapter is T & TicketingPort {
+  const port = adapter as { issueTickets?: unknown; checkTickets?: unknown };
+  return typeof port.issueTickets === 'function' && typeof port.checkTickets === 'function';
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -133,6 +144,12 @@ export interface ProviderCapabilities {
   /** Ancillaries: equipaje, asientos y demás servicios sueltos. */
   readonly services: boolean;
   readonly reshop: boolean;
+  /**
+   * Emitir los tiquetes de una reserva confirmada, sin tarjeta (`TicketingPort`). Opcional y
+   * ausente = `false`: es la primera operación que mueve dinero irreversible, y un proveedor nuevo
+   * no la hereda por olvido. Distinta de `pay`, que es el pago diferido de LATAM.
+   */
+  readonly issue?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;

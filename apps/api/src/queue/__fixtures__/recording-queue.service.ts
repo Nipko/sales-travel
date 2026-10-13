@@ -6,12 +6,15 @@ import {
   compensationJobId,
   hcnCheckJobId,
   isValidDelayMs,
+  issueTicketsJobId,
   reconcileAccountJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
+  verifyIssueJobId,
   type CancelRetryJob,
   type CompensateJob,
   type HcnCheckJob,
+  type IssueTicketsJob,
   type PostSaleEnqueueOptions,
   type PostSaleJobName,
   type PostSaleQueueService,
@@ -19,6 +22,7 @@ import {
   type VerifyCancellationJob,
   type VerifyCreationJob,
   type VerifyHotelBookingJob,
+  type VerifyIssueJob,
 } from '../post-sale-queue.service.js';
 
 /**
@@ -46,9 +50,13 @@ export interface RecordedPostSaleJob {
     | VerifyHotelBookingJob
     | VerifyCancellationJob
     | HcnCheckJob
-    | ReconcileProviderAccountJob;
+    | ReconcileProviderAccountJob
+    | IssueTicketsJob
+    | VerifyIssueJob;
   jobId?: string;
   delayMs?: number;
+  /** Intentos que pediría a BullMQ. Ausente = los 5 de siempre. */
+  attempts?: number;
   /** Por qué la cola real no lo habría encolado; ausente si lo habría aceptado. */
   rejection?: string;
 }
@@ -73,6 +81,8 @@ export class RecordingQueueService {
   readonly cancelVerifications: VerifyCancellationJob[] = [];
   readonly hcnChecks: HcnCheckJob[] = [];
   readonly reconciliations: ReconcileProviderAccountJob[] = [];
+  readonly issues: IssueTicketsJob[] = [];
+  readonly issueVerifications: { data: VerifyIssueJob; delayMs?: number }[] = [];
   /** Intervalos con que se pidió programar el barrido. */
   readonly sweeperSchedules: number[] = [];
   /** Patrones con que se pidió programar la conciliación diaria. */
@@ -80,7 +90,12 @@ export class RecordingQueueService {
   readonly jobs: RecordedPostSaleJob[] = [];
 
   /** `false` simula "no hay Redis": el saga tiene que registrarlo, no darlo por hecho. */
-  constructor(private readonly accepted = true) {}
+  constructor(private accepted = true) {}
+
+  /** Cambia la respuesta de la cola a mitad del test (Redis que se cae o vuelve). */
+  accept(accepted: boolean): void {
+    this.accepted = accepted;
+  }
 
   enqueueCancelRetry(data: CancelRetryJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
     this.cancels.push(data);
@@ -131,6 +146,19 @@ export class RecordingQueueService {
     return this.record(POST_SALE_JOBS.hcnCheck, data, hcnCheckJobId(data), options);
   }
 
+  enqueueIssue(data: IssueTicketsJob): Promise<boolean> {
+    this.issues.push(data);
+    return this.record(POST_SALE_JOBS.issue, data, issueTicketsJobId(data), {}, 1);
+  }
+
+  enqueueVerifyIssue(data: VerifyIssueJob, options: PostSaleEnqueueOptions = {}): Promise<boolean> {
+    this.issueVerifications.push({
+      data,
+      ...(options.delayMs === undefined ? {} : { delayMs: options.delayMs }),
+    });
+    return this.record(POST_SALE_JOBS.verifyIssue, data, verifyIssueJobId(data), options);
+  }
+
   enqueueReconcileAccount(data: ReconcileProviderAccountJob): Promise<boolean> {
     this.reconciliations.push(data);
     return this.record(POST_SALE_JOBS.reconcileAccount, data, reconcileAccountJobId(data), {});
@@ -155,6 +183,7 @@ export class RecordingQueueService {
     data: RecordedPostSaleJob['data'],
     jobId: string | undefined,
     { delayMs }: PostSaleEnqueueOptions,
+    attempts?: number,
   ): Promise<boolean> {
     const rejection =
       delayMs !== undefined && !isValidDelayMs(delayMs)
@@ -167,6 +196,7 @@ export class RecordingQueueService {
       data,
       ...(jobId === undefined ? {} : { jobId }),
       ...(delayMs === undefined ? {} : { delayMs }),
+      ...(attempts === undefined ? {} : { attempts }),
       ...(rejection === undefined ? {} : { rejection }),
     });
     return Promise.resolve(this.accepted && rejection === undefined);

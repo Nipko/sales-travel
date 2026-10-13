@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import adultFixture from './__fixtures__/v5-roundtrip-adult-200.json';
 import multipaxFixture from './__fixtures__/price-multipax-2adt-200.json';
+import fulfillCashFixture from './__fixtures__/fulfill-atpco-cash-200.json';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import {
   SABRE_CANCEL_BOOKING_PATH,
@@ -35,7 +36,9 @@ import {
 } from './sabre-offer-price.adapter';
 import { SABRE_BOOKING_USE_CASES, SabreOrderCreateAdapter } from './sabre-order-create.adapter';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
+import { SabreTicketingAdapter } from './sabre-ticketing.adapter';
 import { mapSabreShopResponse } from './shop/response.mapper';
+import { SABRE_FULFILL_PATH } from './ticketing/fulfill.request.builder';
 
 /**
  * LA FASE DE RESERVA, EXTREMO A EXTREMO, POR LA PUERTA PÚBLICA.
@@ -159,6 +162,7 @@ interface Harness {
   readonly price: SabreOfferPriceAdapter;
   readonly create: SabreOrderCreateAdapter;
   readonly manage: SabreOrderManageAdapter;
+  readonly ticketing: SabreTicketingAdapter;
   /** La secuencia de rutas que el ACL tocó, en orden. */
   paths(): string[];
   /** El único cuerpo que se mandó a esa ruta. Lanza si hubo cero o más de uno. */
@@ -206,6 +210,7 @@ function wire(routes: Record<string, readonly Reply[]>, cfg: SabreConfig = confi
     price: new SabreOfferPriceAdapter(cfg, http, { logger, now: () => NOW_MS }),
     create: new SabreOrderCreateAdapter(cfg, http, { logger }),
     manage: new SabreOrderManageAdapter(cfg, http, { logger, now: () => NOW_MS }),
+    ticketing: new SabreTicketingAdapter(cfg, http, { logger, now: () => NOW_MS }),
     paths: () => calls.map((call) => call.path),
     bodyAt: (path) => {
       const matches = calls.filter((call) => call.path === path);
@@ -490,6 +495,29 @@ function ticketCheck(confirmationId: string = PNR): unknown {
         offerExpirationDate: '2026-08-27',
         offerExpirationTime: '23:59',
       },
+    ],
+  };
+}
+
+/**
+ * La emisión oficial con `CASH` (`help-documentation-fulfill-flight-tickets-examples.txt:178-230`)
+ * para los dos pasajeros de la reserva: el segundo tiquete es el primero con el número siguiente.
+ */
+function fulfilledForTwo(): unknown {
+  const body = structuredClone(fulfillCashFixture) as { tickets: Record<string, unknown>[] };
+  const [first] = body.tickets;
+  if (first === undefined) throw new Error('el fixture de emisión no trae tiquetes');
+  return { ...body, tickets: [first, { ...first, number: '0016802004061' }] };
+}
+
+/** La reserva emitida tal como la relee `getBooking`: un tiquete por pasajero, con su índice. */
+function bookingIssuedForTwo(): unknown {
+  return {
+    ...(bookingView({ lane: 'ATPCO', isTicketed: false }) as Record<string, unknown>),
+    isTicketed: true,
+    flightTickets: [
+      { number: '0016802004060', travelerIndex: 1, ticketStatusCode: 'TE' },
+      { number: '0016802004061', travelerIndex: 2, ticketStatusCode: 'TE' },
     ],
   };
 }
@@ -1279,6 +1307,91 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
 
     await expect(harness.manage.cancelBooking(PNR, CTX)).rejects.toThrow(SabreApiError);
     expect(harness.paths().filter((path) => path === SABRE_CANCEL_BOOKING_PATH)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 5 bis. La emisión encadenada a la reserva (SAB-07)
+// ---------------------------------------------------------------------------------------------
+
+describe('emitir lo que se reservó: createBooking → issueTickets → checkTickets → VOID', () => {
+  it('el PNR de la creación es el que se lee, se emite, se comprueba y se anula', async () => {
+    const harness = wire({
+      [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())],
+      [SABRE_GET_BOOKING_PATH]: [
+        ok(bookingView({ lane: 'ATPCO', isTicketed: false })),
+        ok(bookingIssuedForTwo()),
+      ],
+      [SABRE_FULFILL_PATH]: [ok(fulfilledForTwo())],
+      [SABRE_CHECK_FLIGHT_TICKETS_PATH]: [ok(ticketCheck()), ok(ticketCheck())],
+      [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
+    });
+
+    const request = orderRequest(atpcoOffer());
+    const created = await harness.create.createBooking(request, CTX);
+    const pnr = created.result.pnr ?? '';
+    expect(pnr).toBe(PNR);
+
+    // 1. Emitir: lee antes, emite una vez, sin tarjeta y con el número de pasajeros de la reserva.
+    const issued = await harness.ticketing.issueTickets(pnr, CTX, {
+      travelerCount: request.passengers.length,
+    });
+    expect(issued.outcome).toBe('ISSUED');
+    expect(issued.documents.map((d) => d.number)).toEqual(['0016802004060', '0016802004061']);
+    const fulfill = harness.bodyAt(SABRE_FULFILL_PATH);
+    expect(fulfill['confirmationId']).toBe(PNR);
+    expect(fulfill['formsOfPayment']).toEqual([{ type: 'CASH' }]);
+    expect(fulfill['acceptPriceChanges']).toBe(false);
+
+    // 2. Las condiciones, leídas del proveedor.
+    const conditions = await harness.ticketing.checkTickets(pnr, CTX);
+    expect(conditions.tickets).toEqual([
+      { number: '0012345678901', voidable: 'yes', refundable: 'no' },
+    ]);
+
+    // 3. Anular: la reserva ya está emitida, así que hay que nombrar VOID; la relectura y la
+    //    comprobación van antes de la cancelación.
+    const voided = await harness.manage.cancelBooking(pnr, CTX, { ticketOperation: 'VOID' });
+    expect(voided.result.success).toBe(true);
+
+    expect(harness.paths()).toEqual([
+      SABRE_CREATE_BOOKING_PATH,
+      SABRE_GET_BOOKING_PATH,
+      SABRE_FULFILL_PATH,
+      SABRE_CHECK_FLIGHT_TICKETS_PATH,
+      SABRE_GET_BOOKING_PATH,
+      SABRE_CHECK_FLIGHT_TICKETS_PATH,
+      SABRE_CANCEL_BOOKING_PATH,
+    ]);
+    expect(harness.bodyAt(SABRE_CANCEL_BOOKING_PATH)['flightTicketOperation']).toBe('VOID');
+
+    // La emisión limpia va en `info`, como la creación y la cancelación.
+    expect(harness.logs.find((l) => l.message === 'sabre.fulfillFlightTickets')?.level).toBe(
+      'info',
+    );
+  });
+
+  it('la emisión no lleva tarjeta, PAN ni datos del pasajero, ni en el cuerpo ni en el log', async () => {
+    const harness = wire({
+      [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())],
+      [SABRE_GET_BOOKING_PATH]: [ok(bookingView({ lane: 'ATPCO', isTicketed: false }))],
+      [SABRE_FULFILL_PATH]: [ok(fulfilledForTwo())],
+    });
+    const request = orderRequest(atpcoOffer());
+    await harness.create.createBooking(request, CTX);
+    await harness.ticketing.issueTickets(PNR, CTX, { travelerCount: request.passengers.length });
+
+    const call = harness.calls.find((c) => c.path === SABRE_FULFILL_PATH);
+    if (call === undefined) throw new Error('la emisión no salió al cable');
+    expect(keysOf(call.body).filter((key) => CARD_KEY.test(key))).toEqual([]);
+    expect((call.raw.match(PAN_SHAPE) ?? []).filter(luhn)).toEqual([]);
+    for (const value of PII_VALUES) {
+      expect(call.raw, value).not.toContain(value);
+    }
+    const logs = JSON.stringify(harness.logs);
+    for (const value of [...PII_VALUES, 'DRAKE']) {
+      expect(logs, value).not.toContain(value);
+    }
   });
 });
 

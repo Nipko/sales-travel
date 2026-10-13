@@ -50,3 +50,29 @@ describe('operationStatusView', () => {
     expect(operationStatusView({ type: 'cancel', status: 'success' }).label).toBe('OK');
   });
 });
+
+describe('la emisión de tiquetes en el historial (SAB-08)', () => {
+  it('se llama Emisión', () => {
+    expect(operationTypeLabel('issue')).toBe('Emisión');
+  });
+
+  it('en curso, emitida o fallida', () => {
+    expect(operationStatusView({ type: 'issue', status: 'pending' })).toEqual({
+      label: 'En curso',
+      tone: 'pending',
+    });
+    expect(operationStatusView({ type: 'issue', status: 'success' })).toEqual({
+      label: 'Emitida',
+      tone: 'ok',
+    });
+    expect(
+      operationStatusView({ type: 'issue', status: 'failed', reconciliationRequired: false }),
+    ).toEqual({ label: 'Falló', tone: 'failed' });
+  });
+
+  it('una emisión en duda no es un fallo: sin confirmar, y se revisa', () => {
+    expect(
+      operationStatusView({ type: 'issue', status: 'failed', reconciliationRequired: true }),
+    ).toEqual({ label: 'Sin confirmar', tone: 'pending' });
+  });
+});

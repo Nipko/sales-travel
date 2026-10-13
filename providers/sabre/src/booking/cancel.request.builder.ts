@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { sabreBodyDigest } from '../canonical-json';
 import { indexValue, type SabreIndex } from '../indices';
 import {
   SABRE_CONFIRMATION_ID_PATTERN,
@@ -160,11 +160,46 @@ export interface SabreCancelOffer {
   readonly expirationTime?: string;
 }
 
-/** Un billete comprobado — `CheckedTicket`, `:8496`. Sólo lo que decide la cancelación. */
+/** Un importe tal como lo da el contrato: decimal en texto y divisa ISO 4217. */
+export interface SabreCheckedAmount {
+  /** `^[0-9]+(\.[0-9]{1,3})?$`. Se guarda el texto: convertirlo es de quien sabe la divisa. */
+  readonly amount: string;
+  readonly currency: string;
+}
+
+/** Una penalidad estimada de reembolso — `PenaltyItem`, `:4642`. Sólo importe y origen. */
+export interface SabreCheckedPenalty extends SabreCheckedAmount {
+  /** `PenaltySourceEnum` (`:8898`). `Category 16` quita la garantía de reembolsabilidad. */
+  readonly source?: SabrePenaltySource;
+}
+
+/** `PenaltySourceEnum` — `:8898`. */
+export const SABRE_PENALTY_SOURCES = [
+  'Category 33',
+  'Category 31',
+  'Category 16',
+  'Unknown',
+] as const;
+export type SabrePenaltySource = (typeof SABRE_PENALTY_SOURCES)[number];
+
+/**
+ * Un billete comprobado — `CheckedTicket`, `:8496`. Lo que decide la cancelación y, para mostrar
+ * las condiciones, lo que el proveedor estima que se recuperaría.
+ *
+ * Los importes son OPCIONALES y se leen campo a campo: un importe ilegible se descarta y no tumba la
+ * evidencia, porque de la evidencia depende poder cancelar y un importe mal formado no cambia si el
+ * billete es anulable.
+ */
 export interface SabreCheckedTicket {
   readonly number: string;
   readonly isVoidable?: boolean;
   readonly isRefundable?: boolean;
+  /** `refundTotals` (`Ticket`, `:6533`): estimación de lo que se reembolsa. */
+  readonly refundTotal?: SabreCheckedAmount;
+  /** `refundFee` (`:8515`): la tasa de cancelación del reembolso automatizado. */
+  readonly refundFee?: SabreCheckedAmount;
+  /** `refundPenalties[]` (`:4642`): estimaciones pesimistas, una por aplicabilidad. */
+  readonly refundPenalties?: readonly SabreCheckedPenalty[];
 }
 
 /**
@@ -198,6 +233,10 @@ const CheckTicketsResponseSchema = z.object({
         number: z.string().optional(),
         isVoidable: z.boolean().optional(),
         isRefundable: z.boolean().optional(),
+        // `unknown` a propósito: se leen campo a campo y un importe ilegible no tumba la evidencia.
+        refundTotals: z.unknown().optional(),
+        refundFee: z.unknown().optional(),
+        refundPenalties: z.unknown().optional(),
       }),
     )
     .optional(),
@@ -212,6 +251,39 @@ const CheckTicketsResponseSchema = z.object({
     )
     .optional(),
 });
+
+/** `Value.amount` / `TotalValues.total` — `^[0-9]+(\.[0-9]{1,3})?$` (`:4095-4111`). */
+const CHECKED_AMOUNT_PATTERN = /^[0-9]+(\.[0-9]{1,3})?$/;
+const CHECKED_CURRENCY_PATTERN = /^[A-Z]{3}$/;
+
+/**
+ * Un importe del contrato, o `undefined` si no tiene la forma. `amountKey` es `total` en
+ * `TotalValues` y `amount` en `RefundFee` y `Value`; la divisa es `currencyCode` en los tres.
+ */
+function readCheckedAmount(raw: unknown, amountKey: string): SabreCheckedAmount | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const fields = raw as Readonly<Record<string, unknown>>;
+  const amount = fields[amountKey];
+  const currency = fields['currencyCode'];
+  if (typeof amount !== 'string' || !CHECKED_AMOUNT_PATTERN.test(amount)) return undefined;
+  if (typeof currency !== 'string' || !CHECKED_CURRENCY_PATTERN.test(currency)) return undefined;
+  return { amount, currency };
+}
+
+/** `refundPenalties[]`: las que traen importe legible. El origen sólo si es del enum. */
+function readCheckedPenalties(raw: unknown): SabreCheckedPenalty[] {
+  if (!Array.isArray(raw)) return [];
+  const penalties: SabreCheckedPenalty[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
+    const fields = item as Readonly<Record<string, unknown>>;
+    const value = readCheckedAmount(fields['penalty'], 'amount');
+    if (value === undefined) continue;
+    const source = SABRE_PENALTY_SOURCES.find((known) => known === fields['source']);
+    penalties.push({ ...value, ...(source === undefined ? {} : { source }) });
+  }
+  return penalties;
+}
 
 export interface SabreTicketCheckReadContext {
   /** La reserva sobre la que se pidió la comprobación. Se contrasta con el eco de la respuesta. */
@@ -283,10 +355,16 @@ export function readSabreTicketCheck(
   const tickets: SabreCheckedTicket[] = [];
   for (const ticket of parsed.data.tickets ?? []) {
     if (ticket.number === undefined) continue;
+    const refundTotal = readCheckedAmount(ticket.refundTotals, 'total');
+    const refundFee = readCheckedAmount(ticket.refundFee, 'amount');
+    const refundPenalties = readCheckedPenalties(ticket.refundPenalties);
     tickets.push({
       number: ticket.number,
       ...(ticket.isVoidable === undefined ? {} : { isVoidable: ticket.isVoidable }),
       ...(ticket.isRefundable === undefined ? {} : { isRefundable: ticket.isRefundable }),
+      ...(refundTotal === undefined ? {} : { refundTotal }),
+      ...(refundFee === undefined ? {} : { refundFee }),
+      ...(refundPenalties.length === 0 ? {} : { refundPenalties }),
     });
   }
 
@@ -745,16 +823,6 @@ export function buildSabreCancelBookingRequest(
   return body;
 }
 
-/** Serialización canónica: claves ordenadas en todo el árbol. Misma petición ⇒ mismos bytes. */
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entryValue]) => entryValue !== undefined)
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-  return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${canonicalJson(entryValue)}`).join(',')}}`;
-}
-
 /**
  * Clave de idempotencia del saga.
  *
@@ -767,7 +835,7 @@ function canonicalJson(value: unknown): string {
  * hay razón para publicarla fuera del saga.
  */
 export function sabreCancelIdempotencyKey(request: SabreCancelBookingRequest): string {
-  return createHash('sha256').update(canonicalJson(request)).digest('hex');
+  return sabreBodyDigest(request);
 }
 
 /** Línea de log estructurado. Nombra la forma de la cancelación, **nunca los identificadores**. */

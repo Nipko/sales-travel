@@ -28,6 +28,20 @@ export const ORDER_EVENTS = {
   /** Cancelación ejecutada contra el proveedor (exitosa o rechazada). */
   cancelled: 'OrderCancellationAttempted',
 
+  // Emisión de tiquetes (SAB-08). El pedido sale del request a la cola de post-venta: el primer
+  // evento dice que se pidió, y el último en qué quedó. Conteos y vocabulario cerrado: nunca los
+  // números de tiquete, que el panel de red muestra a cualquier admin del subárbol.
+
+  /** Un vendedor pidió emitir: hay una operación `issue` pendiente y un job en la cola. */
+  issueRequested: 'OrderTicketIssueRequested',
+  /** La reserva quedó emitida: la orden pasó a `ticketed`, con sus documentos guardados. */
+  ticketed: 'OrderTicketed',
+  /**
+   * La emisión no terminó en `ticketed`: rechazada sin emitir (se puede volver a pedir), o en duda
+   * (parcial, sin confirmar o para revisar), que se concilia releyendo la reserva y nunca reemitiendo.
+   */
+  issueFailed: 'OrderTicketIssueFailed',
+
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
 
@@ -75,6 +89,17 @@ export const POST_SALE_ESCALATION_REASONS = [
   'provider-status-unknown',
 ] as const;
 export type PostSaleEscalationReason = (typeof POST_SALE_ESCALATION_REASONS)[number];
+
+/** Motivos de `OrderEscalated` de la emisión de tiquetes. Vocabulario cerrado: el panel filtra. */
+export const TICKET_ISSUE_ESCALATION_REASONS = [
+  /** Una emisión en duda y las relecturas se agotaron sin ver todos los tiquetes emitidos. */
+  'issue-unverified',
+  /** El proveedor declaró una emisión parcial o ambigua: una persona tiene que mirar la reserva. */
+  'issue-needs-human',
+  /** Se emitió y la orden ya no estaba confirmada al cerrarla (otra operación la cambió). */
+  'issue-order-state-conflict',
+] as const;
+export type TicketIssueEscalationReason = (typeof TICKET_ISSUE_ESCALATION_REASONS)[number];
 
 /** Clasificación de una divergencia con el proveedor (04 §9.4). */
 export const RECONCILIATION_DISCREPANCY_KINDS = [
