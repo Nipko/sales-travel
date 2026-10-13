@@ -18,17 +18,16 @@ describe('contadores del menú', () => {
 });
 
 describe('sección Plataforma del menú', () => {
-  it('Aprobaciones abre la consola y lleva el contador de depósitos', () => {
-    expect(superAdminNav[0]).toMatchObject({
-      label: 'Aprobaciones',
-      href: '/admin/plataforma/aprobaciones',
+  it('Carteras abre la cola de depósitos de la red y lleva su contador', () => {
+    expect(superAdminNav.find((i) => i.label === 'Carteras')).toMatchObject({
+      href: '/admin/plataforma/carteras',
       badge: 'pendingDeposits',
     });
   });
 
   it('sólo con el rol superadmin en la agencia activa, como sus pantallas', () => {
     const viewer = { platformUser: true, superadmin: true };
-    expect(navSections('superadmin', viewer).at(-1)?.label).toBe('Plataforma');
+    expect(navSections('superadmin', viewer).map((s) => s.label)).toContain('Plataforma');
     expect(navSections('tenant_admin', viewer).map((s) => s.label)).not.toContain('Plataforma');
   });
 });

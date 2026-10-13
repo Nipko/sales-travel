@@ -54,7 +54,9 @@ describe('loadDepositApprovals', () => {
   it('sin mensaje, uno nuestro según el estado', async () => {
     respond(502, { error: '' });
     const res = await loadDepositApprovals(DEFAULT_APPROVALS_FILTERS);
-    expect(res.ok ? '' : res.message).toBe('No pudimos cargar los depósitos. Inténtalo de nuevo.');
+    expect(res.ok ? '' : res.message).toBe(
+      'No pudimos cargar los depósitos. Reintenta en unos segundos.',
+    );
   });
 
   it('una respuesta con otra forma no se muestra como datos', async () => {

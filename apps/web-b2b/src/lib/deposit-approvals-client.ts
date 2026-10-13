@@ -11,7 +11,7 @@ import {
 import { readJson } from './read-json';
 
 /**
- * Las llamadas del navegador a Plataforma → Aprobaciones (`/api/admin/deposit-reports`). Devuelven
+ * Las llamadas del navegador a Plataforma → Carteras (`/api/admin/deposit-reports`). Devuelven
  * datos ya validados o un mensaje para la pantalla; nunca lanzan.
  */
 

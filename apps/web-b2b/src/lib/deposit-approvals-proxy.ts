@@ -3,7 +3,7 @@ import { isCurrencyCode, isUuid } from './wallets';
 import type { WalletProxyPlan } from './wallet-proxy';
 
 /**
- * A qué ruta del API va cada pedido de Plataforma → Aprobaciones (`/api/admin/deposit-reports/...`
+ * A qué ruta del API va cada pedido de Plataforma → Carteras (`/api/admin/deposit-reports/...`
  * → `/admin/deposit-reports/...`). Sin I/O.
  *
  * Sólo lectura: la cola y su contador. La query se rearma parámetro por parámetro y lo que no se
@@ -14,7 +14,7 @@ import type { WalletProxyPlan } from './wallet-proxy';
 const NOT_FOUND: WalletProxyPlan = {
   ok: false,
   status: 404,
-  error: 'Ruta de aprobaciones inválida.',
+  error: 'Ruta de carteras inválida.',
 };
 const BAD_FILTER = (error: string): WalletProxyPlan => ({ ok: false, status: 400, error });
 

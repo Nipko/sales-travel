@@ -24,7 +24,7 @@ export function badgeLabel(badge: NavBadge, count: number): string {
 
 /**
  * Los contadores del menú. Hoy uno: los depósitos informados que esperan a Planetour, que sólo ve
- * el superadmin (Plataforma → Aprobaciones). Se releen al navegar y cuando una pantalla avisa que
+ * el superadmin (Plataforma → Carteras). Se releen al navegar y cuando una pantalla avisa que
  * resolvió uno. Si el pedido falla, el menú queda sin contador: la fuente es la cola, no el menú.
  */
 export function useNavBadges(role: string | undefined): NavBadgeCounts {

@@ -2,27 +2,31 @@
 
 import { ClipboardCheck, RefreshCw, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { NodeKindBadge } from '../../../../../../components/network/node-kind';
 import { Button } from '../../../../../../components/ui/button';
 import { Select, TextInput } from '../../../../../../components/ui/field';
+import { SegmentedControl } from '../../../../../../components/ui/segmented-control';
 import {
   ApproveReportDialog,
   RejectReportDialog,
 } from '../../../../../../components/wallets/wallet-dialogs';
 import { EmptyState, ToneBadge, ToneNotice } from '../../../../../../components/wallets/wallet-ui';
-import { cn } from '../../../../../../lib/cn';
 import {
+  ALREADY_RESOLVED_MESSAGE,
   DEFAULT_APPROVALS_FILTERS,
   SCOPE_HINT,
   SEARCH_MAX_LENGTH,
   STATUS_TABS,
   appendPage,
+  approverLabel,
+  canResolveReport,
+  carterasHref,
+  defaultFinancedBy,
   emptiesLoadedPage,
   emptyCopy,
   financierLabel,
-  otherFinancierOf,
   resolvedMessage,
   scopeOptions,
   sinceLabel,
@@ -71,17 +75,23 @@ type Resolving = { readonly kind: 'approve' | 'reject'; readonly report: QueuedD
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Plataforma → Aprobaciones: los depósitos que informaron las agencias de toda la red, en una sola
- * cola. Antes había que abrir nodo por nodo (Gestión de Agencias → nodo → Carteras) para encontrar
- * qué esperaba aprobación.
+ * Plataforma → Carteras: los depósitos que informaron las agencias de toda la red, en una sola cola.
+ * Antes había que abrir nodo por nodo (Agencias → nodo → Carteras) para encontrar qué esperaba
+ * aprobación.
  *
  * Por omisión muestra lo que financia Planetour, que es lo que llegó a su cuenta; lo que financia un
- * consolidador o una agencia de la red se ve aparte (normalmente lo aprueba ese nodo). Aprobar y
- * rechazar usan las mismas rutas y diálogos que las carteras de cada nodo.
+ * consolidador o una agencia de la red se ve aparte y sólo se mira: lo aprueba ese nodo, que es quien
+ * recibió el dinero. Aprobar y rechazar usan las mismas rutas y diálogos que las carteras de cada
+ * nodo. Los filtros viven en la URL (`?estado=&alcance=&moneda=&nodo=`): un enlace abre la misma
+ * lista, y la ficha de un nodo enlaza aquí con `?nodo=`.
  */
-export function DepositApprovalsPanel() {
-  const [filters, setFilters] = useState<ApprovalsFilters>(DEFAULT_APPROVALS_FILTERS);
-  const [search, setSearch] = useState('');
+export function DepositApprovalsPanel({
+  initialFilters = DEFAULT_APPROVALS_FILTERS,
+}: {
+  initialFilters?: ApprovalsFilters;
+}) {
+  const [filters, setFilters] = useState<ApprovalsFilters>(initialFilters);
+  const [search, setSearch] = useState(initialFilters.q);
   const [list, setList] = useState<ListState>({ status: 'loading' });
   const [counts, setCounts] = useState<PendingDeposits | null>(null);
   const [currencies, setCurrencies] = useState<readonly string[]>([]);
@@ -116,6 +126,14 @@ export function DepositApprovalsPanel() {
   useEffect(() => {
     void load(filters, 'initial');
   }, [filters, load]);
+
+  // Los filtros a la URL sin recargar: Next sincroniza replaceState con su router.
+  useEffect(() => {
+    const href = carterasHref(filters);
+    if (`${window.location.pathname}${window.location.search}` !== href) {
+      window.history.replaceState(null, '', href);
+    }
+  }, [filters]);
 
   useEffect(() => {
     const q = search.trim();
@@ -170,6 +188,14 @@ export function DepositApprovalsPanel() {
   ): Promise<string | undefined> {
     const res = await action();
     if (!res.ok) {
+      if (res.status === 409) {
+        // Otro lo aprobó o lo rechazó mientras se miraba: no hay nada que corregir en el diálogo.
+        setResolving(null);
+        toast.info(ALREADY_RESOLVED_MESSAGE);
+        notifyPendingDepositsChanged();
+        void load(filters, 'quiet');
+        return undefined;
+      }
       if (refreshAfterFailure(res)) {
         notifyPendingDepositsChanged();
         void load(filters, 'quiet');
@@ -200,22 +226,29 @@ export function DepositApprovalsPanel() {
     filters.financedBy === 'platform' &&
     filters.q === '' &&
     filters.currency === 'all' &&
+    filters.tenantId === null &&
     counts !== null &&
     counts.network > 0
       ? counts.network
       : 0;
+  const scopedNode =
+    filters.tenantId === null
+      ? null
+      : list.status === 'ready'
+        ? (list.data.reports.find((r) => r.tenant.id === filters.tenantId)?.tenant.name ?? null)
+        : null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-5 sm:py-8">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
-            Aprobaciones
+            Carteras de la red
           </h1>
           <p className="mt-1 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
-            Los depósitos que informaron las agencias de toda la red. Verifica cada uno contra el
-            extracto del banco: al aprobarlo se acredita en la cartera de la agencia; al rechazarlo,
-            la agencia ve el motivo y puede informarlo de nuevo.
+            Los depósitos que informaron las agencias y esperan tu aprobación. Verifica cada uno
+            contra el extracto del banco: al aprobarlo se acredita en la cartera de la agencia; al
+            rechazarlo, la agencia ve el motivo y puede informarlo de nuevo.
           </p>
         </div>
         <Button
@@ -231,7 +264,33 @@ export function DepositApprovalsPanel() {
       </header>
 
       <div className="mb-5 space-y-3">
-        <Segmented
+        {filters.tenantId !== null ? (
+          <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[var(--color-fg)]">
+              {scopedNode !== null
+                ? `Ves sólo los depósitos de ${scopedNode} y su red.`
+                : 'Ves sólo los depósitos de un nodo y su red.'}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="self-start sm:self-auto"
+              onClick={() =>
+                setFilters((f) => ({
+                  ...f,
+                  tenantId: null,
+                  financedBy:
+                    f.financedBy === defaultFinancedBy(f.tenantId)
+                      ? defaultFinancedBy(null)
+                      : f.financedBy,
+                }))
+              }
+            >
+              Ver toda la red
+            </Button>
+          </div>
+        ) : null}
+        <SegmentedControl
           legend="Estado de los depósitos"
           options={STATUS_TABS}
           value={filters.status}
@@ -239,11 +298,12 @@ export function DepositApprovalsPanel() {
         />
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 space-y-1.5">
-            <Segmented
+            <SegmentedControl
               legend="De quién es el dinero"
               options={scopes}
               value={filters.financedBy}
               onChange={(value: FinancedByFilter) => setFilter('financedBy', value)}
+              countLabel="por aprobar"
             />
             <p className="max-w-prose text-xs text-[var(--color-fg-muted)]">
               {SCOPE_HINT[filters.financedBy]}
@@ -409,7 +469,6 @@ export function DepositApprovalsPanel() {
           key={resolving.report.id}
           report={resolving.report}
           nodeName={resolving.report.tenant.name}
-          otherFinancier={otherFinancierOf(resolving.report)}
           onClose={closeDialog}
           onSubmit={(body) =>
             resolve('approve', resolving.report, () =>
@@ -434,68 +493,6 @@ export function DepositApprovalsPanel() {
   );
 }
 
-/**
- * Un grupo de radios con aspecto de control segmentado: se recorre con las flechas, como cualquier
- * grupo de radios, y la opción marcada se lee sin depender del color.
- */
-function Segmented<T extends string>({
-  legend,
-  options,
-  value,
-  onChange,
-}: {
-  legend: string;
-  options: readonly { readonly value: T; readonly label: string; readonly count?: number }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  const name = useId();
-  return (
-    <fieldset className="min-w-0">
-      <legend className="sr-only">{legend}</legend>
-      <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5">
-        {options.map((option) => {
-          const checked = option.value === value;
-          return (
-            <label
-              key={option.value}
-              className={cn(
-                'relative inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-[var(--color-primary)]',
-                checked
-                  ? 'bg-[var(--color-surface-muted)] text-[var(--color-fg)] shadow-[var(--shadow-xs)]'
-                  : 'text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]',
-              )}
-            >
-              <input
-                type="radio"
-                name={name}
-                value={option.value}
-                checked={checked}
-                onChange={() => onChange(option.value)}
-                className="sr-only"
-              />
-              {option.label}
-              {option.count !== undefined ? (
-                <span
-                  className={cn(
-                    'rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
-                    option.count > 0
-                      ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-                      : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
-                  )}
-                >
-                  {option.count}
-                  <span className="sr-only"> por aprobar</span>
-                </span>
-              ) : null}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 /** Lo que se lee de un depósito antes de decidir: monto, referencia, agencia, quién lo financia. */
 export function ReportRow({
   report,
@@ -509,6 +506,7 @@ export function ReportRow({
   onReject: () => void;
 }) {
   const pending = report.status === 'pending';
+  const canResolve = canResolveReport(report);
   const status = reportStatus(report.status);
   const amount = formatMinor(report.amountMinor, report.currency, report.exponent);
   const reported = [
@@ -575,7 +573,12 @@ export function ReportRow({
         ) : (
           <ToneBadge tone={status.tone}>{status.label}</ToneBadge>
         )}
-        {pending ? (
+        {pending && !canResolve ? (
+          <p className="text-xs font-medium text-[var(--color-fg-muted)] sm:text-right">
+            {approverLabel(report)}
+          </p>
+        ) : null}
+        {pending && canResolve ? (
           <div className="flex gap-2">
             <Button size="sm" className="flex-1 sm:flex-none" onClick={onApprove}>
               Aprobar

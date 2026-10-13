@@ -82,7 +82,7 @@ type Dialog =
   | { readonly kind: 'approve'; readonly report: DepositReport }
   | { readonly kind: 'reject'; readonly report: DepositReport };
 
-/** Un depósito resuelto aquí también baja el contador del menú (Plataforma → Aprobaciones). */
+/** Un depósito resuelto aquí también baja el contador del menú (Plataforma → Carteras). */
 function announceResolved<T>(res: WalletResult<T>): WalletResult<T> {
   if (res.ok) notifyPendingDepositsChanged();
   return res;

@@ -909,8 +909,10 @@ GET    /tenants/:tenantId/portfolios/network-holds?currency&status
 GET    /tenants/:tenantId/portfolios/deposit-reports
 POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
 
--- El superadmin, sobre toda la red (Plataforma → Aprobaciones). Sólo lectura: se aprueba y se
--- rechaza con las dos rutas de arriba, en el nodo dueño del informe.
+-- El superadmin, sobre toda la red (Plataforma → Carteras, /admin/plataforma/carteras
+-- ?estado&alcance&moneda&nodo). Sólo lectura: se aprueba y se rechaza con las dos rutas de arriba,
+-- en el nodo dueño del informe, y desde la cola sólo lo que financia Planetour (lo que financia
+-- otro nodo llegó a su cuenta: "Lo aprueba {nodo}").
 GET    /admin/deposit-reports?status&financedBy&currency&tenantId&q&cursor&limit
                                                 -- la cola: pendientes del más viejo al más nuevo (o el historial),
                                                 --   con nodo, financiador y totales por moneda; financedBy=platform|network
@@ -956,6 +958,27 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ### Admin (superadmin)
 
 ```
+GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
+                                         -- 30 días por defecto, hasta 366. tenantId = el subárbol de
+                                         -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
+                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- confirmadas, red (nodos, personas, sesiones vivas),
+                                         -- carteras (cupo, deuda, exposición de Planetour), lo que
+                                         -- espera a una persona (depósitos, post-venta fallida o
+                                         -- trabada, hoteles sin verificar, retenciones en conflicto,
+                                         -- conciliación, invitaciones), las reservas con problemas
+                                         -- (admin_order_attention: total, por motivo y muestra de 10),
+                                         -- puestos al 90 %, corridas de conciliación de 7 días,
+                                         -- frescura de los catálogos de hoteles y señales de
+                                         -- proveedores. Sólo lee; las funciones platform_overview_* y
+                                         -- admin_* exigen en la base is_platform_superadmin() (42501
+                                         -- admin_superadmin_required → 403 SUPERADMIN_REQUIRED con
+                                         -- rethrowAdminDbError). En el panel: /admin/plataforma/resumen,
+                                         -- adonde entra el superadmin al abrir `/` (BFF
+                                         -- /api/admin/overview?period=today|7d|30d|month, traducido
+                                         -- a días de Bogotá).
+-- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
+-- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status

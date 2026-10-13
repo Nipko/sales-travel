@@ -11,18 +11,13 @@ import {
 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Card, CardContent } from '../../components/ui/card';
+import { parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
+import { PLATFORM_HOME, shouldLandOnPlatformOverview } from '../../lib/platform-overview';
+import { getActiveTenant } from '../../lib/session';
 import { canSell, viewerOf, type Viewer } from '../../lib/viewer';
-
-interface Membership {
-  id: string;
-  role: string;
-  status: string;
-  tenantId: string;
-  tenantSlug: string;
-  tenantName: string;
-}
 
 interface QuickAction {
   href: Route;
@@ -126,14 +121,23 @@ function buildStats(k: DashboardKpis | null): Stat[] {
 }
 
 export default async function DashboardPage() {
-  const [res, kpiRes] = await Promise.all([
-    api<Membership[]>('/me/memberships'),
+  const [res, kpiRes, activeTenantId] = await Promise.all([
+    api<unknown>('/me/memberships'),
     api<DashboardKpis>('/reports/dashboard').catch(() => null),
+    getActiveTenant(),
   ]);
-  const memberships = res.ok ? res.data : [];
+  const memberships = res.ok ? parseMemberships(res.data) : [];
+  const viewer = viewerOf(memberships);
+  // El superadmin entra a su Resumen, con el mismo criterio con que `/admin/plataforma` lo deja
+  // pasar: sin bucle de redirecciones. `redirect` lanza, así que va fuera de cualquier try/catch.
+  if (
+    shouldLandOnPlatformOverview(resolveActiveMembership(memberships, activeTenantId)?.role, viewer)
+  ) {
+    redirect(PLATFORM_HOME);
+  }
   // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y seria falso.
   const stats = buildStats(kpiRes?.ok ? kpiRes.data : null);
-  const primary = primaryAction(viewerOf(memberships));
+  const primary = primaryAction(viewer);
   const PrimaryIcon = primary.icon;
 
   return (

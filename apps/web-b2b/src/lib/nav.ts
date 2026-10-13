@@ -3,11 +3,11 @@ import {
   Building2,
   Calendar,
   Car,
-  ClipboardCheck,
   FileText,
   Home,
   Hotel,
   KeyRound,
+  LayoutDashboard,
   Lock,
   MapPin,
   Network,
@@ -65,19 +65,23 @@ export const accountNav: NavItem[] = [
   { label: 'Seguridad', href: '/configuracion/seguridad', icon: Lock },
 ];
 
-/** La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. */
+/**
+ * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
+ * se sumen (Usuarios, Reservas, Actividad, Sistema) se agregan a este mismo arreglo.
+ */
 export const superAdminNav: NavItem[] = [
+  { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
+  { label: 'Agencias', href: '/admin/tenants', icon: Building2 },
   {
-    label: 'Aprobaciones',
-    href: '/admin/plataforma/aprobaciones',
-    icon: ClipboardCheck,
+    label: 'Carteras',
+    href: '/admin/plataforma/carteras',
+    icon: Wallet,
     badge: 'pendingDeposits',
   },
-  { label: 'Gestión de Agencias', href: '/admin/tenants', icon: Building2 },
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
-  { label: 'Proveedores de la plataforma', href: '/admin/plataforma/proveedores', icon: Plug },
-  { label: 'Usuarios de la plataforma', href: '/admin/plataforma/usuarios', icon: UserCog },
+  { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
+  { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
 ];
 
 /** Roles que ven la sección Administración. */
@@ -105,16 +109,20 @@ export interface NavSection {
  * el sidebar y para la paleta de comandos (⌘K): si no, una ofrecía pantallas que la otra no.
  */
 export function navSections(role: string | undefined, viewer: Viewer): NavSection[] {
+  const platform = role === 'superadmin';
   const sections: NavSection[] = [
     // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts).
     { label: 'Operaciones', items: navForViewer(operationsNav, viewer) },
-    { label: 'Gestión', items: managementNav },
+    // La plataforma va primero entre lo suyo; Gestión (Clientes, Cartera B2B, Reportes) mostraría
+    // los datos del tenant de la plataforma, que no vende: vacíos.
+    ...(platform
+      ? [{ label: 'Plataforma', items: superAdminNav }]
+      : [{ label: 'Gestión', items: managementNav }]),
   ];
   if (seesAdministration(role)) {
     sections.push({ label: 'Administración', items: adminNav });
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.
   sections.push({ label: 'Mi cuenta', items: accountNav });
-  if (role === 'superadmin') sections.push({ label: 'Plataforma', items: superAdminNav });
   return sections;
 }

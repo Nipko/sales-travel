@@ -5,7 +5,7 @@ import { forwardWalletPlan } from '../../../../../lib/wallet-proxy-route';
 type Params = { params: Promise<{ path?: string[] }> };
 
 /**
- * Plataforma → Aprobaciones: la cola de depósitos informados de toda la red y su contador. Sólo
+ * Plataforma → Carteras: la cola de depósitos informados de toda la red y su contador. Sólo
  * lectura; aprobar y rechazar van por `/api/tenants/:id/portfolios/deposit-reports/...`. Si quien
  * pide es superadmin lo decide el API.
  */

@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_APPROVALS_FILTERS,
   parseQueuedReport,
   type QueuedDepositReport,
 } from '../../../../../../lib/deposit-approvals';
@@ -52,7 +53,8 @@ describe('DepositApprovalsPanel en su primer pintado', () => {
 
   it('título, filtros con nombre y la cola anunciando que carga', () => {
     expect(html).toContain('<h1');
-    expect(html).toContain('Aprobaciones');
+    expect(html).toContain('Carteras de la red');
+    expect(html).toContain('esperan tu aprobación');
     expect(html).toContain('Estado de los depósitos');
     expect(html).toContain('De quién es el dinero');
     expect(html).toContain('aria-label="Buscar por agencia o referencia"');
@@ -70,6 +72,21 @@ describe('DepositApprovalsPanel en su primer pintado', () => {
 
   it('va en tú', () => {
     expect([...html.replace(/<[^>]+>/g, ' ').matchAll(VOSEO)]).toEqual([]);
+  });
+
+  it('acotada a un nodo (?nodo=): lo dice, ofrece volver a toda la red y mira todo lo del nodo', () => {
+    const scoped = renderToStaticMarkup(
+      createElement(DepositApprovalsPanel, {
+        initialFilters: { ...DEFAULT_APPROVALS_FILTERS, financedBy: 'all', tenantId: NODE },
+      }),
+    );
+    expect(scoped).toContain('Ves sólo los depósitos de un nodo y su red.');
+    expect(scoped).toContain('Ver toda la red');
+    const checked = [...scoped.matchAll(/<input[^>]*>/g)]
+      .map((m) => m[0])
+      .filter((tag) => tag.includes('checked=""'))
+      .map((tag) => /value="([^"]*)"/.exec(tag)?.[1]);
+    expect(checked).toEqual(['pending', 'all']);
   });
 });
 
@@ -96,6 +113,29 @@ describe('ReportRow', () => {
     expect(html).toContain(
       'Rechazar<span class="sr-only"> el depósito WIRE-77 de Agencia Sur</span>',
     );
+  });
+
+  it('uno que financia otro nodo: se ve pero no se resuelve aquí, y dice quién lo aprueba', () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportRow, {
+        report: {
+          ...REPORT,
+          financier: {
+            id: '10000000-0000-4000-8000-0000000000c1',
+            name: 'Consolidador Andino',
+            tenantType: 'consolidator',
+          },
+          financedByPlatform: false,
+        },
+        now,
+        onApprove: noop,
+        onReject: noop,
+      }),
+    );
+    expect(html).not.toContain('Aprobar');
+    expect(html).not.toContain('Rechazar');
+    expect(html).toContain('Lo aprueba Consolidador Andino');
+    expect(html).toContain('Informado hace 3 días');
   });
 
   it('uno resuelto: sin botones, con quién y por qué', () => {

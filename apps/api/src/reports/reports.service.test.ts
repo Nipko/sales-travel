@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { salesVerticalLabel } from './reports.service.js';
+import { salesVertical, salesVerticalLabel } from './reports.service.js';
 
 /**
  * La vertical de cada orden en los reportes de ventas (docs/tbo/09 PR-4.6). Antes, cualquier
@@ -32,5 +32,23 @@ describe('salesVerticalLabel', () => {
   it('una vertical declarada que no se conoce cae a la de su proveedor', () => {
     expect(salesVerticalLabel('hotelbeds', 'cruceros')).toBe('Hoteles');
     expect(salesVerticalLabel('otro', 'cruceros')).toBe('Vuelos');
+  });
+});
+
+describe('salesVertical: el código de la vertical, para quien no muestra etiquetas', () => {
+  it.each([
+    ['tbo-hotels', 'hotels', 'hotels'],
+    ['agent-cars', 'cars', 'cars'],
+    ['assistcard', null, 'assistance'],
+    ['latam-ndc', null, 'flights'],
+    ['hotelbeds', 'cruceros', 'hotels'],
+    ['otro', 'cruceros', 'flights'],
+  ] as const)('%s con `vertical: %s` → %s', (provider, vertical, code) => {
+    expect(salesVertical(provider, vertical)).toBe(code);
+  });
+
+  it('una clave heredada de Object no es una vertical', () => {
+    expect(salesVertical('otro', 'toString')).toBe('flights');
+    expect(salesVerticalLabel('otro', 'constructor')).toBe('Vuelos');
   });
 });
