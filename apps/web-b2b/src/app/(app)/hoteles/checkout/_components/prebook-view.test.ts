@@ -4,11 +4,14 @@ import type { RateSelection } from '../../_components/hotel-rate-selection';
 import {
   acceptedPrebookOf,
   agencyContactNotice,
+  AMENITIES_PREVIEW,
+  amenityChips,
   checkoutExpiryNotice,
   continueGate,
   isRetryablePrebookStatus,
   parsePrebook,
   priceChangeView,
+  roomAmenitiesView,
   signalsView,
   type HotelPrebook,
   type HotelPrebookRepricing,
@@ -187,6 +190,37 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
       apiResponse({ rateConditions: [{ category: 'parking', text: 'Parking USD 10' }] }),
     );
     expect(parsed?.rateConditions).toEqual([{ category: 'other', text: 'Parking USD 10' }]);
+  });
+
+  it('trae los servicios de cada habitación; lo que no se puede atribuir a una habitación no se muestra', () => {
+    expect(
+      parsePrebook(apiResponse({ roomAmenities: [['Free WiFi', ' Minibar ']] }))?.roomAmenities,
+    ).toEqual([['Free WiFi', 'Minibar']]);
+    for (const roomAmenities of [
+      // Una lista por habitación o nada: la tarifa tiene UNA habitación.
+      [['Free WiFi'], ['Minibar']],
+      ['Free WiFi'],
+      'Free WiFi',
+      [['   ', '']],
+      null,
+    ]) {
+      const parsed = parsePrebook(apiResponse({ roomAmenities }));
+      // La tarifa se lee igual: los servicios no deciden nada.
+      expect(parsed?.prebookRef).toBe(PREBOOK_REF);
+      expect(parsed).not.toHaveProperty('roomAmenities');
+    }
+    expect(parsePrebook(apiResponse())).not.toHaveProperty('roomAmenities');
+  });
+
+  it('servicios: textos no vacíos, de hasta 80 caracteres y 60 por habitación, por si el API cambia', () => {
+    const muchos = Array.from({ length: 70 }, (_, i) => `Servicio ${i}`);
+    const parsed = parsePrebook(
+      apiResponse({ roomAmenities: [[7, '', 'x'.repeat(81), '😀'.repeat(80), ...muchos]] }),
+    );
+    const [lista] = parsed?.roomAmenities ?? [];
+    expect(lista).toHaveLength(60);
+    expect(lista?.[0]).toBe('😀'.repeat(80));
+    expect(lista?.[1]).toBe('Servicio 0');
   });
 });
 
@@ -526,6 +560,97 @@ describe('agencyContactNotice — el contacto de soporte antes de los huéspedes
   it('con el contacto, o sin saberlo, no hay aviso', () => {
     expect(agencyContactNotice({ agencyContact: 'ok' })).toBeUndefined();
     expect(agencyContactNotice(undefined)).toBeUndefined();
+  });
+});
+
+describe('roomAmenitiesView — los servicios de la habitación en el checkout (TBO-12)', () => {
+  const DOS_HABITACIONES: HotelRoompack = {
+    ...ROOMPACK,
+    rooms: [
+      { name: 'Deluxe King', reference: 1, bedOptions: [] },
+      { name: '  Suite Junior ', reference: 2, bedOptions: [] },
+    ],
+  };
+
+  it('una habitación: un bloque «Servicios de la habitación», sin número', () => {
+    expect(
+      roomAmenitiesView({ roompack: ROOMPACK, roomAmenities: [['Free WiFi', 'Minibar']] }),
+    ).toEqual({
+      title: 'Servicios de la habitación',
+      note: 'Como los informa el proveedor, en su idioma.',
+      blocks: [{ key: 'all', amenities: ['Free WiFi', 'Minibar'] }],
+    });
+  });
+
+  it('varias con la misma lista (TBO da una para toda la unidad): un bloque que lo dice', () => {
+    const view = roomAmenitiesView({
+      roompack: DOS_HABITACIONES,
+      roomAmenities: [
+        ['Free WiFi', 'Minibar'],
+        ['Free WiFi', 'Minibar'],
+      ],
+    });
+    expect(view?.title).toBe('Servicios de las habitaciones');
+    expect(view?.note).toContain('Son los mismos en las 2 habitaciones.');
+    expect(view?.blocks).toEqual([{ key: 'all', amenities: ['Free WiFi', 'Minibar'] }]);
+  });
+
+  it('varias con listas distintas: un bloque por habitación, «Habitación 2» con su nombre', () => {
+    const view = roomAmenitiesView({
+      roompack: DOS_HABITACIONES,
+      roomAmenities: [['Free WiFi'], ['Free WiFi', 'Jacuzzi']],
+    });
+    expect(view?.title).toBe('Servicios de las habitaciones');
+    expect(view?.note).not.toContain('los mismos');
+    expect(view?.blocks).toEqual([
+      { key: 'room-0', label: 'Habitación 1', roomName: 'Deluxe King', amenities: ['Free WiFi'] },
+      {
+        key: 'room-1',
+        label: 'Habitación 2',
+        roomName: 'Suite Junior',
+        amenities: ['Free WiFi', 'Jacuzzi'],
+      },
+    ]);
+  });
+
+  it('la habitación sin servicios va igual, vacía; sin nombre, sólo el número', () => {
+    const view = roomAmenitiesView({
+      roompack: {
+        ...DOS_HABITACIONES,
+        rooms: [
+          { name: 'Deluxe King', reference: 1, bedOptions: [] },
+          { name: '  ', reference: 2, bedOptions: [] },
+        ],
+      },
+      roomAmenities: [['Free WiFi'], []],
+    });
+    expect(view?.blocks[1]).toEqual({ key: 'room-1', label: 'Habitación 2', amenities: [] });
+  });
+
+  it('sin servicios en ninguna habitación, o sin el dato, nada', () => {
+    expect(roomAmenitiesView({ roompack: ROOMPACK })).toBeUndefined();
+    expect(roomAmenitiesView({ roompack: ROOMPACK, roomAmenities: [] })).toBeUndefined();
+    expect(
+      roomAmenitiesView({ roompack: DOS_HABITACIONES, roomAmenities: [[], []] }),
+    ).toBeUndefined();
+  });
+});
+
+describe('amenityChips — 8 a la vista y «Ver todos (n)»', () => {
+  const doce = Array.from({ length: 12 }, (_, i) => `Servicio ${i + 1}`);
+
+  it(`hasta ${AMENITIES_PREVIEW} entran todas, sin botón`, () => {
+    expect(amenityChips(doce.slice(0, AMENITIES_PREVIEW), false)).toEqual({
+      shown: doce.slice(0, AMENITIES_PREVIEW),
+    });
+  });
+
+  it('con más, las primeras 8 y «Ver todos (12)»; abierto, todas y «Ver menos»', () => {
+    expect(amenityChips(doce, false)).toEqual({
+      shown: doce.slice(0, 8),
+      toggle: 'Ver todos (12)',
+    });
+    expect(amenityChips(doce, true)).toEqual({ shown: doce, toggle: 'Ver menos' });
   });
 });
 

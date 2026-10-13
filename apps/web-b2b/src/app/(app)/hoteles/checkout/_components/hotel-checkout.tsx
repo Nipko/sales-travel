@@ -39,6 +39,7 @@ import {
   agencyContactNotice,
   continueGate,
   priceChangeView,
+  roomAmenitiesView,
   signalsView,
   type AcceptedPrebook,
 } from './prebook-view';
@@ -343,6 +344,7 @@ function PrebookReady({
   const signals = useMemo(() => signalsView(prebook.signals), [prebook.signals]);
   const funding = useMemo(() => fundingNotice(prebook.funding), [prebook.funding]);
   const agencyContact = agencyContactNotice(prebook.bookingReadiness);
+  const amenities = useMemo(() => roomAmenitiesView(prebook), [prebook]);
   // Con el reloj del servidor: si el 100 % empezó a regir después del PreBook, también se avisa.
   const nonRefundable = useMemo(
     () => nonRefundableAt(prebook, Date.now() + clockOffsetMs),
@@ -397,6 +399,7 @@ function PrebookReady({
             row={row}
             expired={expired}
             providerEnvironment={prebook.providerEnvironment}
+            amenities={amenities}
           />
           <CancelPolicy pack={prebook.roompack} nonRefundable={nonRefundable !== undefined} />
           <RateConditions conditions={prebook.rateConditions} />

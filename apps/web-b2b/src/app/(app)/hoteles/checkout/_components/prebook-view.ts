@@ -85,6 +85,11 @@ export interface HotelPrebook {
    * Si la agencia tiene hoy lo que el Book le va a exigir. Sin él no se sabe, y decide el Book.
    */
   readonly bookingReadiness?: PrebookBookingReadiness;
+  /**
+   * Los servicios de cada habitación que dio el PreBook ("Free WiFi"), una lista por habitación en
+   * el orden de `roompack.rooms`, como los informa el proveedor. Sólo se muestran: no deciden nada.
+   */
+  readonly roomAmenities?: readonly (readonly string[])[];
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -203,6 +208,31 @@ function readinessOf(value: unknown): PrebookBookingReadiness | undefined {
   return contact === 'ok' || contact === 'missing' ? { agencyContact: contact } : undefined;
 }
 
+/** Los topes del API (`hotel-room-amenities.ts`), repetidos acá por si llega otra cosa. */
+const ROOM_AMENITIES_MAX = 60;
+const ROOM_AMENITY_MAX_CHARS = 80;
+
+/**
+ * Una lista por habitación, de textos. Lo que no tiene esa forma —o no tiene una lista por cada
+ * habitación de la tarifa— no se muestra: atribuirle a una habitación los servicios de otra sería
+ * peor que no mostrar ninguno. Nunca invalida la tarifa: son sólo para mirar.
+ */
+function roomAmenitiesOf(value: unknown, rooms: number): string[][] | undefined {
+  if (!Array.isArray(value) || value.length !== rooms) return undefined;
+  const lists: string[][] = [];
+  for (const list of value) {
+    if (!Array.isArray(list)) return undefined;
+    lists.push(
+      list
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0 && Array.from(item).length <= ROOM_AMENITY_MAX_CHARS)
+        .slice(0, ROOM_AMENITIES_MAX),
+    );
+  }
+  return lists.some((list) => list.length > 0) ? lists : undefined;
+}
+
 /**
  * La respuesta del PreBook neutral, o `undefined` si no es una tarifa revalidada completa: sin
  * `prebookRef` no hay Book posible, y sin precio ni política no hay nada que aceptar.
@@ -229,6 +259,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
   const nonRefundable = parseNonRefundable(value['nonRefundable']);
   const environment = value['providerEnvironment'];
   const bookingReadiness = readinessOf(value['bookingReadiness']);
+  const roomAmenities = roomAmenitiesOf(value['roomAmenities'], roompack.rooms.length);
   return {
     prebookRef,
     providerCode,
@@ -249,6 +280,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
       ? { providerEnvironment: environment }
       : {}),
     ...(bookingReadiness === undefined ? {} : { bookingReadiness }),
+    ...(roomAmenities === undefined ? {} : { roomAmenities }),
   };
 }
 
@@ -511,6 +543,86 @@ export function agencyContactNotice(
     href: AGENCY_SETTINGS_HREF,
     linkLabel: 'Ir a Mi Agencia',
   };
+}
+
+// ───────────────────────── Servicios de la habitación ─────────────────────────
+
+/** Etiquetas a la vista antes de «Ver todos». */
+export const AMENITIES_PREVIEW = 8;
+
+export interface RoomAmenitiesBlock {
+  /** Estable entre renders: el estado de «Ver todos» de cada bloque es suyo. */
+  readonly key: string;
+  /** «Habitación 2», sólo cuando cada habitación trae los suyos. */
+  readonly label?: string;
+  /** El nombre de esa habitación, junto a su número. */
+  readonly roomName?: string;
+  /** Vacía: el proveedor no informó servicios para esa habitación. */
+  readonly amenities: readonly string[];
+}
+
+export interface RoomAmenitiesView {
+  readonly title: string;
+  readonly note: string;
+  readonly blocks: readonly RoomAmenitiesBlock[];
+}
+
+function sameAmenities(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+
+/**
+ * Los servicios que dio el PreBook para distinguir habitaciones antes de reservar (TBO-12), o
+ * `undefined` si no hay ninguno.
+ *
+ * Si todas las habitaciones traen la misma lista va un solo bloque, que dice que vale para todas:
+ * TBO da una lista para la unidad reservable entera (docs/tbo/03 §2.7), y repetirla por habitación
+ * sólo haría más larga la pantalla. Si difieren, un bloque por habitación («Habitación 2»), también
+ * para la que no trae ninguno, para que el vendedor no lo lea como un olvido de la pantalla.
+ */
+export function roomAmenitiesView(
+  prebook: Pick<HotelPrebook, 'roompack' | 'roomAmenities'>,
+): RoomAmenitiesView | undefined {
+  const lists = prebook.roomAmenities ?? [];
+  const [first] = lists;
+  if (first === undefined || lists.every((list) => list.length === 0)) return undefined;
+  const note = 'Como los informa el proveedor, en su idioma.';
+  if (lists.every((list) => sameAmenities(list, first))) {
+    return lists.length === 1
+      ? { title: 'Servicios de la habitación', note, blocks: [{ key: 'all', amenities: first }] }
+      : {
+          title: 'Servicios de las habitaciones',
+          note: `${note} Son los mismos en las ${lists.length} habitaciones.`,
+          blocks: [{ key: 'all', amenities: first }],
+        };
+  }
+  return {
+    title: 'Servicios de las habitaciones',
+    note,
+    blocks: lists.map((amenities, i) => {
+      const roomName = prebook.roompack.rooms[i]?.name.trim();
+      return {
+        key: `room-${i}`,
+        label: `Habitación ${i + 1}`,
+        ...(roomName ? { roomName } : {}),
+        amenities,
+      };
+    }),
+  };
+}
+
+export interface AmenityChips {
+  readonly shown: readonly string[];
+  /** El texto del botón que muestra todas o las pliega; sin botón si entran todas. */
+  readonly toggle?: string;
+}
+
+/** Las etiquetas de un bloque: las primeras {@link AMENITIES_PREVIEW} y «Ver todos (n)». */
+export function amenityChips(amenities: readonly string[], expanded: boolean): AmenityChips {
+  if (amenities.length <= AMENITIES_PREVIEW) return { shown: amenities };
+  return expanded
+    ? { shown: amenities, toggle: 'Ver menos' }
+    : { shown: amenities.slice(0, AMENITIES_PREVIEW), toggle: `Ver todos (${amenities.length})` };
 }
 
 // ───────────────────────── Seguir al paso 2 ─────────────────────────

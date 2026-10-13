@@ -82,6 +82,17 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
     expect(res.prebook.bookingReadiness).toEqual({ agencyContact: 'missing' });
   });
 
+  it('trae los servicios de la habitación del PreBook, una lista por habitación', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREBOOK, roomAmenities: [['Free WiFi', 'Minibar']] },
+    });
+    const res = await prebookRateAction(REFERENCE);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.prebook.roomAmenities).toEqual([['Free WiFi', 'Minibar']]);
+  });
+
   it('una referencia que no es nuestra no llega al API', async () => {
     const res = await prebookRateAction({
       providerCode: 'tbo-hotels',
