@@ -24,6 +24,8 @@ const GOBIERNO: Readonly<Record<string, string>> = {
   PROVIDERS_DISABLED: join(__dirname, 'circuit-breaker.service.ts'),
   FLIGHT_PROVIDERS_OPT_IN: join(__dirname, '..', 'providers', 'providers.module.ts'),
   HOTEL_PROVIDERS_OPT_IN: join(__dirname, '..', 'providers', 'hotel-providers.module.ts'),
+  // Detalle por habitación de HotelDetails de TBO (Q-65): `on` por defecto, `off` lo apaga.
+  TBO_ROOM_DETAILS: join(__dirname, '..', 'providers-tbo', 'tbo-hotels.factory.ts'),
 };
 
 /** El bloque del servicio `api`: desde `  api:` hasta el siguiente servicio del mismo nivel. */

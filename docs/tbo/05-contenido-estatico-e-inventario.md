@@ -436,6 +436,27 @@ función queda **apagada** hasta tener un fixture real capturado en test, y `Roo
 `"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search sin imágenes de habitación
 → [Q-65](./10-preguntas-para-tbo.md#q-65). El uso de `RoomID` en la oferta está en [02](./02-search-y-oferta-canonica.md).
 
+**Estado del ACL (TBO-05, 2026-10-13).** El cliente de contenido ya puede mandar `IsRoomDetailRequired: true`
+(`getHotelDetails(…, { roomDetail: true })`), pero ningún llamador lo pide todavía: lo hará el contenido por habitación
+bajo demanda (TBO-06). Sin pedirlo, el body y la salida son los de siempre.
+
+- **Lector tolerante** (`providers/tbo-hotels/src/static/room-detail.reader.ts`): busca el bloque en el hotel bajo
+  `Rooms`, `RoomDetails`, `RoomDetail`, `RoomInfo`, `RoomInformation`, `HotelRooms`, `RoomList`, `RoomData`,
+  `RoomTypes` o `Room` (lista, objeto indexado por id u objeto único); si no, en la raíz con el `HotelCode` de cada
+  habitación; si no, una lista de objetos con al menos dos campos de habitación. Informa la forma (`array`, `map`,
+  `single`, `root`, `heuristic`, `none`, `unreadable`) en la métrica `tbo.hotelDetails.room_detail` y, con `none`, un
+  `warn` `tbo.static.room_container_not_found` con `Clave:tipoJSON` de cada clave del hotel, nunca valores. Fixtures
+  INFERIDOS en `__fixtures__/inferred/` hasta la sonda PR-12 (TBO-10).
+- **Normalización**: `RoomId` a texto (`0` o ceros → `null`); sin id, la habitación se identifica con `n-` y 16 hex del
+  SHA-256 de su nombre normalizado (el mismo `normalizeRoomName` de la web). Fotos sólo de dominios de TBO por
+  `https` (sin esquema o con `http` se suben a `https`), hasta 30; descripción en texto plano; hasta 100 habitaciones
+  por hotel.
+- **El contenido del hotel nunca empeora.** Si con la clave TBO falla, contesta "No Hotels Found" o le faltan hoteles,
+  el cliente repite el lote SIN la clave y devuelve lo que traiga (`roomDetail: 'fallback'`). Si sin la clave vinieron
+  hoteles que con ella no, es un rechazo; tres seguidos suspenden la clave hasta reiniciar el proceso, con un `warn`
+  `tbo.static.room_detail_suspended`. La variable `TBO_ROOM_DETAILS=off` del deploy la apaga del todo.
+- **¿Search manda `RoomID`?** Cada pack lo cuenta por su forma en `tbo.search.room_id` (`present`, `zero`, `absent`).
+
 ---
 
 #### 2.6.4 Lote sin contenido: "No Hotels Found" (producción, 2026-09-30; CE-23)
