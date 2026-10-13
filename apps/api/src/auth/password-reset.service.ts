@@ -4,7 +4,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import { mailNodeOf } from '../mail/mail-node.js';
 import { MailerService } from '../mail/mailer.service.js';
+import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { currentContext } from '../request-context/request-context.js';
 import { PasswordReuseError } from './auth-errors.js';
 import { passwordResetEmail, type ResetEmailVariant } from './password-reset-email.js';
@@ -53,6 +55,7 @@ export class PasswordResetService {
     private readonly mailer: MailerService,
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
+    private readonly notices: SecurityNoticeService,
   ) {}
 
   /**
@@ -70,7 +73,7 @@ export class PasswordResetService {
 
     const { token } = await this.issueToken(this.db.db, user.id, { invalidatePrevious: false });
 
-    const node = await this.mailNodeOf(user.id);
+    const node = await mailNodeOf(this.db, user.id);
 
     // El resultado del envío no cambia la respuesta (seguiría siendo un oráculo): queda en la
     // auditoría para quien investigue por qué no llegó.
@@ -239,7 +242,7 @@ export class PasswordResetService {
     });
     if (issued === null) return { linkSent: false };
 
-    const node = await this.mailNodeOf(userId);
+    const node = await mailNodeOf(this.db, userId);
     const sent = await this.sendResetEmail(
       node?.tenantId ?? null,
       issued.email,
@@ -260,27 +263,6 @@ export class PasswordResetService {
   }
 
   /**
-   * El nodo por cuyo correo le escribimos a alguien sin un admin de por medio: su membership activa
-   * más antigua. Se lee con su id en el contexto (policy memberships_self): la API corre como
-   * app_user y, sin él, la RLS de memberships no deja ver ninguna y el correo salía siempre por el
-   * del sistema.
-   */
-  private async mailNodeOf(
-    userId: string,
-  ): Promise<{ tenantId: string; name: string } | undefined> {
-    return this.db.withRequestContext({ userId }, (trx) =>
-      trx
-        .selectFrom('memberships')
-        .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
-        .select(['memberships.tenant_id as tenantId', 'tenants.name as name'])
-        .where('memberships.user_id', '=', userId)
-        .where('memberships.status', '=', 'active')
-        .orderBy('memberships.created_at')
-        .executeTakeFirst(),
-    );
-  }
-
-  /**
    * Canjea el token y fija la contraseña nueva. Revoca TODAS las sesiones del usuario y, por
    * `password_changed_at`, también sus equipos de confianza. Si un admin le había pedido elegir una
    * contraseña nueva, la marca se levanta en el mismo UPDATE: sirve tanto el enlace que le envió el
@@ -297,6 +279,9 @@ export class PasswordResetService {
    * Con el cambio forzado pendiente, la contraseña nueva no puede ser la misma de antes
    * (PasswordReuseError): el admin lo forzó porque pudo quedar expuesta. El rollback deja el enlace
    * vigente para elegir otra.
+   *
+   * Hecho el cambio, le avisa a su correo que la contraseña cambió (`password_changed`): si no fue
+   * ella, se entera por su buzón y no por el próximo ingreso fallido.
    */
   async reset(token: string, newPassword: string): Promise<{ ok: true }> {
     const hash = await this.password.hash(newPassword);
@@ -371,6 +356,7 @@ export class PasswordResetService {
       aggregateType: 'user',
       aggregateId: userId,
     });
+    this.notices.notify('password_changed', { userId, tenantId: null });
 
     return { ok: true };
   }
@@ -380,7 +366,7 @@ export class PasswordResetService {
    * equipos de confianza) y levanta la marca de "elegir una contraseña nueva" si la tenía. El
    * dispositivo actual sigue porque el controlador le emite una sesión nueva
    * (AuthService.reissueAfterPasswordChange): antes esto prometía conservar la actual y la mataba
-   * igual.
+   * igual. Hecho el cambio, le avisa a su correo, como el canje del enlace.
    */
   async change(
     userId: string,
@@ -421,6 +407,7 @@ export class PasswordResetService {
       aggregateType: 'user',
       aggregateId: userId,
     });
+    this.notices.notify('password_changed', { userId, tenantId: null });
 
     return { ok: true };
   }

@@ -2,11 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { HttpException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import { AuditService, type AuditEvent } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role, TenantType } from '../database/database.types.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { MemberDetailService, type MemberDetail } from './member-detail.service.js';
 
@@ -82,7 +83,13 @@ d('ficha del usuario y cierre de una sesión, contra Postgres', () => {
 
   const network = new NetworkService(database);
   const audit = new AuditService(database);
-  const detail = new MemberDetailService(database, network, audit);
+  const notices = { notify: vi.fn() };
+  const detail = new MemberDetailService(
+    database,
+    network,
+    audit,
+    notices as unknown as SecurityNoticeService,
+  );
 
   let cons: string;
   let norte: string;
@@ -487,7 +494,12 @@ d('ficha del usuario y cierre de una sesión, contra Postgres', () => {
 
     it('si el evento no entra, la sesión sigue abierta', async () => {
       const id = await session(ana, norte);
-      const conFalla = new MemberDetailService(database, network, new AuditoriaQueFalla(database));
+      const conFalla = new MemberDetailService(
+        database,
+        network,
+        new AuditoriaQueFalla(database),
+        notices as unknown as SecurityNoticeService,
+      );
 
       await expect(conFalla.revokeSession(adminNorte, norte, ana, id)).rejects.toThrow(
         'el evento no entró',

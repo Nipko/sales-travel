@@ -5,6 +5,7 @@ import { scriptedKysely } from '../__fixtures__/scripted-kysely.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB, Role } from '../database/database.types.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import type { NetworkService } from '../network/network.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import { MemberDetailService } from './member-detail.service.js';
@@ -174,13 +175,15 @@ function banco(opts: Banco = {}) {
     ),
   };
   const audit = { emitWithin: vi.fn(() => Promise.resolve()) };
+  const notices = { notify: vi.fn() };
   const service = new MemberDetailService(
     db as unknown as DatabaseService,
     network as unknown as NetworkService,
     audit as unknown as AuditService,
+    notices as unknown as SecurityNoticeService,
   );
   const ran = (c: Consulta) => k.queries.filter((q) => consulta(q) === c);
-  return { service, network, db, audit, k, contexts, trxs, ran };
+  return { service, network, db, audit, notices, k, contexts, trxs, ran };
 }
 
 async function motivo(p: Promise<unknown>): Promise<string> {
@@ -513,6 +516,52 @@ describe('MemberDetailService.revokeSession', () => {
       '404/SESSION_NOT_FOUND',
     );
     expect(audit.emitWithin).not.toHaveBeenCalled();
+  });
+
+  it('cerrada la sesión, la persona recibe UN aviso, después del commit y por el nodo de la ruta', async () => {
+    const { service, audit, notices } = banco();
+    // Mientras la transacción sigue abierta, todavía no hubo aviso.
+    audit.emitWithin.mockImplementationOnce(() => {
+      expect(notices.notify).not.toHaveBeenCalled();
+      return Promise.resolve();
+    });
+
+    expect(await service.revokeSession(ACTOR, NODO, TARGET, SESION)).toEqual({ ok: true });
+
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('session_revoked', {
+      userId: TARGET,
+      tenantId: NODO,
+    });
+  });
+
+  it('ningún rechazo avisa: ni uno mismo, ni fuera del nodo, ni sin sesión, ni sin rango', async () => {
+    const casos = [
+      { b: banco(), target: ACTOR },
+      { b: banco({ routeRole: undefined }), target: TARGET },
+      { b: banco({ rows: { sesionARevocar: [] } }), target: TARGET },
+      { b: banco({ rows: { sesionARevocar: [{ tenant_id: null }] } }), target: TARGET },
+      { b: banco({ sessionRole: undefined }), target: TARGET },
+      {
+        b: banco({ routeRole: 'admin', rows: { rolDelObjetivo: [{ role: 'tenant_admin' }] } }),
+        target: TARGET,
+      },
+      { b: banco({ rows: { revocar: [{ revoked: false }] } }), target: TARGET },
+    ];
+    for (const { b, target } of casos) {
+      expect(await motivo(b.service.revokeSession(ACTOR, NODO, target, SESION))).not.toBe('ok');
+      expect(b.notices.notify).not.toHaveBeenCalled();
+    }
+  });
+
+  it('si la auditoría falla, la transacción se deshace y no hay aviso', async () => {
+    const { service, audit, notices } = banco();
+    audit.emitWithin.mockRejectedValueOnce(new Error('el evento no entró'));
+
+    await expect(service.revokeSession(ACTOR, NODO, TARGET, SESION)).rejects.toThrow(
+      'el evento no entró',
+    );
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 
   it('una sesión sin nodo no se toca desde un nodo', async () => {

@@ -10,6 +10,7 @@ import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role, TenantType } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import { MemberSupportService } from '../tenants/member-support.service.js';
@@ -89,14 +90,16 @@ d('historial por usuario y Actividad de la red, contra Postgres', () => {
   const network = new NetworkService(database);
   const audit = new AuditService(database);
   const sessions = new SessionService(database, audit);
+  const notices = { notify: vi.fn() } as unknown as SecurityNoticeService;
   const resets = new PasswordResetService(
     database,
     password,
     mailer as unknown as MailerService,
     audit,
     sessions,
+    notices,
   );
-  const support = new MemberSupportService(database, network, audit, resets);
+  const support = new MemberSupportService(database, network, audit, resets, notices);
   const controller = new UserAuditController(audit, network);
 
   let cons: string;

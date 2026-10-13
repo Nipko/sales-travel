@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { MemberSupportService } from '../tenants/member-support.service.js';
 import { AuthService, type AuthResult, type LoginResult } from './auth.service.js';
@@ -83,12 +84,14 @@ d('forzar el cambio de contraseña, contra Postgres como app_user', () => {
         Promise.resolve(true),
     ),
   };
+  const notices = { notify: vi.fn() } as unknown as SecurityNoticeService;
   const resets = new PasswordResetService(
     database,
     password,
     mailer as unknown as MailerService,
     audit,
     sessions,
+    notices,
   );
   const auth = new AuthService(
     database,
@@ -104,7 +107,7 @@ d('forzar el cambio de contraseña, contra Postgres como app_user', () => {
     attempts,
     resets,
   );
-  const support = new MemberSupportService(database, network, audit, resets);
+  const support = new MemberSupportService(database, network, audit, resets, notices);
 
   let agency: string;
   let adminId: string;

@@ -10,7 +10,8 @@ import type { AuditService } from '../audit/audit.service.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { SessionService } from '../auth/session.service.js';
 import type { DatabaseService } from '../database/database.service.js';
-import type { Role } from '../database/database.types.js';
+import type { MembershipStatus, Role, UserStatus } from '../database/database.types.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import type { NetworkService } from '../network/network.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -76,6 +77,7 @@ function banco({
     footprint: vi.fn(() => Promise.resolve({ activeMemberships: 0, liveSessions: 0 })),
     assertNotLastSuperadmin: vi.fn(() => Promise.resolve()),
   };
+  const notices = { notify: vi.fn() };
   const controller = new AdminController(
     db as unknown as DatabaseService,
     network as unknown as NetworkService,
@@ -85,8 +87,9 @@ function banco({
     seats as unknown as SeatsService,
     invitations as unknown as InvitationsService,
     platformUsers as unknown as PlatformUsersService,
+    notices as unknown as SecurityNoticeService,
   );
-  return { controller, network, tenants, db, seats, invitations, platformUsers };
+  return { controller, network, tenants, db, seats, invitations, platformUsers, notices };
 }
 
 describe('AdminController: corrección de la red, sólo superadmin', () => {
@@ -256,6 +259,182 @@ describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () =>
   });
 });
 
+/**
+ * El cambio de rol o de estado de una membership con su transacción de verdad (cambio, evento,
+ * commit): la membership destino es `membresia` y el actor la administra como `roleOver`.
+ */
+function bancoMembresia(
+  membresia: { id: string; role: Role; status: MembershipStatus },
+  roleOver: Role = 'tenant_admin',
+) {
+  const orden: string[] = [];
+  const update = {
+    set: vi.fn(() => update),
+    where: vi.fn(() => update),
+    executeTakeFirstOrThrow: vi.fn(() => {
+      orden.push('update');
+      return Promise.resolve({ numUpdatedRows: 1n });
+    }),
+  };
+  const trx = { updateTable: vi.fn(() => update) };
+  const db = {
+    withRequestContext: vi
+      .fn()
+      // 1ª: la membership destino, leída con la RLS del actor.
+      .mockResolvedValueOnce(membresia)
+      .mockImplementation(async (_ctx: unknown, fn: (t: unknown) => Promise<unknown>) => {
+        const result = await fn(trx);
+        orden.push('commit');
+        return result;
+      }),
+  };
+  const sessions = {
+    revokeForTenant: vi.fn(() => {
+      orden.push('sesiones');
+      return Promise.resolve(1);
+    }),
+  };
+  const invitations = { revokeOrphaned: vi.fn(() => Promise.resolve([])) };
+  const audit = {
+    emitWithin: vi.fn(() => {
+      orden.push('evento');
+      return Promise.resolve();
+    }),
+  };
+  const notices = {
+    notify: vi.fn(() => {
+      orden.push('aviso');
+    }),
+  };
+  const controller = new AdminController(
+    db as unknown as DatabaseService,
+    { roleOver: vi.fn(() => Promise.resolve(roleOver)) } as unknown as NetworkService,
+    audit as unknown as AuditService,
+    sessions as unknown as SessionService,
+    {} as TenantsService,
+    {} as SeatsService,
+    invitations as unknown as InvitationsService,
+    {} as PlatformUsersService,
+    notices as unknown as SecurityNoticeService,
+  );
+  return { controller, orden, audit, notices };
+}
+
+describe('AdminController: la persona se entera por su correo de su rol y su acceso', () => {
+  const VENDEDOR = { id: 'm-7', role: 'vendedor' as Role, status: 'active' as MembershipStatus };
+
+  it('cambiar el rol: UN aviso con el rol nuevo, por el nodo destino, después del commit', async () => {
+    const { controller, orden, notices } = bancoMembresia(VENDEDOR);
+
+    await controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'admin' });
+
+    expect(orden).toEqual(['update', 'evento', 'commit', 'aviso']);
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('role_changed', {
+      userId: OTRO,
+      tenantId: NODO,
+      role: 'admin',
+    });
+  });
+
+  it('el mismo rol que ya tenía no es un cambio: sin aviso', async () => {
+    const { controller, audit, notices } = bancoMembresia(VENDEDOR);
+
+    await controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'vendedor' });
+
+    expect(audit.emitWithin).toHaveBeenCalledTimes(1);
+    expect(notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('suspender su acceso al nodo: el aviso sale después del commit', async () => {
+    const { controller, orden, notices } = bancoMembresia(VENDEDOR);
+
+    await controller.setMembershipStatus(ACTOR, {
+      userId: OTRO,
+      tenantId: NODO,
+      status: 'suspended',
+    });
+
+    expect(orden).toEqual(['update', 'sesiones', 'evento', 'commit', 'aviso']);
+    expect(notices.notify).toHaveBeenCalledWith('membership_suspended', {
+      userId: OTRO,
+      tenantId: NODO,
+    });
+  });
+
+  it('reactivarlo: el aviso de reactivado; si ya estaba en ese estado, ninguno', async () => {
+    const reactivar = bancoMembresia({ ...VENDEDOR, status: 'suspended' });
+    await reactivar.controller.setMembershipStatus(ACTOR, {
+      userId: OTRO,
+      tenantId: NODO,
+      status: 'active',
+    });
+    expect(reactivar.notices.notify).toHaveBeenCalledTimes(1);
+    expect(reactivar.notices.notify).toHaveBeenCalledWith('membership_reactivated', {
+      userId: OTRO,
+      tenantId: NODO,
+    });
+
+    const igual = bancoMembresia(VENDEDOR);
+    await igual.controller.setMembershipStatus(ACTOR, {
+      userId: OTRO,
+      tenantId: NODO,
+      status: 'active',
+    });
+    expect(igual.audit.emitWithin).toHaveBeenCalledTimes(1);
+    expect(igual.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('si algo falla dentro de la transacción, no hay aviso', async () => {
+    const { controller, audit, notices } = bancoMembresia(VENDEDOR);
+    audit.emitWithin.mockImplementationOnce(() => Promise.reject(new Error('el evento no entró')));
+
+    await expect(
+      controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'admin' }),
+    ).rejects.toThrow('el evento no entró');
+    expect(notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('ningún rechazo avisa: uno mismo, fuera de la red o sin rango', async () => {
+    const yo = bancoMembresia(VENDEDOR);
+    await expect(
+      yo.controller.changeRole(ACTOR, { userId: ACTOR, tenantId: NODO, role: 'admin' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      yo.controller.setMembershipStatus(ACTOR, {
+        userId: ACTOR,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    const fuera = banco({ roleOver: undefined });
+    await expect(
+      fuera.controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'vendedor' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      fuera.controller.setMembershipStatus(ACTOR, {
+        userId: OTRO,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    const superior = bancoMembresia({ ...VENDEDOR, role: 'tenant_admin' }, 'admin');
+    await expect(
+      superior.controller.setMembershipStatus(ACTOR, {
+        userId: OTRO,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
+
+    for (const n of [yo.notices, fuera.notices, superior.notices]) {
+      expect(n.notify).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)', () => {
   function invitaciones(roleOver: Role | undefined) {
     const service = { invite: vi.fn(() => Promise.resolve({ id: 'inv', expiresAt: new Date() })) };
@@ -408,11 +587,25 @@ describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => 
 });
 
 /**
- * Una base que corre lo que le pasan: el UPDATE de `users` toca `filas` filas. Para seguir el orden
- * de la suspensión de una cuenta (guarda, cambio, sesiones, invitaciones, evento) sin Postgres.
+ * Una base que corre lo que le pasan: la cuenta estaba en `previo` (`null` = no existe) y el
+ * UPDATE de `users` toca `filas` filas. Para seguir el orden de la suspensión de una cuenta (guarda,
+ * estado anterior, cambio, sesiones, invitaciones, evento, commit y aviso) sin Postgres.
  */
-function bancoCuenta({ filas = 1n, superadmin = true } = {}) {
+function bancoCuenta({
+  filas = 1n,
+  superadmin = true,
+  previo = 'active',
+}: { filas?: bigint; superadmin?: boolean; previo?: UserStatus | null } = {}) {
   const orden: string[] = [];
+  const select = {
+    select: vi.fn(() => select),
+    where: vi.fn(() => select),
+    forNoKeyUpdate: vi.fn(() => select),
+    executeTakeFirst: vi.fn(() => {
+      orden.push('previo');
+      return Promise.resolve(previo === null ? undefined : { status: previo });
+    }),
+  };
   const update = {
     set: vi.fn(() => update),
     where: vi.fn(() => update),
@@ -425,9 +618,13 @@ function bancoCuenta({ filas = 1n, superadmin = true } = {}) {
       return Promise.resolve({ numUpdatedRows: filas });
     }),
   };
-  const trx = { updateTable: vi.fn(() => update) };
+  const trx = { updateTable: vi.fn(() => update), selectFrom: vi.fn(() => select) };
   const db = {
-    withRequestContext: vi.fn((_ctx: unknown, fn: (t: unknown) => Promise<unknown>) => fn(trx)),
+    withRequestContext: vi.fn(async (_ctx: unknown, fn: (t: unknown) => Promise<unknown>) => {
+      const result = await fn(trx);
+      orden.push('commit');
+      return result;
+    }),
   };
   const sessions = {
     revokeAllForUser: vi.fn(() => {
@@ -459,6 +656,11 @@ function bancoCuenta({ filas = 1n, superadmin = true } = {}) {
       return Promise.resolve();
     }),
   };
+  const notices = {
+    notify: vi.fn(() => {
+      orden.push('aviso');
+    }),
+  };
   const controller = new AdminController(
     db as unknown as DatabaseService,
     { isSuperadmin: vi.fn(() => Promise.resolve(superadmin)) } as unknown as NetworkService,
@@ -468,8 +670,19 @@ function bancoCuenta({ filas = 1n, superadmin = true } = {}) {
     {} as SeatsService,
     invitations as unknown as InvitationsService,
     platformUsers as unknown as PlatformUsersService,
+    notices as unknown as SecurityNoticeService,
   );
-  return { controller, orden, update, sessions, invitations, audit, platformUsers };
+  return {
+    controller,
+    orden,
+    update,
+    select,
+    sessions,
+    invitations,
+    audit,
+    platformUsers,
+    notices,
+  };
 }
 
 describe('Plataforma → Usuarios: directorio y cuenta en toda la plataforma, sólo superadmin', () => {
@@ -539,8 +752,8 @@ describe('Plataforma → Usuarios: directorio y cuenta en toda la plataforma, s�
     expect(nadie.invitations.orphanedInvitations).not.toHaveBeenCalled();
   });
 
-  it('suspender: guarda del último superadmin, cambio, sesiones, invitaciones y evento, en ese orden', async () => {
-    const { controller, orden, platformUsers } = bancoCuenta();
+  it('suspender: guarda, estado anterior, cambio, sesiones, invitaciones, evento y, tras el commit, el aviso', async () => {
+    const { controller, orden, platformUsers, notices, select } = bancoCuenta();
 
     await expect(
       controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
@@ -551,11 +764,28 @@ describe('Plataforma → Usuarios: directorio y cuenta en toda la plataforma, s�
       revokedInvitations: 1,
     });
     expect(platformUsers.assertNotLastSuperadmin).toHaveBeenCalledWith(expect.anything(), OTRO);
-    expect(orden).toEqual(['guarda', 'update', 'sesiones', 'invitaciones', 'evento']);
+    // El estado anterior se lee con la fila tomada, para no avisar de un cambio que no hubo.
+    expect(select.forNoKeyUpdate).toHaveBeenCalledTimes(1);
+    expect(orden).toEqual([
+      'guarda',
+      'previo',
+      'update',
+      'sesiones',
+      'invitaciones',
+      'evento',
+      'commit',
+      'aviso',
+    ]);
+    // Sin nodo de por medio: sale por el correo de su nodo y no nombra ninguno.
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('account_suspended', {
+      userId: OTRO,
+      tenantId: null,
+    });
   });
 
   it('suspender al último superadmin activo: 409 con motivo y no cambia nada', async () => {
-    const { controller, platformUsers, update, sessions, audit } = bancoCuenta();
+    const { controller, platformUsers, update, sessions, audit, notices } = bancoCuenta();
     platformUsers.assertNotLastSuperadmin.mockRejectedValueOnce(new LastSuperadminError());
 
     const res = controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' });
@@ -567,27 +797,61 @@ describe('Plataforma → Usuarios: directorio y cuenta en toda la plataforma, s�
     expect(update.executeTakeFirstOrThrow).not.toHaveBeenCalled();
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(audit.emitWithin).not.toHaveBeenCalled();
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 
-  it('una cuenta que no existe: 404 con motivo, sin revocar nada ni dejar evento', async () => {
-    const { controller, sessions, invitations, audit } = bancoCuenta({ filas: 0n });
-
+  it('una cuenta que no existe: 404 con motivo, sin revocar nada, dejar evento ni avisar', async () => {
+    for (const b of [bancoCuenta({ previo: null }), bancoCuenta({ filas: 0n })]) {
+      await expect(
+        b.controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
+      ).rejects.toMatchObject({ reason: 'USER_NOT_FOUND', message: 'Ese usuario no existe.' });
+      expect(b.sessions.revokeAllForUser).not.toHaveBeenCalled();
+      expect(b.invitations.revokeOrphaned).not.toHaveBeenCalled();
+      expect(b.audit.emitWithin).not.toHaveBeenCalled();
+      expect(b.notices.notify).not.toHaveBeenCalled();
+    }
+    // Sin la fila, ni se intenta el cambio.
+    const nadie = bancoCuenta({ previo: null });
     await expect(
-      controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
-    ).rejects.toMatchObject({ reason: 'USER_NOT_FOUND', message: 'Ese usuario no existe.' });
-    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
-    expect(invitations.revokeOrphaned).not.toHaveBeenCalled();
-    expect(audit.emitWithin).not.toHaveBeenCalled();
+      nadie.controller.setUserStatus(ACTOR, { userId: OTRO, status: 'active' }),
+    ).rejects.toMatchObject({ reason: 'USER_NOT_FOUND' });
+    expect(nadie.update.executeTakeFirstOrThrow).not.toHaveBeenCalled();
   });
 
-  it('reactivar no pasa por la guarda ni revoca nada; queda el evento', async () => {
-    const { controller, orden, platformUsers } = bancoCuenta();
+  it('reactivar no pasa por la guarda ni revoca nada; queda el evento y, tras el commit, el aviso', async () => {
+    const { controller, orden, platformUsers, notices } = bancoCuenta({ previo: 'suspended' });
 
     await expect(
       controller.setUserStatus(ACTOR, { userId: OTRO, status: 'active' }),
     ).resolves.toEqual({ id: OTRO, status: 'active', revokedSessions: 0, revokedInvitations: 0 });
     expect(platformUsers.assertNotLastSuperadmin).not.toHaveBeenCalled();
-    expect(orden).toEqual(['update', 'evento']);
+    expect(orden).toEqual(['previo', 'update', 'evento', 'commit', 'aviso']);
+    expect(notices.notify).toHaveBeenCalledWith('account_reactivated', {
+      userId: OTRO,
+      tenantId: null,
+    });
+  });
+
+  it('si el estado ya era ése, el cambio y el evento quedan pero no hay aviso', async () => {
+    const reactivar = bancoCuenta({ previo: 'active' });
+    await reactivar.controller.setUserStatus(ACTOR, { userId: OTRO, status: 'active' });
+    expect(reactivar.audit.emitWithin).toHaveBeenCalledTimes(1);
+    expect(reactivar.notices.notify).not.toHaveBeenCalled();
+
+    const suspender = bancoCuenta({ previo: 'suspended' });
+    await suspender.controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' });
+    expect(suspender.audit.emitWithin).toHaveBeenCalledTimes(1);
+    expect(suspender.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('si algo falla dentro de la transacción, no hay aviso', async () => {
+    const { controller, audit, notices } = bancoCuenta();
+    audit.emitWithin.mockImplementationOnce(() => Promise.reject(new Error('el evento no entró')));
+
+    await expect(
+      controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
+    ).rejects.toThrow('el evento no entró');
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 });
 

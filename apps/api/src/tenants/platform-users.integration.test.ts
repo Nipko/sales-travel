@@ -10,6 +10,7 @@ import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role, TenantType } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { AdminController } from './admin.controller.js';
 import { ListPlatformUsersQuerySchema, type ListPlatformUsersQuery } from './dto.js';
@@ -94,6 +95,7 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
     audit,
   );
   const platformUsers = new PlatformUsersService(database);
+  const notices = { notify: vi.fn() };
   const admin = new AdminController(
     database,
     network,
@@ -103,6 +105,7 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
     {} as SeatsService,
     invitations,
     platformUsers,
+    notices as unknown as SecurityNoticeService,
   );
 
   let platform: string;
@@ -429,6 +432,10 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
       expect(
         await rejection(admin.setUserStatus(root, { userId: nadie, status: 'suspended' })),
       ).toBe('404/USER_NOT_FOUND');
+      expect(notices.notify).not.toHaveBeenCalledWith(expect.anything(), {
+        userId: nadie,
+        tenantId: null,
+      });
       const { rows } = await pool.query(
         `SELECT 1 FROM domain_events WHERE event_type = 'UserStatusChanged' AND aggregate_id = $1`,
         [nadie],
@@ -496,6 +503,28 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
       await expect(
         admin.setUserStatus(root, { userId: tercero, status: 'active' }),
       ).resolves.toMatchObject({ status: 'active' });
+    });
+
+    it('la persona recibe un aviso por cada cambio real de su cuenta, no por repetir el mismo', async () => {
+      const dani = await user('dani-aviso');
+      await member(agenciaNorte, dani, 'vendedor');
+      notices.notify.mockClear();
+
+      await admin.setUserStatus(root, { userId: dani, status: 'suspended' });
+      await admin.setUserStatus(root, { userId: dani, status: 'suspended' });
+      await admin.setUserStatus(root, { userId: dani, status: 'active' });
+      await admin.setUserStatus(root, { userId: dani, status: 'active' });
+
+      expect(notices.notify.mock.calls).toEqual([
+        ['account_suspended', { userId: dani, tenantId: null }],
+        ['account_reactivated', { userId: dani, tenantId: null }],
+      ]);
+      // Los cuatro quedan en la auditoría: el aviso es lo único que cuida no repetirse.
+      const { rows } = await pool.query(
+        `SELECT 1 FROM domain_events WHERE event_type = 'UserStatusChanged' AND aggregate_id = $1`,
+        [dani],
+      );
+      expect(rows).toHaveLength(4);
     });
 
     it('al último superadmin activo no se lo suspende: 409 (la carrera en que el otro ya cayó)', async () => {

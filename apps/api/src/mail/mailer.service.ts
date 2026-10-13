@@ -40,6 +40,11 @@ function buildFrom(fromEmail: string, fromName: string): string {
   return fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
 }
 
+/** El texto con cada dirección de correo reemplazada: para loguear un error de SMTP sin datos personales. */
+export function redactAddresses(text: string): string {
+  return text.replace(/[^\s<>"'(),;:@]+@[^\s<>"'(),;:@]+/g, '<correo>');
+}
+
 /** Construye un TransportSpec desde una cuenta 'email' (config no-secreta + credenciales). null si incompleta. */
 export function specFromAccount(
   config: Record<string, unknown>,
@@ -82,15 +87,17 @@ export class MailerService {
   async sendToTenant(tenantId: string | null, msg: MailMessage): Promise<boolean> {
     const spec = await this.resolveSpec(tenantId);
     if (!spec) {
+      // Sin el destinatario: un correo es dato personal y no va al log.
       this.logger.warn(
-        `no email transport (tenant=${tenantId ?? 'none'}); skipping "${msg.subject}" → ${msg.to}`,
+        `no email transport (tenant=${tenantId ?? 'none'}); skipping "${msg.subject}"`,
       );
       return false;
     }
     const r = await this.deliver(spec, msg);
     if (!r.ok) {
-      // NUNCA loguear credenciales; sólo el mensaje del error de transporte.
-      this.logger.error(`email send failed (tenant=${tenantId}): ${r.reason}`);
+      // NUNCA loguear credenciales; sólo el mensaje del error de transporte, sin las direcciones
+      // que el servidor SMTP suele citar al rechazar un destinatario.
+      this.logger.error(`email send failed (tenant=${tenantId}): ${redactAddresses(r.reason)}`);
       return false;
     }
     return true;
