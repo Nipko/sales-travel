@@ -47,7 +47,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
 | Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
 | Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
-| Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | Pendiente (USR-13; founder D1 = C)                                        |
+| Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | **Hecho (USR-13; D1 = C)**: pide el código si pasaron 10 minutos          |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
 | Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
@@ -304,7 +304,7 @@ enlace, la vieja deja de servir en el acto. Nadie elige la contraseña nueva por
   desconocido es 400 sin llegar al API), `GET /api/admin/users/[userId]/impact` y
   `PATCH /api/admin/users/status` (mismo origen, cuerpo `{ userId, status }` reconstruido), todas con
   el estado y el motivo del API.
-- Pendiente de USR-13 (D1 = C): reconfirmar el 2FA antes de suspender en toda la plataforma.
+- Suspender o reactivar en toda la plataforma pide el 2FA de los últimos 10 minutos (USR-13).
 
 ### Tests
 
@@ -822,3 +822,96 @@ Sin cambios en la base ni en el panel.
   enviar o forzar el enlace. Contra Postgres, `platform-users.integration.test.ts` y
   `membership-revocation.integration.test.ts` (un aviso por cambio real, no por repetirlo).
 - `apps/api/src/voseo-guard.test.ts` recorre también las plantillas de los avisos.
+
+## Reconfirmar el 2FA antes de las acciones de alto impacto (USR-13)
+
+Founder D1 = C: una sesión de admin robada sola no tiene que alcanzar para abrirle a nadie la puerta
+de otra cuenta ni para golpear a toda la plataforma. Antes de esas acciones se pide el código del
+2FA si la sesión no lo pasó en los últimos **10 minutos**; el soporte de todos los días no lo pide.
+Sin cambios en la base: la ventana se mide con `sessions.mfa_verified_at`, que ya existía.
+
+| Acción                                                    | Pide el código                         |
+| --------------------------------------------------------- | -------------------------------------- |
+| Suspender o reactivar una cuenta en toda la plataforma    | Siempre                                |
+| Restablecer el 2FA de otra persona                        | Siempre                                |
+| Forzar el cambio de contraseña                            | Siempre                                |
+| Enviarle el enlace para restablecer la contraseña         | Si tiene un rol de admin en algún nodo |
+| Exportar a CSV y forzar el cambio en bloque (USR-16, -14) | Siempre, cuando existan                |
+| Desbloquear, cerrar sus sesiones, cerrar una sesión       | No                                     |
+
+"Rol de admin" = `ADMIN_ROLES` (de `admin` para arriba, incluidos los de plataforma), en cualquiera
+de sus nodos, no sólo en el de la ruta.
+
+### API
+
+- `RECENT_MFA_WINDOW_MINUTES = 10` (`apps/api/src/auth/recent-mfa.ts`). Una ruta se marca con
+  `@RequireRecentMfa()` (o `@RequireRecentMfa(minutos)`), siempre en el handler; `RecentMfaGuard` es
+  el último guard global (después de `MfaEnforcementGuard` y `RolesGuard`) y sólo opina en las rutas
+  marcadas. Cuando la exigencia depende de los datos, el servicio llama a `assertRecentMfa()`
+  después de autorizar (así lo hace `MemberSupportService.sendPasswordReset`): a quien no podía
+  hacerlo igual no se le pide el código. Hoy llevan la marca `PATCH /admin/users/status`,
+  `POST /tenants/:id/members/:userId/reset-mfa` y `.../require-password-reset`; un test fija esa
+  lista contra la metadata real de `AppModule`.
+- Sin el 2FA reciente: **403 `MFA_RECENT_REQUIRED`** ("Confirma con tu código de verificación en
+  dos pasos para seguir."). 403 y no 401: la sesión sigue viva. Quien no tiene el 2FA activo (los
+  roles que no lo exigen: `agency_admin`, `admin`) recibe **403 `MFA_REQUIRED_FOR_ACTION`** ("Para
+  hacer esto necesitas la verificación en dos pasos. Actívala en Seguridad y vuelve a intentarlo."):
+  no hay código que pedirle.
+- **`POST /auth/step-up` `{ code }`** (6 dígitos, Zod estricto): `MfaService.stepUp` prueba el TOTP
+  con el mismo bloqueo de la cuenta que el login (`withLockout`, acción `step_up`; cada fallo se
+  audita como `auth.mfa.reauth_failed`) y el anti-replay del paso, y pone `mfa_verified_at = now()`
+  en ESA sesión (no revocada). Audita `auth.mfa.step_up`. Errores: 400 `MFA_CODE_INVALID` (código
+  incorrecto o ya usado), 429 `MFA_ACCOUNT_LOCKED`, 409 `MFA_NOT_ENABLED` y 401 `SESSION_REVOKED` si
+  la sesión se cerró en el medio. Sólo TOTP: un código de recuperación no reconfirma (si se perdió el
+  teléfono, se vuelve a ingresar con uno). Throttle de 10 por minuto.
+- La antigüedad la mide la base (`now() - mfa_verified_at` en `SessionService.validate`) y llega al
+  contexto como `mfaVerifiedAt` en el reloj de la API: un desfase entre los relojes no corre la
+  ventana.
+- Lo que **no** cuenta como haber escrito el código: cambiar de agencia y el token nuevo de un
+  cambio de contraseña heredan el instante de la sesión que reemplazan; entrar con un equipo de
+  confianza cuenta desde que se confió en él (`TrustedDeviceService.use` devuelve ese instante);
+  completar un ingreso liberando un puesto conserva el del intento original (claim `mfa_at` del
+  permiso). `IssueSessionParams.mfaVerifiedAt` lo lleva hasta el `INSERT` de la sesión.
+
+### Panel
+
+- `withStepUp(fn)` (`apps/web-b2b/src/lib/step-up.ts`): corre la llamada; ante 403
+  `MFA_RECENT_REQUIRED` abre el diálogo, manda el código y la repite **una** vez (nunca en bucle).
+  Si se cierra el diálogo devuelve `StepUpCancelled` (`isStepUpCancelled`): la acción no se hizo y
+  no hay error que mostrar. Dos acciones a la vez comparten un solo código. La llamada envuelta
+  tiene que devolver el `reason` del API en el fallo (`StepUpAware<T>`): hoy `runMemberAction`
+  (todas las acciones de soporte de Equipo y de la ficha) y `setPlatformUserStatus`.
+- `StepUpProvider` (`apps/web-b2b/src/components/step-up-dialog.tsx`), montado una vez en el layout
+  del panel: **"Confirma que eres tú"**, "Escribe el código de 6 dígitos de tu app de
+  autenticación.", seis casillas (`inputMode="numeric"`, `autocomplete="one-time-code"`); se envía
+  solo al completar el sexto dígito o con **Confirmar**. Errores en el diálogo: "Ese código no es
+  válido. Inténtalo de nuevo." (las casillas se vacían) y "Demasiados intentos. Espera unos
+  minutos.". Mientras verifica no se cierra.
+- `POST /api/auth/step-up`: mismo origen, cuerpo reconstruido (`{ code }` de 6 dígitos; lo demás es
+  400 sin llegar al API), estado y motivo del API en el error.
+- El historial de la persona muestra `auth.mfa.step_up` como "Reconfirmó su 2FA para una acción de
+  alto impacto".
+- Para sumar una acción de otro frente (cancelar una orden desde la consola, exportar a CSV): en el
+  API, `@RequireRecentMfa()` en el handler (y sumarla a la lista del test del guard); en el panel,
+  que su llamada devuelva el `reason` y envolverla con `withStepUp`.
+
+### Tests
+
+- `apps/api/src/auth/guards/recent-mfa.guard.test.ts`: los bordes de la ventana (10 minutos exactos
+  pasa, un milisegundo después no), la ventana por ruta, sin 2FA activo, sin contexto (401), que una
+  ruta sin la marca no la ve, que el guard es el último global y la lista exacta de rutas marcadas.
+- `apps/api/src/auth/mfa.service.test.ts`: `stepUp` pone en ahora sólo esa sesión y lo audita; cada
+  código malo cuenta y el quinto bloquea (429) sin tocar la sesión; uno de recuperación no sirve ni
+  cuenta; sin 2FA, 409; sesión cerrada en el medio, 401.
+- `apps/api/src/tenants/member-support.service.test.ts` y `member-support.integration.test.ts`:
+  enviar el enlace a un admin pide el código (también si es admin en otro nodo), después de la
+  autorización y del 409; a un vendedor, no.
+- `apps/api/src/auth/auth-premium.integration.test.ts` (Postgres, como `app_user`): la ventana corre
+  desde el código, `stepUp` la renueva y el mismo código no sirve dos veces; cambiar de contraseña o
+  de agencia hereda el instante; el equipo de confianza cuenta desde su alta; sesión revocada, 401.
+- `seat.service.test.ts`, `jwt-tokens.test.ts`, `auth.service.*.test.ts`, `dto.test.ts` y
+  `auth.controller.step-up.test.ts`: el instante heredado de punta a punta y el borde del endpoint.
+- Panel: `lib/step-up.test.ts` (reintento único, cancelar, sin bucle, sin diálogo, código
+  compartido, el cuerpo del BFF y los mensajes, en tú), `components/step-up-dialog.render.test.ts`,
+  `app/api/auth/step-up/route.test.ts`, y el reintento en `tenant-admin-seats-client.test.ts` y
+  `platform-users.test.ts`.
