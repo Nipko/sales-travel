@@ -8,6 +8,12 @@ import {
   type TenantOption,
   type TenantProviders,
 } from './provider-enablement';
+import {
+  parseProviderHealth,
+  parseProviderHealthList,
+  type KillSwitchBody,
+  type ProviderHealth,
+} from './provider-health';
 import { readJson } from './read-json';
 
 /**
@@ -19,8 +25,8 @@ export type Loaded<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly message: string };
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 function errorOf(body: unknown): string | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
@@ -111,5 +117,48 @@ export function saveTenant(
     `/api/admin/providers/${encodeURIComponent(code)}/tenants/${encodeURIComponent(tenantId)}`,
     writeInit(request),
     parsePlatformProvider,
+  );
+}
+
+/** ¿Está respondiendo cada proveedor? */
+export function loadProviderHealth(): Promise<Loaded<ProviderHealth[]>> {
+  return call('/api/admin/providers/health', {}, parseProviderHealthList);
+}
+
+function jsonInit(method: 'PUT' | 'POST', body: unknown): RequestInit {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
+function actionUrl(code: string, action: string): string {
+  return `/api/admin/providers/${encodeURIComponent(code)}/${action}`;
+}
+
+/** Apagado de emergencia. Devuelve la salud del proveedor como quedó. */
+export function saveKillSwitch(
+  code: string,
+  body: KillSwitchBody,
+): Promise<Loaded<ProviderHealth>> {
+  return call(actionUrl(code, 'kill-switch'), jsonInit('PUT', body), parseProviderHealth);
+}
+
+/** Levanta el apagado del panel, con un motivo opcional. */
+export function clearKillSwitch(code: string, reason: string): Promise<Loaded<ProviderHealth>> {
+  const trimmed = reason.trim();
+  return call(
+    actionUrl(code, 'kill-switch/clear'),
+    jsonInit('POST', { reason: trimmed === '' ? null : trimmed }),
+    parseProviderHealth,
+  );
+}
+
+/** Cierra el circuito abierto del proveedor. */
+export function resetProviderCircuit(
+  code: string,
+  reason: string,
+): Promise<Loaded<ProviderHealth>> {
+  return call(
+    actionUrl(code, 'circuit/reset'),
+    jsonInit('POST', { reason: reason.trim() }),
+    parseProviderHealth,
   );
 }

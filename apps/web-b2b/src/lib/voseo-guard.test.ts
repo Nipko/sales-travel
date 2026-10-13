@@ -55,6 +55,14 @@ const SCANNED = [
   'app/(app)/page.tsx',
   'app/(app)/reportes',
   'lib/sales-reports.ts',
+  // Plataforma → Proveedores: la habilitación, la salud y el apagado de emergencia.
+  'app/(app)/admin/plataforma/proveedores',
+  'app/(app)/admin/_components/provider-enablement-ui.tsx',
+  'app/api/admin/providers',
+  'lib/provider-enablement.ts',
+  'lib/provider-enablement-client.ts',
+  'lib/provider-enablement-proxy.ts',
+  'lib/provider-health.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

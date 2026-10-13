@@ -4,6 +4,11 @@ import {
   parseEnablementBody,
   type EnablementBody,
 } from './provider-enablement';
+import {
+  parseCircuitResetBody,
+  parseClearKillSwitchBody,
+  parseKillSwitchBody,
+} from './provider-health';
 
 /**
  * A qué ruta del API va una escritura del panel de proveedores, y con qué cuerpo. Sin I/O, para
@@ -44,4 +49,46 @@ export function enablementProxyPlan(
     };
   }
   return { ok: true, path, body };
+}
+
+/**
+ * Las palancas de un incidente (`/admin/providers/:code/...`): el apagado de emergencia, levantarlo
+ * y cerrar el circuito. Mismo borde que la habilitación: el código arma la URL y el cuerpo se rearma
+ * campo por campo. Las rutas además exigen el mismo origen (lib/tenant-admin-proxy-route.ts).
+ */
+export type ProviderActionPlan =
+  | { readonly ok: true; readonly path: string; readonly body: Readonly<Record<string, unknown>> }
+  | { readonly ok: false; readonly error: string };
+
+const INVALID_CODE: ProviderActionPlan = { ok: false, error: 'Código de proveedor inválido.' };
+
+export function killSwitchPlan(code: string, rawBody: unknown): ProviderActionPlan {
+  if (!isProviderCode(code)) return INVALID_CODE;
+  const body = parseKillSwitchBody(rawBody);
+  if (body === undefined) {
+    return {
+      ok: false,
+      error:
+        'El apagado tiene que decir si corta sólo las ventas o todo, con un motivo de 5 a 500 caracteres y su vencimiento.',
+    };
+  }
+  return { ok: true, path: `/admin/providers/${code}/kill-switch`, body };
+}
+
+export function killSwitchClearPlan(code: string, rawBody: unknown): ProviderActionPlan {
+  if (!isProviderCode(code)) return INVALID_CODE;
+  const body = parseClearKillSwitchBody(rawBody);
+  if (body === undefined) {
+    return { ok: false, error: 'El motivo no puede superar los 500 caracteres.' };
+  }
+  return { ok: true, path: `/admin/providers/${code}/kill-switch/clear`, body };
+}
+
+export function circuitResetPlan(code: string, rawBody: unknown): ProviderActionPlan {
+  if (!isProviderCode(code)) return INVALID_CODE;
+  const body = parseCircuitResetBody(rawBody);
+  if (body === undefined) {
+    return { ok: false, error: 'Cerrar el circuito pide un motivo de 5 a 500 caracteres.' };
+  }
+  return { ok: true, path: `/admin/providers/${code}/circuit/reset`, body };
 }

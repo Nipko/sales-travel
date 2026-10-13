@@ -371,11 +371,15 @@ export function statusLabel(effective: Pick<EffectiveEnablement, 'enabled'>): st
   return effective.enabled ? 'Habilitado' : 'Deshabilitado';
 }
 
-/** Lo que el kill-switch de operaciones corta, en palabras del superadmin. */
+/**
+ * Lo que corta el apagado de emergencia, en palabras del superadmin. Puede venir del panel o de la
+ * variable PROVIDERS_DISABLED (el más amplio de los dos): de dónde sale lo dice la salud del
+ * proveedor.
+ */
 export function killSwitchLabel(level: EnablementKillLevel): string {
   return level === 'sales'
-    ? 'Apagado de emergencia de operaciones (PROVIDERS_DISABLED, sólo ventas): no busca ni vende; la post-venta sigue.'
-    : 'Apagado de emergencia de operaciones (PROVIDERS_DISABLED): cortado del todo, incluida la post-venta.';
+    ? 'Apagado de emergencia (solo ventas): no busca ni vende; la post-venta sigue.'
+    : 'Apagado de emergencia: cortado del todo, incluida la post-venta.';
 }
 
 /**
@@ -772,12 +776,12 @@ export function requestErrorMessage(
   message: string | undefined,
   kind: 'read' | 'write',
 ): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   if (status === 403) {
     return 'Sólo el superadmin de la plataforma puede ver y cambiar la habilitación de proveedores.';
   }
   if (message && message.trim() !== '') return message;
   return kind === 'write'
-    ? 'No se pudo guardar el cambio. Probá de nuevo.'
-    : 'No se pudo cargar la habilitación de proveedores. Probá de nuevo.';
+    ? 'No se pudo guardar el cambio. Inténtalo de nuevo.'
+    : 'No se pudo cargar la habilitación de proveedores. Inténtalo de nuevo.';
 }

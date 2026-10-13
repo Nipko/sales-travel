@@ -58,7 +58,7 @@ export async function forwardRead(target: TenantAdminProxyTarget): Promise<NextR
 export async function forwardPlan(
   req: Request,
   plan: TenantAdminProxyPlan,
-  method: 'PATCH' | 'POST',
+  method: 'PATCH' | 'POST' | 'PUT',
 ): Promise<NextResponse> {
   const rejected = crossOrigin(req);
   if (rejected) return rejected;

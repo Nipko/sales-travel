@@ -44,7 +44,7 @@ describe('AddExceptionDialog', () => {
     const html = render(provider(), TENANTS);
     expect(html).toContain('Agregar excepción de TBO Holidays');
     expect(html).toContain('type="search"');
-    expect(html).toContain('Escribí parte del nombre o del slug.');
+    expect(html).toContain('Escribe parte del nombre o del slug.');
     expect(html).toMatch(/type="submit" disabled="">Agregar</);
   });
 
