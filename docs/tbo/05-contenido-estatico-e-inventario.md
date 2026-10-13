@@ -436,9 +436,10 @@ función queda **apagada** hasta tener un fixture real capturado en test, y `Roo
 `"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search sin imágenes de habitación
 → [Q-65](./10-preguntas-para-tbo.md#q-65). El uso de `RoomID` en la oferta está en [02](./02-search-y-oferta-canonica.md).
 
-**Estado del ACL (TBO-05, 2026-10-13).** El cliente de contenido ya puede mandar `IsRoomDetailRequired: true`
-(`getHotelDetails(…, { roomDetail: true })`), pero ningún llamador lo pide todavía: lo hará el contenido por habitación
-bajo demanda (TBO-06). Sin pedirlo, el body y la salida son los de siempre.
+**Estado del ACL (TBO-05, 2026-10-13).** El cliente de contenido puede mandar `IsRoomDetailRequired: true`
+(`getHotelDetails(…, { roomDetail: true })`). Lo pide SOLO el contenido por habitación bajo demanda (TBO-06, abajo): el
+sync, la ficha del hotel y las fotos de los resultados siguen sin pedirlo, y sin pedirlo el body y la salida son los de
+siempre.
 
 - **Lector tolerante** (`providers/tbo-hotels/src/static/room-detail.reader.ts`): busca el bloque en el hotel bajo
   `Rooms`, `RoomDetails`, `RoomDetail`, `RoomInfo`, `RoomInformation`, `HotelRooms`, `RoomList`, `RoomData`,
@@ -458,6 +459,33 @@ bajo demanda (TBO-06). Sin pedirlo, el body y la salida son los de siempre.
   vino con la clave (`tbo.static.room_detail_fallback_failed`) en vez del error. La variable `TBO_ROOM_DETAILS=off` del
   deploy la apaga del todo.
 - **¿Search manda `RoomID`?** Cada pack lo cuenta por su forma en `tbo.search.room_id` (`present`, `zero`, `absent`).
+
+**Encendido bajo demanda (TBO-06, 2026-10-13).** `GET /hotels/content/:proveedor/:hotel/rooms?lang=` devuelve fotos,
+tamaño y descripción de cada habitación de UN hotel (`HotelRoomContentService`):
+
+- **Del catálogo primero.** Lo que respondió TBO queda en `hotel_room_content` y su resultado en
+  `hotel_room_content_fetch` (migración 0070), por hotel e idioma. Vigencias: con habitaciones, **30 días**; el hotel sin
+  contenido en ese idioma (`none`), **7**; volvió el hotel pero sin un bloque legible o TBO no aceptó la clave para él
+  (`unreadable`), **1**. Mientras vale, la ficha no llama.
+- **Bajo demanda, sólo si hace falta.** Vencido o nunca pedido: `HotelDetails` de ese solo código con la clave, un
+  intento, con la cuenta que la agencia tiene habilitada (respeta `opt-in` y apagado), por el circuito en modo pasivo y
+  el cupo de fondo del limitador. Sin habitaciones en el idioma pedido se pide `EN` (CE-23). Sólo hoteles de
+  `hotel_inventory`: un código inventado no gasta cupo. La respuesta espera 6 s; si no llegó sale lo guardado (aunque
+  esté vencido) o `pending` con `retryAfterMs: 3000`, y la llamada sigue y guarda. Un fallo se recuerda 2 minutos
+  (`hotels:room-content-failed:…`, log `hotels.room_content.fallo` con proveedor, idioma y nombre del error).
+- **`roomKey`.** `hotel_room_content.room_id` es el `roomKey` del ACL (el `RoomId` o `n-` + 16 hex del nombre
+  normalizado); el id real va en `room_ref` (para enlazar con el `RoomID` de Search) y el nombre normalizado en
+  `name_key` (enlace por nombre con candidato único, D-TBO-H2). La app escribe sólo por
+  `hotel_catalog_store_room_contents`, que valida cada habitación (id, texto plano sin `<`/`>`, fotos `https`, topes) y
+  reemplaza el set del idioma; si llegaron habitaciones y no entró ninguna, el resultado queda `unreadable`.
+- **Dos interruptores.** `HOTEL_ROOM_CONTENT=off` (API): la ruta responde sólo lo guardado, vencido o no, y si no hay
+  nada `disabled`; nunca llama. `TBO_ROOM_DETAILS=off` o la clave suspendida (ACL): el adapter no hace NINGUNA llamada
+  (`roomDetailAvailable`) y la ruta responde `disabled`. El contenido del hotel no depende de ninguno de los dos.
+- **Fotos por el proxy propio** (`/api/hotels/images/…`), sólo de los dominios de TBO; las que no se pueden servir se
+  cuentan (`hotels.room_content.descartado`) y no salen. El tamaño sale también en m² (`sizeM2`): en m² tal cual, en
+  pies convertido y redondeado, fuera de 5–500 `null`.
+- **Diagnóstico.** Cada llamada deja una línea `hotels.room_content.traido` con el resultado (`rooms`, `none`,
+  `unreadable`), cuántas vinieron, cuántas se guardaron y cuántas rechazó la base: sin códigos ni contenido.
 
 ---
 
@@ -641,7 +669,7 @@ Las columnas `provider_city_code` y las tablas `hotel_content` y `hotel_room_con
 | Servicios                                                                | detalle, filtros futuros  | `HotelFacilities`                                                    | `hotel_content.facilities`                           | ídem                                                                     |
 | Atracciones cercanas                                                     | detalle                   | `Attractions`                                                        | `hotel_content.attractions_html`                     | ídem                                                                     |
 | Teléfono, web                                                            | detalle, voucher          | `PhoneNumber`, `HotelWebsiteUrl` (este último solo TBOHotelCodeList) | `hotel_content.phone/website_url`                    | ídem                                                                     |
-| Nombre, tamaño e imágenes de la habitación                               | detalle de tarifa         | `RoomName`, `RoomSize`, `imageURL` vía `RoomID`                      | `hotel_room_content`                                 | cuando exista fixture real (§2.6.3)                                      |
+| Nombre, tamaño e imágenes de la habitación                               | detalle de tarifa         | `RoomName`, `RoomSize`, `imageURL` vía `RoomID`                      | `hotel_room_content`                                 | bajo demanda desde la ficha (§2.6.3, TBO-06)                             |
 | Suplementos `AtProperty`, régimen, reembolsable                          | tarifa                    | **no es estático**: Search y PreBook                                 | —                                                    | ver [02](./02-search-y-oferta-canonica.md), [03](./03-prebook-y-book.md) |
 
 Reglas:
