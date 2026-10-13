@@ -7,7 +7,12 @@ import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import { SABRE_CHECK_FLIGHT_TICKETS_PATH } from './booking/cancel.request.builder';
 import { SABRE_GET_BOOKING_PATH } from './booking/get.request.builder';
 import { sabreBodyDigest } from './canonical-json';
-import { SABRE_DEFAULT_REQUEST_TIMEOUT_MS, SABRE_HOSTS, type SabreConfig } from './config';
+import {
+  SABRE_AUTH_PATH,
+  SABRE_DEFAULT_REQUEST_TIMEOUT_MS,
+  SABRE_HOSTS,
+  type SabreConfig,
+} from './config';
 import { SabreApiError } from './errors';
 import { SabreHttpClient } from './http/sabre-http.client';
 import {
@@ -128,6 +133,7 @@ function wire(
   options: {
     readonly cfg?: SabreConfig;
     readonly settings?: SabreTicketingAdapterSettings;
+    readonly tokens?: SabreTokenProvider;
   } = {},
 ) {
   const cfg = options.cfg ?? config();
@@ -173,7 +179,7 @@ function wire(
     return Promise.resolve(new Response(JSON.stringify(next.body), { status: next.status }));
   };
 
-  const tokens: SabreTokenProvider = {
+  const tokens: SabreTokenProvider = options.tokens ?? {
     getToken: () => Promise.resolve('ATK-SUPERSECRETO'),
     invalidate: () => Promise.resolve(),
   };
@@ -519,6 +525,29 @@ describe('issueTickets — sin reintento, con conciliación', () => {
   });
 });
 
+describe('issueTickets — el token que no se obtiene es una emisión que no salió', () => {
+  it.each<[string, SabreApiError]>([
+    ['un timeout del token', new SabreApiError(0, 'timeout', SABRE_AUTH_PATH)],
+    ['un 503 del token', new SabreApiError(503, '{}', SABRE_AUTH_PATH)],
+    ['un 401 del token', new SabreApiError(401, '{"error":"invalid_client"}', SABRE_AUTH_PATH)],
+  ])('%s: lanza, sin emitir y sin relectura', async (_l, failure) => {
+    // La lectura previa obtiene su token; el de la emisión falla antes de abrir la petición.
+    let calls = 0;
+    const tokens: SabreTokenProvider = {
+      getToken: () => {
+        calls += 1;
+        return calls === 1 ? Promise.resolve('ATK-SUPERSECRETO') : Promise.reject(failure);
+      },
+      invalidate: () => Promise.resolve(),
+    };
+    const h = wire({ [SABRE_GET_BOOKING_PATH]: [ok(notIssued())] }, { tokens });
+    const error = await rejection(() => h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 }));
+    expect(error).toBe(failure);
+    expect(h.paths()).toEqual([SABRE_GET_BOOKING_PATH]);
+    expect(h.logs.some((call) => call.message === 'sabre.fulfillFlightTickets')).toBe(false);
+  });
+});
+
 describe('issueTickets — timeout de 45 s', () => {
   it('la emisión se corta a los 45 s, no a los 30 del default; después se relee una vez', async () => {
     vi.useFakeTimers();
@@ -700,6 +729,54 @@ describe('issueTickets — errores y avisos dentro del 200', () => {
     const result = await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
     expect(result.outcome).toBe('ISSUED');
     expect(result.warnings).toEqual(['document-not-committed', 'reconciled']);
+  });
+
+  it('un tiquete fantasma —con número y sin grabar— que la relectura no ve: NEEDS_HUMAN, nunca UNVERIFIED', async () => {
+    // UNVERIFIED dejaría repetir la emisión en cuanto una lectura dijera «nada», y la emisión ya
+    // devolvió el número de un tiquete: repetirla es un segundo tiquete para el mismo pasajero.
+    const body = fulfilledCash();
+    const [ticket] = body['tickets'] as Json[];
+    const h = wire({
+      [SABRE_GET_BOOKING_PATH]: [ok(notIssued()), ok(notIssued())],
+      [SABRE_FULFILL_PATH]: [ok({ ...body, tickets: [{ ...ticket, isCommitted: false }] })],
+    });
+    const result = await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+    expect(result.outcome).toBe('NEEDS_HUMAN');
+    expect(result.warnings).toEqual(['document-not-committed']);
+    expect(result.documents.map((document) => document.number)).toEqual(['0016802004060']);
+    expect(h.paths()).toEqual([SABRE_GET_BOOKING_PATH, SABRE_FULFILL_PATH, SABRE_GET_BOOKING_PATH]);
+  });
+
+  it('un tiquete sin grabar y la relectura caída: NEEDS_HUMAN con el número que dio la emisión', async () => {
+    const body = fulfilledCash();
+    const [ticket] = body['tickets'] as Json[];
+    const h = wire({
+      [SABRE_GET_BOOKING_PATH]: [
+        ok(notIssued()),
+        { status: 500, body: {} },
+        { status: 500, body: {} },
+        { status: 500, body: {} },
+      ],
+      [SABRE_FULFILL_PATH]: [ok({ ...body, tickets: [{ ...ticket, isCommitted: false }] })],
+    });
+    const result = await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+    expect(result.outcome).toBe('NEEDS_HUMAN');
+    expect(result.warnings).toEqual(['document-not-committed', 'reconciliation-failed']);
+    expect(result.documents).toHaveLength(1);
+  });
+
+  it('un documento con un estado que no se sabe leer tampoco queda en UNVERIFIED', async () => {
+    const body = fulfilledCash();
+    const [ticket] = body['tickets'] as Json[];
+    const h = wire({
+      [SABRE_GET_BOOKING_PATH]: [ok(notIssued()), ok(notIssued())],
+      [SABRE_FULFILL_PATH]: [ok({ ...body, tickets: [{ ...ticket, ticketStatusCode: 'TV' }] })],
+    });
+    const result = await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+    expect(result.outcome).toBe('NEEDS_HUMAN');
+    expect(result.warnings).toEqual(
+      expect.arrayContaining(['document-status-unknown', 'document-not-committed']),
+    );
   });
 
   it('menos tiquetes que pasajeros, sin aviso: PARTIAL y sin relectura', async () => {

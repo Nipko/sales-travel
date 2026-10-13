@@ -330,6 +330,16 @@ describe('errors[] dentro del cuerpo: el vocabulario de errores de la lista ofic
     ).toBe('UNVERIFIED');
   });
 
+  it('«no se emitió nada» con tiquetes en el mismo cuerpo no es FAILED: lo mira una persona', () => {
+    const mapped = mapSabreFulfillResponse(
+      { ...cash(), errors: [{ category: 'APPLICATION_ERROR', type: 'PRICE_MISMATCH' }] },
+      ONE,
+    );
+    expect(mapped.verdict).toBe('NEEDS_HUMAN');
+    expect(mapped.documents).toHaveLength(1);
+    expect(mapped.warnings).toEqual(['provider-rejected', 'price-changed']);
+  });
+
   it('un error con tiquetes en el mismo cuerpo: manda el error y los documentos se conservan', () => {
     const mapped = mapSabreFulfillResponse(
       { ...cash(), errors: [{ category: 'APPLICATION_ERROR', type: 'PAYMENT_CARD_ISSUE' }] },

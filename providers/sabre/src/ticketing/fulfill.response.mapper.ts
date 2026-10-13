@@ -377,7 +377,11 @@ export function mapSabreFulfillResponse(
   if ((response.errors ?? []).length > 0) {
     const failure = classifySabreFulfillIssues(signals);
     for (const warning of failure.warnings) warnings.add(warning);
-    return { ...base, verdict: failure.verdict, warnings: [...warnings] };
+    // «No se emitió nada» con números de documento en el mismo cuerpo se contradice, y `FAILED`
+    // invita a pedirla otra vez: con documentos a la vista no se da por rechazo.
+    const verdict =
+      failure.verdict === 'FAILED' && documents.length > 0 ? 'NEEDS_HUMAN' : failure.verdict;
+    return { ...base, verdict, warnings: [...warnings] };
   }
 
   let needsHuman = false;

@@ -24,7 +24,7 @@ import type {
 import { parseSabreDecimalToMinor } from './booking/cancel.response.mapper';
 import type { SabreBookingSnapshot } from './booking/get.response.mapper';
 import type { SabreTicketingFormOfPayment } from './booking/ticketing-policy';
-import { sabreConversationIdPrefix, type SabreConfig } from './config';
+import { SABRE_AUTH_PATH, sabreConversationIdPrefix, type SabreConfig } from './config';
 import { SabreApiError, type SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
@@ -74,7 +74,8 @@ import {
  * ## Si lanza, no se emitió nada
  *
  * Lanza lo que se rechaza antes de salir —entrada inválida, PCC de emisión sin grupo, la lectura
- * previa que falla, la cola local vencida— y siempre con `sentToProvider: false` cuando es nuestro.
+ * previa que falla, la cola local vencida, el token que no se pudo obtener— y siempre con
+ * `sentToProvider: false` cuando es nuestro.
  * Todo lo que pasa después de mandar la emisión vuelve como resultado.
  */
 
@@ -279,6 +280,9 @@ export class SabreTicketingAdapter implements TicketingPort {
    *
    * `NEEDS_HUMAN` no se resuelve con la lectura aunque muestre todo emitido: el proveedor declaró
    * un estado ambiguo y eso lo mira una persona. La lectura sí aporta los documentos que hay.
+   *
+   * `UNVERIFIED` nunca sale con documentos de la emisión: si el proveedor devolvió números y la
+   * lectura no los confirma, es `NEEDS_HUMAN`.
    */
   private async settle(
     orderId: string,
@@ -300,6 +304,12 @@ export class SabreTicketingAdapter implements TicketingPort {
         reconciled: false,
       };
     }
+    // La emisión devolvió números de documento: algo se emitió. Si la relectura no lo confirma —un
+    // tiquete fantasma (`isCommitted: false`) que nunca llegó a la reserva, un estado que no se sabe
+    // leer— o no se puede hacer, `UNVERIFIED` dejaría repetir la emisión en cuanto una lectura
+    // dijera «nada», y eso es un segundo tiquete sobre el mismo pasajero. Con números en la mano la
+    // duda la resuelve una persona.
+    const providerReturnedDocuments = provisional.documents.length > 0;
 
     let snapshot: SabreBookingSnapshot;
     try {
@@ -308,7 +318,8 @@ export class SabreTicketingAdapter implements TicketingPort {
       warnings.add('reconciliation-failed');
       return {
         ...base,
-        outcome: verdict === 'ALREADY_FULFILLED' ? 'NEEDS_HUMAN' : verdict,
+        outcome:
+          verdict === 'ALREADY_FULFILLED' || providerReturnedDocuments ? 'NEEDS_HUMAN' : verdict,
         documents: provisional.documents,
         warnings,
         reconciled: false,
@@ -340,6 +351,11 @@ export class SabreTicketingAdapter implements TicketingPort {
     if (verdict === 'ALREADY_FULFILLED') {
       // El proveedor dice que está emitida y la reserva no muestra un solo tiquete: no se adivina.
       warnings.add('ticketed-without-documents');
+      return settled('NEEDS_HUMAN');
+    }
+    if (providerReturnedDocuments) {
+      // La emisión dio números y la reserva no los tiene: el tiquete no quedó grabado en ella.
+      warnings.add('document-not-committed');
       return settled('NEEDS_HUMAN');
     }
     return settled('UNVERIFIED');
@@ -440,10 +456,14 @@ function preflightOf(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * ¿Llegó la emisión al proveedor? Sólo la cola local vencida dice que no (`sentToProvider: false`).
- * Todo lo demás —un 4xx incluido— ya salió, y se decide con {@link failureOf}.
+ * ¿Llegó la emisión al proveedor? Dicen que no la cola local vencida (`sentToProvider: false`) y el
+ * token que no se pudo obtener: el cliente HTTP lo pide antes de abrir la petición, y la emisión no
+ * se reintenta, así que un fallo de `/v2/auth/token` es una emisión que nunca salió —darla por «en
+ * duda» mandaría a revisar una reserva intacta—. Todo lo demás —un 4xx incluido— ya salió, y se
+ * decide con {@link failureOf}.
  */
 function wasSent(error: SabreApiError): boolean {
+  if (error.path === SABRE_AUTH_PATH) return false;
   return (error as { sentToProvider?: unknown }).sentToProvider !== false;
 }
 

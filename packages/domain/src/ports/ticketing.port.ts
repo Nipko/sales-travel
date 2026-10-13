@@ -25,11 +25,13 @@ import type { TicketDocument } from './order-manage.port';
  *   mismo estado final que `ISSUED` y no se mandó una segunda emisión.
  * - `PARTIAL`: unos pasajeros tienen tiquete y otros no. No se reintenta sola.
  * - `NEEDS_HUMAN`: el proveedor declaró un estado que no se puede resolver solo (emisión parcial,
- *   emisión sin confirmar, tiquetes que no pudo leer, precio cambiado con documentos). Nunca se
- *   reintenta: alguien tiene que mirar la reserva.
+ *   emisión sin confirmar, tiquetes que no pudo leer, precio cambiado con documentos), o devolvió
+ *   números de tiquete que la reserva no muestra. Nunca se reintenta: alguien tiene que mirar la
+ *   reserva.
  * - `FAILED`: el proveedor la rechazó y no emitió nada. Corregida la causa, se puede volver a pedir.
  * - `UNVERIFIED`: se mandó y no se sabe si se emitió (timeout, error del servidor, respuesta que no
- *   se entiende). **Prohibido repetirla** hasta que una lectura de la reserva diga qué hay.
+ *   se entiende). **Prohibido repetirla** hasta que una lectura de la reserva diga qué hay. Nunca
+ *   lleva números que la emisión haya devuelto: con números en la mano es `NEEDS_HUMAN`.
  */
 export const TICKET_ISSUE_OUTCOMES = [
   'ISSUED',
