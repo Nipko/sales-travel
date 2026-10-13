@@ -82,7 +82,7 @@ export class SearchTelemetryService {
       const used = res.rows[0]?.count_recent_searches ?? 0;
       if (used >= quota) {
         throw new ForbiddenException(
-          `Se alcanzó el límite de ${quota} búsquedas por hora de esta agencia. Volvé a intentar más tarde.`,
+          `Se alcanzó el límite de ${quota} búsquedas por hora de esta agencia. Vuelve a intentarlo más tarde.`,
         );
       }
     } catch (err) {

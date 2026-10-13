@@ -97,10 +97,18 @@ describe('POST /provider-accounts — el borde exige la forma DECLARADA del prov
     expect(fields.map((f) => f.field)).toContain('config.ticketingPcc');
   });
 
-  it('una cuenta declarada `mock` se acepta sin credenciales reales: no autentica contra nadie', () => {
-    expect(() =>
-      pipe.transform(body({ credentials: { placeholder: 'x' }, config: { mock: true } })),
-    ).not.toThrow();
+  it('`mock: true` ya no exime de nada: sin las tres credenciales la cuenta se RECHAZA', () => {
+    // Antes se aceptaba "porque no autentica contra nadie", y era verdad a medias: el modo
+    // simulado de Sabre ya no existe, así que la cuenta se guardaba y Sabre desaparecía de las
+    // búsquedas sin error para nadie.
+    const { fields } = rejection(
+      body({ credentials: { placeholder: 'x' }, config: { mock: true } }),
+    );
+    expect(fields.map((f) => f.field).sort()).toEqual([
+      'credentials.epr',
+      'credentials.homePcc',
+      'credentials.password',
+    ]);
   });
 
   it('ningún mensaje de error hace eco del VALOR de una credencial', () => {

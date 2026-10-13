@@ -103,7 +103,7 @@ export function describeTicketingDeadline(
   const cuando = cuandoTexto(deadline);
   const state = ticketingState(deadline, now);
   if (state === 'expired') {
-    return `Plazo de emisión vencido el ${cuando}: verificá la reserva`;
+    return `Plazo de emisión vencido el ${cuando}: verifica la reserva`;
   }
   const base = options.fromOrder
     ? `Plazo de la tarifa: emitir antes del ${cuando}`

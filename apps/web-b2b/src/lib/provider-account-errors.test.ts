@@ -4,7 +4,7 @@ import { providerAccountSaveError } from './provider-account-errors';
 /** RF-29 CA 2 en Mi Red → Credenciales: el 409 de una cuenta con reservas vivas es un aviso. */
 
 const MENSAJE =
-  'Esta cuenta tiene 3 reserva(s) activa(s) hechas con ella. No se puede desactivar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas. Podés actualizar la contraseña sin desactivarla.';
+  'Esta cuenta tiene 3 reserva(s) activa(s) hechas con ella. No se puede desactivar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas. Puedes actualizar la contraseña sin desactivarla.';
 
 describe('providerAccountSaveError', () => {
   it('409 PROVIDER_ACCOUNT_IN_USE: aviso con el conteo y el motivo del API tal cual', () => {

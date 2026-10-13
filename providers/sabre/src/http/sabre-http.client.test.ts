@@ -1,7 +1,7 @@
 import type { LoggerPort } from '@sales-travel/core';
 import { describe, expect, it } from 'vitest';
 import type { SabreFetch, SabreTokenProvider } from '../auth/token.service';
-import { SABRE_HOSTS, type SabreConfig } from '../config';
+import { SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS, SABRE_HOSTS, type SabreConfig } from '../config';
 import { SabreApiError, SabreConfigError } from '../errors';
 import {
   SABRE_NON_IDEMPOTENT_PATHS,
@@ -358,5 +358,314 @@ describe('SabreHttpClient — redacción de logs (RNF-07, R-13)', () => {
     const error = (await http.postJson(SHOP_PATH, {}).catch((e: unknown) => e)) as SabreApiError;
     expect(error.message).not.toContain('Pa55w0rd!');
     expect(error.body).not.toContain('Pa55w0rd!');
+  });
+});
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Semáforo por cuenta (RNF-04)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Todo por `postJson`, mirando cuántos `fetch` hay ABIERTOS a la vez: es lo único que Sabre ve. Las
+ * dos direcciones importan igual: más de N en vuelo agota el cupo de la agencia, y un semáforo mal
+ * hecho que serialice las búsquedas convierte el fan-out en una cola de uno.
+ */
+
+const SHOP_OK = { groupedItineraryResponse: { version: '5' } };
+
+interface PendingFetch {
+  readonly resolve: (res: Response) => void;
+  readonly reject: (err: Error) => void;
+}
+
+interface GatedFetch {
+  readonly fetch: SabreFetch;
+  /** Rutas en el orden en que llegaron al cable. */
+  readonly started: string[];
+  inFlight(): number;
+  maxInFlight(): number;
+  /** Contesta el `fetch` abierto más antiguo. */
+  releaseNext(response?: Response): void;
+  /** Hace fallar el `fetch` abierto más antiguo, como una red caída. */
+  failNext(error: Error): void;
+}
+
+/** `fetch` que no contesta hasta que el test lo suelta. Cuenta lo que hay abierto a cada momento. */
+function gatedFetch(): GatedFetch {
+  const pending: PendingFetch[] = [];
+  const started: string[] = [];
+  let open = 0;
+  let peak = 0;
+  const oldest = (): PendingFetch => {
+    const head = pending.shift();
+    if (head === undefined) throw new Error('no hay ningún fetch abierto que soltar');
+    return head;
+  };
+  return {
+    started,
+    inFlight: () => open,
+    maxInFlight: () => peak,
+    fetch: (url) => {
+      started.push(new URL(url).pathname);
+      open++;
+      peak = Math.max(peak, open);
+      return new Promise<Response>((resolve, reject) => {
+        pending.push({
+          resolve: (res) => {
+            open--;
+            resolve(res);
+          },
+          reject: (err) => {
+            open--;
+            reject(err);
+          },
+        });
+      });
+    },
+    releaseNext: (response = json(SHOP_OK)) => oldest().resolve(response),
+    failNext: (error) => oldest().reject(error),
+  };
+}
+
+/** Deja correr las microtareas y los timers ya vencidos: lo que tenía que salir al cable, salió. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Un `sleep` que no vuelve hasta que el test llama a `wake()`: congela un backoff a mitad. */
+function frozenSleep(): { sleep: (ms: number) => Promise<void>; wake: () => void } {
+  let resume: (() => void) | undefined;
+  return {
+    sleep: () =>
+      new Promise<void>((resolve) => {
+        resume = resolve;
+      }),
+    wake: () => {
+      if (resume === undefined) throw new Error('nadie está durmiendo un backoff');
+      resume();
+    },
+  };
+}
+
+function gatedClient(
+  gated: GatedFetch,
+  cfg: Partial<SabreConfig>,
+  extras: {
+    logger?: LoggerPort;
+    sleep?: (ms: number) => Promise<void>;
+    tokens?: SabreTokenProvider;
+  } = {},
+): SabreHttpClient {
+  return new SabreHttpClient(config(cfg), extras.tokens ?? fakeTokens(), {
+    fetch: gated.fetch,
+    sleep: extras.sleep ?? (() => Promise.resolve()),
+    jitter: () => 0,
+    uuid: () => 'conv-fijo',
+    ...(extras.logger ? { logger: extras.logger } : {}),
+  });
+}
+
+type MaybeNotSent = SabreApiError & { sentToProvider?: unknown };
+
+describe('SabreHttpClient — semáforo de concurrencia por cuenta', () => {
+  it('con N+1 llamadas simultáneas nunca hay más de N fetch en vuelo, y sí hay N', async () => {
+    const gated = gatedFetch();
+    const http = gatedClient(gated, { maxConcurrentRequests: 3 });
+
+    const calls = [1, 2, 3, 4].map(() => http.postJson(SHOP_PATH, {}, { idempotent: true }));
+    await settle();
+
+    // Exactamente N: ni N+1 (se pasa del cupo) ni 1 (serializa el fan-out).
+    expect(gated.started).toHaveLength(3);
+    expect(gated.inFlight()).toBe(3);
+
+    gated.releaseNext();
+    await settle();
+    // La cuarta sale en cuanto se libera un hueco, no al final de las tres.
+    expect(gated.started).toHaveLength(4);
+
+    gated.releaseNext();
+    gated.releaseNext();
+    gated.releaseNext();
+    const results = await Promise.all(calls);
+
+    expect(results.map((result) => result.status)).toEqual([200, 200, 200, 200]);
+    expect(gated.maxInFlight()).toBe(3);
+  });
+
+  it('sin `maxConcurrentRequests` en la cuenta, el tope es el default defensivo', async () => {
+    const gated = gatedFetch();
+    const http = gatedClient(gated, {});
+    const total = SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS + 2;
+
+    const calls = Array.from({ length: total }, () => http.postJson(SHOP_PATH, {}));
+    await settle();
+    expect(gated.started).toHaveLength(SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS);
+
+    for (let i = 0; i < total; i++) {
+      gated.releaseNext();
+      await settle();
+    }
+    await Promise.all(calls);
+    expect(gated.started).toHaveLength(total);
+    expect(gated.maxInFlight()).toBe(SABRE_DEFAULT_MAX_CONCURRENT_REQUESTS);
+  });
+
+  it('el cupo es de la INSTANCIA: la llamada de otra cuenta no espera a ésta', async () => {
+    const gated = gatedFetch();
+    const cuentaA = gatedClient(gated, { maxConcurrentRequests: 1 });
+    const cuentaB = gatedClient(gated, { maxConcurrentRequests: 1, homePcc: 'YYYY' });
+
+    const calls = [cuentaA.postJson(SHOP_PATH, {}), cuentaB.postJson(SHOP_PATH, {})];
+    await settle();
+    expect(gated.started).toHaveLength(2);
+
+    gated.releaseNext();
+    gated.releaseNext();
+    await Promise.all(calls);
+  });
+
+  it('la espera vence con el timeout de la petición: THROTTLED, sin salir al cable ni abrir circuito', async () => {
+    const gated = gatedFetch();
+    const { logger, calls: logs } = spyLogger();
+    const http = gatedClient(gated, { maxConcurrentRequests: 1 }, { logger });
+
+    const ocupada = http.postJson(SHOP_PATH, {});
+    await settle();
+    const error = (await http
+      .postJson(CREATE_BOOKING_PATH, { travelers: [] }, { timeoutMs: 25 })
+      .catch((caught: unknown) => caught)) as MaybeNotSent;
+
+    expect(error).toBeInstanceOf(SabreApiError);
+    expect(error.failure.kind).toBe('THROTTLED');
+    // La saturación es de la cuenta, no de Sabre: no puede abrir el circuito de toda la red.
+    expect(error.failure.circuit).toBe('IGNORE');
+    expect(error.failure.disableAccount).toBe(false);
+    // Contrato neutral de `apps/api`: «no salió», así que repetirla no duplica una reserva.
+    expect(error.sentToProvider).toBe(false);
+    expect(gated.started).toEqual([SHOP_PATH]);
+
+    const vencida = logs.find((call) => call.message === 'sabre.http.cola_vencida');
+    expect(vencida?.level).toBe('warn');
+    expect(vencida?.meta?.['moneyOperation']).toBe(true);
+    expect(vencida?.meta?.['maxConcurrent']).toBe(1);
+    expect(vencida?.meta?.['kind']).toBe('THROTTLED');
+
+    gated.releaseNext();
+    await expect(ocupada).resolves.toMatchObject({ status: 200 });
+  });
+
+  it('una espera vencida no se queda con el hueco: sale UNA de las que esperan al liberarse', async () => {
+    const gated = gatedFetch();
+    const { logger, calls: logs } = spyLogger();
+    const http = gatedClient(gated, { maxConcurrentRequests: 1 }, { logger });
+
+    const ocupada = http.postJson(SHOP_PATH, {});
+    await settle();
+    await expect(http.postJson(SHOP_PATH, {}, { timeoutMs: 10 })).rejects.toBeInstanceOf(
+      SabreApiError,
+    );
+
+    const siguiente = http.postJson(SHOP_PATH, {});
+    const otra = http.postJson(SHOP_PATH, {});
+    await settle();
+    expect(gated.started).toHaveLength(1);
+
+    gated.releaseNext();
+    await settle();
+    // Sale UNA de las dos en espera, no las dos: el hueco de la vencida no se regaló.
+    expect(gated.started).toHaveLength(2);
+    expect(gated.inFlight()).toBe(1);
+
+    gated.releaseNext();
+    await settle();
+    gated.releaseNext();
+    await Promise.all([ocupada, siguiente, otra]);
+    expect(gated.maxInFlight()).toBe(1);
+    // Las que esperaron lo dicen en el log: es el dato para calibrar el cupo de la cuenta.
+    expect(logs.filter((call) => call.message === 'sabre.http.en_cola')).toHaveLength(2);
+  });
+
+  it('un fallo del token o de la red también devuelve el hueco', async () => {
+    const gated = gatedFetch();
+    const base = fakeTokens();
+    let tokenFails = true;
+    const tokens: SabreTokenProvider = {
+      getToken: () => {
+        if (!tokenFails) return base.getToken();
+        tokenFails = false;
+        return Promise.reject(new Error('token caído'));
+      },
+      invalidate: () => base.invalidate(),
+    };
+    const http = gatedClient(gated, { maxConcurrentRequests: 1 }, { tokens });
+
+    await expect(http.postJson(SHOP_PATH, {})).rejects.toThrow('token caído');
+
+    const caida = http.postJson(CREATE_BOOKING_PATH, {});
+    const detras = http.postJson(SHOP_PATH, {});
+    await settle();
+    expect(gated.started).toEqual([CREATE_BOOKING_PATH]);
+
+    gated.failNext(new Error('ECONNRESET'));
+    await expect(caida).rejects.toBeInstanceOf(SabreApiError);
+    await settle();
+    expect(gated.started).toEqual([CREATE_BOOKING_PATH, SHOP_PATH]);
+
+    gated.releaseNext();
+    await expect(detras).resolves.toMatchObject({ status: 200 });
+  });
+
+  it('el hueco se suelta durante el backoff: dormir no bloquea a las demás llamadas', async () => {
+    const gated = gatedFetch();
+    const frozen = frozenSleep();
+    const http = gatedClient(gated, { maxConcurrentRequests: 1 }, { sleep: frozen.sleep });
+
+    const reintenta = http.postJson(SHOP_PATH, {}, { idempotent: true });
+    await settle();
+    gated.releaseNext(json({ errorCode: 'ERR.2SG.GATEWAY.REQUEST_THROTTLED' }, 429));
+    await settle();
+
+    // Mientras la primera duerme su backoff, la segunda tiene el hueco.
+    const mientras = http.postJson(CREATE_BOOKING_PATH, {});
+    await settle();
+    expect(gated.started).toEqual([SHOP_PATH, CREATE_BOOKING_PATH]);
+
+    frozen.wake();
+    await settle();
+    // El reintento espera su turno: el cupo sigue siendo 1.
+    expect(gated.started).toHaveLength(2);
+
+    gated.releaseNext(json({ errors: [{ category: 'APPLICATION_ERROR', type: 'X' }] }));
+    await expect(mientras).rejects.toBeInstanceOf(SabreApiError);
+    await settle();
+    expect(gated.started).toEqual([SHOP_PATH, CREATE_BOOKING_PATH, SHOP_PATH]);
+
+    gated.releaseNext();
+    await expect(reintenta).resolves.toMatchObject({ status: 200 });
+    expect(gated.maxInFlight()).toBe(1);
+  });
+
+  it('si un intento anterior ya salió, la espera vencida del reintento no afirma «no salió»', async () => {
+    const gated = gatedFetch();
+    const frozen = frozenSleep();
+    const http = gatedClient(gated, { maxConcurrentRequests: 1 }, { sleep: frozen.sleep });
+
+    const lectura = http.postJson(SHOP_PATH, {}, { idempotent: true, timeoutMs: 25 });
+    await settle();
+    gated.releaseNext(json({ message: 'unavailable' }, 503));
+    await settle();
+
+    const ocupa = http.postJson(SHOP_PATH, {});
+    await settle();
+    frozen.wake();
+
+    const error = (await lectura.catch((caught: unknown) => caught)) as MaybeNotSent;
+    expect(error.failure.kind).toBe('THROTTLED');
+    expect(error.sentToProvider).toBe(true);
+    expect(gated.started).toEqual([SHOP_PATH, SHOP_PATH]);
+
+    gated.releaseNext();
+    await ocupa;
   });
 });

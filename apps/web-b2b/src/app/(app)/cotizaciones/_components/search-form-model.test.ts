@@ -42,7 +42,7 @@ describe('validateSearch — ruta', () => {
   it('reclama el origen cuando no hay código IATA', () => {
     expect(validateSearch(draft({ origin: '' }), HOY)).toEqual({
       field: 'origin',
-      message: 'Elegí el aeropuerto de origen.',
+      message: 'Elige el aeropuerto de origen.',
     });
   });
 
@@ -86,7 +86,7 @@ describe('validateSearch — fechas', () => {
   it('reclama la ida cuando el control de fechas está vacío', () => {
     expect(validateSearch(draft({ departureDate: '', returnDate: '' }), HOY)).toEqual({
       field: 'dates',
-      message: 'Elegí la fecha de ida.',
+      message: 'Elige la fecha de ida.',
     });
   });
 

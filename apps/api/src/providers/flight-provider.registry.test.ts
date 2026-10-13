@@ -375,8 +375,10 @@ describe('FlightProviderRegistry', () => {
 
       expect(active.map((p) => p.code)).toEqual(['beta-air']);
       expect(unavailable.map((u) => [u.code, u.reason])).toEqual([['alfa-air', 'no-credentials']]);
-      // El motivo es lo que la pantalla enseña: tiene que venir, y con algo que decir.
-      expect(unavailable[0]?.detail).toContain('Credenciales');
+      // El motivo es lo que la pantalla enseña: tiene que venir, con algo que decir y en tú.
+      expect(unavailable[0]?.detail).toBe(
+        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
+      );
     });
 
     it('una cuenta INCOMPLETA se distingue de una cuenta ausente', async () => {
@@ -393,7 +395,9 @@ describe('FlightProviderRegistry', () => {
 
       expect(active).toEqual([]);
       expect(unavailable[0]?.reason).toBe('incomplete-account');
-      expect(unavailable[0]?.detail).toContain('apiKey');
+      expect(unavailable[0]?.detail).toBe(
+        'Faltan datos en la cuenta de este proveedor (apiKey). Complétala en Mi Red → Credenciales.',
+      );
     });
 
     it('el motivo de una ausencia nombra el campo pero nunca un valor de credencial', async () => {

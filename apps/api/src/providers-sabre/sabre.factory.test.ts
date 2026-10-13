@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { Logger, NotFoundException } from '@nestjs/common';
-import { OrderCreateNotSentError } from '@sales-travel/domain';
+import type { Offer } from '@sales-travel/canonical';
+import { OrderCreateNotSentError, type OrderCreateRequest } from '@sales-travel/domain';
 import {
+  REDACTED,
   SabreApiError,
   SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
@@ -565,6 +567,447 @@ describe('SabreProviderFactory — humanizeError no hace eco del proveedor', () 
     expect(mensaje).not.toContain('AB1234567');
     expect(mensaje).not.toContain('CARDOSO');
     expect(mensaje).toContain('PCC');
+  });
+});
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Lo que el factory INYECTA: logger, cliente compartido y las dos mitades de la cuenta
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Por el adapter que devuelve el factory y con `fetch` global interceptado: es exactamente lo que
+ * corre en producción. Sabre no se llama — cada ruta tiene su respuesta escrita en el test, con la
+ * forma del contrato.
+ */
+
+const PNR = 'QWERTY';
+const PII = {
+  givenName: 'MARIA',
+  surname: 'QUISPE',
+  birthdate: '1990-05-14',
+  document: 'AB1234567',
+  email: 'maria.quispe@example.com',
+  phone: '+51 (1) 555-0142',
+} as const;
+
+const RUTA_TOKEN = '/v2/auth/token';
+const RUTA_SHOP = '/v5/offers/shop';
+const RUTA_CREATE = '/v1/trip/orders/createBooking';
+const RUTA_GET = '/v1/trip/orders/getBooking';
+const RUTA_CANCEL = '/v1/trip/orders/cancelBooking';
+
+function respuesta(body: unknown, status = 200): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+}
+
+function tokenOk(): Promise<Response> {
+  return respuesta({ access_token: 'ATK-DE-PRUEBA', expires_in: 3600 });
+}
+
+/** Oferta ATPCO con itinerario: el carril que `createBooking` reconstruye como `flightDetails`. */
+function ofertaAtpco(): Offer {
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    tenantId: 't1',
+    products: ['flight'],
+    provider: { name: 'sabre', offerRef: 'shop-ref', source: 'ATPCO', raw: {} },
+    total: { amountMinor: 23780, currency: 'USD' },
+    baseFare: { amountMinor: 19348, currency: 'USD' },
+    taxes: { amountMinor: 4432, currency: 'USD' },
+    itineraries: [
+      {
+        segments: [
+          {
+            carrier: 'AA',
+            flightNumber: '76',
+            origin: 'JFK',
+            destination: 'SFO',
+            departureAt: '2026-12-11T06:00:00-05:00',
+            arrivalAt: '2026-12-11T09:43:00-08:00',
+            durationMinutes: 403,
+            cabin: 'economy',
+            bookingClass: 'B',
+          },
+        ],
+        totalDurationMinutes: 403,
+        stops: 0,
+      },
+    ],
+    fetchedAt: '2026-10-11T11:30:00.000Z',
+    expiresAt: '2026-10-11T11:31:30.000Z',
+    expiresAtSource: 'platform-policy',
+  };
+}
+
+function pedidoDeReserva(): OrderCreateRequest {
+  return {
+    offer: ofertaAtpco(),
+    criteria: {
+      origin: 'JFK',
+      destination: 'SFO',
+      departureDate: '2026-12-11',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+      currency: 'USD',
+    },
+    passengers: [
+      {
+        paxId: 'PAX-1',
+        requestedTravelerIndex: 0,
+        paxType: 'ADT',
+        title: 'Mrs',
+        givenName: PII.givenName,
+        surname: PII.surname,
+        birthdate: PII.birthdate,
+        gender: 'F',
+        citizenshipCountryCode: 'PE',
+        identityDoc: {
+          type: 'P',
+          number: PII.document,
+          issuingCountryCode: 'PE',
+          expiryDate: '2030-01-31',
+        },
+      },
+    ],
+    contactInfo: { email: PII.email, phone: PII.phone },
+  };
+}
+
+/**
+ * Las líneas que llegan al `Logger` de Nest, en el formato `mensaje {meta}` de `loggerPort`, en los
+ * niveles que PRODUCCIÓN conserva: `main.ts` arranca Nest con `['log', 'warn', 'error']`. `debug`
+ * se silencia sin capturarse, porque contarlo daba por emitida una traza que en producción se
+ * descarta (así pasó con el éxito de createBooking, getBooking y cancelBooking).
+ */
+function capturarLog(): string[] {
+  const lineas: string[] = [];
+  const capturar = (...args: unknown[]): void => {
+    lineas.push(String(args[0]));
+  };
+  vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+  vi.spyOn(Logger.prototype, 'log').mockImplementation(capturar);
+  vi.spyOn(Logger.prototype, 'warn').mockImplementation(capturar);
+  vi.spyOn(Logger.prototype, 'error').mockImplementation(capturar);
+  return lineas;
+}
+
+function metaDe(lineas: readonly string[], mensaje: string): Record<string, unknown> {
+  const linea = lineas.find((l) => l.startsWith(`${mensaje} `));
+  if (linea === undefined) throw new Error(`no se emitió ${mensaje}: [${lineas.join(' | ')}]`);
+  return JSON.parse(linea.slice(mensaje.length + 1)) as Record<string, unknown>;
+}
+
+/**
+ * «Sólo códigos y conteos», como propiedad y no como lista de claves: números, booleanos y
+ * cadenas de vocabulario cerrado (sin espacios, sin `@`, sin `+`), a cualquier profundidad. Un
+ * nombre, un correo o un teléfono no caben en esa forma. La marca de redacción se admite: es lo que
+ * `redactMeta` deja donde una clave lo manda tapar (`withTargetPcc` cae por el fragmento `pcc`).
+ */
+function soloCodigosYConteos(valor: unknown, ruta = 'meta'): string[] {
+  if (valor === null || valor === undefined) return [];
+  if (typeof valor === 'number' || typeof valor === 'boolean') return [];
+  if (typeof valor === 'string') {
+    return valor === REDACTED || /^[A-Za-z0-9_.:/-]{0,80}$/.test(valor) ? [] : [`${ruta}=${valor}`];
+  }
+  if (Array.isArray(valor)) return valor.flatMap((v, i) => soloCodigosYConteos(v, `${ruta}.${i}`));
+  if (typeof valor === 'object') {
+    return Object.entries(valor as Record<string, unknown>).flatMap(([k, v]) =>
+      soloCodigosYConteos(v, `${ruta}.${k}`),
+    );
+  }
+  return [`${ruta}: tipo ${typeof valor}`];
+}
+
+describe('SabreProviderFactory — las trazas de una reserva llegan al log de producción', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function rutasDeReserva(): void {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const ruta = new URL(String(input)).pathname;
+      switch (ruta) {
+        case RUTA_TOKEN:
+          return tokenOk();
+        case RUTA_CREATE:
+          return respuesta({
+            timestamp: '2026-10-11T12:00:00',
+            confirmationId: PNR,
+            booking: {
+              bookingId: PNR,
+              flights: [{ itemId: '1', flightStatusCode: 'HK', flightStatusName: 'Confirmed' }],
+            },
+          });
+        case RUTA_GET:
+          return respuesta({
+            bookingId: PNR,
+            isCancelable: true,
+            isTicketed: false,
+            flights: [
+              {
+                itemId: '1',
+                confirmationId: 'AB123',
+                airlineCode: 'AA',
+                sourceType: 'ATPCO',
+                flightStatusCode: 'HK',
+                flightStatusName: 'Confirmed',
+              },
+            ],
+            travelers: [{ givenName: PII.givenName, surname: PII.surname }],
+          });
+        case RUTA_CANCEL:
+          return respuesta({ timestamp: '2026-10-11T12:00:02' });
+        default:
+          throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+      }
+    });
+  }
+
+  it('createBooking, getBooking y cancelBooking se emiten, y sólo con códigos y conteos', async () => {
+    rutasDeReserva();
+    const lineas = capturarLog();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter) || !supportsAuditedCancel(adapter)) {
+      throw new Error('el adapter de Sabre perdió los puertos auditados');
+    }
+    const ctx = { tenantId: 't1', requestId: 'req-traza' };
+
+    await adapter.createOrderAudited(pedidoDeReserva(), ctx);
+    await adapter.cancelOrderAudited(PNR, ctx);
+
+    const creacion = metaDe(lineas, 'sabre.createBooking');
+    expect(creacion).toMatchObject({
+      provider: 'sabre',
+      outcome: 'CONFIRMED',
+      items: 1,
+      issues: 0,
+    });
+    const lectura = metaDe(lineas, 'sabre.getBooking');
+    expect(lectura).toMatchObject({ provider: 'sabre', withSurnameCheck: false, items: 1 });
+    const cancelacion = metaDe(lineas, 'sabre.cancelBooking');
+    expect(cancelacion).toMatchObject({
+      provider: 'sabre',
+      cancelAll: true,
+      ticketCheckPerformed: false,
+      outcome: expect.any(String) as unknown,
+    });
+
+    for (const meta of [creacion, lectura, cancelacion]) {
+      expect(soloCodigosYConteos(meta)).toEqual([]);
+    }
+    // Y barrido sobre TODO lo que llegó al log, no sólo esas tres líneas.
+    const volcado = lineas.join('\n');
+    for (const prohibido of [
+      PNR,
+      ...Object.values(PII),
+      EPR,
+      PASSWORD,
+      HOME_PCC,
+      'ATK-DE-PRUEBA',
+    ]) {
+      expect(volcado, `el log publicó ${prohibido}`).not.toContain(prohibido);
+    }
+  });
+});
+
+describe('SabreProviderFactory — el cupo de concurrencia es de la CUENTA, búsqueda incluida', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** `fetch` global que deja colgadas shop y createBooking hasta que el test las suelta. */
+  function colgarRutas(): {
+    abiertas: (pcc?: string) => string[];
+    soltar: (ruta: string) => void;
+    soltarTodo: () => void;
+  } {
+    const pendientes: Array<{ ruta: string; pcc: string; soltar: () => void }> = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      const pcc = (init?.body as string | undefined)?.includes('"B2C3"') ? 'B2C3' : HOME_PCC;
+      return new Promise<Response>((resolve) => {
+        pendientes.push({
+          ruta,
+          pcc,
+          // Un 400 cierra la llamada sin reintentos ni segunda búsqueda: lo único que se mide
+          // aquí es cuántas hay abiertas a la vez.
+          soltar: () => resolve(new Response('{"error":"invalid_request"}', { status: 400 })),
+        });
+      });
+    });
+    return {
+      abiertas: (pcc) =>
+        pendientes.filter((p) => pcc === undefined || p.pcc === pcc).map((p) => p.ruta),
+      soltar: (ruta) => {
+        const i = pendientes.findIndex((p) => p.ruta === ruta);
+        const [p] = pendientes.splice(i, 1);
+        p?.soltar();
+      },
+      soltarTodo: () => {
+        for (const p of pendientes.splice(0)) p.soltar();
+      },
+    };
+  }
+
+  async function asentar(): Promise<void> {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  const criterios = {
+    origin: 'BOG',
+    destination: 'LIM',
+    departureDate: '2026-12-01',
+    paxCount: { adults: 1, children: 0, infants: 0 },
+    currency: 'USD',
+  };
+
+  it('cuatro búsquedas salen a la vez, la reserva espera su hueco y otra cuenta no espera', async () => {
+    capturarLog();
+    const cable = colgarRutas();
+    const factory = factoryWith((tenantId) =>
+      Promise.resolve(
+        tenantId === 't2'
+          ? resolved({
+              id: 'acc-sabre-2',
+              ownerTenantId: 'owner-2',
+              credentials: { epr: EPR, password: PASSWORD, homePcc: 'B2C3' },
+            })
+          : resolved(),
+      ),
+    );
+    const cuenta = await factory.forTenant('t1');
+    const otraCuenta = await factory.forTenant('t2');
+    const ctx = { tenantId: 't1' };
+
+    const busquedas = [1, 2, 3, 4].map(() => cuenta.search(criterios, ctx).catch(() => undefined));
+    await asentar();
+    // El fan-out no se serializa: las cuatro del cupo por defecto están en el cable.
+    expect(cable.abiertas(HOME_PCC)).toEqual([RUTA_SHOP, RUTA_SHOP, RUTA_SHOP, RUTA_SHOP]);
+
+    // La reserva usa el MISMO cliente: con un cliente propio de la búsqueda saldría ya.
+    const reserva = cuenta.createOrder(pedidoDeReserva(), ctx).catch(() => undefined);
+    await asentar();
+    expect(cable.abiertas(HOME_PCC)).not.toContain(RUTA_CREATE);
+
+    // Otra cuenta tiene su propio cupo.
+    const ajena = otraCuenta.search(criterios, { tenantId: 't2' }).catch(() => undefined);
+    await asentar();
+    expect(cable.abiertas('B2C3')).toEqual([RUTA_SHOP]);
+
+    cable.soltar(RUTA_SHOP);
+    await asentar();
+    expect(cable.abiertas(HOME_PCC)).toContain(RUTA_CREATE);
+    expect(cable.abiertas(HOME_PCC)).toHaveLength(4);
+
+    cable.soltarTodo();
+    await Promise.all([...busquedas, reserva, ajena]);
+  });
+
+  it('el cupo CONTRACTUAL de la cuenta sale de `config.maxConcurrentRequests`, también como texto', async () => {
+    capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: '2' } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    // Dos, no el default de cuatro: el número del contrato manda.
+    expect(cable.abiertas()).toEqual([RUTA_SHOP, RUTA_SHOP]);
+
+    cable.soltar(RUTA_SHOP);
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(2);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
+  });
+
+  it('un `maxConcurrentRequests` inválido se avisa y deja el default, sin tumbar la cuenta', async () => {
+    const lineas = capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: 0 } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3, 4, 5].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(4);
+    expect(lineas.some((l) => l.includes('config.maxConcurrentRequests inválida'))).toBe(true);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
+  });
+});
+
+describe('SabreProviderFactory — cabeceras de grupo desde las dos mitades de la cuenta', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function cabecerasDeShop(
+    credentials: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): Promise<Record<string, string>> {
+    let cabeceras: Record<string, string> = {};
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === RUTA_TOKEN) return tokenOk();
+      cabeceras = (init?.headers ?? {}) as Record<string, string>;
+      return respuesta({ error: 'invalid_request' }, 400);
+    });
+    const adapter = await factoryWith(() =>
+      Promise.resolve(resolved({ credentials, config })),
+    ).forTenant('t1');
+    await adapter
+      .search(
+        {
+          origin: 'BOG',
+          destination: 'LIM',
+          departureDate: '2026-12-01',
+          paxCount: { adults: 1, children: 0, infants: 0 },
+          currency: 'USD',
+        },
+        { tenantId: 't1' },
+      )
+      .catch(() => undefined);
+    return cabeceras;
+  }
+
+  it('guardadas en el blob CIFRADO también salen: la spec las declara `encrypted-or-config`', async () => {
+    const cabeceras = await cabecerasDeShop(
+      {
+        epr: EPR,
+        password: PASSWORD,
+        homePcc: HOME_PCC,
+        sabreGroup: 'W0H3',
+        sabreCurrentCity: 'BOG',
+      },
+      {},
+    );
+    expect(cabeceras['X-Sabre-Group']).toBe('W0H3');
+    expect(cabeceras['X-Sabre-Current-City']).toBe('BOG');
+  });
+
+  it('desde `config` siguen saliendo como hasta hoy', async () => {
+    const cabeceras = await cabecerasDeShop(
+      { epr: EPR, password: PASSWORD, homePcc: HOME_PCC },
+      { sabreGroup: 'W0H3', sabreCurrentCity: 'LIM' },
+    );
+    expect(cabeceras['X-Sabre-Group']).toBe('W0H3');
+    expect(cabeceras['X-Sabre-Current-City']).toBe('LIM');
   });
 });
 

@@ -96,7 +96,7 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
       // Dos negativas distintas, porque la acción del vendedor es distinta. Si el tenant tenía
       // CUENTA, hay algo que completar y se dice qué. Si se cayó al escalón de plataforma y
       // tampoco hay nada ahí, no existe ninguna cuenta que completar: es una ausencia lisa, y
-      // decirle "completá tu cuenta" lo mandaría a una pantalla vacía.
+      // decirle "completa tu cuenta" lo mandaría a una pantalla vacía.
       throw credentialSource === 'env'
         ? new NotFoundException(`no hay credenciales de LATAM resolubles desde ${tenantId}`)
         : new ProviderAccountIncompleteError(PROVIDER_CODE, missing);

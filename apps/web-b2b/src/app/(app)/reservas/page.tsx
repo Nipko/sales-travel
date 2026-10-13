@@ -319,7 +319,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'retrieve',
           success: false,
-          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en LATAM'),
+          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en el proveedor'),
         });
       }
     } catch {
@@ -804,7 +804,7 @@ export default function ReservasPage() {
                     order.status !== 'failed' &&
                     (isCar ? (
                       // Autos: el backend de cancelación es provider-aware, mismo endpoint.
-                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing (todo eso es LATAM).
+                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing: son operaciones de vuelos.
                       supportsOrderCancellation(order.capabilities, order.status) ? (
                         <Button
                           variant="secondary"
@@ -1133,7 +1133,8 @@ function OrderDetailModal({
     order.status !== 'cancelled' &&
     order.status !== 'failed' &&
     supportsOrderCancellation(order.capabilities, order.status);
-  // Pagar/Emitir es flujo LATAM; los autos se pagan en su propio checkout, nunca acá.
+  // Pagar/Emitir es de vuelos, y sólo si el proveedor lo declara; los autos se pagan en su
+  // propio checkout, nunca aquí.
   const canPay =
     !isCar &&
     !!order.pnr &&

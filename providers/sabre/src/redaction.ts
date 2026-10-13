@@ -143,6 +143,12 @@ const SECRET_KEYS = new Set([
 /**
  * PII de pasajero. `getBooking` y `createBooking` hacen **eco de la request entera**: pasaportes,
  * fechas de nacimiento y tarjetas enmascaradas incluidas (docs/sabre/10 RNF-07).
+ *
+ * Las formas PLURALES no son redundantes con las singulares: el Set compara exacto y el contrato
+ * usa justamente el plural —`contactInfo.emails[]`, `contactInfo.phones[]`, `travelers[].emails[]`,
+ * `travelers[].phones[].number`—, que es lo que construye el builder de createBooking. Hasta esta
+ * ronda un rechazo que hiciera eco de la request publicaba correo y teléfono del pasajero en
+ * `SabreApiError.message` y `.body`; lo fija `booking-phase.e2e.test.ts` §6.
  */
 const PII_KEYS = new Set([
   'givenname',
@@ -153,8 +159,11 @@ const PII_KEYS = new Set([
   'birthdate',
   'dateofbirth',
   'email',
+  'emails',
   'emailaddress',
+  'emailaddresses',
   'phone',
+  'phones',
   'phonenumber',
   'documentnumber',
   'passportnumber',
@@ -343,11 +352,16 @@ export function isSecretKey(key: string): boolean {
  *
  * `tel` y `mobile` se dejan FUERA a propósito: `telAvivAirport` y `mobileVersion` son vocabulario
  * legítimo y taparlos cuesta diagnóstico. La forma larga (`telephone`) sí está.
+ *
+ * El plural va aparte por la misma razón que en `PII_KEYS`: la comparación es por palabra EXACTA, y
+ * `travelerEmails` o `contactPhones` tienen como palabra `emails`/`phones`, no `email`/`phone`.
  */
 const PII_ABBREVIATION_WORDS = new Set([
   'email',
+  'emails',
   'mail',
   'phone',
+  'phones',
   'telephone',
   'msisdn',
   'dob',
@@ -1043,8 +1057,15 @@ export function redactMeta(meta: Record<string, unknown>): Record<string, unknow
   return redactValue(meta) as Record<string, unknown>;
 }
 
-/** Los dos niveles que el ACL usa. `info`/`error` no se abren hasta que haya un caso que los pida. */
-export type SabreLogLevel = 'debug' | 'warn';
+/**
+ * Los niveles que el ACL usa. `error` no se abre hasta que haya un caso que lo pida.
+ *
+ * `info` existe por las escrituras y lecturas de una reserva (`sabre.createBooking`,
+ * `sabre.getBooking`, `sabre.cancelBooking`): el API de producción arranca con el `Logger` de Nest
+ * en `log`/`warn`/`error` (`apps/api/src/main.ts`), así que un desenlace limpio logueado en `debug`
+ * no llegaba nunca, y la única traza de una reserva CONFIRMADA era ninguna.
+ */
+export type SabreLogLevel = 'debug' | 'info' | 'warn';
 
 /**
  * **El ÚNICO sitio del paquete donde se llama a un método de `LoggerPort`.**
