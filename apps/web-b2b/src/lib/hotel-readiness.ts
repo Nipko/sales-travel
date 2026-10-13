@@ -9,7 +9,13 @@ import { readJson } from './read-json';
  * el API.
  */
 
-export type ReadinessTbo = 'enabled' | 'not-enabled' | 'platform-disabled' | 'unknown';
+/** `kill-switch`: operaciones lo apagó para toda la plataforma (`PROVIDERS_DISABLED`). */
+export type ReadinessTbo =
+  | 'enabled'
+  | 'not-enabled'
+  | 'platform-disabled'
+  | 'kill-switch'
+  | 'unknown';
 
 export type ReadinessAccount =
   | {
@@ -58,7 +64,12 @@ export interface HotelReadiness {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CURRENCY_RE = /^[A-Z]{3}$/;
 
-const TBO_STATES: readonly ReadinessTbo[] = ['enabled', 'not-enabled', 'platform-disabled'];
+const TBO_STATES: readonly ReadinessTbo[] = [
+  'enabled',
+  'not-enabled',
+  'platform-disabled',
+  'kill-switch',
+];
 const ACCOUNT_PROBLEMS = ['no-credentials', 'incomplete', 'not-allowed'] as const;
 const GAPS: readonly ReadinessGap[] = [
   'tbo-not-enabled',
@@ -118,11 +129,11 @@ function nodeOf(value: unknown): ReadinessNode | undefined {
         return gap === undefined ? [] : [gap];
       })
     : [];
-  return {
+  const node: ReadinessNode = {
     tenantId: tenantId.toLowerCase(),
     name,
     isBranch: value['isBranch'] === true,
-    ready: value['ready'] === true,
+    ready: false,
     missing,
     tbo: oneOf(value['tbo'], TBO_STATES) ?? 'unknown',
     account: accountOf(value['account']),
@@ -130,6 +141,10 @@ function nodeOf(value: unknown): ReadinessNode | undefined {
     supportContact: oneOf(value['supportContact'], ['ok', 'missing'] as const) ?? 'unknown',
     activeSellers: sellersOf(value['activeSellers']),
   };
+  // «Lista para probar» sólo si el API lo dice Y la web leyó todo: con una línea «sin revisar» o
+  // un faltante en pantalla, la etiqueta contradiría a la lista que la acompaña.
+  const ready = value['ready'] === true && missing.length === 0 && !hasUnknown(node);
+  return { ...node, ready };
 }
 
 /** La respuesta del API, o `undefined` si no se entiende (la pantalla lo dice y ofrece reintentar). */
@@ -211,6 +226,18 @@ function tboCheck(node: ReadinessNode): ReadinessCheck {
     return { key: 'tbo', state, text: 'No pudimos revisar si TBO está habilitado' };
   }
   if (state === 'ok') return { key: 'tbo', state, text: 'TBO habilitado' };
+  if (node.tbo === 'kill-switch') {
+    // No se arregla con un ajuste: le gana a todos, y se levanta con un redeploy.
+    return {
+      key: 'tbo',
+      state,
+      text: 'TBO está apagado de emergencia para toda la plataforma (PROVIDERS_DISABLED)',
+      action: {
+        label: 'Ver en Proveedores de la plataforma',
+        href: '/admin/plataforma/proveedores',
+      },
+    };
+  }
   return {
     key: 'tbo',
     state,

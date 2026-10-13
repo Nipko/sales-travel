@@ -346,6 +346,34 @@ describe('qué dice de cada nodo', () => {
     expect(node.missing.includes('tbo-not-enabled')).toBe(esperado !== 'enabled');
   });
 
+  it.each(['tbo-hotels', 'tbo-hotels:ventas', 'despegar-hotels,tbo-hotels'])(
+    'con PROVIDERS_DISABLED=%s, TBO está apagado de emergencia aunque su ajuste lo encienda',
+    async (valor) => {
+      vi.stubEnv('PROVIDERS_DISABLED', valor);
+      try {
+        const node = await unNodo({});
+
+        expect(node.tbo).toBe('kill-switch');
+        expect(node.missing).toEqual(['tbo-not-enabled']);
+        expect(node.ready).toBe(false);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it('el apagado de emergencia de otro proveedor no toca a TBO', async () => {
+    vi.stubEnv('PROVIDERS_DISABLED', 'despegar-hotels');
+    try {
+      const node = await unNodo({});
+
+      expect(node.tbo).toBe('enabled');
+      expect(node.ready).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(['incomplete', 'not-allowed'] as const)(
     'una cuenta %s es un faltante de la cuenta, con su motivo',
     async (status) => {

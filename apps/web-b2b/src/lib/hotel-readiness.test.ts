@@ -121,6 +121,14 @@ describe('parseHotelReadiness: la respuesta del API', () => {
     ).toEqual([{ currency: 'USD', status: 'active' }]);
   });
 
+  it.each([
+    ['con una línea sin revisar', { tbo: 'quizas' }],
+    ['con un faltante', { missing: ['wallet'] }],
+    ['con carteras ilegibles', { wallets: 'muchas' }],
+  ])('«Lista para probar» no sale %s aunque el API diga ready', (_q, extra) => {
+    expect(nodo({ ready: true, ...extra }).ready).toBe(false);
+  });
+
   it('sin `missing` no inventa faltantes, y un nodo que no es sucursal lo dice', () => {
     const node = nodo({ missing: undefined, isBranch: false });
     expect(node.missing).toEqual([]);
@@ -200,6 +208,22 @@ describe('readinessChecks: lo que dice de cada sucursal', () => {
     );
     expect(tbo.text).toBe('TBO está deshabilitado para esta sucursal');
     expect(tbo.action?.href).toBe(`/admin/tenants/${NORTE}`);
+  });
+
+  it('el apagado de emergencia no se arregla en la sucursal: manda al panel de la plataforma', () => {
+    const node = nodo({ tbo: 'kill-switch', missing: ['tbo-not-enabled'], ready: false });
+    const tbo = check(node, 'tbo');
+
+    expect(node.tbo).toBe('kill-switch');
+    expect(tbo).toEqual({
+      key: 'tbo',
+      state: 'missing',
+      text: 'TBO está apagado de emergencia para toda la plataforma (PROVIDERS_DISABLED)',
+      action: {
+        label: 'Ver en Proveedores de la plataforma',
+        href: '/admin/plataforma/proveedores',
+      },
+    });
   });
 
   it('la cuenta: producción, propia, sin entorno, incompleta o no admitida', () => {

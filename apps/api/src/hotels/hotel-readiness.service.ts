@@ -3,17 +3,15 @@ import { SELLING_ROLES } from '../auth/roles.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { NetworkService, type NetworkTenant } from '../network/network.service.js';
 import { PortfoliosService } from '../portfolios/portfolios.service.js';
+import { effectiveEnablement } from '../provider-enablement/provider-enablement.policy.js';
 import { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import type {
   HotelAccountEnvironment,
   HotelProviderAccountProblem,
 } from '../providers/hotel-provider.types.js';
-import {
-  isDisabledByPlatform,
-  isProviderEnabled,
-  type CredentialSource,
-} from '../providers/provider.types.js';
+import { isDisabledByPlatform, type CredentialSource } from '../providers/provider.types.js';
+import { killLevel } from '../search/circuit-breaker.service.js';
 import { agencyBookingContact } from './hotel-booking-contact.js';
 
 /** El proveedor de la reserva de prueba que guía la pantalla (docs/platform/13, paso 9). */
@@ -25,7 +23,16 @@ export const READINESS_CONCURRENCY = 4;
 /** Plazo de toda la revisión: lo que no llega queda `unknown` y la pantalla lo dice. */
 export const READINESS_DEADLINE_MS = 8_000;
 
-export type HotelReadinessTbo = 'enabled' | 'not-enabled' | 'platform-disabled' | 'unknown';
+/**
+ * `kill-switch`: operaciones lo apagó para toda la plataforma (`PROVIDERS_DISABLED`). Le gana a
+ * cualquier ajuste y no se arregla en el panel: hace falta un redeploy.
+ */
+export type HotelReadinessTbo =
+  | 'enabled'
+  | 'not-enabled'
+  | 'platform-disabled'
+  | 'kill-switch'
+  | 'unknown';
 
 export type HotelReadinessAccount =
   | {
@@ -271,13 +278,24 @@ export class HotelReadinessService {
     }
   }
 
-  /** Lo mismo que decide la búsqueda: el ajuste de la plataforma o, sin ninguno, la política. */
+  /**
+   * Lo mismo que muestra el panel de Proveedores para el tenant: primero el kill-switch de
+   * operaciones, que el breaker aplica en cada llamada, y después el ajuste de la plataforma o, sin
+   * ninguno, la política. Sin el kill-switch, la guía decía «Lista para probar» de una sucursal que
+   * no iba a ver ni una tarifa de TBO.
+   */
   private async tboOf(tenantId: string): Promise<HotelReadinessTbo> {
     const entries = await this.registry.enablementOf(tenantId);
     const entry = entries.find((e) => e.code === READINESS_PROVIDER);
     if (entry === undefined) return 'not-enabled';
-    if (isDisabledByPlatform(entry.decision)) return 'platform-disabled';
-    return isProviderEnabled(entry.decision, entry.callPolicy) ? 'enabled' : 'not-enabled';
+    const effective = effectiveEnablement({
+      killSwitch: killLevel(READINESS_PROVIDER),
+      decision: entry.decision,
+      callPolicy: entry.callPolicy,
+    });
+    if (effective.origin === 'kill-switch') return 'kill-switch';
+    if (effective.enabled) return 'enabled';
+    return isDisabledByPlatform(entry.decision) ? 'platform-disabled' : 'not-enabled';
   }
 
   private async accountOf(tenantId: string): Promise<HotelReadinessAccount> {
