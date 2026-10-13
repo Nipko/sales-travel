@@ -49,7 +49,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Avisarle por correo cada cambio de seguridad hecho por un admin                | Automático                                | —                                                                                         | Pendiente (USR-12)                                                        |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | Pendiente (USR-13; founder D1 = C)                                        |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
-| Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Invitaciones                 | Superadmin                                                                                | Pendiente (USR-15)                                                        |
+| Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
 | Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
 | Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | Pendiente (USR-18)                                                        |
 
@@ -661,3 +661,72 @@ viene desde USR-5). El nombre de cada persona, en Equipo y en Plataforma → Usu
   (cerrar una sesión ajena, desbloquear, el menú), cargando y error, el pie, el botón del nombre en la
   lista y todo en tú. `platform-users.render.test.ts`: el nombre como botón y el menú del directorio.
   `team.render.test.ts`: el menú de la fila con _Membresía_.
+
+## Invitaciones sin aceptar de toda la red (USR-15)
+
+Antes, para ver quién quedó invitado sin aceptar había que abrir Equipo nodo por nodo. Sin cambios en
+la base: la RLS de `user_invitations` (0028, `can_read_membership`) ya le deja al superadmin leerlas
+todas.
+
+### API
+
+- `GET /admin/invitations` (`AdminInvitationsController` / `AdminInvitationsService`, aparte de
+  `InvitationsController`, que sigue siendo la de un nodo y la del canje). Sólo superadmin: 401 sin
+  sesión, 403 `SUPERADMIN_ONLY` a cualquier otro, antes de leer nada (el chequeo vive en el servicio).
+- Filtros con Zod `.strict()`: `state` = `pending` (por defecto: `expires_at > now()`), `expired`
+  (`expires_at <= now()`, el mismo corte del canje) o `all`; `q` (el correo, `%` y `_` literales);
+  `tenantId` (el nodo con su subárbol); `limit` (1-100, 50 por defecto) y `cursor` (el mismo
+  `{ createdAt, id }` con microsegundos del directorio, orden `(created_at, id)` descendente). Sólo
+  las que no se aceptaron ni se revocaron.
+- Respuesta `{ invitations, nextCursor, counts }`: cada una con `id`, `email`, `role`, `tenantId`,
+  `tenantName`, `invitedByEmail` (quien la emitió o la reenvió por última vez; `null` si esa cuenta
+  ya no existe), `createdAt`, `expiresAt` y `expired`. `counts = { pending, expired }` cuenta con la
+  misma búsqueda y nodo, sin importar `state` ni el cursor, en la misma transacción que la página
+  (comparten el `now()`). Nunca sale el hash del token.
+- Reenviar y revocar no tienen ruta nueva: son `POST /invitations/:id/resend|revoke?tenantId=` con el
+  nodo de la fila. El superadmin las supera en rango en cualquier nodo; con el nodo equivocado, 404
+  `INVITATION_NOT_PENDING`.
+
+### Panel
+
+- **Plataforma → Usuarios** suma pestañas (`SectionTabs`): _Usuarios_ (el directorio de USR-4) e
+  _Invitaciones_, con el número de pendientes de toda la red (un `GET /api/admin/invitations?limit=1`
+  aparte, que se repite cada vez que una invitación cambia; sin número si falla, nunca un cero
+  inventado). Las dos quedan montadas al cambiar (`SectionTabPanel keepMounted`): cada una conserva
+  sus filtros y lo que cargó. La de invitaciones se monta recién la primera vez que se abre.
+- **Filtros**: _Pendientes_, _Vencidas_ y _Todas_ con sus números, "Busca por correo" (espera de
+  300 ms) y _Nodo_ (en el orden del árbol, con su subárbol), y _Limpiar filtros_.
+- **Cada fila**: correo (con _Vencida_ si ya venció), "{Rol} · {Nodo} · Vence en {n} días / Vence hoy /
+  Venció hace {…}" e "Invitado por {correo} · {hace…}" ("un usuario eliminado" si esa cuenta ya no
+  existe). _Reenviar_ (destacado en una vencida) y _Revocar_, con la confirmación de Equipo ("Revocar
+  la invitación a {correo}" / "El enlace que le enviamos deja de funcionar…").
+- **Después de una acción** la fila cambia en el lugar, sin recargar, para no perder las páginas de
+  _Cargar más_: reenviar deja el vencimiento nuevo y a quien reenvió como invitador (una vencida pasa a
+  pendiente y sale de _Vencidas_); revocar la saca de la lista y de su contador. El aviso de reenvío es
+  el de Equipo (`invitationNotice`, con la advertencia si el correo no salió). Si ya no estaba
+  pendiente (la aceptaron o la revocaron desde otra sesión) sale de la lista con un aviso. Cuando la
+  fila se va, el foco pasa al título de la lista; mientras corre una acción sus botones quedan
+  `aria-disabled` (no `disabled`), para no soltar el foco. Los errores quedan en la fila.
+- **Estados**: cargando, error con su motivo y _Reintentar_, y vacío ("No hay invitaciones
+  pendientes.", "No hay invitaciones vencidas.", "No hay invitaciones sin aceptar." o, con búsqueda o
+  nodo, "No encontramos invitaciones con esos filtros." y _Limpiar filtros_).
+- **BFF**: `GET /api/admin/invitations`, `forwardRead` con la consulta reconstruida parámetro por
+  parámetro (uno desconocido o repetido es 400 sin llegar al API), con el estado y el motivo del API.
+- `SectionTabs` (también en Carteras) ya no muestra barra de desplazamiento: la regla `*` de
+  `globals.css` le ganaba a `[scrollbar-width:none]` y el `-mb-px` de las pestañas dejaba una barra
+  vertical en Windows.
+
+### Tests
+
+- `apps/api/src/tenants/admin-invitations.service.test.ts`: el borde (estados, búsqueda, nodo,
+  cursor, límite, parámetros de más), el SQL de cada estado y de los contadores, el cursor de ida y
+  vuelta, cómo sale cada fila y el 403 sin ninguna consulta.
+- `apps/api/src/tenants/admin-invitations.integration.test.ts` (se salta sin `PGHOST`), como
+  `app_user`: el superadmin ve todas las redes, nunca aceptadas ni revocadas; un admin de red recibe
+  403 aunque pida su subárbol; cada estado, el nodo con su subárbol, la búsqueda sin comodines y los
+  contadores; el cursor sin saltos con dos del mismo microsegundo; reenviar y revocar por las rutas de
+  un nodo con el nodo de la fila (y 404 con otro nodo).
+- `apps/api/src/auth/sales-operations.guard.test.ts`: la ruta clasificada como administración.
+- Web: `lib/platform-invitations.test.ts` (lectura, consulta reconstruida, frases, la lista después
+  de cada acción, las llamadas y la ruta del panel) y `platform-invitations.render.test.ts` (filas,
+  vencida, en espera, error, estados, filtros, las pestañas sin barra), todo en tú.
