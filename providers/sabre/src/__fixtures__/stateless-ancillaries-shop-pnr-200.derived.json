@@ -1,0 +1,384 @@
+{
+  "itinerary": {
+    "id": "I-1",
+    "itineraryPartReferenceIds": ["IP-1", "IP-2"]
+  },
+  "itineraryParts": [
+    { "id": "IP-1", "segmentReferenceIds": ["SEG-1"] },
+    { "id": "IP-2", "segmentReferenceIds": ["SEG-2"] }
+  ],
+  "segments": [
+    {
+      "id": "SEG-2",
+      "departureDateTime": "2024-07-16T10:00:00",
+      "arrivalDateTime": "2024-07-16T18:41:00",
+      "departureAirportCode": "SFO",
+      "arrivalAirportCode": "BOS",
+      "operatingAirlineCode": "X0",
+      "bookingAirlineCode": "X0",
+      "isElectronicTicket": true,
+      "bookingFlightNumber": "0134",
+      "brandCode": "AN",
+      "bookingClassCode": "Y",
+      "operatingFlightNumber": "134",
+      "operatingBookingClassCode": "Y",
+      "sequence": 2,
+      "statusCode": "HK",
+      "statusName": "Confirmed",
+      "isInboundConnection": false,
+      "isOutboundConnection": false
+    },
+    {
+      "id": "SEG-1",
+      "departureDateTime": "2024-07-09T06:00:00",
+      "arrivalDateTime": "2024-07-09T09:25:00",
+      "departureAirportCode": "BOS",
+      "arrivalAirportCode": "SFO",
+      "operatingAirlineCode": "X0",
+      "bookingAirlineCode": "X0",
+      "isElectronicTicket": true,
+      "bookingFlightNumber": "133",
+      "brandCode": "AN",
+      "bookingClassCode": "Y",
+      "operatingFlightNumber": "133",
+      "operatingBookingClassCode": "Y",
+      "sequence": 1,
+      "statusCode": "HK",
+      "statusName": "Confirmed",
+      "isInboundConnection": false,
+      "isOutboundConnection": false
+    }
+  ],
+  "passengers": [
+    {
+      "id": "PAX-1",
+      "nameNumber": "01.01",
+      "givenName": "TEST MR",
+      "surname": "SABRE",
+      "typeCode": "ADT",
+      "specialServiceCodes": ["WCHR"],
+      "loyaltyPrograms": [
+        { "airlineCode": "X0", "number": "987654321", "tierLevel": "GLD", "tierNumber": 3 }
+      ]
+    },
+    {
+      "id": "PAX-2",
+      "nameNumber": "02.01",
+      "givenName": "JUNIOR MSTR",
+      "surname": "SABRE",
+      "typeCode": "CNN"
+    }
+  ],
+  "offers": [
+    {
+      "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2",
+      "items": [
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-1",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1", "PAX-2"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_1",
+            "quantity": 1,
+            "isAvailable": false,
+            "sectorPortionIndicator": "Sector"
+          },
+          "price": {
+            "unitPrices": [
+              {
+                "total": { "amount": { "amount": "35.00", "currencyCode": "USD" } },
+                "totalBreakdown": {
+                  "base": { "amount": { "amount": "35.00", "currencyCode": "USD" } }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-2",
+          "segmentReferenceIds": ["SEG-2"],
+          "passengerReferenceIds": ["PAX-1", "PAX-2"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_1",
+            "quantity": 1,
+            "isAvailable": false,
+            "sectorPortionIndicator": "Sector"
+          },
+          "price": {
+            "unitPrices": [
+              {
+                "total": { "amount": { "amount": "35.00", "currencyCode": "USD" } },
+                "passengerReferenceIds": ["PAX-1"]
+              },
+              {
+                "total": { "amount": { "amount": "26.25", "currencyCode": "USD" } },
+                "passengerReferenceIds": ["PAX-2"]
+              }
+            ]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-3",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_2",
+            "quantity": 1,
+            "isAvailable": false,
+            "sectorPortionIndicator": "Sector"
+          },
+          "price": {
+            "unitPrices": [
+              {
+                "total": { "amount": { "amount": 50.0, "currencyCode": "USD" } },
+                "totalBreakdown": {
+                  "base": { "amount": { "amount": 50.0, "currencyCode": "USD" } }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-4",
+          "itineraryPartReferenceIds": ["IP-1"],
+          "passengerReferenceIds": ["PAX-1", "PAX-2"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_3",
+            "quantity": 1,
+            "sectorPortionIndicator": "Portion"
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-5",
+          "itineraryReferenceId": "I-1",
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_4",
+            "quantity": 1,
+            "sectorPortionIndicator": "Journey"
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "12.00", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-6",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_5",
+            "quantity": 1
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "45.00", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-7",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_6",
+            "quantity": 1
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "125.00", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-8",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_7",
+            "quantity": 1
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "75.00", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-9",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_8",
+            "quantity": 1
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "20.00", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-10",
+          "segmentReferenceIds": ["SEG-1"],
+          "passengerReferenceIds": ["PAX-1"],
+          "details": {
+            "type": "AncillaryOfferItem",
+            "ancillaryReferenceId": "ancillary_ancillary_9",
+            "quantity": 1
+          },
+          "price": {
+            "unitPrices": [{ "total": { "amount": { "amount": "45.005", "currencyCode": "USD" } } }]
+          }
+        },
+        {
+          "id": "b891aae1-836f-447e-ae2c-16d64d9c76e2-11",
+          "segmentReferenceIds": ["SEG-1", "SEG-2"],
+          "passengerReferenceIds": ["PAX-1", "PAX-2"],
+          "details": { "type": "AirOfferItem" }
+        }
+      ]
+    }
+  ],
+  "ancillaries": [
+    {
+      "id": "ancillary_ancillary_1",
+      "groupCode": "BG",
+      "groupName": "BAGGAGE",
+      "subCode": "0CC",
+      "reasonForIssuanceCode": "C",
+      "reasonForIssuance": "Baggage",
+      "commercialName": "FIRST BAG UP TO 23KG",
+      "airlineCode": "X0",
+      "specialService": { "code": "XBAG", "detail": "Excess bag", "type": "NotAllowed" },
+      "vendorCode": "ATP",
+      "emdType": { "code": "2", "value": "FlightCouponAssociated", "isConsumedAtIssuance": false },
+      "bookingMethod": { "code": "01", "value": "SpecialServiceRequest" },
+      "serviceTypeCode": "F",
+      "serviceType": "FlightRelated",
+      "isDisplayOnly": false,
+      "weights": [
+        { "value": 23, "unit": "Kilogram" },
+        { "value": 50, "unit": "Pound" }
+      ],
+      "ancillaryRule": {
+        "isRefundable": false,
+        "isCommissionable": false,
+        "isInterlineable": false,
+        "feeApplicationMethod": { "code": "3", "value": "Item" },
+        "purchaseBy": "2024-07-08",
+        "customRule": { "maxQuantityPerPassenger": 1, "excludedFormOfPayments": ["AX"] }
+      }
+    },
+    {
+      "id": "ancillary_ancillary_2",
+      "groupCode": "99",
+      "groupName": "MISCELLANEOUS FEES",
+      "subCode": "GTS",
+      "reasonForIssuanceCode": "D",
+      "reasonForIssuance": "FinancialImpact",
+      "commercialName": "GDS TICKET SERVICE FEE",
+      "airlineCode": "X0",
+      "vendorCode": "MMGR",
+      "emdType": { "code": "1", "value": "Standalone", "isConsumedAtIssuance": true }
+    },
+    {
+      "id": "ancillary_ancillary_3",
+      "groupCode": "BG",
+      "groupName": "BAGGAGE",
+      "subCode": "0GO",
+      "reasonForIssuanceCode": "C",
+      "reasonForIssuance": "Baggage",
+      "commercialName": "CARRY ON UP TO 10KG",
+      "airlineCode": "X0",
+      "serviceTypeCode": "B",
+      "serviceType": "CarryOnBaggageAllowance",
+      "weights": [{ "value": 10, "unit": "Kilogram" }],
+      "ancillaryRule": { "isRefundable": true, "freeOfChargeRules": ["BookingRequired"] }
+    },
+    {
+      "id": "ancillary_ancillary_4",
+      "groupCode": "ML",
+      "groupName": "MEAL",
+      "subCode": "0B3",
+      "reasonForIssuanceCode": "G",
+      "reasonForIssuance": "InFlightServices",
+      "commercialName": "HOT MEAL",
+      "airlineCode": "X0",
+      "specialService": { "code": "MOML", "type": "Optional" },
+      "emdType": { "code": "1", "value": "Standalone" },
+      "bookingMethod": { "code": "01", "value": "SpecialServiceRequest" }
+    },
+    {
+      "id": "ancillary_ancillary_5",
+      "groupCode": "LG",
+      "groupName": "LOUNGE",
+      "subCode": "0BX",
+      "reasonForIssuanceCode": "E",
+      "reasonForIssuance": "AirportServices",
+      "commercialName": "LOUNGE ACCESS",
+      "airlineCode": "X0",
+      "isDisplayOnly": true
+    },
+    {
+      "id": "ancillary_ancillary_6",
+      "groupCode": "PT",
+      "groupName": "PETS",
+      "subCode": "0BS",
+      "reasonForIssuanceCode": "C",
+      "reasonForIssuance": "Baggage",
+      "commercialName": "PET IN CABIN",
+      "airlineCode": "X0",
+      "bookingMethod": { "code": "03", "value": "ContactAirline" }
+    },
+    {
+      "id": "ancillary_ancillary_7",
+      "groupCode": "BG",
+      "groupName": "BAGGAGE",
+      "subCode": "0EG",
+      "reasonForIssuanceCode": "C",
+      "reasonForIssuance": "Baggage",
+      "commercialName": "BICYCLE",
+      "airlineCode": "X0",
+      "bagType": "BIKE",
+      "specialService": {
+        "code": "BIKE",
+        "detail": "Bicycle",
+        "type": "Required",
+        "requiredProperties": {
+          "propertyDefinitions": [
+            {
+              "name": "WEIGHT",
+              "type": "Int",
+              "min": 0,
+              "max": 32,
+              "unit": "KILOGRAM",
+              "allowedValues": ["1"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ancillary_ancillary_8",
+      "groupCode": "SA",
+      "groupName": "SEAT ASSIGNMENT",
+      "subCode": "0B5",
+      "reasonForIssuanceCode": "A",
+      "reasonForIssuance": "AirTransportation",
+      "commercialName": "PREFERRED SEAT",
+      "airlineCode": "X0"
+    },
+    {
+      "id": "ancillary_ancillary_9",
+      "groupCode": "BG",
+      "groupName": "BAGGAGE",
+      "subCode": "0CD",
+      "reasonForIssuanceCode": "C",
+      "reasonForIssuance": "Baggage",
+      "commercialName": "SECOND BAG UP TO 23KG",
+      "airlineCode": "X0",
+      "weights": [{ "value": 23, "unit": "Kilogram" }]
+    }
+  ]
+}

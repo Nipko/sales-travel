@@ -276,6 +276,7 @@ describe('capa 1 — sólo un sitio del paquete llama al LoggerPort', () => {
       'src/auth/token.service.ts',
       'src/http/sabre-http.client.ts',
       'src/redaction.ts',
+      'src/sabre-ancillary.adapter.ts',
       'src/sabre-flight-check.adapter.ts',
       'src/sabre-flight-search.adapter.ts',
       'src/sabre-offer-price.adapter.ts',
