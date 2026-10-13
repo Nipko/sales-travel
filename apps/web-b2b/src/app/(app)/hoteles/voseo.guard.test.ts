@@ -19,11 +19,13 @@ const SRC = fileURLToPath(new URL('../../../', import.meta.url));
 const ARCHIVOS_SUELTOS = [
   'app/(app)/error.tsx',
   'app/global-error.tsx',
+  'components/hotels/hotel-testing-guide.tsx',
   'components/layout/sales-blocked.tsx',
   'lib/api.ts',
   'lib/hotel-book.ts',
   'lib/hotel-content-batch.ts',
   'lib/hotel-image-proxy.ts',
+  'lib/hotel-readiness.ts',
   'lib/read-json.ts',
   'lib/viewer.ts',
 ] as const;

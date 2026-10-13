@@ -1,7 +1,8 @@
 import { Network, Store } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '../../lib/cn';
-import { SUPERADMIN_CANNOT_SELL } from '../../lib/viewer';
+import { SUPERADMIN_CANNOT_SELL, type SalesArea } from '../../lib/viewer';
+import { HotelTestingGuide } from '../hotels/hotel-testing-guide';
 
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]';
@@ -18,8 +19,18 @@ const SECONDARY_ACTION = cn(
  *
  * La prueba pasa por OTRA cuenta porque la regla del API mira la identidad del usuario, no el nodo
  * activo: un superadmin que además es vendedor de una sucursal sigue sin vender (`viewer.ts`).
+ *
+ * En Hoteles, el superadmin ve además qué sucursal está lista para probar una reserva y qué le falta
+ * a cada una (D-TBO-H1 A). Sólo el superadmin: la revisión es del panel de la plataforma, y el API
+ * se la niega a un `platform_admin`.
  */
-export function SalesBlockedNotice() {
+export function SalesBlockedNotice({
+  area,
+  superadmin = false,
+}: {
+  area?: SalesArea;
+  superadmin?: boolean;
+}) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-5 sm:py-16">
       <section
@@ -71,6 +82,7 @@ export function SalesBlockedNotice() {
           </Link>
         </div>
       </section>
+      {area === 'hotels' && superadmin ? <HotelTestingGuide /> : null}
     </div>
   );
 }

@@ -45,6 +45,20 @@ describe('SalesGate: el superadmin no ve las pantallas de venta', () => {
     expect(render(both, '/hoteles')).not.toContain(SCREEN);
   });
 
+  it('en Hoteles el superadmin ve además la guía para probar una reserva; en otra venta, no', () => {
+    expect(render(superadmin, '/hoteles')).toContain('Probar una reserva de hotel');
+    expect(render(superadmin, '/hoteles/checkout')).toContain('Probar una reserva de hotel');
+    expect(render(superadmin, '/cotizaciones')).not.toContain('Probar una reserva de hotel');
+  });
+
+  it('un platform_admin ve el aviso en Hoteles, sin la guía: la revisión es del superadmin', () => {
+    const platformAdmin = viewerOf([{ role: 'platform_admin', status: 'active' }]);
+    const html = render(platformAdmin, '/hoteles');
+    expect(html).toContain(SUPERADMIN_CANNOT_SELL);
+    expect(html).not.toContain('Probar una reserva de hotel');
+    expect(html).not.toContain(SCREEN);
+  });
+
   it('quien vende ve la pantalla de venta', () => {
     const html = render(vendedor, '/hoteles');
     expect(html).toContain(SCREEN);
