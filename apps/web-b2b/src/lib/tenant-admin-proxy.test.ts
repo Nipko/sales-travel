@@ -105,10 +105,18 @@ describe('puestos: rutas del API', () => {
     });
   });
 
-  it('enviar el enlace para restablecer la contraseña y desbloquear', () => {
+  it('enviar el enlace para restablecer la contraseña, forzar el cambio y desbloquear', () => {
     expect(memberActionTarget(ID, USER, 'send-password-reset')).toEqual({
       ok: true,
       path: `/tenants/${ID.toLowerCase()}/members/${USER}/send-password-reset`,
+    });
+    expect(memberActionTarget(ID, USER, 'require-password-reset')).toEqual({
+      ok: true,
+      path: `/tenants/${ID.toLowerCase()}/members/${USER}/require-password-reset`,
+    });
+    expect(memberActionTarget(ID, '../unlock', 'require-password-reset')).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
     });
     expect(memberActionTarget(ID, USER, 'unlock')).toEqual({
       ok: true,

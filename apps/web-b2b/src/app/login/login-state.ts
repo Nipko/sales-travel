@@ -61,6 +61,11 @@ export interface CredentialsState extends StepBase {
    * entrar antes de que pasen los 15 minutos.
    */
   offerPasswordReset?: true;
+  /**
+   * Un admin le pidió elegir una contraseña nueva: el aviso dice que el enlace está en su correo y
+   * ofrece pedir otro si no le llegó.
+   */
+  passwordResetRequired?: true;
 }
 
 export interface MfaState extends StepBase {
@@ -148,6 +153,9 @@ export const LOGIN_MESSAGES = {
   releaseSessionGone:
     'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Ingresa de nuevo.',
   seatsTakenAgain: 'Alguien ocupó el puesto antes que tú. Revisa la lista de nuevo.',
+  passwordResetRequired:
+    'Tienes que elegir una contraseña nueva. Te enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar.',
+  passwordResetRequiredLink: '¿No te llegó? Pide otro enlace',
 } as const;
 
 export function mfaInvalidMessage(attemptsLeft: number | null): string {
@@ -194,6 +202,7 @@ export type AuthOutcome =
   | { kind: 'release-invalid' }
   | { kind: 'release-forbidden' }
   | { kind: 'release-session-gone' }
+  | { kind: 'password-reset-required' }
   | { kind: 'rate-limited' }
   | { kind: 'unavailable' }
   | { kind: 'unexpected' };
@@ -287,6 +296,11 @@ export function classifyAuthResponse(call: AuthCall, res: ApiResponse): AuthOutc
   if (status === 409 && reason === 'SEATS_FULL') {
     return { kind: 'seats', seats: parseSeatsFull(body?.['details']) };
   }
+  // Un admin le pidió elegir una contraseña nueva. Llega del login (la contraseña era correcta) y
+  // también del código o de liberar un puesto, si el admin lo pidió mientras tanto.
+  if (status === 403 && reason === 'PASSWORD_RESET_REQUIRED') {
+    return { kind: 'password-reset-required' };
+  }
   if (status === 429) return { kind: 'rate-limited' };
   if (status >= 500) return { kind: 'unavailable' };
 
@@ -338,6 +352,19 @@ function seatsState(
 }
 
 /**
+ * Vuelta a la contraseña con el cambio pendiente: la sesión no se abre hasta que use el enlace del
+ * correo, así que lo único útil es decírselo y ofrecerle pedir otro.
+ */
+function passwordResetPending(base: StepBase): CredentialsState {
+  return {
+    step: 'credentials',
+    ...base,
+    notice: LOGIN_MESSAGES.passwordResetRequired,
+    passwordResetRequired: true,
+  };
+}
+
+/**
  * Vuelta a la contraseña con la cuenta bloqueada. Sin decirlo, el aviso era "la verificación
  * venció" y la contraseña correcta se rechazaba después como incorrecta durante 15 minutos.
  */
@@ -368,6 +395,8 @@ export function afterLogin(
       };
     case 'seats':
       return seatsState(base, outcome.seats, nowMs);
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'invalid-credentials':
       return credentialsError(base, 'invalid', LOGIN_MESSAGES.invalid);
     case 'rate-limited':
@@ -400,6 +429,8 @@ export function afterMfa(
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.mfaExpired };
     case 'mfa-locked':
       return lockedOut(base);
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'mfa-invalid':
       // Sin intentos, el desafío ya no sirve: seguir pidiendo el código sería un bucle. Y como cada
       // código fallido suma al bloqueo de la cuenta (5, igual que el desafío), a esta altura la
@@ -433,6 +464,8 @@ export function afterRelease(
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.releaseExpired };
     case 'release-session-gone':
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.releaseSessionGone };
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'release-forbidden':
       // Sin permiso para liberar, la pantalla pasa a ser la de quien no administra el nodo.
       return {
