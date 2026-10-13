@@ -6,6 +6,7 @@ import {
   ROOM_CONTENT_ENDPOINT,
   ROOM_CONTENT_MAX_RETRIES,
   initialRoomContentState,
+  isRememberableRoomContent,
   loadRoomContent,
   rememberRoomContent,
   rememberedRoomContent,
@@ -68,6 +69,36 @@ describe('lo recordado', () => {
     const key = encodeHotelKey([{ provider: 'tbo-hotels', hotelId: 'pendiente' }]) ?? '';
     rememberRoomContent(key, PENDING);
     expect(rememberedRoomContent(key)).toBeUndefined();
+  });
+
+  it('none (que puede ser un error de paso de la ruta) y disabled se vuelven a preguntar', () => {
+    const key = encodeHotelKey([{ provider: 'tbo-hotels', hotelId: 'sin-fotos' }]) ?? '';
+    for (const status of ['none', 'disabled'] as const) {
+      const reply: RoomContentReply = { byProvider: { 'tbo-hotels': { status, rooms: [] } } };
+      expect(isRememberableRoomContent(reply)).toBe(false);
+      rememberRoomContent(key, reply);
+      expect(rememberedRoomContent(key)).toBeUndefined();
+      expect(initialRoomContentState(key, true)).toEqual({ status: 'loading' });
+    }
+    expect(isRememberableRoomContent({ byProvider: {} })).toBe(false);
+    expect(isRememberableRoomContent(READY)).toBe(true);
+  });
+
+  it('un 429 de la ruta llega como none: el hotel no queda sin fotos hasta recargar', async () => {
+    const key = encodeHotelKey([{ provider: 'tbo-hotels', hotelId: 'tope' }]) ?? '';
+    const replies: RoomContentReply[] = [
+      { byProvider: { 'tbo-hotels': { status: 'none', rooms: [] } } },
+      READY,
+    ];
+    const request = vi.fn(() => Promise.resolve(replies.shift()));
+    for (let i = 0; i < 2; i += 1) {
+      const res = await loadRoomContent(key, new AbortController().signal, () => undefined, {
+        request,
+      });
+      if (res.complete) rememberRoomContent(key, res.reply);
+    }
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(rememberedRoomContent(key)).toBe(READY);
   });
 
   it(`hasta ${ROOM_CONTENT_CACHE_MAX} hoteles: el menos usado sale primero`, () => {

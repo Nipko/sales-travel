@@ -501,11 +501,14 @@ resultados muestra la foto, el tamaño (`≈ 32 m²`, o el texto del proveedor s
   sólo al desplegar la tarjeta. El panel lo pide a su ruta `GET /api/hotels/rooms/<clave del hotel>?lang=es`, que llama
   al API por cada proveedor del hotel que da contenido. Es una ruta y no una acción del servidor porque el cliente de
   Next despacha las acciones de a una: una espera de hasta 6 s dejaría «Buscar de nuevo» o «Ver más hoteles» detrás de
-  unas fotos. Con `pending` se vuelve a preguntar a los `retryAfterMs`, hasta 3 veces; lo completo se recuerda por
-  hotel mientras dura la pestaña (hasta 60 hoteles).
+  unas fotos. Con `pending` se vuelve a preguntar a los `retryAfterMs`, hasta 3 veces. Sólo lo que llegó `ready` se
+  recuerda por hotel mientras dura la pestaña (hasta 60 hoteles): la ruta convierte todo error del API (un 429, un
+  despliegue, la sesión vencida) en `none`, así que `none` y `disabled` se vuelven a preguntar al desplegar de nuevo o
+  volver a la ficha, en lugar de dejar el hotel sin fotos hasta recargar.
 - **Sin riesgo para la ficha.** Mientras se pide o sigue `pending`, un esqueleto del tamaño de la miniatura; con
   `none`, `disabled`, un error o sin coincidencia, el tipo queda como antes (el icono de la cama). La miniatura
-  (`next/image` sobre el proxy propio, 96×72 en el teléfono y 128×96 desde `sm`) abre un diálogo con la galería de la
+  (`next/image` sobre el proxy propio, 96×72 en el teléfono y 128×96 desde `sm`, con el mismo reintento de las
+  miniaturas de la galería si el proxy está al tope de descargas) abre un diálogo con la galería de la
   habitación, su tamaño y la descripción completa. Una combinación de varias habitaciones muestra una miniatura por
   habitación distinta, hasta tres.
 

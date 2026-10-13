@@ -1,11 +1,10 @@
 'use client';
 
 import { BedDouble, ChevronDown, ImageOff, Ruler } from 'lucide-react';
-import Image from 'next/image';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../../../components/ui/dialog';
 import { cn } from '../../../../lib/cn';
-import { HotelGallery } from '../[hotelKey]/_components/hotel-gallery';
+import { GalleryImage, HotelGallery } from '../[hotelKey]/_components/hotel-gallery';
 import { roomsWithPhotos, type GroupRoomContent, type MatchedRoom } from './room-content-match';
 import {
   REFERENCE_PHOTO_NOTE,
@@ -77,7 +76,6 @@ export function RoomPhotos({ content }: { content: GroupRoomContent | undefined 
 
 function RoomThumb({ matched }: { matched: MatchedRoom }) {
   const [open, setOpen] = useState(false);
-  const [broken, setBroken] = useState(false);
   const noteId = useId();
   const { room, name, exact } = matched;
   const [cover] = room.images;
@@ -98,22 +96,24 @@ function RoomThumb({ matched }: { matched: MatchedRoom }) {
           FOCUS,
         )}
       >
-        {broken ? (
-          <ImageOff
-            aria-hidden="true"
-            className="absolute inset-0 m-auto size-5 text-[var(--color-fg-subtle)]"
-          />
-        ) : (
-          <Image
-            src={cover}
-            alt={`Foto de ${name}`}
-            fill
-            sizes={THUMB_SIZES}
-            quality={60}
-            className="object-cover"
-            onError={() => setBroken(true)}
-          />
-        )}
+        {/* Con reintento, como las miniaturas de la galería: el proxy responde 503 mientras tiene
+            sus descargas al tope (la galería del hotel y estas miniaturas salen a la vez), y sin
+            reintento la miniatura quedaba rota hasta recargar. */}
+        <GalleryImage
+          key={cover}
+          src={cover}
+          alt={`Foto de ${name}`}
+          fill
+          sizes={THUMB_SIZES}
+          quality={60}
+          className="object-cover"
+          fallback={
+            <ImageOff
+              aria-hidden="true"
+              className="absolute inset-0 m-auto size-5 text-[var(--color-fg-subtle)]"
+            />
+          }
+        />
         {count > 1 ? (
           <span
             aria-hidden="true"
@@ -127,7 +127,7 @@ function RoomThumb({ matched }: { matched: MatchedRoom }) {
         <p
           id={noteId}
           title={REFERENCE_PHOTO_NOTE}
-          className="w-24 text-[10px] leading-tight text-[var(--color-fg-muted)] sm:w-32"
+          className="w-24 text-[11px] leading-tight text-[var(--color-fg-muted)] sm:w-32"
         >
           Foto de referencia
           <span className="sr-only">. {REFERENCE_PHOTO_NOTE}</span>

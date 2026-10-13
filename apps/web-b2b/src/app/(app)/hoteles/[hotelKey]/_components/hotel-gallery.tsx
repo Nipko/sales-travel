@@ -71,9 +71,10 @@ function revealInside(container: HTMLElement, el: HTMLElement): void {
 /**
  * Una foto de la galería que, si no carga, se vuelve a pedir un rato después
  * ({@link afterPhotoError}: el proxy al tope de descargas responde 503 y en segundos se libera); si
- * tampoco, `fallback`. Mientras espera el reintento, el fondo del recuadro.
+ * tampoco, `fallback`. Mientras espera el reintento, el fondo del recuadro. También la usa la
+ * miniatura de cada tipo de habitación (room-photo.tsx), que compite por el mismo tope del proxy.
  */
-function GalleryImage({
+export function GalleryImage({
   fallback,
   ...image
 }: Omit<ImageProps, 'onError'> & { readonly fallback: ReactNode }) {

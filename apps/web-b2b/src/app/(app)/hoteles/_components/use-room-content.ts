@@ -19,8 +19,14 @@ import {
  *
  * Lo que el API todavía está trayendo del proveedor vuelve `pending`: se vuelve a preguntar a los
  * `retryAfterMs`, hasta {@link ROOM_CONTENT_MAX_RETRIES} veces, y después queda sin fotos. Lo que
- * llegó completo se recuerda por hotel mientras dura la pestaña: volver a desplegar una tarjeta o
- * abrir otra vez la ficha no vuelve a preguntar.
+ * llegó con contenido (`ready` en todos los proveedores) se recuerda por hotel mientras dura la
+ * pestaña: volver a desplegar una tarjeta o abrir otra vez la ficha no vuelve a preguntar.
+ *
+ * Un `none` o un `disabled` NO se recuerdan. La ruta del panel convierte cualquier error del API
+ * (un 429 del tope por vendedor, un 503 durante un despliegue, la sesión vencida) en `none`, y el
+ * API mismo dice `none` cuando el proveedor falló hace un momento; `disabled` cambia cuando se
+ * enciende el interruptor. Recordarlos dejaba el hotel sin fotos hasta recargar la pestaña. Volver
+ * a preguntar es barato: el API responde del catálogo y acota él solo las llamadas al proveedor.
  */
 
 export const ROOM_CONTENT_ENDPOINT = '/api/hotels/rooms/';
@@ -47,9 +53,18 @@ export function rememberedRoomContent(hotelKey: string): RoomContentReply | unde
   return hit;
 }
 
-/** Recuerda la respuesta completa de un hotel. Lo que sigue `pending` no se recuerda. */
+/**
+ * Lo que vale recordar: hay al menos un proveedor y todos trajeron contenido. Un `pending`, un
+ * `none` (que puede ser un error de paso) o un `disabled` se vuelven a preguntar.
+ */
+export function isRememberableRoomContent(reply: RoomContentReply): boolean {
+  const results = Object.values(reply.byProvider);
+  return results.length > 0 && results.every((r) => r.status === 'ready');
+}
+
+/** Recuerda la respuesta de un hotel, sólo si todos sus proveedores trajeron contenido. */
 export function rememberRoomContent(hotelKey: string, reply: RoomContentReply): void {
-  if (hasPendingRoomContent(reply)) return;
+  if (!isRememberableRoomContent(reply)) return;
   remembered.delete(hotelKey);
   remembered.set(hotelKey, reply);
   for (const key of remembered.keys()) {

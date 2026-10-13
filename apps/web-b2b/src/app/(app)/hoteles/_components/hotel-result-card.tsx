@@ -326,8 +326,9 @@ export function HotelResultCard({
  * Las habitaciones desplegadas de una tarjeta, por tipo (hasta `CARD_ROOM_TYPES`; el resto, en la
  * ficha), cada plan con su «Reservar»: se va al checkout desde el listado, con las mismas
  * compuertas que en la ficha. Las fotos, el tamaño y la descripción de cada tipo (TBO-07) se
- * piden recién al desplegarla: este componente sólo se monta abierto. El Search del listado no trae las políticas por tramos (D-TBO-19 A);
- * el PreBook del checkout da las finales antes de cargar los huéspedes, y la nota de arriba lo dice.
+ * piden recién al desplegarla: este componente sólo se monta abierto. El Search del listado no
+ * trae las políticas por tramos (D-TBO-19 A); el PreBook del checkout da las finales antes de
+ * cargar los huéspedes, y la nota de arriba lo dice.
  */
 export function HotelResultRates({
   item,
