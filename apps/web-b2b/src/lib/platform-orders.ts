@@ -284,9 +284,17 @@ export function ordersHref(filters: OrdersFilters, orderId: string | null = null
 
 // ───────────────────────────── El pedido ─────────────────────────────
 
+/** Un número de orden como se ve en la pantalla: "1042", "#1042" o "# 7". */
+const ORDER_NUMBER_SEARCH = /^#?\s*(\d{1,9})$/;
+
 /**
  * La búsqueda como la acepta el API: sin caracteres de control, recortada y con al menos dos
  * caracteres. `''` si no hay nada que buscar todavía.
+ *
+ * El número de orden se copia de la consola o del Resumen con su "#", que no es parte del número:
+ * con él, el API no lo reconoce. Y cada agencia numera desde 1, así que una reserva de un dígito
+ * ("7", "#7") va con un cero adelante: el API pide 2 caracteres y lee "07" como el número 7
+ * (admin_search_orders, 0076).
  */
 export function searchTerm(raw: string): string {
   const q = raw
@@ -294,6 +302,8 @@ export function searchTerm(raw: string): string {
     .trim()
     .slice(0, ORDERS_SEARCH_MAX_LENGTH)
     .trim();
+  const orderNumber = ORDER_NUMBER_SEARCH.exec(q)?.[1];
+  if (orderNumber !== undefined) return orderNumber.length === 1 ? `0${orderNumber}` : orderNumber;
   return q.length >= ORDERS_SEARCH_MIN_LENGTH ? q : '';
 }
 
@@ -882,13 +892,29 @@ export const WALLET_HOLD_VIEW: Readonly<Record<WalletHoldStatus, { label: string
   exempt: { label: 'Exenta', tone: 'neutral' },
 };
 
-/** Lo que no se ve en el estado: si la retención bloqueó saldo de verdad. */
+/**
+ * Lo que no se ve en el estado: hasta dónde subió la retención por la red (wallet_hold_policy,
+ * 0060). En los tres casos el nodo que vende SÍ retuvo en su cartera; lo que cambia es la cascada
+ * hacia los nodos que lo financian.
+ */
 export const WALLET_HOLD_MODE_HINT: Readonly<Record<WalletHoldMode, string | null>> = {
   enforce: null,
-  observe: 'En observación: se registró, pero no bloqueó saldo.',
-  off: 'Las retenciones estaban apagadas para este nodo.',
-  legacy: 'Reserva anterior a las retenciones de cartera.',
+  observe:
+    'Red en observación: retuvo el nodo que vende; los nodos de arriba sólo se evaluaron, sin bloquear su saldo.',
+  off: 'Retención en la red apagada: retuvo sólo el nodo que vende.',
+  legacy: 'Retención anterior a la retención en cadena: sólo en el nodo que vende.',
 };
+
+/**
+ * La aclaración bajo el estado de la retención. Una exenta no retuvo en ninguna cartera, con
+ * cualquier modo: se reservó con la cuenta propia del nodo y nadie de la red queda expuesto.
+ */
+export function walletHoldHint(hold: Pick<OrderWalletHoldView, 'status' | 'mode'>): string | null {
+  if (hold.status === 'exempt') {
+    return 'No retuvo ninguna cartera: se reservó con la cuenta propia del nodo con el proveedor.';
+  }
+  return hold.mode === null ? null : WALLET_HOLD_MODE_HINT[hold.mode];
+}
 
 /** Las divergencias de la conciliación (docs/tbo/04 §9.4). */
 const RECONCILIATION_KIND_LABEL: Readonly<Record<string, string>> = {

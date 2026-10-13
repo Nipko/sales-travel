@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ATTENTION_ORDERS_HREF, platformOrderHref } from './platform-overview';
+import { ATTENTION_ORDERS_HREF, attentionOrdersHref, platformOrderHref } from './platform-overview';
 import {
   DEFAULT_ORDERS_FILTERS,
   activeFilterCount,
@@ -28,6 +28,7 @@ import {
   searchTerm,
   statusMismatch,
   toggleStatus,
+  walletHoldHint,
   withDate,
   withPreset,
   type OrdersFilters,
@@ -122,6 +123,14 @@ describe('la URL de la pantalla', () => {
     const one = new URL(platformOrderHref(ORDER_2), 'https://x').searchParams;
     expect(orderFromSearchParams(one)).toBe(ORDER_2);
     expect(filtersFromSearchParams(one)).toEqual(DEFAULT_ORDERS_FILTERS);
+    // El Resumen acotado a un nodo: las mismas que cuenta su tarjeta, el nodo con su red.
+    const scoped = new URL(attentionOrdersHref(NODE_SUR), 'https://x').searchParams;
+    expect(filtersFromSearchParams(scoped)).toEqual({
+      ...DEFAULT_ORDERS_FILTERS,
+      attention: true,
+      tenantId: NODE_SUR,
+      subtree: true,
+    });
   });
 });
 
@@ -149,6 +158,20 @@ describe('el pedido', () => {
     expect(searchTerm(' ab\tc ')).toBe('ab c');
     expect(searchTerm('x'.repeat(150))).toHaveLength(100);
     expect(ordersSearch({ ...DEFAULT_ORDERS_FILTERS, q: 'a' })).toBe('');
+    expect(searchTerm('#')).toBe('');
+  });
+
+  it('el n.º de orden como se ve en la pantalla, también el de un dígito', () => {
+    expect(searchTerm('#1042')).toBe('1042');
+    expect(searchTerm(' # 1042 ')).toBe('1042');
+    expect(searchTerm('1042')).toBe('1042');
+    // El API pide 2 caracteres y lee "07" como el número 7.
+    expect(searchTerm('7')).toBe('07');
+    expect(searchTerm('#7')).toBe('07');
+    expect(ordersSearch({ ...DEFAULT_ORDERS_FILTERS, q: '#7' })).toBe('q=07');
+    // Lo demás no se toca: un "#" en medio no es un número de orden.
+    expect(searchTerm('AB#12')).toBe('AB#12');
+    expect(searchTerm('#1234567890')).toBe('#1234567890');
   });
 });
 
@@ -293,6 +316,24 @@ describe('textos', () => {
     expect(passengerLine({ givenName: 'Leo', surname: '', paxType: 'DRIVER', room: null })).toBe(
       'Leo · Conductor',
     );
+  });
+
+  it('la retención dice hasta dónde subió por la red (0060): el que vende siempre retuvo', () => {
+    expect(walletHoldHint({ status: 'held', mode: 'enforce' })).toBeNull();
+    expect(walletHoldHint({ status: 'held', mode: 'observe' })).toBe(
+      'Red en observación: retuvo el nodo que vende; los nodos de arriba sólo se evaluaron, sin bloquear su saldo.',
+    );
+    expect(walletHoldHint({ status: 'captured', mode: 'off' })).toBe(
+      'Retención en la red apagada: retuvo sólo el nodo que vende.',
+    );
+    expect(walletHoldHint({ status: 'released', mode: 'legacy' })).toContain(
+      'sólo en el nodo que vende',
+    );
+    // Exenta: con cualquier modo, nadie retuvo.
+    expect(walletHoldHint({ status: 'exempt', mode: 'off' })).toBe(
+      'No retuvo ninguna cartera: se reservó con la cuenta propia del nodo con el proveedor.',
+    );
+    expect(walletHoldHint({ status: 'held', mode: null })).toBeNull();
   });
 
   it('un evento o una divergencia que no conocemos sale por su código', () => {

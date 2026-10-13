@@ -13,7 +13,6 @@ import { PLATFORM_TIME_ZONE } from '../../../../../../lib/platform-overview';
 import {
   ORDER_STATUS_VIEW,
   RECONCILIATION_SEVERITY_VIEW,
-  WALLET_HOLD_MODE_HINT,
   WALLET_HOLD_VIEW,
   eventLabel,
   formatOrderDate,
@@ -22,6 +21,7 @@ import {
   reconciliationActionLabel,
   reconciliationKindLabel,
   statusMismatch,
+  walletHoldHint,
   type PlatformOrderDetail,
   type PlatformOrderRow,
 } from '../../../../../../lib/platform-orders';
@@ -229,6 +229,7 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
     reload: reloadNothing,
   };
   const hold = detail.walletHold;
+  const holdHint = hold === null ? null : walletHoldHint(hold);
 
   return (
     <div className="space-y-7">
@@ -371,12 +372,11 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
                 {formatMoney(hold.saleAmountMinor, hold.currency)}
               </span>
             </p>
-            {hold.mode !== null && WALLET_HOLD_MODE_HINT[hold.mode] !== null ? (
-              <Quiet>{WALLET_HOLD_MODE_HINT[hold.mode]}</Quiet>
-            ) : null}
+            {holdHint !== null ? <Quiet>{holdHint}</Quiet> : null}
             <Quiet>
               {[
-                `Retenida el ${formatOrderDate(hold.createdAt)}`,
+                // Exenta (vendió con su cuenta propia) no bloqueó saldo en ninguna cartera.
+                `${hold.status === 'exempt' ? 'Registrada' : 'Retenida'} el ${formatOrderDate(hold.createdAt)}`,
                 hold.capturedAt !== null ? `cobrada el ${formatOrderDate(hold.capturedAt)}` : null,
                 hold.closedAt !== null ? `cerrada el ${formatOrderDate(hold.closedAt)}` : null,
               ]

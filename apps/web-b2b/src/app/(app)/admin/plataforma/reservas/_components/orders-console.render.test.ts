@@ -15,7 +15,7 @@ import {
   ORDER_2,
   rowPayload,
 } from '../../../../../../lib/platform-orders.fixture';
-import { AUDIT_FOOTNOTE, OrderDetailContent } from './order-detail-sheet';
+import { AUDIT_FOOTNOTE, OrderDetailContent, OrderDetailSheet } from './order-detail-sheet';
 import { OrdersConsole, OrdersResults, type ListState } from './orders-console';
 
 /** Formas del voseo que podrían colarse en esta pantalla (va en tú neutro). */
@@ -134,12 +134,23 @@ describe('OrdersConsole en su primer pintado', () => {
     expect(attention).toContain('Limpiar filtros');
   });
 
-  it('con ?orden= abre la ficha, que dice "Reserva" mientras llega', () => {
+  it('con ?orden= la ficha espera a la página hidratada: así abre en el <body> y con el foco', () => {
     const open = renderToStaticMarkup(createElement(OrdersConsole, { initialOrderId: ORDER_1 }));
-    expect(open).toMatch(/role="dialog"[^>]*aria-modal="true"/);
-    expect(open).toMatch(/<h2 id="[^"]+"[^>]*>Reserva<\/h2>/);
-    expect(open).toContain('Cargando la reserva…');
-    expect(open).toContain('aria-label="Cerrar la ficha"');
+    expect(open).not.toContain('role="dialog"');
+  });
+
+  it('la ficha dice "Reserva" mientras llega, o lo de la fila que se tocó', () => {
+    const fromLink = renderToStaticMarkup(
+      createElement(OrderDetailSheet, { orderId: ORDER_1, preview: null, onClose: noop }),
+    );
+    expect(fromLink).toMatch(/role="dialog"[^>]*aria-modal="true"/);
+    expect(fromLink).toMatch(/<h2 id="[^"]+"[^>]*>Reserva<\/h2>/);
+    expect(fromLink).toContain('Cargando la reserva…');
+    expect(fromLink).toContain('aria-label="Cerrar la ficha"');
+    const fromRow = renderToStaticMarkup(
+      createElement(OrderDetailSheet, { orderId: ORDER_1, preview: ROW, onClose: noop }),
+    );
+    expect(fromRow).toMatch(/<h2 id="[^"]+"[^>]*>Reserva #1042 · Agencia Sur<\/h2>/);
   });
 
   it('va en tú', () => {

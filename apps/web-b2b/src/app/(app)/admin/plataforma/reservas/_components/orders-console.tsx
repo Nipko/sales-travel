@@ -1,7 +1,7 @@
 'use client';
 
 import { CalendarSearch, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../../components/ui/button';
 import { TextInput } from '../../../../../../components/ui/field';
@@ -46,6 +46,8 @@ interface Selected {
 
 /** Espera de la búsqueda: no se pide una página por cada tecla. */
 const SEARCH_DEBOUNCE_MS = 300;
+
+const subscribeNothing = () => () => undefined;
 /** Cada cuánto se rehace "desde hace…" sin volver a pedir nada. */
 const CLOCK_TICK_MS = 60_000;
 
@@ -73,6 +75,16 @@ export function OrdersConsole({
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  /**
+   * La ficha se pinta recién con la página hidratada. Con `?orden=` en una carga completa, el
+   * servidor la pintaba en su lugar y al hidratar ModalPortal la movía al `<body>`: el foco inicial
+   * quedaba en el nodo que se descartó y el diálogo abría sin foco para el teclado y el lector.
+   */
+  const hydrated = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
   /** El último pedido de la lista: una respuesta vieja (filtros de antes) no pisa la nueva. */
   const request = useRef(0);
   /** Hay una lista en pantalla: si falla una actualización, se conserva. */
@@ -96,7 +108,13 @@ export function OrdersConsole({
     }
     if (mode === 'refresh' && showing.current) {
       toast.error(`No pudimos actualizar la lista: ${page.message}`);
-      setList((s) => (s.status === 'ready' ? { ...s, refreshing: false } : s));
+      // Un "Cargar más" que salió antes de actualizar ya no vuelve (su respuesta se descarta): sin
+      // esto, el botón quedaba en "Cargando…" para siempre.
+      setList((s) =>
+        s.status === 'ready'
+          ? { ...s, refreshing: false, more: s.more === 'loading' ? 'idle' : s.more }
+          : s,
+      );
       return;
     }
     showing.current = false;
@@ -169,8 +187,8 @@ export function OrdersConsole({
   const hrefFor = useCallback((row: PlatformOrderRow) => ordersHref(filters, row.id), [filters]);
 
   const activeCount = activeFilterCount(filters);
-  const typed = search.trim();
-  const tooShort = typed.length > 0 && typed.length < ORDERS_SEARCH_MIN_LENGTH;
+  // Lo que no se pide (una letra, un "#" solo): se avisa en vez de mostrar la lista sin filtrar.
+  const tooShort = search.trim() !== '' && searchTerm(search) === '';
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-5 sm:py-8">
@@ -240,7 +258,7 @@ export function OrdersConsole({
           aria-live="polite"
           className={cn('text-xs text-[var(--color-fg-muted)]', !tooShort && 'sr-only')}
         >
-          {tooShort ? 'Escribe al menos 2 caracteres para buscar.' : ''}
+          {tooShort ? `Escribe al menos ${ORDERS_SEARCH_MIN_LENGTH} caracteres para buscar.` : ''}
         </p>
         <div className="hidden md:block">
           <OrdersFilters
@@ -285,7 +303,7 @@ export function OrdersConsole({
         onClear={() => setFilters(clearedFilters(filters))}
       />
 
-      {selected !== null ? (
+      {selected !== null && hydrated ? (
         <OrderDetailSheet
           key={selected.id}
           orderId={selected.id}

@@ -18,6 +18,15 @@ export const TRUSTED_DEVICE_HEADER = 'x-trusted-device';
 /** Donde Caddy deja la IP del usuario que resolvió (el nombre es histórico: ya no es el peer TCP). */
 export const EDGE_CLIENT_IP_HEADER = 'x-edge-peer-ip';
 
+/**
+ * La ruta como va a los registros: sin la query. Hay búsquedas que viajan en ella (Reservas de la
+ * red busca por el correo del cliente) y los registros no pueden guardar datos personales.
+ */
+export function loggablePath(path: string): string {
+  const query = path.indexOf('?');
+  return query === -1 ? path : `${path.slice(0, query)}?…`;
+}
+
 /** El API trata un secreto más corto como no configurado: mandarlo no serviría de nada. */
 const MIN_PROXY_SECRET_LENGTH = 32;
 /** Lo que guarda `sessions.user_agent`. */
@@ -183,7 +192,7 @@ export async function api<T>(
       }
       const apiError = apiErrorFromBody(res.status, res.statusText, body);
       console.error(
-        `[API FETCH ERROR] PATH: ${path}, STATUS: ${res.status}, REASON: ${apiError.reason ?? '-'}, MESSAGE: ${apiError.message}`,
+        `[API FETCH ERROR] PATH: ${loggablePath(path)}, STATUS: ${res.status}, REASON: ${apiError.reason ?? '-'}, MESSAGE: ${apiError.message}`,
       );
       return { ok: false, error: apiError };
     }
@@ -193,7 +202,7 @@ export async function api<T>(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // El detalle técnico queda en el log; al usuario se le muestra un mensaje claro y accionable.
-    console.error(`[API FETCH CONNECTION ERROR] PATH: ${path}, ERROR: ${message}`);
+    console.error(`[API FETCH CONNECTION ERROR] PATH: ${loggablePath(path)}, ERROR: ${message}`);
     return {
       ok: false,
       error: {
@@ -257,7 +266,7 @@ export async function apiWithStatus(path: string, init: RequestInit = {}): Promi
     res = await fetch(`${BASE}/api${path}`, { ...init, headers, cache: 'no-store' });
   } catch (err) {
     const name = err instanceof Error ? err.name : 'UnknownError';
-    console.error(`[API FETCH CONNECTION ERROR] PATH: ${path}, ERROR: ${name}`);
+    console.error(`[API FETCH CONNECTION ERROR] PATH: ${loggablePath(path)}, ERROR: ${name}`);
     return {
       kind: 'unreachable',
       status: SERVICIO_NO_DISPONIBLE,
@@ -267,7 +276,9 @@ export async function apiWithStatus(path: string, init: RequestInit = {}): Promi
 
   const read = await readApiResponse(res);
   if (read.kind === 'not-json') {
-    console.error(`[API FETCH ERROR] PATH: ${path}, STATUS: ${res.status}, BODY: no JSON`);
+    console.error(
+      `[API FETCH ERROR] PATH: ${loggablePath(path)}, STATUS: ${res.status}, BODY: no JSON`,
+    );
   }
   return read;
 }

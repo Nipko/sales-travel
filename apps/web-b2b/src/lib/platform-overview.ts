@@ -35,6 +35,17 @@ export const PLATFORM_RESERVAS: Route = '/admin/plataforma/reservas';
 /** Las reservas de la red que necesitan a una persona (`?atencion=1`, lib/platform-orders). */
 export const ATTENTION_ORDERS_HREF: Route = `${PLATFORM_RESERVAS}?atencion=1`;
 
+/**
+ * Las que necesitan a una persona dentro del nodo al que se acotó el Resumen, con su red
+ * (`?atencion=1&nodo=`): el Resumen acotado cuenta sólo las de ese subárbol, y "Ver todas" tiene que
+ * abrir esas mismas y no las de toda la red. Sin nodo, las de toda la red.
+ */
+export function attentionOrdersHref(tenantId: string | null): Route {
+  return tenantId === null
+    ? ATTENTION_ORDERS_HREF
+    : `${ATTENTION_ORDERS_HREF}&nodo=${encodeURIComponent(tenantId)}`;
+}
+
 /** Reservas de la red con la ficha de esta reserva abierta (`?orden=`, lib/platform-orders). */
 export function platformOrderHref(orderId: string): Route {
   return `${PLATFORM_RESERVAS}?orden=${encodeURIComponent(orderId)}`;
@@ -925,7 +936,11 @@ function orderEntryText(sample: OrderAttentionSample): string {
  * esperan. Una cancelación fallida, una retención en conflicto o saldo retenido sin reserva son
  * urgentes: hay plata trabada o un cliente que cree que canceló.
  */
-function ordersItem(orders: OrderAttention, now: number): AttentionItem | undefined {
+function ordersItem(
+  orders: OrderAttention,
+  now: number,
+  scopeTenantId: string | null,
+): AttentionItem | undefined {
   if (orders.total === 0) return undefined;
   const reasons = ATTENTION_REASON_PRIORITY.filter((r) => orders.byReason[r] > 0);
   return {
@@ -949,7 +964,7 @@ function ordersItem(orders: OrderAttention, now: number): AttentionItem | undefi
         href: platformOrderHref(sample.orderId),
       };
     }),
-    action: { label: 'Ver todas', href: ATTENTION_ORDERS_HREF },
+    action: { label: 'Ver todas', href: attentionOrdersHref(scopeTenantId) },
   };
 }
 
@@ -1191,16 +1206,18 @@ function invitationsItem(attention: OverviewAttention): AttentionItem | undefine
  * pantalla dice "Todo en orden".
  *
  * `oldestPlatformDeposit`: cuándo se informó el depósito más viejo que espera a Planetour, si se sabe
- * (`undefined` mientras no se leyó, `null` si no hay).
+ * (`undefined` mientras no se leyó, `null` si no hay). `scope`: el nodo al que se acotó el Resumen,
+ * para que los enlaces abran lo mismo que cuenta la tarjeta.
  */
 export function attentionItems(
-  overview: Pick<PlatformOverview, 'attention' | 'providers' | 'wallets' | 'network' | 'catalogs'>,
+  overview: Pick<PlatformOverview, 'attention' | 'providers' | 'wallets' | 'network' | 'catalogs'> &
+    Partial<Pick<PlatformOverview, 'scope'>>,
   oldestPlatformDeposit: string | null | undefined,
   now: number,
 ): AttentionItem[] {
   const items = [
     providersItem(overview.providers),
-    ordersItem(overview.attention.orders, now),
+    ordersItem(overview.attention.orders, now, overview.scope?.tenantId ?? null),
     postSaleItem(overview.attention),
     depositsItem(overview.attention, oldestPlatformDeposit, now),
     reconciliationItem(overview.attention),

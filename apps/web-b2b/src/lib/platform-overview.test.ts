@@ -8,6 +8,7 @@ import {
   PLATFORM_HOME,
   SEVERITY_LABEL,
   attentionItems,
+  attentionOrdersHref,
   monthLabel,
   overviewErrorMessage,
   overviewHref,
@@ -503,6 +504,20 @@ describe('attentionItems', () => {
       severity: 'warning',
       summary: '1 reserva necesita que alguien la revise.',
     });
+  });
+
+  it('con el Resumen acotado a un nodo, "Ver todas" abre las de ese nodo y su red', () => {
+    const scoped = only(
+      itemsWith(
+        { orders: ordersWith({ review: 1 }, [sampleRow()]) },
+        {
+          scope: { tenantId: NODE_SUR, name: 'Agencia Sur', tenantType: 'agency', isBranch: false },
+        },
+      ),
+      'orders',
+    );
+    expect(scoped.action?.href).toBe(`/admin/plataforma/reservas?atencion=1&nodo=${NODE_SUR}`);
+    expect(attentionOrdersHref(null)).toBe(ATTENTION_ORDERS_HREF);
   });
 
   it('cada motivo tiene su texto', () => {
