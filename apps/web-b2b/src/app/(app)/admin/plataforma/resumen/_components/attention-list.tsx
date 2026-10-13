@@ -132,6 +132,8 @@ function AttentionRow({ item }: { item: AttentionItem }) {
           <Button asChild variant="secondary" size="sm" className="self-start">
             <Link href={item.action.href}>
               {item.action.label}
+              {/* "Ver todas" suelto no dice de qué: el lector de pantalla oye también el tema. */}
+              <span className="sr-only"> · {item.title}</span>
               <ArrowRight aria-hidden="true" />
             </Link>
           </Button>

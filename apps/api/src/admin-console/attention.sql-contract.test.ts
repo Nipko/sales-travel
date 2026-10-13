@@ -14,10 +14,10 @@ import {
  * que lo lee. Si uno cambia sin el otro, una reserva con problemas desaparecería del Resumen sin que
  * nadie lo note. Este test lee la migración tal como se aplica.
  */
-const MIGRATION = readFileSync(
-  join(__dirname, '..', '..', '..', '..', 'db', 'migrations', '0075_platform_console_reads.sql'),
-  'utf8',
-);
+const MIGRATIONS = join(__dirname, '..', '..', '..', '..', 'db', 'migrations');
+const MIGRATION = readFileSync(join(MIGRATIONS, '0075_platform_console_reads.sql'), 'utf8');
+/** Reservas de la red: marca cada fila con el motivo más grave, por un CASE propio. */
+const ORDERS_CONSOLE = readFileSync(join(MIGRATIONS, '0076_admin_orders_console.sql'), 'utf8');
 
 function functionBody(name: string): string {
   const start = MIGRATION.indexOf(`CREATE FUNCTION ${name}(`);
@@ -63,5 +63,25 @@ describe('admin_order_attention (0075) y attention.ts', () => {
     expect(isOrderAttentionReason('review')).toBe(true);
     expect(isOrderAttentionReason('otra-cosa')).toBe(false);
     expect(isOrderAttentionReason(undefined)).toBe(false);
+  });
+});
+
+describe('admin_search_orders (0076) y ATTENTION_PRIORITY', () => {
+  const start = ORDERS_CONSOLE.indexOf('CREATE FUNCTION admin_search_orders(');
+  const open = ORDERS_CONSOLE.indexOf('$$', start);
+  const body = ORDERS_CONSOLE.slice(open + 2, ORDERS_CONSOLE.indexOf('$$', open + 2));
+
+  it('el motivo de cada fila es el más grave, con el orden de ATTENTION_PRIORITY', () => {
+    const ranked = [...body.matchAll(/WHEN '([a-z-]+)'\s+THEN (\d+)/g)].map((m) => ({
+      reason: m[1],
+      rank: Number(m[2]),
+    }));
+    expect(ranked.map((r) => r.reason)).toEqual([...ATTENTION_PRIORITY]);
+    expect(ranked.map((r) => r.rank)).toEqual(ATTENTION_PRIORITY.map((_, i) => i));
+  });
+
+  it('lee los motivos de admin_order_attention, no una lista propia', () => {
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(body).toContain('public.admin_order_attention()');
   });
 });

@@ -251,6 +251,14 @@ describe('OverviewContent: lo que requiere atención', () => {
     expect(text).toContain('Ver invitaciones');
   });
 
+  it('Reservas con problemas lleva a Reservas de la red: todas, o la ficha de cada una', () => {
+    expect(html).toContain('href="/admin/plataforma/reservas?atencion=1"');
+    expect(text).toContain('Ver todas · Reservas con problemas');
+    expect(html).toContain(
+      'href="/admin/plataforma/reservas?orden=40000000-0000-4000-8000-000000000001"',
+    );
+  });
+
   it('va en tú', () => {
     expect([...text.matchAll(VOSEO)]).toEqual([]);
   });

@@ -4,7 +4,10 @@ import { AgentCarsProviderModule } from '../providers-agent-cars/agent-cars.modu
 import { HotelProvidersModule } from '../providers/hotel-providers.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
+import { NetworkModule } from '../network/network.module.js';
 import { SearchModule } from '../search/search.module.js';
+import { AdminOrdersController } from './admin-orders.controller.js';
+import { AdminOrdersService } from './admin-orders.service.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
@@ -30,6 +33,10 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
  *
  * Los claims de cancelación que un proceso dejó en vuelo (HARD-1) los vence `PostSaleModule` con
  * `StaleCancelClaimService`, que es de todas las verticales.
+ *
+ * Reservas de la red (`/admin/orders`, la consola del superadmin) vive acá para reusar las lecturas
+ * de la ficha (`OrdersService`, `HotelOrderReadsService`) sin exportarlas; `NetworkModule` trae
+ * `SuperadminGuard`.
  */
 @Module({
   imports: [
@@ -38,12 +45,14 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
     PricingModule,
     HotelProvidersModule,
     SearchModule,
+    NetworkModule,
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, AdminOrdersController],
   // El worker de post-venta vive en `PostSaleModule`: enruta también jobs de hoteles, y
   // `HotelsModule` ya importa este módulo.
   providers: [
     OrdersService,
+    AdminOrdersService,
     ExternalOrderIntentService,
     HotelOrderTrackingStore,
     HotelOrderReadsService,

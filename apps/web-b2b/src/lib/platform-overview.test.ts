@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { ATTENTION_REASON_LABEL, ORDER_ATTENTION_REASONS } from './attention-labels';
 import {
-  ATTENTION_REASON_LABEL,
+  ATTENTION_ORDERS_HREF,
   DEFAULT_OVERVIEW_PERIOD,
   INVITATIONS_HREF,
-  ORDER_ATTENTION_REASONS,
   OVERVIEW_PERIODS,
   PLATFORM_HOME,
   SEVERITY_LABEL,
   attentionItems,
+  attentionOrdersHref,
   monthLabel,
   overviewErrorMessage,
   overviewHref,
@@ -17,6 +18,7 @@ import {
   periodDates,
   periodFromParam,
   periodParam,
+  platformOrderHref,
   postSaleTypeLabel,
   providerName,
   salesVerticalLabel,
@@ -479,23 +481,43 @@ describe('attentionItems', () => {
         'Sin confirmación del hotel (HCN): 1',
       ],
     });
+    // Cada reserva abre su ficha en Reservas de la red; "Ver todas", la lista de las que esperan.
     expect(item.entries).toEqual([
       {
         key: ORDER_1,
         text: 'Agencia Sur · n.º 1042 · TBO-778',
         meta: 'Cancelación fallida · desde ayer',
+        href: `/admin/plataforma/reservas?orden=${ORDER_1}`,
       },
       {
         key: ORDER_2,
         text: 'Andes Travel · n.º 7',
         meta: 'En revisión con el proveedor · desde hace 3 horas',
+        href: `/admin/plataforma/reservas?orden=${ORDER_2}`,
       },
     ]);
+    expect(item.action).toEqual({ label: 'Ver todas', href: ATTENTION_ORDERS_HREF });
+    expect(ATTENTION_ORDERS_HREF).toBe('/admin/plataforma/reservas?atencion=1');
+    expect(platformOrderHref(ORDER_2)).toBe(`/admin/plataforma/reservas?orden=${ORDER_2}`);
     // Sin plata trabada ni cancelaciones fallidas: revisar, no urgente.
     expect(only(itemsWith({ orders: ordersWith({ 'create-stuck': 1 }) }), 'orders')).toMatchObject({
       severity: 'warning',
       summary: '1 reserva necesita que alguien la revise.',
     });
+  });
+
+  it('con el Resumen acotado a un nodo, "Ver todas" abre las de ese nodo y su red', () => {
+    const scoped = only(
+      itemsWith(
+        { orders: ordersWith({ review: 1 }, [sampleRow()]) },
+        {
+          scope: { tenantId: NODE_SUR, name: 'Agencia Sur', tenantType: 'agency', isBranch: false },
+        },
+      ),
+      'orders',
+    );
+    expect(scoped.action?.href).toBe(`/admin/plataforma/reservas?atencion=1&nodo=${NODE_SUR}`);
+    expect(attentionOrdersHref(null)).toBe(ATTENTION_ORDERS_HREF);
   });
 
   it('cada motivo tiene su texto', () => {
