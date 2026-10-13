@@ -7,6 +7,7 @@ import {
   SabreConfigError,
   SabreCreateBookingError,
   SabreCreateBookingMapError,
+  SabreFulfillBuildError,
   SabreFlightCheckMappingError,
   SabreFlightCheckNoMatchedOfferError,
   SabreFlightCheckRejectedError,
@@ -21,7 +22,9 @@ import {
   SabrePriceRejectedError,
   SabrePriceRequestError,
   SabreShopMappingError,
+  SabreTicketingNotSentError,
   type SabreFailureKind,
+  type SabreTicketingRefusal,
 } from '@sales-travel/sabre';
 
 /**
@@ -60,6 +63,19 @@ const MENSAJE_POR_KIND: Readonly<Record<SabreFailureKind, string>> = {
 
 /** Fallback cuando el error no es ninguno de los tipados del ACL. */
 const MENSAJE_DESCONOCIDO = 'No pudimos procesar la solicitud con Sabre. Intenta nuevamente.';
+
+/**
+ * Una emisión que el ACL rechazó antes de mandarla. Lo único que se cita es nuestro código: el
+ * vendedor tiene que saber que no se emitió nada y qué hacer.
+ */
+const EMISION_NO_ENVIADA: Readonly<Record<SabreTicketingRefusal, string>> = {
+  BOOKING_CANCELLED:
+    'La reserva figura cancelada en Sabre: no hay nada que emitir. Consulta su estado antes de seguir.',
+  TARGET_PCC_NOT_ADDRESSABLE:
+    'La cuenta de Sabre tiene un PCC de emisión sin grupo (sabreGroup o sabreCurrentCity). Complétalo en Mi Red → Credenciales → Sabre.',
+  TRAVELER_COUNT_INVALID:
+    'La reserva no tiene pasajeros que se puedan emitir. Ya quedó registrado para el equipo.',
+};
 
 export function humanizeSabreError(err: unknown): string {
   // Sin `??` de rescate a propósito: `MENSAJE_POR_KIND` es un `Record` COMPLETO sobre
@@ -110,6 +126,11 @@ export function humanizeSabreError(err: unknown): string {
     err instanceof SabreIndexError
   ) {
     return 'No pudimos armar la operación con los datos de esta oferta. Revalida el precio y vuelve a intentar; si se repite, ya quedó registrado para el equipo.';
+  }
+  if (err instanceof SabreTicketingNotSentError) return EMISION_NO_ENVIADA[err.code];
+  if (err instanceof SabreFulfillBuildError) {
+    // Como la cancelación: la regla es nuestra y cerrada, y dice qué dato no permitió armarla.
+    return `No pudimos armar la emisión de esta reserva (${err.rule}). No se emitió nada; ya quedó registrado para el equipo.`;
   }
   if (err instanceof SabreCancelBookingBuildError) {
     // `rule` es vocabulario NUESTRO y cerrado; es lo único que se cita, porque distingue

@@ -8,7 +8,9 @@ import {
   SabreOfferPriceEmptyError,
   SabrePriceRejectedError,
   SabrePriceRequestError,
+  SabreFulfillBuildError,
   SabreShopMappingError,
+  SabreTicketingNotSentError,
   type SabreFailureKind,
 } from '@sales-travel/sabre';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -177,6 +179,14 @@ describe('humanizeSabreError — tú neutro', () => {
       'SabreCancelBookingBuildError',
       humanizeSabreError(new SabreCancelBookingBuildError('TICKET_OPERATION_REQUIRED', 'x')),
     ],
+    [
+      'SabreTicketingNotSentError',
+      humanizeSabreError(new SabreTicketingNotSentError('TARGET_PCC_NOT_ADDRESSABLE', 'x')),
+    ],
+    [
+      'SabreFulfillBuildError',
+      humanizeSabreError(new SabreFulfillBuildError('TARGET_PCC_INVALID', 'x')),
+    ],
     ['desconocido', humanizeSabreError(new Error('x'))],
     ['501', new SabreOperationNotSupportedError('pagar la reserva').message],
   ];
@@ -211,6 +221,27 @@ describe('humanizeSabreError — tú neutro', () => {
     expect(humanizeSabreError(new SabreConfigError('x'))).toContain('Revísala');
     expect(new SabreOperationNotSupportedError('pagar').message).toContain(
       'Elige una oferta de otro proveedor',
+    );
+  });
+});
+
+describe('humanizeSabreError — la emisión que no salió (SAB-08)', () => {
+  it.each([
+    ['BOOKING_CANCELLED', 'figura cancelada en Sabre'],
+    ['TARGET_PCC_NOT_ADDRESSABLE', 'Complétalo en Mi Red → Credenciales → Sabre'],
+    ['TRAVELER_COUNT_INVALID', 'no tiene pasajeros'],
+  ] as const)('%s dice qué pasó y no hace eco del mensaje interno', (code, esperado) => {
+    const mensaje = humanizeSabreError(new SabreTicketingNotSentError(code, 'DETALLE-INTERNO'));
+    expect(mensaje).toContain(esperado);
+    expect(mensaje).not.toContain('DETALLE-INTERNO');
+  });
+
+  it('una emisión que no se pudo armar cita sólo la regla y dice que no se emitió nada', () => {
+    const mensaje = humanizeSabreError(
+      new SabreFulfillBuildError('CONFIRMATION_ID_INVALID', 'DETALLE-INTERNO'),
+    );
+    expect(mensaje).toBe(
+      'No pudimos armar la emisión de esta reserva (CONFIRMATION_ID_INVALID). No se emitió nada; ya quedó registrado para el equipo.',
     );
   });
 });

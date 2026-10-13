@@ -155,6 +155,10 @@ services:
       # No se usan para encender nada nuevo (README §6.1).
       FLIGHT_PROVIDERS_OPT_IN: ${FLIGHT_PROVIDERS_OPT_IN:-}
       HOTEL_PROVIDERS_OPT_IN: ${HOTEL_PROVIDERS_OPT_IN:-}
+      # Operaciones de Sabre que mueven dinero o cambian la reserva, una por una: issue, void,
+      # refund, seats, services, modify (lista separada por comas). Vacía = ninguna. Un valor que no
+      # se reconoce tumba el arranque del api. No se enciende nada hasta certificarlo en CERT.
+      SABRE_OPERATIONS: ${SABRE_OPERATIONS:-}
       # Notificaciones por email: URL del panel (link de verificación) + SMTP por defecto del
       # sistema (fallback cuando una agencia no configura su propio correo / BYO-email).
       APP_WEB_URL: ${APP_WEB_URL:-https://app.planetour.cloud}
