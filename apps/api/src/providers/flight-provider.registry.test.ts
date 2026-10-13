@@ -231,6 +231,29 @@ describe('FlightProviderRegistry', () => {
     });
   });
 
+  describe('entorno de la cuenta', () => {
+    it('copia el que declara el factory: búsqueda, venta y post-venta ven lo mismo', async () => {
+      const r = registry([
+        new StubProviderFactory({ code: 'alfa-air', providerEnvironment: 'test' }),
+        new StubProviderFactory({ code: 'beta-air', providerEnvironment: 'live' }),
+      ]);
+
+      const { active } = await r.forTenant(TENANT);
+      expect(active.map((p) => [p.code, p.environment])).toEqual([
+        ['alfa-air', 'test'],
+        ['beta-air', 'live'],
+      ]);
+      expect((await r.byCode(TENANT, 'alfa-air')).environment).toBe('test');
+      expect((await r.byCodeForOffer(TENANT, 'alfa-air')).environment).toBe('test');
+    });
+
+    it('un factory que no lo dice sale `live`: es lo que eran todas las cuentas', async () => {
+      const r = registry([new StubProviderFactory({ code: 'alfa-air' })]);
+
+      expect((await r.byCode(TENANT, 'alfa-air')).environment).toBe('live');
+    });
+  });
+
   describe('habilitación de la plataforma', () => {
     it('un proveedor `always` apagado para el tenant sale `platform-disabled`, sin tocar la bóveda', async () => {
       const stub = new StubProviderFactory({ code: 'alfa-air' });
@@ -375,8 +398,10 @@ describe('FlightProviderRegistry', () => {
 
       expect(active.map((p) => p.code)).toEqual(['beta-air']);
       expect(unavailable.map((u) => [u.code, u.reason])).toEqual([['alfa-air', 'no-credentials']]);
-      // El motivo es lo que la pantalla enseña: tiene que venir, y con algo que decir.
-      expect(unavailable[0]?.detail).toContain('Credenciales');
+      // El motivo es lo que la pantalla enseña: tiene que venir, con algo que decir y en tú.
+      expect(unavailable[0]?.detail).toBe(
+        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
+      );
     });
 
     it('una cuenta INCOMPLETA se distingue de una cuenta ausente', async () => {
@@ -393,7 +418,9 @@ describe('FlightProviderRegistry', () => {
 
       expect(active).toEqual([]);
       expect(unavailable[0]?.reason).toBe('incomplete-account');
-      expect(unavailable[0]?.detail).toContain('apiKey');
+      expect(unavailable[0]?.detail).toBe(
+        'Faltan datos en la cuenta de este proveedor (apiKey). Complétala en Mi Red → Credenciales.',
+      );
     });
 
     it('el motivo de una ausencia nombra el campo pero nunca un valor de credencial', async () => {

@@ -79,7 +79,7 @@ export class ProviderBookingRefTakenError extends ConflictException {
 
   constructor(readonly provider: string) {
     super(
-      'No pudimos abrir la reserva: la referencia que generamos para el proveedor ya estaba en uso. No se envió nada; volvé a intentarlo.',
+      'No pudimos abrir la reserva: la referencia que generamos para el proveedor ya estaba en uso. No se envió nada; vuelve a intentarlo.',
     );
     this.name = 'ProviderBookingRefTakenError';
   }

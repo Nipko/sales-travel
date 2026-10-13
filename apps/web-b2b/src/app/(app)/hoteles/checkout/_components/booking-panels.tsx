@@ -16,10 +16,12 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Card } from '../../../../../components/ui/card';
 import { cn } from '../../../../../lib/cn';
+import type { HotelAccountEnvironment } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
 import type { HotelDetailLink } from '../../_components/hotel-search-handoff';
 import type { AtHotelCharge } from '../../_components/hotel-rate-view';
 import { formatRemaining } from '../../_components/offer-expiry';
+import { TestBookingNotice } from '../../_components/test-account-notice';
 import { PRIMARY_ACTION, SECONDARY_ACTION } from './action-styles';
 import {
   repricedChangeView,
@@ -175,10 +177,16 @@ export function ConfirmedPanel({
   view,
   atHotel,
   headingRef,
+  providerEnvironment,
 }: {
   view: ConfirmedView;
   atHotel: readonly AtHotelCharge[];
   headingRef: Heading;
+  /**
+   * El entorno de la cuenta que reservó (PreBook). Con `test`, «Reserva confirmada» y el voucher
+   * no pueden pasar por una habitación de verdad para el cliente.
+   */
+  providerEnvironment?: HotelAccountEnvironment;
 }) {
   return (
     <Card className="overflow-hidden">
@@ -194,6 +202,7 @@ export function ConfirmedPanel({
           </p>
         </div>
       </div>
+      <TestBookingNotice environment={providerEnvironment} className="mx-4 mt-4" />
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 px-4 py-4 sm:grid-cols-2">
         {view.orderNumber === undefined ? null : (
           <Detail label="Reserva">N.º {view.orderNumber}</Detail>
@@ -213,7 +222,7 @@ export function ConfirmedPanel({
           <div className="rounded-md border border-[var(--color-warning)]/50 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-fg)]">
             <p className="flex items-center gap-1 font-medium">
               <Receipt aria-hidden="true" className="size-3 shrink-0" />
-              Recordale al huésped lo que paga en el hotel
+              Recuérdale al huésped lo que paga en el hotel
             </p>
             <ul className="mt-0.5 space-y-0.5">
               {atHotel.map((c, i) => (

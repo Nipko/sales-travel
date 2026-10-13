@@ -172,7 +172,8 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
     });
 
     const snapshot = mapSabreGetBookingForDisplay(result.data);
-    this.log('debug', 'sabre.getBooking', {
+    // `info`: es la lectura con la que el saga CIERRA una creación, y producción descarta `debug`.
+    this.log('info', 'sabre.getBooking', {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,
@@ -318,7 +319,9 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
 
     const detail = mapSabreCancelResponse(result.data, { requestedPolicy: policy });
 
-    this.log(detail.success ? 'debug' : 'warn', 'sabre.cancelBooking', {
+    // `info` en el éxito por lo mismo que createBooking: una cancelación limpia también es una
+    // escritura con dinero detrás, y en `debug` no llegaba al log de producción.
+    this.log(detail.success ? 'info' : 'warn', 'sabre.cancelBooking', {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,

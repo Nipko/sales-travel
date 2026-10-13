@@ -93,6 +93,19 @@ describe('catálogo de proveedores', () => {
     ]);
     expect(byKey.get('brandLadderRounds')?.help).toContain('aerolíneas × rondas');
   });
+
+  it('ofrece el contenido NDC apagado por defecto y con los dos textos que lee el factory', () => {
+    const ndc = new Map(sabre().config.map((field) => [field.key, field])).get('ndcContent');
+
+    expect(ndc?.label).toBe('Contenido NDC (experimental)');
+    expect(ndc?.defaultValue).toBe('false');
+    // Exactamente estos dos: `sabreShopOptionsFromAccountConfig` sólo convierte "true" y "false".
+    expect(ndc?.options?.map((o) => o.value)).toEqual(['false', 'true']);
+    expect(ndc?.help).toBe(
+      'Pide tarifas NDC a Sabre. Déjalo apagado: la plataforma todavía no muestra esas tarifas.',
+    );
+    expect(ndc?.secret).not.toBe(true);
+  });
 });
 
 describe('validateProviderDraft — Sabre', () => {
@@ -285,7 +298,34 @@ describe('buildProviderAccountPayload', () => {
       brandLadderRounds: '0',
       upsellLimit: '3',
       multipleFares: 'off',
+      ndcContent: 'false',
     });
+  });
+
+  it('encender NDC se guarda en config como texto, nunca en las credenciales cifradas', () => {
+    const payload = buildProviderAccountPayload(sabre(), {
+      ...validSabreDraft(),
+      config: { ndcContent: 'true' },
+    });
+    expect(payload.config['ndcContent']).toBe('true');
+    expect(payload.credentials).not.toHaveProperty('ndcContent');
+  });
+
+  it('una cuenta guardada con NDC encendido se precarga al editar, sin anunciarlo como pérdida', () => {
+    const prefill = prefillFromAccount(sabre(), {
+      label: 'default',
+      status: 'active',
+      isInheritable: true,
+      config: { environment: 'cert', ndcContent: 'true' },
+    });
+    expect(prefill.config['ndcContent']).toBe('true');
+    expect(prefill.droppedConfigKeys).not.toContain('ndcContent');
+  });
+
+  it('el resumen de la cuenta nombra el modo NDC con su etiqueta, no con el valor crudo', () => {
+    expect(accountConfigSummary(sabre(), { ndcContent: 'false' })).toContain(
+      'Contenido NDC (experimental): Apagado (recomendado)',
+    );
   });
 
   it('persiste una escalera habilitada sin mezclarla con las credenciales cifradas', () => {

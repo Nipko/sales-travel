@@ -152,6 +152,7 @@ const ENTRADAS: [string, Clase][] = [
     'PATCH /admin/tenants/:id/seats',
     'POST /admin/tenants/:id/move',
     'GET /admin/users',
+    'GET /admin/users/:userId/impact',
     'POST /admin/users',
     'PATCH /admin/users/status',
     'PATCH /admin/memberships/role',
@@ -171,6 +172,8 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:id/seats/sessions/:sessionId/release',
     'POST /tenants/:id/members/:userId/reset-mfa',
     'POST /tenants/:id/members/:userId/revoke-sessions',
+    'POST /tenants/:id/members/:userId/send-password-reset',
+    'POST /tenants/:id/members/:userId/unlock',
     'GET /tenants/:id/branding',
     'GET /tenants/:id/branding/own',
     'PATCH /tenants/:id/branding',
@@ -575,7 +578,7 @@ describe('RolesGuard con la metadata REAL de cada venta', () => {
         expect(err, role).toBeInstanceOf(PlatformRoleCannotSellError);
         expect((err as PlatformRoleCannotSellError).getStatus()).toBe(403);
         expect((err as PlatformRoleCannotSellError).message).toBe(
-          'El superadministrador no vende: usá un usuario de una sucursal',
+          'El superadministrador no vende: usa un usuario de una sucursal',
         );
       }
     },
@@ -646,7 +649,7 @@ describe('la respuesta HTTP del 403', () => {
     expect(json).toHaveBeenCalledWith({
       statusCode: 403,
       error: 'Forbidden',
-      message: 'El superadministrador no vende: usá un usuario de una sucursal',
+      message: 'El superadministrador no vende: usa un usuario de una sucursal',
       reason: 'PLATFORM_ROLE_CANNOT_SELL',
     });
   });

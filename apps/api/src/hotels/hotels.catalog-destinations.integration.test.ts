@@ -439,6 +439,7 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
       code: TBO,
       status: 'ok',
       count: 2,
+      accountEnvironment: 'test',
     });
     expect(res.hotels.map((o) => o.hotelId).sort()).toEqual([T1, T2].sort());
   });

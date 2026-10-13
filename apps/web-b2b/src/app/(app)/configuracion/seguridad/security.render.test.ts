@@ -115,7 +115,7 @@ describe('RecoveryCodes', () => {
     expect(html).toContain('Los guardé en un lugar seguro');
     expect(html).toMatch(/<input[^>]*type="checkbox"/);
     expect(buttonTag(html, 'Listo')).toContain('disabled=""');
-    expect(html).toContain('Marcá la casilla cuando los tengas guardados.');
+    expect(html).toContain('Marca la casilla cuando los tengas guardados.');
   });
 
   it('avisa que no se vuelven a mostrar; al regenerar, que los anteriores dejaron de servir', () => {
@@ -148,12 +148,12 @@ describe('MfaSetupStep', () => {
 
   it('pasos 1-2-3 en una lista ordenada', () => {
     expect(html).toMatch(/<ol[^>]*>[\s\S]*<li[\s\S]*<li[\s\S]*<li/);
-    expect(html).toContain('Abrí tu app de autenticación');
-    expect(html).toContain('Ingresá el código de 6 dígitos que muestra la app');
+    expect(html).toContain('Abre tu app de autenticación');
+    expect(html).toContain('Ingresa el código de 6 dígitos que muestra la app');
   });
 
   it('clave manual colapsable, en bloques de 4, con Copiar', () => {
-    expect(html).toMatch(/<details[^>]*>[\s\S]*¿No podés escanear\? Ingresá la clave a mano/);
+    expect(html).toMatch(/<details[^>]*>[\s\S]*¿No puedes escanear\? Ingresa la clave a mano/);
     expect(html).not.toMatch(/<details[^>]*open/);
     expect(html).toContain('<span>JBSW</span><span>Y3DP</span>');
     expect(buttons(html)).toContain('Copiar');
@@ -202,7 +202,7 @@ describe('SessionsList', () => {
       createElement(SessionsList, {
         sessions: [],
         now: NOW,
-        loadError: 'No pudimos cargar tus sesiones abiertas. Recargá la página.',
+        loadError: 'No pudimos cargar tus sesiones abiertas. Recarga la página.',
       }),
     );
     expect(failed).toMatch(/role="alert"[\s\S]*No pudimos cargar tus sesiones abiertas/);

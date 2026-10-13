@@ -32,7 +32,7 @@ function crossOrigin(req: Request): NextResponse | null {
   return isSameOriginRequest(req.headers)
     ? null
     : NextResponse.json(
-        { error: 'No pudimos confirmar que el pedido venga del panel. Recargá la página.' },
+        { error: 'No pudimos confirmar que el pedido venga del panel. Recarga la página.' },
         { status: 403 },
       );
 }

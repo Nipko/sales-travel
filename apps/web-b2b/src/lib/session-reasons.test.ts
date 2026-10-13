@@ -109,8 +109,8 @@ describe('textos', () => {
   it.each([
     ['otro-dispositivo', 'Tu sesión se abrió en otro dispositivo.'],
     ['liberada', 'Un administrador liberó tu puesto.'],
-    ['expirada', 'Tu sesión venció. Volvé a ingresar.'],
-    ['cerrada', 'Tu sesión se cerró. Volvé a ingresar.'],
+    ['expirada', 'Tu sesión venció. Vuelve a ingresar.'],
+    ['cerrada', 'Tu sesión se cerró. Vuelve a ingresar.'],
   ] as const)('%s', (motivo, text) => {
     expect(motivoMessage(motivo)).toBe(text);
   });

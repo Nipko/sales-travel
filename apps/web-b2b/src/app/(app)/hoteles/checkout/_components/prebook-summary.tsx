@@ -4,9 +4,11 @@ import { ArrowRight, Info, Receipt } from 'lucide-react';
 import { useId } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { Card } from '../../../../../components/ui/card';
+import type { HotelAccountEnvironment } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
 import { OwnMarginLine, RateItem, stayLabel } from '../../_components/hotel-rate-item';
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
+import { TestBookingNotice } from '../../_components/test-account-notice';
 import type { ContinueGate } from './prebook-view';
 
 /*
@@ -15,7 +17,16 @@ import type { ContinueGate } from './prebook-view';
  * con las políticas que el PreBook da por finales. Y el total con el paso siguiente.
  */
 
-export function PrebookSummary({ row, expired }: { row: HotelRateRow; expired: boolean }) {
+export function PrebookSummary({
+  row,
+  expired,
+  providerEnvironment,
+}: {
+  row: HotelRateRow;
+  expired: boolean;
+  /** El entorno de la cuenta que la revalidó (PreBook): con `test` se avisa que no es real. */
+  providerEnvironment?: HotelAccountEnvironment;
+}) {
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--color-border)] px-4 py-3">
@@ -25,6 +36,7 @@ export function PrebookSummary({ row, expired }: { row: HotelRateRow; expired: b
         <p className="text-[11px] text-[var(--color-fg-muted)]">
           Precio, disponibilidad y condiciones confirmados con el proveedor.
         </p>
+        <TestBookingNotice environment={providerEnvironment} className="mt-2" />
       </div>
       <ul>
         <RateItem row={row} expired={expired} />

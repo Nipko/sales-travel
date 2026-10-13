@@ -22,6 +22,40 @@ export function rateProviderLabel(
   return providerTagFor(pack.provider?.name ?? '', showProvider)?.label;
 }
 
+/** Qué tarifas vienen de una cuenta de prueba de su proveedor, y cómo nombrarlo si se puede. */
+export interface TestAccountView {
+  /** Proveedores cuya cuenta es de prueba: sus planes llevan la etiqueta «Prueba». */
+  readonly codes: ReadonlySet<string>;
+  /**
+   * Nombre legible del proveedor para el aviso, sólo con la divulgación encendida y uno solo de
+   * prueba. Sin él, el aviso habla de «un proveedor».
+   */
+  readonly providerLabel?: string;
+}
+
+/**
+ * Los proveedores que aportaron tarifas con una cuenta de prueba (`accountEnvironment: 'test'`).
+ * Una reserva con ellos no es una habitación de verdad, así que el aviso va SIEMPRE, como el de una
+ * tarifa simulada en vuelos: lo único que respeta el ajuste de divulgación es si se nombra al
+ * proveedor. Uno que respondió sin hoteles (`count: 0`) no tiene tarifas a la vista de las que
+ * avisar. Sirve igual para la búsqueda y sus tramos (`providers[]`) y para la ficha, que pasa una
+ * parte por proveedor con el entorno del detalle y cuántas tarifas dio.
+ */
+export function testAccountView(
+  providers: readonly (Pick<HotelProviderOutcome, 'code' | 'accountEnvironment'> & {
+    readonly count?: number;
+  })[],
+  showProvider: boolean,
+): TestAccountView {
+  const codes = new Set(
+    providers.filter((p) => p.accountEnvironment === 'test' && p.count !== 0).map((p) => p.code),
+  );
+  const [only] = codes;
+  const label =
+    codes.size === 1 && only !== undefined ? providerTagFor(only, showProvider)?.label : undefined;
+  return label === undefined ? { codes } : { codes, providerLabel: label };
+}
+
 /**
  * Omisiones que no son de ESTA búsqueda sino de la configuración: apagado para la agencia (flag
  * `opt-in` o la plataforma) o de respaldo que no hizo falta llamar.

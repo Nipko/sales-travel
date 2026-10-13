@@ -63,13 +63,13 @@ const MESSAGES: Readonly<Record<PortfolioReason, string>> = {
     'Sólo quien financia a este nodo gestiona sus carteras: su consolidador, su agencia o el ' +
     'superadmin de Planetour.',
   PORTFOLIO_CURRENCY_NOT_ENABLED:
-    'La agencia no tiene cartera en esa moneda: pedile a quien te financia que la habilite.',
+    'La agencia no tiene cartera en esa moneda: pídele a quien te financia que la habilite.',
   PORTFOLIO_ALREADY_ENABLED: 'El nodo ya tiene una cartera en esa moneda.',
   PORTFOLIO_NOT_FOUND: 'La cartera no existe en este nodo.',
   PORTFOLIO_BALANCE_OUT_OF_RANGE:
     'El movimiento dejaría el saldo fuera del rango que la cartera puede registrar.',
   PORTFOLIO_IDEMPOTENCY_KEY_REUSED:
-    'La Idempotency-Key ya se usó para otro movimiento o con otros datos: generá una nueva.',
+    'La Idempotency-Key ya se usó para otro movimiento o con otros datos: genera una nueva.',
   PORTFOLIO_IDENTITY_IMMUTABLE:
     'La moneda y el nodo de una cartera no cambian: para otra moneda se habilita otra cartera.',
   PORTFOLIO_ENTRY_AUTHOR: 'Un depósito o un ajuste de cartera lo firma el usuario que lo registra.',
@@ -137,7 +137,7 @@ export class PortfolioNotFoundError extends NotFoundException {
 export function walletNotEnabled(currency: string): PortfolioConflictError {
   return new PortfolioConflictError(
     'PORTFOLIO_CURRENCY_NOT_ENABLED',
-    `La agencia no tiene cartera en ${currency}: pedile a quien te financia que la habilite.`,
+    `La agencia no tiene cartera en ${currency}: pídele a quien te financia que la habilite.`,
   );
 }
 

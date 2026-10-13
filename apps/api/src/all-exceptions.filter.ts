@@ -146,7 +146,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       statusCode: status,
       error: 'Internal Server Error',
-      message: 'Ocurrió un error inesperado. Intentá de nuevo en unos minutos.',
+      message: 'Ocurrió un error inesperado. Inténtalo de nuevo en unos minutos.',
     });
   }
 
@@ -155,13 +155,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const m = raw.toLowerCase().trim();
     if (m.includes('invalid credentials')) return 'Email o contraseña incorrectos.';
     if (m.includes('verification token'))
-      return 'El enlace de verificación es inválido o expiró. Pedí uno nuevo.';
+      return 'El enlace de verificación es inválido o expiró. Pide uno nuevo.';
     if (m.includes('no active membership'))
-      return 'No tenés una membresía activa para acceder. Pedí acceso al administrador de tu agencia.';
-    if (m === 'unauthorized') return 'Tu sesión expiró o no iniciaste sesión. Volvé a ingresar.';
-    if (m === 'forbidden') return 'No tenés permiso para realizar esta acción.';
-    if (m === 'too many requests')
-      return 'Demasiados intentos. Esperá un momento e intentá de nuevo.';
+      return 'No tienes una membresía activa para acceder. Pide acceso al administrador de tu agencia.';
+    if (m === 'unauthorized') return 'Tu sesión expiró o no iniciaste sesión. Vuelve a ingresar.';
+    if (m === 'forbidden') return 'No tienes permiso para realizar esta acción.';
+    // El 429 de @nestjs/throttler dice "ThrottlerException: Too Many Requests": con `===` llegaba
+    // en inglés a la pantalla (Equipo lo muestra tal cual).
+    if (m === 'too many requests' || m.endsWith(': too many requests'))
+      return 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
     // Mensaje ya en español o específico del negocio: se respeta.
     return raw || 'No pudimos procesar la solicitud.';
   }

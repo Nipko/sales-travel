@@ -42,7 +42,7 @@ function ResetForm() {
             href="/olvide-password"
             className="font-medium text-[var(--color-primary)] hover:underline"
           >
-            Pedí uno nuevo
+            Pide uno nuevo
           </Link>
           .
         </p>
@@ -54,7 +54,7 @@ function ResetForm() {
     return (
       <AuthShell
         title="Contraseña actualizada"
-        description="Ya podés entrar con tu contraseña nueva."
+        description="Ya puedes entrar con tu contraseña nueva."
       >
         <div className="space-y-4">
           <FormSuccess message="Listo. Por seguridad cerramos todas las sesiones abiertas en otros dispositivos." />
@@ -72,7 +72,7 @@ function ResetForm() {
   }
 
   return (
-    <AuthShell title="Elegí tu contraseña nueva" description="Mínimo 12 caracteres.">
+    <AuthShell title="Elige tu contraseña nueva" description="Mínimo 12 caracteres.">
       <form action={formAction} className="space-y-5">
         <input type="hidden" name="token" value={token} />
 

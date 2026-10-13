@@ -1,3 +1,4 @@
+import { parseIssuedInvitation, type IssuedInvitation } from './invitation-notice';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
 import { tenantAdminErrorMessage } from './tenant-admin-client';
@@ -27,8 +28,8 @@ import {
  * vacía: esa confusión es la que hacía decir "Esta agencia no tiene usuarios" ante un 403.
  */
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -71,11 +72,11 @@ function seg(id: string): string {
 
 /** El 403 de la vista de puestos es de permiso sobre el nodo, no de superadmin. */
 function seatsReadError(status: number, message: string | undefined): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
-  if (status === 403) return 'No administrás este nodo: no podés ver sus puestos.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if (status === 403) return 'No administras este nodo: no puedes ver sus puestos.';
   // El texto de un 404 puede ser el "Cannot GET …" de la ruta: no se muestra.
   if (status === 404) return 'No encontramos los puestos de este nodo.';
-  return message?.trim() || 'No pudimos cargar los puestos. Probá de nuevo.';
+  return message?.trim() || 'No pudimos cargar los puestos. Inténtalo de nuevo.';
 }
 
 export function loadSeats(tenantId: string): Promise<Loaded<SeatsView>> {
@@ -156,45 +157,116 @@ export function loadMembers(tenantId: string): Promise<Loaded<NetworkMember[]>> 
 export function loadInvitations(tenantId: string): Promise<Loaded<PendingInvitation[]>> {
   return call(`/api/invitations?tenantId=${seg(tenantId)}`, {}, parseInvitations, (status) =>
     status === 403
-      ? 'No tenés permiso para ver las invitaciones de este nodo.'
+      ? 'No tienes permiso para ver las invitaciones de este nodo.'
       : 'No pudimos cargar las invitaciones pendientes.',
   );
 }
 
-/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
-export function revokeInvitation(tenantId: string, invitationId: string): Promise<Loaded<true>> {
-  return call(
-    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
-    accepted,
-    (status, message) =>
-      status === 401
-        ? 'Tu sesión venció. Volvé a iniciar sesión.'
-        : message?.trim() || 'No pudimos revocar la invitación. Probá de nuevo.',
-  );
+/**
+ * Lo que devuelven reenviar y revocar. `gone`: la invitación ya no está pendiente (la aceptaron o la
+ * revocaron desde otra sesión), así que la fila de la lista quedó vieja y hay que recargarla.
+ */
+export type InvitationActionResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly message: string; readonly gone?: true };
+
+/** Reenviar o revocar una invitación: el error, con el mensaje del API tal cual. Nunca lanza. */
+async function invitationAction<T>(
+  url: string,
+  parse: (value: unknown) => T | undefined,
+  fallback: string,
+): Promise<InvitationActionResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', cache: 'no-store' });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : errorOf(body)?.trim() || fallback;
+    return body?.['reason'] === 'INVITATION_NOT_PENDING'
+      ? { ok: false, message, gone: true }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parse(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
 }
 
-/** `{ id, expiresAt }` del reenvío. `undefined` si la forma no es la esperada. */
-function parseResent(value: unknown): { expiresAt: string } | undefined {
-  const expiresAt = asRecord(value)?.['expiresAt'];
-  return typeof expiresAt === 'string' ? { expiresAt } : undefined;
+/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
+export function revokeInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<InvitationActionResult<true>> {
+  return invitationAction(
+    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
+    accepted,
+    'No pudimos revocar la invitación. Inténtalo de nuevo.',
+  );
 }
 
 /**
  * Reenviar una invitación: enlace nuevo (el anterior deja de valer) y 7 días más. Devuelve el nuevo
- * vencimiento; el error, el mensaje del API tal cual.
+ * vencimiento y si el correo salió; el error, el mensaje del API tal cual.
  */
 export function resendInvitation(
   tenantId: string,
   invitationId: string,
-): Promise<Loaded<{ expiresAt: string }>> {
-  return call(
+): Promise<InvitationActionResult<IssuedInvitation>> {
+  return invitationAction(
     `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
-    parseResent,
-    (status, message) =>
-      status === 401
-        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
-        : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
+    parseIssuedInvitation,
+    'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
+}
+
+/** Lo que pide el formulario de "Invitar usuario". */
+export interface InvitationRequest {
+  readonly email: string;
+  readonly tenantId: string;
+  readonly role: string;
+}
+
+/**
+ * El resultado de invitar. Si ya había una pendiente para ese correo en el nodo, el error trae su id
+ * (`pendingInvitationId`), para ofrecer reenviarla en vez de crear otra.
+ */
+export type InvitationResult =
+  | { readonly ok: true; readonly data: IssuedInvitation }
+  | { readonly ok: false; readonly message: string; readonly pendingInvitationId?: string };
+
+/** Invitar a alguien a un nodo. Nunca lanza. */
+export async function sendInvitation(input: InvitationRequest): Promise<InvitationResult> {
+  let res: Response;
+  try {
+    res = await fetch('/api/invitations', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : errorOf(body)?.trim() || 'No pudimos enviar la invitación. Inténtalo de nuevo.';
+    const pendingInvitationId = asRecord(body?.['details'])?.['invitationId'];
+    return body?.['reason'] === 'INVITATION_ALREADY_PENDING' &&
+      typeof pendingInvitationId === 'string'
+      ? { ok: false, message, pendingInvitationId }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parseIssuedInvitation(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
 }

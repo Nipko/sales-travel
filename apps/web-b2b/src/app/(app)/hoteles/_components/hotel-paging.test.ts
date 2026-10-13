@@ -177,6 +177,26 @@ describe('los tramos de una búsqueda', () => {
     expect(canLoadMore(s)).toBe(false);
   });
 
+  it('guarda las partes por proveedor de cada tramo: de ahí sale el aviso de cuenta de prueba', () => {
+    const inicio = moreStateFor(busqueda(PRIMERO));
+    expect(inicio.providers).toEqual([]);
+    const prueba = {
+      code: 'tbo-hotels',
+      status: 'ok',
+      count: 2,
+      accountEnvironment: 'test',
+    } as const;
+
+    const uno = moreArrived(moreLoading(inicio), tramo({ providers: [prueba] }));
+    expect(uno.providers).toEqual([prueba]);
+    // Un tramo sin partes (un API anterior) no borra las que ya había.
+    const dos = moreArrived(
+      moreLoading(uno),
+      tramo({ providers: [], paging: { ...PRIMERO, page: 2, consulted: 300 } }),
+    );
+    expect(dos.providers).toBe(uno.providers);
+  });
+
   it('un proveedor que falló en el tramo se nombra con su motivo', () => {
     const s = moreArrived(
       moreStateFor(busqueda(PRIMERO)),

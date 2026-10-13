@@ -12,6 +12,7 @@ import type {
 } from '@sales-travel/domain';
 import { vi } from 'vitest';
 import type {
+  HotelAccountEnvironment,
   HotelProviderAdapter,
   HotelProviderCapabilities,
   HotelProviderFactory,
@@ -50,6 +51,8 @@ export interface StubHotelAdapterOptions {
   searchImpl?: (criteria: HotelSearchCriteria, ctx: SearchContext) => Promise<HotelOffer[]>;
   /** Moneda de la oferta por defecto: para probar la puerta de moneda. */
   currency?: string;
+  /** Entorno que declara la cuenta, como el de TBO. Sin él, el adapter no declara ninguno. */
+  accountEnvironment?: HotelAccountEnvironment;
 }
 
 /** Adapter de hoteles completo (los cinco puertos obligatorios) con todos los métodos espiables. */
@@ -90,11 +93,13 @@ export class StubHotelAdapter implements HotelProviderAdapter {
       warnings: [],
     }),
   );
+  readonly accountEnvironment: HotelAccountEnvironment | undefined;
 
   constructor(
     readonly code: string,
     opts: StubHotelAdapterOptions = {},
   ) {
+    this.accountEnvironment = opts.accountEnvironment;
     const impl = opts.searchImpl;
     this.searchAvailability = vi.fn((criteria: HotelSearchCriteria, ctx: SearchContext) =>
       impl

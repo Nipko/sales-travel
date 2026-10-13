@@ -55,7 +55,7 @@ const rooms = z.array(RoomDistributionSchema).min(1).max(PLATFORM_OCCUPANCY_LIMI
 const saleCurrency = z.string().trim().toUpperCase().pipe(CurrencyCodeSchema);
 
 export const GUEST_NATIONALITY_INVALID =
-  'No reconocemos la nacionalidad del pasajero principal: indicá el código ISO del país, de 2 o 3 letras (por ejemplo, CO o COL).';
+  'No reconocemos la nacionalidad del pasajero principal: indica el código ISO del país, de 2 o 3 letras (por ejemplo, CO o COL).';
 
 /**
  * Nacionalidad del pasajero principal, que sale siempre en ISO 3166-1 alfa-2 (RF-06). No es el
@@ -130,7 +130,7 @@ export const HotelAvailabilityInputSchema = z
     refundableOnly: z.boolean().optional(),
   })
   .refine((v) => (v.hotelIds && v.hotelIds.length > 0) || v.destinationId != null, {
-    message: 'Indicá un destino o al menos un ID de hotel.',
+    message: 'Indica un destino o al menos un ID de hotel.',
     path: ['destinationId'],
   });
 

@@ -398,9 +398,10 @@ describe('TBO en /hotels/availability — la respuesta combinada (RF-14 CA 2, RF
   it('parte por proveedor: los dos `ok` y el booleano de divulgación fuera de la carga', async () => {
     const res = await buscar(banco());
 
+    // Sólo TBO dice el entorno de su cuenta (la de prueba en este banco): Despegar no distingue.
     expect(res.providers).toEqual([
       { code: DESPEGAR, status: 'ok', count: 3 },
-      { code: TBO, status: 'ok', count: 2 },
+      { code: TBO, status: 'ok', count: 2, accountEnvironment: 'test' },
     ]);
   });
 
@@ -408,7 +409,12 @@ describe('TBO en /hotels/availability — la respuesta combinada (RF-14 CA 2, RF
     const b = banco({ responder: () => json(fixture('pdf/search-no-availability.p18.json')) });
     const res = await buscar(b);
 
-    expect(parteDe(res.providers, TBO)).toEqual({ code: TBO, status: 'empty', count: 0 });
+    expect(parteDe(res.providers, TBO)).toEqual({
+      code: TBO,
+      status: 'empty',
+      count: 0,
+      accountEnvironment: 'test',
+    });
     expect(res.hotels.map((o) => o.hotelId)).toEqual(['101', '205', '350']);
     expect(b.breaker.snapshot()[TBO]).toEqual({ state: 'closed', failures: 0 });
   });

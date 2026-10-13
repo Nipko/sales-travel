@@ -60,6 +60,17 @@ export const ProviderContentSourceSchema = z
 export type ProviderContentSource = z.infer<typeof ProviderContentSourceSchema>;
 
 /**
+ * Entorno de la CUENTA del proveedor con la que se obtuvo la oferta: `test` es una cuenta de
+ * pruebas (sandbox, certificación) y `live` una de producción. Mismo vocabulario que el cifrado de
+ * payloads de proveedor (`PROVIDER_PAYLOAD_ENVIRONMENTS` en `apps/api`).
+ *
+ * Existe porque una tarifa de una cuenta de pruebas no se distingue de una real por su forma: trae
+ * precio, vuelos y localizador igual que cualquiera, y no emite un tiquete válido ni se factura.
+ */
+export const ProviderEnvironmentSchema = z.enum(['test', 'live']);
+export type ProviderEnvironment = z.infer<typeof ProviderEnvironmentSchema>;
+
+/**
  * Identifica al proveedor que originó la Offer (Amadeus, Travelport, HotelDo, etc).
  * El nombre canónico se asigna en cada ACL en `providers/<name>/`.
  */
@@ -69,6 +80,16 @@ export const ProviderRefSchema = z.object({
 
   /** Carril de contenido dentro del proveedor. Sabre: 'ATPCO' | 'NDC' | 'LCC'. */
   source: ProviderContentSourceSchema.optional(),
+
+  /**
+   * Entorno de la cuenta con que se cotizó. Ausente = `live`: así se leen las ofertas guardadas
+   * antes de que existiera el campo y las de proveedores sin cuenta de pruebas.
+   *
+   * Lo escribe la capa de búsqueda a partir de la cuenta que resolvió, NUNCA el ACL ni el cliente:
+   * el ACL no sabe con qué cuenta lo construyeron, y el navegador podría borrarlo para que una
+   * reserva de prueba pareciera real. Por eso la creación de la orden lo vuelve a escribir.
+   */
+  environment: ProviderEnvironmentSchema.optional(),
 
   /**
    * Identificadores CRUDOS del proveedor, OPACOS para el dominio: los que hay que reenviar de

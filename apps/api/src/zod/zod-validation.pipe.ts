@@ -21,7 +21,7 @@ export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
         .map((f) => `${f.field}: ${f.message}`)
         .join('; ');
       throw new BadRequestException({
-        message: `Revisá los datos ingresados — ${summary}`,
+        message: `Revisa los datos ingresados — ${summary}`,
         fields,
       });
     }

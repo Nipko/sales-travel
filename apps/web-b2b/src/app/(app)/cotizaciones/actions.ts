@@ -58,6 +58,11 @@ export interface Offer {
     offerRef: string;
     source?: string;
     raw?: Record<string, unknown>;
+    /**
+     * `test` = la cotizó una cuenta de pruebas del proveedor: no emite tiquetes reales. Lo escribe
+     * el API desde la cuenta que resolvió; ausente es real. Ver `lib/test-content.ts`.
+     */
+    environment?: 'test' | 'live';
   };
   total: Money;
   baseFare: Money;
@@ -200,7 +205,7 @@ export async function searchFlightsAction(
     return fallo('Origen y destino deben ser distintos.');
   }
   if (!DATE_RE.test(departureDate)) {
-    return fallo('Ingresá una fecha de ida válida.');
+    return fallo('Ingresa una fecha de ida válida.');
   }
   const today = todayISO();
   if (departureDate < today) {
@@ -209,7 +214,7 @@ export async function searchFlightsAction(
   const isRoundtrip = tripType === 'roundtrip';
   if (isRoundtrip) {
     if (!DATE_RE.test(returnDate)) {
-      return fallo('Ingresá la fecha de vuelta o cambiá a "Solo ida".');
+      return fallo('Ingresa la fecha de vuelta o cambia a "Solo ida".');
     }
     if (returnDate < departureDate) {
       return fallo('La fecha de vuelta no puede ser anterior a la de ida.');
@@ -243,7 +248,7 @@ export async function searchFlightsAction(
     });
   } catch {
     return fallo(
-      'No se pudo conectar al servicio de búsqueda. Verificá que el API esté corriendo.',
+      'No se pudo conectar al servicio de búsqueda. Verifica que el API esté corriendo.',
     );
   }
 

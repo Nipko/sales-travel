@@ -55,6 +55,8 @@ import { pendingOrderReconciliationMessage } from './pending-order-reconciliatio
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
+import { TestOrderTag } from './_components/test-order-tag';
+import { isTestOrder, TEST_ORDER_EMAIL_NOTICE } from '../../../lib/test-content';
 
 interface Segment {
   carrier: string;
@@ -116,6 +118,8 @@ interface Order {
   totalAmount: number;
   currency: string;
   errorMessage?: string | null;
+  /** `true` = se reservó con la cuenta de pruebas del proveedor: no es un tiquete válido. */
+  testContent?: boolean;
   /** Sólo en hoteles: subestado, estado del proveedor y HCN, sin PII (RF-26). */
   providerTracking?: unknown;
   createdAt: string;
@@ -319,7 +323,7 @@ export default function ReservasPage() {
           orderId: order.id,
           type: 'retrieve',
           success: false,
-          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en LATAM'),
+          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en el proveedor'),
         });
       }
     } catch {
@@ -706,6 +710,7 @@ export default function ReservasPage() {
                           {order.pnr}
                         </span>
                       )}
+                      <TestOrderTag order={order} />
                       {hotelNonRefundable ? (
                         <RefundTag
                           badge={{ tone: 'warning', label: 'No reembolsable' }}
@@ -804,7 +809,7 @@ export default function ReservasPage() {
                     order.status !== 'failed' &&
                     (isCar ? (
                       // Autos: el backend de cancelación es provider-aware, mismo endpoint.
-                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing (todo eso es LATAM).
+                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing: son operaciones de vuelos.
                       supportsOrderCancellation(order.capabilities, order.status) ? (
                         <Button
                           variant="secondary"
@@ -1133,7 +1138,8 @@ function OrderDetailModal({
     order.status !== 'cancelled' &&
     order.status !== 'failed' &&
     supportsOrderCancellation(order.capabilities, order.status);
-  // Pagar/Emitir es flujo LATAM; los autos se pagan en su propio checkout, nunca acá.
+  // Pagar/Emitir es de vuelos, y sólo si el proveedor lo declara; los autos se pagan en su
+  // propio checkout, nunca aquí.
   const canPay =
     !isCar &&
     !!order.pnr &&
@@ -1275,6 +1281,7 @@ function OrderDetailModal({
             >
               {status.label}
             </span>
+            <TestOrderTag order={order} detail />
           </div>
           <button
             type="button"
@@ -1472,6 +1479,13 @@ function OrderDetailModal({
                 <span className={cn('text-xs', sendMsg.ok ? 'text-emerald-700' : 'text-red-700')}>
                   {sendMsg.text}
                 </span>
+              )}
+              {/* A una reserva de prueba no se le manda la confirmación sola al crearla; si el
+                  vendedor la reenvía, sabe antes cómo le llega al pasajero. */}
+              {isTestOrder(order) && (
+                <p className="w-full text-xs text-[var(--color-fg-muted)]">
+                  {TEST_ORDER_EMAIL_NOTICE}
+                </p>
               )}
             </section>
           )}

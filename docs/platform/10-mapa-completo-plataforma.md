@@ -724,7 +724,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
 /admin/incidents                 -- monitoreo + status page
-/admin/users                     -- usuarios cross-tenant (sólo lectura: el alta es por invitación, ver 14)
+/admin/plataforma/usuarios       -- directorio de personas de toda la red, filtros y suspensión global (doc 15; el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
 /admin/audit                     -- log global
 /admin/reports                   -- métricas de plataforma
@@ -799,6 +799,8 @@ POST   /auth/change-password             -- devuelve token nuevo: la sesión act
 GET    /tenants/:id/seats                -- uso del cupo y conectados del subárbol (admin del nodo)
 POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
+POST   /tenants/:id/members/:userId/send-password-reset -- { sent, expiresAt }; nunca el enlace · 409 · 429 (doc 15)
+POST   /tenants/:id/members/:userId/unlock  -- { unlocked }: levanta el bloqueo por intentos fallidos (doc 15)
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 
@@ -807,9 +809,14 @@ Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_s
 ```
 PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations
 PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
-PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes
+PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes · 404 USER_NOT_FOUND · 409 LAST_SUPERADMIN (doc 15)
+GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
+GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
 POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
+POST   /invitations                      -- { id, expiresAt, emailSent } · 409 INVITATION_ALREADY_PENDING con details.invitationId (0066, doc 15)
+POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace nuevo y 7 días más
+POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING
 ```
 
 ### Tenant

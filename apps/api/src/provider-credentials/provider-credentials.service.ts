@@ -83,19 +83,19 @@ export type ProviderAccountRelease = 'deactivate' | 'change-identity' | 'stop-in
 
 const IN_USE_UNVERIFIED: Readonly<Record<ProviderAccountRelease, string>> = {
   deactivate:
-    'No pudimos comprobar si esta cuenta tiene reservas activas, así que no se desactiva. Volvé a intentarlo en unos minutos.',
+    'No pudimos comprobar si esta cuenta tiene reservas activas, así que no se desactiva. Vuelve a intentarlo en unos minutos.',
   'change-identity':
-    'No pudimos comprobar si esta cuenta tiene reservas activas, así que no se cambia el usuario, el entorno ni la URL. Volvé a intentarlo en unos minutos.',
+    'No pudimos comprobar si esta cuenta tiene reservas activas, así que no se cambia el usuario, el entorno ni la URL. Vuelve a intentarlo en unos minutos.',
   'stop-inheritance':
-    'No pudimos comprobar si hay reservas activas de tu red hechas con esta cuenta, así que sigue heredándose. Volvé a intentarlo en unos minutos.',
+    'No pudimos comprobar si hay reservas activas de tu red hechas con esta cuenta, así que sigue heredándose. Vuelve a intentarlo en unos minutos.',
 };
 
 function inUseMessage(change: ProviderAccountRelease, activeOrders: number): string {
   switch (change) {
     case 'deactivate':
-      return `Esta cuenta tiene ${activeOrders} reserva(s) activa(s) hechas con ella. No se puede desactivar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas. Podés actualizar la contraseña sin desactivarla.`;
+      return `Esta cuenta tiene ${activeOrders} reserva(s) activa(s) hechas con ella. No se puede desactivar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas. Puedes actualizar la contraseña sin desactivarla.`;
     case 'change-identity':
-      return `Esta cuenta tiene ${activeOrders} reserva(s) activa(s) hechas con ella. No se puede cambiar el usuario, el entorno ni la URL del proveedor hasta que terminen: el proveedor sólo deja consultarlas y cancelarlas con la cuenta con la que se hicieron. Podés actualizar la contraseña del mismo usuario.`;
+      return `Esta cuenta tiene ${activeOrders} reserva(s) activa(s) hechas con ella. No se puede cambiar el usuario, el entorno ni la URL del proveedor hasta que terminen: el proveedor sólo deja consultarlas y cancelarlas con la cuenta con la que se hicieron. Puedes actualizar la contraseña del mismo usuario.`;
     case 'stop-inheritance':
       return `Hay ${activeOrders} reserva(s) activa(s) de agencias de tu red hechas con esta cuenta. No se puede dejar de heredar hasta que terminen: es la única con la que el proveedor deja consultarlas y cancelarlas.`;
   }

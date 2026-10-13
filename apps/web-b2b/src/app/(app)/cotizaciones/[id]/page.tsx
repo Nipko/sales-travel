@@ -26,8 +26,9 @@ import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
-import type { PaymentData } from './payment-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
+import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
+import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
 import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
 import {
@@ -276,7 +277,7 @@ export default function QuotationDetailPage() {
           ? { ok: true, text: `Cotización enviada a ${data.to ?? customerEmail}` }
           : {
               ok: false,
-              text: 'No hay correo configurado para enviar. Configurá el email de la agencia (Mi Red → Email) o el del sistema.',
+              text: 'No hay correo configurado para enviar. Configura el email de la agencia (Mi Red → Email) o el del sistema.',
             },
       );
     } catch {
@@ -312,7 +313,6 @@ export default function QuotationDetailPage() {
       countryDialingCode: string;
       areaCode: string;
     },
-    payment?: PaymentData,
   ) {
     if (!quotation) return;
     if (!canReserveAfterPriceCheck(priceStatus, verifying)) {
@@ -324,16 +324,14 @@ export default function QuotationDetailPage() {
       });
       return;
     }
-    const body: Record<string, unknown> = {
+    // Nunca lleva `payment`: createOrder no cobra y el API rechaza el campo (D1).
+    const body = {
       offer: quotation.selectedOffer,
       searchCriteria: quotation.searchCriteria,
       passengers,
       contactInfo,
       quotationId: quotation.id,
     };
-    if (payment) {
-      body.payment = payment;
-    }
     let res: Response;
     try {
       res = await fetch('/api/orders', {
@@ -441,7 +439,7 @@ export default function QuotationDetailPage() {
     } catch {
       setPriceStatus({
         kind: 'error',
-        message: 'No se pudo conectar para revalidar la tarifa. Intentá de nuevo.',
+        message: 'No se pudo conectar para revalidar la tarifa. Inténtalo de nuevo.',
       });
     } finally {
       setVerifying(false);
@@ -488,6 +486,9 @@ export default function QuotationDetailPage() {
   const fareComponents = fareComponentsForDisplay(selectedOffer);
   const fareSummary = fareFamilySummary(selectedOffer);
   const venta = saleBreakdown(selectedOffer);
+  // La oferta guardada, o la revalidada por el API si ya se verificó el precio: la marca de la
+  // revalidada sale de la cuenta que la cotizó, no de lo que guardó el navegador.
+  const testFare = isTestFare(selectedOffer);
   const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
   const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
 
@@ -537,6 +538,7 @@ export default function QuotationDetailPage() {
                     {selectedOffer.fareFamily.name}
                   </span>
                 )}
+                {testFare ? <TestContentBadge /> : null}
               </div>
 
               <div className="space-y-4">
@@ -1064,10 +1066,13 @@ export default function QuotationDetailPage() {
       */}
       {shouldShowBookingForm(bookingResult) && (
         <div className="mt-5">
+          {/* Se puede reservar igual —sirve para probar el flujo—, pero quien lo hace lo sabe
+              antes de cargar a un pasajero real. */}
+          {testFare ? (
+            <TestContentNotice className="mb-3">{TEST_BOOKING_NOTICE}</TestContentNotice>
+          ) : null}
           <PassengerForm
             paxCount={searchCriteria.paxCount}
-            totalAmountMinor={selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor}
-            currency={selectedOffer.total.currency}
             customerName={customerName || undefined}
             contactEmail={customerEmail || undefined}
             contactPhone={customerPhone || undefined}

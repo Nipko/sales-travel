@@ -20,6 +20,7 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
+  ListPlatformUsersQuerySchema,
   MembershipImpactQuerySchema,
   MoveTenantSchema,
   SetMembershipStatusSchema,
@@ -27,8 +28,10 @@ import {
   TenantIdParamSchema,
   UpdateSeatsSchema,
   UpdateTenantSchema,
+  UuidParamSchema,
   type ChangeRoleDto,
   type CreateTenantDto,
+  type ListPlatformUsersQuery,
   type MembershipImpactQuery,
   type MoveTenantDto,
   type SetMembershipStatusDto,
@@ -39,6 +42,12 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
 import { InvitationsService } from './invitations.service.js';
+import { UserNotFoundError } from './platform-users.errors.js';
+import {
+  PlatformUsersService,
+  type PlatformUsersPage,
+  type UserFootprint,
+} from './platform-users.service.js';
 import { TenantSeatsSuperadminOnlyError, type SeatsView } from './seats.policy.js';
 import { SeatsService } from './seats.service.js';
 import { UserCreationRetiredError } from './onboarding.errors.js';
@@ -61,6 +70,11 @@ interface TargetMembership {
 interface ChangeEffects {
   revokedSessions: number;
   revokedInvitations: number;
+}
+
+/** Lo que arrastraría suspender una cuenta en toda la plataforma, para decirlo antes. */
+interface UserSuspensionImpact extends UserFootprint {
+  invitationsToRevoke: number;
 }
 
 /** Deshace la transacción de una simulación devolviendo lo que calculó. */
@@ -90,6 +104,7 @@ export class AdminController {
     private readonly tenants: TenantsService,
     private readonly seats: SeatsService,
     private readonly invitations: InvitationsService,
+    private readonly platformUsers: PlatformUsersService,
   ) {}
 
   /**
@@ -107,7 +122,7 @@ export class AdminController {
     if (!userId) throw new UnauthorizedException();
     // Sin esto, un `admin` podía promoverse a consolidator_admin dentro de su propio nodo.
     if (body.userId === userId) {
-      throw new ForbiddenException('no podés cambiar tu propio rol');
+      throw new ForbiddenException('no puedes cambiar tu propio rol');
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
@@ -165,7 +180,7 @@ export class AdminController {
   ): Promise<{ invitationsToRevoke: number }> {
     if (!userId) throw new UnauthorizedException();
     if (query.userId === userId) {
-      throw new ForbiddenException('no puedes cambiar tu propia membership');
+      throw new ForbiddenException('no puedes cambiar tu propia membresía');
     }
 
     const actorRole = await this.actorRoleOver(userId, query.tenantId);
@@ -199,43 +214,46 @@ export class AdminController {
     return { tenants: await this.tenants.listNetwork(actor) };
   }
 
+  /**
+   * El directorio de personas de toda la red (Plataforma → Usuarios): una fila por persona con todos
+   * sus nodos y roles, búsqueda por nombre o correo, filtros y paginado por cursor. Sólo
+   * superadmin: lista usuarios de TODOS los tenants. Ver PlatformUsersService.list.
+   */
   @Get('users')
-  async listUsers(@CurrentUser() userId: string | undefined) {
-    // Panel de plataforma: lista usuarios de TODOS los tenants ⇒ sólo superadmin.
-    await this.assertSuperadmin(userId);
+  async listUsers(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(ListPlatformUsersQuerySchema)) query: ListPlatformUsersQuery,
+  ): Promise<PlatformUsersPage> {
+    const actor = await this.assertSuperadmin(userId);
+    return this.platformUsers.list(actor, query);
+  }
 
-    const rows = await this.db.withRequestContext({ userId }, async (trx) => {
-      return trx
-        .selectFrom('memberships')
-        .innerJoin('users', 'users.id', 'memberships.user_id')
-        .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
-        .select([
-          'users.id',
-          'users.email',
-          'users.name',
-          'users.status',
-          'memberships.role',
-          'tenants.name as tenantName',
-          'users.created_at',
-          'users.last_login_at',
-        ])
-        .orderBy('users.created_at', 'desc')
+  /**
+   * Qué arrastraría suspender la cuenta en toda la plataforma, para que la confirmación lo diga
+   * antes: sus accesos activos, sus sesiones vivas y las invitaciones que se revocarían. Las
+   * invitaciones salen de la misma consulta que usa la suspensión, en una transacción que se deshace.
+   * Sólo superadmin; nunca sobre uno mismo; 404 si la cuenta no existe.
+   */
+  @Get('users/:userId/impact')
+  async userImpact(
+    @CurrentUser() userId: string | undefined,
+    @Param('userId', new ZodValidationPipe(UuidParamSchema)) targetUserId: string,
+  ): Promise<UserSuspensionImpact> {
+    const actor = await this.assertSuperadmin(userId);
+    if (targetUserId === actor) {
+      throw new ForbiddenException('no puedes suspender tu propio usuario');
+    }
+
+    const footprint = await this.platformUsers.footprint(actor, targetUserId);
+    const orphaned = await this.dryRun({ userId: actor }, async (trx) => {
+      await trx
+        .updateTable('users')
+        .set({ status: 'suspended' })
+        .where('id', '=', targetUserId)
         .execute();
+      return this.invitations.orphanedInvitations(trx, { inviterUserId: targetUserId });
     });
-
-    return {
-      users: rows.map((r) => ({
-        id: r.id,
-        email: r.email,
-        name: r.name,
-        status: r.status,
-        role: r.role,
-        tenantName: r.tenantName,
-        createdAt: r.created_at,
-        // Antes iba `null` fijo aunque la columna existe.
-        lastLoginAt: r.last_login_at,
-      })),
-    };
+    return { ...footprint, invitationsToRevoke: orphaned.length };
   }
 
   /**
@@ -319,7 +337,7 @@ export class AdminController {
   ) {
     if (!userId) throw new UnauthorizedException();
     if (body.userId === userId) {
-      throw new ForbiddenException('no podés cambiar el estado de tu propia membership');
+      throw new ForbiddenException('no puedes cambiar el estado de tu propia membresía');
     }
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
@@ -382,7 +400,8 @@ export class AdminController {
    * desactivar una identidad que quizá también opera en otra red.
    *
    * Suspender cierra TODAS sus sesiones y revoca todas las invitaciones pendientes que emitió, en la
-   * misma transacción que el cambio y su evento.
+   * misma transacción que el cambio y su evento. 404 si la cuenta no existe (antes respondía como si
+   * la hubiera suspendido y dejaba el evento); 409 si es el último superadmin activo.
    */
   @Patch('users/status')
   async setUserStatus(
@@ -391,17 +410,21 @@ export class AdminController {
   ) {
     const actor = await this.assertSuperadmin(userId);
     if (body.userId === actor) {
-      throw new ForbiddenException('no podés suspender tu propio usuario');
+      throw new ForbiddenException('no puedes suspender tu propio usuario');
     }
 
     const effects = await this.db.withRequestContext(
       { userId: actor },
       async (trx): Promise<ChangeEffects> => {
-        await trx
+        if (body.status === 'suspended') {
+          await this.platformUsers.assertNotLastSuperadmin(trx, body.userId);
+        }
+        const written = await trx
           .updateTable('users')
           .set({ status: body.status })
           .where('id', '=', body.userId)
-          .execute();
+          .executeTakeFirstOrThrow();
+        if (written.numUpdatedRows === 0n) throw new UserNotFoundError();
 
         let revokedSessions = 0;
         let revokedInvitations = 0;
@@ -447,7 +470,7 @@ export class AdminController {
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst(),
     );
-    if (!target) throw new ForbiddenException('membership not found in this tenant');
+    if (!target) throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
     return target;
   }
 
@@ -457,7 +480,7 @@ export class AdminController {
    */
   private static assertWritten(result: { numUpdatedRows: bigint }): void {
     if (result.numUpdatedRows === 0n) {
-      throw new ForbiddenException('membership not found in this tenant');
+      throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
     }
   }
 
@@ -490,7 +513,7 @@ export class AdminController {
    * queda, lo que devolvió sí.
    */
   private async dryRun<T>(
-    ctx: { userId: string; tenantId: string },
+    ctx: { userId: string; tenantId?: string },
     fn: (trx: Transaction<DB>) => Promise<T>,
   ): Promise<T> {
     try {
@@ -511,7 +534,7 @@ export class AdminController {
   private async actorRoleOver(
     actorUserId: string,
     tenantId: string,
-    outsideMessage = 'not authorized to manage this tenant',
+    outsideMessage = 'No administras este nodo.',
   ): Promise<Role> {
     const role = await this.network.roleOver(actorUserId, tenantId);
     if (role === undefined) throw new ForbiddenException(outsideMessage);
@@ -548,7 +571,7 @@ export class AdminController {
     );
     if (Number(remaining?.count ?? 0) === 0) {
       throw new ForbiddenException(
-        'es el último administrador activo del tenant: asigná otro antes de suspenderlo',
+        'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
       );
     }
   }
@@ -559,7 +582,8 @@ export class AdminController {
    */
   private async assertSuperadmin(
     userId: string | undefined,
-    denied: () => ForbiddenException = () => new ForbiddenException('superadmin access required'),
+    denied: () => ForbiddenException = () =>
+      new ForbiddenException('Esta acción es sólo para el superadmin.'),
   ): Promise<string> {
     if (!userId) throw new UnauthorizedException();
     if (!(await this.network.isSuperadmin(userId))) throw denied();

@@ -276,11 +276,13 @@ describe('capa 1 — sólo un sitio del paquete llama al LoggerPort', () => {
       'src/auth/token.service.ts',
       'src/http/sabre-http.client.ts',
       'src/redaction.ts',
+      'src/sabre-ancillary.adapter.ts',
       'src/sabre-flight-check.adapter.ts',
       'src/sabre-flight-search.adapter.ts',
       'src/sabre-offer-price.adapter.ts',
       'src/sabre-order-create.adapter.ts',
       'src/sabre-order-manage.adapter.ts',
+      'src/sabre-seat-map.adapter.ts',
     ]);
     // Los tres adapters de price/create/manage entraron con el cableado de la Fase 2.b/3. La
     // capa 1 —que es la defensa— los cubre sin tocar nada: no llaman al logger, se lo pasan a

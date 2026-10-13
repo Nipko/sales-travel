@@ -35,7 +35,15 @@ import { TrustedDeviceService } from './trusted-device.service.js';
   ],
   // SessionService se exporta para RequestContextMiddleware (valida la sesión en cada
   // request) y para los caminos administrativos que revocan sesiones al suspender. SeatService,
-  // para la gestión de puestos del módulo de tenants.
-  exports: [JwtService, PasswordService, SessionService, TotpService, SeatService],
+  // para la gestión de puestos del módulo de tenants. PasswordResetService, para que Equipo le
+  // envíe a alguien el enlace para restablecer su contraseña.
+  exports: [
+    JwtService,
+    PasswordService,
+    SessionService,
+    TotpService,
+    SeatService,
+    PasswordResetService,
+  ],
 })
 export class AuthModule {}

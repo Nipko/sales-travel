@@ -1,14 +1,11 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { membershipStatusPlan } from '../../../../../lib/tenant-admin-proxy';
+import { forwardPlan } from '../../../../../lib/tenant-admin-proxy-route';
 
-export async function PATCH(req: Request) {
-  const body = (await req.json()) as unknown;
-  const res = await api<unknown>('/admin/memberships/status', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  }
-  return NextResponse.json(res.data);
+/**
+ * Suspende o reactiva el acceso de un miembro a un nodo (sólo ese nodo y su subárbol). Quién puede
+ * lo decide el API.
+ */
+export async function PATCH(req: Request): Promise<NextResponse> {
+  return forwardPlan(req, membershipStatusPlan(await req.json().catch(() => undefined)), 'PATCH');
 }

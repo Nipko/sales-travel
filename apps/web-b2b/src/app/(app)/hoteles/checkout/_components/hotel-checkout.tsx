@@ -387,7 +387,11 @@ function PrebookReady({
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-5">
-          <PrebookSummary row={row} expired={expired} />
+          <PrebookSummary
+            row={row}
+            expired={expired}
+            providerEnvironment={prebook.providerEnvironment}
+          />
           <CancelPolicy pack={prebook.roompack} nonRefundable={nonRefundable !== undefined} />
           <RateConditions conditions={prebook.rateConditions} />
         </div>

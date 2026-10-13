@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { operationsNav } from './nav';
 import {
@@ -46,8 +48,15 @@ describe('viewerOf: el superadmin es una identidad del usuario', () => {
 
   it('el aviso dice lo mismo que el 403 del API', () => {
     expect(SUPERADMIN_CANNOT_SELL).toBe(
-      'El superadministrador no vende: usá un usuario de una sucursal',
+      'El superadministrador no vende: usa un usuario de una sucursal',
     );
+    // El texto vive en dos paquetes: si uno cambia sin el otro, la web y el 403 dirían cosas
+    // distintas. Se lee la fuente del API en vez de importarla para no meter Nest en la web.
+    const apiError = readFileSync(
+      fileURLToPath(new URL('../../../api/src/auth/sales-operation-errors.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(apiError).toContain(`super('${SUPERADMIN_CANNOT_SELL}')`);
   });
 });
 

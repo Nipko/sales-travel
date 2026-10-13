@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
+import { PasswordResetService } from '../auth/password-reset.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { MembershipStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
+import {
+  MemberAccountSuspendedError,
+  MembershipSuspendedError,
+  PasswordResetRateLimitedError,
+} from './member-support.errors.js';
 import {
   assertCanSupportMember,
   MemberNotFoundError,
@@ -14,13 +21,21 @@ import {
 /** Motivo con que quedan revocadas las sesiones que cierra un admin (SESSION_REVOKED). */
 export const REVOKED_BY_ADMIN_REASON = 'revoked_by_admin';
 
+/** Enlaces para restablecer la contraseña de una persona que frenan uno más, y en qué ventana. */
+export const RESET_LINKS_PER_WINDOW = 3;
+export const RESET_LINKS_WINDOW_MINUTES = 15;
+
 /**
- * Soporte a un miembro del equipo: restablecer su 2FA (perdió el teléfono y los códigos) y cerrar
- * todas sus sesiones (perdió la notebook) sin suspenderle la membership.
+ * Soporte a un miembro del equipo: restablecer su 2FA (perdió el teléfono y los códigos), cerrar
+ * todas sus sesiones (perdió la notebook) sin suspenderle la membership, enviarle el enlace para que
+ * elija una contraseña nueva y levantarle el bloqueo por intentos fallidos.
  *
- * Las dos tocan la identidad global, no un nodo: la regla de quién puede está en
+ * Todas tocan la identidad global, no un nodo: la regla de quién puede está en
  * assertCanSupportMember. Lo que hace la base (`admin_reset_user_mfa`, `revoke_user_sessions`) es
  * SECURITY DEFINER y no autoriza: todo se valida antes.
+ *
+ * Nadie elige la contraseña de otro (docs/platform/14): el admin sólo dispara el correo con el enlace,
+ * que llega al buzón de la persona. No ve el enlace ni el token, y la respuesta no los trae.
  */
 @Injectable()
 export class MemberSupportService {
@@ -28,6 +43,7 @@ export class MemberSupportService {
     private readonly db: DatabaseService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
+    private readonly resets: PasswordResetService,
   ) {}
 
   /**
@@ -88,16 +104,143 @@ export class MemberSupportService {
   }
 
   /**
+   * Le envía a la persona un enlace de un solo uso para elegir una contraseña nueva. Deja sin efecto
+   * los enlaces anteriores y su contraseña actual sigue valiendo hasta que la cambie. La respuesta
+   * dice si el correo salió (`sent`), nunca el enlace.
+   *
+   * El enlace y su evento quedan en la misma transacción, que bloquea la fila del usuario: dos envíos
+   * en paralelo se ordenan y el segundo ya cuenta el enlace del primero para el límite. El correo
+   * sale después del commit: si no sale, el enlace igual existe y se audita el fallo.
+   */
+  async sendPasswordReset(
+    actorUserId: string,
+    tenantId: string,
+    targetUserId: string,
+  ): Promise<{ sent: boolean; expiresAt: string }> {
+    const membershipStatus = await this.authorize(actorUserId, tenantId, targetUserId);
+    if (membershipStatus === 'suspended') throw new MembershipSuspendedError();
+
+    const issued = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+      const target = await trx
+        .selectFrom('users')
+        .select(['email', 'status'])
+        .where('id', '=', targetUserId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!target) throw new MemberNotFoundError();
+      if (target.status !== 'active') throw new MemberAccountSuspendedError();
+
+      const recent = await trx
+        .selectFrom('password_reset_tokens')
+        .select((eb) => eb.fn.countAll<string>().as('n'))
+        .where('user_id', '=', targetUserId)
+        .where(
+          sql<boolean>`created_at > now() - make_interval(mins => ${RESET_LINKS_WINDOW_MINUTES})`,
+        )
+        .executeTakeFirst();
+      if (Number(recent?.n ?? 0) >= RESET_LINKS_PER_WINDOW) {
+        throw new PasswordResetRateLimitedError();
+      }
+
+      const { token, expiresAt } = await this.resets.issueToken(trx, targetUserId, {
+        invalidatePrevious: true,
+      });
+      // En la misma transacción: un enlace enviado por un admin sin su rastro no debe existir.
+      await this.audit.emitWithin(trx, {
+        eventType: 'auth.password_reset.sent_by_admin',
+        tenantId,
+        actorUserId,
+        aggregateType: 'user',
+        aggregateId: targetUserId,
+        payload: { targetUserId, expiresAt: expiresAt.toISOString() },
+      });
+
+      const node = await trx
+        .selectFrom('tenants')
+        .select('name')
+        .where('id', '=', tenantId)
+        .executeTakeFirst();
+      return { email: target.email, token, expiresAt, nodeName: node?.name ?? null };
+    });
+
+    const sent = await this.resets.sendResetEmail(
+      tenantId,
+      issued.email,
+      this.resets.resetLink(issued.token),
+      'admin',
+      issued.nodeName,
+    );
+    if (!sent) {
+      await this.audit.emit({
+        eventType: 'auth.password_reset.email_failed',
+        tenantId,
+        actorUserId,
+        aggregateType: 'user',
+        aggregateId: targetUserId,
+        payload: { targetUserId, via: 'admin' },
+      });
+    }
+    return { sent, expiresAt: issued.expiresAt.toISOString() };
+  }
+
+  /**
+   * Levanta el bloqueo por intentos fallidos: el contador vuelve a cero y puede intentar de nuevo de
+   * inmediato. No toca la contraseña, el 2FA ni el estado de la cuenta.
+   *
+   * `unlocked: false` si no estaba bloqueada (el bloqueo ya venció o nunca existió): no cambia nada
+   * y no se audita. El valor anterior se lee bloqueando la fila en la misma sentencia, así dos
+   * desbloqueos en paralelo dan uno solo.
+   */
+  async unlock(
+    actorUserId: string,
+    tenantId: string,
+    targetUserId: string,
+  ): Promise<{ unlocked: boolean }> {
+    await this.authorize(actorUserId, tenantId, targetUserId);
+
+    const unlocked = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+      const res = await sql<{ locked_until: Date }>`
+        WITH prev AS (
+          SELECT locked_until FROM users WHERE id = ${targetUserId}::uuid FOR NO KEY UPDATE
+        )
+        UPDATE users u
+           SET failed_login_attempts = 0,
+               locked_until = NULL
+          FROM prev
+         WHERE u.id = ${targetUserId}::uuid
+           AND prev.locked_until > now()
+        RETURNING prev.locked_until
+      `.execute(trx);
+      const row = res.rows[0];
+      if (row === undefined) return false;
+      await this.audit.emitWithin(trx, {
+        eventType: 'auth.lockout.cleared_by_admin',
+        tenantId,
+        actorUserId,
+        aggregateType: 'user',
+        aggregateId: targetUserId,
+        payload: { targetUserId, lockedUntil: new Date(row.locked_until).toISOString() },
+      });
+      return true;
+    });
+    return { unlocked };
+  }
+
+  /**
    * La regla de assertCanSupportMember con los datos de la base. El orden importa: primero lo que
    * se decide sin leer nada (uno mismo), después que el actor administre el nodo de la ruta, y
    * recién entonces se miran las memberships del objetivo, para no revelarle a alguien de afuera
    * si un usuario pertenece a un nodo.
+   *
+   * Devuelve el estado de su membership en el nodo de la ruta, que cuenta aunque esté suspendida:
+   * enviarle el enlace lo rechaza recién después de autorizar, así el 409 no le cuenta nada a quien
+   * no podía actuar.
    */
   private async authorize(
     actorUserId: string,
     tenantId: string,
     targetUserId: string,
-  ): Promise<void> {
+  ): Promise<MembershipStatus> {
     if (actorUserId === targetUserId) throw new MemberSelfActionError();
 
     const routeRole = await this.network.roleOver(actorUserId, tenantId);
@@ -106,7 +249,7 @@ export class MemberSupportService {
     const inRoute = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
       trx
         .selectFrom('memberships')
-        .select(['tenant_id', 'role'])
+        .select(['tenant_id', 'role', 'status'])
         .where('user_id', '=', targetUserId)
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst(),
@@ -130,6 +273,7 @@ export class MemberSupportService {
       targetMemberships: memberships,
       actorRoles,
     });
+    return inRoute.status;
   }
 
   /**

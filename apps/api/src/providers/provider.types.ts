@@ -16,6 +16,7 @@ import type {
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
+import type { ProviderEnvironment } from './provider-environment.js';
 
 /**
  * Un adapter de vuelos = los cuatro ports del dominio.
@@ -188,6 +189,17 @@ export interface TenantAdapter<TAdapter> {
    * forzada): sólo el factory, que la resolvió, sabe de quién es.
    */
   readonly accountOwnerTenantId?: string | undefined;
+  /**
+   * Entorno de la cuenta con que sale el adapter: `test` (sandbox, certificación) o `live`.
+   * `undefined` = el factory no lo dice y se lee como `live`, que es lo que eran todas las cuentas
+   * antes de que existiera el campo.
+   *
+   * Lo declara el factory porque es el único que leyó la cuenta: ni el ACL (que no sabe con qué
+   * cuenta lo construyeron) ni el fan-out (que no lee configuraciones de nadie) pueden saberlo. Con
+   * esto la búsqueda marca cada tarifa de una cuenta de pruebas y la orden lo guarda, para que el
+   * vendedor nunca le venda a un cliente un tiquete que no sirve para viajar.
+   */
+  readonly providerEnvironment?: ProviderEnvironment | undefined;
 }
 
 /**
@@ -195,8 +207,8 @@ export interface TenantAdapter<TAdapter> {
  *
  * Existe porque el adapter de una cuenta heredada es el MISMO para el consolidador y para sus
  * agencias: el error no puede saber si la credencial rechazada es de quien lo ve o de su
- * consolidador, y el mensaje cambia de destinatario ("verificá tus credenciales" frente a
- * "avisale al consolidador").
+ * consolidador, y el mensaje cambia de destinatario ("verifica tus credenciales" frente a
+ * "avísale al consolidador").
  */
 export interface ProviderErrorContext {
   readonly credentialSource?: CredentialSource;
@@ -231,6 +243,12 @@ export interface ResolvedProvider<TAdapter> {
   readonly credentialSource: CredentialSource;
   readonly capabilities: ProviderCapabilities;
   readonly callPolicy: CallPolicy;
+  /**
+   * Entorno de la cuenta resuelta, ya sin huecos: lo que declaró el factory o `live` si no dijo
+   * nada (ver {@link TenantAdapter.providerEnvironment}). Obligatorio a propósito: quien estampa
+   * ofertas u órdenes no puede olvidarse de mirarlo.
+   */
+  readonly environment: ProviderEnvironment;
 }
 
 /**
@@ -446,8 +464,8 @@ export class AllFlightProvidersFailedError extends BadGatewayException {
  *
  * Extiende `NotFoundException` porque el efecto es el mismo que no tener cuenta —el registry lo
  * traduce a "proveedor no habilitado" y la búsqueda sigue sin él—; existe como tipo propio para
- * que la ausencia llegue a la pantalla con el motivo CORRECTO. "Cargá tus credenciales" y
- * "completá las que cargaste" son dos acciones distintas para el vendedor, y adivinarlas a
+ * que la ausencia llegue a la pantalla con el motivo CORRECTO. "Carga tus credenciales" y
+ * "completa las que cargaste" son dos acciones distintas para el vendedor, y adivinarlas a
  * partir del texto de un mensaje es el `if` sobre strings que este paquete lleva rondas quitando.
  *
  * `missingFields` son NOMBRES de campo, nunca valores.
@@ -470,7 +488,7 @@ export class ProviderAccountIncompleteError extends NotFoundException {
  *
  * Extiende `NotFoundException` por lo mismo que {@link ProviderAccountIncompleteError}: el efecto
  * es el de no tener cuenta, y la búsqueda sigue sin el proveedor. Lleva `detail` porque la acción
- * del vendedor no es ninguna de las dos que el registry sabe decir ("cargá" o "completá"): una
+ * del vendedor no es ninguna de las dos que el registry sabe decir ("carga" o "completa"): una
  * cuenta que se acepta en la bóveda y se rechaza en silencio es una agencia creyendo que vende
  * con un proveedor que nunca se llama.
  *
@@ -493,7 +511,7 @@ export class ProviderAccountNotAllowedError extends NotFoundException {
 export class ProviderNotAvailableError extends BadRequestException {
   constructor(
     readonly providerCode: string,
-    message = `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisá Mi Red → Credenciales.`,
+    message = `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisa Mi Red → Credenciales.`,
   ) {
     super(message);
     this.name = 'ProviderNotAvailableError';
@@ -506,7 +524,7 @@ export class ProviderNotAvailableError extends BadRequestException {
  * aquí.
  *
  * Es un {@link ProviderNotAvailableError} para que quien ya lo trata como "no habilitado" siga
- * igual, con otro mensaje: "revisá tus credenciales" mandaría al vendedor a un panel donde no hay
+ * igual, con otro mensaje: "revisa tus credenciales" mandaría al vendedor a un panel donde no hay
  * nada que arreglar.
  */
 export class ProviderDisabledByPlatformError extends ProviderNotAvailableError {
@@ -534,7 +552,7 @@ export class ProviderOrderAccountUnavailableError extends ConflictException {
 
   constructor(readonly providerCode: string) {
     super(
-      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pedile al administrador de tu red que la revise en Mi Red → Credenciales.',
+      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pídele al administrador de tu red que la revise en Mi Red → Credenciales.',
     );
     this.name = 'ProviderOrderAccountUnavailableError';
   }

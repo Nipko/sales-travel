@@ -13,6 +13,7 @@ import {
   type SabreMultipleFaresMode,
   SABRE_BRAND_LADDER_DEFAULT,
   SABRE_MULTIPLE_FARES_DEFAULT,
+  SABRE_NDC_CONTENT_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -140,6 +141,14 @@ export interface SabreFlightSearchDeps {
   shopOptions?: SabreShopOptions;
   /** Sustituye al `SabreTokenService` por defecto. Sólo para tests. */
   tokens?: SabreTokenProvider;
+  /**
+   * Cliente HTTP de la cuenta, si quien construye ya tiene uno. El semáforo de concurrencia vive en
+   * el cliente: con un cliente propio, la búsqueda tendría su cupo aparte del de price/create/
+   * manage y la cuenta podría llegar al doble de llamadas en vuelo que su límite. Con él, `fetch`,
+   * `logger`, `now`, `sleep`, `jitter` y `uuid` de estas deps no se aplican al cliente: son los del
+   * cliente inyectado.
+   */
+  http?: SabreHttpClient;
 }
 
 /**
@@ -226,14 +235,16 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
         ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
         ...(deps.cacheNamespace === undefined ? {} : { cacheNamespace: deps.cacheNamespace }),
       });
-    this.http = new SabreHttpClient(cfg, this.tokens, {
-      ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
-      ...(deps.logger === undefined ? {} : { logger: deps.logger }),
-      ...(deps.now === undefined ? {} : { now: deps.now }),
-      ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
-      ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
-      ...(deps.uuid === undefined ? {} : { uuid: deps.uuid }),
-    });
+    this.http =
+      deps.http ??
+      new SabreHttpClient(cfg, this.tokens, {
+        ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+        ...(deps.logger === undefined ? {} : { logger: deps.logger }),
+        ...(deps.now === undefined ? {} : { now: deps.now }),
+        ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
+        ...(deps.jitter === undefined ? {} : { jitter: deps.jitter }),
+        ...(deps.uuid === undefined ? {} : { uuid: deps.uuid }),
+      });
   }
 
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
@@ -250,6 +261,10 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     const pedirMarcas = modo !== 'off';
     const modoMulti = opciones.multipleFares ?? SABRE_MULTIPLE_FARES_DEFAULT;
     const pedirMulti = modoMulti !== 'off' && !this.multipleFaresUnsupported;
+    // Mismo `?? DEFAULT` que las marcas, y por la misma razón. No entra en la degradación: pedir
+    // o no NDC no es una capacidad que el PCC rechace, es una decisión de la cuenta, y cada
+    // llamada de esta búsqueda la hereda de `...opciones` sin que nadie la pise.
+    const pedirNdc = opciones.ndcContent ?? SABRE_NDC_CONTENT_DEFAULT;
     // Una búsqueda no mueve dinero ni crea estado: es de las pocas llamadas de Sabre que SÍ se
     // puede reintentar. El cliente HTTP ignora esta marca en los paths de `SABRE_NON_IDEMPOTENT_PATHS`.
     const opciones_http = {
@@ -388,7 +403,10 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       httpOptions: opciones_http,
     });
 
-    this.logMapping(mapped, result, ctx, this.brandedFaresTecho === 'off' ? false : pedirMarcas);
+    this.logMapping(mapped, result, ctx, {
+      pidioMarcas: this.brandedFaresTecho === 'off' ? false : pedirMarcas,
+      pidioNdc: pedirNdc,
+    });
     return ofertas;
   }
 
@@ -522,7 +540,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     mapped: SabreShopMapResult,
     result: SabreResult<unknown>,
     ctx: SearchContext,
-    pidioMarcas: boolean,
+    pedido: { readonly pidioMarcas: boolean; readonly pidioNdc: boolean },
   ): void {
     const meta = {
       tenantId: ctx.tenantId,
@@ -531,7 +549,10 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       offers: mapped.offers.length,
       // `pidioMarcas` va al lado del censo a propósito: `conMarca: 0` sin saber si se pidieron
       // no dice nada. Juntos sí: pedidas y cero = el PCC no publica marcas en esta ruta.
-      pidioMarcas,
+      pidioMarcas: pedido.pidioMarcas,
+      // Lo mismo con NDC: `ndc-content-skipped` con `pidioNdc: true` es el mapper NDC que falta;
+      // con `pidioNdc: false` es Sabre devolviendo una fuente que se le pidió apagar.
+      pidioNdc: pedido.pidioNdc,
       ...censoDeContenido(mapped.offers),
       ...(mapped.statistics === undefined ? {} : { statistics: mapped.statistics }),
     };

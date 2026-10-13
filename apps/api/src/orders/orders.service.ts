@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -37,6 +39,7 @@ import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import { stampProviderEnvironment } from '../providers/provider-environment.js';
 import {
   supportsAuditedCancel,
   supportsAuditedCreate,
@@ -109,9 +112,21 @@ export function notSentMessage(detail: string): string {
   if (/contactInfo\.phones/.test(detail)) partes.add('teléfono de contacto');
   if (/contactInfo\.emails/.test(detail)) partes.add('email de contacto');
   if (partes.size === 0) {
-    return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalidá el precio y volvé a intentar.';
+    return 'La reserva no se envió a la aerolínea: los datos de esta oferta no alcanzan para reservar. Revalida el precio y vuelve a intentar.';
   }
-  return `La reserva no se envió a la aerolínea. Revisá ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
+  return `La reserva no se envió a la aerolínea. Revisa ${[...partes].join('; ')}. La cotización sigue disponible para reintentar.`;
+}
+
+/**
+ * ¿Quien lanzó afirma que la llamada NO salió al proveedor? Sólo `false` explícito: ausente o
+ * cualquier otro valor es «no se sabe», y eso sigue siendo una creación incierta.
+ */
+function sentNothing(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { sentToProvider?: unknown }).sentToProvider === false
+  );
 }
 
 export function summarizeIssues(issues: ProviderIssue[]): string | null {
@@ -396,20 +411,27 @@ export class OrdersService {
   async createOrder(
     tenantId: string,
     userId: string,
-    dto: CreateOrderDto,
+    requested: CreateOrderDto,
     clientRequestId?: string,
   ): Promise<{ order: OrderRow; providerResult: OrderCreateResult; saga: SagaDecision }> {
-    if (dto.offer.tenantId !== tenantId) {
+    if (requested.offer.tenantId !== tenantId) {
       throw new BadRequestException('La oferta no pertenece a la agencia activa.');
     }
-    this.assertCreateRequestConsistency(dto);
-    const requestKey = createRequestKey(dto.quotationId, clientRequestId);
+    this.assertCreateRequestConsistency(requested);
+    const requestKey = createRequestKey(requested.quotationId, clientRequestId);
 
-    const providerCode = dto.offer.provider.name;
+    const providerCode = requested.offer.provider.name;
     // Es la única venta de este servicio: si la plataforma apagó el proveedor para el tenant, no se
     // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
     // `flightProvider`, que no mira la habilitación.
     const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
+    // El entorno de la cuenta con la que se va a reservar, no el que mandó el navegador: es lo que
+    // decide si la orden es una reserva de prueba (sin correo automático al pasajero, marcada en
+    // Reservas). Se escribe ANTES del claim para que la fila `pending` ya nazca marcada.
+    const dto: CreateOrderDto = {
+      ...requested,
+      offer: stampProviderEnvironment(requested.offer, provider.environment),
+    };
 
     // El claim se inserta antes de priceOffer/createOrder. Una colisión termina aquí, sin tocar el
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.
@@ -438,6 +460,9 @@ export class OrdersService {
         aggregateId: intent.id,
         payload: {
           provider: providerCode,
+          // Una reserva contra una cuenta de pruebas no es una venta: el evento lo dice para que
+          // nadie la concilie ni la cuente como tal.
+          environment: provider.environment,
           offerRef: verifiedDto.offer.provider.offerRef ?? null,
           amountMinor: verifiedDto.offer.pricing?.finalMinor ?? verifiedDto.offer.total.amountMinor,
           currency: verifiedDto.offer.total.currency,
@@ -636,7 +661,7 @@ export class OrdersService {
     const revalidatedExpiry = Date.parse(checked.offer.expiresAt);
     if (!Number.isFinite(revalidatedExpiry) || revalidatedExpiry <= Date.now()) {
       throw new ConflictException(
-        'La oferta revalidada ya venció o no tiene una vigencia válida. Volvé a buscar antes de reservar.',
+        'La oferta revalidada ya venció o no tiene una vigencia válida. Vuelve a buscar antes de reservar.',
       );
     }
 
@@ -648,14 +673,16 @@ export class OrdersService {
     if (checked.priceChanged || changedMoney || changedFare) {
       throw new ConflictException(
         changedFare
-          ? 'La familia o la base tarifaria cambió. Revalidá la oferta y aceptá la nueva opción antes de reservar.'
-          : 'El precio cambió. Revalidá la oferta y aceptá el nuevo precio antes de reservar.',
+          ? 'La familia o la base tarifaria cambió. Revalida la oferta y acepta la nueva opción antes de reservar.'
+          : 'El precio cambió. Revalida la oferta y acepta el nuevo precio antes de reservar.',
       );
     }
 
     // El adapter puede construir su respuesta sobre la oferta de entrada y, por tanto, arrastrar
     // un `pricing` manipulado por el cliente. Se quita siempre y se vuelve a calcular desde BD.
-    const { pricing: _untrustedPricing, ...providerOffer } = checked.offer;
+    // El entorno, por lo mismo, se vuelve a escribir desde la cuenta resuelta.
+    const { pricing: _untrustedPricing, ...checkedOffer } = checked.offer;
+    const providerOffer = stampProviderEnvironment(checkedOffer, provider.environment);
     const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
     const offer: Offer =
       rules.length === 0
@@ -715,6 +742,9 @@ export class OrdersService {
     } catch (err) {
       if (err instanceof OrderCreateNotSentError) {
         await this.rejectNotSent(tenantId, userId, provider.code, intent, err);
+      }
+      if (sentNothing(err)) {
+        await this.rejectNotDispatched(tenantId, userId, provider.code, intent, err);
       }
       // Una excepción NO es un `FAILED`. Un `FAILED` es el proveedor diciendo "no reservé nada";
       // un timeout es el proveedor no diciendo nada, y la reserva puede existir.
@@ -786,6 +816,54 @@ export class OrdersService {
       orderId: intent.id,
       retryForbidden: false,
     });
+  }
+
+  /**
+   * La llamada se cortó ANTES de salir (`sentToProvider: false`): el cupo de concurrencia de la
+   * cuenta seguía lleno al vencer la espera, o el breaker la frenó. Es el mismo contrato neutral
+   * que ya leen la política de reintento de cancelaciones y la reserva de hoteles.
+   *
+   * No hay reserva que conciliar, así que la cotización se libera como en {@link rejectNotSent}.
+   * Escalarla como `create-uncertain` mandaba a buscar en el PCC un PNR que no existe y bloqueaba
+   * la cotización con «No vuelvas a reservar». Sale como 429 y no como 503: el navegador lee
+   * cualquier 5xx como desenlace desconocido (`isAmbiguousCreateHttpStatus`), y aquí sí se sabe.
+   */
+  private async rejectNotDispatched(
+    tenantId: string,
+    userId: string,
+    providerCode: string,
+    intent: OrderRow,
+    err: unknown,
+  ): Promise<never> {
+    await this.intents.failBeforeProvider(tenantId, intent);
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.createFailed,
+        tenantId,
+        actorUserId: userId,
+        aggregateType: 'order',
+        aggregateId: intent.id,
+        payload: {
+          provider: providerCode,
+          reason: 'not-dispatched',
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+          uncertain: false,
+        },
+      });
+    } catch {
+      // Nada salió al proveedor: perder este evento no abre ninguna reserva fantasma.
+    }
+    throw new HttpException(
+      {
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        error: 'Too Many Requests',
+        message:
+          'La reserva no se envió a la aerolínea: el proveedor está atendiendo otras consultas de tu red. La cotización sigue disponible; intenta nuevamente en unos segundos.',
+        orderId: intent.id,
+        retryForbidden: false,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */
@@ -1653,7 +1731,7 @@ export class OrdersService {
             ? 'La cancelación anterior quedó sin verificar. No se puede enviar otra cancelación hasta conciliar el estado con el proveedor.'
             : policy.retryable
               ? 'La cancelación anterior sólo puede continuarse desde su operación de reintento.'
-              : 'La cancelación anterior no es reintentable. Revisá el motivo antes de continuar.',
+              : 'La cancelación anterior no es reintentable. Revisa el motivo antes de continuar.',
         );
       }
       if (previous.status === 'pending') {

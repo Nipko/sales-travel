@@ -211,7 +211,7 @@ describe('HotelsService.searchAvailability — catálogo ciudad → IDs', () => 
     const http = err as ServiceUnavailableException;
     expect(http.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
     expect(http.message).toBe(
-      'El catálogo de hoteles de ese destino todavía no está sincronizado. Probá con otra ciudad o avisá al administrador.',
+      'El catálogo de hoteles de ese destino todavía no está sincronizado. Prueba con otra ciudad o avísale al administrador.',
     );
   });
 

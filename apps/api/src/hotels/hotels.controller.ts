@@ -10,7 +10,6 @@ import {
   Res,
   UseFilters,
 } from '@nestjs/common';
-import type { HotelOffer } from '@sales-travel/canonical';
 import type { HotelDestinationSuggestion } from '@sales-travel/domain';
 import type {
   BookResult,
@@ -49,7 +48,7 @@ import {
 import { HotelPrebookService, type HotelPrebookResponse } from './hotel-prebook.service.js';
 import type { HotelSearchCurrencyOptions } from './hotel-search-currency.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
-import { HotelsService } from './hotels.service.js';
+import { HotelsService, type HotelDetailResponse } from './hotels.service.js';
 import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
@@ -176,7 +175,7 @@ export class HotelsController {
   async detail(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(HotelDetailInputSchema)) body: HotelDetailInput,
-  ): Promise<HotelOffer> {
+  ): Promise<HotelDetailResponse> {
     const tenantId = await this.tenant(userId);
     return this.hotels.getHotelDetail(tenantId, body);
   }

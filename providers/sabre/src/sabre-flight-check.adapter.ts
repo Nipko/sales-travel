@@ -32,12 +32,11 @@ import {
  * con sus `offerItemIds`. El mapper los guarda bajo `bookingOfferId` / `bookingOfferItemIds`: son
  * identificadores de Booking Management, no identificadores NDC.
  *
- * Este cambio no toca `sabre-order-create.adapter.ts` por aislamiento de alcance. Para consumir la
- * cadena nueva, `productOf` debe leer primero ese par completo y emitir `flightOffer`; sólo si no
- * existe debe caer a los ids de `/offers/price` o al `flightDetails` histórico. La rama parcial
- * (sólo uno de los dos ids) tiene que seguir fallando fuerte. Hasta hacer ese cableado, el resultado
- * queda correctamente revalidado y transporta los handles, pero create seguirá reconstruyendo
- * `flightDetails` para ATPCO.
+ * Esos handles son los que reserva createBooking: `productOf` (`sabre-order-create.adapter.ts`) lee
+ * PRIMERO el par completo y emite `flightOffer`; sólo si no viene cae a los ids de `/offers/price`
+ * (NDC) y, sin ninguno de los dos, al `flightDetails` reconstruido desde el itinerario. Media cadena
+ * —uno de los dos ids sin el otro— falla fuerte antes de la red con `SabreOrderCreateInputError`:
+ * reservar con medio par es reservar otra cosa.
  */
 
 export interface SabreFlightCheckDeps {

@@ -22,6 +22,7 @@ import {
   type TenantProviderFactory,
   type UnavailableProvider,
 } from './provider.types.js';
+import { DEFAULT_PROVIDER_ENVIRONMENT } from './provider-environment.js';
 
 /**
  * Proveedores a los que la plataforma presta SUS credenciales cuando el tenant no tiene ni
@@ -261,7 +262,7 @@ export class FlightProviderRegistry {
           absence: {
             code: factory.code,
             reason: 'incomplete-account',
-            detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Completala en Mi Red → Credenciales.`,
+            detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Complétala en Mi Red → Credenciales.`,
           },
         };
       }
@@ -292,6 +293,8 @@ export class FlightProviderRegistry {
         credentialSource: resolved.credentialSource,
         capabilities: factory.capabilities,
         callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+        // Sin dato, `live`: es lo que eran todas las cuentas antes de que el factory lo declarara.
+        environment: resolved.providerEnvironment ?? DEFAULT_PROVIDER_ENVIRONMENT,
       },
     };
   }
@@ -301,7 +304,7 @@ export class FlightProviderRegistry {
       code: factory.code,
       reason: 'no-credentials',
       detail:
-        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
+        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
     };
   }
 }

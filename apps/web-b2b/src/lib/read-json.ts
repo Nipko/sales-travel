@@ -38,16 +38,16 @@ export function describeNonJson(status: number, body: string): string {
     return 'La operación tardó más de lo permitido y se cortó antes de terminar. NO la repitas sin verificar antes en Mis Reservas: puede haberse creado igual.';
   }
   if (status === 502 || status === 503) {
-    return 'El servidor no está respondiendo en este momento. Esperá unos segundos y probá de nuevo.';
+    return 'El servidor no está respondiendo en este momento. Espera unos segundos e inténtalo de nuevo.';
   }
   if (status === 401 || status === 403) {
-    return 'Tu sesión no es válida para esta operación. Volvé a iniciar sesión e intentá otra vez.';
+    return 'Tu sesión no es válida para esta operación. Vuelve a iniciar sesión e inténtalo otra vez.';
   }
   if (status >= 500) {
-    return `El servidor respondió con un error (${status}) y sin detalle. Ya quedó registrado; probá de nuevo en unos minutos.`;
+    return `El servidor respondió con un error (${status}) y sin detalle. Ya quedó registrado; inténtalo de nuevo en unos minutos.`;
   }
   if (html) {
-    return `La respuesta del servidor no eran datos sino una página (${status}). Ya quedó registrado; probá de nuevo.`;
+    return `La respuesta del servidor no eran datos sino una página (${status}). Ya quedó registrado; inténtalo de nuevo.`;
   }
   return `El servidor respondió de una forma que no pudimos interpretar (${status}).`;
 }

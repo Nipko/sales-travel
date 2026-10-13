@@ -1,4 +1,4 @@
-import type { HotelRoompack, Money } from '../../actions';
+import type { HotelAccountEnvironment, HotelRoompack, Money } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
 import { saleTotal } from '../../_components/hotel-rate-view';
 import type { RateSelection } from '../../_components/hotel-rate-selection';
@@ -68,6 +68,11 @@ export interface HotelPrebook {
    * 100 % en el precio de venta. El Book exige la confirmación del vendedor.
    */
   readonly nonRefundable?: PrebookNonRefundable;
+  /**
+   * El entorno de la cuenta que revalidó la tarifa, si el proveedor lo declara. Con `test` el
+   * checkout avisa que la reserva no es real.
+   */
+  readonly providerEnvironment?: HotelAccountEnvironment;
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -200,6 +205,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
   }
   const funding = parseFunding(value['funding']);
   const nonRefundable = parseNonRefundable(value['nonRefundable']);
+  const environment = value['providerEnvironment'];
   return {
     prebookRef,
     providerCode,
@@ -215,6 +221,10 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
     },
     ...(funding === undefined ? {} : { funding }),
     ...(nonRefundable === undefined ? {} : { nonRefundable }),
+    // Sólo los dos valores conocidos: otro texto no avisa nada, que es mejor que avisar mal.
+    ...(environment === 'test' || environment === 'live'
+      ? { providerEnvironment: environment }
+      : {}),
   };
 }
 

@@ -161,7 +161,7 @@ export class AuthService {
     // de demo que dependan del alta abierta.
     if (process.env['ALLOW_PUBLIC_SIGNUP'] !== 'true') {
       throw new ForbiddenException(
-        'el alta pública está deshabilitada: pedí una invitación a tu agencia',
+        'el alta pública está deshabilitada: pide una invitación a tu agencia',
       );
     }
 
@@ -266,9 +266,9 @@ export class AuthService {
       const link = `${base}/verificar?token=${encodeURIComponent(token)}`;
       await this.mailer.sendToTenant(tenantId, {
         to: email,
-        subject: 'Verificá tu correo · PlaneTour',
+        subject: 'Verifica tu correo · PlaneTour',
         html: verificationEmailHtml(link),
-        text: `Verificá tu correo entrando a este enlace: ${link}`,
+        text: `Verifica tu correo entrando a este enlace: ${link}`,
       });
     } catch {
       // Best-effort: el envío de verificación nunca debe tumbar la operación principal.
@@ -824,15 +824,15 @@ function verificationEmailHtml(link: string): string {
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#fff;border:1px solid #e4e4e7;border-radius:12px;padding:32px">
         <tr><td>
-          <h1 style="margin:0 0 8px;font-size:18px;color:#18181b">Verificá tu correo</h1>
+          <h1 style="margin:0 0 8px;font-size:18px;color:#18181b">Verifica tu correo</h1>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#52525b">
-            Confirmá tu dirección de correo para activar tu cuenta en PlaneTour.
+            Confirma tu dirección de correo para activar tu cuenta en PlaneTour.
           </p>
           <a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
             Verificar correo
           </a>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#a1a1aa">
-            Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
+            Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
             <span style="color:#4f46e5;word-break:break-all">${link}</span>
           </p>
         </td></tr>

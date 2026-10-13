@@ -287,7 +287,9 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     const advisories = plan.advisories.map(describeAdvisory);
     const failures = classifySabrePartialFailure(mapped.order, tolerance);
 
-    this.log(mapped.order.outcome === 'CONFIRMED' ? 'debug' : 'warn', 'sabre.createBooking', {
+    // `info` y no `debug` en el éxito: producción descarta `debug`, y una reserva es justo lo que
+    // tiene que dejar traza aunque haya salido bien.
+    this.log(mapped.order.outcome === 'CONFIRMED' ? 'info' : 'warn', 'sabre.createBooking', {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,

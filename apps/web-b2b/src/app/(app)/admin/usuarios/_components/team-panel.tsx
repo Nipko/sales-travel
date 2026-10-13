@@ -4,10 +4,15 @@ import { Mail, RefreshCw, Search, UserPlus, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../components/ui/button';
-import { Dialog, useConfirm } from '../../../../../components/ui/dialog';
+import { useConfirm } from '../../../../../components/ui/dialog';
 import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/cn';
-import { invitationExpiry } from '../../../../../lib/invitation-expiry';
+import {
+  invitationNotice,
+  type InvitationKind,
+  type InvitationNotice,
+  type IssuedInvitation,
+} from '../../../../../lib/invitation-notice';
 import { readJson } from '../../../../../lib/read-json';
 import {
   loadInvitations,
@@ -23,6 +28,7 @@ import {
   grantableRoles,
   memberActionCopy,
   memberActionDoneMessage,
+  memberActionNoticeTone,
   memberName,
   roleChangeCopy,
   statusChangeCopy,
@@ -32,9 +38,11 @@ import {
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
 import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/tenant-network';
+import { inputClass, selectClass } from './field-classes';
+import { InvitationList } from './invitation-list';
+import { InviteDialog } from './invite-dialog';
 import { MemberList, type MemberRowError } from './member-list';
 import { INVITABLE_ROLES, roleLabel } from './roles';
-import { InvitationList } from './invitation-list';
 import { SeatsCard, useSeatsView } from './seats-ui';
 
 /**
@@ -60,12 +68,6 @@ type NetworkState =
   | { readonly status: 'error'; readonly message: string }
   | { readonly status: 'ready'; readonly tenants: readonly NetworkNode[] };
 
-const inputClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-
-const selectClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-
 /** " Se revocaron N invitaciones que envió." para el aviso de éxito, según lo que devolvió el API. */
 function revokedSuffix(body: unknown): string {
   const n =
@@ -76,6 +78,15 @@ function revokedSuffix(body: unknown): string {
   return n === 1
     ? ' Se revocó 1 invitación que envió.'
     : ` Se revocaron ${n} invitaciones que envió.`;
+}
+
+/** Un aviso pasajero: el éxito, o la advertencia de un correo que no salió. */
+function notify(notice: InvitationNotice) {
+  const show = notice.tone === 'warning' ? toast.warning : toast.success;
+  show(
+    notice.message,
+    notice.description === undefined ? undefined : { description: notice.description },
+  );
 }
 
 function Alert({
@@ -159,7 +170,7 @@ export function TeamPanel({
         status: 'error',
         message:
           res.status === 403
-            ? 'No administrás ningún nodo de la red.'
+            ? 'No administras ningún nodo de la red.'
             : 'No pudimos cargar tu red de agencias.',
       });
       return;
@@ -259,7 +270,7 @@ export function TeamPanel({
       );
       await Promise.all([load(true), reloadSeats(true)]);
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setBusyUserId(null);
     }
@@ -293,7 +304,7 @@ export function TeamPanel({
       );
       await load(true);
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setBusyUserId(null);
     }
@@ -305,7 +316,8 @@ export function TeamPanel({
       title: copy.title,
       description: copy.description,
       confirmLabel: copy.confirmLabel,
-      destructive: true,
+      // Enviar el enlace y desbloquear le devuelven el acceso, no se lo cortan: confirmación neutra.
+      destructive: action !== 'send-password-reset' && action !== 'unlock',
     });
     if (!ok) return;
     setActionError('');
@@ -318,7 +330,9 @@ export function TeamPanel({
       failOn(member, res.message);
       return;
     }
-    toast.success(memberActionDoneMessage(action, member, res.data));
+    const notify =
+      memberActionNoticeTone(action, res.data) === 'warning' ? toast.warning : toast.success;
+    notify(memberActionDoneMessage(action, member, res.data));
     await Promise.all([load(true), reloadSeats(true)]);
   }
 
@@ -326,7 +340,7 @@ export function TeamPanel({
     const ok = await confirm({
       title: `Revocar la invitación a ${invitation.email}`,
       description:
-        'El enlace que le enviamos deja de funcionar. Si después querés sumarlo, tenés que invitarlo de nuevo.',
+        'El enlace que le enviamos deja de funcionar. Si después quieres sumarlo, tienes que invitarlo de nuevo.',
       confirmLabel: 'Revocar',
       destructive: true,
     });
@@ -336,6 +350,8 @@ export function TeamPanel({
     const res = await revokeInvitation(tenantId, invitation.id);
     if (!res.ok) {
       setActionError(res.message);
+      // Ya no estaba pendiente (la aceptaron o la revocaron desde otra sesión): la fila quedó vieja.
+      if (res.gone) await load(true);
       return;
     }
     toast.success(`Revocamos la invitación a ${invitation.email}.`);
@@ -350,16 +366,27 @@ export function TeamPanel({
       const res = await resendInvitation(tenantId, invitation.id);
       if (!res.ok) {
         setActionError(res.message);
+        if (res.gone) await load(true);
         return;
       }
-      const expiry = invitationExpiry(res.data.expiresAt, new Date());
-      toast.success(`Reenviamos la invitación a ${invitation.email}.`, {
-        description: `El enlace anterior ya no sirve. El nuevo ${expiry?.label ?? 'vence en 7 días'}.`,
-      });
+      notify(invitationNotice('resent', invitation.email, res.data, new Date()));
       await load(true);
     } finally {
       setResendingId(null);
     }
+  }
+
+  /**
+   * Lo que emitió "Invitar usuario": una invitación nueva o el reenvío de la pendiente. Una nueva cuyo
+   * correo salió queda en el aviso de arriba; lo demás (un reenvío, un correo que no salió) es un
+   * aviso pasajero.
+   */
+  function invitationIssued(kind: InvitationKind, email: string, issued: IssuedInvitation) {
+    setShowInvite(false);
+    const notice = invitationNotice(kind, email, issued, new Date());
+    if (kind === 'invited' && notice.tone === 'success') setInviteSent(notice.message);
+    else notify(notice);
+    void load(true);
   }
 
   const tenants = network.status === 'ready' ? network.tenants : [];
@@ -404,7 +431,7 @@ export function TeamPanel({
         <Alert tone="success" onDismiss={() => setInviteSent('')}>
           <span className="inline-flex items-center gap-2">
             <Mail aria-hidden="true" className="size-4 text-[var(--color-success)]" />
-            Invitación enviada a {inviteSent}. Elige su propia contraseña al aceptarla.
+            {inviteSent}
           </span>
         </Alert>
       ) : null}
@@ -457,7 +484,7 @@ export function TeamPanel({
         <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-10 text-center">
           <Users aria-hidden="true" className="mx-auto mb-2 size-6 text-[var(--color-fg-subtle)]" />
           <p className="text-sm font-medium text-[var(--color-fg)]">
-            No administrás ningún nodo de la red.
+            No administras ningún nodo de la red.
           </p>
         </div>
       ) : null}
@@ -515,135 +542,15 @@ export function TeamPanel({
           tenantId={tenantId}
           tenantName={selectedName}
           roles={grantableRoles(INVITABLE_ROLES, actor)}
+          pendingRoleOf={(id) =>
+            invitations.status === 'ready'
+              ? invitations.items.find((i) => i.id === id)?.role
+              : undefined
+          }
           onClose={() => setShowInvite(false)}
-          onSent={(email) => {
-            setShowInvite(false);
-            setInviteSent(email);
-            void load(true);
-          }}
+          onDone={invitationIssued}
         />
       ) : null}
     </div>
-  );
-}
-
-function InviteDialog({
-  tenantId,
-  tenantName,
-  roles,
-  onClose,
-  onSent,
-}: {
-  tenantId: string;
-  tenantName: string | undefined;
-  roles: readonly { readonly value: string; readonly label: string; readonly hint: string }[];
-  onClose: () => void;
-  onSent: (email: string) => void;
-}) {
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState(
-    roles.find((r) => r.value === 'vendedor')?.value ?? roles[0]?.value ?? '',
-  );
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const hint = roles.find((r) => r.value === role)?.hint;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (sending) return;
-    setSending(true);
-    setError('');
-    try {
-      const res = await fetch('/api/invitations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), tenantId, role }),
-      });
-      if (!res.ok) {
-        const read = await readJson<{ error?: string }>(res);
-        setError((read.ok ? read.data.error : undefined) ?? 'No pudimos enviar la invitación.');
-        return;
-      }
-      onSent(email.trim());
-    } catch {
-      setError('No pudimos conectar con el servidor. Probá de nuevo.');
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={() => {
-        if (!sending) onClose();
-      }}
-      title="Invitar usuario"
-      description={
-        tenantName
-          ? `Se suma a ${tenantName} y elige su propia contraseña al aceptar.`
-          : 'Elige su propia contraseña al aceptar.'
-      }
-      className="max-w-sm"
-    >
-      <form onSubmit={(e) => void submit(e)} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="inv-email" className="text-xs font-semibold">
-            Correo electrónico
-          </Label>
-          <input
-            id="inv-email"
-            type="email"
-            required
-            autoComplete="off"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="persona@agencia.com"
-            className={inputClass}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="inv-role" className="text-xs font-semibold">
-            Rol
-          </Label>
-          <select
-            id="inv-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            aria-describedby="inv-role-hint"
-            className={selectClass}
-          >
-            {roles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-          <p id="inv-role-hint" className="text-xs text-[var(--color-fg-muted)]">
-            {hint ?? 'No podés invitar con un rol igual o superior al tuyo.'}
-          </p>
-        </div>
-
-        {error ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/5 px-3 py-2 text-xs text-[var(--color-danger)]"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={sending}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={sending || role === ''}>
-            {sending ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
-            {sending ? 'Enviando…' : 'Enviar invitación'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
   );
 }

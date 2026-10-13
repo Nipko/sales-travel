@@ -25,6 +25,7 @@ import type {
   TenantAdapter,
   TenantProviderFactory,
 } from '../provider.types.js';
+import type { ProviderEnvironment } from '../provider-environment.js';
 
 /**
  * Segundo proveedor de vuelos, ANÓNIMO y sólo para tests.
@@ -110,6 +111,8 @@ export interface StubFactoryOptions extends StubAdapterOptions {
   failResolveWith?: Error;
   /** Si `true`, `resolveForTenant` lanza `NotFoundException`: tenant sin credenciales. */
   failResolve?: boolean;
+  /** Entorno que declara la cuenta. Ausente = el factory no dice nada (se lee como `live`). */
+  providerEnvironment?: ProviderEnvironment;
 }
 
 export class StubProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
@@ -146,6 +149,9 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
     return Promise.resolve({
       adapter: this.adapterFor(tenantId),
       credentialSource: this.sourceFor(tenantId),
+      ...(this.opts.providerEnvironment === undefined
+        ? {}
+        : { providerEnvironment: this.opts.providerEnvironment }),
     });
   }
 

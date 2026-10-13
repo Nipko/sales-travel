@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { HttpException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import pg from 'pg';
@@ -55,6 +57,19 @@ async function rejection(p: Promise<unknown>): Promise<string> {
     const http = err as HttpException & { reason?: string };
     if (typeof http.getStatus !== 'function') throw err;
     return `${http.getStatus()}/${http.reason ?? '?'}`;
+  }
+  throw new Error('esperaba un error HTTP');
+}
+
+type HttpRejection = HttpException & { reason?: string; publicDetails?: unknown };
+
+/** El error HTTP con que termina `p` (motivo y detalles incluidos). */
+async function rejected(p: Promise<unknown>): Promise<HttpRejection> {
+  try {
+    await p;
+  } catch (err) {
+    if (typeof (err as HttpException).getStatus !== 'function') throw err;
+    return err as HttpRejection;
   }
   throw new Error('esperaba un error HTTP');
 }
@@ -253,6 +268,33 @@ d('alta sólo por invitación, contra Postgres', () => {
       expect(rows[0]!.payload).toMatchObject({ adminRole: 'tenant_admin', admin: 'invited' });
     });
 
+    it('si el correo no sale: el nodo y la invitación quedan, y la respuesta lo dice', async () => {
+      mailer.sendToTenant.mockResolvedValueOnce(false);
+      const to = email('sin-correo');
+
+      const res = await tenants.create(
+        consAdminB,
+        alta('sin-correo', { parentTenantId: consB, adminEmail: to }),
+      );
+
+      expect(res.admin).toMatchObject({
+        email: to,
+        role: 'tenant_admin',
+        status: 'invited_email_failed',
+      });
+      expect(Object.keys(res.admin!).sort()).toEqual(RESPONSE_KEYS);
+      const pending = await pendingInvitations(res.tenant.id, to);
+      expect(pending).toHaveLength(1);
+      expect(res.admin).toMatchObject({ invitationId: pending[0]!.id });
+      // El fallo queda auditado con el id de la invitación, sin la dirección.
+      const { rows } = await pool.query<{ payload: unknown }>(
+        `SELECT payload FROM domain_events
+          WHERE event_type = 'UserInvitationEmailFailed' AND aggregate_id = $1`,
+        [pending[0]!.id],
+      );
+      expect(rows).toEqual([{ payload: { invitationId: pending[0]!.id, via: 'invite' } }]);
+    });
+
     it('aceptar vincula a quien ya tenía cuenta sin cambiarle la contraseña ni el nombre', async () => {
       const ajeno = email('cons-admin-a');
       const res = await tenants.create(
@@ -291,7 +333,7 @@ d('alta sólo por invitación, contra Postgres', () => {
       });
 
       expect(Object.keys(ajeno).sort()).toEqual(Object.keys(nuevo).sort());
-      expect(Object.keys(nuevo).sort()).toEqual(['expiresAt', 'id']);
+      expect(Object.keys(nuevo).sort()).toEqual(['emailSent', 'expiresAt', 'id']);
       expect(await membershipsOf(subB, email('cons-admin-a'))).toEqual([]);
     });
   });
@@ -386,10 +428,236 @@ d('alta sólo por invitación, contra Postgres', () => {
       expect(await rejection(invitations.resend({ ...base, tenantId: subB }))).toBe(
         '404/INVITATION_NOT_PENDING',
       );
-      await invitations.revoke(agencyAdminB, agencyB, id);
+      await invitations.revoke(agencyAdminB, 'tenant_admin', agencyB, id);
       expect(await rejection(invitations.resend({ ...base, tenantId: agencyB }))).toBe(
         '404/INVITATION_NOT_PENDING',
       );
+    });
+  });
+
+  /** Espera a que el insert de una invitación quede bloqueado por otra transacción (el índice de 0066). */
+  async function insertWaitingOnLock(): Promise<void> {
+    for (let i = 0; i < 200; i++) {
+      const { rows } = await pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+            AND query LIKE 'insert into "user_invitations"%'`,
+      );
+      if (Number(rows[0]!.n) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('el insert de la invitación nunca quedó esperando');
+  }
+
+  describe('revocar', () => {
+    it('exige rango sobre el rol de la invitación y deja un solo UserInvitationRevoked', async () => {
+      const to = email('revocar');
+      const { id } = await invitations.invite({
+        actorUserId: agencyAdminB,
+        tenantId: agencyB,
+        email: to,
+        role: 'admin',
+      });
+
+      // Un admin no revoca la invitación de otro admin.
+      const err = await rejected(invitations.revoke(plainAdminB, 'admin', agencyB, id));
+      expect(`${err.getStatus()}/${err.reason}`).toBe('403/ROLE_NOT_GRANTABLE');
+      expect(await pendingInvitations(agencyB, to)).toHaveLength(1);
+
+      await invitations.revoke(agencyAdminB, 'tenant_admin', agencyB, id);
+      expect(await pendingInvitations(agencyB, to)).toEqual([]);
+      // La segunda vez ya no está pendiente: 404 y sin otro evento.
+      const again = await rejected(invitations.revoke(agencyAdminB, 'tenant_admin', agencyB, id));
+      expect(`${again.getStatus()}/${again.reason}`).toBe('404/INVITATION_NOT_PENDING');
+
+      const { rows } = await pool.query(
+        `SELECT actor_user_id, payload FROM domain_events
+          WHERE event_type = 'UserInvitationRevoked' AND aggregate_id = $1`,
+        [id],
+      );
+      expect(rows).toEqual([
+        { actor_user_id: agencyAdminB, payload: { role: 'admin', cause: 'manual' } },
+      ]);
+    });
+  });
+
+  describe('una sola invitación pendiente por correo y nodo (0066)', () => {
+    it('invitar otra vez al mismo correo es 409 con la pendiente, aunque esté vencida o cambie la mayúscula', async () => {
+      const to = email('doble');
+      const { id } = await invitations.invite({
+        actorUserId: agencyAdminB,
+        tenantId: agencyB,
+        email: to,
+        role: 'vendedor',
+      });
+      await pool.query(
+        `UPDATE user_invitations SET expires_at = now() - interval '1 day' WHERE id = $1`,
+        [id],
+      );
+      mailer.sendToTenant.mockClear();
+
+      const err = await rejected(
+        invitations.invite({
+          actorUserId: agencyAdminB,
+          tenantId: agencyB,
+          email: to.toUpperCase(),
+          role: 'admin',
+        }),
+      );
+
+      expect(`${err.getStatus()}/${err.reason}`).toBe('409/INVITATION_ALREADY_PENDING');
+      expect(err.publicDetails).toEqual({ invitationId: id });
+      expect(await pendingInvitations(agencyB, to)).toHaveLength(1);
+      expect(mailer.sendToTenant).not.toHaveBeenCalled();
+
+      // En otro nodo, el mismo correo sí se invita.
+      await invitations.invite({
+        actorUserId: agencyAdminB,
+        tenantId: subB,
+        email: to,
+        role: 'vendedor',
+      });
+      expect(await pendingInvitations(subB, to)).toHaveLength(1);
+    });
+
+    it('el índice frena la carrera: el insert que esperaba a otro sale como el mismo 409, con la que ganó', async () => {
+      const to = email('carrera');
+      const rival = await pool.connect();
+      let winner: string;
+      try {
+        // Otro pedido ya insertó, sin confirmar: la lectura previa del servicio no lo ve.
+        await rival.query('BEGIN');
+        const { rows } = await rival.query<{ id: string }>(
+          `INSERT INTO user_invitations (tenant_id, email, role, token_hash, invited_by, expires_at)
+           VALUES ($1, $2, 'vendedor', $3, $4, now() + interval '7 days') RETURNING id`,
+          [agencyB, to, `rival-${sfx}`, agencyAdminB],
+        );
+        winner = rows[0]!.id;
+
+        const loser = rejected(
+          invitations.invite({
+            actorUserId: agencyAdminB,
+            tenantId: agencyB,
+            email: to,
+            role: 'vendedor',
+          }),
+        );
+        await insertWaitingOnLock();
+        await rival.query('COMMIT');
+
+        const err = await loser;
+        expect(`${err.getStatus()}/${err.reason}`).toBe('409/INVITATION_ALREADY_PENDING');
+        expect(err.publicDetails).toEqual({ invitationId: winner });
+      } finally {
+        rival.release();
+      }
+
+      expect((await pendingInvitations(agencyB, to)).map((p) => p.id)).toEqual([winner]);
+      // La transacción que perdió no dejó un UserInvited a medias.
+      const { rows: invited } = await pool.query(
+        `SELECT 1 FROM domain_events WHERE event_type = 'UserInvited' AND payload->>'email' = $1`,
+        [to],
+      );
+      expect(invited).toEqual([]);
+    });
+
+    it('la limpieza de 0066 deja la del enlace más reciente y revoca las demás con su rastro', async () => {
+      const to = email('duplicada');
+      const client = await pool.connect();
+      try {
+        // Todo en una transacción que se deshace: sin el índice para poder sembrar duplicadas, la
+        // migración tal cual y lo que deja. Nadie más escribe invitaciones mientras dura.
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL lock_timeout = '10s'`);
+        await client.query('DROP INDEX uq_user_invitations_pending');
+
+        const seed = async (
+          label: string,
+          tenantId: string,
+          address: string,
+          expires: string,
+          created: string,
+          accepted = false,
+        ): Promise<string> => {
+          const { rows } = await client.query<{ id: string }>(
+            `INSERT INTO user_invitations
+               (tenant_id, email, role, token_hash, invited_by, expires_at, created_at, accepted_at)
+             VALUES ($1, $2, 'vendedor', $3, $4, now() + $5::interval, now() + $6::interval,
+                     CASE WHEN $7::boolean THEN now() END)
+             RETURNING id`,
+            [tenantId, address, `dup-${label}-${sfx}`, agencyAdminB, expires, created, accepted],
+          );
+          return rows[0]!.id;
+        };
+        const vencida = await seed('vencida', agencyB, to, '-2 days', '-9 days');
+        // La más vieja por alta, pero reenviada hace un día: su enlace es el último que salió.
+        const reenviada = await seed('reenviada', agencyB, to, '6 days', '-8 days');
+        const nueva = await seed('nueva', agencyB, to, '5 days', '-2 days');
+        const mayuscula = await seed('mayuscula', agencyB, to.toUpperCase(), '1 day', '-1 day');
+        const aceptada = await seed('aceptada', agencyB, to, '3 days', '-3 days', true);
+        const otroNodo = await seed('otro-nodo', subB, to, '4 days', '-4 days');
+
+        await client.query(
+          readFileSync(
+            join(
+              __dirname,
+              '..',
+              '..',
+              '..',
+              '..',
+              'db',
+              'migrations',
+              '0066_invitation_pending_unique.sql',
+            ),
+            'utf8',
+          ),
+        );
+
+        const { rows: state } = await client.query<{ id: string; revoked: boolean }>(
+          `SELECT id, revoked_at IS NOT NULL AS revoked FROM user_invitations WHERE id = ANY($1)`,
+          [[vencida, reenviada, nueva, mayuscula, aceptada, otroNodo]],
+        );
+        const revokedIds = state.filter((r) => r.revoked).map((r) => r.id);
+        expect(revokedIds.sort()).toEqual([vencida, nueva, mayuscula].sort());
+
+        const { rows: events } = await client.query<{
+          aggregate_id: string;
+          tenant_id: string;
+          actor_user_id: string | null;
+          payload: Record<string, unknown>;
+        }>(
+          `SELECT aggregate_id, tenant_id, actor_user_id, payload FROM domain_events
+            WHERE event_type = 'UserInvitationRevoked' AND aggregate_id = ANY($1)`,
+          [[vencida, reenviada, nueva, mayuscula, aceptada, otroNodo]],
+        );
+        expect(events.map((e) => e.aggregate_id).sort()).toEqual(revokedIds.sort());
+        for (const e of events) {
+          expect(e).toMatchObject({
+            tenant_id: agencyB,
+            actor_user_id: null,
+            payload: { cause: 'duplicate_cleanup', role: 'vendedor' },
+          });
+        }
+
+        // El índice volvió y frena una segunda pendiente, también con otra mayúscula.
+        await client.query('SAVEPOINT segunda');
+        const second = await client
+          .query(
+            `INSERT INTO user_invitations (tenant_id, email, role, token_hash, invited_by, expires_at)
+             VALUES ($1, $2, 'vendedor', $3, $4, now() + interval '7 days')`,
+            [agencyB, to.toUpperCase(), `dup-segunda-${sfx}`, agencyAdminB],
+          )
+          .then(
+            () => undefined,
+            (e: unknown) => e as { code?: string; constraint?: string },
+          );
+        expect(second).toMatchObject({ code: '23505', constraint: 'uq_user_invitations_pending' });
+        await client.query('ROLLBACK TO SAVEPOINT segunda');
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
     });
   });
 });

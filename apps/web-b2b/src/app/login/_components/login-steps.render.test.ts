@@ -64,7 +64,7 @@ describe('CredentialsStep', () => {
     expect(hidden(html, 'intent')).toBe('credentials');
     expect(hidden(html, 'next')).toBe('/reservas/9');
     expect(html).toContain('href="/olvide-password"');
-    expect(html).toMatch(/<h1[^>]*>Ingresá a tu cuenta<\/h1>/);
+    expect(html).toMatch(/<h1[^>]*>Ingresa a tu cuenta<\/h1>/);
   });
 
   it('Tab desde el email va a la contraseña: el link de olvido queda después del botón', () => {
@@ -152,7 +152,7 @@ describe('CredentialsStep', () => {
   it('muestra el motivo del cierre sólo en la primera pantalla', () => {
     const first = credentials({}, { motivo: 'otro-dispositivo' });
     expect(first).toContain('Tu sesión se abrió en otro dispositivo.');
-    expect(first).toContain('Si no fuiste vos, cambiá tu contraseña');
+    expect(first).toContain('Si no fuiste tú, cambia tu contraseña');
     const retry = credentials(
       { attempt: 1, email: EMAIL, error: { kind: 'invalid', message: LOGIN_MESSAGES.invalid } },
       { motivo: 'otro-dispositivo' },
@@ -357,7 +357,7 @@ describe('SeatsFullStep', () => {
 
   it('quien no administra el cupo ve a quién pedírselo, sin lista', () => {
     const html = seats({ seats: { ...SEATS, release: null } });
-    expect(html).toContain('Pedile a un administrador de Viajes Andinos que libere uno');
+    expect(html).toContain('Pídele a un administrador de Viajes Andinos que libere uno');
     expect(html).toContain('Volver a intentar');
     expect(html).not.toContain(RELEASE_BUTTON_LABEL);
     expect(html).not.toContain('Ana Pérez');
@@ -443,7 +443,7 @@ describe('LoginPage', () => {
       expect(html).not.toContain(ustedeo);
     }
     expect(html).not.toContain('cursor-pointer');
-    expect(html).toContain('¿No podés ingresar? Pedile ayuda al administrador de tu agencia.');
+    expect(html).toContain('¿No puedes ingresar? Pídele ayuda al administrador de tu agencia.');
     // Un solo h1 por pantalla: el del paso.
     expect(html.match(/<h1\b/g)).toHaveLength(1);
   });

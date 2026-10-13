@@ -237,7 +237,7 @@ export class HotelSearchContextExpiredError extends ConflictException {
 
   constructor() {
     super(
-      'La búsqueda de esta tarifa ya no está vigente: los proveedores sostienen sus tarifas por tiempo limitado. Volvé a buscar para reservar.',
+      'La búsqueda de esta tarifa ya no está vigente: los proveedores sostienen sus tarifas por tiempo limitado. Vuelve a buscar para reservar.',
     );
     this.name = 'HotelSearchContextExpiredError';
   }
@@ -252,7 +252,7 @@ export class HotelOfferNotInSearchError extends BadRequestException {
 
   constructor() {
     super(
-      'La tarifa elegida no pertenece a ninguna búsqueda vigente de esta agencia. Volvé a buscar y elegila de los resultados.',
+      'La tarifa elegida no pertenece a ninguna búsqueda vigente de esta agencia. Vuelve a buscar y elígela de los resultados.',
     );
     this.name = 'HotelOfferNotInSearchError';
   }
@@ -267,7 +267,7 @@ export class HotelOfferUnavailableError extends ConflictException {
 
   constructor() {
     super(
-      'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda o volvé a buscar para ver precios actualizados.',
+      'Esta tarifa ya no está disponible. Elige otra de la misma búsqueda o vuelve a buscar para ver precios actualizados.',
     );
     this.name = 'HotelOfferUnavailableError';
   }
@@ -282,7 +282,7 @@ export class HotelSearchNationalityMissingError extends ConflictException {
 
   constructor() {
     super(
-      'Esta tarifa depende de la nacionalidad del pasajero principal y la búsqueda se hizo sin ella. Volvé a buscar indicándola para reservar.',
+      'Esta tarifa depende de la nacionalidad del pasajero principal y la búsqueda se hizo sin ella. Vuelve a buscar indicándola para reservar.',
     );
     this.name = 'HotelSearchNationalityMissingError';
   }
@@ -297,7 +297,7 @@ export class HotelSearchAccountChangedError extends ConflictException {
 
   constructor() {
     super(
-      'La cuenta del proveedor cambió desde la búsqueda (se renovó la credencial o cambió la cuenta que usa esta agencia). Volvé a buscar para reservar con la cuenta vigente.',
+      'La cuenta del proveedor cambió desde la búsqueda (se renovó la credencial o cambió la cuenta que usa esta agencia). Vuelve a buscar para reservar con la cuenta vigente.',
     );
     this.name = 'HotelSearchAccountChangedError';
   }
@@ -312,7 +312,7 @@ export class HotelSearchContextUnavailableError extends ServiceUnavailableExcept
 
   constructor() {
     super(
-      'No pudimos preparar la reserva de las tarifas de este proveedor. Volvé a buscar; si se repite, avisá al administrador.',
+      'No pudimos preparar la reserva de las tarifas de este proveedor. Vuelve a buscar; si se repite, avísale al administrador.',
     );
     this.name = 'HotelSearchContextUnavailableError';
   }

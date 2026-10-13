@@ -16,6 +16,7 @@ import {
   Settings,
   Shield,
   Ticket,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -67,7 +68,7 @@ export const accountNav: NavItem[] = [
 
 /**
  * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
- * se sumen (Usuarios, Actividad, Sistema) se agregan a este mismo arreglo.
+ * se sumen (Actividad, Sistema) se agregan a este mismo arreglo.
  */
 export const superAdminNav: NavItem[] = [
   { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
@@ -83,6 +84,7 @@ export const superAdminNav: NavItem[] = [
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
   { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
+  { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
 ];
 
 /** Roles que ven la sección Administración. */
@@ -94,6 +96,11 @@ const ADMIN_NAV_ROLES: readonly string[] = [
   'agency_admin',
   'admin',
 ];
+
+/** ¿Ve la sección Administración (Mi Red, Mi Agencia, Equipo…) con este rol en la agencia activa? */
+export function seesAdministration(role: string | undefined): boolean {
+  return ADMIN_NAV_ROLES.includes(role ?? '');
+}
 
 /** Mis Reservas: las reservas del tenant activo. */
 const MY_ORDERS_HREF = '/reservas';
@@ -122,7 +129,7 @@ export function navSections(role: string | undefined, viewer: Viewer): NavSectio
       ? [{ label: 'Plataforma', items: superAdminNav }]
       : [{ label: 'Gestión', items: managementNav }]),
   ];
-  if (ADMIN_NAV_ROLES.includes(role ?? '')) {
+  if (seesAdministration(role)) {
     sections.push({ label: 'Administración', items: adminNav });
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.

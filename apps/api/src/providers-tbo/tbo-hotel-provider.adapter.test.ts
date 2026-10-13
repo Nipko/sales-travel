@@ -36,6 +36,7 @@ import { LanguageCodeSchema } from '@sales-travel/validation';
 import { describe, expect, it, vi } from 'vitest';
 import {
   HOTEL_CONTENT_LANGUAGES,
+  hasAccountEnvironment,
   supportsHotelBookingByClientReference,
   supportsHotelBookingContext,
   supportsHotelBookingsByDate,
@@ -553,6 +554,15 @@ describe('TboHotelProviderAdapter', () => {
     expect(adapter.searchAccount).toEqual(CUENTA);
     expect(supportsHotelSearchContext(adapter)).toBe(true);
     expect(supportsHotelRatesContext(adapter)).toBe(true);
+  });
+
+  it('dice contra qué entorno sale su cuenta, para que la web avise si es de prueba', () => {
+    const prueba = new TboHotelProviderAdapter(acl(), CUENTA, 'test');
+    const real = new TboHotelProviderAdapter(acl(), CUENTA, 'live');
+
+    expect(prueba.accountEnvironment).toBe('test');
+    expect(real.accountEnvironment).toBe('live');
+    expect(hasAccountEnvironment(prueba)).toBe(true);
   });
 
   it('volcado a un log no arrastra el ACL', () => {

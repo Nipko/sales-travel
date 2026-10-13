@@ -101,7 +101,7 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
 
   it('trae el aviso de cartera del API; sin él, la tarifa se lee igual y decide el Book', () => {
     const message =
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.';
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.';
     expect(
       parsePrebook(
         apiResponse({
@@ -133,6 +133,19 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
         funding: { status: 'own-account' },
       }),
     ).toEqual({ ok: true });
+  });
+
+  it('trae el entorno de la cuenta; uno desconocido o ausente no avisa nada', () => {
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'test' }))?.providerEnvironment).toBe(
+      'test',
+    );
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'live' }))?.providerEnvironment).toBe(
+      'live',
+    );
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'sandbox' }))).not.toHaveProperty(
+      'providerEnvironment',
+    );
+    expect(parsePrebook(apiResponse())).not.toHaveProperty('providerEnvironment');
   });
 
   it('sin `prebookRef` válido, sin precio o con otro vocabulario no hay tarifa que aceptar', () => {

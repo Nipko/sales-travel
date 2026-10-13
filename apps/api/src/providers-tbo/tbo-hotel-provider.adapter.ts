@@ -49,6 +49,8 @@ import {
   type TboStaticContentClient,
 } from '@sales-travel/tbo-hotels';
 import type {
+  HotelAccountEnvironment,
+  HotelAccountEnvironmentPort,
   HotelAccountIssuePort,
   HotelBookContextRequest,
   HotelBookFailure,
@@ -265,6 +267,7 @@ export class TboHotelProviderAdapter
     HotelPrebookContextPort,
     HotelBookingContextPort,
     HotelAccountIssuePort,
+    HotelAccountEnvironmentPort,
     HotelContentPort,
     HotelContentBatchPort,
     HotelCityCatalogPort
@@ -302,6 +305,14 @@ export class TboHotelProviderAdapter
   /** Con qué cuenta de la bóveda sale este adapter. Una copia: nadie la cambia desde afuera. */
   get searchAccount(): HotelProviderAccountFingerprint {
     return { ...this.#account };
+  }
+
+  /**
+   * El entorno de la cuenta (`config.environment`, RF-37): con `test` la web avisa que las
+   * reservas no son habitaciones de verdad. No es un secreto.
+   */
+  get accountEnvironment(): HotelAccountEnvironment {
+    return this.#environment;
   }
 
   searchAvailability(criteria: HotelSearchCriteria, ctx: SearchContext): Promise<HotelOffer[]> {

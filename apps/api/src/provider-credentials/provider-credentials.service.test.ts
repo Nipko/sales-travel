@@ -101,7 +101,10 @@ describe('listSafe — `config` no sale verbatim', () => {
     ]);
 
     const [cuenta] = await service.listSafe('t1');
-    expect(cuenta?.config).toEqual({ environment: 'cert', mock: true, agencyIata: '12345678' });
+    expect(cuenta?.config).toEqual({ environment: 'cert', agencyIata: '12345678' });
+    // `mock` dejó de estar en la lista blanca de Sabre con el modo simulado: se nombra como clave
+    // no mostrada en vez de devolverse como si todavía significara algo.
+    expect(cuenta?.redactedConfigKeys).toEqual(['mock']);
   });
 
   it('la lista blanca devuelve las opciones de shop Sabre y no las marca como pérdidas', async () => {
@@ -113,6 +116,7 @@ describe('listSafe — `config` no sale verbatim', () => {
           brandLadderRounds: '2',
           upsellLimit: '3',
           multipleFares: 'off',
+          ndcContent: 'false',
         },
         credentials: { epr: EPR, password: PASSWORD, homePcc: 'AB1C' },
       },
@@ -124,6 +128,8 @@ describe('listSafe — `config` no sale verbatim', () => {
       brandLadderRounds: '2',
       upsellLimit: '3',
       multipleFares: 'off',
+      // Sin estar en la lista blanca, el panel no podría precargarlo al editar y lo perdería.
+      ndcContent: 'false',
     });
     expect(cuenta?.redactedConfigKeys).toEqual([]);
     expect(cuenta?.configVerified).toBe(true);
@@ -200,12 +206,16 @@ describe('listSafe — completitud: nombres de campo, nunca valores', () => {
     expect((await service.listSafe('t1'))[0]?.readiness).toBe('complete');
   });
 
-  it('una cuenta declarada mock no se hace pasar por completa', async () => {
+  it('una cuenta de Sabre declarada mock es lo que es: incompleta, no simulada', async () => {
+    // El modo simulado de Sabre ya no existe —el factory no construye el ACL sin credenciales—, así
+    // que `simulated` prometía fixtures que nadie sirve. Lo cierto es que le faltan las tres.
     const service = servicioCon([
       { provider_code: 'sabre', config: { mock: true }, credentials: { placeholder: 'x' } },
     ]);
 
-    expect((await service.listSafe('t1'))[0]?.readiness).toBe('simulated');
+    const [cuenta] = await service.listSafe('t1');
+    expect(cuenta?.readiness).toBe('incomplete');
+    expect(cuenta?.missingRequiredFields).toEqual(['epr', 'password', 'homePcc']);
   });
 
   it('un proveedor sin reglas declaradas responde `unknown`, no `complete`', async () => {

@@ -403,7 +403,12 @@ d('TBO en la búsqueda de /hotels, contra Postgres sembrado', () => {
       location: { lat: 4.6781, lng: -74.0455 },
     });
     expect(hotelDe(res, T2)?.providerHotels).toBeUndefined();
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: 2 });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: 2,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toEqual({ code: DESPEGAR, status: 'ok', count: 3 });
   });
 

@@ -63,7 +63,7 @@ export function providerAccountSaveError(
             : `No se guardó: la cuenta tiene ${active} ${active === 1 ? 'reserva activa' : 'reservas activas'}`,
         body:
           message ??
-          'Mientras haya reservas activas hechas con esta cuenta no se puede desactivar, cambiar de usuario ni dejar de heredar. Podés actualizar la contraseña del mismo usuario.',
+          'Mientras haya reservas activas hechas con esta cuenta no se puede desactivar, cambiar de usuario ni dejar de heredar. Puedes actualizar la contraseña del mismo usuario.',
       },
     };
   }

@@ -94,10 +94,14 @@ export interface ProviderSpec {
  *
  * Los límites de 3–4 de los PCC son los de `SabreConfigSchema`: fuera de rango, `parseSabreConfig`
  * lanza en la primera búsqueda y no al guardar.
+ *
+ * Sin `mockConfigKey` y sin `mock` en la lista blanca: el modo simulado de Sabre ya no existe —el
+ * factory no construye el ACL sin `epr`, `password` y `homePcc`, declare lo que declare `config`—.
+ * Dejar la clave aquí eximía de los obligatorios a una cuenta que luego nunca autenticaba y la
+ * listaba como `simulated`, prometiendo fixtures que nadie sirve.
  */
 const SABRE: ProviderSpec = {
   label: 'Sabre',
-  mockConfigKey: 'mock',
   fields: [
     {
       key: 'epr',
@@ -172,8 +176,9 @@ const SABRE: ProviderSpec = {
     'brandLadderRounds',
     'upsellLimit',
     'multipleFares',
+    'ndcContent',
     'allowCardBinPricing',
-    'mock',
+    'maxConcurrentRequests',
   ],
 };
 
@@ -405,7 +410,7 @@ function fieldIssues(
     if (rule.origin === 'encrypted-only' && rule.key in config) {
       issues.push({
         path: ['config', rule.key],
-        message: `\`${rule.key}\` no puede viajar en \`config\`: config se guarda sin cifrar y se devuelve por el listado de cuentas. Mandalo dentro de \`credentials\`, que sí va cifrado.`,
+        message: `\`${rule.key}\` no puede viajar en \`config\`: config se guarda sin cifrar y se devuelve por el listado de cuentas. Mándalo dentro de \`credentials\`, que sí va cifrado.`,
       });
     }
 

@@ -316,6 +316,8 @@ interface OpcionesBanco {
   cartera?: Cartera;
   /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
   noReembolsablesBloqueadas?: boolean;
+  /** El entorno que declara la cuenta del stub, como el de TBO. */
+  entorno?: 'test' | 'live';
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -324,6 +326,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
     callPolicy: opts.callPolicy ?? 'always',
     searchProfile: { requiresGuestNationality: opts.requiresGuestNationality ?? true },
     circuit: { accountRef: 'huella-de-la-cuenta' },
+    ...(opts.entorno === undefined ? {} : { accountEnvironment: opts.entorno }),
   });
   const puerto = conPrebook(stub.adapterFor(AGENCIA));
   const cache = opts.cache ?? new MemoryCacheAdapter();
@@ -567,7 +570,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       currency: 'USD',
       reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
       message:
-        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 
@@ -599,7 +602,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       status: 'blocked',
       currency: 'USD',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 
@@ -1001,6 +1004,32 @@ describe('sin snapshot no hay tarifa que aceptar', () => {
   });
 });
 
+describe('entorno de la cuenta: el checkout avisa una reserva de prueba', () => {
+  it('con una cuenta de prueba, la respuesta lo dice en `providerEnvironment`', async () => {
+    const b = await bancoConBusqueda({ entorno: 'test' });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.providerEnvironment).toBe('test');
+  });
+
+  it('con una cuenta de producción también: la web sólo avisa en `test`', async () => {
+    const b = await bancoConBusqueda({ entorno: 'live' });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.providerEnvironment).toBe('live');
+  });
+
+  it('un proveedor que no declara entorno no lo inventa', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('providerEnvironment');
+  });
+});
+
 // ───────────────────────── TBO de punta a punta ─────────────────────────
 
 const TBO = 'tbo-hotels';
@@ -1137,6 +1166,16 @@ function prebooksDe(fetch: Mock<TboFetch>): Record<string, unknown>[] {
 }
 
 describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
+  it('la cuenta del consolidador es la de prueba: el detalle y el PreBook lo dicen', async () => {
+    const b = bancoTbo();
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(oferta.accountEnvironment).toBe('test');
+    expect(res.providerEnvironment).toBe('test');
+  });
+
   it('RF-15 CA-1: por el cable sale exactamente el PreBook de Postman: `BookingCode` y `PaymentMode: "Limit"`', async () => {
     const b = bancoTbo();
     const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
@@ -1232,7 +1271,7 @@ describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
 
     expect((err as TboApiError).kind).toBe('INSUFFICIENT_BALANCE');
     expect(humanizeTboError(err, { credentialSource: 'inherited' })).toBe(
-      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avisale al consolidador.',
+      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avísale al consolidador.',
     );
     expect(b.emit.mock.calls).toEqual([
       [

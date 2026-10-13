@@ -86,12 +86,12 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
       ok: false,
       error: {
         status: 409,
-        message: 'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda.',
+        message: 'Esta tarifa ya no está disponible. Elige otra de la misma búsqueda.',
       },
     });
     expect(await prebookRateAction(REFERENCE)).toEqual({
       ok: false,
-      error: 'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda.',
+      error: 'Esta tarifa ya no está disponible. Elige otra de la misma búsqueda.',
       retryable: false,
     });
   });
