@@ -310,6 +310,11 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/overview',
   ),
   ...noVenta(
+    'Agencias en números: puestos, ventas y pendientes de cada nodo, y el impacto de suspender uno (sólo lectura)',
+    'GET /admin/tenants/stats',
+    'GET /admin/tenants/:id/impact',
+  ),
+  ...noVenta(
     'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',
     'GET /admin/orders',
     'GET /admin/orders/:id',
