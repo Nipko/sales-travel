@@ -81,6 +81,14 @@ describe('FlightOrderTracking', () => {
     expect(html).toContain('Todavía no tenemos los números de tiquete.');
   });
 
+  it('con una lectura guardada que no los trajo, no manda a consultar otra vez', () => {
+    const vacio = { airlineLocators: [], documents: [], ticketingDeadline: null };
+    const html = pintar(orden({ status: 'ticketed', flightTracking: vacio }));
+    expect(html).toContain('La aerolínea no informó su localizador en la última consulta.');
+    expect(html).toContain('La última consulta no trajo números de tiquete.');
+    expect(html).not.toContain('Consultar estado');
+  });
+
   it('una fallida sin nada guardado no pinta nada', () => {
     expect(pintar(orden({ status: 'failed', flightTracking: null }))).toBe('');
   });

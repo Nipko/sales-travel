@@ -234,3 +234,46 @@ export function retrieveSummary(tracking: FlightTracking | null): string {
   ];
   return `Reserva consultada: ${parts.join(' y ')} al día.`;
 }
+
+/**
+ * ¿La lectura dice que el proveedor tiene la reserva cancelada? `status` viene en el vocabulario de
+ * cada proveedor (`CANCELLED`, `cancelled`). Sólo cuenta el estado exacto: uno a medio camino
+ * («cancelación pendiente») no es una reserva caída.
+ */
+export function providerReportsCancelled(status: unknown): boolean {
+  if (typeof status !== 'string') return false;
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'cancelled' || normalized === 'canceled';
+}
+
+/** El aviso de «Consultar estado» y si tiene que llamar la atención. */
+export interface RetrieveNotice {
+  readonly message: string;
+  /** `true`: el proveedor ya no tiene viva una reserva que aquí sigue activa. */
+  readonly alert: boolean;
+}
+
+/**
+ * El aviso completo de «Consultar estado». Si el proveedor tiene la reserva cancelada y aquí sigue
+ * viva, eso va primero y como alerta: es lo que pasa cuando la aerolínea la cae por plazo de
+ * emisión, y el vendedor no se puede enterar al cobrar o emitir. Sin eso, cuenta lo guardado.
+ */
+export function retrieveNotice(
+  tracking: FlightTracking | null,
+  providerStatus: unknown,
+  orderStatus: string,
+): RetrieveNotice {
+  if (!providerReportsCancelled(providerStatus)) {
+    return { message: retrieveSummary(tracking), alert: false };
+  }
+  if (orderStatus === 'cancelled') {
+    return {
+      message: 'Reserva consultada: también figura cancelada en el proveedor.',
+      alert: false,
+    };
+  }
+  return {
+    message: 'La reserva figura cancelada en el proveedor. Revísala antes de cobrar o emitir.',
+    alert: true,
+  };
+}

@@ -52,7 +52,7 @@ import {
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
-import { parseFlightTracking, retrieveSummary } from './flight-order-view';
+import { parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
@@ -316,19 +316,26 @@ export default function ReservasPage() {
       const res = await fetch(`/api/orders/${order.id}/retrieve`, { method: 'POST' });
       const data = (await res.json()) as {
         found?: boolean;
+        status?: unknown;
         flightTracking?: unknown;
         error?: string;
       };
       if (data.found) {
         // Lo que la consulta trajo queda en la fila (localizadores, tiquetes y plazo), no en un
-        // aviso que se pierde al cerrarlo.
+        // aviso que se pierde al cerrarlo. `null` es "no se pudo leer lo guardado": la fila se
+        // queda con lo que ya mostraba en vez de vaciarse.
         if (data.flightTracking === undefined) void loadOrders(false);
-        else applyFlightTracking(order.id, data.flightTracking);
+        else if (data.flightTracking !== null) applyFlightTracking(order.id, data.flightTracking);
+        const notice = retrieveNotice(
+          parseFlightTracking(data.flightTracking),
+          data.status,
+          order.status,
+        );
         setActionResult({
           orderId: order.id,
           type: 'retrieve',
-          success: true,
-          message: retrieveSummary(parseFlightTracking(data.flightTracking)),
+          success: !notice.alert,
+          message: notice.message,
         });
       } else {
         setActionResult({

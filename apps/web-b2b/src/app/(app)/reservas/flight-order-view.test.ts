@@ -10,6 +10,8 @@ import {
   locatorChipLabel,
   orderTicketingDeadline,
   parseFlightTracking,
+  providerReportsCancelled,
+  retrieveNotice,
   retrieveSummary,
 } from './flight-order-view';
 
@@ -219,5 +221,45 @@ describe('retrieveSummary — el aviso de «Consultar estado»', () => {
       'Reserva consultada. La aerolínea todavía no informó localizador ni tiquetes.',
     );
     expect(retrieveSummary(null)).toBe('Reserva consultada en el proveedor.');
+  });
+});
+
+describe('retrieveNotice — una reserva que el proveedor ya canceló no pasa como «al día»', () => {
+  it('sólo el estado cancelado exacto, en el vocabulario de cada proveedor', () => {
+    expect(providerReportsCancelled('CANCELLED')).toBe(true);
+    expect(providerReportsCancelled('cancelled')).toBe(true);
+    expect(providerReportsCancelled(' Canceled ')).toBe(true);
+    expect(providerReportsCancelled('CANCEL_PENDING')).toBe(false);
+    expect(providerReportsCancelled('ACTIVE')).toBe(false);
+    expect(providerReportsCancelled(undefined)).toBe(false);
+    expect(providerReportsCancelled(7)).toBe(false);
+  });
+
+  it('cancelada en el proveedor y viva aquí: alerta, antes que los conteos', () => {
+    const notice = retrieveNotice(parseFlightTracking(TRACKING), 'CANCELLED', 'confirmed');
+    expect(notice).toEqual({
+      message: 'La reserva figura cancelada en el proveedor. Revísala antes de cobrar o emitir.',
+      alert: true,
+    });
+    expect(retrieveNotice(null, 'cancelled', 'ticketed').alert).toBe(true);
+  });
+
+  it('cancelada en los dos lados no es alerta', () => {
+    expect(retrieveNotice(parseFlightTracking(TRACKING), 'CANCELLED', 'cancelled')).toEqual({
+      message: 'Reserva consultada: también figura cancelada en el proveedor.',
+      alert: false,
+    });
+  });
+
+  it('viva en el proveedor: el aviso de siempre, con lo guardado', () => {
+    const tracking = parseFlightTracking(TRACKING);
+    expect(retrieveNotice(tracking, 'ACTIVE', 'confirmed')).toEqual({
+      message: retrieveSummary(tracking),
+      alert: false,
+    });
+    expect(retrieveNotice(null, undefined, 'confirmed')).toEqual({
+      message: 'Reserva consultada en el proveedor.',
+      alert: false,
+    });
   });
 });

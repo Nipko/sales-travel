@@ -117,9 +117,15 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
                 Con este código el pasajero hace el check-in en la web de la aerolínea.
               </p>
             </>
-          ) : (
+          ) : tracking === null ? (
             <p className="text-xs text-[var(--color-fg-muted)]">
               La aerolínea todavía no informó su localizador. Usa «Consultar estado» para traerlo.
+            </p>
+          ) : (
+            // Ya hubo una lectura guardada y no trajo ninguno: volver a consultar no lo arregla
+            // (una aerolínea que vende directo no siempre lo da aparte del código de la reserva).
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              La aerolínea no informó su localizador en la última consulta.
             </p>
           )}
         </section>
@@ -160,9 +166,13 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
                 );
               })}
             </ul>
-          ) : (
+          ) : tracking === null ? (
             <p className="text-xs text-[var(--color-fg-muted)]">
               Todavía no tenemos los números de tiquete. Usa «Consultar estado» para traerlos.
+            </p>
+          ) : (
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              La última consulta no trajo números de tiquete.
             </p>
           )}
         </section>
