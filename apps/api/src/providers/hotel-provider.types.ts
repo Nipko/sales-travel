@@ -29,6 +29,7 @@ import type {
 } from '@sales-travel/domain';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
 import type {
+  CredentialSource,
   ProviderErrorContext,
   ResolvedProvider,
   SkippedProvider,
@@ -596,6 +597,22 @@ export type HotelAccountEnvironment = 'test' | 'live';
 export interface HotelAccountEnvironmentPort {
   readonly accountEnvironment: HotelAccountEnvironment;
 }
+
+/**
+ * Por qué un tenant no tiene una cuenta utilizable de un proveedor. Las tres se arreglan distinto:
+ * cargar o heredar una cuenta, completar la que hay, o quitar la que el proveedor no admite.
+ */
+export type HotelProviderAccountProblem = 'no-credentials' | 'incomplete' | 'not-allowed';
+
+/** La cuenta con que saldría un proveedor para un tenant, sin haberlo llamado. */
+export type HotelProviderAccountStatus =
+  | {
+      readonly status: 'ok';
+      readonly source: CredentialSource;
+      /** Ausente si el adapter no declara entorno ({@link hasAccountEnvironment}). */
+      readonly environment?: HotelAccountEnvironment;
+    }
+  | { readonly status: HotelProviderAccountProblem };
 
 // ───────────────────────── Contenido de un hotel bajo demanda (PR-3.6) ─────────────────────────
 

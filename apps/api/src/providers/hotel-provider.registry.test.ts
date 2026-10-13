@@ -504,6 +504,76 @@ describe('HotelProviderRegistry', () => {
     });
   });
 
+  describe('accountStatusOf (diagnóstico de la plataforma)', () => {
+    it('con cuenta: de dónde sale y su entorno, sin consultar la habilitación ni llamar al proveedor', async () => {
+      const alfa = new StubHotelProviderFactory({
+        code: 'alfa-hotels',
+        callPolicy: 'opt-in',
+        credentialSource: 'inherited',
+        accountEnvironment: 'test',
+      });
+      const beta = new StubHotelProviderFactory({ code: 'beta-hotels', credentialSource: 'own' });
+      const { port, decisionFor } = flags(false);
+      const r = registry([alfa, beta], port);
+
+      expect(await r.accountStatusOf(TENANT, 'alfa-hotels')).toEqual({
+        status: 'ok',
+        source: 'inherited',
+        environment: 'test',
+      });
+      // Sin entorno declarado, no se inventa uno.
+      expect(await r.accountStatusOf(TENANT, 'beta-hotels')).toEqual({
+        status: 'ok',
+        source: 'own',
+      });
+      expect(decisionFor).not.toHaveBeenCalled();
+      expect(alfa.adapterFor(TENANT).searchAvailability).not.toHaveBeenCalled();
+    });
+
+    it('distingue la cuenta ausente, la incompleta y la que el proveedor no admite', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({ code: 'sin-hotels', failResolve: true }),
+        new StubHotelProviderFactory({
+          code: 'media-hotels',
+          failResolveWith: new ProviderAccountIncompleteError('media-hotels', ['password']),
+        }),
+        new StubHotelProviderFactory({
+          code: 'ajena-hotels',
+          failResolveWith: new ProviderAccountNotAllowedError(
+            'ajena-hotels',
+            'Sólo la del consolidador.',
+          ),
+        }),
+      ]);
+
+      expect(await r.accountStatusOf(TENANT, 'sin-hotels')).toEqual({ status: 'no-credentials' });
+      expect(await r.accountStatusOf(TENANT, 'media-hotels')).toEqual({ status: 'incomplete' });
+      expect(await r.accountStatusOf(TENANT, 'ajena-hotels')).toEqual({ status: 'not-allowed' });
+    });
+
+    it('la cuenta de la plataforma sin fallback habilitado cuenta como sin cuenta', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({ code: 'alfa-hotels', credentialSource: 'env' }),
+      ]);
+
+      expect(await r.accountStatusOf(TENANT, 'alfa-hotels')).toEqual({ status: 'no-credentials' });
+    });
+
+    it('el proveedor desconocido es 400 y un fallo real de la bóveda se propaga', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({
+          code: 'alfa-hotels',
+          failResolveWith: new Error('bóveda caída'),
+        }),
+      ]);
+
+      await expect(r.accountStatusOf(TENANT, 'no-existe')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+      await expect(r.accountStatusOf(TENANT, 'alfa-hotels')).rejects.toThrow('bóveda caída');
+    });
+  });
+
   describe('byCodeForSale', () => {
     it("'opt-in' con el flag apagado es 400 sin tocar la bóveda: nombrarlo no lo enciende", async () => {
       const stub = new StubHotelProviderFactory({ code: 'alfa-hotels', callPolicy: 'opt-in' });

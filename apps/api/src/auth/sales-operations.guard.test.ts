@@ -196,6 +196,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /provider-payloads/orders/:orderId',
   ),
   ...noVenta(
+    'diagnóstico de la plataforma: qué le falta a cada sucursal para probar una reserva de hotel, sin precio',
+    'GET /admin/hotels/readiness',
+  ),
+  ...noVenta(
     'reglas de precio y su simulador: configuración, no venta',
     'GET /pricing/rules',
     'POST /pricing/rules',
