@@ -46,7 +46,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
 | Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
-| Avisarle por correo cada cambio de seguridad hecho por un admin                | Automático                                | —                                                                                         | Pendiente (USR-12)                                                        |
+| Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | Pendiente (USR-13; founder D1 = C)                                        |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
@@ -733,3 +733,90 @@ todas.
 - Web: `lib/platform-invitations.test.ts` (lectura, consulta reconstruida, frases, la lista después
   de cada acción, las llamadas y la ruta del panel) y `platform-invitations.render.test.ts` (filas,
   vencida, en espera, error, estados, filtros, las pestañas sin barra), todo en tú.
+
+## Avisos por correo de cada cambio de seguridad (USR-12)
+
+Antes, si un admin le restablecía el 2FA, le cerraba las sesiones, le cambiaba el rol o le suspendía
+el acceso, la persona se enteraba al próximo ingreso, o nunca. Ahora le llega un aviso a su propio
+buzón (NIST 800-63B-4, OWASP), también cuando cambia su propia contraseña: si no lo esperaba, avisa.
+Sin cambios en la base ni en el panel.
+
+### Qué avisos hay
+
+| Aviso                                             | Cuándo                                                              | Asunto                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `mfa_reset`                                       | Restablecer su 2FA                                                  | Restablecimos tu verificación en dos pasos · PlaneTour     |
+| `sessions_revoked`                                | Cerrar todas sus sesiones, si tenía alguna abierta                  | Cerramos tus sesiones abiertas · PlaneTour                 |
+| `session_revoked`                                 | Cerrar una sesión desde la ficha                                    | Cerramos una de tus sesiones · PlaneTour                   |
+| `unlocked`                                        | Desbloquear, si había un bloqueo vigente                            | Desbloqueamos tu cuenta · PlaneTour                        |
+| `role_changed`                                    | Cambiar su rol en un nodo, si cambió                                | Tu rol en {nodo} cambió · PlaneTour                        |
+| `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió                | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
+| `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió    | Tu cuenta de PlaneTour fue suspendida / reactivada         |
+| `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta   | Tu contraseña cambió · PlaneTour                           |
+| `membership_removed`                              | Quitarla de un nodo: la plantilla está, la llamada llega con USR-11 | Ya no formas parte de {nodo} · PlaneTour                   |
+
+- Enviarle el enlace y forzar el cambio de contraseña no suman un aviso: el correo del enlace ya lo
+  es. Liberar un puesto (Equipo → Puestos) tampoco avisa: es operativo, de todos los días, y el panel
+  ya le dice "Un administrador liberó tu puesto".
+- "Si cambió": repetir un cambio que ya estaba hecho (reactivar a alguien activo, darle el rol que ya
+  tenía, cerrar sesiones a quien no tenía ninguna) queda en la auditoría como siempre pero no avisa
+  de algo que no pasó.
+
+### API
+
+- `SecurityNoticeService` (`apps/api/src/mail/security-notice.service.ts`, exportado por
+  `MailerModule`, global): `notify(kind, { userId, tenantId, nodeName?, role? })`. Lo llaman
+  `MemberSupportService` (`resetMfa`, `revokeSessions`, `unlock`), `MemberDetailService.revokeSession`,
+  `AdminController` (`changeRole`, `setMembershipStatus`, `setUserStatus`) y `PasswordResetService`
+  (`reset`, `change`), siempre después del commit: un aviso de algo que se deshizo sería falso. Si la
+  transacción falla, no hay aviso.
+- La respuesta al admin no lo espera: el envío queda en `InflightWorkRegistry` (`security-notice`)
+  para que un apagado ordenado lo deje salir. `send()` es el envío en sí: devuelve si salió y nunca
+  lanza. Si no sale, el log dice el tipo y el id de la persona, nunca su correo ni el error (el de la
+  base o el del SMTP puede citarlo).
+- Por qué correo sale: el del nodo de la ruta (propio o heredado), que el aviso nombra ("Un
+  administrador de {nodo}…"). Sin nodo de por medio (`tenantId: null`: su contraseña, su cuenta en
+  toda la plataforma), el de su membership activa más antigua o el del sistema, sin nombrar ningún
+  nodo. Esa membership se lee con su id en el contexto (`mail/mail-node.ts`, el mismo de "Olvidé mi
+  contraseña", que antes era privado de `PasswordResetService`). A una cuenta suspendida también le
+  llega: es a quien más le importa.
+- `PATCH /admin/users/status` lee el estado anterior de la cuenta con la fila tomada
+  (`FOR NO KEY UPDATE`): una cuenta que no existe es 404 antes del UPDATE. `PATCH
+/admin/memberships/status` compara con el estado que ya leía de la membership destino, y
+  `PATCH /admin/memberships/role` con su rol actual.
+- `MailerService` ya no escribe en el log el destinatario de un correo que no tiene por dónde salir,
+  y el error del SMTP va con las direcciones reemplazadas (`redactAddresses`): un correo es un dato
+  personal.
+
+### Plantillas
+
+- `apps/api/src/mail/security-notices.ts`: en tú, "Hola, {nombre}:" (o "Hola:"), lo que pasó y, al
+  final de todas, "Si no lo esperabas, avísale a tu administrador de inmediato.". La contraseña
+  cambiada suma "Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»…"; restablecer el 2FA
+  cuenta que los códigos de recuperación ya no sirven y que los equipos de confianza vuelven a pedir
+  el segundo paso; suspender el acceso a un nodo aclara que los demás no cambian.
+- El rol va con el nombre con que Equipo lo ofrece (_Admin de agencia_, _Manager_, _Vendedor_…) y,
+  si exige 2FA, lo dice.
+- Nunca llevan enlaces ni tokens (el pie lo aclara: "no trae enlaces ni te pide datos"): un aviso de
+  seguridad con un botón es justo lo que imita el phishing. El nombre del nodo y el de la persona van
+  escapados en el HTML y sin caracteres de control en el asunto y el texto (`mail-text.ts`); sin
+  nombre de nodo legible, "la plataforma".
+
+### Tests
+
+- `apps/api/src/mail/security-notices.test.ts`: asunto, saludo, cuerpo y línea final de cada aviso;
+  todos en tú, sin enlaces ni tokens; el rol y su aviso de 2FA; nombres hostiles escapados, sin saltos
+  de línea en el asunto y "la plataforma" sin nombre.
+- `apps/api/src/mail/security-notice.service.test.ts`: por qué nodo sale y a quién, el nombre que ya
+  trae el llamador, la membership leída en el contexto de la persona, el correo del sistema, `false`
+  sin lanzar cuando el correo o la base fallan y el log sin el correo; `notify` no hace esperar y
+  queda registrado para el apagado.
+- `apps/api/src/mail/security-notice.integration.test.ts` (se salta sin `PGHOST`): el nodo de la
+  ruta, la membership activa más antigua como `app_user` (una suspendida no cuenta) y el correo del
+  sistema.
+- Las llamadas, con dobles: `member-support.service.test.ts`, `member-detail.service.test.ts`,
+  `admin.controller.test.ts` y `password-reset.service.test.ts` verifican un aviso por cambio, después
+  del commit, ninguno si no cambió nada, en un 4xx o si la transacción falla, y ninguno extra al
+  enviar o forzar el enlace. Contra Postgres, `platform-users.integration.test.ts` y
+  `membership-revocation.integration.test.ts` (un aviso por cambio real, no por repetirlo).
+- `apps/api/src/voseo-guard.test.ts` recorre también las plantillas de los avisos.
