@@ -562,6 +562,11 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     const voided = outcome.detail.voidedTickets.length;
     const partial =
       outcome.outcome === 'PARTIALLY_CANCELLED' || (!outcome.result.success && voided > 0);
+    // `ALREADY_CANCELLED` es éxito para una cancelación (el estado final es el buscado), pero no
+    // para una anulación: la reserva ya estaba cancelada antes de esta llamada —desde otro canal— y
+    // nada dice qué pasó con sus tiquetes. Darla por anulada liberaría la cartera con tiquetes que
+    // pueden seguir emitidos y cobrados. No se sabe: se concilia.
+    const verified = outcome.outcome !== 'UNVERIFIED' && outcome.outcome !== 'ALREADY_CANCELLED';
     return {
       result: outcome.result,
       audit: {
@@ -579,7 +584,7 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
         ...outcome.shape,
       },
       idempotencyKey: outcome.idempotencyKey,
-      verified: outcome.outcome !== 'UNVERIFIED',
+      verified,
       ...(partial ? { partial: true } : {}),
     };
   }

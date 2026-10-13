@@ -155,7 +155,7 @@ describe('publicTicketCheck', () => {
   });
 });
 
-function vista(statuses: readonly ('ISSUED' | 'VOIDED')[], found = true): OrderView {
+function vista(statuses: readonly ('ISSUED' | 'VOIDED' | 'UNKNOWN')[], found = true): OrderView {
   return {
     found,
     airlineLocators: [],
@@ -208,6 +208,26 @@ describe('settleTicketVoid', () => {
     expect(
       settleTicketVoid({ success: false, verified: true, partial: false, read: undefined }),
     ).toEqual({ outcome: 'UNVERIFIED' });
+  });
+
+  it('rechazada con una relectura que no prueba la reserva intacta: UNVERIFIED, no REJECTED', () => {
+    // REJECTED devuelve la reserva a emitida y deja pedir otra anulación: hay que VER los tiquetes
+    // emitidos. Una lectura sin tiquetes, o con uno que no se sabe leer, no lo prueba.
+    expect(
+      settleTicketVoid({ success: false, verified: true, partial: false, read: vista([]) }),
+    ).toMatchObject({ outcome: 'UNVERIFIED', voidedTickets: 0 });
+    expect(
+      settleTicketVoid({
+        success: false,
+        verified: true,
+        partial: false,
+        read: vista(['ISSUED', 'UNKNOWN']),
+      }),
+    ).toMatchObject({ outcome: 'UNVERIFIED' });
+    const sinDocumentos: OrderView = { found: true, airlineLocators: [], warnings: [] };
+    expect(
+      settleTicketVoid({ success: false, verified: true, partial: false, read: sinDocumentos }),
+    ).toMatchObject({ outcome: 'UNVERIFIED' });
   });
 });
 

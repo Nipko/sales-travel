@@ -60,6 +60,7 @@ d('claims de cancelación vencidos contra Postgres', () => {
     tenantId: string,
     minutos: number,
     status: 'pending' | 'failed' = 'pending',
+    extra: Record<string, unknown> = {},
   ): Promise<{ orderId: string; operationId: string }> {
     numero += 1;
     const order = await pool.query<{ id: string }>(
@@ -77,10 +78,11 @@ d('claims de cancelación vencidos contra Postgres', () => {
       `INSERT INTO order_operations (tenant_id, order_id, type, status, result, actor_user_id,
                                      created_at, updated_at)
        VALUES ($1, $2, 'cancel', $3,
-               '{"status":"pending","outcome":"UNVERIFIED","priorOrderStatus":"confirmed"}'::jsonb,
+               '{"status":"pending","outcome":"UNVERIFIED","priorOrderStatus":"confirmed"}'::jsonb
+                 || $6::jsonb,
                $4, now() - make_interval(mins => $5), now() - make_interval(mins => $5))
        RETURNING id`,
-      [tenantId, orderId, status, usuario, minutos],
+      [tenantId, orderId, status, usuario, minutos, JSON.stringify(extra)],
     );
     return { orderId, operationId: op.rows[0]!.id };
   }
@@ -135,6 +137,18 @@ d('claims de cancelación vencidos contra Postgres', () => {
       priorStatus: 'confirmed',
     });
     expect(await store.listStale(agenciaA, { claimedBefore: corte(), limit: 1 })).toHaveLength(1);
+  });
+
+  it('un claim de anulación de tiquetes se lista con su `ticketOperation` (SAB-09)', async () => {
+    const c = await claim(agenciaA, 50, 'pending', { ticketOperation: 'VOID' });
+
+    const stale = await store.listStale(agenciaA, { claimedBefore: corte(), limit: 50 });
+
+    expect(stale.find((s) => s.operationId === c.operationId)).toMatchObject({
+      ticketOperation: 'VOID',
+      priorStatus: 'confirmed',
+    });
+    await store.expire(agenciaA, c, { claimedBefore: corte(), lastError: 'x', result: {} });
   });
 
   it('lo vence con su CAS, y la escritura que lo acompaña va en la misma transacción', async () => {

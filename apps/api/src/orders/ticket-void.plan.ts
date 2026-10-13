@@ -110,6 +110,9 @@ export interface TicketVoidSettlement {
  * - Rechazada: la documentación del proveedor no garantiza que un rechazo deshaga los tiquetes ya
  *   anulados (docs/sabre/06 §5.2), así que manda la relectura. Con tiquetes anulados es `PARTIAL`;
  *   sin relectura no se puede saber y es `UNVERIFIED`; sólo con la reserva intacta es `REJECTED`.
+ *   «Intacta» se prueba: la relectura muestra los tiquetes y todos siguen emitidos. Una relectura
+ *   sin tiquetes, o con alguno en un estado que no se sabe leer, no prueba nada y es `UNVERIFIED`:
+ *   `REJECTED` devuelve la reserva a emitida y deja pedir otra anulación.
  */
 export function settleTicketVoid(attempt: {
   readonly success: boolean;
@@ -123,7 +126,15 @@ export function settleTicketVoid(attempt: {
   if (attempt.success) return { outcome: 'VOIDED', ...seen };
   if (attempt.partial) return { outcome: 'PARTIAL', ...seen };
   if (read === undefined) return { outcome: 'UNVERIFIED' };
-  return { outcome: voidedTicketCount(read) > 0 ? 'PARTIAL' : 'REJECTED', ...seen };
+  if (voidedTicketCount(read) > 0) return { outcome: 'PARTIAL', ...seen };
+  return { outcome: ticketsStillIssued(read) ? 'REJECTED' : 'UNVERIFIED', ...seen };
+}
+
+/** ¿La lectura muestra tiquetes, y todos emitidos? Es la prueba de que un rechazo no anuló nada. */
+function ticketsStillIssued(view: OrderView): boolean {
+  if (!view.found) return false;
+  const tickets = (view.documents ?? []).filter((document) => document.kind === 'TICKET');
+  return tickets.length > 0 && tickets.every((document) => document.status === 'ISSUED');
 }
 
 /**

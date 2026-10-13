@@ -11,6 +11,7 @@ import type {
   StaleCancelClaimExpiry,
   StaleCancelClaimStore,
 } from '../stale-cancel-claim.store.js';
+import { persistedTicketOperation } from '../ticket-void.plan.js';
 
 /**
  * Dobles de Postgres para la cancelación de una orden de hotel (docs/tbo/09 PR-5.3), compartidos por
@@ -478,6 +479,7 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
               const order = orderOf(tenantId, String(op['order_id']));
               if (order === undefined) return [];
               const prior = parse(op['result'])['priorOrderStatus'];
+              const ticketOperation = persistedTicketOperation(op['result']);
               return [
                 {
                   operationId: String(op['id']),
@@ -486,6 +488,7 @@ export function memoryHotelCancellation(initial: Partial<HotelCancelState> = {})
                   userId: String(order['user_id']),
                   actorUserId: (op['actor_user_id'] as string | null | undefined) ?? null,
                   priorStatus: typeof prior === 'string' ? prior : undefined,
+                  ...(ticketOperation === undefined ? {} : { ticketOperation }),
                 },
               ];
             }),

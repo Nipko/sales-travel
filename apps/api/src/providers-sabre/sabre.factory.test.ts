@@ -2093,6 +2093,22 @@ describe('SabreProviderFactory — anular tiquetes (VOID)', () => {
     expect(result).not.toHaveProperty('partial');
   });
 
+  it('una reserva que ya estaba cancelada (desde otro canal) no prueba la anulación: sin verificar', async () => {
+    // Para una cancelación `BOOKING_ALREADY_CANCELED` es éxito; para una anulación, no dice qué
+    // pasó con los tiquetes. Darla por anulada liberaría la cartera con tiquetes quizá cobrados.
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'BOOKING_ALREADY_CANCELED' }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      verified: false,
+      audit: { outcome: 'ALREADY_CANCELLED', voidedTickets: 0 },
+    });
+  });
+
   it('el traductor de errores dice qué hacer cuando la anulación ya no está disponible', () => {
     expect(
       humanizeSabreError(new SabreCancelBookingBuildError('VOID_NOT_AVAILABLE', 'detalle')),

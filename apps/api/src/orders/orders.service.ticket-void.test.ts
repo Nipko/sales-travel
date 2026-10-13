@@ -26,8 +26,14 @@ import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.ser
 import { memoryHotelCancellation, type Row } from './__fixtures__/memory-hotel-cancellation.js';
 import type { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
 import { ORDER_EVENTS } from './order-events.js';
+import type { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { OrdersService, type OrderRow } from './orders.service.js';
-import { TICKET_VOID_MESSAGES, TICKET_VOID_REASONS } from './ticket-void.plan.js';
+import { STALE_CANCEL_CLAIM_MS, StaleCancelClaimService } from './stale-cancel-claim.service.js';
+import {
+  TICKET_VOID_MESSAGES,
+  TICKET_VOID_REASONS,
+  VOID_UNVERIFIED_LAST_ERROR,
+} from './ticket-void.plan.js';
 
 /**
  * Anular (VOID) los tiquetes de una reserva emitida por la puerta pública de `OrdersService`
@@ -428,6 +434,65 @@ describe('voidTickets: lo que pasa después de la consulta', () => {
     expect(b.audit.ofType(ORDER_EVENTS.escalated)).toMatchObject([
       { payload: { reason: 'cancellation-unverified', ticketOperation: 'VOID' } },
     ]);
+  });
+
+  it('un «sí» del proveedor que no se puede verificar no libera la cartera ni da la reserva por anulada', async () => {
+    // P. ej., la reserva ya estaba cancelada desde otro canal: el proveedor contesta éxito, pero
+    // nada dice qué pasó con los tiquetes.
+    const b = banco();
+    b.cancelOrderAudited.mockResolvedValue(anulada({ verified: false }));
+
+    await expect(b.anular()).resolves.toMatchObject({ outcome: 'UNVERIFIED' });
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.settle).not.toHaveBeenCalled();
+    expect(b.audit.ofType(ORDER_EVENTS.ticketsVoided)).toEqual([]);
+    expect(b.mem.result(b.ultima())).toMatchObject({
+      voidOutcome: 'UNVERIFIED',
+      reconciliationRequired: true,
+    });
+  });
+
+  it('rechazada con una relectura que no muestra los tiquetes: UNVERIFIED, no vuelve a emitida', async () => {
+    const b = banco();
+    b.cancelOrderAudited.mockResolvedValue(anulada({ result: { success: false, warnings: [] } }));
+    b.adapter.retrieveForDisplay.mockResolvedValue({ ...lectura('ISSUED'), documents: [] });
+
+    await expect(b.anular()).resolves.toMatchObject({ outcome: 'UNVERIFIED' });
+    expect(b.mem.order(ORDEN)?.['status']).toBe('pending');
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toMatchObject([
+      { payload: { reason: 'void-unverified', ticketOperation: 'VOID' } },
+    ]);
+  });
+
+  it('una anulación que quedó en vuelo (el proceso murió) vence como anulación sin confirmar', async () => {
+    const b = banco();
+    b.cancelOrderAudited.mockReturnValue(new Promise<OrderCancelAudit>(() => undefined));
+    void b.anular();
+    await vi.waitFor(() => expect(b.cancelOrderAudited).toHaveBeenCalledOnce());
+    const barrido = new StaleCancelClaimService(b.mem.staleClaims, b.audit.asService(), {
+      handles: () => false,
+    } as unknown as HotelOrderCancellationService);
+
+    await expect(
+      barrido.sweepTenant(TENANT, Date.now() + STALE_CANCEL_CLAIM_MS + 60_000),
+    ).resolves.toMatchObject({ expired: 1 });
+
+    expect(b.ultima()).toMatchObject({
+      status: 'failed',
+      last_error: VOID_UNVERIFIED_LAST_ERROR,
+    });
+    expect(b.mem.result(b.ultima())).toMatchObject({
+      ticketOperation: 'VOID',
+      voidOutcome: 'UNVERIFIED',
+      staleClaim: true,
+      reconciliationRequired: true,
+    });
+    expect(b.audit.ofType(ORDER_EVENTS.escalated)).toMatchObject([
+      { payload: { reason: 'cancellation-unverified', ticketOperation: 'VOID', staleClaim: true } },
+    ]);
+    // En el historial sigue siendo una anulación, y no se ofrece reintentarla.
+    const [op] = await b.service.listOperations(TENANT, ORDEN);
+    expect(op).toMatchObject({ ticketOperation: 'VOID', retryable: false });
   });
 
   it('un timeout en la anulación: 409 «no reintentes», en conciliación y nunca en la cola', async () => {
