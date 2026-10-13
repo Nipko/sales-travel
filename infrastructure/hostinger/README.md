@@ -118,7 +118,7 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 | Variable                  | Default | Uso                                                                |
 | ------------------------- | ------- | ------------------------------------------------------------------ |
 | `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                       |
-| `PROVIDERS_DISABLED`      | vacío   | Kill-switch de emergencia por proveedor (§6.1)                     |
+| `PROVIDERS_DISABLED`      | vacío   | Respaldo del apagado de emergencia del panel (§6.1)                |
 | `TBO_ROOM_DETAILS`        | `on`    | `off` (u otro valor) deja de pedir a TBO el detalle por habitación |
 | `HOTEL_ROOM_CONTENT`      | `on`    | `off` (u otro valor): la ficha sólo muestra habitaciones guardadas |
 | `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
@@ -197,7 +197,7 @@ Desde el 2026-09-28 qué proveedores usa cada agencia lo decide el **superadmin 
 ([`docs/tbo/08`](../../docs/tbo/08-requisitos-maestro.md#d-tbo-18--en-qué-búsquedas-se-consulta-tbo) D-TBO-18). El
 estado de un proveedor para una agencia sale de lo primero que opine, en este orden:
 
-1. `PROVIDERS_DISABLED`, el kill-switch de emergencia: le gana a todo.
+1. El apagado de emergencia: el del panel o `PROVIDERS_DISABLED`, el más amplio de los dos. Le gana a todo.
 2. El ajuste de la agencia o, si no tiene, el del ancestro más cercano de su red.
 3. El ajuste global del proveedor.
 4. Las variables legado `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN`, sólo si la base no tiene ningún ajuste de
@@ -222,13 +222,39 @@ ssh deploy@<IP> "cd /opt/sales-travel && docker compose exec -T postgres psql -U
   'SELECT provider_code, tenant_id, enabled, reason, updated_at FROM provider_enablement ORDER BY 1, 2 NULLS FIRST'"
 ```
 
-**Emergencia: `PROVIDERS_DISABLED`.** Variable de GitHub, lista separada por comas: `código` apaga el proveedor del
-todo, post-venta incluida; `código:ventas` apaga sólo búsqueda, PreBook y Book, y deja leer y cancelar lo vendido. Vale
-para toda la plataforma y le gana a cualquier ajuste del panel, que la muestra como _Apagado de emergencia de
-operaciones_. Es para incidentes (el proveedor responde mal, un bug nuestro), no para decidir quién vende con qué, y
-exige desplegar (Actions → **Deploy** → Run workflow). Editar `PROVIDERS_DISABLED` en el `.env` del VPS y hacer
-`docker compose up -d api` es más rápido, pero el despliegue siguiente reescribe el `.env` con la variable de GitHub:
-hay que cambiar las dos.
+**Emergencia, primero el panel: _Apagado de emergencia_.** En _Proveedores de la plataforma_, cada proveedor muestra
+si está respondiendo (_Funcionando_, _Con fallos_, _No responde: circuito abierto_, _Probando si volvió_), cuántas
+cuentas de agencia tiene en pausa y cuántos avisos de cuenta (sin saldo, bloqueada) hubo en las últimas 24 h. El botón
+_Apagado de emergencia_ corta el proveedor para toda la plataforma, en segundos y sin desplegar:
+
+- _Solo ventas_: frena búsquedas, pre-reservas y reservas nuevas; lo ya vendido se sigue consultando y cancelando.
+- _Todo_: también la post-venta (consultas, cancelaciones y conciliación).
+
+En vuelos, la venta que sigue a una oferta ya buscada (revalidar y crear la orden) también se corta, con cualquiera de
+los dos niveles. La post-venta de vuelos (leer, cancelar, pagar una orden) **no** pasa por el circuit breaker: ni _Todo_
+ni `PROVIDERS_DISABLED` la frenan hoy.
+
+Pide motivo, un vencimiento (1 h, 4 h, 24 h o sin vencimiento) y escribir el código del proveedor para confirmar. La
+réplica del api que lo recibe lo aplica al instante y las demás en 10 s como mucho; vencido, el proveedor vuelve solo.
+_Reanudar proveedor_ lo levanta antes. Cada uno queda en `domain_events` (`platform.provider_kill_switch.set` y
+`.cleared`, en el tenant de la plataforma) con quién, el motivo y el apagado anterior. _Cerrar circuito_ (sólo con el
+circuito abierto) deja que el proveedor vuelva a recibir llamadas de inmediato en vez de esperar la sonda; si sigue
+fallando, se abre otra vez (`platform.provider_circuit.reset`). Si la API no puede leer los apagados, se queda con la
+última lectura: un error de la base nunca enciende un proveedor apagado. Desde el VPS:
+
+```bash
+ssh deploy@<IP> "cd /opt/sales-travel && docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  'SELECT provider_code, level, reason, set_at, expires_at FROM provider_kill_switches ORDER BY 1'"
+```
+
+**Respaldo: `PROVIDERS_DISABLED`.** Si el panel no está disponible (la API o la base caídas), la variable. Variable de
+GitHub, lista separada por comas: `código` apaga el proveedor del todo, post-venta incluida; `código:ventas` apaga sólo
+búsqueda, PreBook y Book, y deja leer y cancelar lo vendido. Vale para toda la plataforma, le gana a cualquier ajuste
+y el panel no la puede levantar (_Reanudar proveedor_ responde que se quita desplegando): si la variable y el panel
+apagan el mismo proveedor, vale el apagado más amplio. Es para incidentes (el proveedor responde mal, un bug nuestro),
+no para decidir quién vende con qué, y exige desplegar (Actions → **Deploy** → Run workflow). Editar
+`PROVIDERS_DISABLED` en el `.env` del VPS y hacer `docker compose up -d api` es más rápido, pero el despliegue
+siguiente reescribe el `.env` con la variable de GitHub: hay que cambiar las dos.
 
 **Legado: `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN`.** Hasta el 2026-09-28 eran la única forma de encender un
 proveedor `opt-in` (`código` para todas las agencias, `código@<tenantId>` para una) y cada cambio exigía desplegar.

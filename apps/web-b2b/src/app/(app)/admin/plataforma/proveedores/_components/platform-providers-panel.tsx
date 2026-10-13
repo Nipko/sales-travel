@@ -2,7 +2,7 @@
 
 import { Pencil, Plus, RefreshCw, RotateCcw, Unplug } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../../components/ui/button';
 import { Card } from '../../../../../../components/ui/card';
@@ -30,12 +30,25 @@ import {
   type TenantOverride,
 } from '../../../../../../lib/provider-enablement';
 import {
+  clearKillSwitch,
   loadPlatformProviders,
+  loadProviderHealth,
   loadTenantOptions,
+  resetProviderCircuit,
   saveGlobal,
+  saveKillSwitch,
   saveTenant,
   type Loaded,
 } from '../../../../../../lib/provider-enablement-client';
+import {
+  CIRCUIT_RESET_CONFIRM,
+  circuitResetToast,
+  HEALTH_POLL_MS,
+  killSwitchClearedToast,
+  killSwitchSetToast,
+  type KillSwitchBody,
+  type ProviderHealth,
+} from '../../../../../../lib/provider-health';
 import {
   ChangeDialog,
   ChoiceControl,
@@ -46,6 +59,8 @@ import {
   Switch,
 } from '../../../_components/provider-enablement-ui';
 import { AddExceptionDialog } from './add-exception-dialog';
+import { KillSwitchDialog, ReasonConfirmDialog } from './kill-switch-dialog';
+import { ProviderHealthRow } from './provider-health';
 
 type GlobalNext = { readonly kind: 'set'; readonly enabled: boolean } | { readonly kind: 'reset' };
 
@@ -63,6 +78,17 @@ type PanelState =
   | { readonly status: 'error'; readonly message: string }
   | { readonly status: 'ready'; readonly providers: readonly PlatformProvider[] };
 
+/** La última salud leída (se conserva si una relectura falla) y el error de la última, si lo hubo. */
+interface HealthState {
+  readonly byCode: ReadonlyMap<string, ProviderHealth>;
+  readonly error: string | null;
+}
+
+type Incident = {
+  readonly kind: 'kill' | 'resume' | 'reset';
+  readonly provider: PlatformProvider;
+};
+
 /**
  * Proveedores de la plataforma: por proveedor, el interruptor "Todos los tenants" y las
  * excepciones por tenant, cada una con su estado efectivo y de dónde sale.
@@ -72,6 +98,59 @@ export function PlatformProvidersPanel() {
   const [tenants, setTenants] = useState<Loaded<TenantOption[]> | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [adding, setAdding] = useState<PlatformProvider | null>(null);
+  const [health, setHealth] = useState<HealthState>({ byCode: new Map(), error: null });
+  const [incident, setIncident] = useState<Incident | null>(null);
+  const healthInFlight = useRef(false);
+  /**
+   * Sube con cada palanca que devuelve la salud de un proveedor: una lectura del sondeo que empezó
+   * antes no la pisa con el estado de antes del apagado.
+   */
+  const healthGeneration = useRef(0);
+
+  const loadHealth = useCallback(async () => {
+    // Una lectura lenta no se solapa con la siguiente del sondeo.
+    if (healthInFlight.current) return;
+    healthInFlight.current = true;
+    const generation = healthGeneration.current;
+    const res = await loadProviderHealth();
+    healthInFlight.current = false;
+    if (generation !== healthGeneration.current) return;
+    setHealth((h) =>
+      res.ok
+        ? { byCode: new Map(res.data.map((p) => [p.code, p] as const)), error: null }
+        : { byCode: h.byCode, error: res.message },
+    );
+  }, []);
+
+  // Cada 30 s mientras la pestaña está a la vista, y al volver a ella.
+  useEffect(() => {
+    void loadHealth();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadHealth();
+    }, HEALTH_POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void loadHealth();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [loadHealth]);
+
+  const replaceHealth = useCallback((updated: ProviderHealth) => {
+    healthGeneration.current += 1;
+    setHealth((h) => ({ byCode: new Map(h.byCode).set(updated.code, updated), error: h.error }));
+  }, []);
+
+  /**
+   * Relee los proveedores sin el esqueleto de carga: el apagado cambia su estado efectivo y el
+   * aviso de su tarjeta. Si falla, queda lo que había; la salud ya dice lo que pasó.
+   */
+  const refreshProviders = useCallback(async () => {
+    const res = await loadPlatformProviders();
+    if (res.ok) setState({ status: 'ready', providers: res.data });
+  }, []);
 
   const load = useCallback(async () => {
     setState({ status: 'loading' });
@@ -107,6 +186,47 @@ export function PlatformProvidersPanel() {
 
   const closePending = useCallback(() => setPending(null), []);
   const closeAdding = useCallback(() => setAdding(null), []);
+  const closeIncident = useCallback(() => setIncident(null), []);
+
+  async function confirmKill(
+    provider: PlatformProvider,
+    body: KillSwitchBody,
+  ): Promise<string | undefined> {
+    const res = await saveKillSwitch(provider.code, body);
+    if (!res.ok) return res.message;
+    replaceHealth(res.data);
+    setIncident(null);
+    toast.success(killSwitchSetToast(provider.code, body.level));
+    void refreshProviders();
+    return undefined;
+  }
+
+  async function confirmResume(
+    provider: PlatformProvider,
+    reason: string,
+  ): Promise<string | undefined> {
+    const res = await clearKillSwitch(provider.code, reason);
+    if (!res.ok) return res.message;
+    replaceHealth(res.data);
+    setIncident(null);
+    const remaining = res.data.killSwitch.effective;
+    if (remaining === null) toast.success(killSwitchClearedToast(provider.code));
+    else toast.warning(killSwitchClearedToast(provider.code, remaining));
+    void refreshProviders();
+    return undefined;
+  }
+
+  async function confirmReset(
+    provider: PlatformProvider,
+    reason: string,
+  ): Promise<string | undefined> {
+    const res = await resetProviderCircuit(provider.code, reason);
+    if (!res.ok) return res.message;
+    replaceHealth(res.data);
+    setIncident(null);
+    toast.success(circuitResetToast(provider.code));
+    return undefined;
+  }
 
   async function confirmPending(reason: string): Promise<string | undefined> {
     if (pending === null) return undefined;
@@ -157,6 +277,10 @@ export function PlatformProvidersPanel() {
             proveedor corta búsquedas y ventas nuevas: las reservas ya hechas se siguen consultando,
             cancelando y conciliando.
           </p>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
+            La salud de cada proveedor se actualiza cada 30 segundos. En un incidente, el apagado de
+            emergencia lo corta para toda la plataforma en segundos, sin desplegar.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-[11px] font-medium text-[var(--color-fg-muted)]">
@@ -199,6 +323,14 @@ export function PlatformProvidersPanel() {
         </div>
       ) : (
         <div className="space-y-8">
+          {health.error !== null ? (
+            <p
+              role="status"
+              className="rounded-lg border border-[var(--color-warning)]/45 bg-[var(--color-warning)]/12 px-3 py-2 text-xs text-[var(--color-fg)]"
+            >
+              No pudimos actualizar la salud de los proveedores: {health.error}
+            </p>
+          ) : null}
           {groupByVertical(state.providers).map((group) => (
             <section key={group.vertical} aria-labelledby={`vertical-${group.vertical}`}>
               <h2
@@ -212,6 +344,8 @@ export function PlatformProvidersPanel() {
                   <li key={provider.code}>
                     <ProviderCard
                       provider={provider}
+                      health={health.byCode.get(provider.code)}
+                      onIncident={(kind) => setIncident({ kind, provider })}
                       tenantNames={tenantNames}
                       onGlobal={(next) => setPending({ scope: 'global', provider, next })}
                       onOverride={(override, to) =>
@@ -265,18 +399,55 @@ export function PlatformProvidersPanel() {
           onClose={closeAdding}
         />
       ) : null}
+
+      {incident?.kind === 'kill' ? (
+        <KillSwitchDialog
+          key={`kill-${incident.provider.code}`}
+          code={incident.provider.code}
+          vertical={incident.provider.vertical}
+          initialLevel={health.byCode.get(incident.provider.code)?.killSwitch.panel?.level}
+          onConfirm={(body) => confirmKill(incident.provider, body)}
+          onClose={closeIncident}
+        />
+      ) : incident?.kind === 'resume' ? (
+        <ReasonConfirmDialog
+          key={`resume-${incident.provider.code}`}
+          title={`¿Reanudar ${providerMetaFor(incident.provider.code).name}?`}
+          description="Levanta el apagado de emergencia puesto desde el panel: el proveedor vuelve a buscar y vender para toda la plataforma, salvo donde un ajuste lo tenga apagado."
+          confirmLabel="Reanudar proveedor"
+          pendingLabel="Reanudando…"
+          reasonRequired={false}
+          onConfirm={(reason) => confirmResume(incident.provider, reason)}
+          onClose={closeIncident}
+        />
+      ) : incident?.kind === 'reset' ? (
+        <ReasonConfirmDialog
+          key={`reset-${incident.provider.code}`}
+          title={`¿Cerrar el circuito de ${providerMetaFor(incident.provider.code).name}?`}
+          description={CIRCUIT_RESET_CONFIRM}
+          confirmLabel="Cerrar circuito"
+          pendingLabel="Cerrando…"
+          reasonRequired
+          onConfirm={(reason) => confirmReset(incident.provider, reason)}
+          onClose={closeIncident}
+        />
+      ) : null}
     </div>
   );
 }
 
 function ProviderCard({
   provider,
+  health,
+  onIncident,
   tenantNames,
   onGlobal,
   onOverride,
   onAdd,
 }: {
   provider: PlatformProvider;
+  health: ProviderHealth | undefined;
+  onIncident: (kind: Incident['kind']) => void;
   tenantNames: ReadonlyMap<string, string>;
   onGlobal: (next: GlobalNext) => void;
   onOverride: (override: TenantOverride, to: EnablementChoice) => void;
@@ -304,6 +475,14 @@ function ProviderCard({
       </div>
 
       <div className="space-y-3 px-4 pb-4 sm:px-5">
+        <ProviderHealthRow
+          code={provider.code}
+          health={health}
+          onKill={() => onIncident('kill')}
+          onResume={() => onIncident('resume')}
+          onReset={() => onIncident('reset')}
+        />
+
         <div
           id={sourceId}
           className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-fg-muted)]"
