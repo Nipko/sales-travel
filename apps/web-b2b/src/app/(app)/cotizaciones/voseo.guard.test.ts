@@ -24,11 +24,13 @@ const CARPETAS = [
 ] as const;
 
 const ARCHIVOS_SUELTOS = [
+  'components/test-content-badge.tsx',
   'lib/baggage.ts',
   'lib/birthdate.ts',
   'lib/full-name.ts',
   'lib/provider-account-errors.ts',
   'lib/provider-errors.ts',
+  'lib/test-content.ts',
   'lib/ticketing-deadline.ts',
 ] as const;
 
