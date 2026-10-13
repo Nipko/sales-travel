@@ -204,11 +204,8 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
 
 /** El cuerpo tal como lo entrega el pipe de la ruta: validado y con los defaults aplicados. */
 function pedidoValidado(): HotelAvailabilityInput {
-  // El pipe tipa su salida con la ENTRADA del esquema, pero en runtime devuelve
-  // `safeParse().data`, que es la salida (con `childrenAges` ya en []).
-  return new ZodValidationPipe(HotelAvailabilityInputSchema).transform(
-    PEDIDO_WEB,
-  ) as HotelAvailabilityInput;
+  // `safeParse().data`: la salida del esquema, con `childrenAges` ya en [].
+  return new ZodValidationPipe(HotelAvailabilityInputSchema).transform(PEDIDO_WEB);
 }
 
 /** Lo que el browser recibe: la respuesta después de pasar por `JSON.stringify`. */
