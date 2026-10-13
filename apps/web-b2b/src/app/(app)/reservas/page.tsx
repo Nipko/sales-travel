@@ -61,6 +61,7 @@ import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
 import { TestOrderTag } from './_components/test-order-tag';
+import { TicketConditions } from './_components/ticket-conditions';
 import { isTestOrder, TEST_ORDER_EMAIL_NOTICE } from '../../../lib/test-content';
 
 interface Segment {
@@ -1131,6 +1132,7 @@ export default function ReservasPage() {
             }}
             issueInFlight={detailOrder.id in issuesInFlight}
             onIssueRequest={() => setIssuing(detailOrder)}
+            onOrderChanged={() => void loadOrders(false)}
           />
         ))}
 
@@ -1198,6 +1200,7 @@ function OrderDetailModal({
   onPayRequest,
   issueInFlight,
   onIssueRequest,
+  onOrderChanged,
 }: {
   order: Order;
   onClose: () => void;
@@ -1206,6 +1209,8 @@ function OrderDetailModal({
   /** Hay una emisión de esta reserva siguiéndose en la página. */
   issueInFlight: boolean;
   onIssueRequest: () => void;
+  /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
+  onOrderChanged: () => void;
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const isCar = isCarOrder(order);
@@ -1499,6 +1504,20 @@ function OrderDetailModal({
           {/* Vuelo: localizadores de la aerolínea, tiquetes y plazo guardados de la última lectura. */}
           {!isCar && <FlightOrderTracking order={order} />}
 
+          {/* Vuelo emitido: condiciones de los tiquetes en vivo y su anulación (SAB-09). */}
+          {!isCar && (
+            <TicketConditions
+              order={order}
+              operations={operations}
+              opsLoading={opsLoading}
+              opsError={opsError !== null}
+              onVoidAttempted={() => {
+                void reloadOps();
+                onOrderChanged();
+              }}
+            />
+          )}
+
           <section>
             <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Pasajeros ({order.passengers.length})
@@ -1611,7 +1630,7 @@ function OrderDetailModal({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-[var(--color-fg)]">
-                            {operationTypeLabel(op.type)}
+                            {operationTypeLabel(op.type, op.ticketOperation)}
                           </span>
                           <span
                             className={cn(

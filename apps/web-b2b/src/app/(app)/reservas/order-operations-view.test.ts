@@ -76,3 +76,37 @@ describe('la emisión de tiquetes en el historial (SAB-08)', () => {
     ).toEqual({ label: 'Sin confirmar', tone: 'pending' });
   });
 });
+
+describe('la anulación de tiquetes en el historial (SAB-09)', () => {
+  it('una cancelación que anuló los tiquetes se nombra por lo que hizo', () => {
+    expect(operationTypeLabel('cancel', 'VOID')).toBe('Anulación de tiquetes');
+    expect(operationTypeLabel('cancel')).toBe('Cancelación');
+    expect(operationTypeLabel('issue', 'VOID')).toBe('Emisión');
+  });
+
+  it('en curso, anulada o no anulada', () => {
+    const anulacion = { type: 'cancel', ticketOperation: 'VOID' } as const;
+    expect(operationStatusView({ ...anulacion, status: 'pending' })).toEqual({
+      label: 'En curso',
+      tone: 'pending',
+    });
+    expect(operationStatusView({ ...anulacion, status: 'success' })).toEqual({
+      label: 'Anulada',
+      tone: 'ok',
+    });
+    expect(
+      operationStatusView({ ...anulacion, status: 'failed', reconciliationRequired: false }),
+    ).toEqual({ label: 'No se anuló', tone: 'failed' });
+  });
+
+  it('una anulación en duda no es un fallo: sin confirmar, y se revisa', () => {
+    expect(
+      operationStatusView({
+        type: 'cancel',
+        ticketOperation: 'VOID',
+        status: 'failed',
+        reconciliationRequired: true,
+      }),
+    ).toEqual({ label: 'Sin confirmar', tone: 'pending' });
+  });
+});
