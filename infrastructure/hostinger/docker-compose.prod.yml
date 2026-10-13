@@ -153,6 +153,9 @@ services:
       # Detalle por habitación de HotelDetails de TBO (`IsRoomDetailRequired`): `on` u `off`. Con
       # `off` el ACL nunca lo pide; el contenido del hotel no depende de esto.
       TBO_ROOM_DETAILS: ${TBO_ROOM_DETAILS:-on}
+      # Fotos, tamaño y descripción de cada habitación en la ficha (`GET /hotels/content/…/rooms`):
+      # `on` u `off`. Con `off` sale sólo lo que el catálogo ya guardó y nunca se llama al proveedor.
+      HOTEL_ROOM_CONTENT: ${HOTEL_ROOM_CONTENT:-on}
       # LEGADO (D-TBO-18): los proveedores los enciende el superadmin desde el panel. Estas sólo
       # encienden donde la base no tiene ajuste: `código` para todos o `código@<tenantId>` para uno.
       # No se usan para encender nada nuevo (README §6.1).

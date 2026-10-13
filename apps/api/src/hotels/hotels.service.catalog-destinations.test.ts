@@ -39,6 +39,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import {
   CATALOG_SUGGESTION_LIMIT,
   CATALOG_SUGGESTION_MIN_SIMILARITY,
@@ -223,6 +224,7 @@ function banco(
     {} as HotelBookingService,
     {} as HotelContentService,
     {} as BookingPermissionsService,
+    {} as HotelRoomContentService,
   );
   return { service, controller, despegar, fetch, db, instrument, breaker };
 }

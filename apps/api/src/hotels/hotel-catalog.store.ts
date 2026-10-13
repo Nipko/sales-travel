@@ -1,19 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type {
-  HotelCatalogRecord,
-  HotelContentLanguage,
-  HotelContentRecord,
+import type { HotelRoomContentOutcome } from '../database/database.types.js';
+import {
+  HOTEL_CONTENT_LANGUAGES,
+  type HotelCatalogRecord,
+  type HotelContentLanguage,
+  type HotelContentRecord,
+  type HotelProviderRoomContent,
 } from '../providers/hotel-provider.types.js';
 
 /**
- * Lo que el API lee y escribe del catálogo de hoteles para las fotos de los resultados y las
- * ciudades que se cargan al buscarlas (migración 0054; docs/tbo/05 §8.5).
+ * Lo que el API lee y escribe del catálogo de hoteles para las fotos de los resultados, las
+ * ciudades que se cargan al buscarlas (migración 0054; docs/tbo/05 §8.5) y el contenido por
+ * habitación (0070; 05 §2.6.3).
  *
  * - Las tablas son de PLATAFORMA, sin tenant ni RLS (0041): se leen con `this.db.db`, como el resto
  *   del catálogo de `HotelsService`.
- * - Escribir es SÓLO por las dos funciones `SECURITY DEFINER` de 0054, que validan cada campo y
+ * - Escribir es SÓLO por las funciones `SECURITY DEFINER` de 0054 y 0070, que validan cada campo y
  *   aplican las reglas del sync (huella, `listing` nunca sobre `details`, nunca desactivar). La app
  *   sigue sin `INSERT`/`UPDATE` sobre las tablas.
  * - Las consultas crudas llevan un comentario que las nombra (`/* hotel-catalog:… *\/`): así se las
@@ -72,6 +76,52 @@ export type HotelCityImportOutcome = 'unknown-city' | 'already-loaded' | 'loaded
 export interface HotelCityImportResult {
   readonly outcome: HotelCityImportOutcome;
   readonly activeHotels: number;
+}
+
+/** La última vez que se le pidió al proveedor el detalle por habitación de un hotel en un idioma. */
+export interface HotelRoomContentFetchState {
+  readonly outcome: HotelRoomContentOutcome;
+  readonly roomCount: number;
+  readonly fetchedAt: Date;
+}
+
+/** Qué sabe el catálogo de las habitaciones de UN hotel, en los idiomas pedidos. */
+export interface HotelRoomContentState {
+  /** Está en `hotel_inventory` de ese proveedor: sólo esos se piden al proveedor. */
+  readonly inCatalog: boolean;
+  /** Por idioma; un idioma ausente nunca se pidió. */
+  readonly fetches: ReadonlyMap<HotelContentLanguage, HotelRoomContentFetchState>;
+}
+
+/** Una fila de `hotel_room_content` con los nombres del contrato, sin verificar. */
+export interface HotelRoomContentRow {
+  readonly lang: HotelContentLanguage;
+  readonly roomKey: string;
+  readonly roomRef: string | null;
+  readonly nameKey: string | null;
+  readonly name: string | null;
+  readonly sizeText: string | null;
+  readonly description: string | null;
+  /** JSONB tal como lo devuelve `pg`: se verifica al servir. */
+  readonly images: unknown;
+}
+
+export interface HotelRoomContentStoreResult {
+  readonly stored: number;
+  readonly rejected: number;
+}
+
+/** Tope de `hotel_catalog_store_room_contents`. */
+export const HOTEL_ROOM_CONTENT_MAX_ROOMS = 100;
+
+const ROOM_OUTCOMES: ReadonlySet<string> = new Set(['rooms', 'none', 'unreadable']);
+
+function isContentLanguage(value: unknown): value is HotelContentLanguage {
+  return (HOTEL_CONTENT_LANGUAGES as readonly unknown[]).includes(value);
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
 }
 
 /** Filas por llamada a `hotel_catalog_store_contents` (su tope es 50). */
@@ -219,6 +269,124 @@ export class HotelCatalogStore {
       }
     }
     return total;
+  }
+
+  /**
+   * Si el hotel está en el catálogo de su proveedor y qué respondió el proveedor la última vez que
+   * se le pidieron sus habitaciones, por idioma (`hotel_room_content_fetch`, 0070). Una sola
+   * consulta: una fila por idioma pedido.
+   */
+  async roomContentState(
+    providerCode: string,
+    hotelId: string,
+    langs: readonly HotelContentLanguage[],
+  ): Promise<HotelRoomContentState> {
+    const result = await sql<{
+      lang: string;
+      in_catalog: boolean;
+      outcome: string | null;
+      room_count: number | string | null;
+      fetched_at: Date | string | null;
+    }>`/* hotel-catalog:room-content-state */
+      SELECT w.lang,
+             EXISTS (SELECT 1 FROM hotel_inventory h
+                      WHERE h.provider_code = ${providerCode} AND h.hotel_id = ${hotelId})
+               AS in_catalog,
+             f.outcome, f.room_count, f.fetched_at
+        FROM unnest(${[...langs]}::text[]) AS w(lang)
+        LEFT JOIN hotel_room_content_fetch f
+          ON f.provider_code = ${providerCode} AND f.hotel_id = ${hotelId} AND f.lang = w.lang`.execute(
+      this.db.db,
+    );
+    const fetches = new Map<HotelContentLanguage, HotelRoomContentFetchState>();
+    let inCatalog = false;
+    for (const row of result.rows) {
+      inCatalog ||= row.in_catalog === true;
+      if (!isContentLanguage(row.lang) || row.outcome === null || !ROOM_OUTCOMES.has(row.outcome)) {
+        continue;
+      }
+      const fetchedAt = row.fetched_at === null ? undefined : new Date(row.fetched_at);
+      if (fetchedAt === undefined || Number.isNaN(fetchedAt.getTime())) continue;
+      fetches.set(row.lang, {
+        outcome: row.outcome as HotelRoomContentOutcome,
+        roomCount: count(row.room_count),
+        fetchedAt,
+      });
+    }
+    return { inCatalog, fetches };
+  }
+
+  /** Las habitaciones guardadas del hotel en esos idiomas, en el orden del proveedor. */
+  async roomContents(
+    providerCode: string,
+    hotelId: string,
+    langs: readonly HotelContentLanguage[],
+  ): Promise<HotelRoomContentRow[]> {
+    const result = await sql<{
+      lang: string;
+      room_id: string;
+      room_ref: string | null;
+      name_key: string | null;
+      name: string | null;
+      size_text: string | null;
+      description: string | null;
+      images: unknown;
+    }>`/* hotel-catalog:room-contents */
+      SELECT c.lang, c.room_id, c.room_ref, c.name_key, c.name, c.size_text, c.description,
+             c.images
+        FROM hotel_room_content c
+       WHERE c.provider_code = ${providerCode} AND c.hotel_id = ${hotelId}
+         AND c.lang = ANY(${[...langs]}::text[])
+       ORDER BY c.lang, c.position, c.room_id`.execute(this.db.db);
+    const out: HotelRoomContentRow[] = [];
+    for (const row of result.rows) {
+      if (!isContentLanguage(row.lang) || typeof row.room_id !== 'string') continue;
+      out.push({
+        lang: row.lang,
+        roomKey: row.room_id,
+        roomRef: stringOrNull(row.room_ref),
+        nameKey: stringOrNull(row.name_key),
+        name: stringOrNull(row.name),
+        sizeText: stringOrNull(row.size_text),
+        description: stringOrNull(row.description),
+        images: row.images,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Reemplaza las habitaciones del hotel en ese idioma y anota qué respondió el proveedor, por
+   * `hotel_catalog_store_room_contents` (0070). Las habitaciones van recortadas a su tope y sólo con
+   * `rooms`; las que la función no acepta vuelven contadas en `rejected`. Lanza si el hotel no está
+   * en el catálogo de ese proveedor.
+   */
+  async storeRoomContents(
+    providerCode: string,
+    hotelId: string,
+    lang: HotelContentLanguage,
+    outcome: HotelRoomContentOutcome,
+    rooms: readonly HotelProviderRoomContent[],
+  ): Promise<HotelRoomContentStoreResult> {
+    const payload =
+      outcome === 'rooms'
+        ? rooms.slice(0, HOTEL_ROOM_CONTENT_MAX_ROOMS).map((room) => ({
+            roomKey: room.roomKey,
+            roomRef: room.roomRef,
+            nameKey: room.nameKey,
+            name: room.name,
+            sizeText: room.sizeText,
+            description: room.description,
+            images: [...room.images],
+          }))
+        : [];
+    const result = await sql<{ stored: number | string; rejected: number | string }>`
+      /* hotel-catalog:store-room-contents */
+      SELECT * FROM hotel_catalog_store_room_contents(${providerCode}, ${hotelId}, ${lang}, ${outcome}, ${JSON.stringify(payload)}::jsonb)`.execute(
+      this.db.db,
+    );
+    const [row] = result.rows;
+    return { stored: count(row?.stored), rejected: count(row?.rejected) };
   }
 
   /** La ciudad del catálogo del proveedor, o `undefined` si no la conoce. */

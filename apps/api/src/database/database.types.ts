@@ -407,16 +407,40 @@ export interface HotelContentTable {
   fetched_at: Generated<Timestamp>;
 }
 
-/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+/**
+ * 0041 + 0070: contenido por habitación. `room_id` es el `roomKey` del ACL (el id del proveedor o
+ * `n-` + 16 hex del nombre normalizado) y nunca `'0'` (centinela de "sin mapeo"). La app la escribe
+ * sólo por `hotel_catalog_store_room_contents`.
+ */
 export interface HotelRoomContentTable {
   provider_code: string;
   hotel_id: string;
   room_id: string;
   lang: LanguageCode;
+  /** Id de la habitación en el proveedor (TBO `RoomId`); `null` si no vino. */
+  room_ref: string | null;
+  /** Nombre normalizado como `normalizeRoomName` de la web. */
+  name_key: string | null;
   name: string | null;
   size_text: string | null;
+  /** Texto plano, sin `<` ni `>`. */
   description: string | null;
+  /** `string[]` de URLs `https`. */
   images: unknown;
+  position: Generated<number>;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** Qué respondió el proveedor al detalle por habitación de un hotel en un idioma (0070). */
+export type HotelRoomContentOutcome = 'rooms' | 'none' | 'unreadable';
+
+/** 0070: la última vez que se pidió el detalle por habitación de un hotel en un idioma. */
+export interface HotelRoomContentFetchTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  outcome: HotelRoomContentOutcome;
+  room_count: Generated<number>;
   fetched_at: Generated<Timestamp>;
 }
 
@@ -1041,6 +1065,7 @@ export interface DB {
   hotel_match: HotelMatchTable;
   hotel_content: HotelContentTable;
   hotel_room_content: HotelRoomContentTable;
+  hotel_room_content_fetch: HotelRoomContentFetchTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;

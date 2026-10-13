@@ -26,6 +26,8 @@ const GOBIERNO: Readonly<Record<string, string>> = {
   HOTEL_PROVIDERS_OPT_IN: join(__dirname, '..', 'providers', 'hotel-providers.module.ts'),
   // Detalle por habitación de HotelDetails de TBO (Q-65): `on` por defecto, `off` lo apaga.
   TBO_ROOM_DETAILS: join(__dirname, '..', 'providers-tbo', 'tbo-hotels.factory.ts'),
+  // Contenido por habitación de la ficha (TBO-06): `on` por defecto, `off` no sale al proveedor.
+  HOTEL_ROOM_CONTENT: join(__dirname, '..', 'hotels', 'hotel-room-content.config.ts'),
 };
 
 /** El bloque del servicio `api`: desde `  api:` hasta el siguiente servicio del mismo nivel. */
