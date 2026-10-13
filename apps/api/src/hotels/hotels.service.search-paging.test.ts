@@ -370,7 +370,10 @@ describe('tramos — "Ver más hoteles"', () => {
 
     // El mismo sobre, sólo con los hoteles de este tramo.
     expect(ids(res.hotels)).toEqual(CATALOGO.slice(100, 200));
-    expect(res.providers).toEqual([{ code: TBO, status: 'ok', count: 100 }]);
+    // La cuenta de TBO de este banco es la de prueba: el tramo lo dice como la búsqueda.
+    expect(res.providers).toEqual([
+      { code: TBO, status: 'ok', count: 100, accountEnvironment: 'test' },
+    ]);
     expect(res.showProviderInResults).toBe(false);
     expect(res.nonRefundableRates).toBe('allowed');
     expect(res.paging).toEqual({
@@ -643,7 +646,9 @@ describe('tramos — la moneda y el punto de venta son los del primero', () => {
 
     // Sin la moneda guardada, el tramo se habría buscado en COP y TBO habría quedado fuera por
     // moneda: la lista mezclaría o perdería hoteles.
-    expect(res.providers).toEqual([{ code: TBO, status: 'ok', count: 100 }]);
+    expect(res.providers).toEqual([
+      { code: TBO, status: 'ok', count: 100, accountEnvironment: 'test' },
+    ]);
     expect(res.hotels[0]?.roompacks[0]?.price.total.currency).toBe('USD');
     const { HotelCodes: _a, ...busqueda } = cuerpo(b.fetch, 0);
     const { HotelCodes: _b, ...tramo } = cuerpo(b.fetch, 1);

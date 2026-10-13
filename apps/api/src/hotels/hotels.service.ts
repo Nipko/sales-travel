@@ -24,6 +24,7 @@ import {
   supportsHotelRatesDetail,
   supportsHotelSearchContext,
   supportsHotelSuggest,
+  type HotelAccountEnvironment,
   type HotelCatalogOrder,
   type HotelCityCatalog,
   type HotelCityCatalogPort,
@@ -64,6 +65,7 @@ import {
   sortOutcomes,
   telemetrySlices,
   unavailableOutcome,
+  withAccountEnvironment,
   withCatalogFacts,
   type CanonicalHotelKeyOf,
   type HotelCatalogFacts,
@@ -195,7 +197,17 @@ interface CapableProvider<TPort> {
   readonly adapter: HotelProviderAdapter & TPort;
   readonly circuit: ProviderCircuitOptions | undefined;
   readonly searchProfile: HotelSearchProfile;
+  readonly accountEnvironment: HotelAccountEnvironment | undefined;
 }
+
+/**
+ * Las tarifas de un hotel (`POST /hotels/detail`) con el entorno de la cuenta que las dio, si el
+ * proveedor lo declara: el detalle no tiene `providers[]` donde decirlo, y con `test` la ficha
+ * avisa que no son habitaciones de verdad. Aditivo: la oferta sale igual que antes.
+ */
+export type HotelDetailResponse = HotelOffer & {
+  readonly accountEnvironment?: HotelAccountEnvironment;
+};
 
 interface CallablePlan {
   readonly provider: ResolvedHotelProvider;
@@ -292,7 +304,13 @@ function capable<TPort>(
   p: ResolvedHotelProvider,
   adapter: HotelProviderAdapter & TPort,
 ): CapableProvider<TPort> {
-  return { code: p.code, adapter, circuit: p.circuit, searchProfile: p.searchProfile };
+  return {
+    code: p.code,
+    adapter,
+    circuit: p.circuit,
+    searchProfile: p.searchProfile,
+    accountEnvironment: p.accountEnvironment,
+  };
 }
 
 /**
@@ -1001,7 +1019,7 @@ export class HotelsService {
    * Es otra búsqueda, y con la misma moneda que la del listado desde el que se abrió: las mismas
    * reglas de moneda permitida y de markup fijo, y la misma puerta ({@link gateRatesByCurrency}).
    */
-  async getHotelDetail(tenantId: string, input: HotelDetailInput): Promise<HotelOffer> {
+  async getHotelDetail(tenantId: string, input: HotelDetailInput): Promise<HotelDetailResponse> {
     const defaults = await this.tenantDefaults(tenantId);
     const currency = resolveHotelSearchCurrency(input.currency, defaults.currency);
     const rules = await this.pricing.getApplicableRules(tenantId, 'hotels');
@@ -1041,7 +1059,9 @@ export class HotelsService {
         )
       : rates;
     // El detalle es la pantalla desde la que se reserva: sin el waterfall mostraría el neto.
-    return withPricing(offer, rules, tenantId);
+    const priced = withPricing(offer, rules, tenantId);
+    const { accountEnvironment } = provider;
+    return accountEnvironment === undefined ? priced : { ...priced, accountEnvironment };
   }
 
   /**
@@ -1140,6 +1160,7 @@ export class HotelsService {
     state: FanOutState,
   ): Promise<void> {
     for (const c of wave) state.called.add(c.provider.code);
+    const environments = new Map(wave.map((c) => [c.provider.code, c.provider.accountEnvironment]));
     const settled = await fanOut(wave.map((c) => this.toRun(tenantId, c, state.durations)));
 
     // `settled.items` llega en el orden de la ola, que es el estable del registry.
@@ -1149,9 +1170,9 @@ export class HotelsService {
         gateByCurrency(batch.offers, currency),
         currency,
       );
-      state.outcomes.push(
-        batch.partialReason === undefined ? outcome : partialOutcome(outcome, batch.partialReason),
-      );
+      const answered =
+        batch.partialReason === undefined ? outcome : partialOutcome(outcome, batch.partialReason);
+      state.outcomes.push(withAccountEnvironment(answered, environments.get(batch.code)));
       state.contributed.push({ code: batch.code, offers });
       if (outcome.droppedForCurrency !== undefined) {
         // Sólo códigos y conteos: ni payload del proveedor ni datos del huésped (RNF-07).

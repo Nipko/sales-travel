@@ -447,7 +447,12 @@ export function BookingStep({
           onPollNow={pollNow}
         />
       ) : phase.kind === 'confirmed' ? (
-        <ConfirmedPanel view={phase.view} atHotel={atHotel} headingRef={headingRef} />
+        <ConfirmedPanel
+          view={phase.view}
+          atHotel={atHotel}
+          headingRef={headingRef}
+          providerEnvironment={prebook.providerEnvironment}
+        />
       ) : phase.kind === 'failed' ? (
         <FailedPanel
           view={phase.view}
@@ -521,6 +526,7 @@ export function BookingStep({
                 onNonRefundableAcknowledgedChange={handleNonRefundableAcknowledged}
                 nonRefundableError={errors[NON_REFUNDABLE_FIELD]}
                 ownAccount={bookedWithOwnAccount(prebook.funding)}
+                providerEnvironment={prebook.providerEnvironment}
                 gate={gate}
                 onConfirm={confirm}
                 onBack={onBack}

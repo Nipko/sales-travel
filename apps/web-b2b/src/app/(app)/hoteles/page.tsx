@@ -1,7 +1,15 @@
 'use client';
 
 import { Hotel, Info, RefreshCw, TriangleAlert } from 'lucide-react';
-import { startTransition, useActionState, useEffect, useId, useRef, useState } from 'react';
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   DateRangePicker,
   EMPTY_RANGE,
@@ -25,7 +33,11 @@ import {
 import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
 import { emptyWithMoreView, type MoreState } from './_components/hotel-paging';
-import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
+import {
+  degradedProviders,
+  emptyResultsView,
+  testAccountView,
+} from './_components/hotel-provider-view';
 import { HotelResultSkeleton } from './_components/hotel-result-card';
 import { HotelResults } from './_components/hotel-results';
 import { ResultsPager } from './_components/hotel-results-pager';
@@ -138,6 +150,11 @@ export default function HotelesPage() {
   const [state, formAction, isPending] = useActionState(searchHotelsAction, INITIAL);
   // Los tramos siguientes de la búsqueda ("Ver más hoteles"), sumados a lo que trajo el primero.
   const { more, hotels: allHotels, loadMore } = useMoreHotels(state);
+  // De la búsqueda y de cada tramo: la cuenta de prueba se avisa venga de donde venga la tarifa.
+  const testAccount = useMemo(
+    () => testAccountView([...state.providers, ...more.providers], state.showProviderInResults),
+    [state.providers, more.providers, state.showProviderInResults],
+  );
   // Entrada y salida en un solo calendario, como vuelos: primer clic la entrada, segundo la salida.
   const [dates, setDates] = useState<DateRange>(EMPTY_RANGE);
   const [datesProblem, setDatesProblem] = useState<string | null>(null);
@@ -556,6 +573,7 @@ export default function HotelesPage() {
               headingId={resultsHeadingId}
               more={more}
               onLoadMore={loadMore}
+              testAccount={testAccount}
             />
           </div>
         ) : isPending ? null : (

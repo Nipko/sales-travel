@@ -135,6 +135,19 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
     ).toEqual({ ok: true });
   });
 
+  it('trae el entorno de la cuenta; uno desconocido o ausente no avisa nada', () => {
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'test' }))?.providerEnvironment).toBe(
+      'test',
+    );
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'live' }))?.providerEnvironment).toBe(
+      'live',
+    );
+    expect(parsePrebook(apiResponse({ providerEnvironment: 'sandbox' }))).not.toHaveProperty(
+      'providerEnvironment',
+    );
+    expect(parsePrebook(apiResponse())).not.toHaveProperty('providerEnvironment');
+  });
+
   it('sin `prebookRef` válido, sin precio o con otro vocabulario no hay tarifa que aceptar', () => {
     expect(parsePrebook(apiResponse({ prebookRef: undefined }))).toBeUndefined();
     expect(parsePrebook(apiResponse({ prebookRef: 'abc' }))).toBeUndefined();

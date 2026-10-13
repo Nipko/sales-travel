@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { HotelOffer, HotelSearchCriteria } from '@sales-travel/canonical';
-import type { HotelSuggestPort } from '@sales-travel/domain';
+import type { HotelRatesDetailPort, HotelSuggestPort } from '@sales-travel/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PricingService } from '../pricing/pricing.service.js';
 import type { HotelProviderFactory } from '../providers/hotel-provider.types.js';
@@ -961,5 +961,76 @@ describe('sugerencias y detalle — por capacidad', () => {
     await expect(
       b.service.getHotelDetail(TENANT, { ...detalle, provider: 'otro-hotels' }),
     ).rejects.toBeInstanceOf(ProviderNotAvailableError);
+  });
+});
+
+describe('entorno de la cuenta — la web avisa las tarifas de una cuenta de prueba', () => {
+  it('la parte de un proveedor que respondió lleva el entorno que declara su cuenta', async () => {
+    const b = banco({ stubs: [stub({ accountEnvironment: 'test' })] });
+    const res = await b.service.searchAvailability(TENANT, entrada());
+
+    expect(parteDe(res.providers, STUB)).toEqual({
+      code: STUB,
+      status: 'ok',
+      count: 1,
+      accountEnvironment: 'test',
+    });
+    // Despegar no distingue entornos: su parte sale como siempre.
+    expect(parteDe(res.providers, DESPEGAR)).not.toHaveProperty('accountEnvironment');
+  });
+
+  it('uno que respondió sin hoteles también lo lleva: la búsqueda se hizo con esa cuenta', async () => {
+    const b = banco({ stubs: [stub({ accountEnvironment: 'live', offers: [] })] });
+    const res = await b.service.searchAvailability(TENANT, entrada());
+
+    expect(parteDe(res.providers, STUB)).toEqual({
+      code: STUB,
+      status: 'empty',
+      count: 0,
+      accountEnvironment: 'live',
+    });
+  });
+
+  it('uno que falló no lo lleva: no aporta tarifas de las que avisar', async () => {
+    const b = banco({
+      stubs: [
+        stub({
+          accountEnvironment: 'test',
+          searchImpl: () => Promise.reject(new Error('caído')),
+        }),
+      ],
+    });
+    const res = await b.service.searchAvailability(TENANT, entrada());
+
+    expect(parteDe(res.providers, STUB)).toMatchObject({ status: 'error' });
+    expect(parteDe(res.providers, STUB)).not.toHaveProperty('accountEnvironment');
+  });
+
+  const detalle = {
+    hotelId: 'S-1',
+    checkinDate: '2026-11-10',
+    checkoutDate: '2026-11-13',
+    rooms: [{ adults: 2, childrenAges: [] }],
+  };
+
+  function conTarifas(f: StubHotelProviderFactory): StubHotelProviderFactory {
+    const getHotelRates = vi.fn(() => Promise.resolve(stubHotelOffer(STUB, { hotelId: 'S-1' })));
+    Object.assign(f.adapterFor(TENANT), { getHotelRates } satisfies HotelRatesDetailPort);
+    return f;
+  }
+
+  it('el detalle de un hotel lo lleva junto a la oferta: no tiene `providers[]` donde decirlo', async () => {
+    const b = banco({ stubs: [conTarifas(stub({ accountEnvironment: 'test' }))] });
+
+    const res = await b.service.getHotelDetail(TENANT, { ...detalle, provider: STUB });
+    expect(res.hotelId).toBe('S-1');
+    expect(res.accountEnvironment).toBe('test');
+  });
+
+  it('el detalle de un proveedor que no declara entorno sale sin el campo', async () => {
+    const b = banco({ stubs: [conTarifas(stub())] });
+
+    const res = await b.service.getHotelDetail(TENANT, { ...detalle, provider: STUB });
+    expect(res).not.toHaveProperty('accountEnvironment');
   });
 });

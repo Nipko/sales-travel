@@ -218,6 +218,11 @@ export interface ResolvedHotelProvider
   readonly circuit?: ProviderCircuitOptions;
   /** Tenant dueño de la cuenta con que sale el adapter (ver `TenantAdapter`). */
   readonly accountOwnerTenantId?: string;
+  /**
+   * El entorno de la cuenta, si el adapter lo declara ({@link hasAccountEnvironment}). Ausente en
+   * un proveedor que no distingue entornos: la web no avisa nada.
+   */
+  readonly accountEnvironment?: HotelAccountEnvironment;
 }
 
 /** Lo que el registry necesita de una orden para resolver su post-venta. */
@@ -578,6 +583,20 @@ export interface HotelAccountIssuePort {
   accountIssueOf(err: unknown): HotelProviderAccountIssue | undefined;
 }
 
+// ───────────────────────── Entorno de la cuenta ─────────────────────────
+
+/**
+ * Contra qué entorno del proveedor sale la cuenta. Con `test` las reservas no son habitaciones de
+ * verdad: la web lo avisa en resultados, ficha y checkout para que nadie le venda una a un cliente.
+ * No es un secreto: viaja en `config` de la cuenta (RF-37).
+ */
+export type HotelAccountEnvironment = 'test' | 'live';
+
+/** Un adapter que sabe contra qué entorno sale su cuenta. */
+export interface HotelAccountEnvironmentPort {
+  readonly accountEnvironment: HotelAccountEnvironment;
+}
+
 // ───────────────────────── Contenido de un hotel bajo demanda (PR-3.6) ─────────────────────────
 
 /** Idiomas de contenido: los de `hotel_content.lang` (0041) y `LanguageCodeSchema`. */
@@ -865,4 +884,16 @@ export function supportsHotelCityCatalog<T extends object>(
   adapter: T,
 ): adapter is T & HotelCityCatalogPort {
   return hasMethod<HotelCityCatalogPort>(adapter, 'listCityCatalog');
+}
+
+/**
+ * Un valor y no un método: se mira lo que vale, no que exista. Un adapter con el campo en
+ * `undefined` o con otro texto no declara entorno, y la web no avisa nada en vez de avisar mal.
+ */
+export function hasAccountEnvironment<T extends object>(
+  adapter: T,
+): adapter is T & HotelAccountEnvironmentPort {
+  const key: keyof HotelAccountEnvironmentPort = 'accountEnvironment';
+  const value = (adapter as Record<string, unknown>)[key];
+  return value === 'test' || value === 'live';
 }

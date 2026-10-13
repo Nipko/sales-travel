@@ -16,6 +16,7 @@ import type {
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import { HotelProviderRegistry } from './hotel-provider.registry.js';
 import {
+  hasAccountEnvironment,
   supportsHotelBookingByClientReference,
   supportsHotelBookingsByDate,
   supportsHotelPaymentOptions,
@@ -811,6 +812,62 @@ describe('capacidades opcionales por presencia del método', () => {
     expect(supportsHotelBookingByClientReference(soloReferencia)).toBe(true);
     expect(supportsHotelBookingsByDate(soloReferencia)).toBe(false);
     expect(supportsHotelSuggest(soloReferencia)).toBe(false);
+  });
+});
+
+describe('entorno de la cuenta', () => {
+  it('la guarda mira el valor: sólo `test` o `live` declaran entorno', () => {
+    expect(hasAccountEnvironment({ accountEnvironment: 'test' })).toBe(true);
+    expect(hasAccountEnvironment({ accountEnvironment: 'live' })).toBe(true);
+    expect(hasAccountEnvironment({})).toBe(false);
+    expect(hasAccountEnvironment({ accountEnvironment: undefined })).toBe(false);
+    expect(hasAccountEnvironment({ accountEnvironment: 'produccion' })).toBe(false);
+  });
+
+  it('la venta lo lleva en el proveedor resuelto: `forTenant`, `byCode` y `byCodeForOffer`', async () => {
+    const r = registry([
+      new StubHotelProviderFactory({ code: 'alfa-hotels', accountEnvironment: 'test' }),
+      new StubHotelProviderFactory({ code: 'beta-hotels', accountEnvironment: 'live' }),
+    ]);
+
+    const { active } = await r.forTenant(TENANT);
+    expect(active.map((p) => [p.code, p.accountEnvironment])).toEqual([
+      ['alfa-hotels', 'test'],
+      ['beta-hotels', 'live'],
+    ]);
+    expect((await r.byCode(TENANT, 'alfa-hotels')).accountEnvironment).toBe('test');
+    expect((await r.byCodeForOffer(TENANT, 'beta-hotels')).accountEnvironment).toBe('live');
+  });
+
+  it('la post-venta también: `forOrder` y `forAccount` con la cuenta de la orden', async () => {
+    const base = new StubHotelProviderFactory({
+      code: 'alfa-hotels',
+      capabilities: { reconcileByDate: true },
+      accountEnvironment: 'test',
+    });
+    const conCuenta = (tenantId: string) =>
+      Promise.resolve({ adapter: base.adapterFor(tenantId), credentialSource: 'own' as const });
+    const factory = Object.assign(base, {
+      resolveForOrder: conCuenta,
+      resolveForAccount: conCuenta,
+    });
+    const r = registry([factory]);
+
+    const orden = await r.forOrder(TENANT, {
+      orderId: 'o-1',
+      provider: 'alfa-hotels',
+      providerAccountId: 'acc-1',
+    });
+    const cuenta = await r.forAccount(TENANT, { provider: 'alfa-hotels', accountId: 'acc-1' });
+    expect(orden.accountEnvironment).toBe('test');
+    expect(cuenta.accountEnvironment).toBe('test');
+  });
+
+  it('un adapter que no declara entorno sale sin el campo: no se inventa uno', async () => {
+    const r = registry([new StubHotelProviderFactory({ code: 'alfa-hotels' })]);
+
+    const { active } = await r.forTenant(TENANT);
+    expect(active[0]).not.toHaveProperty('accountEnvironment');
   });
 });
 

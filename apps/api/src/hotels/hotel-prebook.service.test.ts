@@ -316,6 +316,8 @@ interface OpcionesBanco {
   cartera?: Cartera;
   /** Quien financia a la agencia le bloqueó las no reembolsables (0055). */
   noReembolsablesBloqueadas?: boolean;
+  /** El entorno que declara la cuenta del stub, como el de TBO. */
+  entorno?: 'test' | 'live';
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -324,6 +326,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
     callPolicy: opts.callPolicy ?? 'always',
     searchProfile: { requiresGuestNationality: opts.requiresGuestNationality ?? true },
     circuit: { accountRef: 'huella-de-la-cuenta' },
+    ...(opts.entorno === undefined ? {} : { accountEnvironment: opts.entorno }),
   });
   const puerto = conPrebook(stub.adapterFor(AGENCIA));
   const cache = opts.cache ?? new MemoryCacheAdapter();
@@ -1001,6 +1004,32 @@ describe('sin snapshot no hay tarifa que aceptar', () => {
   });
 });
 
+describe('entorno de la cuenta: el checkout avisa una reserva de prueba', () => {
+  it('con una cuenta de prueba, la respuesta lo dice en `providerEnvironment`', async () => {
+    const b = await bancoConBusqueda({ entorno: 'test' });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.providerEnvironment).toBe('test');
+  });
+
+  it('con una cuenta de producción también: la web sólo avisa en `test`', async () => {
+    const b = await bancoConBusqueda({ entorno: 'live' });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.providerEnvironment).toBe('live');
+  });
+
+  it('un proveedor que no declara entorno no lo inventa', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('providerEnvironment');
+  });
+});
+
 // ───────────────────────── TBO de punta a punta ─────────────────────────
 
 const TBO = 'tbo-hotels';
@@ -1137,6 +1166,16 @@ function prebooksDe(fetch: Mock<TboFetch>): Record<string, unknown>[] {
 }
 
 describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
+  it('la cuenta del consolidador es la de prueba: el detalle y el PreBook lo dicen', async () => {
+    const b = bancoTbo();
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(oferta.accountEnvironment).toBe('test');
+    expect(res.providerEnvironment).toBe('test');
+  });
+
   it('RF-15 CA-1: por el cable sale exactamente el PreBook de Postman: `BookingCode` y `PaymentMode: "Limit"`', async () => {
     const b = bancoTbo();
     const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);

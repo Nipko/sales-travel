@@ -26,6 +26,7 @@ import { isRateExpired } from './offer-expiry';
 import { RateBookAction } from './rate-book-action';
 import { roomTypeGroups, roomTypesCountText } from './room-type-groups';
 import { RoomTypeList } from './room-type-list';
+import { TestAccountTag } from './test-account-notice';
 import { useBookRate } from './use-book-rate';
 
 /*
@@ -70,6 +71,8 @@ interface HotelResultCardProps {
    * reparten entre los que ya estaban y la marca los deja ver de un vistazo.
    */
   fresh?: boolean;
+  /** Proveedores con cuenta de prueba: sus tarifas llevan la etiqueta «Prueba». */
+  testAccountCodes?: ReadonlySet<string>;
 }
 
 export function HotelResultCard({
@@ -84,6 +87,7 @@ export function HotelResultCard({
   searchToken,
   showProvider,
   fresh = false,
+  testAccountCodes,
 }: HotelResultCardProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -99,6 +103,9 @@ export function HotelResultCard({
   const stars = item.hotel.stars;
   const stayText = stayShortLabel(nights, rooms);
   const countId = useId();
+  const headlineTest =
+    headline !== undefined &&
+    (testAccountCodes?.has(headline.row.pack.provider?.name ?? '') ?? false);
 
   return (
     <article className="@container overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
@@ -240,11 +247,12 @@ export function HotelResultCard({
                   </p>
                 ) : null}
                 <OwnMarginLine row={headline.row} />
-                {headline.row.providerLabel || summary.headlineExpired ? (
+                {headline.row.providerLabel || headlineTest || summary.headlineExpired ? (
                   // La pastilla es la de la tarifa del precio, no la del hotel: una tarjeta puede
                   // reunir tarifas de varios proveedores (RF-40 CA 4).
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 @2xl:justify-end">
                     <ProviderPill label={headline.row.providerLabel} />
+                    {headlineTest ? <TestAccountTag /> : null}
                     {summary.headlineExpired ? <ExpiredTag /> : null}
                   </div>
                 ) : null}
@@ -304,6 +312,7 @@ export function HotelResultCard({
             stay={stay}
             searchToken={searchToken}
             showProvider={showProvider}
+            testAccountCodes={testAccountCodes}
           />
         ) : null}
       </div>
@@ -327,6 +336,7 @@ export function HotelResultRates({
   stay,
   searchToken,
   showProvider,
+  testAccountCodes,
 }: {
   item: FilteredHotel;
   isExpired: (rate: ResultRate) => boolean;
@@ -338,6 +348,7 @@ export function HotelResultRates({
   stay: HotelStay | undefined;
   searchToken: string | undefined;
   showProvider: boolean;
+  testAccountCodes?: ReadonlySet<string>;
 }) {
   const [allTypes, setAllTypes] = useState(false);
   const listId = useId();
@@ -381,6 +392,7 @@ export function HotelResultRates({
           maxGroups={allTypes ? undefined : CARD_ROOM_TYPES}
           isExpired={isExpired}
           isUnavailable={unavailableForAgency}
+          testAccountCodes={testAccountCodes}
           planAction={(rate) =>
             unavailableForAgency(rate) ? null : (
               <RateBookAction

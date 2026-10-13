@@ -15,6 +15,7 @@ import {
   sortOutcomes,
   telemetrySlices,
   unavailableOutcome,
+  withAccountEnvironment,
   withCatalogFacts,
   type HotelProviderOutcome,
 } from './hotel-search.aggregate.js';
@@ -472,6 +473,34 @@ describe('partialOutcome — respuesta parcial (RF-14 CA 3)', () => {
     expect(partialOutcome(conMoneda, 'Faltó el lote 2.').reason).toBe(
       'Faltó el lote 2. 1 tarifa en EUR no se muestra: esta búsqueda es en USD.',
     );
+  });
+});
+
+describe('withAccountEnvironment — de qué entorno es la cuenta que respondió', () => {
+  const ok: HotelProviderOutcome = { code: 'tbo-hotels', status: 'ok', count: 3 };
+
+  it('va en lo que respondió, con hoteles o sin ellos, también si fue parcial', () => {
+    expect(withAccountEnvironment(ok, 'test')).toEqual({ ...ok, accountEnvironment: 'test' });
+    expect(
+      withAccountEnvironment({ code: 'tbo-hotels', status: 'empty', count: 0 }, 'live'),
+    ).toEqual({ code: 'tbo-hotels', status: 'empty', count: 0, accountEnvironment: 'live' });
+    const parcial = partialOutcome(ok, 'Un lote no respondió.');
+    expect(withAccountEnvironment(parcial, 'test')).toEqual({
+      ...parcial,
+      accountEnvironment: 'test',
+    });
+  });
+
+  it('no va en lo que no aportó tarifas: caído, omitido o sin cuenta', () => {
+    const caido = errorOutcome('tbo-hotels', 'no respondió');
+    const omitido = skippedOutcome('tbo-hotels', 'currency-mismatch', 'Cotiza en USD.');
+
+    expect(withAccountEnvironment(caido, 'test')).toBe(caido);
+    expect(withAccountEnvironment(omitido, 'test')).toBe(omitido);
+  });
+
+  it('un proveedor que no declara entorno sale como llegó', () => {
+    expect(withAccountEnvironment(ok, undefined)).toBe(ok);
   });
 });
 
