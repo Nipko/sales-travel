@@ -1,4 +1,5 @@
-import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import { type ExecutionContext } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
@@ -6,49 +7,43 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
 import type { Role } from '../database/database.types.js';
 import type { NetworkService } from '../network/network.service.js';
+import { SuperadminRequiredError } from '../network/superadmin.errors.js';
+import { SuperadminGuard } from '../network/superadmin.guard.js';
 import { requestContextStorage } from '../request-context/request-context.js';
-import {
-  PLATFORM_CONSOLE_DB_DENIAL,
-  PlatformConsoleScopeNotFoundError,
-  PlatformConsoleSuperadminOnlyError,
-  platformConsoleDbError,
-} from './admin-console.errors.js';
+import { PlatformConsoleScopeNotFoundError } from './admin-console.errors.js';
 import { AdminOverviewController } from './admin-overview.controller.js';
 import { AdminOverviewQuerySchema } from './admin-overview.schemas.js';
 import type { AdminOverviewService } from './admin-overview.service.js';
 
 const USUARIO = '99999999-9999-4999-8999-999999999999';
 
-function banco({ esSuperadmin = true } = {}) {
+function banco() {
   const overview = { overview: vi.fn(() => Promise.resolve({ generatedAt: 'ahora' })) };
-  const network = { isSuperadmin: vi.fn(() => Promise.resolve(esSuperadmin)) };
-  const controller = new AdminOverviewController(
-    overview as unknown as AdminOverviewService,
-    network as unknown as NetworkService,
-  );
-  return { controller, overview, network };
+  const controller = new AdminOverviewController(overview as unknown as AdminOverviewService);
+  return { controller, overview };
 }
 
 const QUERY = AdminOverviewQuerySchema.parse({ from: '2026-09-01', to: '2026-09-30' });
 
 describe('AdminOverviewController: sólo el superadmin', () => {
-  it('sin usuario, 401 y el servicio no se entera', async () => {
-    const { controller, overview, network } = banco();
-    await expect(controller.get(undefined, QUERY)).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(network.isSuperadmin).not.toHaveBeenCalled();
-    expect(overview.overview).not.toHaveBeenCalled();
+  it('la clase entera pasa por SuperadminGuard', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, AdminOverviewController)).toEqual([
+      SuperadminGuard,
+    ]);
   });
 
-  it('quien no es superadmin (platform_admin incluido) recibe 403 con motivo', async () => {
-    const { controller, overview, network } = banco({ esSuperadmin: false });
-    const error = await controller.get(USUARIO, QUERY).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(PlatformConsoleSuperadminOnlyError);
-    expect((error as PlatformConsoleSuperadminOnlyError).getStatus()).toBe(403);
-    expect((error as PlatformConsoleSuperadminOnlyError).reason).toBe(
-      'PLATFORM_CONSOLE_SUPERADMIN_ONLY',
-    );
-    expect(network.isSuperadmin).toHaveBeenCalledWith(USUARIO);
-    expect(overview.overview).not.toHaveBeenCalled();
+  it('platform_admin pasa RolesGuard (rol de plataforma) pero SuperadminGuard lo frena: 403', async () => {
+    const roles = new RolesGuard(new Reflector());
+    const network = { isSuperadmin: vi.fn(() => Promise.resolve(false)) };
+    const superadmin = new SuperadminGuard(network as unknown as NetworkService);
+    const ctx = {
+      getHandler: () => () => undefined,
+      getClass: () => AdminOverviewController,
+    } as unknown as ExecutionContext;
+    await requestContextStorage.run({ userId: USUARIO, role: 'platform_admin' }, async () => {
+      expect(roles.canActivate(ctx)).toBe(true);
+      await expect(superadmin.canActivate(ctx)).rejects.toBeInstanceOf(SuperadminRequiredError);
+    });
   });
 
   it('el superadmin pasa, con su id como actor y la query ya validada', async () => {
@@ -98,21 +93,6 @@ describe('AdminOverviewController: RolesGuard', () => {
 });
 
 describe('errores de la consola', () => {
-  it('el rechazo de la base (0075) es el mismo 403 que da el controlador', () => {
-    expect(
-      platformConsoleDbError({ code: '42501', message: PLATFORM_CONSOLE_DB_DENIAL }),
-    ).toBeInstanceOf(PlatformConsoleSuperadminOnlyError);
-  });
-
-  it.each([
-    ['otro 42501 (una policy)', { code: '42501', message: 'new row violates row-level security' }],
-    ['otro código', { code: '22023', message: PLATFORM_CONSOLE_DB_DENIAL }],
-    ['algo que no es un objeto', 'boom'],
-    ['null', null],
-  ])('%s no se traduce', (_caso, err) => {
-    expect(platformConsoleDbError(err)).toBeUndefined();
-  });
-
   it('el nodo que no existe es un 404 con motivo', () => {
     const error = new PlatformConsoleScopeNotFoundError();
     expect(error.getStatus()).toBe(404);

@@ -13,16 +13,21 @@
 -- la red. Acá cada lectura cruzada es una función con nombre, que:
 --
 --   1. exige ELLA MISMA que quien pide sea el superadmin de la plataforma
---      (platform_console_require_superadmin, 42501 platform_console_superadmin_required). No confía
---      sólo en la app, a diferencia de network_sales_summary (0014): defensa en profundidad;
---   2. devuelve AGREGADOS (conteos y sumas por moneda), nunca filas con datos de pasajeros ni de
---      contacto;
---   3. acepta un nodo raíz (p_root) para mirar el subárbol de un consolidador; NULL es toda la red.
+--      (is_platform_superadmin(); si no, 42501 admin_superadmin_required). No confía sólo en la
+--      app, a diferencia de network_sales_summary (0014): defensa en profundidad. Las migraciones
+--      siguientes de la consola (0076-0079) usan el mismo predicado y el mismo mensaje, que la API
+--      traduce a 403 con rethrowAdminDbError (apps/api/src/network/superadmin.errors.ts);
+--   2. devuelve AGREGADOS (conteos y sumas por moneda) o, en admin_order_attention, sólo el número,
+--      el localizador y el estado de la orden: nunca datos de pasajeros ni de contacto;
+--   3. las del Resumen aceptan un nodo raíz (p_root) para mirar el subárbol de un consolidador; NULL
+--      es toda la red. Las admin_* devuelven el tenant de cada fila y quien las llama acota.
 --
 -- Nunca se suman monedas distintas: todo monto sale agrupado por moneda.
 --
 -- Las consume AdminOverviewService (apps/api/src/admin-console), que corre con
--- withRequestContext({ userId }) para que app.current_user_id llegue a estas funciones.
+-- withRequestContext({ userId }) para que app.current_user_id llegue a estas funciones. Las admin_*
+-- (secciones 7 a 10) son además la base de las consolas siguientes: Reservas de la red (ADM-4),
+-- Agencias con puestos e impacto (ADM-9), Procesos (ADM-11) y la ficha de cada nodo (ADM-13).
 --
 -- search_path = pg_catalog, public, pg_temp en todas (posterior a 0060: nada las endurece después;
 -- ver apps/api/src/database/migrations-search-path.test.ts).
@@ -36,7 +41,7 @@
 -- no es un UUID, false.
 --
 -- SECURITY DEFINER para leer memberships sin re-disparar su RLS (mismo patrón que 0020).
-CREATE FUNCTION platform_console_is_superadmin()
+CREATE FUNCTION is_platform_superadmin()
 RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
@@ -63,11 +68,11 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION platform_console_is_superadmin() IS
+COMMENT ON FUNCTION is_platform_superadmin() IS
   '¿El usuario de app.current_user_id es el superadmin de la plataforma (membership activa con rol superadmin en el tenant platform, usuario activo)? Gobierna las lecturas de toda la red de la consola. Ver db/migrations/0075.';
 
-REVOKE ALL ON FUNCTION platform_console_is_superadmin() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION platform_console_is_superadmin() TO app_user;
+REVOKE ALL ON FUNCTION is_platform_superadmin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_platform_superadmin() TO app_user;
 
 -- La guarda con que empieza cada lectura de la consola. Sin GRANT: la llaman las funciones de abajo,
 -- que corren con su dueño.
@@ -77,10 +82,10 @@ LANGUAGE plpgsql STABLE
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
-  IF NOT public.platform_console_is_superadmin() THEN
+  IF NOT public.is_platform_superadmin() THEN
     RAISE EXCEPTION USING
       ERRCODE = '42501',
-      MESSAGE = 'platform_console_superadmin_required',
+      MESSAGE = 'admin_superadmin_required',
       DETAIL  = format('app.current_user_id = %L',
                        COALESCE(NULLIF(current_setting('app.current_user_id', true), ''), '(sin valor)')),
       HINT    = 'Sólo el superadmin de la plataforma lee la red entera. Un nodo se lee con su tenant en app.current_tenant_id.';
@@ -89,7 +94,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION platform_console_require_superadmin() IS
-  'Si app.current_user_id no es el superadmin de la plataforma, 42501 platform_console_superadmin_required. Helper de 0075, sin GRANT.';
+  'Si app.current_user_id no es el superadmin de la plataforma, 42501 admin_superadmin_required. Helper de 0075, sin GRANT.';
 
 REVOKE ALL ON FUNCTION platform_console_require_superadmin() FROM PUBLIC;
 
@@ -608,5 +613,376 @@ GRANT EXECUTE ON FUNCTION platform_overview_attention(uuid, timestamptz) TO app_
 -- 6. Índice para leer por período
 -- ============================================================================
 -- Las lecturas de arriba filtran órdenes por created_at en toda la red; hasta ahora sólo había índices
--- por tenant, estado y PNR.
-CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at);
+-- por tenant, estado y PNR. (created_at DESC, id DESC) sirve también para paginar la consola de
+-- Reservas de la red (ADM-4, 0076) por (created_at, id) de lo más nuevo a lo más viejo.
+CREATE INDEX IF NOT EXISTS idx_orders_created_id ON orders (created_at DESC, id DESC);
+
+-- ============================================================================
+-- 7. Las reservas que necesitan a una persona
+-- ============================================================================
+-- Una fila por (orden, motivo) de las órdenes creadas en los últimos 180 días. El vocabulario es
+-- cerrado y es el mismo de ORDER_ATTENTION_REASONS (apps/api/src/admin-console/attention.ts; un test
+-- de contrato lee este archivo), y `since` es el momento del hecho que lo dispara:
+--
+--   review          hotel_order_tracking.sub_status create-not-found-yet o unknown: a la agencia se le
+--                   dice "el equipo la revisa". since = hotel_order_tracking.updated_at.
+--   verifying-long  sub_status create-uncertain, cancel-unverified o unverified-read y la orden sin
+--                   cambios hace más de 2 horas. since = orders.updated_at.
+--   create-stuck    orden pending hace más de 30 minutos sin una verificación de hotel en curso (sin
+--                   tracking, o sub_status NULL o create-pending). since = orders.created_at.
+--   cancel-failed   la ÚLTIMA operación cancel de la orden falló y la orden no quedó cancelada.
+--                   since = order_operations.updated_at de esa operación.
+--   hold-conflict   la retención de cartera quedó en conflicto (figuró confirmada y después no).
+--                   since = wallet_hold_groups.captured_at, o created_at si nunca se capturó.
+--   hold-orphan     retención todavía held con la orden failed o cancelled y creada hace más de 1
+--                   hora: saldo retenido sin reserva. since = orders.updated_at (cuando se cerró).
+--   hcn-missing     hotel_order_tracking.hcn_state missing: sin número de confirmación del hotel.
+--                   since = hotel_order_tracking.updated_at.
+--   reconciliation  divergencia crítica de la conciliación sobre la orden en los últimos 14 días.
+--                   since = la primera de esas divergencias.
+--
+-- Los umbrales son heurísticos para afinar con datos reales: cambiarlos es cambiar esta función y
+-- ATTENTION_THRESHOLDS juntos (el test de contrato lo exige).
+CREATE FUNCTION admin_order_attention()
+RETURNS TABLE (
+  order_id          UUID,
+  tenant_id         UUID,
+  tenant_name       TEXT,
+  order_number      INTEGER,
+  provider          TEXT,
+  provider_order_id TEXT,
+  order_status      TEXT,
+  reason            TEXT,
+  since             TIMESTAMPTZ
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+#variable_conflict use_column
+BEGIN
+  PERFORM public.platform_console_require_superadmin();
+
+  RETURN QUERY
+    WITH recent AS (
+      SELECT o.id, o.tenant_id, o.order_number, o.provider, o.provider_order_id, o.status,
+             o.created_at, o.updated_at
+        FROM public.orders o
+       WHERE o.created_at > now() - interval '180 days'
+    ),
+    last_cancel AS (
+      SELECT DISTINCT ON (op.order_id) op.order_id, op.status, op.updated_at
+        FROM public.order_operations op
+        JOIN recent r ON r.id = op.order_id
+       WHERE op.type = 'cancel'
+       ORDER BY op.order_id, op.created_at DESC, op.id DESC
+    ),
+    facts AS (
+      SELECT r.id AS oid, 'review'::text AS why, h.updated_at AS at
+        FROM recent r
+        JOIN public.hotel_order_tracking h ON h.order_id = r.id
+       WHERE h.sub_status IN ('create-not-found-yet', 'unknown')
+      UNION ALL
+      SELECT r.id, 'verifying-long', r.updated_at
+        FROM recent r
+        JOIN public.hotel_order_tracking h ON h.order_id = r.id
+       WHERE h.sub_status IN ('create-uncertain', 'cancel-unverified', 'unverified-read')
+         AND r.updated_at < now() - interval '2 hours'
+      UNION ALL
+      SELECT r.id, 'create-stuck', r.created_at
+        FROM recent r
+        LEFT JOIN public.hotel_order_tracking h ON h.order_id = r.id
+       WHERE r.status = 'pending'
+         AND r.created_at < now() - interval '30 minutes'
+         AND (h.order_id IS NULL OR h.sub_status IS NULL OR h.sub_status = 'create-pending')
+      UNION ALL
+      SELECT r.id, 'cancel-failed', lc.updated_at
+        FROM last_cancel lc
+        JOIN recent r ON r.id = lc.order_id
+       WHERE lc.status = 'failed'
+         AND r.status <> 'cancelled'
+      UNION ALL
+      SELECT r.id, 'hold-conflict', COALESCE(g.captured_at, g.created_at)
+        FROM recent r
+        JOIN public.wallet_hold_groups g ON g.order_id = r.id
+       WHERE g.status = 'conflict'
+      UNION ALL
+      SELECT r.id, 'hold-orphan', r.updated_at
+        FROM recent r
+        JOIN public.wallet_hold_groups g ON g.order_id = r.id
+       WHERE g.status = 'held'
+         AND r.status IN ('failed', 'cancelled')
+         AND g.created_at < now() - interval '1 hour'
+      UNION ALL
+      SELECT r.id, 'hcn-missing', h.updated_at
+        FROM recent r
+        JOIN public.hotel_order_tracking h ON h.order_id = r.id
+       WHERE h.hcn_state = 'missing'
+      UNION ALL
+      SELECT r.id, 'reconciliation', min(i.created_at)
+        FROM public.provider_reconciliation_items i
+        JOIN recent r ON r.id = i.order_id
+       WHERE i.severity = 'critical'
+         AND i.created_at > now() - interval '14 days'
+       GROUP BY r.id
+    )
+    SELECT r.id,
+           r.tenant_id,
+           t.name::text,
+           r.order_number,
+           r.provider::text,
+           r.provider_order_id::text,
+           r.status::text,
+           f.why,
+           f.at
+      FROM facts f
+      JOIN recent r         ON r.id = f.oid
+      JOIN public.tenants t ON t.id = r.tenant_id
+     ORDER BY f.at, r.id, f.why;
+END;
+$$;
+
+COMMENT ON FUNCTION admin_order_attention() IS
+  'Una fila por (orden, motivo) de las órdenes de los últimos 180 días de toda la red que necesitan a una persona: review, verifying-long, create-stuck, cancel-failed, hold-conflict, hold-orphan, hcn-missing, reconciliation; since es el momento del hecho que lo dispara (ver el encabezado de la sección 7). Sin datos de pasajeros ni de contacto. Sólo el superadmin de la plataforma. Ver db/migrations/0075.';
+
+REVOKE ALL ON FUNCTION admin_order_attention() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_order_attention() TO app_user;
+
+-- ============================================================================
+-- 8. Ventas por nodo, proveedor, vertical y moneda
+-- ============================================================================
+-- Órdenes creadas en [p_from, p_to). Confirmadas son confirmed y ticketed; total_amount ya está en
+-- unidades menores (0005). La vertical es la de apps/web-b2b/src/lib/order-vertical.ts: la marca
+-- search_criteria.vertical (hotels, cars) y, para autos anteriores a la marca, el proveedor
+-- agent-cars; lo demás son vuelos. La consola de Reservas de la red (0076) usa el mismo CASE.
+CREATE FUNCTION admin_sales_summary(p_from TIMESTAMPTZ, p_to TIMESTAMPTZ)
+RETURNS TABLE (
+  tenant_id              UUID,
+  provider               TEXT,
+  vertical               TEXT,
+  currency               TEXT,
+  orders_count           BIGINT,
+  confirmed_count        BIGINT,
+  confirmed_amount_minor NUMERIC,
+  cancelled_count        BIGINT,
+  failed_count           BIGINT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+#variable_conflict use_column
+BEGIN
+  PERFORM public.platform_console_require_superadmin();
+  PERFORM public.platform_console_check_period(p_from, p_to);
+
+  RETURN QUERY
+    SELECT o.tenant_id,
+           o.provider::text,
+           (CASE
+              WHEN o.search_criteria ->> 'vertical' = 'hotels' THEN 'hotels'
+              WHEN o.search_criteria ->> 'vertical' = 'cars' OR o.provider = 'agent-cars' THEN 'cars'
+              ELSE 'flights'
+            END)::text,
+           upper(btrim(o.currency))::text,
+           count(*)::bigint,
+           count(*) FILTER (WHERE o.status IN ('confirmed', 'ticketed'))::bigint,
+           COALESCE(sum(o.total_amount) FILTER (WHERE o.status IN ('confirmed', 'ticketed')), 0)::numeric,
+           count(*) FILTER (WHERE o.status = 'cancelled')::bigint,
+           count(*) FILTER (WHERE o.status = 'failed')::bigint
+      FROM public.orders o
+     WHERE o.created_at >= p_from
+       AND o.created_at <  p_to
+     GROUP BY 1, 2, 3, 4;
+END;
+$$;
+
+COMMENT ON FUNCTION admin_sales_summary(timestamptz, timestamptz) IS
+  'Órdenes creadas en [p_from, p_to) de toda la red por nodo, proveedor, vertical (flights, hotels, cars, como order-vertical.ts) y moneda: cuántas, confirmadas (confirmed, ticketed) con su monto en unidades menores, canceladas y fallidas. Nunca suma monedas. Sólo el superadmin de la plataforma. Ver db/migrations/0075.';
+
+REVOKE ALL ON FUNCTION admin_sales_summary(timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_sales_summary(timestamptz, timestamptz) TO app_user;
+
+-- ============================================================================
+-- 9. Cada nodo en números
+-- ============================================================================
+-- Una fila por nodo (la raíz incluida):
+--   - active_users: usuarios activos con una membership activa en el nodo;
+--   - live_sessions: sesiones vivas en el nodo, con el predicado de user_admin_overview (0055);
+--   - seat_limit / seats_used: el cupo de sesiones simultáneas del nodo y cuántas lo ocupan
+--     (seats_in_use, 0055); NULL si el nodo no fija cupo;
+--   - orders_30d, last_order_at: lo que vendió en 30 días y su última orden;
+--   - open_orders: órdenes pending, confirmed o ticketed (lo que sigue vivo si se suspende el nodo);
+--   - held: lo retenido de SUS carteras por reservas en curso, moneda → unidades menores;
+--   - pending_deposit_reports: depósitos informados que esperan aprobación;
+--   - pending_invitations: invitaciones sin aceptar, sin revocar y vigentes.
+CREATE FUNCTION admin_node_stats()
+RETURNS TABLE (
+  tenant_id               UUID,
+  active_users            BIGINT,
+  live_sessions           BIGINT,
+  seat_limit              INTEGER,
+  seats_used              INTEGER,
+  orders_30d              BIGINT,
+  last_order_at           TIMESTAMPTZ,
+  open_orders             BIGINT,
+  held                    JSONB,
+  pending_deposit_reports BIGINT,
+  pending_invitations     BIGINT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+#variable_conflict use_column
+BEGIN
+  PERFORM public.platform_console_require_superadmin();
+
+  RETURN QUERY
+    WITH users_by AS (
+      SELECT m.tenant_id AS tid, count(DISTINCT m.user_id) AS n
+        FROM public.memberships m
+        JOIN public.users u ON u.id = m.user_id
+       WHERE m.status = 'active'
+         AND u.status = 'active'
+       GROUP BY m.tenant_id
+    ),
+    sessions_by AS (
+      SELECT s.tenant_id AS tid, count(*) AS n
+        FROM public.sessions s
+       WHERE s.revoked_at IS NULL
+         AND s.expires_at > now()
+         AND s.last_seen_at > now() - s.idle_timeout_seconds * interval '1 second'
+       GROUP BY s.tenant_id
+    ),
+    orders_by AS (
+      SELECT o.tenant_id AS tid,
+             count(*) FILTER (WHERE o.created_at > now() - interval '30 days') AS n30,
+             max(o.created_at) AS last_at,
+             count(*) FILTER (WHERE o.status IN ('pending', 'confirmed', 'ticketed')) AS open
+        FROM public.orders o
+       GROUP BY o.tenant_id
+    ),
+    held_by AS (
+      SELECT x.tid, jsonb_object_agg(x.cur, x.amount) AS held
+        FROM (SELECT l.tenant_id AS tid, l.currency AS cur, sum(l.amount_minor) AS amount
+                FROM public.wallet_hold_levels l
+               WHERE l.status = 'held'
+               GROUP BY l.tenant_id, l.currency) x
+       GROUP BY x.tid
+    ),
+    deposits_by AS (
+      SELECT r.tenant_id AS tid, count(*) AS n
+        FROM public.portfolio_deposit_reports r
+       WHERE r.status = 'pending'
+       GROUP BY r.tenant_id
+    ),
+    invitations_by AS (
+      SELECT i.tenant_id AS tid, count(*) AS n
+        FROM public.user_invitations i
+       WHERE i.accepted_at IS NULL
+         AND i.revoked_at IS NULL
+         AND i.expires_at > now()
+       GROUP BY i.tenant_id
+    )
+    SELECT t.id,
+           COALESCE(ub.n, 0)::bigint,
+           COALESCE(sb.n, 0)::bigint,
+           t.concurrent_seats,
+           CASE WHEN t.concurrent_seats IS NOT NULL THEN public.seats_in_use(t.id, NULL) END,
+           COALESCE(ob.n30, 0)::bigint,
+           ob.last_at,
+           COALESCE(ob.open, 0)::bigint,
+           COALESCE(hb.held, '{}'::jsonb),
+           COALESCE(db.n, 0)::bigint,
+           COALESCE(ib.n, 0)::bigint
+      FROM public.tenants t
+      LEFT JOIN users_by ub       ON ub.tid = t.id
+      LEFT JOIN sessions_by sb    ON sb.tid = t.id
+      LEFT JOIN orders_by ob      ON ob.tid = t.id
+      LEFT JOIN held_by hb        ON hb.tid = t.id
+      LEFT JOIN deposits_by db    ON db.tid = t.id
+      LEFT JOIN invitations_by ib ON ib.tid = t.id
+     ORDER BY t.path;
+END;
+$$;
+
+COMMENT ON FUNCTION admin_node_stats() IS
+  'Una fila por nodo: usuarios activos, sesiones vivas, cupo y puestos en uso (seats_in_use; NULL sin cupo), órdenes de 30 días y la última, órdenes abiertas (pending, confirmed, ticketed), lo retenido de sus carteras por moneda (held), depósitos por aprobar e invitaciones vigentes. Sólo el superadmin de la plataforma. Ver db/migrations/0075.';
+
+REVOKE ALL ON FUNCTION admin_node_stats() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_node_stats() TO app_user;
+
+-- ============================================================================
+-- 10. La conciliación por proveedor
+-- ============================================================================
+-- Por proveedor con alguna corrida (o alguna divergencia desde p_since): las corridas desde p_since
+-- y cuántas fallaron (failed, invalid o abandoned), la última corrida terminada y el estado de la
+-- última corrida, aunque sea anterior a p_since (un proveedor que dejó de conciliar sigue a la
+-- vista), y las divergencias críticas y advertencias desde p_since.
+CREATE FUNCTION admin_reconciliation_health(p_since TIMESTAMPTZ)
+RETURNS TABLE (
+  provider_code    TEXT,
+  runs             BIGINT,
+  failed_runs      BIGINT,
+  last_finished_at TIMESTAMPTZ,
+  last_status      TEXT,
+  critical_items   BIGINT,
+  warning_items    BIGINT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+#variable_conflict use_column
+BEGIN
+  PERFORM public.platform_console_require_superadmin();
+  IF p_since IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'platform_console_period_invalid',
+      DETAIL = 'p_since es NULL';
+  END IF;
+
+  RETURN QUERY
+    WITH runs_by AS (
+      SELECT r.provider_code AS code,
+             count(*) FILTER (WHERE r.started_at >= p_since) AS n,
+             count(*) FILTER (WHERE r.started_at >= p_since
+                                AND r.status IN ('failed', 'invalid', 'abandoned')) AS failed,
+             max(r.finished_at) AS last_finished
+        FROM public.provider_reconciliation_runs r
+       GROUP BY r.provider_code
+    ),
+    last_run AS (
+      SELECT DISTINCT ON (r.provider_code) r.provider_code AS code, r.status
+        FROM public.provider_reconciliation_runs r
+       ORDER BY r.provider_code, r.started_at DESC, r.id DESC
+    ),
+    items_by AS (
+      SELECT i.provider_code AS code,
+             count(*) FILTER (WHERE i.severity = 'critical') AS critical,
+             count(*) FILTER (WHERE i.severity = 'warning') AS warning
+        FROM public.provider_reconciliation_items i
+       WHERE i.created_at >= p_since
+       GROUP BY i.provider_code
+    ),
+    codes AS (
+      SELECT rb.code FROM runs_by rb
+      UNION
+      SELECT ib.code FROM items_by ib
+    )
+    SELECT c.code::text,
+           COALESCE(rb.n, 0)::bigint,
+           COALESCE(rb.failed, 0)::bigint,
+           rb.last_finished,
+           lr.status::text,
+           COALESCE(ib.critical, 0)::bigint,
+           COALESCE(ib.warning, 0)::bigint
+      FROM codes c
+      LEFT JOIN runs_by rb  ON rb.code = c.code
+      LEFT JOIN last_run lr ON lr.code = c.code
+      LEFT JOIN items_by ib ON ib.code = c.code
+     ORDER BY c.code;
+END;
+$$;
+
+COMMENT ON FUNCTION admin_reconciliation_health(timestamptz) IS
+  'Por proveedor: corridas de conciliación desde p_since y cuántas fallaron (failed, invalid, abandoned), la última terminada y el estado de la última corrida (aunque sea anterior), y divergencias críticas y advertencias desde p_since. Sólo el superadmin de la plataforma. Ver db/migrations/0075.';
+
+REVOKE ALL ON FUNCTION admin_reconciliation_health(timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION admin_reconciliation_health(timestamptz) TO app_user;

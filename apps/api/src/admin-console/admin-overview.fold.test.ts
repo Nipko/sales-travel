@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CATALOG_STALE_HOURS,
   foldAttention,
+  foldCatalogs,
   foldNetwork,
+  foldOrderAttention,
   foldQuotations,
+  foldReconciliationRuns,
   foldSales,
+  foldSaturatedSeats,
   foldTopNodes,
   foldTrend,
   foldWallets,
-  killSwitchedCodes,
   orderStatusBucket,
+  type AttentionExtras,
+  type OverviewOrderAttentionRow,
   type OverviewOrdersRow,
 } from './admin-overview.fold.js';
+import { ORDER_ATTENTION_REASONS } from './attention.js';
 
 /**
  * Plataforma → Resumen: de las filas de 0075 a la vista. Lo que no puede pasar nunca es sumar monedas
@@ -350,6 +357,12 @@ describe('foldWallets', () => {
   });
 });
 
+const NO_EXTRAS: AttentionExtras = {
+  orders: foldOrderAttention([]),
+  seats: { saturated: [] },
+  reconciliationRuns: foldReconciliationRuns([], 7),
+};
+
 describe('foldAttention', () => {
   it('suma lo de Planetour y lo de la red, y deja sólo los tipos con algo pendiente', () => {
     const attention = foldAttention(
@@ -369,9 +382,13 @@ describe('foldAttention', () => {
         { op_type: 'pay', failed: 1, stuck: 0 },
       ],
       30,
+      NO_EXTRAS,
     );
     expect(attention).toEqual({
       depositReports: { total: 3, platform: 2, network: 1 },
+      orders: NO_EXTRAS.orders,
+      seats: { saturated: [] },
+      reconciliationRuns: { sinceDays: 7, failedRuns: 0, byProvider: [] },
       postSale: {
         failed: 3,
         stuck: 1,
@@ -388,7 +405,7 @@ describe('foldAttention', () => {
   });
 
   it('sin fila, ceros', () => {
-    expect(foldAttention(undefined, [], 30).depositReports).toEqual({
+    expect(foldAttention(undefined, [], 30, NO_EXTRAS).depositReports).toEqual({
       total: 0,
       platform: 0,
       network: 0,
@@ -396,13 +413,174 @@ describe('foldAttention', () => {
   });
 });
 
-describe('killSwitchedCodes', () => {
-  it('los códigos de PROVIDERS_DISABLED, sin nivel, sin repetir y ordenados', () => {
-    expect(killSwitchedCodes(' tbo-hotels:ventas , latam-ndc,, latam-ndc:otra ')).toEqual([
-      'latam-ndc',
-      'tbo-hotels',
+const attentionRow = (
+  orderId: string,
+  reason: string,
+  since: string,
+  extra: Partial<OverviewOrderAttentionRow> = {},
+): OverviewOrderAttentionRow => ({
+  order_id: orderId,
+  tenant_id: 'nodo-1',
+  tenant_name: 'Agencia Uno',
+  order_number: '1042',
+  provider: 'tbo-hotels',
+  provider_order_id: 'LOC-1',
+  order_status: 'pending',
+  reason,
+  since,
+  ...extra,
+});
+
+describe('foldOrderAttention', () => {
+  it('cuenta reservas distintas y, por motivo, cada fila', () => {
+    const view = foldOrderAttention([
+      attentionRow('o1', 'hcn-missing', '2026-10-01T10:00:00Z'),
+      attentionRow('o1', 'cancel-failed', '2026-10-02T10:00:00Z'),
+      attentionRow('o2', 'create-stuck', '2026-10-03T10:00:00Z'),
     ]);
-    expect(killSwitchedCodes(undefined)).toEqual([]);
-    expect(killSwitchedCodes('')).toEqual([]);
+    expect(view.total).toBe(2);
+    expect(view.byReason).toEqual({
+      ...Object.fromEntries(ORDER_ATTENTION_REASONS.map((r) => [r, 0])),
+      'hcn-missing': 1,
+      'cancel-failed': 1,
+      'create-stuck': 1,
+    });
+  });
+
+  it('la muestra lleva una fila por reserva con su motivo más grave, de la que más espera a la que menos', () => {
+    const view = foldOrderAttention([
+      attentionRow('o2', 'create-stuck', '2026-10-03T10:00:00Z'),
+      // o1: hcn-missing es menos grave que cancel-failed (ATTENTION_PRIORITY), aunque sea anterior.
+      attentionRow('o1', 'hcn-missing', '2026-10-01T10:00:00Z'),
+      attentionRow('o1', 'cancel-failed', '2026-10-04T10:00:00Z', { order_number: 7 }),
+      attentionRow('o3', 'hold-orphan', '2026-09-30T10:00:00Z', {
+        since: new Date('2026-09-30T10:00:00Z'),
+      }),
+    ]);
+    expect(view.sample.map((s) => [s.orderId, s.reason, s.since])).toEqual([
+      ['o3', 'hold-orphan', '2026-09-30T10:00:00.000Z'],
+      ['o2', 'create-stuck', '2026-10-03T10:00:00.000Z'],
+      ['o1', 'cancel-failed', '2026-10-04T10:00:00.000Z'],
+    ]);
+    expect(view.sample[2]).toMatchObject({
+      orderNumber: 7,
+      tenantName: 'Agencia Uno',
+      providerOrderId: 'LOC-1',
+    });
+  });
+
+  it('corta la muestra y descarta motivos desconocidos o fechas rotas', () => {
+    const rows = Array.from({ length: 12 }, (_, i) =>
+      attentionRow(
+        `o${String(i).padStart(2, '0')}`,
+        'review',
+        `2026-10-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
+      ),
+    );
+    const view = foldOrderAttention([
+      ...rows,
+      attentionRow('x', 'otra-cosa', '2026-10-01T00:00:00Z'),
+      attentionRow('y', 'review', 'no-es-fecha'),
+    ]);
+    expect(view.total).toBe(12);
+    expect(view.byReason.review).toBe(12);
+    expect(view.sample).toHaveLength(10);
+    expect(view.sample[0]?.orderId).toBe('o00');
+    expect(foldOrderAttention(rows, 3).sample).toHaveLength(3);
+  });
+});
+
+describe('foldSaturatedSeats', () => {
+  const seats = (name: string, used: number | string, limit: number | string) => ({
+    tenant_id: `id-${name}`,
+    tenant_name: name,
+    seats_used: used,
+    seat_limit: limit,
+  });
+
+  it('desde el 90 % de los puestos (redondeado hacia arriba), del más lleno al menos', () => {
+    expect(
+      foldSaturatedSeats([
+        seats('Diez', 9, 10),
+        seats('Ocho de diez', 8, 10),
+        seats('Tres', '3', '3'),
+        seats('Dos de tres', 2, 3),
+        seats('Sin cupo', 5, 0),
+      ]),
+    ).toEqual([
+      { tenantId: 'id-Tres', tenantName: 'Tres', used: 3, limit: 3 },
+      { tenantId: 'id-Diez', tenantName: 'Diez', used: 9, limit: 10 },
+    ]);
+  });
+
+  it('con un cupo de 1, el único puesto en uso lo satura', () => {
+    expect(foldSaturatedSeats([seats('Uno', 1, 1), seats('Libre', 0, 1)])).toHaveLength(1);
+  });
+});
+
+describe('foldReconciliationRuns', () => {
+  it('suma las corridas fallidas de todos los proveedores', () => {
+    const view = foldReconciliationRuns(
+      [
+        {
+          provider_code: 'tbo-hotels',
+          runs: '7',
+          failed_runs: '2',
+          last_finished_at: '2026-10-12T06:00:00Z',
+          last_status: 'failed',
+          critical_items: '1',
+          warning_items: '0',
+        },
+        {
+          provider_code: 'agent-cars',
+          runs: 0,
+          failed_runs: 0,
+          last_finished_at: null,
+          last_status: null,
+          critical_items: 0,
+          warning_items: 3,
+        },
+      ],
+      7,
+    );
+    expect(view.failedRuns).toBe(2);
+    expect(view.sinceDays).toBe(7);
+    expect(view.byProvider.map((p) => [p.providerCode, p.lastFinishedAt])).toEqual([
+      ['agent-cars', null],
+      ['tbo-hotels', '2026-10-12T06:00:00.000Z'],
+    ]);
+  });
+});
+
+describe('foldCatalogs', () => {
+  const now = new Date('2026-10-13T12:00:00Z');
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+  const catalog = (code: string, lastSyncedAt: string | null) => ({
+    provider_code: code,
+    cities: '120',
+    synced_last_48h: '100',
+    failed_cities: '3',
+    last_synced_at: lastSyncedAt,
+  });
+
+  it(`queda atrás pasadas ${CATALOG_STALE_HOURS} horas, o si nunca se sincronizó`, () => {
+    const view = foldCatalogs(
+      [
+        catalog('tbo-hotels', hoursAgo(35)),
+        catalog('hoteldo', hoursAgo(37)),
+        catalog('nuevo', null),
+      ],
+      now,
+    );
+    expect(view.map((c) => [c.providerCode, c.stale])).toEqual([
+      ['hoteldo', true],
+      ['nuevo', true],
+      ['tbo-hotels', false],
+    ]);
+    expect(view.find((c) => c.providerCode === 'tbo-hotels')).toMatchObject({
+      cities: 120,
+      syncedLast48h: 100,
+      failedCities: 3,
+    });
   });
 });

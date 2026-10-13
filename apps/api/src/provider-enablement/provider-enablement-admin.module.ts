@@ -9,11 +9,13 @@ import { ProviderEnablementService } from './provider-enablement.service.js';
 /**
  * El panel de la plataforma para la habilitación de proveedores. Aparte de
  * {@link ProviderEnablementModule} porque éste lo importan los registries, y el panel importa a los
- * registries: juntos serían un ciclo.
+ * registries: juntos serían un ciclo. Exporta el servicio para la consola de la plataforma (el
+ * Resumen lee de él el apagado de emergencia de cada proveedor).
  */
 @Module({
   imports: [ProviderEnablementModule, ProvidersModule, HotelProvidersModule, NetworkModule],
   controllers: [ProviderEnablementController],
   providers: [ProviderEnablementService],
+  exports: [ProviderEnablementService],
 })
 export class ProviderEnablementAdminModule {}

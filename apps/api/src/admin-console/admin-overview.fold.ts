@@ -2,6 +2,12 @@ import type { QuotationStatus, TenantType } from '../database/database.types.js'
 import { currencyExponent } from '../portfolios/wallet-currency.js';
 import { salesVertical, type SalesVertical } from '../reports/reports.service.js';
 import type { KillLevel } from '../search/circuit-breaker.service.js';
+import {
+  ORDER_ATTENTION_REASONS,
+  attentionRank,
+  isOrderAttentionReason,
+  type OrderAttentionReason,
+} from './attention.js';
 
 /**
  * Plataforma → Resumen: de las filas de las funciones de 0075 a la vista que muestra la web. Sin I/O.
@@ -93,6 +99,47 @@ export interface OverviewPostSaleRow {
   op_type: string;
   failed: DbNumber;
   stuck: DbNumber;
+}
+
+/** `admin_order_attention()`: una fila por (orden, motivo). */
+export interface OverviewOrderAttentionRow {
+  order_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  order_number: DbNumber;
+  provider: string;
+  provider_order_id: string | null;
+  order_status: string;
+  reason: string;
+  since: Date | string;
+}
+
+/** `admin_node_stats()` de los nodos con cupo, con su nombre. */
+export interface OverviewSeatsRow {
+  tenant_id: string;
+  tenant_name: string;
+  seat_limit: DbNumber;
+  seats_used: DbNumber;
+}
+
+/** `admin_reconciliation_health(p_since)`. */
+export interface OverviewReconciliationHealthRow {
+  provider_code: string;
+  runs: DbNumber;
+  failed_runs: DbNumber;
+  last_finished_at: Date | string | null;
+  last_status: string | null;
+  critical_items: DbNumber;
+  warning_items: DbNumber;
+}
+
+/** `hotel_provider_city` por proveedor (catálogo de plataforma, sin RLS). */
+export interface OverviewCatalogRow {
+  provider_code: string;
+  cities: DbNumber;
+  synced_last_48h: DbNumber;
+  failed_cities: DbNumber;
+  last_synced_at: Date | string | null;
 }
 
 export interface OverviewAttentionRow {
@@ -249,14 +296,79 @@ export interface PostSaleTypeView {
   stuck: number;
 }
 
+/** Una reserva de la muestra, con el motivo más grave que tiene. Sin datos de pasajeros. */
+export interface OrderAttentionSampleView {
+  orderId: string;
+  tenantId: string;
+  tenantName: string;
+  orderNumber: number;
+  provider: string;
+  providerOrderId: string | null;
+  orderStatus: string;
+  reason: OrderAttentionReason;
+  /** ISO 8601: desde cuándo (el hecho que dispara ese motivo). */
+  since: string;
+}
+
+/** Las reservas que necesitan a una persona (`admin_order_attention`, 0075 §7). */
+export interface OrderAttentionView {
+  /** Reservas distintas con al menos un motivo. */
+  total: number;
+  /** Reservas por motivo: una reserva con dos motivos cuenta en los dos. */
+  byReason: Record<OrderAttentionReason, number>;
+  /** Hasta {@link ORDER_ATTENTION_SAMPLE} reservas, de la que más espera a la que menos. */
+  sample: OrderAttentionSampleView[];
+}
+
+export interface SaturatedSeatsView {
+  tenantId: string;
+  tenantName: string;
+  used: number;
+  limit: number;
+}
+
+export interface ReconciliationRunsView {
+  sinceDays: number;
+  /** Corridas fallidas (failed, invalid, abandoned) en la ventana, de todos los proveedores. */
+  failedRuns: number;
+  byProvider: {
+    providerCode: string;
+    runs: number;
+    failedRuns: number;
+    /** ISO 8601, o `null` si nunca terminó una. */
+    lastFinishedAt: string | null;
+    lastStatus: string | null;
+    criticalItems: number;
+    warningItems: number;
+  }[];
+}
+
 /** Lo que espera a una persona. Cada contador lleva a su cola. */
 export interface AttentionView {
   depositReports: { total: number; platform: number; network: number };
+  orders: OrderAttentionView;
   postSale: { failed: number; stuck: number; byType: PostSaleTypeView[] };
   hotelOrdersUnverified: number;
   walletHoldConflicts: number;
   reconciliation: { critical: number; warning: number; sinceDays: number };
+  /** De toda la plataforma aunque se acote a un nodo: una corrida es de la cuenta del proveedor. */
+  reconciliationRuns: ReconciliationRunsView;
   invitations: { pending: number; expired: number; expiredSinceDays: number };
+  /** Los nodos con cupo al {@link SEAT_SATURATION_RATIO} o más. */
+  seats: { saturated: SaturatedSeatsView[] };
+}
+
+/** El catálogo de hoteles de un proveedor: cuán fresco está. */
+export interface CatalogView {
+  providerCode: string;
+  cities: number;
+  syncedLast48h: number;
+  /** Ciudades cuya última sincronización respondió con un error (HTTP 400 o más). */
+  failedCities: number;
+  /** ISO 8601, o `null` si nunca se sincronizó. */
+  lastSyncedAt: string | null;
+  /** La última sincronización tiene más de {@link CATALOG_STALE_HOURS} horas (o no hubo). */
+  stale: boolean;
 }
 
 export interface KillSwitchView {
@@ -278,7 +390,7 @@ export interface DisabledProviderView {
 }
 
 export interface ProviderSignalsView {
-  /** `PROVIDERS_DISABLED`: apagados por entorno, le ganan a todo. */
+  /** Apagados de emergencia (hoy `PROVIDERS_DISABLED`): le ganan a todo. */
   killSwitched: KillSwitchView[];
   /**
    * Circuitos abiertos o en prueba. El estado vive en la memoria de cada réplica de la API: esto es
@@ -534,10 +646,18 @@ export function foldWallets(rows: readonly OverviewWalletsRow[]): WalletExposure
     .sort((a, b) => byText(a.currency, b.currency));
 }
 
+/** Lo que se pliega aparte y entra a {@link AttentionView} tal cual. */
+export interface AttentionExtras {
+  orders: OrderAttentionView;
+  seats: { saturated: SaturatedSeatsView[] };
+  reconciliationRuns: ReconciliationRunsView;
+}
+
 export function foldAttention(
   row: OverviewAttentionRow | undefined,
   postSale: readonly OverviewPostSaleRow[],
   recentDays: number,
+  extras: AttentionExtras,
 ): AttentionView {
   const platform = toNumber(row?.deposit_reports_platform);
   const network = toNumber(row?.deposit_reports_network);
@@ -547,6 +667,9 @@ export function foldAttention(
     .sort((a, b) => byText(a.type, b.type));
   return {
     depositReports: { total: platform + network, platform, network },
+    orders: extras.orders,
+    seats: extras.seats,
+    reconciliationRuns: extras.reconciliationRuns,
     postSale: {
       failed: byType.reduce((sum, r) => sum + r.failed, 0),
       stuck: byType.reduce((sum, r) => sum + r.stuck, 0),
@@ -567,15 +690,108 @@ export function foldAttention(
   };
 }
 
+/** Cuántas reservas trae la muestra del Resumen. */
+export const ORDER_ATTENTION_SAMPLE = 10;
+
+function isoOf(value: Date | string): string | undefined {
+  const at = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(at.getTime()) ? undefined : at.toISOString();
+}
+
 /**
- * Los códigos que nombra `PROVIDERS_DISABLED` (`código` o `código:ventas`, separados por coma), sin
- * repetir y en orden. El nivel de cada uno lo decide `killLevel`, que es quien lo aplica.
+ * De las filas (orden, motivo) a la vista: cuántas reservas, cuántas por motivo y una muestra de las
+ * que más esperan, una por reserva con su motivo más grave (ATTENTION_PRIORITY). Un motivo que esta
+ * versión no conoce se ignora: el test de contrato con 0075 impide que pase sin que nadie lo vea.
  */
-export function killSwitchedCodes(raw: string | undefined): string[] {
-  const codes = new Set<string>();
-  for (const entry of (raw ?? '').split(',')) {
-    const code = entry.split(':')[0]?.trim() ?? '';
-    if (code !== '') codes.add(code);
+export function foldOrderAttention(
+  rows: readonly OverviewOrderAttentionRow[],
+  sampleSize: number = ORDER_ATTENTION_SAMPLE,
+): OrderAttentionView {
+  const byReason = Object.fromEntries(ORDER_ATTENTION_REASONS.map((r) => [r, 0])) as Record<
+    OrderAttentionReason,
+    number
+  >;
+  const worst = new Map<string, OrderAttentionSampleView>();
+  for (const row of rows) {
+    if (!isOrderAttentionReason(row.reason)) continue;
+    const since = isoOf(row.since);
+    if (since === undefined) continue;
+    byReason[row.reason] += 1;
+    const current = worst.get(row.order_id);
+    if (current !== undefined && attentionRank(current.reason) <= attentionRank(row.reason)) {
+      continue;
+    }
+    worst.set(row.order_id, {
+      orderId: row.order_id,
+      tenantId: row.tenant_id,
+      tenantName: row.tenant_name,
+      orderNumber: toNumber(row.order_number),
+      provider: row.provider,
+      providerOrderId: row.provider_order_id,
+      orderStatus: row.order_status,
+      reason: row.reason,
+      since,
+    });
   }
-  return [...codes].sort(byText);
+  const sample = [...worst.values()]
+    .sort((a, b) => byText(a.since, b.since) || byText(a.orderId, b.orderId))
+    .slice(0, Math.max(0, sampleSize));
+  return { total: worst.size, byReason, sample };
+}
+
+/** Un nodo con cupo está saturado desde el 90 % de sus puestos en uso. */
+export const SEAT_SATURATION_RATIO = 0.9;
+
+/** Los nodos con cupo al 90 % o más, del más lleno al menos (y por nombre). */
+export function foldSaturatedSeats(rows: readonly OverviewSeatsRow[]): SaturatedSeatsView[] {
+  return rows
+    .flatMap((row) => {
+      const limit = toNumber(row.seat_limit);
+      const used = toNumber(row.seats_used);
+      if (limit <= 0 || used < Math.ceil(SEAT_SATURATION_RATIO * limit)) return [];
+      return [{ tenantId: row.tenant_id, tenantName: row.tenant_name, used, limit }];
+    })
+    .sort((a, b) => b.used / b.limit - a.used / a.limit || byText(a.tenantName, b.tenantName));
+}
+
+export function foldReconciliationRuns(
+  rows: readonly OverviewReconciliationHealthRow[],
+  sinceDays: number,
+): ReconciliationRunsView {
+  const byProvider = rows
+    .map((row) => ({
+      providerCode: row.provider_code,
+      runs: toNumber(row.runs),
+      failedRuns: toNumber(row.failed_runs),
+      lastFinishedAt: row.last_finished_at === null ? null : (isoOf(row.last_finished_at) ?? null),
+      lastStatus: row.last_status,
+      criticalItems: toNumber(row.critical_items),
+      warningItems: toNumber(row.warning_items),
+    }))
+    .sort((a, b) => byText(a.providerCode, b.providerCode));
+  return {
+    sinceDays,
+    failedRuns: byProvider.reduce((sum, p) => sum + p.failedRuns, 0),
+    byProvider,
+  };
+}
+
+/** Un catálogo sin sincronizar hace más de 36 horas quedó atrás: el sync corre a diario. */
+export const CATALOG_STALE_HOURS = 36;
+
+export function foldCatalogs(rows: readonly OverviewCatalogRow[], now: Date): CatalogView[] {
+  const staleBefore = now.getTime() - CATALOG_STALE_HOURS * 3_600_000;
+  return rows
+    .map((row) => {
+      const lastSyncedAt = row.last_synced_at === null ? null : (isoOf(row.last_synced_at) ?? null);
+      return {
+        providerCode: row.provider_code,
+        cities: toNumber(row.cities),
+        syncedLast48h: toNumber(row.synced_last_48h),
+        failedCities: toNumber(row.failed_cities),
+        lastSyncedAt,
+        stale: lastSyncedAt === null || Date.parse(lastSyncedAt) < staleBefore,
+      };
+    })
+    .sort((a, b) => byText(a.providerCode, b.providerCode));
 }

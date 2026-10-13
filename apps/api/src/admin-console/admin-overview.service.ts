@@ -3,26 +3,33 @@ import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, TenantType } from '../database/database.types.js';
 import { STALE_CANCEL_CLAIM_MS } from '../orders/stale-cancel-claim.service.js';
-import { CircuitBreakerService, killLevel } from '../search/circuit-breaker.service.js';
-import {
-  PlatformConsoleScopeNotFoundError,
-  platformConsoleDbError,
-} from './admin-console.errors.js';
+import { rethrowAdminDbError } from '../network/superadmin.errors.js';
+import { ProviderEnablementService } from '../provider-enablement/provider-enablement.service.js';
+import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
+import { PlatformConsoleScopeNotFoundError } from './admin-console.errors.js';
 import {
   foldAttention,
+  foldCatalogs,
   foldNetwork,
+  foldOrderAttention,
+  foldReconciliationRuns,
+  foldSaturatedSeats,
   foldSales,
   foldTopNodes,
   foldTrend,
   foldWallets,
-  killSwitchedCodes,
   type AttentionView,
+  type CatalogView,
   type NetworkView,
   type OverviewAttentionRow,
+  type OverviewCatalogRow,
   type OverviewNetworkRow,
+  type OverviewOrderAttentionRow,
   type OverviewOrdersRow,
   type OverviewPostSaleRow,
   type OverviewQuotationsRow,
+  type OverviewReconciliationHealthRow,
+  type OverviewSeatsRow,
   type OverviewTopNodeRow,
   type OverviewTrendRow,
   type OverviewWalletsRow,
@@ -34,6 +41,7 @@ import {
 } from './admin-overview.fold.js';
 import {
   OVERVIEW_RECENT_DAYS,
+  OVERVIEW_RECONCILIATION_RUN_DAYS,
   OVERVIEW_TOP_NODES,
   OVERVIEW_TREND_MONTHS,
   PLATFORM_TIME_ZONE,
@@ -68,6 +76,8 @@ export interface AdminOverviewView {
   wallets: WalletExposureView[];
   attention: AttentionView;
   providers: ProviderSignalsView;
+  /** El catálogo de hoteles de cada proveedor (de la plataforma, no de un nodo). */
+  catalogs: CatalogView[];
 }
 
 interface Bounds {
@@ -92,6 +102,7 @@ export class AdminOverviewService {
   constructor(
     private readonly db: DatabaseService,
     private readonly breaker: CircuitBreakerService,
+    private readonly enablement: ProviderEnablementService,
   ) {}
 
   async overview(
@@ -103,6 +114,8 @@ export class AdminOverviewService {
     const months = trendMonths(period.to, OVERVIEW_TREND_MONTHS);
     const stuckBefore = new Date(now.getTime() - STALE_CANCEL_CLAIM_MS);
     const since = new Date(now.getTime() - OVERVIEW_RECENT_DAYS * DAY_MS);
+    const runsSince = new Date(now.getTime() - OVERVIEW_RECONCILIATION_RUN_DAYS * DAY_MS);
+    const synced48h = new Date(now.getTime() - 2 * DAY_MS);
 
     try {
       return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
@@ -134,6 +147,36 @@ export class AdminOverviewService {
         const attention = await sql<OverviewAttentionRow>`
           SELECT * FROM platform_overview_attention(${root}::uuid, ${since}::timestamptz)
         `.execute(trx);
+        // admin_* (0075 §7-§10) devuelven toda la red con el tenant de cada fila: se acota acá.
+        const orderAttention = await sql<OverviewOrderAttentionRow>`
+          SELECT a.*
+            FROM admin_order_attention() a
+           WHERE ${root}::uuid IS NULL
+              OR a.tenant_id IN (
+                   SELECT t.id FROM tenants t
+                    WHERE t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${root}::uuid))
+        `.execute(trx);
+        const seats = await sql<OverviewSeatsRow>`
+          SELECT s.tenant_id, t.name AS tenant_name, s.seat_limit, s.seats_used
+            FROM admin_node_stats() s
+            JOIN tenants t ON t.id = s.tenant_id
+           WHERE s.seat_limit IS NOT NULL
+             AND (${root}::uuid IS NULL
+                  OR t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${root}::uuid))
+        `.execute(trx);
+        const runs = await sql<OverviewReconciliationHealthRow>`
+          SELECT * FROM admin_reconciliation_health(${runsSince}::timestamptz)
+        `.execute(trx);
+        // Catálogo de plataforma: hotel_provider_city no tiene tenant ni RLS (0041).
+        const catalogs = await sql<OverviewCatalogRow>`
+          SELECT c.provider_code,
+                 count(*) AS cities,
+                 count(*) FILTER (WHERE c.synced_at > ${synced48h}::timestamptz) AS synced_last_48h,
+                 count(*) FILTER (WHERE c.last_status_code >= 400) AS failed_cities,
+                 max(c.synced_at) AS last_synced_at
+            FROM hotel_provider_city c
+           GROUP BY c.provider_code
+        `.execute(trx);
 
         return {
           generatedAt: now.toISOString(),
@@ -145,12 +188,17 @@ export class AdminOverviewService {
           topNodes: foldTopNodes(topNodes.rows),
           network: foldNetwork(network.rows[0]),
           wallets: foldWallets(wallets.rows),
-          attention: foldAttention(attention.rows[0], postSale.rows, OVERVIEW_RECENT_DAYS),
+          attention: foldAttention(attention.rows[0], postSale.rows, OVERVIEW_RECENT_DAYS, {
+            orders: foldOrderAttention(orderAttention.rows),
+            seats: { saturated: foldSaturatedSeats(seats.rows) },
+            reconciliationRuns: foldReconciliationRuns(runs.rows, OVERVIEW_RECONCILIATION_RUN_DAYS),
+          }),
           providers: await this.providerSignals(trx),
+          catalogs: foldCatalogs(catalogs.rows, now),
         };
       });
     } catch (err) {
-      throw platformConsoleDbError(err) ?? err;
+      rethrowAdminDbError(err);
     }
   }
 
@@ -193,9 +241,13 @@ export class AdminOverviewService {
   }
 
   /**
-   * Las señales de los proveedores: el kill-switch del entorno, los circuitos que no están cerrados
-   * en esta réplica y lo que el superadmin apagó desde Proveedores de la plataforma
-   * (`provider_enablement`, de lectura abierta en 0048).
+   * Las señales de los proveedores: el apagado de emergencia de cada proveedor registrado, los
+   * circuitos que no están cerrados en esta réplica y lo que el superadmin apagó desde Proveedores de
+   * la plataforma (`provider_enablement`, de lectura abierta en 0048).
+   *
+   * El apagado de emergencia sale de ProviderEnablementService.list(), el mismo que muestra
+   * Proveedores de la plataforma: hoy es `PROVIDERS_DISABLED`, y cuando se pueda apagar desde el
+   * panel (0077) su `killSwitch` será el nivel efectivo, sin tocar el Resumen.
    */
   private async providerSignals(trx: Transaction<DB>): Promise<ProviderSignalsView> {
     const disabled = await trx
@@ -205,10 +257,9 @@ export class AdminOverviewService {
       .orderBy('provider_code')
       .execute();
 
-    const killSwitched = killSwitchedCodes(process.env['PROVIDERS_DISABLED']).flatMap((code) => {
-      const level = killLevel(code);
-      return level === undefined ? [] : [{ code, level }];
-    });
+    const killSwitched = (await this.enablement.list())
+      .flatMap((p) => (p.killSwitch === null ? [] : [{ code: p.code, level: p.killSwitch }]))
+      .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 
     const openCircuits = Object.entries(this.breaker.snapshot())
       .filter(([, circuit]) => circuit.state !== 'closed')

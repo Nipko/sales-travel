@@ -1,61 +1,39 @@
-import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import { type ExecutionContext } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
 import type { Role } from '../database/database.types.js';
-import type { NetworkService } from '../network/network.service.js';
+import { SuperadminGuard } from '../network/superadmin.guard.js';
 import { requestContextStorage } from '../request-context/request-context.js';
-import {
-  DepositReportQueueController,
-  DepositReportQueueSuperadminOnlyError,
-} from './deposit-report-queue.controller.js';
+import { DepositReportQueueController } from './deposit-report-queue.controller.js';
 import { DepositReportQueueQuerySchema } from './deposit-report-queue.schemas.js';
 import type { DepositReportQueueService } from './deposit-report-queue.service.js';
 
 const USUARIO = '99999999-9999-4999-8999-999999999999';
 
-function banco({ esSuperadmin = true } = {}) {
+function banco() {
   const queue = {
     list: vi.fn(() =>
       Promise.resolve({ status: 'pending', reports: [], nextCursor: null, totals: [] }),
     ),
     pendingCount: vi.fn(() => Promise.resolve({ total: 3, platform: 2, network: 1 })),
   };
-  const network = { isSuperadmin: vi.fn(() => Promise.resolve(esSuperadmin)) };
   const controller = new DepositReportQueueController(
     queue as unknown as DepositReportQueueService,
-    network as unknown as NetworkService,
   );
-  return { controller, queue, network };
+  return { controller, queue };
 }
 
 const QUERY = DepositReportQueueQuerySchema.parse({});
 
 describe('DepositReportQueueController: sólo el superadmin', () => {
-  it('sin usuario, 401 y el servicio no se entera', async () => {
-    const { controller, queue } = banco();
-    await expect(controller.list(undefined, QUERY)).rejects.toBeInstanceOf(UnauthorizedException);
-    await expect(controller.pendingCount(undefined)).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(queue.list).not.toHaveBeenCalled();
-    expect(queue.pendingCount).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['la cola', (c: DepositReportQueueController) => c.list(USUARIO, QUERY)],
-    ['el contador', (c: DepositReportQueueController) => c.pendingCount(USUARIO)],
-  ])('%s: quien no es superadmin recibe 403 con motivo', async (_q, llamar) => {
-    const { controller, queue, network } = banco({ esSuperadmin: false });
-    const error = await llamar(controller).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(DepositReportQueueSuperadminOnlyError);
-    expect((error as DepositReportQueueSuperadminOnlyError).getStatus()).toBe(403);
-    expect((error as DepositReportQueueSuperadminOnlyError).reason).toBe(
-      'DEPOSIT_REPORT_QUEUE_SUPERADMIN_ONLY',
-    );
-    expect(network.isSuperadmin).toHaveBeenCalledWith(USUARIO);
-    expect(queue.list).not.toHaveBeenCalled();
-    expect(queue.pendingCount).not.toHaveBeenCalled();
+  it('la clase entera pasa por SuperadminGuard (platform_admin queda fuera)', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, DepositReportQueueController)).toEqual([
+      SuperadminGuard,
+    ]);
   });
 
   it('el superadmin pasa, con su id como actor y la query ya validada', async () => {

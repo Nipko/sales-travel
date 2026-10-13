@@ -5,11 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import type { ProviderEnablementService } from '../provider-enablement/provider-enablement.service.js';
 import type { CircuitBreakerService } from '../search/circuit-breaker.service.js';
-import {
-  PlatformConsoleScopeNotFoundError,
-  PlatformConsoleSuperadminOnlyError,
-} from './admin-console.errors.js';
+import { SuperadminRequiredError } from '../network/superadmin.errors.js';
+import { PlatformConsoleScopeNotFoundError } from './admin-console.errors.js';
 import { AdminOverviewQuerySchema } from './admin-overview.schemas.js';
 import { AdminOverviewService } from './admin-overview.service.js';
 import { addDays, todayIn } from './admin-overview.schemas.js';
@@ -47,7 +46,19 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
       [`prov-sano-${sfx}`]: { state: 'closed' as const, failures: 0 },
     }),
   };
-  const service = new AdminOverviewService(database, breaker as unknown as CircuitBreakerService);
+  // El apagado de emergencia de cada proveedor registrado, como lo ve Proveedores de la plataforma.
+  const enablement = {
+    list: () =>
+      Promise.resolve([
+        { code: `prov-sano-${sfx}`, killSwitch: null },
+        { code: `prov-apagado-${sfx}`, killSwitch: 'sales' },
+      ]),
+  };
+  const service = new AdminOverviewService(
+    database,
+    breaker as unknown as CircuitBreakerService,
+    enablement as unknown as ProviderEnablementService,
+  );
 
   const tenants: string[] = [];
   const users: string[] = [];
@@ -115,9 +126,10 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
     seq += 1;
     const { rows } = await admin.query<{ id: string }>(
       `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers,
-                           contact_info, total_amount, currency, order_number, status, created_at)
+                           contact_info, total_amount, currency, order_number, status, created_at,
+                           updated_at)
        VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, $5, $6, $7, $8,
-               now() - $9::interval)
+               now() - $9::interval, now() - $9::interval)
        RETURNING id`,
       [
         tenantId,
@@ -207,9 +219,10 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
   let agencyAdmin: string;
   let seller: string;
 
+  /** Las órdenes de cada caso de admin_order_attention. */
+  const ids: Record<string, string> = {};
   let monthRecent: string;
   let monthOld: string;
-  const savedKillSwitch = process.env['PROVIDERS_DISABLED'];
 
   beforeAll(async () => {
     platform = await platformRootId(admin);
@@ -238,7 +251,7 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
       vertical: 'hotels',
     });
     const o5 = await order(agency, seller, { status: 'failed', amount: 10_000 });
-    await order(agency, seller, { status: 'pending', amount: 5_000 });
+    const pendingAgency = await order(agency, seller, { status: 'pending', amount: 5_000 });
     const hotel = await order(sub, seller, {
       status: 'confirmed',
       amount: 70_000,
@@ -370,14 +383,122 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
     await invitation(agency, { expires: '3 days', accepted: true });
     await invitation(agency, { expires: '3 days', revoked: true });
 
-    process.env['PROVIDERS_DISABLED'] = `prov-apagado-${sfx}:ventas`;
+    // ── admin_order_attention (0075 §7): un caso por motivo. Las órdenes nuevas caen fuera del
+    // período de q() (o no están confirmadas) para no mover las ventas de arriba.
+    ids['o1'] = o1;
+    ids['o2'] = o2;
+    ids['o5'] = o5;
+    ids['hotel'] = hotel;
+    ids['hotelPending'] = hotelPending;
+    ids['directOrder'] = directOrder;
+    ids['pending'] = pendingAgency;
+    // hcn-missing: confirmada hace 100 días, sin número de confirmación del hotel.
+    ids['hcn'] = await order(agency, seller, {
+      status: 'confirmed',
+      amount: 4_000,
+      provider: 'tbo-hotels',
+      vertical: 'hotels',
+      ago: '100 days',
+    });
+    await admin.query(
+      `INSERT INTO hotel_order_tracking (order_id, tenant_id, hcn_state) VALUES ($1, $2, 'missing')`,
+      [ids['hcn'], agency],
+    );
+    // verifying-long: la creación quedó incierta y la orden no cambia hace 10 días.
+    ids['verifying'] = await order(agency, seller, {
+      status: 'pending',
+      amount: 3_000,
+      provider: 'tbo-hotels',
+      vertical: 'hotels',
+      ago: '10 days',
+    });
+    await admin.query(
+      `INSERT INTO hotel_order_tracking (order_id, tenant_id, sub_status) VALUES ($1, $2, 'create-uncertain')`,
+      [ids['verifying'], agency],
+    );
+    // hold-orphan: o5 falló y su retención sigue held hace 2 horas, con su nivel en la cartera de A
+    // (lo que admin_node_stats cuenta como retenido). Como superusuario: la guarda de 0060 deja.
+    const { rows: orphan } = await admin.query<{ id: string }>(
+      `INSERT INTO wallet_hold_groups (order_id, origin_tenant_id, currency, sale_amount_minor,
+                                       provider_code, credential_source, mode, status, created_by,
+                                       created_at)
+       VALUES ($1, $2, 'COP', 1000, 'latam-ndc', 'legacy', 'legacy', 'held', $3,
+               now() - interval '2 hours')
+       RETURNING id`,
+      [o5, agency, seller],
+    );
+    const { rows: holdEntry } = await admin.query<{ id: string }>(
+      `INSERT INTO portfolio_transactions (portfolio_id, amount_minor, transaction_type, reference_id, created_by)
+       VALUES ($1, -1000, 'BOOKING_HOLD', $2, $3) RETURNING id`,
+      [agencyWallet, o5, seller],
+    );
+    await admin.query(
+      `INSERT INTO wallet_hold_levels (group_id, order_id, depth, tenant_id, portfolio_id,
+                                       origin_tenant_id, currency, amount_minor, basis,
+                                       hold_transaction_id, status)
+       VALUES ($1, $2, 0, $3, $4, $3, 'COP', 1000, 'sale', $5, 'held')`,
+      [orphan[0]!.id, o5, agency, agencyWallet, holdEntry[0]!.id],
+    );
+    // reconciliation: divergencia crítica sobre o2 (vive en el tenant de la orden).
+    await admin.query(
+      `INSERT INTO provider_reconciliation_items (tenant_id, run_id, account_id, provider_code, kind,
+                                                  severity, action, order_id, dedupe_key, created_at)
+       VALUES ($1, $2, $3, 'tbo-hotels', 'R1', 'critical', 'review', $4, $5,
+               now() - interval '1 hour')`,
+      [agency, run[0]!.id, account[0]!.id, o2, `R1|${sfx}|o2`],
+    );
+    // create-stuck en D: autos sin la marca de vertical, pendiente hace 10 días.
+    ids['cars'] = await order(direct, directAdmin, {
+      status: 'pending',
+      amount: 2_000,
+      provider: 'agent-cars',
+      ago: '10 days',
+    });
+
+    // ── Puestos: A con cupo 1 y la sesión viva de su admin ocupándolo.
+    await admin.query(`UPDATE tenants SET concurrent_seats = 1 WHERE id = $1`, [agency]);
+    await admin.query(`UPDATE sessions SET seat_tenant_id = $1 WHERE user_id = $2`, [
+      agency,
+      agencyAdmin,
+    ]);
+    await admin.query(`UPDATE tenants SET concurrent_seats = 5 WHERE id = $1`, [direct]);
+
+    // ── Conciliación por proveedor, con un código propio para mirar exacto.
+    for (const [status, ago] of [
+      ['failed', '10 days'],
+      ['failed', '1 day'],
+      ['completed', '2 hours'],
+    ] as const) {
+      await admin.query(
+        `INSERT INTO provider_reconciliation_runs (tenant_id, account_id, provider_code, trigger, status,
+                                                   started_at, finished_at)
+         VALUES ($1, $2, $3, 'scheduled', $4, now() - $5::interval,
+                 now() - $5::interval + interval '1 minute')`,
+        [consolidator, account[0]!.id, `rec-${sfx}`, status, ago],
+      );
+    }
+    await admin.query(
+      `INSERT INTO provider_reconciliation_items (tenant_id, run_id, account_id, provider_code, kind,
+                                                  severity, action, provider_booking_id, dedupe_key)
+       VALUES ($1, $2, $3, $4, 'R2', 'critical', 'reported', 'BK-REC', $5)`,
+      [consolidator, run[0]!.id, account[0]!.id, `rec-${sfx}`, `R2|${sfx}|rec`],
+    );
+
+    // ── Catálogo de hoteles de un proveedor propio: una ciudad hace 40 h, otra hace 50 h con error.
+    await admin.query(
+      `INSERT INTO hotel_provider_city (provider_code, provider_city_code, country_code, name, name_norm,
+                                        synced_at, last_status_code)
+       VALUES ($1, 'c1', 'CO', 'Uno', 'uno', now() - interval '40 hours', 200),
+              ($1, 'c2', 'CO', 'Dos', 'dos', now() - interval '50 hours', 503)`,
+      [`cat-${sfx}`],
+    );
   });
 
   afterAll(async () => {
-    if (savedKillSwitch === undefined) delete process.env['PROVIDERS_DISABLED'];
-    else process.env['PROVIDERS_DISABLED'] = savedKillSwitch;
-    // Las retenciones frenan el borrado de su orden (RESTRICT): primero ellas.
+    // Las retenciones frenan el borrado de su orden (RESTRICT): primero ellas, y sus niveles antes.
+    await admin.query('DELETE FROM wallet_hold_levels WHERE order_id = ANY($1::uuid[])', [orders]);
     await admin.query('DELETE FROM wallet_hold_groups WHERE order_id = ANY($1::uuid[])', [orders]);
+    await admin.query('DELETE FROM hotel_provider_city WHERE provider_code = $1', [`cat-${sfx}`]);
     const { rows } = await admin.query<{ id: string }>(
       'SELECT id FROM tenants WHERE id = ANY($1::uuid[]) ORDER BY nlevel(path) DESC',
       [tenants],
@@ -507,7 +628,13 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
 
   it('lo que espera a una persona, acotado al subárbol', async () => {
     const view = await service.overview(superadmin, q(consolidator));
-    expect(view.attention).toEqual({
+    const {
+      orders: _orders,
+      seats: _seats,
+      reconciliationRuns: _runs,
+      ...counters
+    } = view.attention;
+    expect(counters).toEqual({
       depositReports: { total: 1, platform: 0, network: 1 },
       postSale: {
         failed: 1,
@@ -517,9 +644,11 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
           { type: 'retrieve', failed: 0, stuck: 1 },
         ],
       },
-      hotelOrdersUnverified: 1,
+      // 'unknown' de la sub-agencia y 'create-uncertain' de A.
+      hotelOrdersUnverified: 2,
       walletHoldConflicts: 1,
-      reconciliation: { critical: 1, warning: 1, sinceDays: 30 },
+      // Las críticas R2 de C (la de la cuenta y la de rec-) y la R1 sobre o2.
+      reconciliation: { critical: 3, warning: 1, sinceDays: 30 },
       invitations: { pending: 1, expired: 1, expiredSinceDays: 30 },
     });
 
@@ -529,7 +658,7 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
     expect(other.attention.postSale).toEqual({ failed: 0, stuck: 0, byType: [] });
   });
 
-  it('las señales de los proveedores: kill-switch del entorno y circuitos abiertos', async () => {
+  it('las señales de los proveedores: apagado de emergencia y circuitos abiertos', async () => {
     const view = await service.overview(superadmin, q(consolidator));
     expect(view.providers.killSwitched).toEqual([{ code: `prov-apagado-${sfx}`, level: 'sales' }]);
     expect(view.providers.openCircuits).toEqual([
@@ -560,8 +689,182 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
     ['un platform_admin (retirado)', () => platformAdmin],
   ])('%s no lee la red: la base lo rechaza y la API responde 403', async (_quien, actor) => {
     await expect(service.overview(actor(), q(consolidator))).rejects.toBeInstanceOf(
-      PlatformConsoleSuperadminOnlyError,
+      SuperadminRequiredError,
     );
+  });
+
+  it('las reservas que necesitan a una persona: un motivo por caso, acotadas al subárbol', async () => {
+    const view = await service.overview(superadmin, q(consolidator));
+    const { orders } = view.attention;
+    expect(orders.byReason).toEqual({
+      review: 1,
+      'verifying-long': 1,
+      // La pendiente de A y la de hotel de S (create-pending sigue esperando la verificación).
+      'create-stuck': 2,
+      'cancel-failed': 1,
+      'hold-conflict': 1,
+      'hold-orphan': 1,
+      'hcn-missing': 1,
+      reconciliation: 1,
+    });
+    expect(orders.total).toBe(8);
+    const reasonOf = (id: string | undefined) =>
+      orders.sample.find((s) => s.orderId === id)?.reason;
+    // o1 tiene la cancelación fallida y la retención en conflicto: va la más grave.
+    expect(reasonOf(ids['o1'])).toBe('hold-conflict');
+    expect(reasonOf(ids['o5'])).toBe('hold-orphan');
+    expect(reasonOf(ids['o2'])).toBe('reconciliation');
+    expect(reasonOf(ids['hotel'])).toBe('review');
+    expect(reasonOf(ids['hotelPending'])).toBe('create-stuck');
+    expect(reasonOf(ids['pending'])).toBe('create-stuck');
+    expect(reasonOf(ids['hcn'])).toBe('hcn-missing');
+    expect(reasonOf(ids['verifying'])).toBe('verifying-long');
+    // De la que más espera a la que menos; sin datos de pasajeros ni de contacto.
+    const since = orders.sample.map((s) => s.since);
+    expect(since).toEqual([...since].sort());
+    expect(Object.keys(orders.sample[0] ?? {}).sort()).toEqual([
+      'orderId',
+      'orderNumber',
+      'orderStatus',
+      'provider',
+      'providerOrderId',
+      'reason',
+      'since',
+      'tenantId',
+      'tenantName',
+    ]);
+
+    const other = await service.overview(superadmin, q(direct));
+    expect(other.attention.orders.total).toBe(2);
+    expect(other.attention.orders.byReason).toMatchObject({
+      'hold-conflict': 1,
+      'create-stuck': 1,
+    });
+  });
+
+  it('una cancelación que falló y después salió no pide atención', async () => {
+    const client = await appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [superadmin]);
+      const { rows } = await client.query<{ reason: string }>(
+        'SELECT reason FROM admin_order_attention() WHERE order_id = $1',
+        [ids['o2']],
+      );
+      // o2: su última cancelación salió bien; queda sólo la divergencia de conciliación.
+      expect(rows.map((r) => r.reason)).toEqual(['reconciliation']);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  it('los puestos al 90 % o más, del subárbol', async () => {
+    const view = await service.overview(superadmin, q(consolidator));
+    expect(view.attention.seats.saturated).toEqual([
+      { tenantId: agency, tenantName: `ov-a-${sfx}`, used: 1, limit: 1 },
+    ]);
+    const other = await service.overview(superadmin, q(direct));
+    expect(other.attention.seats.saturated).toEqual([]);
+  });
+
+  it('la conciliación por proveedor y la frescura de los catálogos (de toda la plataforma)', async () => {
+    const view = await service.overview(superadmin, q(direct));
+    expect(view.attention.reconciliationRuns.sinceDays).toBe(7);
+    expect(
+      view.attention.reconciliationRuns.byProvider.find((p) => p.providerCode === `rec-${sfx}`),
+    ).toMatchObject({
+      runs: 2,
+      failedRuns: 1,
+      lastStatus: 'completed',
+      criticalItems: 1,
+      warningItems: 0,
+    });
+    expect(view.attention.reconciliationRuns.failedRuns).toBeGreaterThanOrEqual(1);
+    expect(view.catalogs.find((c) => c.providerCode === `cat-${sfx}`)).toMatchObject({
+      cities: 2,
+      syncedLast48h: 1,
+      failedCities: 1,
+      stale: true,
+    });
+  });
+
+  it('admin_node_stats y admin_sales_summary: un nodo en números y la vertical de order-vertical.ts', async () => {
+    const client = await appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [superadmin]);
+      const { rows: stats } = await client.query<Record<string, unknown>>(
+        'SELECT * FROM admin_node_stats() WHERE tenant_id = ANY($1::uuid[])',
+        [[agency, direct]],
+      );
+      const statsOf = (id: string) => stats.find((r) => r['tenant_id'] === id);
+      expect(statsOf(agency)).toMatchObject({
+        // tenant_admin y vendedor bloqueado (activo); el suspendido no cuenta.
+        active_users: '2',
+        live_sessions: '1',
+        seat_limit: 1,
+        seats_used: 1,
+        pending_deposit_reports: '1',
+        pending_invitations: '1',
+        held: { COP: 1000 },
+      });
+      expect(statsOf(direct)).toMatchObject({ seat_limit: 5, seats_used: 0, held: {} });
+
+      const { rows: sales } = await client.query<{
+        tenant_id: string;
+        provider: string;
+        vertical: string;
+        currency: string;
+        confirmed_count: string;
+      }>(
+        `SELECT * FROM admin_sales_summary(now() - interval '30 days', now())
+          WHERE tenant_id = ANY($1::uuid[])`,
+        [[agency, sub, direct]],
+      );
+      const verticals = (tenant: string, provider: string) => [
+        ...new Set(
+          sales
+            .filter((r) => r.tenant_id === tenant && r.provider === provider)
+            .map((r) => r.vertical),
+        ),
+      ];
+      expect(verticals(sub, 'tbo-hotels')).toEqual(['hotels']);
+      expect(verticals(agency, 'latam-ndc')).toEqual(['flights']);
+      expect(verticals(direct, 'agent-cars')).toEqual(['cars']);
+      expect(
+        sales.find(
+          (r) => r.tenant_id === agency && r.provider === 'latam-ndc' && r.currency === 'COP',
+        ),
+      ).toMatchObject({ confirmed_count: '2' });
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  it('un consolidator_admin en app.current_user_id: cada admin_* responde 42501', async () => {
+    const client = await appPool.connect();
+    try {
+      for (const call of [
+        'SELECT * FROM admin_order_attention()',
+        'SELECT * FROM admin_node_stats()',
+        `SELECT * FROM admin_sales_summary(now() - interval '1 day', now())`,
+        `SELECT * FROM admin_reconciliation_health(now() - interval '7 days')`,
+      ]) {
+        await client.query('BEGIN');
+        await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [
+          consolidatorAdmin,
+        ]);
+        await expect(client.query(call), call).rejects.toMatchObject({
+          code: '42501',
+          message: 'admin_superadmin_required',
+        });
+        await client.query('ROLLBACK');
+      }
+    } finally {
+      client.release();
+    }
   });
 
   it('sin usuario en el request, cada lectura cruzada falla con 42501', async () => {
@@ -574,15 +877,17 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
       `SELECT * FROM platform_overview_wallets(NULL)`,
       `SELECT * FROM platform_overview_post_sale(NULL, now())`,
       `SELECT * FROM platform_overview_attention(NULL, now())`,
+      'SELECT * FROM admin_order_attention()',
+      'SELECT * FROM admin_node_stats()',
+      `SELECT * FROM admin_sales_summary(now() - interval '1 day', now())`,
+      `SELECT * FROM admin_reconciliation_health(now() - interval '7 days')`,
     ]) {
       await expect(appPool.query(call), call).rejects.toMatchObject({
         code: '42501',
-        message: 'platform_console_superadmin_required',
+        message: 'admin_superadmin_required',
       });
     }
-    const { rows } = await appPool.query<{ ok: boolean }>(
-      'SELECT platform_console_is_superadmin() AS ok',
-    );
+    const { rows } = await appPool.query<{ ok: boolean }>('SELECT is_platform_superadmin() AS ok');
     expect(rows[0]?.ok).toBe(false);
   });
 
@@ -620,13 +925,18 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
               p.prosecdef AS secdef
          FROM pg_catalog.pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace
-          AND (p.proname LIKE 'platform\\_console\\_%' OR p.proname LIKE 'platform\\_overview\\_%')
+          AND (p.proname LIKE 'platform\\_console\\_%' OR p.proname LIKE 'platform\\_overview\\_%'
+               OR p.proname LIKE 'admin\\_%' OR p.proname = 'is_platform_superadmin')
         ORDER BY p.proname`,
     );
     const exposed = rows.filter((r) => r.app_exec).map((r) => r.proname);
     expect(exposed).toEqual(
       expect.arrayContaining([
-        'platform_console_is_superadmin',
+        'admin_node_stats',
+        'admin_order_attention',
+        'admin_reconciliation_health',
+        'admin_sales_summary',
+        'is_platform_superadmin',
         'platform_overview_attention',
         'platform_overview_network',
         'platform_overview_orders',

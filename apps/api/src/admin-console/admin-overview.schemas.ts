@@ -23,6 +23,8 @@ export const OVERVIEW_TOP_NODES = 10;
  * invitaciones vencidas de hace más ya no son una tarea.
  */
 export const OVERVIEW_RECENT_DAYS = 30;
+/** Las corridas de conciliación que se miran: la conciliación es diaria, una semana alcanza. */
+export const OVERVIEW_RECONCILIATION_RUN_DAYS = 7;
 
 /**
  * Los años que se pueden pedir. Fuera de ellos no hay ventas que leer, y en los bordes del
