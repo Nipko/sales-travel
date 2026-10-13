@@ -1,6 +1,7 @@
-import type { HotelOffer, HotelRoompack, Money } from '../actions';
+import type { HotelOffer, HotelRoomOccupancy, HotelRoompack, Money } from '../actions';
 import { cancellationView, formatFee, rateBoardLabel, type CancellationView } from './hotel-format';
 import { rateProviderLabel } from './hotel-provider-view';
+import { normalizeRoomName } from './room-type-groups';
 
 /*
  * Qué muestra la tarjeta de un hotel y cada una de sus tarifas, sin React: precio de VENTA,
@@ -71,6 +72,22 @@ export function atHotelCharges(
   return charges;
 }
 
+/**
+ * Una habitación del pack de una tarifa, con lo que hace falta para agruparla por tipo
+ * (room-type-groups): su id de tipo, su nombre normalizado, las camas y la ocupación.
+ */
+export interface HotelRateRoomSlot {
+  /** Su lugar en el pack, base 0. */
+  readonly index: number;
+  /** El nombre del proveedor, recortado; puede estar vacío. */
+  readonly name: string;
+  readonly nameKey: string;
+  readonly roomTypeId?: string;
+  /** La primera opción de camas que informa el proveedor. */
+  readonly beds?: string;
+  readonly occupancy?: HotelRoomOccupancy;
+}
+
 /** Una fila de la lista de tarifas de una tarjeta. */
 export interface HotelRateRow {
   /** Única dentro de la tarjeta: el id de una tarifa sólo es único dentro de SU proveedor. */
@@ -80,6 +97,8 @@ export interface HotelRateRow {
   readonly providerLabel?: string;
   readonly board: string;
   readonly rooms: string;
+  /** Las habitaciones del pack, en su orden: un pack se reserva entero, con un solo código. */
+  readonly roomSlots: readonly HotelRateRoomSlot[];
   readonly cancellation: CancellationView;
   readonly sale: Money;
   readonly ownMargin?: { cost: Money; margin: Money };
@@ -103,6 +122,22 @@ function roomsText(pack: HotelRoompack): string {
   );
 }
 
+function roomSlotsOf(pack: HotelRoompack): HotelRateRoomSlot[] {
+  return pack.rooms.map((room, index) => {
+    const name = room.name.trim();
+    const roomTypeId = room.roomTypeId?.trim();
+    const beds = room.bedOptions.map((b) => b.trim()).find(Boolean);
+    return {
+      index,
+      name,
+      nameKey: normalizeRoomName(name),
+      ...(roomTypeId ? { roomTypeId } : {}),
+      ...(beds === undefined ? {} : { beds }),
+      ...(room.occupancy === undefined ? {} : { occupancy: room.occupancy }),
+    };
+  });
+}
+
 function uniq(values: readonly string[]): string[] {
   return [...new Set(values.map((v) => v.trim()).filter(Boolean))];
 }
@@ -116,6 +151,7 @@ function rowOf(pack: HotelRoompack, showProvider: boolean): HotelRateRow {
     ...(providerLabel === undefined ? {} : { providerLabel }),
     board: rateBoardLabel(pack),
     rooms: roomsText(pack),
+    roomSlots: roomSlotsOf(pack),
     cancellation: cancellationView(pack.cancellation),
     sale: saleTotal(pack),
     ...(ownMargin === undefined ? {} : { ownMargin }),

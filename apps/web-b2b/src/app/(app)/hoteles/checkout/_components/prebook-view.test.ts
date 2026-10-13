@@ -101,7 +101,7 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
 
   it('trae el aviso de cartera del API; sin él, la tarifa se lee igual y decide el Book', () => {
     const message =
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.';
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.';
     expect(
       parsePrebook(
         apiResponse({

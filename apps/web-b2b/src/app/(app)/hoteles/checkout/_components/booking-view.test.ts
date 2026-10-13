@@ -286,7 +286,7 @@ describe('classifyBookResponse — errores', () => {
 
   it('sin cartera en la moneda de la tarifa o con la cartera suspendida: el motivo del API y a Cartera B2B', () => {
     const message =
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.';
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.';
     expect(
       classifyBookResponse(...apiError(409, { reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED', message })),
     ).toEqual({
@@ -353,7 +353,7 @@ describe('classifyBookResponse — errores', () => {
   it('sin contacto de soporte de la agencia: a Mi Agencia', () => {
     expect(
       classifyBookResponse(
-        ...apiError(422, { reason: 'AGENCY_CONTACT_MISSING', message: 'Configuralos.' }),
+        ...apiError(422, { reason: 'AGENCY_CONTACT_MISSING', message: 'Configúralos.' }),
       ),
     ).toMatchObject({ kind: 'rejected', retry: true, action: 'agency' });
   });

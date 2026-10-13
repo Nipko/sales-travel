@@ -64,14 +64,14 @@ const UNREADABLE =
   'TBO devolvió una respuesta que no pudimos interpretar. Ya quedó registrado para el equipo.';
 
 const REQUEST_REJECTED =
-  'No pudimos armar la consulta a TBO con estos datos. Ya quedó registrado; revisá fechas y ocupación y probá de nuevo.';
+  'No pudimos armar la consulta a TBO con estos datos. Ya quedó registrado; revisa fechas y ocupación y prueba de nuevo.';
 
 const OFFER_EXPIRED =
-  'La cotización venció: TBO la mantiene 30 minutos desde la búsqueda. Volvé a buscar para reservar.';
+  'La cotización venció: TBO la mantiene 30 minutos desde la búsqueda. Vuelve a buscar para reservar.';
 
-const THROTTLED = 'TBO está limitando la cantidad de consultas. Probá de nuevo en unos segundos.';
+const THROTTLED = 'TBO está limitando la cantidad de consultas. Prueba de nuevo en unos segundos.';
 
-const UNKNOWN_MESSAGE = 'No pudimos procesar la solicitud con TBO. Intentá nuevamente.';
+const UNKNOWN_MESSAGE = 'No pudimos procesar la solicitud con TBO. Inténtalo de nuevo.';
 
 /** En Book y Cancel, estos desenlaces no dicen si TBO aplicó el write (01 §8.4, última fila). */
 function uncertainWrite(ctx: MessageContext, otherwise: string): string {
@@ -81,44 +81,44 @@ function uncertainWrite(ctx: MessageContext, otherwise: string): string {
 }
 
 const CREDENTIALS_INVALID: ByOrigin = {
-  own: `TBO rechazó el usuario o la contraseña de tu agencia. Verificalos en ${PANEL}.`,
+  own: `TBO rechazó el usuario o la contraseña de tu agencia. Verifícalos en ${PANEL}.`,
   inherited:
-    'TBO rechazó las credenciales que tu agencia hereda del consolidador. Avisale al consolidador para que las revise.',
+    'TBO rechazó las credenciales que tu agencia hereda del consolidador. Avísale al consolidador para que las revise.',
   env: 'El acceso de la plataforma a TBO fue rechazado. Ya quedó registrado para el equipo.',
-  unknown: `TBO rechazó las credenciales de la cuenta con la que opera tu agencia. Revisalas en ${PANEL} o avisale a quien las administra.`,
+  unknown: `TBO rechazó las credenciales de la cuenta con la que opera tu agencia. Revísalas en ${PANEL} o avísale a quien las administra.`,
 };
 
 const ACCOUNT_BLOCKED: ByOrigin = {
-  own: 'TBO tiene bloqueada la cuenta de tu agencia. No se pueden consultar ni reservar hoteles de TBO hasta que TBO la habilite; contactá a tu ejecutivo de TBO.',
-  inherited: 'TBO tiene bloqueada la cuenta del consolidador. Avisale al consolidador.',
+  own: 'TBO tiene bloqueada la cuenta de tu agencia. No se pueden consultar ni reservar hoteles de TBO hasta que TBO la habilite; contacta a tu ejecutivo de TBO.',
+  inherited: 'TBO tiene bloqueada la cuenta del consolidador. Avísale al consolidador.',
   env: 'TBO tiene bloqueada la cuenta de la plataforma. Ya quedó registrado para el equipo.',
   unknown:
-    'TBO tiene bloqueada la cuenta con la que opera tu agencia. Avisale a quien la administra o contactá a tu ejecutivo de TBO.',
+    'TBO tiene bloqueada la cuenta con la que opera tu agencia. Avísale a quien la administra o contacta a tu ejecutivo de TBO.',
 };
 
 const INSUFFICIENT_BALANCE: ByOrigin = {
-  own: 'La cuenta de TBO de tu agencia no tiene saldo o crédito suficiente para esta reserva. Cargá saldo en TBO o elegí otra tarifa.',
+  own: 'La cuenta de TBO de tu agencia no tiene saldo o crédito suficiente para esta reserva. Carga saldo en TBO o elige otra tarifa.',
   inherited:
-    'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avisale al consolidador.',
+    'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avísale al consolidador.',
   env: 'La cuenta de TBO de la plataforma no tiene saldo suficiente para esta reserva. Ya quedó registrado para el equipo.',
   unknown:
-    'La cuenta de TBO con la que opera tu agencia no tiene saldo o crédito suficiente para esta reserva. Avisale a quien la administra o elegí otra tarifa.',
+    'La cuenta de TBO con la que opera tu agencia no tiene saldo o crédito suficiente para esta reserva. Avísale a quien la administra o elige otra tarifa.',
 };
 
 const ACCOUNT_CONFIG_INVALID: ByOrigin = {
-  own: `La configuración de la cuenta de TBO de tu agencia es inválida. Revisala en ${PANEL}.`,
+  own: `La configuración de la cuenta de TBO de tu agencia es inválida. Revísala en ${PANEL}.`,
   inherited:
-    'La configuración de la cuenta de TBO que tu agencia hereda del consolidador es inválida. Avisale al consolidador.',
+    'La configuración de la cuenta de TBO que tu agencia hereda del consolidador es inválida. Avísale al consolidador.',
   env: 'La configuración de TBO de la plataforma es inválida. Ya quedó registrado para el equipo.',
-  unknown: `La configuración de la cuenta de TBO con la que opera tu agencia es inválida. Revisala en ${PANEL} o avisale a quien la administra.`,
+  unknown: `La configuración de la cuenta de TBO con la que opera tu agencia es inválida. Revísala en ${PANEL} o avísale a quien la administra.`,
 };
 
 const ACCOUNT_INCOMPLETE: ByOrigin = {
-  own: `A la cuenta de TBO de tu agencia le faltan datos para operar. Completala en ${PANEL}.`,
+  own: `A la cuenta de TBO de tu agencia le faltan datos para operar. Complétala en ${PANEL}.`,
   inherited:
-    'A la cuenta de TBO que tu agencia hereda del consolidador le faltan datos para operar. Avisale al consolidador.',
+    'A la cuenta de TBO que tu agencia hereda del consolidador le faltan datos para operar. Avísale al consolidador.',
   env: 'A la cuenta de TBO de la plataforma le faltan datos para operar. Ya quedó registrado para el equipo.',
-  unknown: `A la cuenta de TBO con la que opera tu agencia le faltan datos para operar. Completala en ${PANEL} o avisale a quien la administra.`,
+  unknown: `A la cuenta de TBO con la que opera tu agencia le faltan datos para operar. Complétala en ${PANEL} o avísale a quien la administra.`,
 };
 
 /**
@@ -127,7 +127,7 @@ const ACCOUNT_INCOMPLETE: ByOrigin = {
  */
 const MESSAGE_BY_KIND: Readonly<Record<TboFailureKind, (ctx: MessageContext) => string>> = {
   TRANSPORT: (ctx) =>
-    uncertainWrite(ctx, 'No pudimos conectar con TBO. Probá de nuevo en unos segundos.'),
+    uncertainWrite(ctx, 'No pudimos conectar con TBO. Prueba de nuevo en unos segundos.'),
   MALFORMED_RESPONSE: (ctx) => uncertainWrite(ctx, UNREADABLE),
   UNKNOWN_CODE: (ctx) =>
     uncertainWrite(
@@ -140,18 +140,18 @@ const MESSAGE_BY_KIND: Readonly<Record<TboFailureKind, (ctx: MessageContext) => 
   INSUFFICIENT_BALANCE: (ctx) => INSUFFICIENT_BALANCE[ctx.origin],
   THROTTLED: (ctx) => uncertainWrite(ctx, THROTTLED),
   UPSTREAM: (ctx) =>
-    uncertainWrite(ctx, 'TBO tuvo un problema interno. Probá de nuevo en unos minutos.'),
+    uncertainWrite(ctx, 'TBO tuvo un problema interno. Prueba de nuevo en unos minutos.'),
   NO_AVAILABILITY: (ctx) =>
     ctx.operation === 'search'
       ? 'TBO no tiene habitaciones disponibles para estas fechas y ocupación.'
-      : 'La habitación elegida ya no tiene disponibilidad en TBO. Volvé a buscar para ver opciones actualizadas.',
+      : 'La habitación elegida ya no tiene disponibilidad en TBO. Vuelve a buscar para ver opciones actualizadas.',
   RATE_UNAVAILABLE: () =>
-    'Esta tarifa ya no está disponible en TBO. Volvé a buscar para ver precios actualizados.',
+    'Esta tarifa ya no está disponible en TBO. Vuelve a buscar para ver precios actualizados.',
   OFFER_EXPIRED: () => OFFER_EXPIRED,
   BOOKING_FAILED: () =>
     'TBO no pudo crear la reserva. Estamos verificando que no haya quedado registrada; no la repitas hasta ver el resultado.',
   CANCEL_FAILED: () =>
-    'TBO no pudo cancelar la reserva. Revisá su estado en el detalle antes de volver a intentar; si sigue activa, contactá a soporte.',
+    'TBO no pudo cancelar la reserva. Revisa su estado en el detalle antes de volver a intentar; si sigue activa, contacta a soporte.',
 };
 
 const OPERATION_BY_PATH: ReadonlyMap<string, Operation> = new Map([
@@ -190,22 +190,22 @@ export function humanizeTboError(err: unknown, context: ProviderErrorContext = {
   }
   if (err instanceof TboRequestBuildError) {
     return err.reason === 'NOT_ELIGIBLE'
-      ? 'TBO no admite esta búsqueda: revisá la nacionalidad del pasajero principal y la ocupación (hasta 4 niños por habitación).'
+      ? 'TBO no admite esta búsqueda: revisa la nacionalidad del pasajero principal y la ocupación (hasta 4 niños por habitación).'
       : REQUEST_REJECTED;
   }
   if (err instanceof TboDispatchRejectedError) {
     return err.reason === 'DEADLINE'
-      ? 'TBO no alcanzó a responder dentro del tiempo de la búsqueda. Probá de nuevo.'
+      ? 'TBO no alcanzó a responder dentro del tiempo de la búsqueda. Prueba de nuevo.'
       : THROTTLED;
   }
   if (err instanceof TboConfigError) return ACCOUNT_CONFIG_INVALID[origin];
   if (err instanceof TboCredentialsMissingError) return ACCOUNT_INCOMPLETE[origin];
   // Las monedas vienen de una respuesta de TBO: no se citan, aunque tengan forma ISO (RF-04 CA-4).
   if (err instanceof TboUnsupportedCurrencyError) {
-    return 'La cuenta de TBO cotiza en una moneda sin dos decimales, que no podemos mostrar. Hace falta que TBO configure el perfil en USD u otra moneda de dos decimales; avisale a quien administra la cuenta.';
+    return 'La cuenta de TBO cotiza en una moneda sin dos decimales, que no podemos mostrar. Hace falta que TBO configure el perfil en USD u otra moneda de dos decimales; avísale a quien administra la cuenta.';
   }
   if (err instanceof TboPackageOnlyRateError) {
-    return 'Esta tarifa de TBO sólo se vende en un paquete con aéreo. Elegí otra tarifa.';
+    return 'Esta tarifa de TBO sólo se vende en un paquete con aéreo. Elige otra tarifa.';
   }
   // Las excepciones HTTP son nuestras (breaker, operación no disponible): su texto ya es para el
   // vendedor. Cualquier otra cosa puede traer lo que sea en `message`.

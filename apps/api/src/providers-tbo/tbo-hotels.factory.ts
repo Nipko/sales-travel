@@ -62,10 +62,10 @@ const ALLOWED_OWNER_TYPES: ReadonlySet<TenantType> = new Set<TenantType>([
 ]);
 
 const OWN_AGENCY_ACCOUNT =
-  'TBO opera sólo con la cuenta del consolidador: las cuentas propias de agencias todavía no están habilitadas. Quitá la cuenta de TBO de esta agencia en Mi Red → Credenciales para usar la del consolidador.';
+  'TBO opera sólo con la cuenta del consolidador: las cuentas propias de agencias todavía no están habilitadas. Quita la cuenta de TBO de esta agencia en Mi Red → Credenciales para usar la del consolidador.';
 
 const INHERITED_AGENCY_ACCOUNT =
-  'La cuenta de TBO que hereda esta agencia es de otra agencia de la red, y TBO opera sólo con la cuenta del consolidador. Pedile a quien la cargó que la quite para heredar la del consolidador.';
+  'La cuenta de TBO que hereda esta agencia es de otra agencia de la red, y TBO opera sólo con la cuenta del consolidador. Pídele a quien la cargó que la quite para heredar la del consolidador.';
 
 /**
  * Factory del ACL de TBO Hotels por tenant (docs/tbo/06 §5.2; 08 RF-36, RNF-06).

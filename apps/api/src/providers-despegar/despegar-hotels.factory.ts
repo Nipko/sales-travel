@@ -168,7 +168,7 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
 
   /**
    * Dos negativas distintas, porque la acción es distinta: con CUENTA hay un campo que completar;
-   * sin cuenta, al caer a la plataforma tampoco hay nada ahí, y "completá tu cuenta" mandaría al
+   * sin cuenta, al caer a la plataforma tampoco hay nada ahí, y "completa tu cuenta" mandaría al
    * vendedor a una pantalla vacía. En el log, sólo el nombre del campo y el origen: nunca valores.
    */
   private missingApiKey(tenantId: string, credentialSource: CredentialSource): NotFoundException {

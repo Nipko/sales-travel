@@ -34,9 +34,9 @@ describe('BookingHoldRejectedError: la cartera propia', () => {
   it.each([
     [
       'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     ],
-    ['PORTFOLIO_FUNDS_INSUFFICIENT', 'Informá un depósito en Cartera B2B'],
+    ['PORTFOLIO_FUNDS_INSUFFICIENT', 'Informa un depósito en Cartera B2B'],
     ['PORTFOLIO_INACTIVE', 'está suspendida'],
   ] as const)('%s: 409 con motivo y mensaje de negocio, sin importes', (reason, texto) => {
     const err = new BookingHoldRejectedError(reason, { amountCurrency: 'USD' });
@@ -52,15 +52,15 @@ describe('BookingHoldRejectedError: la red que financia (0060)', () => {
   it.each([
     [
       'PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED',
-      'Tu red todavía no opera en USD, así que no se puede retener saldo para esta reserva. Pedile a quien te financia que lo habilite.',
+      'Tu red todavía no opera en USD, así que no se puede retener saldo para esta reserva. Pídele a quien te financia que lo habilite.',
     ],
     [
       'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
-      'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+      'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     ],
     [
       'PORTFOLIO_NETWORK_COST_UNAVAILABLE',
-      'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avisale a quien te financia.',
+      'No se pudo calcular el costo de esta reserva para tu red, así que no se retuvo saldo. Avísale a quien te financia.',
     ],
   ] as const)('%s: el texto exacto, sin montos, ids ni nombres', (reason, texto) => {
     const err = new BookingHoldRejectedError(reason, { amountCurrency: 'USD' });
@@ -97,7 +97,7 @@ describe('los 409 de la retención que no son de saldo', () => {
       'busy',
       new PortfolioHoldBusyError(),
       'PORTFOLIO_HOLD_BUSY',
-      'Probá de nuevo en unos segundos.',
+      'Prueba de nuevo en unos segundos.',
     ],
     [
       'release busy',
@@ -109,7 +109,7 @@ describe('los 409 de la retención que no son de saldo', () => {
       'account',
       new PortfolioHoldAccountChangedError(),
       'PORTFOLIO_HOLD_ACCOUNT_CHANGED',
-      'Volvé a buscar la tarifa.',
+      'Vuelve a buscar la tarifa.',
     ],
     [
       'conflict',

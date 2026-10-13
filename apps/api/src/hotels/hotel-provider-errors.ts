@@ -27,7 +27,7 @@ export class AllHotelProvidersFailedError extends BadGatewayException {
 export class HotelOperationUnavailableError extends ServiceUnavailableException {
   constructor(readonly operation: string) {
     super(
-      `Ninguno de los proveedores de hoteles habilitados para esta agencia ofrece ${operation}. Revisá Mi Red → Credenciales.`,
+      `Ninguno de los proveedores de hoteles habilitados para esta agencia ofrece ${operation}. Revisa Mi Red → Credenciales.`,
     );
     this.name = 'HotelOperationUnavailableError';
   }

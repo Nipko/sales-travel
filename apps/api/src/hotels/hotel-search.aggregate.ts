@@ -121,9 +121,9 @@ export const SKIP_REASON_TEXT: Readonly<
   'no-destination-map':
     'Este destino todavía no está vinculado con las ciudades de este proveedor.',
   'foreign-hotel-ids':
-    'Los IDs de hotel escritos a mano son de otro catálogo: buscá por destino para ver sus tarifas.',
+    'Los IDs de hotel escritos a mano son de otro catálogo: busca por destino para ver sus tarifas.',
   'guest-nationality-missing':
-    'Cotiza según la nacionalidad del pasajero principal: indicala en la búsqueda para ver sus tarifas.',
+    'Cotiza según la nacionalidad del pasajero principal: indícala en la búsqueda para ver sus tarifas.',
 };
 
 export function skippedOutcome(
@@ -276,7 +276,7 @@ export function currencyMismatchReason(
   droppedCurrencies: readonly string[],
   expected: string,
 ): string {
-  return `Cotiza en ${droppedCurrencies.join(', ')} y esta búsqueda es en ${expected}: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.`;
+  return `Cotiza en ${droppedCurrencies.join(', ')} y esta búsqueda es en ${expected}: sus tarifas no se pueden mostrar sin convertir la moneda. Revisa la moneda de la cuenta del proveedor en Mi Red → Credenciales.`;
 }
 
 function partialDropReason(

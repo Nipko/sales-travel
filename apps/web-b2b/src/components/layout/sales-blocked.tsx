@@ -3,9 +3,21 @@ import Link from 'next/link';
 import { cn } from '../../lib/cn';
 import { SUPERADMIN_CANNOT_SELL } from '../../lib/viewer';
 
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]';
+
+const SECONDARY_ACTION = cn(
+  'inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-4 text-sm font-medium',
+  'bg-[var(--color-surface)] text-[var(--color-fg)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-surface-muted)]',
+  FOCUS_RING,
+);
+
 /**
- * Lo que ve el superadmin en una pantalla de venta. No es un error: le dice por qué no está y a
- * dónde ir, con el mismo texto que el 403 del API.
+ * Lo que ve el superadmin en una pantalla de venta. No es un error: le dice por qué no está, a
+ * dónde ir y cómo probar una venta, con el mismo texto que el 403 del API.
+ *
+ * La prueba pasa por OTRA cuenta porque la regla del API mira la identidad del usuario, no el nodo
+ * activo: un superadmin que además es vendedor de una sucursal sigue sin vender (`viewer.ts`).
  */
 export function SalesBlockedNotice() {
   return (
@@ -28,26 +40,33 @@ export function SalesBlockedNotice() {
           corriges la red: si todavía no hay una sucursal, créala desde Gestión de Agencias y súmale
           sus vendedores.
         </p>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+        <p className="mt-3 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
+          <span className="font-medium text-[var(--color-fg)]">
+            Para probar una venta, entra con un vendedor de una sucursal.
+          </span>{' '}
+          Tiene que ser otra cuenta, con otro correo: la regla mira a la persona, no al nodo. Si
+          usas Gmail, puedes invitar tu mismo correo con un sufijo (por ejemplo,{' '}
+          <span className="break-all font-mono text-xs text-[var(--color-fg)]">
+            tunombre+vendedor@gmail.com
+          </span>
+          ) y te llega a la misma bandeja.
+        </p>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Link
             href="/admin/tenants"
             className={cn(
               'inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium',
               'bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-primary-hover)]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
+              FOCUS_RING,
             )}
           >
             <Network aria-hidden="true" className="size-4" />
             Ir a Gestión de Agencias
           </Link>
-          <Link
-            href="/reservas"
-            className={cn(
-              'inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-4 text-sm font-medium',
-              'bg-[var(--color-surface)] text-[var(--color-fg)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-surface-muted)]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
-            )}
-          >
+          <Link href="/admin/usuarios" className={SECONDARY_ACTION}>
+            Invitar un vendedor
+          </Link>
+          <Link href="/reservas" className={SECONDARY_ACTION}>
             Ver reservas hechas
           </Link>
         </div>

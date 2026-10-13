@@ -109,6 +109,42 @@ describe('detailRatesView — RF-40 CA 4 en la lista de tarifas del detalle', ()
     expect(view.failed).toEqual([]);
   });
 
+  it('las agrupa por tipo de habitación, con el «desde» vigente y el reembolso a esa hora', () => {
+    const view = detailRatesView(RATES, false, (row) => row.pack.id === 'T1');
+    // Las tres son «Doble» sin id: un solo tipo, aunque vengan de dos proveedores.
+    expect(view.groups).toHaveLength(1);
+    expect(view.groups[0]?.plans.map((p) => p.row.pack.id)).toEqual(['T1', 'D1', 'T2']);
+    expect(view.groups[0]?.from.row.pack.id).toBe('D1');
+
+    const vencida: HotelDetailRatesResult = {
+      ...RATES,
+      receivedAt: Date.UTC(2026, 10, 9, 12, 0, 0),
+      outcomes: [
+        {
+          ref: TBO,
+          offer: offer('1402689', [
+            {
+              ...pack('T9', 'tbo-hotels', 300_00),
+              cancellation: {
+                refundable: true,
+                status: 'partially_refundable',
+                rules: [
+                  {
+                    type: 'Percentage',
+                    penaltyPercentage: 100,
+                    fromLocalDateTime: '2026-11-08T00:00:00',
+                  },
+                ],
+              },
+            },
+          ]),
+        },
+      ],
+    };
+    // El 100 % ya rige a la hora en que llegaron: se lee como no reembolsable.
+    expect(detailRatesView(vencida, false).groups[0]?.plans[0]?.refund.refundable).toBe(false);
+  });
+
   it('un proveedor que falla no tapa al otro, y se dice cuál faltó', () => {
     const partial: HotelDetailRatesResult = {
       ...RATES,

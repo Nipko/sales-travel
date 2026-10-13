@@ -1,12 +1,14 @@
 'use client';
 
 import { ExternalLink, MapPin, Star } from 'lucide-react';
+import Link from 'next/link';
 import { mapsUrl } from '../[hotelKey]/_components/hotel-content-view';
 import { perNightOf } from './hotel-card-summary';
 import { formatMoney } from './hotel-format';
 import { HotelPhoto } from './hotel-photo';
 import type { PhotoState } from './hotel-photos';
 import type { FilteredHotel } from './hotel-results-filters';
+import { detailLinkForOffer } from './hotel-search-handoff';
 
 /*
  * La vista "Mapa" de los resultados, sin mapa embebido. Un mapa interactivo pide una dependencia
@@ -15,17 +17,21 @@ import type { FilteredHotel } from './hotel-results-filters';
  * una aplicación comercial sin un proveedor contratado. Hasta que se decida uno, la vista lista los
  * hoteles (con los mismos filtros y el mismo orden) con su dirección o sus coordenadas, y abre cada
  * ubicación en Google Maps, en otra pestaña —lo mismo que ya hace la ficha del hotel—, con las
- * coordenadas del catálogo.
+ * coordenadas del catálogo. Cada hotel lleva además a su ficha, con tipos de habitación y tarifas
+ * para reservar, en otra pestaña como la tarjeta de la lista: la vista no es un callejón sin salida.
  */
 
 export function HotelResultsMap({
   items,
   photos,
   nights,
+  searchToken,
 }: {
   items: readonly FilteredHotel[];
   photos: ReadonlyMap<string, PhotoState>;
   nights?: number;
+  /** La búsqueda de la que salieron: sin ella, la ficha no sabría qué estadía cotizar. */
+  searchToken?: string;
 }) {
   const located = items.filter((i) => i.hotel.offer.location !== undefined).length;
   return (
@@ -47,6 +53,8 @@ export function HotelResultsMap({
           const name = offer.name ?? `Hotel ${offer.hotelId}`;
           const cheapest = item.rates[0]?.row.sale;
           const perNight = cheapest ? (perNightOf(cheapest, nights) ?? cheapest) : undefined;
+          const detail =
+            searchToken === undefined ? undefined : detailLinkForOffer(offer, searchToken);
           return (
             <li
               key={key}
@@ -85,6 +93,18 @@ export function HotelResultsMap({
                     </span>
                     {nights !== undefined && nights >= 1 ? ' por noche' : ' por la estadía'}
                   </p>
+                ) : null}
+                {detail ? (
+                  <Link
+                    href={detail}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-6 items-center gap-1 rounded text-xs font-medium text-[var(--color-fg)] underline decoration-[var(--color-border-strong)] underline-offset-2 transition-colors hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                  >
+                    Ver hotel
+                    <ExternalLink aria-hidden="true" className="size-3" />
+                    <span className="sr-only"> {name} (se abre en otra pestaña)</span>
+                  </Link>
                 ) : null}
               </div>
               {offer.location ? (

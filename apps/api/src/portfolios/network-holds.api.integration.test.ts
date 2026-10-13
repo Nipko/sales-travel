@@ -487,7 +487,7 @@ d('retención en cascada por la API (0060, como app_user)', () => {
       currency: 'COP',
       reason: 'PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED',
       message:
-        'Tu red todavía no opera en COP, así que no se puede retener saldo para esta reserva. Pedile a quien te financia que lo habilite.',
+        'Tu red todavía no opera en COP, así que no se puede retener saldo para esta reserva. Pídele a quien te financia que lo habilite.',
     });
 
     const err = await portfolios

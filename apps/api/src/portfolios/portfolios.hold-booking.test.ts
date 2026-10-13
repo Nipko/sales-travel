@@ -138,7 +138,7 @@ describe('PortfoliosService.holdBooking', () => {
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED' });
     expect((err as BookingHoldRejectedError).message).toBe(
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     );
     expect(h.balance()).toBe(500_000);
     expect(h.bank.state.entries).toHaveLength(0);
@@ -162,7 +162,7 @@ describe('PortfoliosService.holdBooking', () => {
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({ reason: 'PORTFOLIO_FUNDS_INSUFFICIENT' });
     expect((err as BookingHoldRejectedError).getStatus()).toBe(HttpStatus.CONFLICT);
-    expect((err as BookingHoldRejectedError).message).toMatch(/Informá un depósito en Cartera B2B/);
+    expect((err as BookingHoldRejectedError).message).toMatch(/Informa un depósito en Cartera B2B/);
     expect(h.balance()).toBe(100_000);
     expect(h.bank.state.entries).toHaveLength(0);
   });

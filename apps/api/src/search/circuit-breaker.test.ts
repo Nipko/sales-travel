@@ -565,7 +565,7 @@ describe('CircuitBreakerService — el rechazo local es tipado y previo al enví
     expect(err).toMatchObject({
       reason: 'provider-circuit',
       sentToProvider: false,
-      message: 'prov-a no está respondiendo. Reintentá en unos segundos.',
+      message: 'prov-a no está respondiendo. Inténtalo de nuevo en unos segundos.',
     });
   });
 

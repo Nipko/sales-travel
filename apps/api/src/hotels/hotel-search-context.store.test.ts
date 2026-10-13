@@ -256,7 +256,7 @@ describe('RF-08 CA-3: la cuenta que reserva tiene que ser la que buscó', () => 
 
     expect(err).toBeInstanceOf(HotelSearchAccountChangedError);
     expect((err as HotelSearchAccountChangedError).getStatus()).toBe(HttpStatus.CONFLICT);
-    expect((err as Error).message).toContain('Volvé a buscar');
+    expect((err as Error).message).toContain('Vuelve a buscar');
   });
 
   it('la misma versión escrita de otra forma es la misma cuenta', async () => {
@@ -399,7 +399,7 @@ describe('falla hacia el lado seguro', () => {
 
     expect(err).toBeInstanceOf(HotelSearchContextExpiredError);
     expect((err as HotelSearchContextExpiredError).reason).toBe('SEARCH_CONTEXT_EXPIRED');
-    expect((err as Error).message).toContain('Volvé a buscar');
+    expect((err as Error).message).toContain('Vuelve a buscar');
   });
 
   it('un registro ilegible en la caché (otra versión) no existe y se borra', async () => {
@@ -650,6 +650,6 @@ describe('errores con motivo máquina', () => {
     expect(err.getStatus()).toBe(HttpStatus.CONFLICT);
     expect(err.reason).toBe('GUEST_NATIONALITY_MISSING');
     expect(err.name).toBe('HotelSearchNationalityMissingError');
-    expect(err.message).toContain('Volvé a buscar');
+    expect(err.message).toContain('Vuelve a buscar');
   });
 });

@@ -103,7 +103,7 @@ export class ProviderAccountChangedError extends ConflictException {
 
   constructor() {
     super(
-      'La cuenta del proveedor cambió mientras se abría la reserva. Volvé a buscar para reservar con la cuenta vigente.',
+      'La cuenta del proveedor cambió mientras se abría la reserva. Vuelve a buscar para reservar con la cuenta vigente.',
     );
     this.name = 'ProviderAccountChangedError';
   }
