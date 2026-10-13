@@ -1,15 +1,16 @@
-import { createElement } from 'react';
+import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { HotelAccountEnvironment, HotelRoompack } from '../../actions';
 import { hotelRateRows } from '../../_components/hotel-rate-view';
 import { BookingConfirm } from './booking-confirm';
+import { ConfirmedPanel } from './booking-panels';
 import { PrebookSummary } from './prebook-summary';
 
 /*
  * El checkout con la cuenta de prueba de TBO (el PreBook lo dice en `providerEnvironment`): la
- * tarifa revalidada y el paso que reserva avisan que la reserva no es real. Con la cuenta de
- * producción, o sin saberlo, nada cambia.
+ * tarifa revalidada, el paso que reserva y la reserva confirmada (con su voucher) avisan que la
+ * reserva no es real. Con la cuenta de producción, o sin saberlo, nada cambia.
  */
 
 const AVISO =
@@ -69,6 +70,17 @@ function confirm(providerEnvironment?: HotelAccountEnvironment): string {
   );
 }
 
+function confirmed(providerEnvironment?: HotelAccountEnvironment): string {
+  return renderToStaticMarkup(
+    createElement(ConfirmedPanel, {
+      view: { orderId: 'ord-1', orderNumber: 1042, providerBookingId: 'TBO-778' },
+      atHotel: [],
+      headingRef: createRef<HTMLHeadingElement>(),
+      ...(providerEnvironment === undefined ? {} : { providerEnvironment }),
+    }),
+  );
+}
+
 describe('checkout con la cuenta de prueba', () => {
   it('la tarifa revalidada lo avisa', () => {
     const html = summary('test');
@@ -82,8 +94,22 @@ describe('checkout con la cuenta de prueba', () => {
     expect(plain.indexOf(AVISO)).toBeLessThan(plain.lastIndexOf('Confirmar reserva'));
   });
 
+  it('la reserva confirmada lo sigue diciendo, antes del voucher que se le podría mandar al cliente', () => {
+    const plain = text(confirmed('test'));
+    expect(plain).toContain('Reserva confirmada');
+    expect(plain).toContain(AVISO);
+    expect(plain.indexOf(AVISO)).toBeLessThan(plain.indexOf('Voucher (PDF)'));
+  });
+
   it('con la cuenta de producción, o sin saberlo, no hay aviso', () => {
-    for (const html of [summary('live'), summary(), confirm('live'), confirm()]) {
+    for (const html of [
+      summary('live'),
+      summary(),
+      confirm('live'),
+      confirm(),
+      confirmed('live'),
+      confirmed(),
+    ]) {
       expect(text(html)).not.toContain('Cuenta de prueba');
     }
   });

@@ -1,9 +1,11 @@
 import { createElement, type ButtonHTMLAttributes } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { HotelOffer, HotelRoompack } from '../actions';
+import type { HotelOffer, HotelProviderOutcome, HotelRoompack } from '../actions';
 import { encodeHotelKey } from './hotel-key';
+import { testAccountView, type TestAccountView } from './hotel-provider-view';
 import { HotelResultCard, HotelResultRates } from './hotel-result-card';
+import { HotelResults } from './hotel-results';
 import { RATE_SELECTION_STORAGE_KEY, parseRateSelections } from './hotel-rate-selection';
 import {
   NO_FILTERS,
@@ -601,6 +603,36 @@ describe('cuenta de prueba — la etiqueta «Prueba» en cada plan', () => {
     );
     expect(html).toContain('>Prueba</span>');
     expect(card(TBO_HOTEL, false)).not.toContain('>Prueba</span>');
+  });
+
+  function lista(testAccount?: TestAccountView): string {
+    return renderToStaticMarkup(
+      createElement(HotelResults, {
+        hotels: [TBO_HOTEL],
+        showProvider: false,
+        clockOffsetMs: 0,
+        searching: false,
+        onSearchAgain: noop,
+        ...(testAccount === undefined ? {} : { testAccount }),
+      }),
+    );
+  }
+
+  const RESPONDIO: HotelProviderOutcome = { code: 'tbo-hotels', status: 'ok', count: 1 };
+
+  it('la lista lleva el aviso arriba de las tarjetas, y la tarjeta su etiqueta', () => {
+    const html = lista(testAccountView([{ ...RESPONDIO, accountEnvironment: 'test' }], false));
+    const aviso = html.indexOf('Algunas tarifas vienen de una cuenta de prueba de un proveedor');
+    expect(aviso).toBeGreaterThan(-1);
+    expect(aviso).toBeLessThan(html.indexOf('<article'));
+    expect(html).toContain('>Prueba</span>');
+  });
+
+  it('sin cuenta de prueba, la lista no avisa nada', () => {
+    const html = lista(testAccountView([RESPONDIO], false));
+    expect(html).not.toContain('cuenta de prueba');
+    expect(html).not.toContain('>Prueba</span>');
+    expect(lista()).not.toContain('cuenta de prueba');
   });
 });
 

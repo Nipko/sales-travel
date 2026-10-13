@@ -447,7 +447,12 @@ export function BookingStep({
           onPollNow={pollNow}
         />
       ) : phase.kind === 'confirmed' ? (
-        <ConfirmedPanel view={phase.view} atHotel={atHotel} headingRef={headingRef} />
+        <ConfirmedPanel
+          view={phase.view}
+          atHotel={atHotel}
+          headingRef={headingRef}
+          providerEnvironment={prebook.providerEnvironment}
+        />
       ) : phase.kind === 'failed' ? (
         <FailedPanel
           view={phase.view}
