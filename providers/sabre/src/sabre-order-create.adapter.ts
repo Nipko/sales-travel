@@ -426,8 +426,9 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       now: this.deps.now?.() ?? new Date(),
     });
     if (planned.decision.fallback !== undefined) {
-      // La cuenta pidió emisión futura y no tiene a quién dejársela. Se reserva igual, con plazo,
-      // porque no reservar por un campo de configuración es peor; pero tiene que verse.
+      // La cuenta pidió emisión futura y no tiene a quién dejársela (sin PCC de emisión, o con uno
+      // que el contrato no acepta). Se reserva igual, con plazo, porque no reservar por un campo de
+      // configuración es peor; pero tiene que verse.
       this.log('warn', 'sabre.createBooking.ticketingPolicyFallback', {
         requestedPolicy: planned.decision.requestedPolicy,
         appliedPolicy: planned.decision.policy,

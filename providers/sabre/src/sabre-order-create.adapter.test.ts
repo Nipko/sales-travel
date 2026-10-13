@@ -805,6 +805,113 @@ describe('política y plazo de emisión', () => {
     expect(wire.outcome.ticketing?.deadline?.source).toBe('PROVIDER_NO_MARGIN');
   });
 
+  it.each([
+    ['vencido hace un minuto', '2026-10-13T11:59:00.000Z'],
+    ['que vence justo ahora', '2026-10-13T12:00:00.000Z'],
+  ])(
+    'un plazo del proveedor %s no sale: el PNR nacería sin tiempo para emitir',
+    async (_c, plazo) => {
+      // Por la puerta pública y contando lo que llega a `fetch`: «no sale» es que no hubo POST.
+      const calls: string[] = [];
+      const cfg = config();
+      const http = new SabreHttpClient(cfg, tokens, {
+        fetch: (url) => {
+          calls.push(url);
+          return Promise.resolve(new Response(JSON.stringify(CONFIRMED_RESPONSE), { status: 200 }));
+        },
+        uuid: () => 'conv-fijo',
+      });
+      const adapter = new SabreOrderCreateAdapter(cfg, http, reloj);
+
+      const thrown = await adapter
+        .createBooking(
+          request(flightCheckedOfferWithDeadline(plazo)),
+          { tenantId: TENANT_ID, requestId: 'req-1' },
+          { ticketing: {} },
+        )
+        .catch((err: unknown) => err);
+
+      expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+      expect((thrown as Error).message).toContain('ya venció');
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it('sin plazo del proveedor y con el vuelo antes de 24 h, el plazo es la salida menos el margen', async () => {
+    // Sale a las 20:00 de Bogotá del mismo día (01:00 UTC del 14). Ahora + 24 h serían las 07:00
+    // del 14, con el avión ya en el aire: se pide la salida menos 2 h, las 18:00 del 13.
+    const base = atpcoOffer();
+    const wire = await book(
+      request({
+        ...base,
+        itineraries: [
+          {
+            segments: [segment({ departureAt: '2026-10-13T20:00:00-05:00' })],
+            totalDurationMinutes: 170,
+            stops: 0,
+          },
+        ],
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)['ticketingTimeLimitPolicy']).toMatchObject({
+      ticketingDate: '2026-10-13',
+      ticketingTime: '18:00',
+    });
+    expect(wire.outcome.ticketing?.deadline?.source).toBe('FALLBACK_BEFORE_DEPARTURE');
+  });
+
+  it('sin plazo del proveedor y con el vuelo dentro del margen, el plazo es la salida', async () => {
+    // Sale a las 08:00 de Bogotá (13:00 UTC), una hora después de ahora: el margen de 2 h no cabe.
+    const base = atpcoOffer();
+    const wire = await book(
+      request({
+        ...base,
+        itineraries: [
+          {
+            segments: [segment({ departureAt: '2026-10-13T08:00:00-05:00' })],
+            totalDurationMinutes: 170,
+            stops: 0,
+          },
+        ],
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(wire.outcome.ticketing?.deadline).toMatchObject({
+      date: '2026-10-13',
+      time: '08:00',
+      source: 'FALLBACK_BEFORE_DEPARTURE',
+    });
+  });
+
+  it('sin plazo del proveedor y con el vuelo después de 24 h, el plazo sigue siendo ahora + 24 h', async () => {
+    const base = atpcoOffer();
+    const wire = await book(
+      request({
+        ...base,
+        itineraries: [
+          {
+            segments: [segment({ departureAt: '2026-10-20T09:15:00-05:00' })],
+            totalDurationMinutes: 170,
+            stops: 0,
+          },
+        ],
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(wire.outcome.ticketing?.deadline).toMatchObject({
+      date: '2026-10-14',
+      time: '07:00',
+      source: 'FALLBACK_WINDOW',
+    });
+  });
+
   it('sin plazo del proveedor, ahora + 24 h en la hora de la oficina', async () => {
     const wire = await book(
       request(atpcoOffer()),
@@ -941,6 +1048,43 @@ describe('política y plazo de emisión', () => {
     // El PCC viaja al proveedor, que es su destino; a la orden no.
     expect(JSON.stringify(wire.outcome.providerRaw)).not.toContain('T1CK');
     expect(wire.outcome.providerRaw['ticketingPolicy']).toBe('FUTURE_TICKETING');
+  });
+
+  it('emisión futura con el PCC de emisión tecleado en minúsculas: sale en mayúsculas', async () => {
+    // La bóveda sólo exige 3 o 4 caracteres. Sin normalizar, el builder rechaza el patrón del
+    // contrato y la cuenta no podría reservar nada.
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { policy: 'FUTURE_TICKETING' } },
+      { cfg: { ticketingPcc: ' t1ck ' }, deps: reloj },
+    );
+    expect(agencyOf(wire)).toEqual({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+    });
+  });
+
+  it('emisión futura con un PCC de emisión fuera del contrato cae a «con plazo» sin nombrarlo', async () => {
+    const { logger, lines } = spyLogger();
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { policy: 'FUTURE_TICKETING' } },
+      { cfg: { ticketingPcc: 'Q-7X' }, deps: { ...reloj, logger } },
+    );
+
+    expect(agencyOf(wire)['ticketingPolicy']).toBe('TICKETING_TIME_LIMIT');
+    expect(wire.outcome.ticketing).toMatchObject({
+      policy: 'TICKETING_TIME_LIMIT',
+      requestedPolicy: 'FUTURE_TICKETING',
+      fallback: 'INVALID_TICKETING_PCC',
+    });
+    const aviso = lines.find((l) => l.message === 'sabre.createBooking.ticketingPolicyFallback');
+    expect(aviso?.meta).toMatchObject({ reason: 'INVALID_TICKETING_PCC' });
+    expect(JSON.stringify(lines)).not.toContain('Q-7X');
+    expect(wire.raw).not.toContain('Q-7X');
+    expect(JSON.stringify(wire.outcome.providerRaw)).not.toContain('Q-7X');
   });
 
   it('emisión futura sin PCC de emisión cae a «con plazo» y lo avisa sin nombrar oficinas', async () => {

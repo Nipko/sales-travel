@@ -172,22 +172,6 @@ const AGENT_CARS: ProviderForm = {
   fallsBackToPlatformCredentials: true,
 };
 
-/**
- * Sabre. Reparto de mitades tal y como lo lee `SabreProviderFactory.toConfig`:
- *
- *  - `epr`, `password`, `homePcc`, `redSignInPcc` y `ticketingPcc` van en `credentials` (blob
- *    cifrado). Los PCC **no son secretos**, pero se guardan juntos para que su función quede
- *    inequívoca. `redSignInPcc` es sólo referencia operativa: nunca sustituye al PCC del token.
- *  - `password` va SÓLO en `credentials`: el factory se niega a leerla de `config`, que es un
- *    JSONB en claro que además se devuelve por el listado.
- *
- * Los tres obligatorios son los mismos que `missingSabreCredentials` exige en el ACL. Sin uno
- * solo de ellos la cuenta se guarda, la búsqueda cae a fixtures, el factory lo detecta y deja a
- * Sabre AUSENTE — sin error para el operador. Por eso se cortan aquí.
- *
- * Los límites de 3–4 caracteres de los PCC no son estética: son los de `SabreConfigSchema`, y un
- * valor fuera de rango hace que `parseSabreConfig` lance en la primera búsqueda, no al guardar.
- */
 /** El margen por defecto del ACL (`SABRE_DEFAULT_TICKETING_LEAD_HOURS`); el panel no lo importa. */
 const SABRE_DEFAULT_TICKETING_LEAD_HOURS = 2;
 
@@ -218,6 +202,22 @@ const SABRE_PCC_TIME_ZONES: readonly ProviderFieldOption[] = [
   { value: 'UTC', label: 'UTC' },
 ];
 
+/**
+ * Sabre. Reparto de mitades tal y como lo lee `SabreProviderFactory.toConfig`:
+ *
+ *  - `epr`, `password`, `homePcc`, `redSignInPcc` y `ticketingPcc` van en `credentials` (blob
+ *    cifrado). Los PCC **no son secretos**, pero se guardan juntos para que su función quede
+ *    inequívoca. `redSignInPcc` es sólo referencia operativa: nunca sustituye al PCC del token.
+ *  - `password` va SÓLO en `credentials`: el factory se niega a leerla de `config`, que es un
+ *    JSONB en claro que además se devuelve por el listado.
+ *
+ * Los tres obligatorios son los mismos que `missingSabreCredentials` exige en el ACL. Sin uno
+ * solo de ellos la cuenta se guarda, la búsqueda cae a fixtures, el factory lo detecta y deja a
+ * Sabre AUSENTE — sin error para el operador. Por eso se cortan aquí.
+ *
+ * Los límites de 3–4 caracteres de los PCC no son estética: son los de `SabreConfigSchema`, y un
+ * valor fuera de rango hace que `parseSabreConfig` lance en la primera búsqueda, no al guardar.
+ */
 const SABRE: ProviderForm = {
   label: 'Sabre',
   note: 'Sabre autentica con un clientId con la forma V1:{EPR}:{PCC}:AA. EPR, contraseña y PCC de la oficina salen del alta que hace tu account manager de Sabre; el resto sólo hace falta si tu contrato lo pide.',
@@ -370,7 +370,7 @@ const SABRE: ProviderForm = {
         value: String(hours),
         label: leadHoursLabel(hours),
       })),
-      help: 'Cuántas horas antes del plazo de la aerolínea vence la reserva para emitir. Si la aerolínea no informa plazo, vence en 24 horas.',
+      help: 'Cuántas horas antes del plazo de la aerolínea vence la reserva para emitir. Si la aerolínea no informa plazo, vence en 24 horas; si el vuelo sale antes, vence con este margen antes de la salida.',
     },
     {
       key: 'ticketingFormOfPayment',

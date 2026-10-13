@@ -19,8 +19,8 @@ import type { SabreAgencyInput } from './create.request.builder';
  *    El plazo sale del proveedor (revalidación) menos un margen, en la hora de la oficina.
  *  - **`FUTURE_TICKETING`** — la reserva queda para que emita el PCC de emisión de la cuenta
  *    (`futureTicketingPolicy.ticketingPcc`, `:4767-4800`): el gancho del consolidador que reserva
- *    en una oficina y emite en otra. Sin PCC de emisión no hay a quién dejársela, y cae a la
- *    primera con un aviso.
+ *    en una oficina y emite en otra. Sin PCC de emisión —o con uno que no tiene la forma del
+ *    contrato— no hay a quién dejársela, y cae a la primera con un aviso.
  *
  * `TODAY` y `ALREADY_TICKETED` no se ofrecen: el primero promete una emisión en el día que la
  * plataforma todavía no hace, y el segundo describe un PNR que ya tiene billete.
@@ -69,18 +69,34 @@ export const SABRE_TICKETING_FALLBACK_WINDOW_HOURS = 24;
  *  - `PROVIDER` — el plazo de la revalidación menos el margen de la cuenta;
  *  - `PROVIDER_NO_MARGIN` — el margen no cabía (el plazo vence antes de que pase): se pide el plazo
  *    del proveedor tal cual, porque pedir uno anterior a ahora vencería la reserva al crearla;
- *  - `FALLBACK_WINDOW` — la oferta no trae plazo legible con zona: ahora + 24 h.
+ *  - `FALLBACK_WINDOW` — la oferta no trae plazo legible con zona: ahora + 24 h;
+ *  - `FALLBACK_BEFORE_DEPARTURE` — sin plazo del proveedor y el primer vuelo sale antes de esas
+ *    24 h: la salida menos el margen (o la salida, si el margen no cabe). Un plazo de emisión
+ *    posterior al despegue no se puede cumplir, y la oficina lo leería como tiempo que no tiene.
+ *
+ * Un plazo del proveedor que ya venció no tiene origen: la reserva no sale
+ * ({@link SabreTicketingPolicyError}), porque nacería sin tiempo para emitir.
  */
 export const SABRE_TICKETING_DEADLINE_SOURCES = [
   'PROVIDER',
   'PROVIDER_NO_MARGIN',
   'FALLBACK_WINDOW',
+  'FALLBACK_BEFORE_DEPARTURE',
 ] as const;
 
 export type SabreTicketingDeadlineSource = (typeof SABRE_TICKETING_DEADLINE_SOURCES)[number];
 
-/** Por qué no se aplicó la política que la cuenta pidió. Vocabulario cerrado. */
-export const SABRE_TICKETING_POLICY_FALLBACKS = ['NO_TICKETING_PCC'] as const;
+/**
+ * Por qué no se aplicó la política que la cuenta pidió. Vocabulario cerrado.
+ *
+ *  - `NO_TICKETING_PCC` — emisión futura sin PCC de emisión en la cuenta;
+ *  - `INVALID_TICKETING_PCC` — el PCC de emisión de la cuenta no tiene la forma del contrato
+ *    (`^[A-Z0-9]{3,4}$`, ya en mayúsculas): mandarlo haría fallar CADA reserva de la cuenta.
+ */
+export const SABRE_TICKETING_POLICY_FALLBACKS = [
+  'NO_TICKETING_PCC',
+  'INVALID_TICKETING_PCC',
+] as const;
 
 export type SabreTicketingPolicyFallback = (typeof SABRE_TICKETING_POLICY_FALLBACKS)[number];
 
@@ -164,6 +180,8 @@ export class SabreTicketingPolicyError extends Error {
 const ISO_WITH_OFFSET =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const AIRLINE_CODE = /^[A-Z0-9]{2}$/;
+/** `FutureTicketingPolicy.ticketingPcc` (`booking-management-v1.yml:4773`). */
+const PCC = /^[A-Z0-9]{3,4}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HH_MM = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
 const HOUR_MS = 60 * 60 * 1000;
@@ -181,9 +199,11 @@ export function planSabreTicketingPolicy(input: {
   readonly now: Date;
 }): SabreTicketingPlan {
   const { offer, settings, now } = input;
-  const ticketingPcc = input.ticketingPcc?.trim();
+  // Un PCC se escribe en mayúsculas, pero la bóveda sólo exige 3 o 4 caracteres: «t1ck» llega tal
+  // cual se tecleó. Sin normalizar, el builder lo rechaza y la cuenta no podría reservar nada.
+  const ticketingPcc = input.ticketingPcc?.trim().toUpperCase() ?? '';
 
-  if (settings.policy === 'FUTURE_TICKETING' && ticketingPcc !== undefined && ticketingPcc !== '') {
+  if (settings.policy === 'FUTURE_TICKETING' && PCC.test(ticketingPcc)) {
     return {
       agency: {
         ticketingPolicy: 'FUTURE_TICKETING',
@@ -195,6 +215,12 @@ export function planSabreTicketingPolicy(input: {
 
   const deadline = ticketingDeadlineFor(offer, settings, now);
   const airlineCode = ticketingAirlineOf(offer);
+  const fallback: SabreTicketingPolicyFallback | undefined =
+    settings.policy !== 'FUTURE_TICKETING'
+      ? undefined
+      : ticketingPcc === ''
+        ? 'NO_TICKETING_PCC'
+        : 'INVALID_TICKETING_PCC';
   return {
     agency: {
       ticketingPolicy: 'TICKETING_TIME_LIMIT',
@@ -207,7 +233,7 @@ export function planSabreTicketingPolicy(input: {
     decision: {
       policy: 'TICKETING_TIME_LIMIT',
       requestedPolicy: settings.policy,
-      ...(settings.policy === 'FUTURE_TICKETING' ? { fallback: 'NO_TICKETING_PCC' as const } : {}),
+      ...(fallback === undefined ? {} : { fallback }),
       deadline,
     },
   };
@@ -240,22 +266,49 @@ function ticketingDeadlineFor(
   now: Date,
 ): NonNullable<SabreTicketingDecision['deadline']> {
   const provider = providerDeadlineOf(offer);
+  const nowMs = now.getTime();
+  const margin = settings.leadHours * HOUR_MS;
   let at: number;
   let source: SabreTicketingDeadlineSource;
   if (provider === null) {
-    at = now.getTime() + SABRE_TICKETING_FALLBACK_WINDOW_HOURS * HOUR_MS;
+    at = nowMs + SABRE_TICKETING_FALLBACK_WINDOW_HOURS * HOUR_MS;
     source = 'FALLBACK_WINDOW';
-  } else {
-    const withMargin = provider - settings.leadHours * HOUR_MS;
-    if (withMargin > now.getTime()) {
-      at = withMargin;
-      source = 'PROVIDER';
-    } else {
-      at = provider;
-      source = 'PROVIDER_NO_MARGIN';
+    const departure = firstDepartureOf(offer);
+    if (departure !== null && departure > nowMs && departure < at) {
+      at = departure - margin > nowMs ? departure - margin : departure;
+      source = 'FALLBACK_BEFORE_DEPARTURE';
     }
+  } else if (provider <= nowMs) {
+    // Pedirlo sería crear un PNR que nace vencido: la aerolínea lo cancela sin que nadie pueda
+    // emitir, y mientras tanto el cupo queda retenido. La oferta hay que revalidarla otra vez.
+    throw new SabreTicketingPolicyError(
+      'el plazo de emisión que dio la revalidación ya venció: la oferta se tiene que revalidar',
+    );
+  } else if (provider - margin > nowMs) {
+    at = provider - margin;
+    source = 'PROVIDER';
+  } else {
+    at = provider;
+    source = 'PROVIDER_NO_MARGIN';
   }
   return { ...wallClockIn(at, settings.pccTimeZone), pccTimeZone: settings.pccTimeZone, source };
+}
+
+/**
+ * El despegue más temprano de la oferta, como instante. `departureAt` es ISO con offset
+ * (`Segment`, `packages/canonical`), así que se compara sin inventar zonas; uno ilegible no cuenta.
+ */
+function firstDepartureOf(offer: Offer): number | null {
+  let first: number | null = null;
+  for (const itinerary of offer.itineraries ?? []) {
+    for (const segment of itinerary.segments) {
+      if (!ISO_WITH_OFFSET.test(segment.departureAt)) continue;
+      const at = Date.parse(segment.departureAt);
+      if (Number.isNaN(at)) continue;
+      if (first === null || at < first) first = at;
+    }
+  }
+  return first;
 }
 
 /**
