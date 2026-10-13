@@ -801,6 +801,8 @@ POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
 POST   /tenants/:id/members/:userId/send-password-reset -- { sent, expiresAt }; nunca el enlace · 409 · 429 (doc 15)
 POST   /tenants/:id/members/:userId/unlock  -- { unlocked }: levanta el bloqueo por intentos fallidos (doc 15)
+GET    /tenants/:id/members/:userId      -- ficha: perfil, seguridad, nodos, sesiones e invitaciones del subárbol · 403 · 404 (0064, doc 15)
+POST   /tenants/:id/members/:userId/sessions/:sessionId/revoke -- { ok }: cierra UNA sesión; hay que superarlo en rango en su nodo (doc 15)
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 
@@ -811,6 +813,7 @@ PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones 
 PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
 PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes · 404 USER_NOT_FOUND · 409 LAST_SUPERADMIN (doc 15)
 GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
+GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
 GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
 POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera

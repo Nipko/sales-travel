@@ -367,9 +367,9 @@ panel lateral que la muestra es USR-7.
   nada); 403 `TENANT_NOT_MANAGED` si no administra `:id`; 404 `SESSION_NOT_FOUND` ("Esa sesión ya no
   está abierta.") si la sesión no está entre las abiertas de esa persona en el subárbol (cerrada, de
   otra persona o de un nodo hermano: un solo motivo). Salvo el superadmin, el actor tiene que superar
-  en rango, sobre el nodo de ESA sesión, al rol con que la persona opera ahí (su membership en el nodo
-  o en un ancestro, de cualquier estado, o un rol de plataforma; leída con la persona en el contexto,
-  como el soporte a un miembro): si no, 403 `ROLE_NOT_GRANTABLE`. `revoke_session(id,
+  en rango, sobre el nodo de ESA sesión, al rol con que la persona opera ahí (sus memberships
+  **activas** en el nodo o en un ancestro, o un rol de plataforma; leídas con la persona en el
+  contexto, como el soporte a un miembro): si no, 403 `ROLE_NOT_GRANTABLE`. `revoke_session(id,
 'revoked_by_admin')` y `auth.session.revoked_by_admin` (`{ targetUserId, sessionId, viaTenantId }`,
   nodo de la sesión) en una transacción; si se cerró en el medio, el mismo 404. Su próximo request
   responde `SESSION_REVOKED`.
@@ -377,6 +377,12 @@ panel lateral que la muestra es USR-7.
     de la sesión: liberar un puesto es gestionar el cupo; acá se elige a una persona, y un admin no
     le corta la sesión a otro de su rango (un `tenant_admin` no cierra la de otro `tenant_admin`, ni
     la de un `consolidator_admin` que opera en su agencia).
+  - Un acceso suspendido no da rango, igual que al cerrar todas sus sesiones: quien fue
+    `tenant_admin` de la agencia (suspendido) y hoy sólo vende en una sub-agencia es un vendedor ahí,
+    y el admin de la agencia le puede cerrar esa sesión.
+  - Desde Plataforma → Usuarios no hay ruta propia: el superadmin cierra una sesión por la de Equipo
+    con `:id` = el nodo de esa sesión (`sessions[].tenantId`). Una sesión sin nodo (`tenantId: null`,
+    sólo en su ficha) no se cierra de a una: "Cerrar todas sus sesiones".
 - Nunca salen hashes de tokens, secretos de MFA ni contraseñas: de los códigos y los equipos, sólo
   cuántos hay. La IP y el navegador de cada sesión sí, como en Puestos.
 
@@ -393,5 +399,6 @@ panel lateral que la muestra es USR-7.
   no ve sesiones ni nodos del hermano o del padre, el del consolidador sí; las funciones de 0064 sólo
   para `app_user` y mudas ante quien no podría verlo; códigos sin usar y equipos válidos;
   invitaciones acotadas al subárbol; evento en la misma transacción (si no entra, la sesión sigue
-  abierta), no se cierra dos veces, rango y pase del superadmin; ninguna contraseña ni hash en la
+  abierta), no se cierra dos veces, rango (un acceso suspendido no lo da) y pase del superadmin;
+  ninguna contraseña ni hash en la
   respuesta.

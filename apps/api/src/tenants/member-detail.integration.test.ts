@@ -122,12 +122,16 @@ d('ficha del usuario y cierre de una sesión, contra Postgres', () => {
     return rows[0]!.id;
   }
 
-  async function member(tenantId: string, userId: string, role: Role) {
-    await pool.query(`INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, $3)`, [
-      tenantId,
-      userId,
-      role,
-    ]);
+  async function member(
+    tenantId: string,
+    userId: string,
+    role: Role,
+    status: 'active' | 'suspended' = 'active',
+  ) {
+    await pool.query(
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, $3, $4)`,
+      [tenantId, userId, role, status],
+    );
   }
 
   /** Una sesión de `userId` en `tenantId`; las que no están vivas, cada una por su motivo. */
@@ -526,6 +530,19 @@ d('ficha del usuario y cierre de una sesión, contra Postgres', () => {
       expect(await detail.revokeSession(root, norte, adminCons, delConsolidador)).toEqual({
         ok: true,
       });
+    });
+
+    it('un acceso suspendido no le da rango: se mide con lo que opera hoy, como cerrar todas', async () => {
+      // Fue tenant_admin de Norte (acceso suspendido) y sigue vendiendo en la sub-agencia: ahí opera
+      // como vendedor. El admin de Norte puede cerrarle TODAS las sesiones (soporte a un miembro
+      // sólo mira sus memberships activas); cerrarle una no puede pedir más.
+      const exAdmin = await user('ex-admin');
+      await member(norte, exAdmin, 'tenant_admin', 'suspended');
+      await member(sub, exAdmin, 'vendedor');
+      const enSub = await session(exAdmin, sub);
+
+      expect(await detail.revokeSession(adminNorte, norte, exAdmin, enSub)).toEqual({ ok: true });
+      expect((await sessionState(enSub))?.revoked_reason).toBe('revoked_by_admin');
     });
 
     it('las propias, no: 403', async () => {

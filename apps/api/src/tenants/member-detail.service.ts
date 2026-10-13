@@ -66,7 +66,10 @@ export interface MemberDetailMembership {
 
 export interface MemberDetailSession {
   id: string;
-  /** `null` sólo en la ficha del superadmin: una sesión de plataforma sin nodo activo. */
+  /**
+   * `null` sólo en la ficha del superadmin: una sesión de plataforma sin nodo activo. Ésa no se
+   * cierra de a una (el cierre va por el nodo de la sesión); sí con "Cerrar todas sus sesiones".
+   */
   tenantId: string | null;
   tenantName: string | null;
   issuedAt: string;
@@ -235,9 +238,9 @@ export class MemberDetailService {
    * - El actor administra el nodo de la ruta (403) y la sesión es de esa persona y está abierta en
    *   ese subárbol (404, un solo motivo para todo).
    * - Salvo el superadmin, el actor supera en rango, sobre el nodo de ESA sesión, al rol con que la
-   *   persona opera ahí (su membership en el nodo o en un ancestro, o un rol de plataforma). Es más
-   *   estricto que liberar un puesto, que sólo pide administrar el nodo: acá se elige a una persona,
-   *   no un puesto, y un admin no le corta la sesión a otro de su rango (doc 15).
+   *   persona opera ahí (su membership activa en el nodo o en un ancestro, o un rol de plataforma).
+   *   Es más estricto que liberar un puesto, que sólo pide administrar el nodo: acá se elige a una
+   *   persona, no un puesto, y un admin no le corta la sesión a otro de su rango (doc 15).
    *
    * La revocación y `auth.session.revoked_by_admin` van en una transacción. 404 si se cerró entre la
    * lectura y la revocación.
@@ -301,9 +304,15 @@ export class MemberDetailService {
   }
 
   /**
-   * El rol con que la persona opera sobre `tenantId`: el de más rango entre sus memberships en ese
-   * nodo o en un ancestro (de cualquier estado: para cortar, se mide contra lo más alto que tuvo) y
-   * sus roles de plataforma, que valen en cualquier nodo. `undefined` si no tiene ninguno.
+   * El rol con que la persona opera sobre `tenantId`: el de más rango entre sus memberships ACTIVAS
+   * en ese nodo o en un ancestro y sus roles de plataforma, que valen en cualquier nodo. `undefined`
+   * si no tiene ninguno.
+   *
+   * Sólo activas, como roleOver y como cerrar todas sus sesiones (assertCanSupportMember): un acceso
+   * suspendido no le da rango sobre nada. Contarlo dejaba un absurdo: quien fue tenant_admin de la
+   * agencia y hoy sólo vende en una sub-agencia no podía perder UNA sesión a manos del admin de la
+   * agencia, que sí podía cerrarle todas. La membership del propio nodo de la sesión no hace falta
+   * contarla suspendida: suspenderla ya cierra las sesiones de ese subárbol (0056).
    *
    * Se lee con la PERSONA en `app.current_user_id` (policy memberships_self), como
    * MemberSupportService: con el actor en el contexto, la RLS sólo mostraría las de su subárbol, y
@@ -317,6 +326,7 @@ export class MemberDetailService {
         .innerJoin('tenants as mt', 'mt.id', 'm.tenant_id')
         .select('m.role')
         .where('m.user_id', '=', targetUserId)
+        .where('m.status', '=', 'active')
         .where((eb) =>
           eb.or([
             eb('m.role', 'in', [...PLATFORM_ROLES]),

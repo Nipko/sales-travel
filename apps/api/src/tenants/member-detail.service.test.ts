@@ -435,9 +435,10 @@ describe('MemberDetailService.revokeSession', () => {
     expect(network.roleOver).toHaveBeenNthCalledWith(2, ACTOR, HIJO);
     expect(contexts[1]).toEqual({ userId: TARGET });
     const [rol] = ran('rolDelObjetivo');
-    // Su membership en el nodo de la sesión o en un ancestro, o un rol de plataforma.
+    // Su membership ACTIVA en el nodo de la sesión o en un ancestro, o un rol de plataforma.
     expect(rol?.sql).toContain('OPERATOR(public.@>)');
-    expect(rol?.parameters).toEqual([TARGET, 'superadmin', 'platform_admin', HIJO]);
+    expect(rol?.sql).toContain('"m"."status" = $2');
+    expect(rol?.parameters).toEqual([TARGET, 'active', 'superadmin', 'platform_admin', HIJO]);
   });
 
   it.each<[Role, Role]>([
