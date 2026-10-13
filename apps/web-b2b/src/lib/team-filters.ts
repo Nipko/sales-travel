@@ -165,13 +165,20 @@ export function chipCounts(
   };
 }
 
-/** Cuántos suspendidos esconde "Ocultar suspendidos" con la búsqueda y el rol puestos. */
+/**
+ * Cuántas filas esconde "Ocultar suspendidos" con lo demás puesto (búsqueda, rol y filtro rápido):
+ * sin el filtro rápido, con "Bloqueados" elegido prometía esconder a suspendidos que no estaban en
+ * la lista y al marcarla no cambiaba nada.
+ */
 export function suspendedCount(
   members: readonly NetworkMember[],
   filters: TeamFilters,
   search: string,
+  now: number,
 ): number {
-  return baseOf(members, { ...filters, hideSuspended: false }, search).filter(suspended).length;
+  return baseOf(members, { ...filters, hideSuspended: false }, search).filter(
+    (m) => suspended(m) && matchesChip(m, filters.chip, now),
+  ).length;
 }
 
 /** El último ingreso como número; sin ingreso (o ilegible) es el más antiguo de todos. */

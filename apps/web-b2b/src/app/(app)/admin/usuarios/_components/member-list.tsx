@@ -207,7 +207,7 @@ export function MemberList({
             filters={filters}
             counts={chipCounts(items, filters, search, now)}
             roles={roleOptions(items, filters.role)}
-            suspendedCount={suspendedCount(items, filters, search)}
+            suspendedCount={suspendedCount(items, filters, search, now)}
             allRef={allRef}
             onChange={onFiltersChange}
             onClear={clearFilters}

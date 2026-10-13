@@ -556,7 +556,8 @@ que los filtros corren en el navegador, sin otra consulta ni cambios de API.
   teléfono van en una fila que se desliza de lado (en tres renglones empujaban la lista fuera de la
   pantalla).
 - **Rol** (_Todos los roles_ y los roles que hay en el nodo, del más alto al más bajo, con el nombre
-  del selector de la fila) y **Ocultar suspendidos (n)**, que se suman al filtro rápido.
+  del selector de la fila) y **Ocultar suspendidos (n)**, que se suman al filtro rápido. Su (n) son
+  las filas que esconde con lo demás puesto, filtro rápido incluido.
 - **Orden por último acceso**: en pantalla ancha, el título de la columna es un botón que alterna
   más reciente → más antiguo → sin ordenar (el del API, por alta en el nodo). Quien nunca ingresó
   cuenta como el acceso más antiguo. La lista no es una tabla (en el teléfono cada miembro es una
@@ -577,7 +578,8 @@ que los filtros corren en el navegador, sin otra consulta ni cambios de API.
   lo que está por defecto no se escribe y un valor desconocido se ignora. Se leen al montar y se
   escriben con `replaceState` (con espera, por el límite de Safari). Equipo también escribe
   `?tenant=` al elegir otro nodo, así una recarga o un enlace abren el mismo nodo con los mismos
-  filtros.
+  filtros. Al montar, el nodo sale del `?tenant=` del navegador y no sólo del que leyó el servidor:
+  al volver con "atrás", Next pinta la página de su caché, con el nodo de antes de elegir otro.
 
 ### Tests
 

@@ -181,7 +181,11 @@ export function TeamPanel({
     const list = read.data.tenants as NetworkNode[];
     setNetwork({ status: 'ready', tenants: treeOrder(list) });
     const root = networkRoot(list);
-    const initial = list.some((t) => t.id === initialTenantId) ? initialTenantId : undefined;
+    // Manda el `?tenant=` del navegador: al volver con "atrás", el router de Next pinta la página que
+    // tiene en caché, con el nodo de antes de que `chooseTenant` escribiera el elegido, y la pantalla
+    // abría en ése con los filtros (leídos de la URL) del otro.
+    const wanted = new URLSearchParams(window.location.search).get('tenant') ?? initialTenantId;
+    const initial = list.some((t) => t.id === wanted) ? wanted : undefined;
     setTenantId((current) => current || initial || root?.id || '');
   }, [initialTenantId]);
 

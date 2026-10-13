@@ -612,6 +612,8 @@ describe('MemberList: filtros del equipo y columna Alta', () => {
     expect(html).toContain('Miembros (1 de 3)');
     expect(html).toContain('role="status" class="sr-only">Se muestra 1 de 3 miembros.');
     expect(html).toContain('Quitar filtros');
+    // Dani (suspendido) sí ingresó: con este filtro, ocultar suspendidos no escondería a nadie.
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*\/>Ocultar suspendidos<\/label>/);
   });
 
   it('rol y ocultar suspendidos se suman, y las chips cuentan sobre lo que queda', () => {

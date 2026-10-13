@@ -190,7 +190,7 @@ describe('chipCounts y suspendedCount', () => {
       'never-logged-in': 2,
       'reset-pending': 1,
     });
-    expect(suspendedCount(TEAM, filters(), '')).toBe(2);
+    expect(suspendedCount(TEAM, filters(), '', NOW)).toBe(2);
   });
 
   it('el número de la chip es el de filas que deja: respeta búsqueda, rol y suspendidos', () => {
@@ -219,9 +219,23 @@ describe('chipCounts y suspendedCount', () => {
   });
 
   it('los suspendidos se cuentan aunque estén ocultos, con la búsqueda y el rol puestos', () => {
-    expect(suspendedCount(TEAM, filters({ hideSuspended: true }), '')).toBe(2);
-    expect(suspendedCount(TEAM, filters({ role: 'admin' }), '')).toBe(1);
-    expect(suspendedCount(TEAM, filters(), 'ana')).toBe(0);
+    expect(suspendedCount(TEAM, filters({ hideSuspended: true }), '', NOW)).toBe(2);
+    expect(suspendedCount(TEAM, filters({ role: 'admin' }), '', NOW)).toBe(1);
+    expect(suspendedCount(TEAM, filters(), 'ana', NOW)).toBe(0);
+  });
+
+  it('con un filtro rápido, cuenta sólo los suspendidos que ese filtro deja: las filas que esconde', () => {
+    // Fer (suspendido en el nodo) nunca ingresó; Gabi (suspendida en la plataforma) sí.
+    expect(suspendedCount(TEAM, filters({ chip: 'never-logged-in' }), '', NOW)).toBe(1);
+    // Ningún bloqueado está suspendido: marcar la casilla no cambiaría nada.
+    expect(suspendedCount(TEAM, filters({ chip: 'locked' }), '', NOW)).toBe(0);
+    for (const chip of TEAM_CHIPS) {
+      const f = filters({ chip: chip.id });
+      const hidden =
+        applyTeamFilters(TEAM, f, '', NOW).length -
+        applyTeamFilters(TEAM, { ...f, hideSuspended: true }, '', NOW).length;
+      expect(suspendedCount(TEAM, f, '', NOW)).toBe(hidden);
+    }
   });
 
   it('un bloqueo que venció deja de contar', () => {
