@@ -34,6 +34,7 @@ vi.mock('../../components/layout/app-shell', () => ({
 vi.mock('../../components/layout/sales-gate', () => ({ SalesGate: () => null }));
 vi.mock('../../components/layout/session-guard', () => ({ SessionGuard: () => null }));
 vi.mock('../../components/layout/verify-banner', () => ({ VerifyBanner: () => null }));
+vi.mock('../../components/step-up-dialog', () => ({ StepUpProvider: () => null }));
 vi.mock('./configuracion/seguridad/_components/mfa-enrollment-gate', () => ({
   MfaEnrollmentGate: () => null,
 }));

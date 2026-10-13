@@ -140,6 +140,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/mfa/confirm',
     'POST /auth/mfa/recovery-codes',
     'POST /auth/mfa/disable',
+    'POST /auth/step-up',
     'POST /auth/resend-verification',
     'GET /me',
     'GET /me/memberships',

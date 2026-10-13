@@ -1,5 +1,6 @@
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
+import { reasonOf, withStepUp, type StepUpAware, type StepUpCancelled } from './step-up';
 import { lastAccessLabel, lockedUntilLabel } from './tenant-admin-format';
 import { requiresMfa, type MfaState } from './tenant-admin-team';
 import { treeOrder, type NetworkNode } from './tenant-network';
@@ -432,12 +433,13 @@ function errorOf(body: unknown): string | undefined {
   return str(asRecord(body)?.['error']);
 }
 
+/** El fallo lleva el `reason` del API cuando vino: con él `withStepUp` sabe si pedir el código. */
 async function call<T>(
   url: string,
   init: RequestInit,
   parse: (value: unknown) => T | undefined,
   errorMessage: (status: number, message: string | undefined) => string,
-): Promise<Loaded<T>> {
+): Promise<StepUpAware<T>> {
   let res: Response;
   try {
     res = await fetch(url, { cache: 'no-store', ...init });
@@ -446,9 +448,11 @@ async function call<T>(
   }
   const read = await readJson<unknown>(res);
   if (!res.ok) {
+    const reason = read.ok ? reasonOf(read.data) : undefined;
     return {
       ok: false,
       message: errorMessage(res.status, read.ok ? errorOf(read.data) : undefined),
+      ...(reason ? { reason } : {}),
     };
   }
   if (!read.ok) return { ok: false, message: read.message };
@@ -488,18 +492,25 @@ export function loadSuspensionImpact(userId: string): Promise<Loaded<UserSuspens
   );
 }
 
+/**
+ * Suspender o reactivar la cuenta en toda la plataforma. Es de alto impacto: si el 2FA de la sesión
+ * no es de los últimos minutos, `withStepUp` pide el código y la repite una vez (USR-13). Si se
+ * cierra el diálogo, vuelve `StepUpCancelled`.
+ */
 export function setPlatformUserStatus(
   userId: string,
   status: 'active' | 'suspended',
-): Promise<Loaded<UserStatusResult>> {
-  return call(
-    '/api/admin/users/status',
-    {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ userId, status }),
-    },
-    parseUserStatusResult,
-    (code, message) => statusChangeError(code, message, status === 'suspended'),
+): Promise<StepUpAware<UserStatusResult> | StepUpCancelled> {
+  return withStepUp(() =>
+    call(
+      '/api/admin/users/status',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId, status }),
+      },
+      parseUserStatusResult,
+      (code, message) => statusChangeError(code, message, status === 'suspended'),
+    ),
   );
 }

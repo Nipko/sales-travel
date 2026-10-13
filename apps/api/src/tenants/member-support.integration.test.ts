@@ -13,6 +13,7 @@ import type { DB, Role } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
+import { requestContextStorage } from '../request-context/request-context.js';
 import { MemberSupportService } from './member-support.service.js';
 
 /**
@@ -350,6 +351,43 @@ d('enlace para restablecer la contraseña y desbloqueo desde Equipo, contra Post
         '403/MEMBER_SELF_ACTION',
       );
       expect(await tokens(peer)).toEqual([]);
+    });
+  });
+
+  describe('enviar el enlace a alguien con un rol de admin (USR-13)', () => {
+    /** El admin con 2FA activo que lo pasó hace `minutes` minutos, como lo deja el middleware. */
+    const asAdmin = <T>(minutes: number, fn: () => Promise<T>) =>
+      requestContextStorage.run(
+        {
+          userId: admin,
+          mfaEnabled: true,
+          mfaVerified: true,
+          mfaVerifiedAt: new Date(Date.now() - minutes * 60_000),
+        },
+        fn,
+      );
+
+    it('pide el 2FA de los últimos 10 minutos: sin él no deja ningún enlace', async () => {
+      const manager = await user('manager');
+      await member(agency, manager, 'admin');
+
+      expect(
+        await rejection(asAdmin(15, () => support.sendPasswordReset(admin, agency, manager))),
+      ).toBe('403/MFA_RECENT_REQUIRED');
+      expect(await tokens(manager)).toEqual([]);
+      expect(mailer.sendToTenant).not.toHaveBeenCalled();
+
+      expect((await asAdmin(2, () => support.sendPasswordReset(admin, agency, manager))).sent).toBe(
+        true,
+      );
+      expect(await tokens(manager)).toHaveLength(1);
+    });
+
+    it('a un vendedor no: es el soporte de todos los días', async () => {
+      const target = await seller('sin-reconfirmar');
+      expect((await asAdmin(60, () => support.sendPasswordReset(admin, agency, target))).sent).toBe(
+        true,
+      );
     });
   });
 

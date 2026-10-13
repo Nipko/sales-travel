@@ -13,6 +13,13 @@ export interface IssueSessionParams {
   userId: string;
   tenantId: string | null;
   mfaVerified: boolean;
+  /**
+   * Cuándo se probó el segundo factor, si no fue recién: la sesión que se reemplaza (switch-tenant,
+   * cambio de contraseña) o el alta del equipo de confianza. Sin él, y con `mfaVerified`, la sesión
+   * lo estrena. Es lo que mira la reconfirmación de las acciones de alto impacto (USR-13): cambiar
+   * de agencia o entrar con un equipo recordado no cuenta como haber tipeado el código.
+   */
+  mfaVerifiedAt?: Date | null;
   expiresAt: Date;
   /** Motivo con que se cierran las demás sesiones del usuario. Por defecto `replaced`. */
   replaceReason?: string;
@@ -126,6 +133,7 @@ export class SeatService {
         seatTenantId: pool,
         idleTimeoutSeconds,
         mfaVerified: params.mfaVerified,
+        mfaVerifiedAt: params.mfaVerifiedAt ?? null,
         expiresAt: params.expiresAt,
         ip: ctx?.ip && isIP(ctx.ip) !== 0 ? ctx.ip : null,
         userAgent: ctx?.userAgent ?? null,
@@ -185,6 +193,8 @@ export class SeatService {
       poolTenantId: full.poolTenantId,
       tenantId: params.tenantId,
       mfa: params.mfaVerified,
+      // Completar el ingreso no estrena el segundo factor: conserva cuándo se probó.
+      ...(params.mfaVerified ? { mfaVerifiedAt: params.mfaVerifiedAt ?? new Date() } : {}),
       remember: params.remember === true,
       jti: randomUUID(),
     });

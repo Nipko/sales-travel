@@ -58,6 +58,9 @@ let userCalls: Call[];
 let failUserUpdate: boolean;
 let issue: ReturnType<typeof vi.fn>;
 
+/** Cuándo pasó el segundo factor la sesión actual (la que se reemplaza). */
+const VERIFIED_AT = new Date('2026-10-13T14:40:00.000Z');
+
 function build(): AuthService {
   const db = {
     get db() {
@@ -85,7 +88,9 @@ function build(): AuthService {
     { verify: vi.fn(() => Promise.resolve(true)) } as unknown as PasswordService,
     { emit: vi.fn(() => Promise.resolve()) } as unknown as AuditService,
     {} as MailerService,
-    { snapshot: vi.fn(() => Promise.resolve({ mfaVerified: true })) } as unknown as SessionService,
+    {
+      snapshot: vi.fn(() => Promise.resolve({ mfaVerified: true, mfaVerifiedAt: VERIFIED_AT })),
+    } as unknown as SessionService,
     {} as MfaService,
     { issue } as unknown as SeatService,
     {} as MfaChallengeService,
@@ -194,10 +199,12 @@ describe('AuthService.switchTenant', () => {
     const res = await build().switchTenant(USER, 't-dest', CURRENT_SESSION);
 
     expect(res).toMatchObject({ tenantId: 't-dest', role: 'admin', userId: USER });
+    // Con su instante: cambiar de agencia no reconfirma las acciones de alto impacto (USR-13).
     expect(issue).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: 't-dest',
         mfaVerified: true,
+        mfaVerifiedAt: VERIFIED_AT,
         current: { sessionId: CURRENT_SESSION, reason: 'tenant_switched' },
       }),
     );

@@ -16,6 +16,8 @@ export interface NewSession {
   seatTenantId: string | null;
   idleTimeoutSeconds: number;
   mfaVerified: boolean;
+  /** Ver IssueSessionParams.mfaVerifiedAt. null = recién (now() de la base). */
+  mfaVerifiedAt?: Date | null;
   expiresAt: Date;
   ip: string | null;
   userAgent: string | null;
@@ -241,7 +243,7 @@ class PgSeatTransaction implements SeatTransaction {
         tenant_id: session.tenantId,
         seat_tenant_id: session.seatTenantId,
         idle_timeout_seconds: session.idleTimeoutSeconds,
-        mfa_verified_at: session.mfaVerified ? sql<Date>`now()` : null,
+        mfa_verified_at: session.mfaVerified ? (session.mfaVerifiedAt ?? sql<Date>`now()`) : null,
         expires_at: session.expiresAt,
         ip: session.ip,
         user_agent: session.userAgent?.slice(0, 512) ?? null,

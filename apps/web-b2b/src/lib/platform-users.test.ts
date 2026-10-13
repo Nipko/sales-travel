@@ -29,6 +29,7 @@ import {
   type PlatformUser,
 } from './platform-users';
 import { voseoIn } from './voseo';
+import { registerStepUpPrompt } from './step-up';
 
 const NOW = Date.parse('2026-10-11T12:00:00Z');
 const NODE = '0b6f6a52-7a47-4c8e-9a3b-1a2b3c4d5e6f';
@@ -445,5 +446,43 @@ describe('las llamadas del navegador', () => {
       ok: false,
       message: 'Es el último superadmin activo: no se puede suspender.',
     });
+  });
+
+  it('suspender en toda la plataforma pide el código del 2FA y se repite una vez (USR-13)', async () => {
+    const fetchMock = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: 'Confirma con tu código de verificación en dos pasos para seguir.',
+            reason: 'MFA_RECENT_REQUIRED',
+          }),
+          { status: 403 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: NODE,
+            status: 'suspended',
+            revokedSessions: 0,
+            revokedInvitations: 0,
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const prompt = vi.fn(() => Promise.resolve(true));
+    const unregister = registerStepUpPrompt(prompt);
+    try {
+      await expect(setPlatformUserStatus(NODE, 'suspended')).resolves.toEqual({
+        ok: true,
+        data: { status: 'suspended', revokedSessions: 0, revokedInvitations: 0 },
+      });
+    } finally {
+      unregister();
+    }
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

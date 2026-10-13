@@ -10,6 +10,7 @@ import { SessionGuard } from '../../components/layout/session-guard';
 import { decideLayoutGate } from '../../components/layout/session-gate';
 import { parseSessionSnapshot, sessionEndPath } from '../../components/layout/session-guard-state';
 import { VerifyBanner } from '../../components/layout/verify-banner';
+import { StepUpProvider } from '../../components/step-up-dialog';
 import { MfaEnrollmentGate } from './configuracion/seguridad/_components/mfa-enrollment-gate';
 
 interface MeResponse {
@@ -100,6 +101,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
       {showVerifyBanner && <VerifyBanner />}
       <SalesGate>{children}</SalesGate>
+      {/* "Confirma que eres tú": lo abre cualquier acción de alto impacto que pida el 2FA (USR-13). */}
+      <StepUpProvider />
       <Toaster richColors closeButton position="top-right" />
     </AppShell>
   );

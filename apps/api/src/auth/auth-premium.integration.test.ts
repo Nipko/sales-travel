@@ -9,7 +9,13 @@ import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
-import { SeatReleaseExpiredError, SeatsFullError } from './auth-errors.js';
+import {
+  MfaCodeRejectedError,
+  MfaRecentRequiredError,
+  SeatReleaseExpiredError,
+  SeatsFullError,
+  SessionInvalidError,
+} from './auth-errors.js';
 import { AuthService, type AuthResult, type LoginResult } from './auth.service.js';
 import { JwtService } from './jwt.service.js';
 import { LOCKOUT_THRESHOLD, LoginAttemptsService } from './login-attempts.service.js';
@@ -17,6 +23,7 @@ import { MFA_MAX_ATTEMPTS, MfaChallengeService } from './mfa-challenge.service.j
 import { MfaService } from './mfa.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { PasswordService } from './password.service.js';
+import { assertRecentMfa } from './recent-mfa.js';
 import { PgSeatRepository } from './seat.repository.js';
 import { SeatService } from './seat.service.js';
 import { SessionService } from './session.service.js';
@@ -374,14 +381,19 @@ d('auth premium contra Postgres, como app_user', () => {
         userAgent: 'Mozilla/5.0 Firefox',
       });
 
-      expect(await trusted.use(owner.id, device.token)).toBe(true);
-      expect(await trusted.use(other.id, device.token)).toBe(false);
+      // Devuelve cuándo se confió en el equipo: desde ahí cuenta el segundo factor de la sesión.
+      const { rows } = await admin.query<{ created_at: Date }>(
+        `SELECT created_at FROM trusted_devices WHERE user_id = $1`,
+        [owner.id],
+      );
+      expect(await trusted.use(owner.id, device.token)).toEqual(rows[0]!.created_at);
+      expect(await trusted.use(other.id, device.token)).toBeNull();
       expect(await trusted.list(owner.id, device.token)).toEqual([
         expect.objectContaining({ current: true, ip: '190.24.8.9' }),
       ]);
 
       await admin.query(`UPDATE users SET password_changed_at = now() WHERE id = $1`, [owner.id]);
-      expect(await trusted.use(owner.id, device.token)).toBe(false);
+      expect(await trusted.use(owner.id, device.token)).toBeNull();
       expect(await trusted.list(owner.id)).toEqual([]);
     });
 
@@ -391,7 +403,7 @@ d('auth premium contra Postgres, como app_user', () => {
       const [view] = await trusted.list(owner.id);
       expect(await trusted.revoke(owner.id, view!.id)).toBe(true);
       expect(await trusted.revoke(owner.id, view!.id)).toBe(false);
-      expect(await trusted.use(owner.id, device.token)).toBe(false);
+      expect(await trusted.use(owner.id, device.token)).toBeNull();
     });
   });
 
@@ -478,6 +490,117 @@ d('auth premium contra Postgres, como app_user', () => {
       await member(other, u.id, 'vendedor');
       await Promise.all([issueFor(u.id, free), issueFor(u.id, other)]);
       expect(await liveSessions(u.id)).toBe(1);
+    });
+  });
+
+  describe('reconfirmar el 2FA antes de una acción de alto impacto (USR-13)', () => {
+    const totp = new TotpService();
+    const MIN = 60_000;
+
+    /** Una persona con el 2FA activo; quedan libres el paso actual y el siguiente. */
+    async function enrolled(label: string, tenantId: string = free) {
+      const u = await user(label, tenantId, 'vendedor');
+      const { secret } = await mfa.beginEnrollment(u.id, u.email);
+      await mfa.confirmEnrollment(u.id, undefined, totp.generate(secret, totp.currentStep() - 1));
+      return { ...u, code: (offset: number) => totp.generate(secret, totp.currentStep() + offset) };
+    }
+
+    async function loginWithCode(u: { email: string; code: (offset: number) => string }) {
+      const challenge = await auth.login({ email: u.email, password: PASSWORD });
+      expect(challenge).toMatchObject({ mfaRequired: true });
+      const { mfaToken } = challenge as { mfaToken: string };
+      return session(await auth.completeMfa(mfaToken, u.code(0)));
+    }
+
+    /** Lo que mira assertRecentMfa, tal cual lo deja el middleware después de validar. */
+    async function freshness(token: string, tenantId: string = free) {
+      const v = await validate(token, tenantId);
+      if (!v.ok) throw new Error(`sesión inválida: ${v.reason}`);
+      return { userId: 'u', mfaEnabled: v.mfaEnabled, mfaVerifiedAt: v.mfaVerifiedAt };
+    }
+
+    async function backdate(sessionId: string, minutes: number): Promise<void> {
+      await admin.query(
+        `UPDATE sessions SET mfa_verified_at = now() - make_interval(mins => $2) WHERE id = $1`,
+        [sessionId, minutes],
+      );
+    }
+
+    async function verifiedAt(token: string): Promise<Date | null> {
+      return (await sessionRow(token)).mfa_verified_at;
+    }
+
+    it('la ventana corre desde el código, y POST /auth/step-up la renueva sólo con uno nuevo', async () => {
+      const u = await enrolled('su-window');
+      const current = await loginWithCode(u);
+      const row = await sessionRow(current.token);
+
+      // Recién ingresado con el código: la antigüedad la mide la base, no el reloj de la API.
+      const fresh = await freshness(current.token);
+      expect(Math.abs(Date.now() - fresh.mfaVerifiedAt!.getTime())).toBeLessThan(5_000);
+      expect(() => assertRecentMfa(10, fresh)).not.toThrow();
+
+      await backdate(row.id, 20);
+      const stale = await freshness(current.token);
+      expect(Math.abs(Date.now() - 20 * MIN - stale.mfaVerifiedAt!.getTime())).toBeLessThan(5_000);
+      expect(() => assertRecentMfa(10, stale)).toThrow(MfaRecentRequiredError);
+
+      const { verifiedAt: at } = await mfa.stepUp(u.id, row.id, u.code(1));
+      expect(await verifiedAt(current.token)).toEqual(at);
+      const renewed = await freshness(current.token);
+      expect(() => assertRecentMfa(10, renewed)).not.toThrow();
+
+      // El mismo código no sirve dos veces (anti-replay): uno interceptado no reconfirma otra sesión.
+      expect(await rejection(mfa.stepUp(u.id, row.id, u.code(1)))).toBeInstanceOf(
+        MfaCodeRejectedError,
+      );
+    });
+
+    it('cambiar la contraseña o de agencia hereda el instante del código, no lo estrena', async () => {
+      const u = await enrolled('su-inherit');
+      const other = await tenant('su-other', 'consolidator', platform);
+      await member(other, u.id, 'vendedor');
+      const first = await loginWithCode(u);
+      await backdate((await sessionRow(first.token)).id, 30);
+      const original = await verifiedAt(first.token);
+
+      const reissued = await auth.reissueAfterPasswordChange(
+        u.id,
+        (await sessionRow(first.token)).id,
+      );
+      expect(await verifiedAt(reissued.token)).toEqual(original);
+
+      const switched = await auth.switchTenant(u.id, other, (await sessionRow(reissued.token)).id);
+      expect(await verifiedAt(switched.token)).toEqual(original);
+      const afterSwitch = await freshness(switched.token, other);
+      expect(() => assertRecentMfa(10, afterSwitch)).toThrow(MfaRecentRequiredError);
+    });
+
+    it('entrar con un equipo de confianza cuenta desde que se confió en él', async () => {
+      const u = await enrolled('su-trusted');
+      const device = await trusted.create(u.id, {});
+      const { rows } = await admin.query<{ created_at: Date }>(
+        `SELECT created_at FROM trusted_devices WHERE user_id = $1`,
+        [u.id],
+      );
+      const current = session(
+        await auth.login({ email: u.email, password: PASSWORD, trustedDeviceToken: device.token }),
+      );
+      expect(await verifiedAt(current.token)).toEqual(rows[0]!.created_at);
+    });
+
+    it('sobre una sesión que se cerró en el medio: 401 SESSION_REVOKED, sin tocarla', async () => {
+      const u = await enrolled('su-revoked');
+      const current = await loginWithCode(u);
+      const row = await sessionRow(current.token);
+      await backdate(row.id, 20);
+      const before = await verifiedAt(current.token);
+      await admin.query(`UPDATE sessions SET revoked_at = now() WHERE id = $1`, [row.id]);
+
+      const err = await rejection(mfa.stepUp(u.id, row.id, u.code(1)));
+      expect(err).toBeInstanceOf(SessionInvalidError);
+      expect((err as SessionInvalidError).reason).toBe('SESSION_REVOKED');
+      expect(await verifiedAt(current.token)).toEqual(before);
     });
   });
 

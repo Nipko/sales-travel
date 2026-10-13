@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/guards/auth.guard.js';
 import { MfaEnforcementGuard } from './auth/guards/mfa-enforcement.guard.js';
+import { RecentMfaGuard } from './auth/guards/recent-mfa.guard.js';
 import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -95,6 +96,12 @@ import { PackagesModule } from './packages/packages.module.js';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // El último: en las rutas @RequireRecentMfa() (alto impacto) pide el 2FA de los últimos minutos
+    // sólo a quien ya pasó el rol de la ruta. Las demás no lo ven.
+    {
+      provide: APP_GUARD,
+      useClass: RecentMfaGuard,
     },
   ],
 })

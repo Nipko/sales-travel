@@ -5,6 +5,7 @@ import {
   ACTION_DONE,
   type SheetActionOutcome,
 } from '../../../../../lib/member-detail';
+import { isStepUpCancelled } from '../../../../../lib/step-up';
 import { runMemberAction } from '../../../../../lib/tenant-admin-seats-client';
 import {
   memberActionCopy,
@@ -24,6 +25,9 @@ export type Confirm = ReturnType<typeof useConfirm>[0];
  *
  * `onBusy` se prende recién después de confirmar. Un rechazo vuelve como `failed` con el motivo del
  * API: quien llama decide dónde mostrarlo (la fila, o la ficha si se pidió desde ahí).
+ *
+ * Las de alto impacto pueden pedir el código del 2FA en el medio (USR-13): `runMemberAction` abre el
+ * diálogo y repite la acción. Cerrarlo es cancelar, sin error.
  */
 export async function supportMember(
   confirm: Confirm,
@@ -44,6 +48,7 @@ export async function supportMember(
   onBusy(true);
   const res = await runMemberAction(tenantId, member.userId, action);
   onBusy(false);
+  if (isStepUpCancelled(res)) return ACTION_CANCELLED;
   // Un aviso que queda (no un toast que se va): el 403 dice a quién hay que pedírselo.
   if (!res.ok) return { status: 'failed', message: res.message };
   const notify =

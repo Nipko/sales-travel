@@ -51,6 +51,11 @@ export interface RequestContext {
   mfaRequired?: boolean;
   mfaEnabled?: boolean;
   mfaVerified?: boolean;
+  /**
+   * Cuándo pasó ESTA sesión el segundo factor por última vez (login o POST /auth/step-up), en el
+   * reloj de este proceso. RecentMfaGuard lo compara con la ventana de las acciones de alto impacto.
+   */
+  mfaVerifiedAt?: Date;
   session?: SessionTiming;
   /** Para el audit log (domain_events.meta) y las sesiones: la IP y el navegador del USUARIO. */
   ip?: string;
