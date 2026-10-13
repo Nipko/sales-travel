@@ -523,6 +523,40 @@ d('historial por usuario y Actividad de la red, contra Postgres', () => {
       });
     });
 
+    it('el "a quién" no nombra a alguien de otra red aunque el evento quede en este subárbol', async () => {
+      // La suspensión global se guarda con el nodo de la sesión del superadmin: si opera en Sur,
+      // queda en Sur aunque la cuenta sea de otra red.
+      await audit.emit({
+        eventType: 'UserStatusChanged',
+        tenantId: sur,
+        actorUserId: root,
+        aggregateType: 'user',
+        aggregateId: carla,
+        payload: { status: 'suspended', revokedSessions: 0, revokedInvitations: 0 },
+      });
+      await audit.emit({
+        eventType: 'UserStatusChanged',
+        tenantId: sur,
+        actorUserId: root,
+        aggregateType: 'user',
+        aggregateId: beto,
+        payload: { status: 'suspended', revokedSessions: 0, revokedInvitations: 0 },
+      });
+
+      const page = await audit.networkAudit(adminCons, cons, { actorUserId: root });
+      const byTarget = page.events
+        .filter((e) => e.eventType === 'UserStatusChanged')
+        .map((e) => e.targetEmail);
+      expect(byTarget.sort()).toEqual([email('beto'), null].sort());
+      expect(JSON.stringify(page)).not.toContain(email('carla'));
+
+      // El superadmin sí la ve, con su correo.
+      const platform = await audit.platformUserAuditTrail(root, carla);
+      expect(platform?.events.find((e) => e.eventType === 'UserStatusChanged')).toMatchObject({
+        targetEmail: email('carla'),
+      });
+    });
+
     it('paginada sin repetir: lo mismo de a 3 que de una vez', async () => {
       const once = await ofNorte();
       const pages = await allPages((before) =>

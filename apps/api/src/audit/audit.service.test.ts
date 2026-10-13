@@ -198,7 +198,11 @@ describe('AuditService.networkAudit', () => {
     );
     expect(sql).toContain('ORDER BY e.occurred_at DESC, e.id DESC');
     expect(sql).toContain('audit_event_target_user(');
-    expect(negocio()[0]?.parameters).toEqual([ROOT, NETWORK_AUDIT_PAGE_SIZE + 1]);
+    // El "a quién" sólo se nombra si tiene una membership bajo el nodo raíz.
+    expect(sql).toContain(
+      'WHERE tm.user_id = tu.id AND "tt"."path" OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = $3::uuid)',
+    );
+    expect(negocio()[0]?.parameters).toEqual([ROOT, NETWORK_AUDIT_PAGE_SIZE + 1, ROOT]);
   });
 
   it('cada categoría filtra por el prefijo de event_type', async () => {
@@ -239,7 +243,7 @@ describe('AuditService.networkAudit', () => {
     const q = negocio()[0];
     expect(plano(q)).toContain('e.actor_user_id = $2::uuid');
     expect(plano(q)).toContain('(e.occurred_at, e.id) < ($3::timestamptz, $4::uuid)');
-    expect(q?.parameters).toEqual([ROOT, ANA, '2026-10-13T12:00:00.123456Z', BETO, 11]);
+    expect(q?.parameters).toEqual([ROOT, ANA, '2026-10-13T12:00:00.123456Z', BETO, 11, ROOT]);
   });
 
   it('el tamaño de página se acota: 1 a 200, 50 si no viene', async () => {
@@ -252,7 +256,7 @@ describe('AuditService.networkAudit', () => {
     ] as const) {
       const { audit, negocio } = banco();
       await audit.networkAudit(VIEWER, ROOT, { limit: pedido });
-      expect(negocio()[0]?.parameters.at(-1), String(pedido)).toBe(sql);
+      expect(negocio()[0]?.parameters.at(-2), String(pedido)).toBe(sql);
     }
   });
 
@@ -333,7 +337,17 @@ describe('AuditService.userAuditTrail', () => {
       `(e.payload ? 'targetUserId' AND lower(e.payload ->> 'targetUserId') = $4)`,
     );
     expect(sql).toContain('(e.occurred_at, e.id) < ($5::timestamptz, $6::uuid)');
-    expect(q?.parameters).toEqual([ROOT, ANA, ANA, ANA, '2026-10-13T12:00:00.000001Z', BETO, 6]);
+    expect(q?.parameters).toEqual([
+      ROOT,
+      ANA,
+      ANA,
+      ANA,
+      '2026-10-13T12:00:00.000001Z',
+      BETO,
+      6,
+      ROOT,
+    ]);
+    expect(sql).toContain('WHERE tm.user_id = tu.id AND "tt"."path" OPERATOR(public.<@)');
   });
 
   it('el tamaño de página del historial va de 1 a 100, 30 si no viene', async () => {
@@ -346,7 +360,7 @@ describe('AuditService.userAuditTrail', () => {
         q.sql.includes('"memberships"') ? [{ id: 'm-1' }] : [],
       );
       await audit.userAuditTrail(VIEWER, ROOT, ANA, { limit: pedido });
-      expect(negocio()[1]?.parameters.at(-1), String(pedido)).toBe(sql);
+      expect(negocio()[1]?.parameters.at(-2), String(pedido)).toBe(sql);
     }
   });
 });

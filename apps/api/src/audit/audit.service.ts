@@ -121,16 +121,31 @@ const CURSOR_AT = sql<string>`to_char(p.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM
 /**
  * La página ya cortada (`page`, con una fila de más) con quién lo hizo y sobre quién. Los correos se
  * buscan después de cortar: sólo para las filas que se devuelven.
+ *
+ * El "a quién" sólo se nombra si esa persona tiene una membership (de cualquier estado) bajo
+ * `rootTenantId`, leída con la RLS de quien mira. Un evento del subárbol puede apuntar a alguien de
+ * otra red (la suspensión global queda con el nodo de la sesión del superadmin, y ése puede ser uno
+ * de esta red): su correo no es de este subárbol y no sale.
  */
-const PAGE_SELECT = sql`
-  SELECT p.id, p.occurred_at, ${CURSOR_AT} AS cursor_at, p.event_type, p.tenant_id, p.tenant_name,
-         u.email AS actor_email, tu.email AS target_email, p.aggregate_type, p.payload
-    FROM page p
-    LEFT JOIN users u  ON u.id  = p.actor_user_id
-    LEFT JOIN users tu ON tu.id = audit_event_target_user(
-                                    p.payload, p.aggregate_type, p.aggregate_id, p.actor_user_id)
-   ORDER BY p.occurred_at DESC, p.id DESC
-`;
+function pageSelect(rootTenantId: string): RawBuilder<AuditRow> {
+  return sql<AuditRow>`
+    SELECT p.id, p.occurred_at, ${CURSOR_AT} AS cursor_at, p.event_type, p.tenant_id,
+           p.tenant_name, u.email AS actor_email, tu.email AS target_email, p.aggregate_type,
+           p.payload
+      FROM page p
+      LEFT JOIN users u  ON u.id  = p.actor_user_id
+      LEFT JOIN users tu ON tu.id = audit_event_target_user(
+                                      p.payload, p.aggregate_type, p.aggregate_id, p.actor_user_id)
+                        AND EXISTS (
+                          SELECT 1
+                            FROM memberships tm
+                            JOIN tenants tt ON tt.id = tm.tenant_id
+                           WHERE tm.user_id = tu.id
+                             AND ${withinRoot('tt.path', rootTenantId)}
+                        )
+     ORDER BY p.occurred_at DESC, p.id DESC
+  `;
+}
 
 /** Pide `limit + 1` filas: la de más sólo dice si hay otra página. */
 function toPage(rows: readonly AuditRow[], limit: number): AuditPage {
@@ -242,7 +257,7 @@ export class AuditService {
          ORDER BY e.occurred_at DESC, e.id DESC
          LIMIT ${limit + 1}
       )
-      ${PAGE_SELECT}
+      ${pageSelect(rootTenantId)}
     `;
 
     const res = await this.db.withRequestContext(
@@ -293,7 +308,7 @@ export class AuditService {
              ORDER BY e.occurred_at DESC, e.id DESC
              LIMIT ${limit + 1}
           )
-          ${PAGE_SELECT}
+          ${pageSelect(rootTenantId)}
         `.execute(trx);
         return toPage(res.rows, limit);
       },

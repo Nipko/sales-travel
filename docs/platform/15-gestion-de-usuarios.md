@@ -454,6 +454,10 @@ guardan como lo mandó el cliente).
 - Cada evento (`AuditEntry`): `id`, `occurredAt`, `eventType`, `tenantId`, `tenantName`,
   `actorEmail`, **`targetEmail`** (nuevo: "a quién") y `payload` tal cual se guardó (nunca lleva
   secretos). Nunca sale `meta` (IP, navegador, sesión).
+- Desde Equipo y desde Mi Red, `targetEmail` sólo se nombra si esa persona tiene una membership (de
+  cualquier estado) en el subárbol que se mira: un evento del subárbol puede apuntar a alguien de
+  otra red (la suspensión global queda con el nodo de la sesión del superadmin), y ese correo no es
+  de esta red. El historial del superadmin lo nombra siempre.
 - El cursor `before` es el `nextBefore` de la página anterior: base64url de `{ occurredAt, id }`, con
   el instante en microsegundos. El orden es `(occurred_at, id)` descendente: los eventos de una misma
   transacción comparten `now()`, y un corte sólo por tiempo saltaba o repetía los del borde.
