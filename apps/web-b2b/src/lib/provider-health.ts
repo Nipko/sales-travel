@@ -225,6 +225,14 @@ export const KILL_LEVEL_OPTIONS: readonly {
   },
 ];
 
+/**
+ * En vuelos la post-venta (leer, cancelar o pagar una orden) no pasa por el circuit breaker, que es
+ * quien aplica el apagado: "Todo" frena lo mismo que "Solo ventas" (runbook §6.1). Quien apaga en un
+ * incidente tiene que saberlo antes de elegir, no descubrirlo después.
+ */
+export const FLIGHTS_POST_SALE_CAVEAT =
+  'En vuelos, la post-venta (consultar, cancelar o pagar una orden) no pasa por este apagado: Todo frena lo mismo que Solo ventas.';
+
 /** Los vencimientos que acepta el API; `null` = sin vencimiento. */
 export type KillSwitchExpiry = 60 | 240 | 1440 | null;
 
@@ -258,6 +266,8 @@ export interface KillSwitchDialogCopy {
   readonly title: string;
   readonly description: string;
   readonly typedLabel: string;
+  /** Lo que se dice si se intenta apagar sin haber escrito el código. */
+  readonly typedMismatch: string;
   readonly confirmLabel: string;
 }
 
@@ -268,6 +278,7 @@ export function killSwitchDialogCopy(code: string): KillSwitchDialogCopy {
     description:
       'Corta el proveedor para toda la plataforma, por encima de cualquier ajuste por agencia. No hace falta desplegar.',
     typedLabel: `Escribe ${code} para confirmar`,
+    typedMismatch: `Escribe ${code} tal cual para poder apagarlo.`,
     confirmLabel: `Apagar ${name}`,
   };
 }

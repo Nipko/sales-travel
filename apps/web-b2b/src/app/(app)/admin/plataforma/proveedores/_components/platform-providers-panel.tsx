@@ -404,6 +404,7 @@ export function PlatformProvidersPanel() {
         <KillSwitchDialog
           key={`kill-${incident.provider.code}`}
           code={incident.provider.code}
+          vertical={incident.provider.vertical}
           initialLevel={health.byCode.get(incident.provider.code)?.killSwitch.panel?.level}
           onConfirm={(body) => confirmKill(incident.provider, body)}
           onClose={closeIncident}

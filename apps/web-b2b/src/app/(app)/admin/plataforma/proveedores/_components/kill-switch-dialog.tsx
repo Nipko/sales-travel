@@ -6,8 +6,12 @@ import { Button } from '../../../../../../components/ui/button';
 import { Dialog } from '../../../../../../components/ui/dialog';
 import { Field, Textarea, TextInput } from '../../../../../../components/ui/field';
 import { cn } from '../../../../../../lib/cn';
-import type { EnablementKillLevel } from '../../../../../../lib/provider-enablement';
+import type {
+  EnablementKillLevel,
+  EnablementVertical,
+} from '../../../../../../lib/provider-enablement';
 import {
+  FLIGHTS_POST_SALE_CAVEAT,
   KILL_EXPIRY_OPTIONS,
   KILL_LEVEL_OPTIONS,
   KILL_REASON_MAX,
@@ -88,11 +92,14 @@ function RadioCard({
  */
 export function KillSwitchDialog({
   code,
+  vertical,
   initialLevel = 'sales',
   onConfirm,
   onClose,
 }: {
   code: string;
+  /** En vuelos se avisa que "Todo" no frena la post-venta. */
+  vertical?: EnablementVertical | undefined;
   /** El nivel con que arranca: el del apagado vigente, para no bajarlo sin querer al reemplazarlo. */
   initialLevel?: EnablementKillLevel | undefined;
   onConfirm: (body: KillSwitchBody) => Promise<string | undefined>;
@@ -104,6 +111,7 @@ export function KillSwitchDialog({
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
   const [touched, setTouched] = useState(false);
+  const [codeTouched, setCodeTouched] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const formId = useId();
@@ -124,6 +132,9 @@ export function KillSwitchDialog({
       return;
     }
     if (!matches) {
+      // El botón está aria-disabled pero se puede activar: quien llega con el teclado o con un
+      // lector de pantalla oye por qué no apagó nada.
+      setCodeTouched(true);
       typedRef.current?.focus();
       return;
     }
@@ -189,6 +200,11 @@ export function KillSwitchDialog({
               <span className="font-semibold">{option.label}:</span> {option.detail}
             </RadioCard>
           ))}
+          {vertical === 'flights' ? (
+            <p className="text-xs leading-relaxed text-[var(--color-fg-muted)]">
+              {FLIGHTS_POST_SALE_CAVEAT}
+            </p>
+          ) : null}
         </fieldset>
 
         <fieldset disabled={sending}>
@@ -225,7 +241,11 @@ export function KillSwitchDialog({
           )}
         </Field>
 
-        <Field label={copy.typedLabel} required>
+        <Field
+          label={copy.typedLabel}
+          required
+          error={codeTouched && !matches ? copy.typedMismatch : undefined}
+        >
           {(a11y) => (
             <TextInput
               {...a11y}

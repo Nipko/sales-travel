@@ -148,6 +148,7 @@ describe('el apagado de emergencia', () => {
       description:
         'Corta el proveedor para toda la plataforma, por encima de cualquier ajuste por agencia. No hace falta desplegar.',
       typedLabel: 'Escribe tbo-hotels para confirmar',
+      typedMismatch: 'Escribe tbo-hotels tal cual para poder apagarlo.',
       confirmLabel: 'Apagar TBO Holidays',
     });
   });

@@ -66,6 +66,25 @@ describe('KillSwitchDialog', () => {
     expect(radios.slice(0, 2).map((r) => r.includes('checked=""'))).toEqual([false, true]);
   });
 
+  it('en vuelos avisa que "Todo" no frena la post-venta; en hoteles, no', () => {
+    const conVertical = (code: string, vertical: 'flights' | 'hotels') =>
+      text(
+        renderToStaticMarkup(
+          createElement(KillSwitchDialog, {
+            code,
+            vertical,
+            onConfirm: () => Promise.resolve(undefined),
+            onClose: noop,
+          }),
+        ),
+      );
+    expect(conVertical('latam-ndc', 'flights')).toContain(
+      'En vuelos, la post-venta (consultar, cancelar o pagar una orden) no pasa por este apagado: Todo frena lo mismo que Solo ventas.',
+    );
+    expect(conVertical('tbo-hotels', 'hotels')).not.toContain('En vuelos');
+    expect(text(dialog())).not.toContain('En vuelos');
+  });
+
   it('pide el vencimiento, con 4 horas elegido', () => {
     const html = dialog();
     const t = text(html);
@@ -96,6 +115,8 @@ describe('KillSwitchDialog', () => {
     expect(html).toMatch(
       /<button[^>]*type="submit"[^>]*aria-disabled="true"[^>]*>Apagar TBO Holidays</,
     );
+    // El aviso de código mal escrito sólo aparece tras intentar apagar, no al abrir.
+    expect(text(html)).not.toContain('tal cual para poder apagarlo');
   });
 });
 
@@ -184,6 +205,18 @@ describe('ProviderHealthRow', () => {
       },
     });
     expect(row(abierto)).toContain('Cerrar circuito');
+    // Una tarjeta por proveedor: el nombre accesible dice de cuál es el botón.
+    expect(
+      renderToStaticMarkup(
+        createElement(ProviderHealthRow, {
+          code: 'tbo-hotels',
+          health: abierto,
+          onKill: noop,
+          onResume: noop,
+          onReset: noop,
+        }),
+      ),
+    ).toContain('aria-label="Cerrar circuito de TBO Holidays"');
     expect(row(salud())).not.toContain('Cerrar circuito');
     expect(
       row(
@@ -221,6 +254,30 @@ describe('ProviderHealthRow', () => {
     expect(t).toContain('Apagado desde el panel (todo) · sin vencimiento · por root@plataforma.co');
     expect(t).toContain('Motivo: Responde basura');
     expect(t).toContain('Reanudar proveedor');
+    expect(
+      renderToStaticMarkup(
+        createElement(ProviderHealthRow, {
+          code: 'tbo-hotels',
+          health: salud({
+            killSwitch: {
+              effective: 'sales',
+              env: null,
+              panel: {
+                level: 'sales',
+                reason: 'Responde basura',
+                setBy: '99999999-9999-4999-8999-999999999999',
+                setByEmail: null,
+                setAt: '2026-10-13T12:00:00Z',
+                expiresAt: null,
+              },
+            },
+          }),
+          onKill: noop,
+          onResume: noop,
+          onReset: noop,
+        }),
+      ),
+    ).toContain('aria-label="Reanudar proveedor TBO Holidays"');
   });
 
   it('apagado sólo por la variable: aviso de sólo lectura, sin "Reanudar"', () => {

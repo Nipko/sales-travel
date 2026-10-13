@@ -62,13 +62,23 @@ export function ProviderHealthRow({
 
         <div className="flex flex-wrap items-center gap-1.5">
           {health?.circuit.state === 'open' ? (
-            <Button variant="secondary" size="sm" onClick={onReset}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onReset}
+              aria-label={`Cerrar circuito de ${name}`}
+            >
               <RotateCcw aria-hidden="true" />
               Cerrar circuito
             </Button>
           ) : null}
           {panel !== null ? (
-            <Button variant="secondary" size="sm" onClick={onResume}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onResume}
+              aria-label={`Reanudar proveedor ${name}`}
+            >
               <Play aria-hidden="true" />
               Reanudar proveedor
             </Button>
