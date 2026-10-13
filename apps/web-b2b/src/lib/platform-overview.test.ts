@@ -228,6 +228,28 @@ describe('parsePlatformOverview', () => {
       ),
     ).toBeUndefined();
     expect(parsePlatformOverview(overviewPayload({ catalogs: undefined }))).toBeUndefined();
+    // Sin saber si el barrido corre, no se puede decir que no hay nada.
+    for (const jobs of [
+      undefined,
+      { postSaleSweepStale: 'no', lastOkAt: null },
+      { postSaleSweepStale: true, lastOkAt: 'ayer' },
+    ]) {
+      expect(
+        parsePlatformOverview(overviewPayload({ attention: { ...quietAttention(), jobs } })),
+      ).toBeUndefined();
+    }
+  });
+
+  it('el barrido de post-venta: corriendo o no, y desde cuándo', () => {
+    expect(parsed().attention.jobs).toEqual({
+      postSaleSweepStale: false,
+      lastOkAt: '2026-10-11T13:55:00.000Z',
+    });
+    expect(
+      parsed({
+        attention: { ...quietAttention(), jobs: { postSaleSweepStale: true, lastOkAt: null } },
+      }).attention.jobs,
+    ).toEqual({ postSaleSweepStale: true, lastOkAt: null });
   });
 
   it('reservas con problemas: un motivo nuevo del API se ignora y una muestra rota se descarta', () => {
@@ -611,6 +633,61 @@ describe('attentionItems', () => {
     });
   });
 
+  it('procesos: el barrido de post-venta que no corre es urgente y lleva a Sistema', () => {
+    const item = only(
+      itemsWith({ jobs: { postSaleSweepStale: true, lastOkAt: '2026-10-11T13:00:00.000Z' } }),
+      'jobs',
+    );
+    expect(item).toEqual({
+      id: 'jobs',
+      severity: 'critical',
+      title: 'Procesos',
+      summary: 'El barrido de post-venta no corre hace 2 horas.',
+      details: [
+        'Sin él no se verifican las reservas y cancelaciones de hotel sin respuesta ni se recupera la conciliación del día.',
+      ],
+      action: { label: 'Ver procesos', href: '/admin/plataforma/sistema' },
+    });
+    expect(
+      only(
+        itemsWith({ jobs: { postSaleSweepStale: true, lastOkAt: '2026-10-11T14:59:30.000Z' } }),
+        'jobs',
+      ).summary,
+    ).toBe('El barrido de post-venta no corre hace menos de un minuto.');
+  });
+
+  it('procesos: sin ningún rastro del barrido, un aviso a revisar; corriendo, nada', () => {
+    expect(
+      only(itemsWith({ jobs: { postSaleSweepStale: true, lastOkAt: null } }), 'jobs'),
+    ).toMatchObject({
+      severity: 'warning',
+      summary: 'No hay registro de que el barrido de post-venta haya corrido.',
+    });
+    expect(itemsWith().map((i) => i.id)).not.toContain('jobs');
+  });
+
+  it('catálogos atrasados: lleva a Sistema, donde se ve cada catálogo', () => {
+    const item = only(
+      itemsWith(
+        {},
+        {
+          catalogs: [
+            {
+              providerCode: 'tbo-hotels',
+              cities: 1,
+              syncedLast48h: 0,
+              failedCities: 0,
+              lastSyncedAt: null,
+              stale: true,
+            },
+          ],
+        },
+      ),
+      'catalogs',
+    );
+    expect(item.action).toEqual({ label: 'Ver procesos', href: '/admin/plataforma/sistema' });
+  });
+
   it('conciliación: corridas fallidas de la semana aunque no haya diferencias', () => {
     const item = only(
       itemsWith({
@@ -725,6 +802,7 @@ describe('attentionItems', () => {
         },
         invitations: { pending: 1, expired: 2, expiredSinceDays: 30 },
         seats: { saturated: [{ tenantId: NODE_SUR, tenantName: 'Sur', used: 3, limit: 3 }] },
+        jobs: { postSaleSweepStale: true, lastOkAt: '2026-09-30T00:00:00.000Z' },
       },
       {
         providers: {
@@ -745,7 +823,7 @@ describe('attentionItems', () => {
       },
       '2026-10-01T00:00:00.000Z',
     );
-    expect(items).toHaveLength(8);
+    expect(items).toHaveLength(9);
     const copy = items
       .flatMap((i) => [
         i.title,

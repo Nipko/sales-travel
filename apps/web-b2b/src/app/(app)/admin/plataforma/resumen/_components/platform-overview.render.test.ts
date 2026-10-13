@@ -177,6 +177,7 @@ describe('OverviewContent: lo que requiere atención', () => {
       seats: {
         saturated: [{ tenantId: NODE_ANDES, tenantName: 'Andes Travel', used: 4, limit: 4 }],
       },
+      jobs: { postSaleSweepStale: true, lastOkAt: '2026-10-11T13:00:00.000Z' },
     },
     providers: {
       ...quietProviders(),
@@ -199,7 +200,7 @@ describe('OverviewContent: lo que requiere atención', () => {
 
   it('cada tarjeta con su frase', () => {
     expect(text).toContain('Requiere tu atención');
-    expect(text).toContain('8 temas');
+    expect(text).toContain('9 temas');
     expect(text).toContain('Proveedores');
     expect(text).toContain('Sabre GDS: no está respondiendo');
     expect(text).toContain('TBO Holidays: apagado de emergencia (solo ventas)');
@@ -217,6 +218,8 @@ describe('OverviewContent: lo que requiere atención', () => {
     expect(text).toContain('Andes Travel: 4 de 4 puestos en uso');
     expect(text).toContain('TBO Holidays: última sincronización hace 3 días');
     expect(text).toContain('3 pendientes de aceptar.');
+    expect(text).toContain('Procesos');
+    expect(text).toContain('El barrido de post-venta no corre hace 2 horas.');
   });
 
   it('la severidad va escrita, no sólo en el color', () => {
@@ -229,10 +232,11 @@ describe('OverviewContent: lo que requiere atención', () => {
     const titles = [...html.matchAll(/<h3 class="text-sm font-semibold[^"]*">([^<]+)<\/h3>/g)].map(
       (m) => m[1],
     );
-    expect(titles.slice(0, 8)).toEqual([
+    expect(titles.slice(0, 9)).toEqual([
       'Proveedores',
       'Reservas con problemas',
       'Post-venta con problemas',
+      'Procesos',
       'Conciliación con los proveedores',
       'Depósitos por aprobar',
       'Puestos',
@@ -249,6 +253,9 @@ describe('OverviewContent: lo que requiere atención', () => {
     expect(text).toContain('Ver proveedores');
     expect(text).toContain('Revisar depósitos');
     expect(text).toContain('Ver invitaciones');
+    // El barrido detenido y los catálogos atrasados llevan a Sistema › Procesos.
+    expect(html.match(/href="\/admin\/plataforma\/sistema"/g)?.length).toBe(2);
+    expect(text).toContain('Ver procesos');
   });
 
   it('Reservas con problemas lleva a Reservas de la red: todas, o la ficha de cada una', () => {

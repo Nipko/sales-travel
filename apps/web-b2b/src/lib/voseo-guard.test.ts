@@ -63,6 +63,11 @@ const SCANNED = [
   'lib/provider-enablement-client.ts',
   'lib/provider-enablement-proxy.ts',
   'lib/provider-health.ts',
+  // Plataforma → Sistema: los procesos automáticos.
+  'app/(app)/admin/plataforma/sistema',
+  'app/api/admin/system',
+  'lib/platform-system.ts',
+  'lib/platform-system-client.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

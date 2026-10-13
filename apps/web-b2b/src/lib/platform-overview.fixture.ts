@@ -52,6 +52,8 @@ export function quietAttention(): Payload {
     reconciliationRuns: { sinceDays: 7, failedRuns: 0, byProvider: [] },
     invitations: { pending: 0, expired: 0, expiredSinceDays: 30 },
     seats: { saturated: [] },
+    // El barrido de post-venta corrió 5 minutos antes de `generatedAt`.
+    jobs: { postSaleSweepStale: false, lastOkAt: '2026-10-11T13:55:00.000Z' },
   };
 }
 
