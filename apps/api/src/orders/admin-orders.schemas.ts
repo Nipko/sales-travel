@@ -151,3 +151,62 @@ export const AdminOrdersQuerySchema = z
     }
   });
 export type AdminOrdersQuery = z.infer<typeof AdminOrdersQuerySchema>;
+
+// ───────────────────────────── Acciones de post-venta ─────────────────────────────
+
+/** El motivo de una acción del superadmin: queda en la auditoría del nodo y de la plataforma. */
+export const ADMIN_ORDER_ACTION_REASON_MIN = 5;
+export const ADMIN_ORDER_ACTION_REASON_MAX = 500;
+
+/** Un carácter de control que no es salto de línea ni tabulación (el motivo se escribe en un área). */
+const CONTROL_CHARACTER = /(?![\n\r\t])\p{Cc}/u;
+
+const REASON_REQUIRED = 'escribe el motivo: queda en la auditoría';
+
+/** Sin cuerpo no hay motivo: el mismo mensaje que un motivo vacío. */
+const BODY_REQUIRED = { required_error: REASON_REQUIRED, invalid_type_error: REASON_REQUIRED };
+
+const ActionReason = z
+  .string({ required_error: REASON_REQUIRED, invalid_type_error: REASON_REQUIRED })
+  .trim()
+  .min(ADMIN_ORDER_ACTION_REASON_MIN, {
+    message: `el motivo tiene que tener al menos ${ADMIN_ORDER_ACTION_REASON_MIN} caracteres`,
+  })
+  .max(ADMIN_ORDER_ACTION_REASON_MAX, {
+    message: `el motivo puede tener hasta ${ADMIN_ORDER_ACTION_REASON_MAX} caracteres`,
+  })
+  .refine((v) => !CONTROL_CHARACTER.test(v), {
+    message: 'el motivo tiene caracteres no válidos',
+  });
+
+/**
+ * El cuerpo de las acciones de post-venta (`POST /admin/orders/:id/send-confirmation`, `…/retrieve`,
+ * `…/operations/:opId/retry`): sólo el motivo, obligatorio. Estricto: el BFF lo reconstruye.
+ */
+export const AdminOrderActionSchema = z.object({ reason: ActionReason }, BODY_REQUIRED).strict();
+export type AdminOrderActionDto = z.infer<typeof AdminOrderActionSchema>;
+
+const ORDER_NUMBER_REQUIRED = 'escribe el número de la orden para confirmar';
+
+/**
+ * `POST /admin/orders/:id/cancel`: el motivo y el número de la orden, que el superadmin escribe
+ * para confirmar (FD-1 C). El API lo compara con el de la reserva: el pedido no depende de que la
+ * pantalla lo haya comprobado.
+ */
+export const AdminOrderCancelSchema = z
+  .object(
+    {
+      reason: ActionReason,
+      orderNumber: z
+        .number({
+          required_error: ORDER_NUMBER_REQUIRED,
+          invalid_type_error: ORDER_NUMBER_REQUIRED,
+        })
+        .int({ message: ORDER_NUMBER_REQUIRED })
+        .positive({ message: ORDER_NUMBER_REQUIRED })
+        .max(2_147_483_647, { message: ORDER_NUMBER_REQUIRED }),
+    },
+    BODY_REQUIRED,
+  )
+  .strict();
+export type AdminOrderCancelDto = z.infer<typeof AdminOrderCancelSchema>;

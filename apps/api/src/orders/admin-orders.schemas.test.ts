@@ -1,9 +1,12 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { OrderStatus } from '../database/database.types.js';
 import {
+  ADMIN_ORDER_ACTION_REASON_MAX,
   ADMIN_ORDERS_MAX_PAGE,
   ADMIN_ORDERS_MAX_QUERY,
   ADMIN_ORDERS_PAGE,
+  AdminOrderActionSchema,
+  AdminOrderCancelSchema,
   AdminOrdersQuerySchema,
   ORDER_STATUSES,
   decodeAdminOrdersCursor,
@@ -144,5 +147,63 @@ describe('el cursor', () => {
     expect(
       decodeAdminOrdersCursor(Buffer.from('{"at":', 'utf8').toString('base64url')),
     ).toBeUndefined();
+  });
+});
+
+describe('AdminOrderActionSchema: el motivo de la acción', () => {
+  const issues = (body: unknown): string[] => {
+    const result = AdminOrderActionSchema.safeParse(body);
+    return result.success ? [] : result.error.issues.map((i) => i.message);
+  };
+
+  it('obligatorio, recortado, de 5 a 500 caracteres', () => {
+    expect(AdminOrderActionSchema.parse({ reason: '  La agencia no entra  ' })).toEqual({
+      reason: 'La agencia no entra',
+    });
+    expect(issues({})).toEqual(['escribe el motivo: queda en la auditoría']);
+    expect(issues(undefined)).toEqual(['escribe el motivo: queda en la auditoría']);
+    expect(issues({ reason: 42 })).toEqual(['escribe el motivo: queda en la auditoría']);
+    expect(issues({ reason: '   abc  ' })).toEqual([
+      'el motivo tiene que tener al menos 5 caracteres',
+    ]);
+    expect(issues({ reason: 'x'.repeat(ADMIN_ORDER_ACTION_REASON_MAX + 1) })).toEqual([
+      'el motivo puede tener hasta 500 caracteres',
+    ]);
+    expect(AdminOrderActionSchema.safeParse({ reason: 'x'.repeat(500) }).success).toBe(true);
+  });
+
+  it('admite saltos de línea; otros caracteres de control no', () => {
+    expect(AdminOrderActionSchema.safeParse({ reason: 'Línea uno\nlínea dos' }).success).toBe(true);
+    expect(issues({ reason: 'Motivo\u0000 raro' })).toEqual([
+      'el motivo tiene caracteres no válidos',
+    ]);
+  });
+
+  it('estricto: un campo de más es un error', () => {
+    expect(AdminOrderActionSchema.safeParse({ reason: 'Motivo largo', extra: 1 }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('AdminOrderCancelSchema: el motivo y el número de la orden', () => {
+  it('los dos obligatorios', () => {
+    expect(
+      AdminOrderCancelSchema.parse({ reason: 'Pedido del cliente', orderNumber: 1042 }),
+    ).toEqual({ reason: 'Pedido del cliente', orderNumber: 1042 });
+    const sinNumero = AdminOrderCancelSchema.safeParse({ reason: 'Pedido del cliente' });
+    expect(sinNumero.success ? [] : sinNumero.error.issues.map((i) => i.message)).toEqual([
+      'escribe el número de la orden para confirmar',
+    ]);
+    expect(AdminOrderCancelSchema.safeParse({ orderNumber: 1042 }).success).toBe(false);
+  });
+
+  it('un número entero y positivo, no un texto', () => {
+    for (const orderNumber of ['1042', 0, -3, 1.5, 2_147_483_648]) {
+      expect(
+        AdminOrderCancelSchema.safeParse({ reason: 'Pedido del cliente', orderNumber }).success,
+        String(orderNumber),
+      ).toBe(false);
+    }
   });
 });

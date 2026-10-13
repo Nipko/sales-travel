@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -14,24 +12,20 @@ import {
 } from '@nestjs/common';
 import type { ProviderIssue } from '@sales-travel/domain';
 import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
-import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { ProviderCapabilities, ProviderCapability } from '../providers/provider.types.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
-import { MailerService } from '../mail/mailer.service.js';
-import { isTestSelectedOffer } from '../providers/provider-environment.js';
-import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../mail/templates.js';
-import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
 import {
   HotelOrderReadsService,
   type PublicHotelOrderTracking,
 } from './hotel-order-reads.service.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
+import { OrderConfirmationService, isTestContent } from './order-confirmation.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
@@ -42,34 +36,6 @@ type PublicProviderIssue = Pick<
   ProviderIssue,
   'severity' | 'category' | 'type' | 'fieldPath' | 'fieldName'
 >;
-
-const NO_FLIGHT_CAPABILITIES: ProviderCapabilities = {
-  retrieve: false,
-  cancel: false,
-  pay: false,
-  services: false,
-  reshop: false,
-};
-
-/** AgentCars no tiene registry: su factory es único y hoy sólo expone cancelación dentro de Orders. */
-const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
-  retrieve: false,
-  cancel: true,
-  pay: false,
-  services: false,
-  reshop: false,
-};
-
-/**
- * ¿La orden es una reserva de la cuenta de pruebas del proveedor?
- *
- * Lo lee de `selected_offer.provider.environment`, que escribe el servidor al crear la orden desde
- * la cuenta resuelta (nunca el navegador). Una reserva de prueba no genera un tiquete válido: no se
- * le confirma al pasajero por correo sin que el vendedor lo pida, y si lo pide va marcada.
- */
-function isTestContent(row: Pick<OrderRow, 'selected_offer'>): boolean {
-  return isTestSelectedOffer(row.selected_offer);
-}
 
 /**
  * Selecciona campos estructurados antes de que la incidencia salga del backend. `message` y
@@ -96,12 +62,10 @@ function publicIssue(issue: ProviderIssue): PublicProviderIssue {
 export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
-    private readonly db: DatabaseService,
-    private readonly mailer: MailerService,
-    private readonly branding: BrandingService,
     private readonly activeTenant: ActiveTenantService,
-    private readonly registry: FlightProviderRegistry,
     private readonly hotelReads: HotelOrderReadsService,
+    private readonly confirmation: OrderConfirmationService,
+    private readonly capabilities: OrderCapabilitiesService,
   ) {}
 
   @SalesOperation()
@@ -177,71 +141,12 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const order = await this.orders.findById(tenantId, id);
     if (!order) throw new NotFoundException();
-    const to = this.contactEmail(order);
-    if (!to) throw new NotFoundException('La reserva no tiene email de contacto');
-    // Sólo hay algo que confirmar si la reserva existe del lado del proveedor. Una pendiente,
-    // fallida o cancelada no se «reenvía»: se le mentiría al cliente con su total.
-    if (order.status !== 'confirmed' && order.status !== 'ticketed') {
-      throw new ConflictException(
-        'Sólo se puede enviar la confirmación de una reserva confirmada o emitida.',
-      );
-    }
-    const sent = await this.sendConfirmationEmail(tenantId, order);
+    const { sent, to } = await this.confirmation.resend(tenantId, order);
     return { sent, to };
   }
 
-  private contactEmail(order: OrderRow): string {
-    const ci = order.contact_info;
-    if (ci && typeof ci === 'object' && 'email' in ci) {
-      const email = (ci as { email?: unknown }).email;
-      return typeof email === 'string' ? email : '';
-    }
-    return '';
-  }
-
   private async sendConfirmationEmail(tenantId: string, order: OrderRow): Promise<boolean> {
-    const to = this.contactEmail(order);
-    if (!to) return false;
-    const brand = await this.branding.resolve(tenantId);
-    // Una reserva de hotel lleva su plantilla: la estadía, el localizador y, si la tarifa no es
-    // reembolsable, el aviso con el 100 %. La de vuelos hablaría de una ruta vacía.
-    const mail = this.hotelReads.handles(order.provider)
-      ? hotelOrderConfirmationEmailHtml({
-          orderNumber: order.order_number,
-          locator: order.provider_order_id,
-          searchCriteria: order.search_criteria,
-          selectedOffer: order.selected_offer,
-          passengers: order.passengers,
-          totalAmount: order.total_amount,
-          currency: order.currency,
-          brand,
-        })
-      : this.flightConfirmationEmail(order, brand);
-    return this.mailer.sendToTenant(tenantId, {
-      to,
-      subject: mail.subject,
-      html: mail.html,
-      text: mail.text,
-    });
-  }
-
-  private flightConfirmationEmail(
-    order: OrderRow,
-    brand: Awaited<ReturnType<BrandingService['resolve']>>,
-  ): { subject: string; html: string; text: string } {
-    return orderConfirmationEmailHtml({
-      orderNumber: order.order_number,
-      pnr: order.provider_order_id,
-      searchCriteria: order.search_criteria,
-      passengers: order.passengers,
-      totalAmount: order.total_amount,
-      currency: order.currency,
-      brand,
-      ticketed: order.status === 'ticketed',
-      // Sólo llega aquí una de prueba si el vendedor la reenvió a mano: asunto «[PRUEBA] » y el
-      // aviso de que no es un tiquete válido para viajar.
-      testContent: isTestContent(order),
-    });
+    return (await this.confirmation.send(tenantId, order)).sent;
   }
 
   @Get()
@@ -279,39 +184,13 @@ export class OrdersController {
     return this.orders.retrieveOrder(tenantId, row, userId);
   }
 
-  /**
-   * Rechaza la operación si el proveedor de la reserva no la sabe hacer.
-   *
-   * Antes esto era `row.provider !== '<un proveedor concreto>'`: cada proveedor nuevo obligaba
-   * a acordarse de tocar este `if`, y olvidarlo significaba mandar una operación a un adapter
-   * que no la implementa. Ahora lo decide el propio proveedor, declarando sus capacidades.
-   */
+  /** Rechaza la operación si el proveedor de la reserva no la sabe hacer. */
   private assertSupports(row: OrderRow, capability: ProviderCapability): void {
-    if (capability === 'cancel' && row.status === 'ticketed') {
-      throw new BadRequestException(
-        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
-      );
-    }
-    if (!this.capabilitiesForOrder(row)[capability]) {
-      throw new BadRequestException(
-        `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
-      );
-    }
-  }
-
-  /** Lo declara el registry de la vertical del proveedor; ninguna vertical se fija aquí. */
-  private capabilitiesFor(provider: string): ProviderCapabilities {
-    if (provider === 'agent-cars') return AGENT_CARS_ORDER_CAPABILITIES;
-    return (
-      this.hotelReads.capabilitiesOf(provider) ??
-      this.registry.capabilitiesOf(provider) ??
-      NO_FLIGHT_CAPABILITIES
-    );
+    this.capabilities.assertSupports(row, capability);
   }
 
   private capabilitiesForOrder(row: Pick<OrderRow, 'provider' | 'status'>): ProviderCapabilities {
-    const capabilities = this.capabilitiesFor(row.provider);
-    return row.status === 'ticketed' ? { ...capabilities, cancel: false } : capabilities;
+    return this.capabilities.capabilitiesForOrder(row);
   }
 
   @Post(':id/cancel')

@@ -998,6 +998,30 @@ GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de
                                          -- (payload sin claves sensibles, redactPayload). Cada ficha
                                          -- abierta deja platform.order.viewed en el nodo de la
                                          -- reserva (lo ve su administrador). 404 ORDER_NOT_FOUND.
+                                         -- `capabilities: { retrieve, cancel }` (OrderCapabilities-
+                                         -- Service; lo de vender no sale).
+-- Post-venta del superadmin desde la ficha (FD-1 C, 2026-10-13; implementado). Nunca venden
+-- (sin @SalesOperation): pagar, emitir, servicios y recotizar no existen aquí. Cuerpo Zod
+-- estricto `{ reason }` (5..500, recortado; queda en la auditoría). Cada una resuelve el nodo con
+-- admin_order_tenant, lee la orden con ese tenant y corre en su contexto (runWithTenantContext):
+-- los servicios de Reservas de la agencia, con sus reglas y el superadmin como actor. Deja
+-- `platform.order.action` {action, orderId, operationId?, reason, outcome ok|error,
+-- errorReason?, result?} en el nodo de la reserva: lo ven la agencia y la plataforma.
+POST   /admin/orders/:id/send-confirmation -- reenvía la confirmación con la marca y el correo del
+                                         -- nodo (confirmada o emitida, 409; sin correo, 404).
+                                         -- → { sent, to }
+POST   /admin/orders/:id/retrieve        -- consulta al proveedor (capacidad retrieve).
+                                         -- → { reading (sin pasajeros), detail (la ficha releída) }
+POST   /admin/orders/:id/operations/:opId/retry
+                                         -- reintenta una cancelación fallida y reintentable con el
+                                         -- mismo claim (OrdersService.retryOperation).
+GET    /admin/orders/:id/cancellation-estimate
+                                         -- la penalidad estimada (sólo hoteles), sin evento.
+POST   /admin/orders/:id/cancel          -- `{ reason, orderNumber }`: cancela en nombre de la
+                                         -- agencia; el número escrito tiene que ser el de la orden
+                                         -- (400 ORDER_NUMBER_MISMATCH). Mismas reglas que la agencia
+                                         -- (emitida no; intento fallido → reintento). La retención de
+                                         -- cartera se libera como en una cancelación de la agencia.
 -- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
 -- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants

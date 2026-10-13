@@ -315,6 +315,14 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/orders/:id',
   ),
   ...noVenta(
+    'Reservas de la red: la post-venta del superadmin sobre lo ya vendido (FD-1 C): reenviar, consultar, reintentar y cancelar',
+    'POST /admin/orders/:id/send-confirmation',
+    'POST /admin/orders/:id/retrieve',
+    'POST /admin/orders/:id/operations/:opId/retry',
+    'GET /admin/orders/:id/cancellation-estimate',
+    'POST /admin/orders/:id/cancel',
+  ),
+  ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
     'GET /tenants/:tenantId/booking-permissions',
     'PUT /tenants/:tenantId/booking-permissions',

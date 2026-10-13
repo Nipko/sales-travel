@@ -47,8 +47,9 @@ const MENCIONES_PERMITIDAS: Readonly<Record<string, readonly string[]>> = {
   'providers/hotel-provider.registry.ts': ['despegar-hotels'],
   // El espacio de ids de hotel de la plataforma es el de ese proveedor.
   'providers/hotel-provider.types.ts': ['despegar-hotels'],
-  // Autos no tiene registry: su factory único se enruta aparte (ver el otro guard).
-  'orders/orders.controller.ts': ['agent-cars'],
+  // Autos no tiene registry: su factory único se enruta aparte (ver el otro guard). Sus
+  // capacidades de post-venta las declara OrderCapabilitiesService (antes, OrdersController).
+  'orders/order-capabilities.service.ts': ['agent-cars'],
   'orders/orders.service.ts': ['agent-cars'],
 };
 

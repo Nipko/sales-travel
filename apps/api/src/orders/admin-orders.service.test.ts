@@ -7,6 +7,7 @@ import { AdminOrderNotFoundError } from './admin-orders.errors.js';
 import { AdminOrdersQuerySchema } from './admin-orders.schemas.js';
 import { ADMIN_ORDER_VIEWED_EVENT, AdminOrdersService } from './admin-orders.service.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
+import type { OrderCapabilitiesService } from './order-capabilities.service.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
 
 /**
@@ -97,13 +98,23 @@ function banco(opts: { owner?: string | null; row?: OrderRow | undefined; hotel?
     trackingOf: vi.fn(() => Promise.resolve(new Map([[ORDEN_ID, TRACKING]]))),
   };
   const audit = { emit: vi.fn(() => Promise.resolve()) };
+  const capabilities = {
+    capabilitiesForOrder: vi.fn(() => ({
+      retrieve: true,
+      cancel: true,
+      pay: true,
+      services: true,
+      reshop: true,
+    })),
+  };
   const service = new AdminOrdersService(
     db as unknown as DatabaseService,
     orders as unknown as OrdersService,
     hotelReads as unknown as HotelOrderReadsService,
     audit as unknown as AuditService,
+    capabilities as unknown as OrderCapabilitiesService,
   );
-  return { service, db, orders, hotelReads, audit };
+  return { service, db, orders, hotelReads, audit, capabilities };
 }
 
 describe('la ficha', () => {
@@ -177,6 +188,47 @@ describe('la ficha', () => {
     const caida = new Error('connection terminated');
     db.withRequestContext.mockReset().mockRejectedValue(caida);
     await expect(service.detail(ACTOR, ORDEN)).rejects.toBe(caida);
+  });
+});
+
+describe('las capacidades de la ficha', () => {
+  it('salen de OrderCapabilitiesService, sólo las de post-venta: lo de vender no aparece', async () => {
+    const { service, capabilities } = banco();
+    const detail = await service.detail(ACTOR, ORDEN);
+    expect(capabilities.capabilitiesForOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ORDEN_ID, provider: 'tbo-hotels', status: 'confirmed' }),
+    );
+    expect(detail.capabilities).toEqual({ retrieve: true, cancel: true });
+  });
+});
+
+describe('lo que usan las acciones', () => {
+  it('snapshot: la misma ficha, sin dejar platform.order.viewed', async () => {
+    const { service, audit } = banco();
+    const detail = await service.snapshot(ACTOR, ORDEN);
+    expect(detail.order.id).toBe(ORDEN_ID);
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('snapshot: el rechazo de la base es el 403 de la guarda', async () => {
+    const { service, db } = banco();
+    db.withRequestContext.mockReset().mockRejectedValue(RECHAZO_DE_LA_BASE);
+    await expect(service.snapshot(ACTOR, ORDEN)).rejects.toBeInstanceOf(SuperadminRequiredError);
+  });
+
+  it('ownerOf: el nodo de la reserva, con el superadmin en la base', async () => {
+    const { service, db } = banco();
+    await expect(service.ownerOf(ACTOR, ORDEN)).resolves.toBe(DUENO);
+    expect(db.withRequestContext).toHaveBeenCalledWith({ userId: ACTOR }, expect.any(Function));
+  });
+
+  it('ownerOf: 404 si no existe y 403 si la base dice que no es el superadmin', async () => {
+    await expect(banco({ owner: null }).service.ownerOf(ACTOR, ORDEN)).rejects.toBeInstanceOf(
+      AdminOrderNotFoundError,
+    );
+    const { service, db } = banco();
+    db.withRequestContext.mockReset().mockRejectedValue(RECHAZO_DE_LA_BASE);
+    await expect(service.ownerOf(ACTOR, ORDEN)).rejects.toBeInstanceOf(SuperadminRequiredError);
   });
 });
 

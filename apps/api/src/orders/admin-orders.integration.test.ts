@@ -21,6 +21,7 @@ import { AdminOrdersQuerySchema } from './admin-orders.schemas.js';
 import { ADMIN_ORDER_VIEWED_EVENT, AdminOrdersService } from './admin-orders.service.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrdersService } from './orders.service.js';
 
 /**
@@ -74,7 +75,16 @@ d('Reservas de la red (funciones de 0076 como app_user)', () => {
     {} as unknown as PricingService,
     hotelReads,
   );
-  const service = new AdminOrdersService(database, orders, hotelReads, audit);
+  const service = new AdminOrdersService(
+    database,
+    orders,
+    hotelReads,
+    audit,
+    new OrderCapabilitiesService(
+      { capabilitiesOf: () => undefined } as unknown as FlightProviderRegistry,
+      hotelReads,
+    ),
+  );
 
   const tenants: string[] = [];
   const users: string[] = [];

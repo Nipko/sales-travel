@@ -6,6 +6,7 @@ import { ProvidersModule } from '../providers/providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { NetworkModule } from '../network/network.module.js';
 import { SearchModule } from '../search/search.module.js';
+import { AdminOrderActionsService } from './admin-order-actions.service.js';
 import { AdminOrdersController } from './admin-orders.controller.js';
 import { AdminOrdersService } from './admin-orders.service.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
@@ -13,6 +14,8 @@ import { HotelOrderCancellationService } from './hotel-order-cancellation.servic
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
+import { OrderConfirmationService } from './order-confirmation.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
@@ -36,7 +39,9 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
  *
  * Reservas de la red (`/admin/orders`, la consola del superadmin) vive acá para reusar las lecturas
  * de la ficha (`OrdersService`, `HotelOrderReadsService`) sin exportarlas; `NetworkModule` trae
- * `SuperadminGuard`.
+ * `SuperadminGuard`. Su post-venta (`AdminOrderActionsService`) usa los mismos servicios que
+ * Reservas de la agencia: el reenvío de la confirmación (`OrderConfirmationService`) y las
+ * capacidades de cada proveedor (`OrderCapabilitiesService`), que antes vivían en su controlador.
  */
 @Module({
   imports: [
@@ -52,7 +57,10 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
   // `HotelsModule` ya importa este módulo.
   providers: [
     OrdersService,
+    OrderConfirmationService,
+    OrderCapabilitiesService,
     AdminOrdersService,
+    AdminOrderActionsService,
     ExternalOrderIntentService,
     HotelOrderTrackingStore,
     HotelOrderReadsService,
