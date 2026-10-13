@@ -8,6 +8,7 @@ import { cn } from '../../../../../lib/cn';
 import type { HotelProviderHotelRef } from '../../_components/hotel-key';
 import { readSearchHandoff, type SearchHandoff } from '../../_components/hotel-search-handoff';
 import { countryNamer } from '../../_components/nationality-field';
+import { useRoomContent } from '../../_components/use-room-content';
 import {
   hotelContentAction,
   hotelRatesAction,
@@ -49,6 +50,10 @@ import { GallerySkeleton, HotelGallery } from './hotel-gallery';
  *
  * Si la ficha llega sin fotos, se buscan en el proveedor en segundo plano (hotel-content-warmup):
  * la galería dice que las está buscando y aparecen cuando llegan, sin frenar nada más.
+ *
+ * Las fotos, el tamaño y la descripción de cada tipo de habitación (TBO-07) se piden apenas se sabe
+ * que hay tarifas que mostrar (la búsqueda de origen), en paralelo a ellas y por una ruta propia: no
+ * esperan a las tarifas ni las hacen esperar.
  */
 
 const CONTENT_UNREADABLE: HotelContentResult = {
@@ -82,6 +87,8 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
   const [ratesLoading, setRatesLoading] = useState(false);
   // La lectura en curso de la ficha y su búsqueda de fotos: se corta al reintentar o al salir.
   const contentRun = useRef<AbortController | null>(null);
+  // Sin búsqueda de origen no hay tarifas, y sin tarifas no hay tipos a los que ponerles foto.
+  const roomContent = useRoomContent(hotelKey, { enabled: !!handoff });
 
   const loadContent = useCallback(() => {
     contentRun.current?.abort();
@@ -273,6 +280,7 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
             loading={ratesLoading}
             onReload={() => loadRates(handoff)}
             facts={facts}
+            roomContent={roomContent}
             shownFacts={{
               ...(header.name ? { name: header.name } : {}),
               ...(header.address ? { address: header.address } : {}),

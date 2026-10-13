@@ -24,10 +24,12 @@ import type { FilteredHotel, ResultRate } from './hotel-results-filters';
 import type { HotelDetailLink, HotelStay } from './hotel-search-handoff';
 import { isRateExpired } from './offer-expiry';
 import { RateBookAction } from './rate-book-action';
+import { groupRoomContent } from './room-content-match';
 import { roomTypeGroups, roomTypesCountText } from './room-type-groups';
 import { RoomTypeList } from './room-type-list';
 import { TestAccountTag } from './test-account-notice';
 import { useBookRate } from './use-book-rate';
+import { useRoomContent } from './use-room-content';
 
 /*
  * La tarjeta de un hotel en los resultados (propuesta aprobada del 2026-09-29): foto grande, zona,
@@ -323,8 +325,10 @@ export function HotelResultCard({
 /**
  * Las habitaciones desplegadas de una tarjeta, por tipo (hasta `CARD_ROOM_TYPES`; el resto, en la
  * ficha), cada plan con su «Reservar»: se va al checkout desde el listado, con las mismas
- * compuertas que en la ficha. El Search del listado no trae las políticas por tramos (D-TBO-19 A);
- * el PreBook del checkout da las finales antes de cargar los huéspedes, y la nota de arriba lo dice.
+ * compuertas que en la ficha. Las fotos, el tamaño y la descripción de cada tipo (TBO-07) se
+ * piden recién al desplegarla: este componente sólo se monta abierto. El Search del listado no
+ * trae las políticas por tramos (D-TBO-19 A); el PreBook del checkout da las finales antes de
+ * cargar los huéspedes, y la nota de arriba lo dice.
  */
 export function HotelResultRates({
   item,
@@ -373,6 +377,7 @@ export function HotelResultRates({
   const anyBookable = item.rates.some((rate) => canBook(rate.row) && !unavailableForAgency(rate));
   const groups = roomTypeGroups(item.rates, isExpired);
   const hiddenTypes = groups.length - CARD_ROOM_TYPES;
+  const roomContent = useRoomContent(hotelKey);
 
   return (
     <>
@@ -393,6 +398,7 @@ export function HotelResultRates({
           isExpired={isExpired}
           isUnavailable={unavailableForAgency}
           testAccountCodes={testAccountCodes}
+          roomContent={(group) => groupRoomContent(group, roomContent)}
           planAction={(rate) =>
             unavailableForAgency(rate) ? null : (
               <RateBookAction

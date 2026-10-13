@@ -252,6 +252,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /hotels/content/:providerCode/:hotelId',
   ),
   ...noVenta(
+    'fotos, tamaño y descripción de las habitaciones de un hotel: contenido estático sin precio',
+    'GET /hotels/content/:providerCode/:hotelId/rooms',
+  ),
+  ...noVenta(
     'fotos de los resultados por lote: contenido estático sin precio, por el cupo de fondo',
     'POST /hotels/content/batch',
   ),

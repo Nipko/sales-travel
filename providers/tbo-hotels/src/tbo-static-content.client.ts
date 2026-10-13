@@ -1,7 +1,14 @@
 import type { LoggerPort, MetricsPort } from '@sales-travel/core';
 import { z, type ZodType, type ZodTypeDef } from 'zod';
 import { requireUsableTboConfig, type TboHotelsConfig } from './config';
-import { TboConfigError, TboRequestBuildError, TboResponseMappingError } from './errors';
+import {
+  TboApiError,
+  TboConfigError,
+  TboDispatchRejectedError,
+  TboRequestBuildError,
+  TboResponseMappingError,
+  type TboFailureKind,
+} from './errors';
 import { TBO_OPERATIONS } from './http/operations';
 import {
   TBO_SLOW_NO_HOTELS_FOUND_MS,
@@ -31,6 +38,14 @@ import {
   mapTboHotelDetailsResponse,
 } from './static/hotel-details.response.mapper';
 import type { TboStaticOperation } from './static/observer';
+import {
+  TBO_PROCESS_ROOM_DETAIL_GATE,
+  TBO_ROOM_DETAILS_SWITCH_VALUES,
+  TboRoomDetailGate,
+  type TboRoomDetailRejectionReason,
+  type TboRoomDetailStatus,
+  type TboRoomDetailsSwitch,
+} from './static/room-detail.gate';
 import {
   TboCityHotelsEnvelopeSchema,
   TboCityListEnvelopeSchema,
@@ -71,6 +86,12 @@ export type { TboStaticOperation } from './static/observer';
  *   (producción, 2026-09-30; 05 CE-23). Con la misma regla de tiempo sale como resultado tipado
  *   `NO_HOTELS_FOUND`, sin reintento, sin error y sin sumar al breaker ni a la racha del sync; lento
  *   sigue siendo `UPSTREAM`.
+ * - **Detalle por habitación** (`roomDetail`, p. 56-57; Q-65): sólo si quien llama lo pide, con el
+ *   interruptor `roomDetails` encendido y la compuerta del proceso abierta (`static/room-detail.gate`).
+ *   El contenido del hotel nunca empeora por pedirlo: si con la clave TBO falla, contesta "No
+ *   Hotels Found" o le faltan hoteles, el mismo lote se repite SIN la clave y se devuelve lo que
+ *   traiga; si sin la clave trae hoteles que con ella no vinieron, es un rechazo, y tres seguidos
+ *   la suspenden en el proceso.
  */
 
 /**
@@ -97,6 +118,22 @@ export interface TboStaticContentOptions {
    * elegido con el log del 2026-09-29; se mide por intento, del envío al último byte del cuerpo.
    */
   readonly slowNoHotelsFoundMs?: number;
+  /**
+   * Interruptor del detalle por habitación (`TBO_ROOM_DETAILS`): `on` por defecto. Con `off` nunca
+   * sale `IsRoomDetailRequired`, aunque quien llama lo pida.
+   */
+  readonly roomDetails?: TboRoomDetailsSwitch;
+  /** La racha de rechazos del detalle por habitación: la del proceso, o una propia en los tests. */
+  readonly roomDetailGate?: TboRoomDetailGate;
+}
+
+/** Lo que se le pide a HotelDetails además de los códigos y el idioma. */
+export interface TboHotelDetailsOptions {
+  /**
+   * Pedir el detalle por habitación (`IsRoomDetailRequired: true`). Lo que se obtuvo lo dice
+   * `roomDetail` del resultado: sólo con `served` las habitaciones son la respuesta de TBO.
+   */
+  readonly roomDetail?: boolean;
 }
 
 /** Por llamada: la señal de quien corta la corrida y, si hace falta, un plazo o intentos menores. */
@@ -118,7 +155,11 @@ export interface TboStaticCall {
 export type TboCountryListResult = TboCountryListMapping & TboStaticCall;
 export type TboCityListResult = TboCityListMapping & TboStaticCall;
 export type TboCityHotelsResult = TboCityHotelsMapping & TboStaticCall;
-export type TboHotelDetailsResult = TboHotelDetailsMapping & TboStaticCall;
+export type TboHotelDetailsResult = TboHotelDetailsMapping &
+  TboStaticCall & {
+    /** Qué pasó con el detalle por habitación (`static/room-detail.gate.ts`). */
+    readonly roomDetail: TboRoomDetailStatus;
+  };
 export type TboHotelCodeListResult = TboHotelCodeListMapping & TboStaticCall;
 
 export interface TboCityHotelsQuery {
@@ -142,6 +183,8 @@ const OptionsSchema = z
       .optional(),
     detailedCityHotels: z.boolean().optional(),
     slowNoHotelsFoundMs: PositiveMs.optional(),
+    roomDetails: z.enum(TBO_ROOM_DETAILS_SWITCH_VALUES).optional(),
+    roomDetailGate: z.instanceof(TboRoomDetailGate).optional(),
   })
   .strict();
 
@@ -149,7 +192,19 @@ interface StaticPolicy {
   readonly timeoutsMs: Readonly<Record<TboStaticOperation, number>>;
   readonly detailedCityHotels: boolean;
   readonly slowNoHotelsFoundMs: number;
+  readonly roomDetails: TboRoomDetailsSwitch;
+  readonly roomDetailGate: TboRoomDetailGate;
 }
+
+/**
+ * Fallos de la llamada con `IsRoomDetailRequired` que no se repiten sin la clave: son de la cuenta
+ * o del cupo, no de la clave, y el lote sin ella fallaría igual.
+ */
+const ACCOUNT_FAILURES: ReadonlySet<TboFailureKind> = new Set<TboFailureKind>([
+  'CREDENTIALS_INVALID',
+  'ACCOUNT_BLOCKED',
+  'THROTTLED',
+]);
 
 /** Opciones inválidas son un error de configuración del despliegue: sólo `ruta:código`. */
 function resolvePolicy(options: TboStaticContentOptions): StaticPolicy {
@@ -165,7 +220,16 @@ function resolvePolicy(options: TboStaticContentOptions): StaticPolicy {
     timeoutsMs: Object.freeze(timeoutsMs),
     detailedCityHotels: parsed.data.detailedCityHotels ?? true,
     slowNoHotelsFoundMs: parsed.data.slowNoHotelsFoundMs ?? TBO_SLOW_NO_HOTELS_FOUND_MS,
+    roomDetails: parsed.data.roomDetails ?? 'on',
+    roomDetailGate: parsed.data.roomDetailGate ?? TBO_PROCESS_ROOM_DETAIL_GATE,
   });
+}
+
+/** La clase y el `kind` del fallo con la clave, para el log. Nunca su mensaje. */
+function failureMeta(failure: unknown): Record<string, string> {
+  if (failure instanceof TboApiError) return { errorClass: failure.name, kind: failure.kind };
+  if (failure instanceof Error) return { errorClass: failure.name };
+  return {};
 }
 
 function callMeta(result: TboHttpResult<unknown>): TboStaticCall {
@@ -204,6 +268,15 @@ export class TboStaticContentClient {
   /** Huella de la cuenta (`tboAccountRef`), nunca el usuario. */
   get accountRef(): string {
     return this.#client.accountRef;
+  }
+
+  /**
+   * Si un `getHotelDetails` con `roomDetail` saldría hoy con `IsRoomDetailRequired`: el interruptor
+   * en `on` y la compuerta del proceso abierta. Con `false`, pedir habitaciones sería gastar un
+   * HotelDetails para traer sólo el contenido del hotel: quien sólo quiere las habitaciones no llama.
+   */
+  get roomDetailAvailable(): boolean {
+    return this.#policy.roomDetails === 'on' && !this.#policy.roomDetailGate.suspended;
   }
 
   /** `GET CountryList` (p. 51). */
@@ -270,14 +343,136 @@ export class TboStaticContentClient {
    * `POST HotelDetails` de hasta 13 códigos en un idioma (p. 56). Un "No Hotels Found" rápido vuelve
    * con `outcome: 'NO_HOTELS_FOUND'` y todos los códigos en `missingHotelCodes`, no como error
    * (05 CE-23): qué hacer con ellos (respaldo en inglés, partir el lote) es de quien llama.
+   *
+   * Con `roomDetail` pide además el detalle por habitación, con las dos llaves del encabezado: lo
+   * que se obtuvo lo dice `roomDetail` del resultado, y el contenido del hotel es, como mínimo, el
+   * del pedido sin la clave.
    */
   async getHotelDetails(
     hotelCodes: readonly string[],
     lang: TboContentLanguage,
     call: TboStaticCallOptions = {},
+    options: TboHotelDetailsOptions = {},
   ): Promise<TboHotelDetailsResult> {
-    const body = buildTboHotelDetailsRequest(hotelCodes, lang);
-    const context = { lang, hotelCodes: body.Hotelcodes.split(',') };
+    if (options.roomDetail !== true) {
+      return this.#hotelDetails(hotelCodes, lang, call, false, 'not_requested');
+    }
+    if (this.#policy.roomDetails === 'off') {
+      return this.#hotelDetails(hotelCodes, lang, call, false, 'switched_off');
+    }
+    const gate = this.#policy.roomDetailGate;
+    if (gate.suspended) return this.#hotelDetails(hotelCodes, lang, call, false, 'suspended');
+    return this.#hotelDetailsWithRooms(hotelCodes, lang, call, gate);
+  }
+
+  /**
+   * El lote con `IsRoomDetailRequired` y, si TBO no lo acepta, el mismo lote sin la clave. La
+   * llamada con la clave va con UN intento: el respaldo sin ella hace de reintento, y repetir con la
+   * clave lo que TBO acaba de rechazar sólo gasta el plazo de quien espera.
+   */
+  async #hotelDetailsWithRooms(
+    hotelCodes: readonly string[],
+    lang: TboContentLanguage,
+    call: TboStaticCallOptions,
+    gate: TboRoomDetailGate,
+  ): Promise<TboHotelDetailsResult> {
+    // Un código ilegible es un bug de quien llama: falla aquí, antes del cable y sin respaldo.
+    buildTboHotelDetailsRequest(hotelCodes, lang, { roomDetail: true });
+    let withRooms: TboHotelDetailsResult | undefined;
+    let failure: unknown;
+    try {
+      withRooms = await this.#hotelDetails(
+        hotelCodes,
+        lang,
+        { ...call, maxAttempts: 1 },
+        true,
+        'served',
+      );
+    } catch (err) {
+      if (!this.#roomDetailFallbackAllowed(err, call)) throw err;
+      failure = err;
+    }
+    if (
+      withRooms !== undefined &&
+      withRooms.outcome === 'DETAILS' &&
+      withRooms.missingHotelCodes.length === 0
+    ) {
+      gate.recordSuccess();
+      return withRooms;
+    }
+
+    const reason: TboRoomDetailRejectionReason =
+      withRooms === undefined
+        ? 'error'
+        : withRooms.outcome === 'NO_HOTELS_FOUND'
+          ? 'no_hotels_found'
+          : 'missing_hotels';
+    let plain: TboHotelDetailsResult;
+    try {
+      plain = await this.#hotelDetails(hotelCodes, lang, call, false, 'fallback');
+    } catch (err) {
+      // Con la clave ya vino contenido de hotel: un fallo del respaldo no se lo quita a quien
+      // espera. Los hoteles que faltaron siguen en `missingHotelCodes` para su respaldo de siempre.
+      if (withRooms === undefined || withRooms.contents.length === 0) throw err;
+      this.#count('tbo.hotelDetails.room_detail_fallback_failed', { reason });
+      this.#log('info', 'tbo.static.room_detail_fallback_failed', {
+        op: 'hotelDetails',
+        lang,
+        reason,
+        requestId: withRooms.requestId,
+        ...failureMeta(err),
+      });
+      return withRooms;
+    }
+    const served = new Set(withRooms?.contents.map((content) => content.hotelId) ?? []);
+    const recovered = plain.contents.filter((content) => !served.has(content.hotelId)).length;
+    // Sin la clave tampoco vino más: TBO no tiene ese contenido y la respuesta con la clave vale.
+    if (withRooms !== undefined && recovered === 0) return withRooms;
+
+    const suspended = recovered > 0 && gate.recordRejection();
+    const meta = {
+      op: 'hotelDetails',
+      lang,
+      reason,
+      hotelCodeCount: plain.contents.length + plain.missingHotelCodes.length,
+      requestId: plain.requestId,
+      consecutiveRejections: gate.consecutiveRejections,
+      rejectionLimit: gate.limit,
+      ...failureMeta(failure),
+    };
+    this.#count('tbo.hotelDetails.room_detail_fallback', { reason });
+    this.#log('info', 'tbo.static.room_detail_fallback', meta);
+    if (suspended) this.#log('warn', 'tbo.static.room_detail_suspended', meta);
+
+    const kept = new Set(plain.contents.map((content) => content.hotelId));
+    return {
+      ...plain,
+      roomContents: (withRooms?.roomContents ?? []).filter((rooms) => kept.has(rooms.hotelId)),
+    };
+  }
+
+  /**
+   * Qué fallos de la llamada con la clave se repiten sin ella: casi todos, porque el caso a cubrir es
+   * justo que TBO no la entienda (un 400, un 500, un cuerpo raro, un plazo vencido por una
+   * respuesta más pesada). No se repite si quien espera ya cortó, ni ante un fallo de la cuenta o
+   * del cupo.
+   */
+  #roomDetailFallbackAllowed(err: unknown, call: TboStaticCallOptions): boolean {
+    if (call.signal?.aborted === true) return false;
+    if (err instanceof TboRequestBuildError) return false;
+    if (err instanceof TboDispatchRejectedError) return false;
+    return !(err instanceof TboApiError && ACCOUNT_FAILURES.has(err.kind));
+  }
+
+  async #hotelDetails(
+    hotelCodes: readonly string[],
+    lang: TboContentLanguage,
+    call: TboStaticCallOptions,
+    roomDetail: boolean,
+    status: TboRoomDetailStatus,
+  ): Promise<TboHotelDetailsResult> {
+    const body = buildTboHotelDetailsRequest(hotelCodes, lang, { roomDetail });
+    const context = { lang, hotelCodes: body.Hotelcodes.split(','), roomDetail };
     const result = await this.#call('hotelDetails', body, TboHotelDetailsEnvelopeSchema, call);
     if (result.outcome === 'NO_AVAILABILITY') {
       // `debug` y no `info`: quien llama escribe UNA línea por lote con lo que resolvió al final.
@@ -290,11 +485,16 @@ export class TboStaticContentClient {
         durationMs: result.durationMs,
         attempt: result.attempts,
       });
-      return { ...emptyTboHotelDetailsMapping(context, this.#mapDeps()), ...callMeta(result) };
+      return {
+        ...emptyTboHotelDetailsMapping(context, this.#mapDeps()),
+        ...callMeta(result),
+        roomDetail: status,
+      };
     }
     return {
       ...mapTboHotelDetailsResponse(result.data, context, this.#mapDeps()),
       ...callMeta(result),
+      roomDetail: status,
     };
   }
 
@@ -363,7 +563,15 @@ export class TboStaticContentClient {
     this.#log('info', message, meta);
   }
 
-  #log(level: 'debug' | 'info', message: string, meta: Record<string, unknown>): void {
+  #count(name: string, tags: Record<string, string>): void {
+    try {
+      this.#metrics?.counter(name, 1, tags);
+    } catch {
+      // Se descarta a propósito: una métrica nunca cambia el resultado.
+    }
+  }
+
+  #log(level: 'debug' | 'info' | 'warn', message: string, meta: Record<string, unknown>): void {
     const logger = this.#logger;
     if (logger === undefined) return;
     try {

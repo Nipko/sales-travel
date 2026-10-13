@@ -88,7 +88,7 @@ Detalle por archivo:
 - `hotel-details.p59.json`: además de la coma tras la segunda URL de `Images` (p. 62), cada URL se
   reúne de sus tres renglones (`…img=9eMP+0FIICgCIk6ZC` / `lzZH9Cs+…K6we` / `UG+E=`). Los 47
   servicios, en el orden del PDF. La nota de habitaciones de p. 56-57 (`IsRoomDetailRequired`) NO se
-  copia: no dice dónde va el contenedor (Q-65) y el detalle por habitación sigue apagado.
+  copia aquí: no dice dónde va el contenedor (Q-65). Sus campos están en los fixtures de `inferred/`.
 - `tbo-hotel-code-list.p67.json`: el primer trozo de `Attractions` se corta en p. 67 con ocho líneas
   `/` sueltas, y fuera del recuadro quedan ocho renglones con la forma `1.1 km   0.7 mi` a los que
   les falta justamente la `/`. Se reconstruye (INFERIDO) poniendo cada `/` en su renglón y los ocho
@@ -248,3 +248,28 @@ nuestro `requestId` para ubicarla en el log; ni la ciudad ni la cuenta, que el l
 aquí sale `TBO_SLOW_NO_HOTELS_FOUND_MS` ([01](../../../../docs/tbo/01-autenticacion-conectividad-y-errores.md)
 §8.5): los tests del cliente de contenido y del sync reproducen esas llamadas con un reloj falso, y
 uno de ellos comprueba que el umbral siga separando los dos grupos del log.
+
+## `inferred/` — detalle por habitación de HotelDetails (INFERIDO, no observado; TBO-05)
+
+**Ninguno de estos cinco archivos es una respuesta de TBO.** La nota "IMPORTANT NOTE" de p. 56-57
+agrega `"IsRoomDetailRequired": true` y nombra los campos de cada habitación (`RoomName`, `RoomId`
+numérico `197354`, `RoomSize` `"1830 ft"`, `RoomDescription`, `imageURL` como lista de URLs `https`
+de `www.tboholidays.com`), pero no dice bajo qué clave ni en qué nivel viene la lista, y no trae una
+respuesta completa ([05](../../../../docs/tbo/05-contenido-estatico-e-inventario.md) §2.6.3;
+[Q-65](../../../../docs/tbo/10-preguntas-para-tbo.md#q-65)). Cada fixture pone el bloque en un lugar
+plausible distinto para fijar que el lector tolerante (`static/room-detail.reader.ts`) lo encuentra, y
+dice qué forma informa. El hotel es el del ejemplo de p. 59-62 (código `1000000`), recortado a los
+campos que el mapper necesita para armar su contenido.
+
+| Archivo                           | Dónde va el bloque                                                                                                                                                                                     | Forma esperada |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `hotel-details-room-array.json`   | `HotelDetails[].Rooms[]`. La primera habitación son los campos y valores LITERALES del ejemplo de p. 57; la segunda trae HTML en la descripción; la tercera, `RoomId` `0` ("mapping isn't available"). | `array`        |
+| `hotel-details-room-map.json`     | `HotelDetails[].RoomDetails` como objeto indexado por `RoomId`, con `ImageURL` como UN texto con dos URLs separadas por coma.                                                                          | `map`          |
+| `hotel-details-room-root.json`    | `RoomDetails[]` en la RAÍZ, con `HotelCode` (texto y número) en cada habitación, imágenes como objetos `{ "Url": … }` y una habitación de otro hotel que no se debe atribuir.                          | `root`         |
+| `hotel-details-room-single.json`  | `HotelDetails[].RoomInfo` como UN objeto: la habitación de p. 57.                                                                                                                                      | `single`       |
+| `hotel-details-room-unknown.json` | Una clave que el lector no conoce (`AccommodationUnits`) con objetos con forma de habitación (`Name`, `Size`, `Photos`) y sin id.                                                                      | `heuristic`    |
+
+Cuando la sonda PR-12 (TBO-10) capture una respuesta real con `IsRoomDetailRequired`, va a
+`observed/hotel-details.room-detail.json` y su caso pasa a ser la fuente de verdad del lector. Si la
+forma real no está entre éstas, se ajusta el lector en el mismo commit; estos fixtures quedan como
+pruebas de tolerancia.

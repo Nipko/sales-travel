@@ -670,6 +670,67 @@ export interface HotelContentPort {
   ): Promise<HotelProviderContent | null>;
 }
 
+// ───────────────────────── Contenido por habitación bajo demanda ─────────────────────────
+
+/**
+ * UNA habitación del detalle por habitación del proveedor (TBO `HotelDetails` con
+ * `IsRoomDetailRequired`, docs/tbo/05 §2.6.3), ya normalizada por su ACL. Es lo que se guarda en
+ * `hotel_room_content` (0070).
+ */
+export interface HotelProviderRoomContent {
+  /**
+   * Identidad estable de la habitación en su hotel: el id del proveedor o, si no lo mandó, `n-` y
+   * 16 hex del SHA-256 de `nameKey`. Cumple `^[A-Za-z0-9_-]{1,64}$` y nunca es `0`.
+   */
+  readonly roomKey: string;
+  /** El id de la habitación en el proveedor (el `RoomID` de Search en TBO); `null` si no vino. */
+  readonly roomRef: string | null;
+  /** El nombre normalizado como `normalizeRoomName` de la web: enlaza por nombre sin id. */
+  readonly nameKey: string;
+  /** Hasta 300 caracteres. Vacío sólo si el proveedor mandó el id sin nombre. */
+  readonly name: string;
+  /** Tal como lo manda el proveedor (`"1830 ft"`). */
+  readonly sizeText: string | null;
+  /** Texto plano, sin `<` ni `>`. */
+  readonly description: string | null;
+  /** URLs `https` de los dominios de fotos del proveedor. */
+  readonly images: readonly string[];
+}
+
+/**
+ * Qué respondió el proveedor al detalle por habitación de UN hotel en UN idioma:
+ *
+ * - `rooms`: vinieron habitaciones (`rooms` no vacía).
+ * - `none`: el proveedor no tiene el hotel en ese idioma (TBO "No Hotels Found" o el hotel no volvió).
+ * - `unreadable`: volvió el hotel, pero sin un bloque de habitaciones legible, o el proveedor no
+ *   aceptó el pedido para ese hotel y el contenido llegó sin habitaciones.
+ * - `unavailable`: el proveedor no puede pedir el detalle hoy (TBO: `TBO_ROOM_DETAILS=off` o la clave
+ *   suspendida en el proceso) y no salió ninguna llamada. No dice nada del hotel: no se guarda.
+ */
+export type HotelRoomContentFetchOutcome = 'rooms' | 'none' | 'unreadable' | 'unavailable';
+
+export interface HotelRoomContentFetch {
+  /** El idioma que se pidió: el de las habitaciones que vuelven. */
+  readonly lang: HotelContentLanguage;
+  readonly outcome: HotelRoomContentFetchOutcome;
+  /** Vacía salvo con `rooms`. */
+  readonly rooms: readonly HotelProviderRoomContent[];
+}
+
+/**
+ * Un proveedor cuyas habitaciones tienen contenido propio (fotos, tamaño, descripción) que se pide
+ * para UN hotel en UN idioma (TBO `HotelDetails` con `IsRoomDetailRequired`). Es una lectura: lo que
+ * se guarda pasa por `hotel_catalog_store_room_contents` (0070), desde el servicio.
+ */
+export interface HotelRoomContentPort {
+  fetchHotelRoomContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelRoomContentFetch>;
+}
+
 // ───────────────────────── Catálogo bajo demanda: fotos y ciudades ─────────────────────────
 
 /** Qué llamada produjo una fila de `hotel_content` (0041). */
@@ -877,6 +938,12 @@ export function supportsHotelContent<T extends object>(
   adapter: T,
 ): adapter is T & HotelContentPort {
   return hasMethod<HotelContentPort>(adapter, 'fetchHotelContent');
+}
+
+export function supportsHotelRoomContent<T extends object>(
+  adapter: T,
+): adapter is T & HotelRoomContentPort {
+  return hasMethod<HotelRoomContentPort>(adapter, 'fetchHotelRoomContent');
 }
 
 export function supportsHotelContentBatch<T extends object>(

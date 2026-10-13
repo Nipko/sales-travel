@@ -159,6 +159,26 @@ describe('pickTboLogMeta: la lista blanca de 01 §11.1', () => {
     expect(meta['issues']).toHaveLength(20);
   });
 
+  it('`hotelKeyShapes` llega hasta 40: con 20 se perdería la clave nueva entre las conocidas', () => {
+    const shapes = Array.from({ length: 50 }, (_, i) => `Campo${i}:string`);
+    const meta = pickTboLogMeta({
+      hotelKeyShapes: shapes,
+      roomShape: 'none',
+      roomContainerKey: 'AccommodationUnits',
+      consecutiveRejections: 3,
+      rejectionLimit: 3,
+      unknownKeys: shapes,
+    });
+    expect(meta['hotelKeyShapes']).toEqual(shapes.slice(0, 40));
+    expect(meta['unknownKeys']).toHaveLength(20);
+    expect(meta).toMatchObject({
+      roomShape: 'none',
+      roomContainerKey: 'AccommodationUnits',
+      consecutiveRejections: 3,
+      rejectionLimit: 3,
+    });
+  });
+
   it('la lista no tiene claves de cabeceras, cuerpos, credenciales ni datos personales', () => {
     for (const forbidden of [
       'authorization',

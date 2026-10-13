@@ -43,6 +43,7 @@ import {
   supportsHotelContent,
   supportsHotelPrebookContext,
   supportsHotelRatesContext,
+  supportsHotelRoomContent,
   supportsHotelSearchContext,
   type HotelBookContextRequest,
   type HotelPrebookContextRequest,
@@ -1115,7 +1116,9 @@ describe('PR-3.6: contenido de un hotel bajo demanda (HotelDetails)', () => {
         },
       ],
       missingHotelCodes: [],
+      roomContents: [],
       diagnostics: DIAGNOSTICO,
+      roomDetail: 'not_requested',
       requestId: 'req-details-1',
       durationMs: 300,
       attempts: 1,
@@ -1274,5 +1277,177 @@ describe('PR-3.6: contenido de un hotel bajo demanda (HotelDetails)', () => {
   it('los idiomas del contenido neutral son los del ACL y los de `hotel_content.lang`', () => {
     expect([...HOTEL_CONTENT_LANGUAGES].sort()).toEqual([...TBO_CONTENT_LANGUAGES].sort());
     expect([...HOTEL_CONTENT_LANGUAGES].sort()).toEqual([...LanguageCodeSchema.options].sort());
+  });
+});
+
+describe('TBO-06: habitaciones de un hotel bajo demanda (HotelDetails con IsRoomDetailRequired)', () => {
+  const DIAGNOSTICO = { received: 1, mapped: 1, rejected: {}, notes: {}, unknownKeys: [] };
+  const HABITACION = {
+    roomKey: '197354',
+    roomId: '197354',
+    nameKey: 'deluxe room 1 king bed garden view',
+    name: 'Deluxe Room, 1 King Bed, Garden View',
+    sizeText: '1830 ft',
+    description: '1 King Bed Overlooking the garden',
+    images: ['https://www.tboholidays.com/imageresource.aspx?img=example1'],
+  };
+
+  function detalle(overrides: Partial<TboHotelDetailsResult> = {}): TboHotelDetailsResult {
+    return {
+      lang: 'en',
+      outcome: 'DETAILS',
+      contents: [
+        {
+          hotelId: '1000000',
+          lang: 'en',
+          source: 'details',
+          name: 'Sofitel Legend Old Cataract Aswan',
+          descriptionHtml: null,
+          descriptionText: null,
+          sections: [],
+          facilities: [],
+          unavailableFacilities: [],
+          attractionsHtml: null,
+          images: [],
+          phone: null,
+          websiteUrl: null,
+          checkInTime: null,
+          checkOutTime: null,
+        },
+      ],
+      hotels: [],
+      missingHotelCodes: [],
+      roomContents: [{ hotelId: '1000000', rooms: [HABITACION], shape: 'array' }],
+      diagnostics: DIAGNOSTICO,
+      roomDetail: 'served',
+      requestId: 'req-rooms-1',
+      durationMs: 300,
+      attempts: 1,
+      ...overrides,
+    };
+  }
+
+  function contenido(
+    result: TboHotelDetailsResult = detalle(),
+    roomDetailAvailable?: boolean,
+  ): TboContentAcl & { getHotelDetails: ReturnType<typeof vi.fn> } {
+    return {
+      getHotelDetails: vi.fn(() => Promise.resolve(result)),
+      listCityHotels: vi.fn(() => Promise.reject(new Error('no se usa'))),
+      ...(roomDetailAvailable === undefined ? {} : { roomDetailAvailable }),
+    };
+  }
+
+  function pedir(c: TboContentAcl, signal?: AbortSignal) {
+    return new TboHotelProviderAdapter(acl(), CUENTA, 'test', c).fetchHotelRoomContent(
+      '1000000',
+      'en',
+      CTX,
+      { timeoutMs: 20_000, ...(signal === undefined ? {} : { signal }) },
+    );
+  }
+
+  it('pide UN código con la clave, en un solo intento, y devuelve las habitaciones neutrales', async () => {
+    const c = contenido();
+    const signal = new AbortController().signal;
+
+    const res = await pedir(c, signal);
+
+    expect(c.getHotelDetails).toHaveBeenCalledWith(
+      ['1000000'],
+      'en',
+      { timeoutMs: 20_000, maxAttempts: 1, signal },
+      { roomDetail: true },
+    );
+    expect(res).toEqual({
+      lang: 'en',
+      outcome: 'rooms',
+      rooms: [
+        {
+          roomKey: '197354',
+          roomRef: '197354',
+          nameKey: 'deluxe room 1 king bed garden view',
+          name: 'Deluxe Room, 1 King Bed, Garden View',
+          sizeText: '1830 ft',
+          description: '1 King Bed Overlooking the garden',
+          images: ['https://www.tboholidays.com/imageresource.aspx?img=example1'],
+        },
+      ],
+    });
+  });
+
+  it('sin señal no inventa una', async () => {
+    const c = contenido();
+    await pedir(c);
+    expect(c.getHotelDetails).toHaveBeenCalledWith(
+      ['1000000'],
+      'en',
+      { timeoutMs: 20_000, maxAttempts: 1 },
+      { roomDetail: true },
+    );
+  });
+
+  it.each([
+    ['"No Hotels Found"', detalle({ outcome: 'NO_HOTELS_FOUND', contents: [], roomContents: [] })],
+    ['el hotel no volvió', detalle({ contents: [], hotels: [], roomContents: [] })],
+  ])('%s → `none`', async (_caso, resultado) => {
+    expect(await pedir(contenido(resultado))).toEqual({ lang: 'en', outcome: 'none', rooms: [] });
+  });
+
+  it('volvió sólo con los datos del catálogo y sin habitaciones legibles → `unreadable`', async () => {
+    const c = contenido(
+      detalle({
+        contents: [],
+        hotels: [
+          {
+            hotelId: '1000000',
+            name: 'Sofitel',
+            stars: 5,
+            location: null,
+            address: null,
+            zipcode: null,
+            countryCode: 'EG',
+            cityCode: '109642',
+          },
+        ],
+        roomContents: [{ hotelId: '1000000', rooms: [], shape: 'none' }],
+      }),
+    );
+    expect(await pedir(c)).toEqual({ lang: 'en', outcome: 'unreadable', rooms: [] });
+  });
+
+  it('TBO no aceptó la clave y el hotel llegó sin ella (`fallback`) → `unreadable`', async () => {
+    const c = contenido(detalle({ roomDetail: 'fallback', roomContents: [] }));
+    expect(await pedir(c)).toEqual({ lang: 'en', outcome: 'unreadable', rooms: [] });
+  });
+
+  it.each(['switched_off', 'suspended', 'not_requested'] as const)(
+    'la clave no salió (`%s`) → `unavailable`: no dice nada del hotel',
+    async (roomDetail) => {
+      const c = contenido(detalle({ roomDetail, roomContents: [] }));
+      expect(await pedir(c)).toEqual({ lang: 'en', outcome: 'unavailable', rooms: [] });
+    },
+  );
+
+  it('con el detalle por habitación apagado o suspendido no sale NINGUNA llamada', async () => {
+    const c = contenido(detalle(), false);
+
+    expect(await pedir(c)).toEqual({ lang: 'en', outcome: 'unavailable', rooms: [] });
+    expect(c.getHotelDetails).not.toHaveBeenCalled();
+    expect(await pedir(contenido(detalle(), true))).toMatchObject({ outcome: 'rooms' });
+  });
+
+  it('armado sin cliente de contenido: error tipado', async () => {
+    await expect(
+      new TboHotelProviderAdapter(acl(), CUENTA, 'test').fetchHotelRoomContent('1', 'es', CTX, {
+        timeoutMs: 1_000,
+      }),
+    ).rejects.toBeInstanceOf(TboContentClientMissingError);
+  });
+
+  it('se detecta por presencia', () => {
+    expect(
+      supportsHotelRoomContent(new TboHotelProviderAdapter(acl(), CUENTA, 'test', contenido())),
+    ).toBe(true);
   });
 });

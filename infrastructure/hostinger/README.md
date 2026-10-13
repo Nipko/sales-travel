@@ -115,12 +115,14 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 #### Variables (opcionales)
 
-| Variable                  | Default | Uso                                                           |
-| ------------------------- | ------- | ------------------------------------------------------------- |
-| `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                  |
-| `PROVIDERS_DISABLED`      | vacío   | Kill-switch de emergencia por proveedor (§6.1)                |
-| `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
-| `HOTEL_PROVIDERS_OPT_IN`  | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
+| Variable                  | Default | Uso                                                                |
+| ------------------------- | ------- | ------------------------------------------------------------------ |
+| `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                       |
+| `PROVIDERS_DISABLED`      | vacío   | Kill-switch de emergencia por proveedor (§6.1)                     |
+| `TBO_ROOM_DETAILS`        | `on`    | `off` (u otro valor) deja de pedir a TBO el detalle por habitación |
+| `HOTEL_ROOM_CONTENT`      | `on`    | `off` (u otro valor): la ficha sólo muestra habitaciones guardadas |
+| `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
+| `HOTEL_PROVIDERS_OPT_IN`  | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 

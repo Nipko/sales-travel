@@ -45,12 +45,15 @@ import {
   HotelNonRefundableBlockedError,
 } from './hotel-booking-errors.js';
 import type { HotelBookResponse, HotelBookingService } from './hotel-booking.service.js';
+import { HotelCatalogStore } from './hotel-catalog.store.js';
 import { HotelContentService } from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { HotelPrebookService } from './hotel-prebook.service.js';
+import { HotelRoomContentService } from './hotel-room-content.service.js';
 import {
   AllHotelProvidersFailedError,
   HotelProviderCapabilityError,
+  UnknownHotelProviderError,
 } from './hotel-provider-errors.js';
 import { HotelSearchPagingExpiredError } from './hotel-search-paging.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
@@ -125,6 +128,7 @@ interface Banco {
   prebooks: HotelPrebookService;
   bookings: { book: ReturnType<typeof vi.fn> };
   permisos: { nonRefundableRates: ReturnType<typeof vi.fn> };
+  db: ReturnType<typeof fakeHotelsDb>;
 }
 
 /** Lo que responde la saga de reserva con órdenes cuando el Book sigue en curso. */
@@ -188,6 +192,13 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
   } as unknown as ProviderDisclosureService;
   const bookings = { book: vi.fn(() => Promise.resolve(RESERVA_EN_CURSO)) };
   const content = new HotelContentService(registry, db.service, breaker, new MemoryCacheAdapter());
+  const roomContent = new HotelRoomContentService(
+    registry,
+    new HotelCatalogStore(db.service),
+    breaker,
+    new MemoryCacheAdapter(),
+    'on',
+  );
   const controller = new HotelsController(
     service,
     reservations,
@@ -197,9 +208,10 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
     bookings as unknown as HotelBookingService,
     content,
     permisos as unknown as BookingPermissionsService,
+    roomContent,
   );
 
-  return { controller, adapter, resolve, prebooks, bookings, permisos };
+  return { controller, adapter, resolve, prebooks, bookings, permisos, db };
 }
 
 /** El cuerpo tal como lo entrega el pipe de la ruta: validado y con los defaults aplicados. */
@@ -383,6 +395,12 @@ describe('HotelsController — superficie HTTP', () => {
       [HotelContentQuerySchema, HotelContentParamsSchema],
     ],
     ['contentBatch', RequestMethod.POST, 'content/batch', [HotelContentBatchBodySchema]],
+    [
+      'roomContent',
+      RequestMethod.GET,
+      'content/:providerCode/:hotelId/rooms',
+      [HotelContentQuerySchema, HotelContentParamsSchema],
+    ],
     ['bookingPermissions', RequestMethod.GET, 'booking-permissions', []],
     ['cancel', RequestMethod.POST, 'reservations/:id/cancel', [CancelBodySchema]],
     ['recovery', RequestMethod.POST, 'reservations/:id/recovery', [RecoveryBodySchema]],
@@ -396,7 +414,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas catorce', () => {
+  it('no hay más rutas que esas quince', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -417,6 +435,7 @@ describe('HotelsController — superficie HTTP', () => {
         'payments',
         'prebook',
         'recovery',
+        'roomContent',
         'suggestions',
       ].sort(),
     );
@@ -500,6 +519,11 @@ describe('HotelsController — tenant', () => {
         }),
     ],
     ['bookingPermissions', (c, u) => c.bookingPermissions(u)],
+    [
+      'roomContent',
+      (c, u) =>
+        c.roomContent(u, { providerCode: 'despegar-hotels', hotelId: '101' }, { lang: 'es' }),
+    ],
     ['cancel', (c, u) => c.cancel(u, 'RES-0001', {})],
     [
       'recovery',
@@ -635,6 +659,42 @@ describe('HotelsController — sobres y paso de parámetros', () => {
       (m) => vi.isMockFunction(m) && m.mock.calls.length > 0,
     );
     expect(tocados).toEqual([]);
+  });
+
+  it('TBO-06: roomContent devuelve las habitaciones sin sobre; un proveedor sin contenido propio, `none` sin consultar nada', async () => {
+    const b = banco();
+    const res = await b.controller.roomContent(
+      USUARIO,
+      { providerCode: 'despegar-hotels', hotelId: '101' },
+      { lang: 'pt' },
+    );
+
+    expect(res).toEqual({
+      providerCode: 'despegar-hotels',
+      hotelId: '101',
+      requestedLang: 'pt',
+      lang: null,
+      langFallback: false,
+      status: 'none',
+      rooms: [],
+    });
+    // Despegar trae su contenido con la disponibilidad: ni la base ni el proveedor.
+    expect(b.db.consultasMarcadas('room-content-state')).toEqual([]);
+    const tocados = Object.values(b.adapter).filter(
+      (m) => vi.isMockFunction(m) && m.mock.calls.length > 0,
+    );
+    expect(tocados).toEqual([]);
+  });
+
+  it('TBO-06: un proveedor que la plataforma no conoce es un error tipado, no un 500', async () => {
+    const b = banco();
+    await expect(
+      b.controller.roomContent(
+        USUARIO,
+        { providerCode: 'otro-hotels', hotelId: '1' },
+        { lang: 'es' },
+      ),
+    ).rejects.toBeInstanceOf(UnknownHotelProviderError);
   });
 
   it('PR-3.6: la ruta valida el proveedor, el código de hotel y el idioma, y el idioma por defecto es español', () => {
@@ -914,7 +974,9 @@ describe('los topes por vendedor de la reserva (0060: la cartera del consolidado
   it.each([
     ['prebook', 'hotels-prebook', 60],
     ['book', 'hotels-book', 30],
-  ] as const)('POST /hotels/%s: cupo %s de %i por minuto por vendedor', (ruta, bucket, limite) => {
+    // TBO-06: cada ficha puede hacer salir al proveedor por el cupo de fondo de la cuenta.
+    ['roomContent', 'hotels-room-content', 60],
+  ] as const)('/hotels %s: cupo %s de %i por minuto por vendedor', (ruta, bucket, limite) => {
     const handler = HotelsController.prototype[ruta];
 
     expect(Reflect.getMetadata(SELLER_RATE_LIMIT_KEY, handler)).toEqual({

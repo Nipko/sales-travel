@@ -433,8 +433,84 @@ Search, `RoomID` es un **array de strings** (`["197354"]`); en `HotelDetails`, `
 trae un ejemplo completo con `IsRoomDetailRequired: true` y la tabla de §14 no incluye ninguno de estos campos
 (VERIFICADO-PDF pp. 56-59). Postura: el schema Zod del ACL deja pasar claves desconocidas en `HotelDetails[]`, la
 función queda **apagada** hasta tener un fixture real capturado en test, y `RoomId` se normaliza a string; `0` o
-`"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search sin imágenes de habitación
+`"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search y la foto sale sólo con un nombre
+idéntico de candidato único, marcada «Foto de referencia» (D-TBO-H2, opción 2; ver «En la pantalla», abajo)
 → [Q-65](./10-preguntas-para-tbo.md#q-65). El uso de `RoomID` en la oferta está en [02](./02-search-y-oferta-canonica.md).
+
+**Estado del ACL (TBO-05, 2026-10-13).** El cliente de contenido puede mandar `IsRoomDetailRequired: true`
+(`getHotelDetails(…, { roomDetail: true })`). Lo pide SOLO el contenido por habitación bajo demanda (TBO-06, abajo): el
+sync, la ficha del hotel y las fotos de los resultados siguen sin pedirlo, y sin pedirlo el body y la salida son los de
+siempre.
+
+- **Lector tolerante** (`providers/tbo-hotels/src/static/room-detail.reader.ts`): busca el bloque en el hotel bajo
+  `Rooms`, `RoomDetails`, `RoomDetail`, `RoomInfo`, `RoomInformation`, `HotelRooms`, `RoomList`, `RoomData`,
+  `RoomTypes` o `Room` (lista, objeto indexado por id u objeto único); si no, en la raíz con el `HotelCode` de cada
+  habitación; si no, una lista de objetos con al menos dos campos de habitación. Informa la forma (`array`, `map`,
+  `single`, `root`, `heuristic`, `none`, `unreadable`) en la métrica `tbo.hotelDetails.room_detail` y, con `none`, un
+  `warn` `tbo.static.room_container_not_found` con `Clave:tipoJSON` de cada clave del hotel, nunca valores. Fixtures
+  INFERIDOS en `__fixtures__/inferred/` hasta la sonda PR-12 (TBO-10).
+- **Normalización**: `RoomId` a texto (`0` o ceros → `null`); sin id, la habitación se identifica con `n-` y 16 hex del
+  SHA-256 de su nombre normalizado (el mismo `normalizeRoomName` de la web). Fotos sólo de dominios de TBO por
+  `https` (sin esquema o con `http` se suben a `https`), hasta 30; descripción en texto plano; hasta 100 habitaciones
+  por hotel.
+- **El contenido del hotel nunca empeora.** Si con la clave TBO falla, contesta "No Hotels Found" o le faltan hoteles,
+  el cliente repite el lote SIN la clave y devuelve lo que traiga (`roomDetail: 'fallback'`). Si sin la clave vinieron
+  hoteles que con ella no, es un rechazo; tres seguidos suspenden la clave hasta reiniciar el proceso, con un `warn`
+  `tbo.static.room_detail_suspended`. Si el lote sin la clave falla y con ella ya vino algún hotel, se devuelve lo que
+  vino con la clave (`tbo.static.room_detail_fallback_failed`) en vez del error. La variable `TBO_ROOM_DETAILS=off` del
+  deploy la apaga del todo.
+- **¿Search manda `RoomID`?** Cada pack lo cuenta por su forma en `tbo.search.room_id` (`present`, `zero`, `absent`).
+
+**Encendido bajo demanda (TBO-06, 2026-10-13).** `GET /hotels/content/:proveedor/:hotel/rooms?lang=` devuelve fotos,
+tamaño y descripción de cada habitación de UN hotel (`HotelRoomContentService`):
+
+- **Del catálogo primero.** Lo que respondió TBO queda en `hotel_room_content` y su resultado en
+  `hotel_room_content_fetch` (migración 0070), por hotel e idioma. Vigencias: con habitaciones, **30 días**; el hotel sin
+  contenido en ese idioma (`none`), **7**; volvió el hotel pero sin un bloque legible o TBO no aceptó la clave para él
+  (`unreadable`), **1**. Mientras vale, la ficha no llama.
+- **Bajo demanda, sólo si hace falta.** Vencido o nunca pedido: `HotelDetails` de ese solo código con la clave, un
+  intento, con la cuenta que la agencia tiene habilitada (respeta `opt-in` y apagado), por el circuito en modo pasivo y
+  el cupo de fondo del limitador. Sin habitaciones en el idioma pedido se pide `EN` (CE-23). Sólo hoteles de
+  `hotel_inventory`: un código inventado no gasta cupo. La respuesta espera 6 s; si no llegó sale lo guardado (aunque
+  esté vencido) o `pending` con `retryAfterMs: 3000`, y la llamada sigue y guarda. Un fallo se recuerda 2 minutos
+  (`hotels:room-content-failed:…`, log `hotels.room_content.fallo` con proveedor, idioma y nombre del error).
+- **`roomKey`.** `hotel_room_content.room_id` es el `roomKey` del ACL (el `RoomId` o `n-` + 16 hex del nombre
+  normalizado); el id real va en `room_ref` (para enlazar con el `RoomID` de Search) y el nombre normalizado en
+  `name_key` (enlace por nombre con candidato único, D-TBO-H2). La app escribe sólo por
+  `hotel_catalog_store_room_contents`, que valida cada habitación (id, texto plano sin `<`/`>`, fotos `https`, topes) y
+  reemplaza el set del idioma; si llegaron habitaciones y no entró ninguna, el resultado queda `unreadable`.
+- **Dos interruptores.** `HOTEL_ROOM_CONTENT=off` (API): la ruta responde sólo lo guardado, vencido o no, y si no hay
+  nada `disabled`; nunca llama. `TBO_ROOM_DETAILS=off` o la clave suspendida (ACL): el adapter no hace NINGUNA llamada
+  (`roomDetailAvailable`) y la ruta responde `disabled`. El contenido del hotel no depende de ninguno de los dos.
+- **Fotos por el proxy propio** (`/api/hotels/images/…`), sólo de los dominios de TBO; las que no se pueden servir se
+  cuentan (`hotels.room_content.descartado`) y no salen. El tamaño sale también en m² (`sizeM2`): en m² tal cual, en
+  pies convertido y redondeado, fuera de 5–500 `null`.
+- **Diagnóstico.** Cada llamada deja una línea `hotels.room_content.traido` con el resultado (`rooms`, `none`,
+  `unreadable`), cuántas vinieron, cuántas se guardaron y cuántas rechazó la base: sin códigos ni contenido.
+
+**En la pantalla (TBO-07, 2026-10-13).** Cada tipo de habitación de la ficha y de la tarjeta desplegada de los
+resultados muestra la foto, el tamaño (`≈ 32 m²`, o el texto del proveedor si no se pudo convertir) y la descripción
+(dos líneas con «Ver más») de su habitación en el catálogo:
+
+- **Enlace (D-TBO-H2 = opción 2).** Primero el `roomTypeId` de la tarifa EN ESE proveedor contra el `roomId` del
+  catálogo: es la misma habitación. Si no hay id que coincida, el `nameKey` idéntico y sólo con **un** candidato que no
+  tenga otro id: la foto lleva «Foto de referencia» («Es la foto de una habitación con el mismo nombre en el catálogo
+  del proveedor.»). Dos candidatos con el mismo nombre, o uno con un id distinto del de la tarifa: sin foto. La
+  coincidencia por el inicio del nombre (opción 3) está escrita y apagada (`allowPrefix`).
+- **Cuándo se pide.** En la ficha, apenas se lee la búsqueda de origen, en paralelo a las tarifas; en los resultados,
+  sólo al desplegar la tarjeta. El panel lo pide a su ruta `GET /api/hotels/rooms/<clave del hotel>?lang=es`, que llama
+  al API por cada proveedor del hotel que da contenido. Es una ruta y no una acción del servidor porque el cliente de
+  Next despacha las acciones de a una: una espera de hasta 6 s dejaría «Buscar de nuevo» o «Ver más hoteles» detrás de
+  unas fotos. Con `pending` se vuelve a preguntar a los `retryAfterMs`, hasta 3 veces. Sólo lo que llegó `ready` se
+  recuerda por hotel mientras dura la pestaña (hasta 60 hoteles): la ruta convierte todo error del API (un 429, un
+  despliegue, la sesión vencida) en `none`, así que `none` y `disabled` se vuelven a preguntar al desplegar de nuevo o
+  volver a la ficha, en lugar de dejar el hotel sin fotos hasta recargar.
+- **Sin riesgo para la ficha.** Mientras se pide o sigue `pending`, un esqueleto del tamaño de la miniatura; con
+  `none`, `disabled`, un error o sin coincidencia, el tipo queda como antes (el icono de la cama). La miniatura
+  (`next/image` sobre el proxy propio, 96×72 en el teléfono y 128×96 desde `sm`, con el mismo reintento de las
+  miniaturas de la galería si el proxy está al tope de descargas) abre un diálogo con la galería de la
+  habitación, su tamaño y la descripción completa. Una combinación de varias habitaciones muestra una miniatura por
+  habitación distinta, hasta tres.
 
 ---
 
@@ -618,7 +694,7 @@ Las columnas `provider_city_code` y las tablas `hotel_content` y `hotel_room_con
 | Servicios                                                                | detalle, filtros futuros  | `HotelFacilities`                                                    | `hotel_content.facilities`                           | ídem                                                                     |
 | Atracciones cercanas                                                     | detalle                   | `Attractions`                                                        | `hotel_content.attractions_html`                     | ídem                                                                     |
 | Teléfono, web                                                            | detalle, voucher          | `PhoneNumber`, `HotelWebsiteUrl` (este último solo TBOHotelCodeList) | `hotel_content.phone/website_url`                    | ídem                                                                     |
-| Nombre, tamaño e imágenes de la habitación                               | detalle de tarifa         | `RoomName`, `RoomSize`, `imageURL` vía `RoomID`                      | `hotel_room_content`                                 | cuando exista fixture real (§2.6.3)                                      |
+| Nombre, tamaño e imágenes de la habitación                               | detalle de tarifa         | `RoomName`, `RoomSize`, `imageURL` vía `RoomID`                      | `hotel_room_content`                                 | bajo demanda desde la ficha (§2.6.3, TBO-06)                             |
 | Suplementos `AtProperty`, régimen, reembolsable                          | tarifa                    | **no es estático**: Search y PreBook                                 | —                                                    | ver [02](./02-search-y-oferta-canonica.md), [03](./03-prebook-y-book.md) |
 
 Reglas:

@@ -67,10 +67,34 @@ describe('buildTboHotelDetailsRequest', () => {
     expect(buildTboHotelDetailsRequest(['1000000'], lang).Language).toBe(code);
   });
 
-  it('nunca pide el detalle por habitación: sin `IsRoomDetailRequired` (RF-32; Q-65)', () => {
+  it('sin la opción no pide el detalle por habitación: la clave no sale (RF-32; Q-65)', () => {
     expect(buildTboHotelDetailsRequest(['1000000'], 'es')).not.toHaveProperty(
       'IsRoomDetailRequired',
     );
+    expect(buildTboHotelDetailsRequest(['1000000'], 'es', {})).not.toHaveProperty(
+      'IsRoomDetailRequired',
+    );
+    // `false` tampoco sale: el body sin la opción es exactamente el de siempre.
+    expect(buildTboHotelDetailsRequest(['1000000'], 'es', { roomDetail: false })).toEqual({
+      Hotelcodes: '1000000',
+      Language: 'ES',
+    });
+  });
+
+  it('con `roomDetail` manda `IsRoomDetailRequired: true` como la nota de p. 56', () => {
+    const body = buildTboHotelDetailsRequest(['1261320', '1000000'], 'en', { roomDetail: true });
+    expect(body).toEqual({
+      Hotelcodes: '1261320,1000000',
+      Language: 'EN',
+      IsRoomDetailRequired: true,
+    });
+    expect(Object.keys(body)).toEqual(['Hotelcodes', 'Language', 'IsRoomDetailRequired']);
+  });
+
+  it('con `roomDetail` sigue validando los códigos antes del cable', () => {
+    expect(
+      buildError(() => buildTboHotelDetailsRequest(['1 2'], 'en', { roomDetail: true })).issues,
+    ).toEqual(['hotelCodes.0:invalid_code']);
   });
 
   it('deduplica conservando el orden y no recorta', () => {
