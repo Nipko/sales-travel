@@ -30,6 +30,7 @@ import * as ancillaryRemoveResponse from './ancillaries/remove.response.mapper';
 import * as ancillaryShopRequest from './ancillaries/shop.request.builder';
 import * as ancillaryShopResponse from './ancillaries/shop.response.mapper';
 import * as ancillaryAdapter from './sabre-ancillary.adapter';
+import * as documentStatus from './ticketing/document-status';
 
 /**
  * La SONDA del entry público: que lo que `src/index.ts` publica sea **el mismo objeto** que el
@@ -113,6 +114,8 @@ const PROBED: readonly ProbedModule[] = [
   { name: 'ancillaries/remove.request.builder', module: ancillaryRemoveRequest },
   { name: 'ancillaries/remove.response.mapper', module: ancillaryRemoveResponse },
   { name: 'sabre-ancillary.adapter', module: ancillaryAdapter },
+  // Estado de tiquetes y EMD (SAB-05).
+  { name: 'ticketing/document-status', module: documentStatus },
 ];
 
 describe('el entry público republica los módulos, no copias de ellos', () => {
