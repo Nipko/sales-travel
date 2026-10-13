@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../../../../../lib/api';
+import { isUuid } from '../../../../../lib/wallets';
 
 /*
  * `GET /api/orders/:id/ticket-check` del panel → `GET /orders/:id/ticket-check` del API (SAB-09).
@@ -22,10 +23,18 @@ export const TICKET_CHECK_UNREADABLE =
 /** Lo que la ruta manda con la respuesta: nada de esto se cachea. */
 export const NO_STORE = { 'cache-control': 'no-store' } as const;
 
+/** Un id que no es de una reserva no llega al API. */
+export const TICKET_CHECK_INVALID_ORDER = {
+  statusCode: 400,
+  error: 'Bad Request',
+  message: 'La reserva no es válida. Vuelve a abrirla desde Reservas.',
+} as const;
+
 export async function proxyTicketCheck(
   orderId: string,
   call: ApiCall,
 ): Promise<TicketCheckProxyReply> {
+  if (!isUuid(orderId)) return { status: 400, body: TICKET_CHECK_INVALID_ORDER };
   const res = await call(`/orders/${encodeURIComponent(orderId)}/ticket-check`, { method: 'GET' });
   if (res.kind === 'json') return { status: res.status, body: res.body };
   const status = res.status >= 500 ? res.status : 502;

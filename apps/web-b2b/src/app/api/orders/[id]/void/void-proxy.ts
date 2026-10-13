@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../../../../../lib/api';
+import { isUuid } from '../../../../../lib/wallets';
 
 /*
  * `POST /api/orders/:id/void` del panel → `POST /orders/:id/void` del API (SAB-09).
@@ -21,7 +22,15 @@ type ApiCall = (path: string, init: RequestInit) => Promise<ApiResponse>;
 export const VOID_UNREADABLE =
   'No pudimos confirmar si la anulación salió. No la repitas: revisa el historial de la reserva en unos minutos.';
 
+/** Un id que no es de una reserva no llega al API: nada salió, y se dice así (4xx, no 5xx). */
+export const VOID_INVALID_ORDER = {
+  statusCode: 400,
+  error: 'Bad Request',
+  message: 'La reserva no es válida. Vuelve a abrirla desde Reservas.',
+} as const;
+
 export async function proxyTicketVoid(orderId: string, call: ApiCall): Promise<VoidProxyReply> {
+  if (!isUuid(orderId)) return { status: 400, body: VOID_INVALID_ORDER };
   const res = await call(`/orders/${encodeURIComponent(orderId)}/void`, { method: 'POST' });
   if (res.kind === 'json') return { status: res.status, body: res.body };
   const status = res.status >= 500 ? res.status : 502;
