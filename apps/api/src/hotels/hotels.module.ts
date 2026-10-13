@@ -71,7 +71,8 @@ import { HotelsService } from './hotels.service.js';
  * interruptor (`HOTEL_ROOM_CONTENT`) se lee una vez, al arrancar.
  *
  * Si la agencia puede reservar tarifas no reembolsables lo fija quien la financia (0055): el PreBook
- * y el Book lo leen de `BookingPermissionsModule`.
+ * y el Book lo leen de `BookingPermissionsModule`. El contacto de soporte que el Book exige lo leen
+ * los dos de `BrandingService` (global), con el mismo predicado: el PreBook sólo lo avisa.
  */
 @Module({
   imports: [

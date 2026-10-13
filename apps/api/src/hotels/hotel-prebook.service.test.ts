@@ -11,6 +11,7 @@ import type {
   BookingPermissionsService,
   NonRefundableRatesPolicy,
 } from '../booking-permissions/booking-permissions.service.js';
+import type { BrandingService, SupportContact } from '../branding/branding.service.js';
 import type { TenantType } from '../database/database.types.js';
 import type { BookingHoldPreview, BookingHoldQuote } from '../portfolios/booking-hold.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
@@ -274,6 +275,7 @@ interface Banco {
   breaker: CircuitBreakerService;
   cartera: Cartera;
   permisos: PermisosFake;
+  soporte: Soporte;
 }
 
 type PermisosFake = { nonRefundableRates: Mock<BookingPermissionsService['nonRefundableRates']> };
@@ -307,6 +309,19 @@ function fondos(cartera: Cartera): PortfoliosService {
   return { previewBookingHold: cartera } as unknown as PortfoliosService;
 }
 
+/** El contacto de soporte efectivo de la agencia, el que el Book manda al proveedor. */
+const SOPORTE: SupportContact = { email: 'reservas@agencia.example', phone: '+57 601 555 0000' };
+
+type Soporte = Mock<(tenantId: string) => Promise<SupportContact>>;
+
+function soporteQueResponde(contacto: SupportContact = SOPORTE): Soporte {
+  return vi.fn((_tenantId: string) => Promise.resolve(contacto));
+}
+
+function marca(soporte: Soporte): BrandingService {
+  return { resolveSupportContact: soporte } as unknown as BrandingService;
+}
+
 interface OpcionesBanco {
   reglas?: ApplicableRule[];
   requiresGuestNationality?: boolean;
@@ -318,6 +333,8 @@ interface OpcionesBanco {
   noReembolsablesBloqueadas?: boolean;
   /** El entorno que declara la cuenta del stub, como el de TBO. */
   entorno?: 'test' | 'live';
+  /** La lectura del contacto de soporte de la agencia: por defecto, uno completo. */
+  soporte?: Soporte;
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -336,6 +353,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
   const breaker = new CircuitBreakerService();
   const cartera = opts.cartera ?? carteraQueCubre();
   const permisos = permisosFake(opts.noReembolsablesBloqueadas);
+  const soporte = opts.soporte ?? soporteQueResponde();
   const service = new HotelPrebookService(
     hotelRegistry(
       [stub],
@@ -348,8 +366,21 @@ function banco(opts: OpcionesBanco = {}): Banco {
     { emit } as unknown as AuditService,
     fondos(cartera),
     permisos as unknown as BookingPermissionsService,
+    marca(soporte),
   );
-  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker, cartera, permisos };
+  return {
+    service,
+    contexts,
+    snapshots,
+    cache,
+    stub,
+    puerto,
+    emit,
+    breaker,
+    cartera,
+    permisos,
+    soporte,
+  };
 }
 
 async function bancoConBusqueda(opts: OpcionesBanco = {}, ctx = contexto()): Promise<Banco> {
@@ -638,6 +669,83 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
   });
 });
 
+describe('contacto de soporte: el PreBook avisa lo que el Book rechazaría con AGENCY_CONTACT_MISSING', () => {
+  it('con email y teléfono internacional (propios o heredados), la agencia está lista', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.bookingReadiness).toEqual({ agencyContact: 'ok' });
+    // El de la agencia que vende: la herencia de marca la resuelve la base (0030).
+    expect(b.soporte).toHaveBeenCalledWith(AGENCIA);
+  });
+
+  it('sin contacto, sin email válido o con un teléfono sin prefijo de país: missing, como en el Book', async () => {
+    for (const contacto of [
+      { email: null, phone: null },
+      { email: 'no-es-un-email', phone: '+57 601 555 0000' },
+      { email: 'reservas@agencia.example', phone: '601 555 0000' },
+      { email: 'reservas@agencia.example', phone: null },
+    ] satisfies SupportContact[]) {
+      const b = await bancoConBusqueda({ soporte: soporteQueResponde(contacto) });
+
+      const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+      expect(res.bookingReadiness).toEqual({ agencyContact: 'missing' });
+      // Es un aviso: la tarifa revalidada queda, y con el contacto cargado se reserva esta misma.
+      expect(await b.snapshots.get(AGENCIA, res.prebookRef)).toBeDefined();
+    }
+  });
+
+  it('si el contacto no se puede leer, el PreBook sale sin el aviso y lo decide el Book', async () => {
+    const b = await bancoConBusqueda({
+      soporte: vi.fn(() => Promise.reject(new Error(`base caída para ${AGENCIA}`))),
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('bookingReadiness');
+    expect(res.prebookRef).toMatch(/^[0-9a-f-]{36}$/);
+    // La cartera no depende de esta lectura.
+    expect(res.funding).toEqual({ status: 'ok', currency: 'USD' });
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    expect(logs).toContain(
+      `hotels.prebook.agency_contact_check_failed provider=${STUB} error=Error`,
+    );
+    expect(logs.join('\n')).not.toContain(AGENCIA);
+  });
+
+  it('un fallo que no es un Error tampoco tumba el PreBook ni llega al log con su contenido', async () => {
+    const b = await bancoConBusqueda({
+      soporte: soporteQueResponde().mockRejectedValue(`fila de ${AGENCIA}`),
+      cartera: carteraQueCubre().mockRejectedValue(`cartera de ${AGENCIA}`),
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('bookingReadiness');
+    expect(res).not.toHaveProperty('funding');
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    expect(logs).toContain(
+      `hotels.prebook.agency_contact_check_failed provider=${STUB} error=UnknownError`,
+    );
+    expect(logs).toContain(
+      `hotels.prebook.funding_check_failed provider=${STUB} error=UnknownError`,
+    );
+    expect(logs.join('\n')).not.toContain(AGENCIA);
+  });
+
+  it('un PreBook que el proveedor rechaza no pregunta por el contacto', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockRejectedValueOnce(new Error('proveedor caído'));
+
+    await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).rejects.toThrow(
+      'proveedor caído',
+    );
+    expect(b.soporte).not.toHaveBeenCalled();
+  });
+});
+
 describe('RF-15 CA-3: un cambio se informa y deja rastro, sin PII ni texto del proveedor', () => {
   it('UNCHANGED no emite `HotelOfferRepriced`', async () => {
     const b = await bancoConBusqueda();
@@ -777,6 +885,7 @@ describe('las puertas: todo rechazo ocurre ANTES de llamar al proveedor', () => 
       { emit: vi.fn() } as unknown as AuditService,
       fondos(carteraQueCubre()),
       permisosFake() as unknown as BookingPermissionsService,
+      marca(soporteQueResponde()),
     );
 
     const err: unknown = await service
@@ -1136,6 +1245,7 @@ function bancoTbo(
     { emit } as unknown as AuditService,
     fondos(carteraQueCubre()),
     permisosFake() as unknown as BookingPermissionsService,
+    marca(soporteQueResponde()),
   );
   return { hotels, prebooks, snapshots, fetch, emit };
 }

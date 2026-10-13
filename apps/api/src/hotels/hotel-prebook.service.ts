@@ -4,6 +4,7 @@ import type { HotelRateConditionCategory, HotelRateSignal } from '@sales-travel/
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
+import { BrandingService } from '../branding/branding.service.js';
 import type { BookingHoldPreview } from '../portfolios/booking-hold.js';
 import { PortfoliosService } from '../portfolios/portfolios.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
@@ -20,6 +21,7 @@ import {
 } from '../providers/hotel-provider.types.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { providerAccountIssueEvent } from './hotel-account-issues.js';
+import { agencyBookingContact } from './hotel-booking-contact.js';
 import { HotelNonRefundableBlockedError } from './hotel-booking-errors.js';
 import { HOTEL_EVENTS } from './hotel-events.js';
 import { effectiveNonRefundable, type HotelNonRefundableTerms } from './hotel-non-refundable.js';
@@ -46,6 +48,16 @@ export interface HotelPrebookRepricing {
 export interface HotelPrebookCondition {
   readonly category: HotelRateConditionCategory;
   readonly text: string;
+}
+
+/**
+ * Lo que el Book le va a exigir a la agencia y el PreBook ya puede decir, para que el vendedor no
+ * cargue huéspedes de una reserva que se va a rechazar. Por ahora, el contacto de soporte que viaja
+ * al proveedor (`hotel-booking-contact.ts`): `missing` es justo lo que el Book rechaza con
+ * `AGENCY_CONTACT_MISSING`.
+ */
+export interface HotelPrebookBookingReadiness {
+  readonly agencyContact: 'ok' | 'missing';
 }
 
 /** La respuesta de `POST /hotels/prebook` con el cuerpo neutral. */
@@ -82,9 +94,20 @@ export interface HotelPrebookResponse {
    * checkout avisa que la reserva no es real: no le asegura una habitación al cliente.
    */
   readonly providerEnvironment?: HotelAccountEnvironment;
+  /**
+   * Si la agencia tiene hoy lo que el Book le va a exigir. Es un aviso, como `funding`: el Book
+   * vuelve a decidir con el mismo predicado. Ausente si no se pudo leer: el PreBook no se cae por
+   * eso.
+   */
+  readonly bookingReadiness?: HotelPrebookBookingReadiness;
 }
 
 const OPERATION = 'la revalidación de una tarifa de su búsqueda (se revalida con su flujo propio)';
+
+/** El nombre de la clase del error para el log, nunca su mensaje. */
+function errorNameOf(err: unknown): string {
+  return err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
+}
 
 function repricingOf(comparison: HotelRepriceComparison): HotelPrebookRepricing {
   return {
@@ -120,6 +143,9 @@ function repricingOf(comparison: HotelRepriceComparison): HotelPrebookRepricing 
  * 8. **Aviso de cartera** (RF-23): si la agencia no tiene cartera en la moneda de la tarifa, la
  *    tiene suspendida o no le alcanza para el precio de venta, se dice ya, antes de que el vendedor
  *    cargue huéspedes. No rechaza el PreBook: el que rechaza, sin llamar al proveedor, es el Book.
+ * 9. **Contacto de soporte** de la agencia, con el mismo predicado del Book (`agencyBookingContact`):
+ *    sin email y teléfono internacional, el Book rechaza con `AGENCY_CONTACT_MISSING`, así que se
+ *    avisa acá, junto con la cartera. Tampoco rechaza el PreBook.
  *
  * **Tarifas no reembolsables** (pedido del founder del 2026-09-29). Si quien financia a la agencia
  * se las bloqueó (0055), el PreBook se rechaza con `NON_REFUNDABLE_BLOCKED`: antes de llamar al
@@ -140,6 +166,7 @@ export class HotelPrebookService {
     private readonly audit: AuditService,
     private readonly portfolios: PortfoliosService,
     private readonly permissions: BookingPermissionsService,
+    private readonly branding: BrandingService,
   ) {}
 
   async prebook(
@@ -260,7 +287,11 @@ export class HotelPrebookService {
       });
     }
 
-    const funding = await this.fundingOf(tenantId, code, offer.account.accountId, roompack);
+    // Las dos lecturas son avisos independientes y ninguna se cae: van a la par.
+    const [funding, bookingReadiness] = await Promise.all([
+      this.fundingOf(tenantId, code, offer.account.accountId, roompack),
+      this.bookingReadinessOf(tenantId, code),
+    ]);
     return {
       prebookRef,
       providerCode: code,
@@ -276,6 +307,7 @@ export class HotelPrebookService {
       ...(provider.accountEnvironment === undefined
         ? {}
         : { providerEnvironment: provider.accountEnvironment }),
+      ...(bookingReadiness === undefined ? {} : { bookingReadiness }),
     };
   }
 
@@ -308,9 +340,28 @@ export class HotelPrebookService {
       );
     } catch (err) {
       // Sin el mensaje: el de la base puede citar ids del tenant.
-      const errorName = err instanceof Error ? err.name.slice(0, 64) : 'UnknownError';
       this.logger.warn(
-        `hotels.prebook.funding_check_failed provider=${providerCode} error=${errorName}`,
+        `hotels.prebook.funding_check_failed provider=${providerCode} error=${errorNameOf(err)}`,
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * El contacto de soporte con la herencia de marca (0030) y el MISMO predicado que el Book, para
+   * que el aviso y el rechazo no se separen. Si no se puede leer, sale sin el aviso: el Book decide
+   * de todos modos.
+   */
+  private async bookingReadinessOf(
+    tenantId: string,
+    providerCode: string,
+  ): Promise<HotelPrebookBookingReadiness | undefined> {
+    try {
+      const contact = agencyBookingContact(await this.branding.resolveSupportContact(tenantId));
+      return { agencyContact: contact === undefined ? 'missing' : 'ok' };
+    } catch (err) {
+      this.logger.warn(
+        `hotels.prebook.agency_contact_check_failed provider=${providerCode} error=${errorNameOf(err)}`,
       );
       return undefined;
     }
