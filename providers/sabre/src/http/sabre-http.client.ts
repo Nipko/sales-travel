@@ -31,6 +31,10 @@ import { logRedacted, redactPath, type SabreLogLevel } from '../redaction';
  *
  * Los paths salen del contrato: `booking-management-v1.yml:15` declara `basePath /v1/trip/orders`
  * y las operaciones en `:64, :89, :190, :140, :214, :39`.
+ *
+ * Los dos de Stateless Ancillaries (`stateless-ancillaries-api-1.0.yml:11`, `:47`, `:66`) agregan y
+ * quitan servicios del PNR con `isCommitEnabled` (default `true`): un alta reintentada tras un
+ * timeout cobra la maleta dos veces. `/shop` es una lectura y se queda fuera.
  */
 export const SABRE_NON_IDEMPOTENT_PATHS: readonly string[] = [
   '/v1/trip/orders/createBooking',
@@ -39,6 +43,8 @@ export const SABRE_NON_IDEMPOTENT_PATHS: readonly string[] = [
   '/v1/trip/orders/refundFlightTickets',
   '/v1/trip/orders/modifyBooking',
   '/v1/trip/orders/cancelBooking',
+  '/v1/dc/ancillaries/add',
+  '/v1/dc/ancillaries/remove',
 ];
 
 /**

@@ -360,3 +360,47 @@ describe('SabreHttpClient — redacción de logs (RNF-07, R-13)', () => {
     expect(error.body).not.toContain('Pa55w0rd!');
   });
 });
+
+describe('SabreHttpClient — Stateless Ancillaries: agregar y quitar escriben en el PNR (SAB-19)', () => {
+  // Literales y no las constantes del builder: lo que se fija es la ruta del contrato
+  // (`stateless-ancillaries-api-1.0.yml:11`, `:47`, `:66`), no lo que el builder diga hoy. Las dos
+  // llevan `isCommitEnabled`: un alta reintentada tras un timeout cobra la maleta dos veces.
+  const WRITES = ['/v1/dc/ancillaries/add', '/v1/dc/ancillaries/remove'] as const;
+
+  it('las dos rutas de escritura están en la lista', () => {
+    for (const path of WRITES) expect(SABRE_NON_IDEMPOTENT_PATHS).toContain(path);
+  });
+
+  it.each(WRITES)('%s no se reintenta tras un 503 ni un 401, aunque se pida', async (path) => {
+    for (const status of [503, 401]) {
+      const spy = spyFetch(() => json({ message: 'down' }, status));
+      const { http, tokens } = client(spy);
+      await expect(http.postJson(path, {}, { idempotent: true })).rejects.toBeInstanceOf(
+        SabreApiError,
+      );
+      expect(spy.calls).toHaveLength(1);
+      expect(tokens.invalidated).toBe(0);
+    }
+  });
+
+  it('/v1/dc/ancillaries/shop es una lectura: con idempotent sí se reintenta', async () => {
+    const spy = spyFetch((n) =>
+      n === 1 ? json({ message: 'down' }, 503) : json({ offers: [{ id: 'o', items: [{}] }] }),
+    );
+    const { http } = client(spy);
+    const result = await http.postJson('/v1/dc/ancillaries/shop', {}, { idempotent: true });
+    expect(result.status).toBe(200);
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it('un {} en /v1/dc/ancillaries/remove no es éxito: no es el contrato de Manage Ancillary', async () => {
+    // `SABRE_EMPTY_BODY_SUCCESS_PATHS` admite `{}` en `/v1/ancillaries/remove`, cuyo schema sólo
+    // declara `errors[]`. El de Stateless declara `results[]`: aquí `{}` es un fallo silencioso.
+    const spy = spyFetch(() => json({}));
+    const { http } = client(spy);
+    await expect(http.postJson('/v1/dc/ancillaries/remove', {})).rejects.toBeInstanceOf(
+      SabreApiError,
+    );
+    expect(spy.calls).toHaveLength(1);
+  });
+});
