@@ -2,7 +2,7 @@ import { createElement, type ButtonHTMLAttributes } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HotelOffer, HotelProviderOutcome, HotelRoompack } from '../actions';
-import { encodeHotelKey } from './hotel-key';
+import { encodeHotelKey, hotelRefsOf } from './hotel-key';
 import { testAccountView, type TestAccountView } from './hotel-provider-view';
 import { HotelResultCard, HotelResultRates } from './hotel-result-card';
 import { HotelResults } from './hotel-results';
@@ -19,6 +19,7 @@ import {
 import { ResultsFiltersPanel } from './hotel-results-filters-panel';
 import { HotelResultsMap } from './hotel-results-map';
 import { detailLinkForOffer, type HotelDetailLink, type HotelStay } from './hotel-search-handoff';
+import { rememberRoomContent } from './use-room-content';
 
 /*
  * La tarjeta y el panel de filtros en su primer pintado: lo que el vendedor no puede pasar por alto
@@ -681,5 +682,80 @@ describe('HotelResultsMap', () => {
       createElement(HotelResultsMap, { items: [itemOf(TBO_HOTEL)], photos: new Map(), nights: 3 }),
     );
     expect(html).not.toContain('Ver hotel');
+  });
+});
+
+// ───────────────────────── Fotos de cada tipo de habitación (TBO-07) ─────────────────────────
+
+const ROOM_PHOTOS = [1, 2].map((n) => `/api/hotels/images/cm9vbS0${n}`);
+
+/** Un hotel propio de estos tests: lo recordado de un hotel vale para toda la pestaña. */
+function hotelConFotos(hotelId: string, provider = 'tbo-hotels'): HotelOffer {
+  return {
+    ...TBO_HOTEL,
+    hotelId,
+    roompacks: [
+      tarifa('F1', 690_000_00, {
+        provider: { name: provider, offerRef: 'F1-REF', raw: { searchId: SEARCH_ID } },
+        rooms: [
+          {
+            name: 'Doble estándar',
+            reference: 1,
+            bedOptions: [],
+            occupancy: { adults: 2, childrenAges: [] },
+          },
+        ],
+      }),
+    ],
+  };
+}
+
+describe('HotelResultRates — fotos, tamaño y descripción de cada tipo', () => {
+  it('al desplegarla, mientras se piden: un esqueleto del tamaño de la miniatura', () => {
+    const html = rates(hotelConFotos('fotos-1'));
+    expect(html).toMatch(
+      /<div aria-hidden="true" data-room-photo-skeleton="" class="relative h-\[72px\] w-24 [^"]*sm:h-24 sm:w-32/,
+    );
+    expect(html).not.toContain('lucide-bed-double');
+  });
+
+  it('ya traídas: la miniatura abre las fotos y, por nombre, dice «Foto de referencia»', () => {
+    const offer = hotelConFotos('fotos-2');
+    rememberRoomContent(encodeHotelKey(hotelRefsOf(offer)) ?? '', {
+      byProvider: {
+        'tbo-hotels': {
+          status: 'ready',
+          rooms: [
+            {
+              roomKey: 'n-doble',
+              roomId: null,
+              nameKey: 'doble estandar',
+              name: 'Doble Estándar',
+              sizeText: '1830 ft',
+              sizeM2: 170,
+              description: 'Vista al jardín & escritorio.',
+              images: ROOM_PHOTOS,
+            },
+          ],
+        },
+      },
+    });
+    const html = rates(offer);
+    expect(html).not.toContain('data-room-photo-skeleton');
+    expect(html).toMatch(
+      /<button type="button" aria-haspopup="dialog" aria-label="Ver 2 fotos de Doble estándar" aria-describedby="([^"]+)"[^>]*>.*?<\/button><p id="\1" title="Es la foto de una habitación con el mismo nombre en el catálogo del proveedor\."[^>]*>Foto de referencia/,
+    );
+    expect(html).toContain('alt="Foto de Doble estándar"');
+    expect(html).toContain('/_next/image?url=%2Fapi%2Fhotels%2Fimages%2Fcm9vbS01');
+    expect(html).toMatch(/>\+1<\/span>/);
+    expect(html).toContain('2 adultos · ≈ 170 m²');
+    // Texto plano, escapado.
+    expect(html).toContain('Vista al jardín &amp; escritorio.');
+  });
+
+  it('un hotel sin proveedor que dé contenido queda como siempre: el icono de la cama', () => {
+    const html = rates(hotelConFotos('fotos-3', 'despegar-hotels'));
+    expect(html).toContain('lucide-bed-double');
+    expect(html).not.toContain('data-room-photo-skeleton');
   });
 });

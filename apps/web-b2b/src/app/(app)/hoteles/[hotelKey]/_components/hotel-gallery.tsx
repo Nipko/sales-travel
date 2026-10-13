@@ -33,12 +33,26 @@ import {
  *
  * Todas las fotos van por `next/image` sobre el proxy propio (miniaturas WebP del propio origen,
  * CSP `img-src 'self'`): el navegador nunca le pide nada al host de fotos del proveedor.
+ *
+ * Dentro de un diálogo (las fotos de un tipo de habitación, TBO-07) las miniaturas van siempre en
+ * una tira debajo: el diálogo no tiene el ancho de la página para la hoja de contactos al costado.
  */
 
-const STAGE_SIZES = '(min-width: 1024px) 720px, 100vw';
+/** Dónde se pinta: en la ficha, a todo el ancho; en un diálogo, más angosta. */
+export type GalleryVariant = 'page' | 'dialog';
 
-const STAGE_BOX =
-  'relative aspect-[4/3] overflow-hidden rounded-lg bg-[var(--color-surface-muted)] sm:aspect-[16/9] lg:aspect-[16/10] lg:max-h-[30rem]';
+const STAGE_SIZES: Record<GalleryVariant, string> = {
+  page: '(min-width: 1024px) 720px, 100vw',
+  dialog: '(min-width: 800px) 720px, 100vw',
+};
+
+const STAGE_BOX_BASE =
+  'relative aspect-[4/3] overflow-hidden rounded-lg bg-[var(--color-surface-muted)]';
+
+const STAGE_BOX: Record<GalleryVariant, string> = {
+  page: `${STAGE_BOX_BASE} sm:aspect-[16/9] lg:aspect-[16/10] lg:max-h-[30rem]`,
+  dialog: `${STAGE_BOX_BASE} sm:aspect-[16/10]`,
+};
 
 const NAV_BUTTON =
   'absolute top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/90 text-[var(--color-fg)] shadow-[var(--shadow-sm)] transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]';
@@ -86,7 +100,15 @@ function GalleryImage({
   );
 }
 
-export function HotelGallery({ images, name }: { images: readonly string[]; name: string }) {
+export function HotelGallery({
+  images,
+  name,
+  variant = 'page',
+}: {
+  images: readonly string[];
+  name: string;
+  variant?: GalleryVariant;
+}) {
   const gallery = useMemo(() => galleryPhotos(images), [images]);
   const { photos } = gallery;
   const count = photos.length;
@@ -149,6 +171,7 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
   const position = galleryPositionLabel(current, count);
   const caption = galleryCaption(gallery);
   const withThumbnails = count > 1;
+  const sideThumbnails = withThumbnails && variant === 'page';
 
   return (
     <section
@@ -157,7 +180,7 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
       onKeyDown={onKeyDown}
       className="space-y-1.5"
     >
-      <div className={cn('grid gap-2', withThumbnails && 'lg:grid-cols-[minmax(0,1fr)_16rem]')}>
+      <div className={cn('grid gap-2', sideThumbnails && 'lg:grid-cols-[minmax(0,1fr)_16rem]')}>
         <div
           id={stageId}
           role={withThumbnails ? 'tabpanel' : 'group'}
@@ -168,16 +191,17 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
           onPointerCancel={() => {
             pointer.current = null;
           }}
-          className={cn(STAGE_BOX, 'touch-pan-y select-none')}
+          className={cn(STAGE_BOX[variant], 'touch-pan-y select-none')}
         >
           <GalleryImage
             key={src}
             src={src}
             alt={`${name}, ${position.toLowerCase()}`}
             fill
-            sizes={STAGE_SIZES}
+            sizes={STAGE_SIZES[variant]}
             quality={75}
-            priority={current === 0}
+            // En un diálogo se abre con un clic: precargarla con la página no sirve de nada.
+            priority={variant === 'page' && current === 0}
             draggable={false}
             className="object-cover"
             fallback={
@@ -195,7 +219,7 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
               alt=""
               aria-hidden="true"
               fill
-              sizes={STAGE_SIZES}
+              sizes={STAGE_SIZES[variant]}
               quality={75}
               loading="eager"
               className="pointer-events-none invisible object-cover"
@@ -238,7 +262,11 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
               ref={listRef}
               role="tablist"
               aria-label={`Elegir una foto de ${name}`}
-              className="flex gap-2 overflow-x-auto p-1 lg:absolute lg:inset-0 lg:grid lg:grid-cols-3 lg:content-start lg:gap-1.5 lg:overflow-y-auto lg:overflow-x-hidden"
+              className={cn(
+                'flex gap-2 overflow-x-auto p-1',
+                sideThumbnails &&
+                  'lg:absolute lg:inset-0 lg:grid lg:grid-cols-3 lg:content-start lg:gap-1.5 lg:overflow-y-auto lg:overflow-x-hidden',
+              )}
             >
               {photos.map((photo, i) => {
                 const selected = i === current;
@@ -256,7 +284,8 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
                     tabIndex={selected ? 0 : -1}
                     onClick={() => select(i, 'thumb')}
                     className={cn(
-                      'relative h-14 w-20 shrink-0 overflow-hidden rounded-md bg-[var(--color-surface-muted)] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)] lg:aspect-[4/3] lg:h-auto lg:w-auto',
+                      'relative h-14 w-20 shrink-0 overflow-hidden rounded-md bg-[var(--color-surface-muted)] transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
+                      sideThumbnails && 'lg:aspect-[4/3] lg:h-auto lg:w-auto',
                       selected
                         ? 'ring-2 ring-[var(--color-primary)]'
                         : 'opacity-75 hover:opacity-100',
@@ -305,7 +334,7 @@ export function HotelGallery({ images, name }: { images: readonly string[]; name
 export function GallerySkeleton({ searching }: { searching: boolean }) {
   return (
     <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_16rem]">
-      <div className={STAGE_BOX}>
+      <div className={STAGE_BOX.page}>
         <div
           aria-hidden="true"
           className="absolute inset-0 bg-[var(--color-surface-muted)] motion-safe:animate-pulse"

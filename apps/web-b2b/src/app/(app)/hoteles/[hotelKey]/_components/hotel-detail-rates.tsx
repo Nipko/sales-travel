@@ -21,6 +21,8 @@ import type { HotelStay } from '../../_components/hotel-search-handoff';
 import { isRateExpired, OfferExpiry } from '../../_components/offer-expiry';
 import { RateBookAction } from '../../_components/rate-book-action';
 import type { RateRefundability } from '../../_components/rate-refundability';
+import { groupRoomContent } from '../../_components/room-content-match';
+import type { RoomContentState } from '../../_components/room-content-view';
 import { roomTypesCountText } from '../../_components/room-type-groups';
 import { RoomTypeList } from '../../_components/room-type-list';
 import { TestAccountNotice } from '../../_components/test-account-notice';
@@ -331,7 +333,14 @@ interface HotelDetailRatesProps {
   facts: ReadonlyMap<string, HotelFacts>;
   /** Los del encabezado de la página. */
   shownFacts: HotelFacts | undefined;
+  /**
+   * Fotos, tamaño y descripción de las habitaciones según el catálogo del proveedor (TBO-07): se
+   * piden junto con las tarifas y llegan por su cuenta. Sin ellas, cada tipo con su icono.
+   */
+  roomContent?: RoomContentState;
 }
+
+const NO_ROOM_CONTENT: RoomContentState = { status: 'idle' };
 
 export function HotelDetailRates({
   hotelKey,
@@ -344,6 +353,7 @@ export function HotelDetailRates({
   onReload,
   facts,
   shownFacts,
+  roomContent = NO_ROOM_CONTENT,
 }: HotelDetailRatesProps) {
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const [expiredCutoffMs, setExpiredCutoffMs] = useState<number | undefined>(undefined);
@@ -465,6 +475,7 @@ export function HotelDetailRates({
               isExpired={(plan) => expired(plan.row)}
               isUnavailable={unavailable}
               testAccountCodes={testAccount.codes}
+              roomContent={(group) => groupRoomContent(group, roomContent)}
               planNotice={({ row, refund }) => {
                 const seller = row.pack.provider?.name;
                 const note =

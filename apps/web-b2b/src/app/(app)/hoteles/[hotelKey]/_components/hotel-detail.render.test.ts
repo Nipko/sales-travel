@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { hotelImageProxyUrl } from '../../../../../lib/hotel-image-proxy';
 import type { HotelRoompack } from '../../actions';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
+import type { RoomContent, RoomContentState } from '../../_components/room-content-view';
+import { RoomPhotosDialog } from '../../_components/room-photo';
 import type { HotelDetailRatesResult } from '../actions';
 import { LocationCard } from './hotel-content-sections';
 import { HotelDetailRates, RatesRefundNoticeBox } from './hotel-detail-rates';
@@ -189,6 +191,7 @@ const NO_REEMBOLSABLE: Partial<HotelRoompack> = {
 function detailRates(
   roompacks: HotelRoompack[],
   extra: Partial<HotelDetailRatesResult> = {},
+  roomContent?: RoomContentState,
 ): string {
   return renderToStaticMarkup(
     createElement(HotelDetailRates, {
@@ -209,6 +212,7 @@ function detailRates(
       onReload: () => undefined,
       facts: new Map(),
       shownFacts: { name: 'Hotel Plaza' },
+      ...(roomContent === undefined ? {} : { roomContent }),
     }),
   );
 }
@@ -292,5 +296,159 @@ describe('HotelDetailRates — cuenta de prueba', () => {
     const html = detailRates([tarifa('A', 400_00, 'Doble')]);
     expect(html).not.toContain('cuenta de prueba');
     expect(html).not.toContain('>Prueba</span>');
+  });
+});
+
+// ───────────────────────── Fotos de cada tipo de habitación (TBO-07) ─────────────────────────
+
+function cuarto(extra: Partial<RoomContent> & Pick<RoomContent, 'roomKey'>): RoomContent {
+  return {
+    roomId: null,
+    nameKey: null,
+    name: null,
+    sizeText: null,
+    sizeM2: null,
+    description: null,
+    images: PHOTOS,
+    ...extra,
+  };
+}
+
+const DELUXE = cuarto({
+  roomKey: '77',
+  roomId: '77',
+  nameKey: 'deluxe king',
+  name: 'Deluxe King Room',
+  sizeM2: 32,
+  description: 'Cama king, escritorio y baño con ducha de lluvia.',
+});
+const SUPERIOR = cuarto({
+  roomKey: 'n-sup',
+  nameKey: 'superior twin',
+  sizeText: 'Amplia',
+  description: `${'Dos camas individuales con vista a la ciudad, minibar y caja fuerte. '.repeat(3)}Fin.`,
+});
+
+const listo = (rooms: RoomContent[]): RoomContentState => ({
+  status: 'done',
+  reply: { byProvider: { 'tbo-hotels': { status: 'ready', rooms } } },
+});
+
+/** La sección (el tipo de habitación) cuyo título es `title`. */
+function seccion(html: string, title: string): string {
+  return (
+    [...html.matchAll(/<section[^>]*>.*?<\/section>/g)]
+      .map((m) => m[0])
+      .find((s) => s.includes(`>${title}</h3>`)) ?? ''
+  );
+}
+
+describe('HotelDetailRates — fotos, tamaño y descripción de cada tipo', () => {
+  const tarifas = [
+    tarifa('D1', 400_00, 'Deluxe King', {}, '77'),
+    tarifa('S', 300_00, 'Superior Twin', {}),
+  ];
+
+  it('por id: la miniatura con su contador, sin «Foto de referencia»', () => {
+    const deluxe = seccion(detailRates(tarifas, {}, listo([DELUXE, SUPERIOR])), 'Deluxe King');
+    expect(deluxe).toContain('aria-label="Ver 3 fotos de Deluxe King"');
+    expect(deluxe).toContain('aria-haspopup="dialog"');
+    expect(deluxe).toContain('alt="Foto de Deluxe King"');
+    expect(deluxe).toContain('/_next/image?url=%2Fapi%2Fhotels%2Fimages%2F');
+    expect(deluxe).not.toContain('tbotechnology.in');
+    expect(deluxe).toMatch(/>\+2<\/span>/);
+    expect(deluxe).not.toContain('Foto de referencia');
+    expect(deluxe).toContain('2 adultos · ≈ 32 m²');
+    expect(deluxe).toContain('Cama king, escritorio y baño con ducha de lluvia.');
+    // Corta: entra en dos líneas, sin «Ver más».
+    expect(deluxe).not.toContain('Ver más');
+  });
+
+  it('por nombre: «Foto de referencia» con su explicación; la descripción larga, con «Ver más»', () => {
+    const superior = seccion(detailRates(tarifas, {}, listo([DELUXE, SUPERIOR])), 'Superior Twin');
+    expect(superior).toMatch(
+      /aria-describedby="([^"]+)".*<p id="\1" title="Es la foto de una habitación con el mismo nombre en el catálogo del proveedor\."[^>]*>Foto de referencia/,
+    );
+    expect(superior).toContain('2 adultos · Amplia');
+    expect(superior).toMatch(/<p id="[^"]+" class="[^"]*line-clamp-2[^"]*">Dos camas/);
+    expect(superior).toMatch(
+      /<button type="button" aria-expanded="false" aria-controls="[^"]+"[^>]*>Ver más<svg[^>]*>.*?<\/svg><span class="sr-only"> de la descripción de Superior Twin<\/span><\/button>/,
+    );
+  });
+
+  it('el diálogo: la galería de la habitación, su tamaño y su descripción completa', () => {
+    const matched = {
+      key: 'tbo-hotels:n-sup',
+      name: 'Superior Twin',
+      room: SUPERIOR,
+      exact: false,
+      slotIndexes: [0],
+    };
+    const html = renderToStaticMarkup(
+      createElement(RoomPhotosDialog, { matched, open: true, onClose: () => undefined }),
+    );
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toMatch(/<h2 id="[^"]+"[^>]*>Superior Twin<\/h2>/);
+    expect(html).toContain(
+      'Foto de referencia. Es la foto de una habitación con el mismo nombre en el catálogo del proveedor.',
+    );
+    expect(html).toContain('aria-roledescription="carrusel"');
+    expect(html).toContain('aria-label="Fotos de Superior Twin"');
+    expect(html.match(/role="tab"/g)).toHaveLength(3);
+    // Angosta: la tira de miniaturas debajo, sin la hoja de contactos al costado.
+    expect(html).not.toContain('lg:grid-cols-[minmax(0,1fr)_16rem]');
+    expect(html).toContain('Amplia');
+    expect(html).toContain('Fin.');
+    // Por id no hay nada que aclarar; cerrado, no pinta nada.
+    expect(
+      renderToStaticMarkup(
+        createElement(RoomPhotosDialog, {
+          matched: { ...matched, exact: true },
+          open: true,
+          onClose: () => undefined,
+        }),
+      ),
+    ).not.toContain('Foto de referencia');
+    expect(
+      renderToStaticMarkup(
+        createElement(RoomPhotosDialog, { matched, open: false, onClose: () => undefined }),
+      ),
+    ).toBe('');
+  });
+
+  it('pidiéndolas o pending: un esqueleto del tamaño de la miniatura en cada tipo de TBO', () => {
+    const states: RoomContentState[] = [
+      { status: 'loading' },
+      {
+        status: 'done',
+        reply: {
+          byProvider: { 'tbo-hotels': { status: 'pending', retryAfterMs: 3_000, rooms: [] } },
+        },
+      },
+    ];
+    for (const state of states) {
+      const html = detailRates(tarifas, {}, state);
+      expect(html.match(/data-room-photo-skeleton=""/g)).toHaveLength(2);
+      expect(html).not.toContain('lucide-bed-double');
+    }
+  });
+
+  it('sin contenido (none, disabled o sin coincidencia): como hoy, con el icono de la cama', () => {
+    const states: (RoomContentState | undefined)[] = [
+      undefined,
+      { status: 'done', reply: { byProvider: { 'tbo-hotels': { status: 'none', rooms: [] } } } },
+      {
+        status: 'done',
+        reply: { byProvider: { 'tbo-hotels': { status: 'disabled', rooms: [] } } },
+      },
+      listo([cuarto({ roomKey: 'n-x', nameKey: 'junior suite' })]),
+    ];
+    for (const state of states) {
+      const html = detailRates(tarifas, {}, state);
+      expect(html.match(/lucide-bed-double/g)).toHaveLength(2);
+      expect(html).not.toContain('data-room-photo-skeleton');
+      expect(html).not.toContain('Foto de');
+    }
   });
 });
