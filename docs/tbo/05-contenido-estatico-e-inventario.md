@@ -433,7 +433,8 @@ Search, `RoomID` es un **array de strings** (`["197354"]`); en `HotelDetails`, `
 trae un ejemplo completo con `IsRoomDetailRequired: true` y la tabla de §14 no incluye ninguno de estos campos
 (VERIFICADO-PDF pp. 56-59). Postura: el schema Zod del ACL deja pasar claves desconocidas en `HotelDetails[]`, la
 función queda **apagada** hasta tener un fixture real capturado en test, y `RoomId` se normaliza a string; `0` o
-`"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search sin imágenes de habitación
+`"0"` significa "sin mapeo", y en ese caso se usa `Rooms[].Name[i]` de Search y la foto sale sólo con un nombre
+idéntico de candidato único, marcada «Foto de referencia» (D-TBO-H2, opción 2; ver «En la pantalla», abajo)
 → [Q-65](./10-preguntas-para-tbo.md#q-65). El uso de `RoomID` en la oferta está en [02](./02-search-y-oferta-canonica.md).
 
 **Estado del ACL (TBO-05, 2026-10-13).** El cliente de contenido puede mandar `IsRoomDetailRequired: true`
@@ -486,6 +487,27 @@ tamaño y descripción de cada habitación de UN hotel (`HotelRoomContentService
   pies convertido y redondeado, fuera de 5–500 `null`.
 - **Diagnóstico.** Cada llamada deja una línea `hotels.room_content.traido` con el resultado (`rooms`, `none`,
   `unreadable`), cuántas vinieron, cuántas se guardaron y cuántas rechazó la base: sin códigos ni contenido.
+
+**En la pantalla (TBO-07, 2026-10-13).** Cada tipo de habitación de la ficha y de la tarjeta desplegada de los
+resultados muestra la foto, el tamaño (`≈ 32 m²`, o el texto del proveedor si no se pudo convertir) y la descripción
+(dos líneas con «Ver más») de su habitación en el catálogo:
+
+- **Enlace (D-TBO-H2 = opción 2).** Primero el `roomTypeId` de la tarifa EN ESE proveedor contra el `roomId` del
+  catálogo: es la misma habitación. Si no hay id que coincida, el `nameKey` idéntico y sólo con **un** candidato que no
+  tenga otro id: la foto lleva «Foto de referencia» («Es la foto de una habitación con el mismo nombre en el catálogo
+  del proveedor.»). Dos candidatos con el mismo nombre, o uno con un id distinto del de la tarifa: sin foto. La
+  coincidencia por el inicio del nombre (opción 3) está escrita y apagada (`allowPrefix`).
+- **Cuándo se pide.** En la ficha, apenas se lee la búsqueda de origen, en paralelo a las tarifas; en los resultados,
+  sólo al desplegar la tarjeta. El panel lo pide a su ruta `GET /api/hotels/rooms/<clave del hotel>?lang=es`, que llama
+  al API por cada proveedor del hotel que da contenido. Es una ruta y no una acción del servidor porque el cliente de
+  Next despacha las acciones de a una: una espera de hasta 6 s dejaría «Buscar de nuevo» o «Ver más hoteles» detrás de
+  unas fotos. Con `pending` se vuelve a preguntar a los `retryAfterMs`, hasta 3 veces; lo completo se recuerda por
+  hotel mientras dura la pestaña (hasta 60 hoteles).
+- **Sin riesgo para la ficha.** Mientras se pide o sigue `pending`, un esqueleto del tamaño de la miniatura; con
+  `none`, `disabled`, un error o sin coincidencia, el tipo queda como antes (el icono de la cama). La miniatura
+  (`next/image` sobre el proxy propio, 96×72 en el teléfono y 128×96 desde `sm`) abre un diálogo con la galería de la
+  habitación, su tamaño y la descripción completa. Una combinación de varias habitaciones muestra una miniatura por
+  habitación distinta, hasta tres.
 
 ---
 
