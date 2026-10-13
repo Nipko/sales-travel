@@ -39,9 +39,9 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | **Forzar cambio de contraseña en el próximo ingreso**                          | Equipo → acciones → Acceso                | Soporte a un miembro. Los mismos 409 que enviar el enlace                                 | **Hecho (USR-3)**: el login responde 403 hasta que la elija               |
 | Suspender / reactivar la cuenta en toda la plataforma                          | Plataforma → Usuarios → acciones          | Superadmin. Nunca la propia ni la del último superadmin activo                            | **Hecho (USR-4)**: la confirmación dice lo que corta                      |
 | Buscar a cualquier persona de la red (nombre, correo, filtros)                 | Plataforma → Usuarios                     | Superadmin                                                                                | **Hecho (USR-4)**                                                         |
-| Ver la ficha de una persona (perfil, seguridad, nodos, sesiones, invitaciones) | Ficha del usuario                         | Admin del nodo, sobre alguien de su subárbol (también uno mismo); superadmin (todo)       | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
-| Cerrar una sesión puntual                                                      | Ficha del usuario → Sesiones              | Admin del nodo que supere su rol sobre el nodo de esa sesión; superadmin. Nunca la propia | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
-| Ver el historial de una persona y la actividad de la red                       | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                               | **Hecho (USR-6)**: Actividad filtrable; el historial en la ficha es USR-7 |
+| Ver la ficha de una persona (perfil, seguridad, nodos, sesiones, invitaciones) | Ficha del usuario                         | Admin del nodo, sobre alguien de su subárbol (también uno mismo); superadmin (todo)       | **Hecho (USR-5, USR-7)**: panel lateral desde Equipo y el directorio      |
+| Cerrar una sesión puntual                                                      | Ficha del usuario → Sesiones              | Admin del nodo que supere su rol sobre el nodo de esa sesión; superadmin. Nunca la propia | **Hecho (USR-5, USR-7)**: desde la ficha, con confirmación                |
+| Ver el historial de una persona y la actividad de la red                       | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                               | **Hecho (USR-6, USR-7)**: Actividad filtrable e historial en la ficha     |
 | Invitar o promover a un admin de consolidador                                  | Equipo, en un nodo consolidador           | Superadmin                                                                                | **Hecho (USR-9)**: no se ofrece en la raíz ni en agencias                 |
 | Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
@@ -591,3 +591,73 @@ que los filtros corren en el navegador, sin otra consulta ni cambios de API.
   suspendidos juntos, la lista vacía por filtros y por búsqueda, el orden y el nombre del botón, la
   columna Alta (relativa, exacta en el `title`, sólo desde `xl`), sin barra mientras carga, con error
   o sin miembros, y todo en tú.
+
+## Ficha del usuario en el panel lateral (USR-7)
+
+Sólo panel: la API de la ficha es USR-5 y la del historial USR-6 (`user.passwordResetRequired` ya
+viene desde USR-5). El nombre de cada persona, en Equipo y en Plataforma → Usuarios, es un botón
+("Ver la ficha de {nombre}", `aria-haspopup="dialog"`) que abre su ficha.
+
+### Panel
+
+- **Panel lateral** (`Sheet`, el mismo de `FormSheet`, que ahora lo comparte): a la derecha en
+  escritorio, pantalla completa en el teléfono; diálogo modal nombrado por la persona y descrito por
+  su correo; Escape, la X, el fondo o _Cerrar_ lo cierran y el foco vuelve al nombre que lo abrió.
+- **Cabecera**: nombre, correo y marcas: _Cuenta suspendida_, _Suspendido en este nodo_ (desde
+  Equipo), _Bloqueado_, _Cambio de contraseña pendiente_, _2FA pendiente_ (si un acceso activo lo
+  exige); sin nada de eso, _Activo_. En la propia ficha, _Tú_.
+- **Perfil**: correo verificado o sin verificar, alta, último acceso e "Invitado por {correo} ·
+  {hace…}" (sin invitación registrada, la fila no se muestra).
+- **Nodos y roles**: "{Nodo} · {Rol} · {Activo|Suspendido}". Desde Equipo, sólo los nodos que
+  administra quien mira (lo filtra el API).
+- **Seguridad**: "2FA activo desde el {fecha}" o "Sin 2FA" (con "su rol lo exige…" si corresponde);
+  códigos de recuperación y equipos de confianza sólo con 2FA; "Bloqueado hasta las {HH:MM}" con
+  _Desbloquear_ al lado (la misma acción del menú); intentos fallidos sin bloqueo; "Contraseña cambiada
+  {hace…}" y el cambio pendiente. Un dato que el API no manda no se muestra: nunca un "0" inventado.
+- **Sesiones abiertas ({n})**: equipo legible (el mismo resumen del user-agent que Puestos), IP, nodo
+  y "Activa {hace…}", con _Cerrar esta sesión_. Confirmación "Cerrar esta sesión de {nombre}" y aviso
+  "Cerramos esa sesión de {nombre}."; un 404 es que ya no estaba abierta y la ficha se relee. Nunca
+  sobre la propia (en la propia ficha se dice que se cierran desde Mi cuenta → Seguridad) ni a quien
+  quien mira no supera en rango (el API decide; el panel no lo ofrece si `canActOn` dice que no).
+  Desde el directorio, el cierre va por la ruta de Equipo con el nodo de la sesión; una sesión sin
+  nodo no se cierra de a una. Vacío: "No tiene sesiones abiertas en los nodos que administras."
+  (Equipo) o "No tiene sesiones abiertas." (directorio).
+- **Invitaciones que envió**: cuántas pendientes y hasta 20, con rol, nodo y vencimiento.
+- **Actividad**: el historial con las frases de `lib/audit-format`, dónde y quién, y _Cargar más_
+  (`aria-disabled` mientras carga, para no soltar el foco). Vacío: "Sin actividad registrada."
+- **Pie**: _Cerrar_ y _Acciones_, que abre hacia arriba el mismo menú agrupado de la fila: _Acceso_,
+  _Seguridad_ y _Membresía_ (la fila ahora también nombra este último grupo). Lo corren los handlers
+  de Equipo, que devuelven el resultado: pedido desde la fila, el error va en la fila; desde la ficha,
+  en el pie de la ficha. Al salir bien, la ficha y su actividad se releen (y Equipo recarga la lista
+  y los puestos). Mientras corre, _Acciones_ queda `aria-disabled`. El menú va sin portal, dentro del
+  diálogo: con `aria-modal` un lector de pantalla no lo deja de lado, y `useModalBehavior` ahora
+  respeta un Escape o un Tab que ya atendió Radix (`defaultPrevented`), así Escape cierra el menú y no
+  también la ficha.
+- **Directorio**: el menú suma el soporte de Equipo por uno de sus nodos (el primero activo; el
+  superadmin puede por cualquiera y el API pide membership en ése), la cuenta (_Suspender en toda la
+  plataforma_ / _Reactivar cuenta_, el handler de USR-4) y _Ver en Equipo_. Cada vez que la ficha se
+  lee, su fila del directorio se pone al día (estado, bloqueo, 2FA, sesiones).
+- **Estados**: cargando (el nombre de la fila en el título y un esqueleto), error con su motivo en tú
+  y _Reintentar_ (403: no administras el nodo, o "sólo para el superadmin"; 404: ya no está en el
+  nodo, o no encontramos la cuenta).
+
+### BFF
+
+- `GET /api/tenants/:tenantId/members/:userId` y `.../audit`, `GET /api/admin/users/:userId` y
+  `.../audit`: `forwardRead` con los ids validados y la consulta del historial reconstruida (`before`
+  con la forma del cursor del API, `limit` de 1 a 100; otro parámetro es 400).
+- `POST /api/tenants/:tenantId/members/:userId/sessions/:sessionId/revoke`: `forwardAction`, sólo
+  desde el mismo origen.
+
+### Tests
+
+- `lib/member-detail.test.ts`: la lectura tolerante (sin id o correo es error; lo raro queda sin dato;
+  filas incompletas descartadas), las marcas, cada frase, el equipo legible, de qué nodo sale el
+  cierre, el nodo de soporte del directorio, la fila puesta al día y las llamadas con sus errores.
+- `lib/tenant-admin-proxy.test.ts`, `lib/platform-users-proxy.test.ts` y
+  `lib/member-detail-routes.test.ts`: las rutas del API que arma el borde, la consulta reconstruida y
+  las cinco rutas del panel (ids, mismo origen, estado y motivo del API).
+- `member-sheet.render.test.ts`: el diálogo y su nombre, cada sección con su vacío, qué se ofrece
+  (cerrar una sesión ajena, desbloquear, el menú), cargando y error, el pie, el botón del nombre en la
+  lista y todo en tú. `platform-users.render.test.ts`: el nombre como botón y el menú del directorio.
+  `team.render.test.ts`: el menú de la fila con _Membresía_.
