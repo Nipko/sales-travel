@@ -113,7 +113,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(operations).toContain('/reservas');
   });
 
-  it('Plataforma: Resumen, Agencias, Carteras y Proveedores', () => {
+  it('Plataforma: Resumen, Agencias, Carteras, Proveedores y Usuarios', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
     expect(platform.map((i) => [i.label, i.href])).toEqual([
@@ -121,6 +121,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
       ['Agencias', '/admin/tenants'],
       ['Carteras', '/admin/plataforma/carteras'],
       ['Proveedores', '/admin/plataforma/proveedores'],
+      ['Usuarios', '/admin/plataforma/usuarios'],
     ]);
   });
 
