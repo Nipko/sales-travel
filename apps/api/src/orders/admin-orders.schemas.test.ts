@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { OrderStatus } from '../database/database.types.js';
 import {
   ADMIN_ORDERS_MAX_PAGE,
+  ADMIN_ORDERS_MAX_QUERY,
   ADMIN_ORDERS_PAGE,
   AdminOrdersQuerySchema,
   ORDER_STATUSES,
@@ -99,7 +100,10 @@ describe('AdminOrdersQuerySchema', () => {
 
   it('la búsqueda: de 2 a 100 caracteres y sin caracteres de control', () => {
     expect(messages({ q: ' a ' })).toEqual(['escribe al menos 2 caracteres']);
-    expect(parse({ q: 'x'.repeat(101) }).success).toBe(false);
+    expect(messages({ q: 'x'.repeat(ADMIN_ORDERS_MAX_QUERY + 1) })).toEqual([
+      `la búsqueda puede tener hasta ${ADMIN_ORDERS_MAX_QUERY} caracteres`,
+    ]);
+    expect(parse({ q: 'x'.repeat(ADMIN_ORDERS_MAX_QUERY) }).success).toBe(true);
     expect(messages({ q: 'ab\u0000cd' })).toEqual(['la búsqueda tiene caracteres no válidos']);
     expect(AdminOrdersQuerySchema.parse({ q: 'cliente@correo.com' }).q).toBe('cliente@correo.com');
   });
@@ -124,7 +128,7 @@ describe('AdminOrdersQuerySchema', () => {
     expect(messages({ cursor: encode({ at: CURSOR.at, id: 'no-es-un-uuid' }) })).toEqual([invalid]);
     expect(messages({ cursor: encode([CURSOR.at, CURSOR.id]) })).toEqual([invalid]);
     expect(messages({ cursor: encode(null) })).toEqual([invalid]);
-    expect(parse({ cursor: 'a'.repeat(201) }).success).toBe(false);
+    expect(messages({ cursor: 'a'.repeat(201) })).toEqual([invalid]);
   });
 });
 

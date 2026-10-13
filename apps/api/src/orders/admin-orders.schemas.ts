@@ -12,6 +12,11 @@ import type { OrderStatus } from '../database/database.types.js';
 
 export const ADMIN_ORDERS_PAGE = 50;
 export const ADMIN_ORDERS_MAX_PAGE = 100;
+/**
+ * El texto más largo que se busca. Lo escribe una persona en la consola: el mensaje de 400 sale en
+ * castellano, como los de los demás campos que se tipean.
+ */
+export const ADMIN_ORDERS_MAX_QUERY = 100;
 
 export const ADMIN_ORDER_VERTICALS = ['flights', 'hotels', 'cars'] as const;
 export type AdminOrderVertical = (typeof ADMIN_ORDER_VERTICALS)[number];
@@ -112,7 +117,9 @@ export const AdminOrdersQuerySchema = z
       .string()
       .trim()
       .min(2, { message: 'escribe al menos 2 caracteres' })
-      .max(100)
+      .max(ADMIN_ORDERS_MAX_QUERY, {
+        message: `la búsqueda puede tener hasta ${ADMIN_ORDERS_MAX_QUERY} caracteres`,
+      })
       .refine((v) => !/\p{Cc}/u.test(v), { message: 'la búsqueda tiene caracteres no válidos' })
       .optional(),
     attention: z
@@ -121,7 +128,7 @@ export const AdminOrdersQuerySchema = z
       .optional(),
     cursor: z
       .string()
-      .max(200)
+      .max(200, { message: INVALID_CURSOR })
       .transform((raw, ctx) => {
         const cursor = decodeAdminOrdersCursor(raw);
         if (cursor === undefined) {
