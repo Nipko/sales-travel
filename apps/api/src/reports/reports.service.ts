@@ -279,6 +279,13 @@ interface ReportWindow {
   to_month: string;
 }
 
+/**
+ * La moneda de una orden, normalizada. `orders.currency` es TEXT sin CHECK: un proveedor que la
+ * escriba en minúsculas o con espacios partiría la misma moneda en dos filas, y la web rechaza el
+ * reporte entero ante un código que no es ISO. Es la misma normalización del Resumen (0075).
+ */
+const ORDER_CURRENCY = sql<string>`upper(btrim(currency))`;
+
 /** El comienzo del mes en curso, en la zona de los reportes. */
 const MONTH_START = sql`(date_trunc('month', now() AT TIME ZONE ${REPORTS_TIME_ZONE}::text) AT TIME ZONE ${REPORTS_TIME_ZONE}::text)`;
 
@@ -297,14 +304,14 @@ export class ReportsService {
       const { rows: verticals } = await sql<VerticalSalesRow>`
         SELECT o.provider,
                o.search_criteria->>'vertical' AS declared_vertical,
-               o.currency,
+               upper(btrim(o.currency)) AS currency,
                count(*) AS orders,
                COALESCE(sum(o.total_amount), 0) AS amount_minor
           FROM orders o
          WHERE o.tenant_id = ${tenantId}
            AND o.status IN ('confirmed', 'ticketed')
            AND o.created_at >= ${range.from_at}
-         GROUP BY o.provider, o.search_criteria->>'vertical', o.currency
+         GROUP BY o.provider, o.search_criteria->>'vertical', upper(btrim(o.currency))
       `.execute(trx);
 
       // El mes se calcula en una subconsulta: con el mismo parámetro en el SELECT y en el GROUP BY,
@@ -312,7 +319,7 @@ export class ReportsService {
       const { rows: months } = await sql<MonthlySalesRow>`
         SELECT s.month, s.currency, count(*) AS orders, COALESCE(sum(s.total_amount), 0) AS amount_minor
           FROM (SELECT to_char(o.created_at AT TIME ZONE ${REPORTS_TIME_ZONE}::text, 'YYYY-MM') AS month,
-                       o.currency,
+                       upper(btrim(o.currency)) AS currency,
                        o.total_amount
                   FROM orders o
                  WHERE o.tenant_id = ${tenantId}
@@ -322,7 +329,7 @@ export class ReportsService {
       `.execute(trx);
 
       const { rows: sellers } = await sql<SellerSalesRow>`
-        SELECT o.user_id, u.name, u.email, o.currency,
+        SELECT o.user_id, u.name, u.email, upper(btrim(o.currency)) AS currency,
                count(*) AS orders,
                COALESCE(sum(o.total_amount), 0) AS amount_minor
           FROM orders o
@@ -330,7 +337,7 @@ export class ReportsService {
          WHERE o.tenant_id = ${tenantId}
            AND o.status IN ('confirmed', 'ticketed')
            AND o.created_at >= ${range.from_at}
-         GROUP BY o.user_id, u.name, u.email, o.currency
+         GROUP BY o.user_id, u.name, u.email, upper(btrim(o.currency))
       `.execute(trx);
 
       return {
@@ -373,11 +380,14 @@ export class ReportsService {
           .executeTakeFirst(),
         trx
           .selectFrom('orders')
-          .select(['currency', sql<string>`COALESCE(sum(total_amount), 0)`.as('amount_minor')])
+          .select([
+            ORDER_CURRENCY.as('currency'),
+            sql<string>`COALESCE(sum(total_amount), 0)`.as('amount_minor'),
+          ])
           .where('tenant_id', '=', tenantId)
           .where('status', 'in', ['confirmed', 'ticketed'])
           .where(sql<boolean>`created_at >= ${MONTH_START}`)
-          .groupBy('currency')
+          .groupBy(ORDER_CURRENCY)
           .execute(),
         trx
           .selectFrom('customers')

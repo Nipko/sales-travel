@@ -201,6 +201,25 @@ d('Reportes de ventas (orders como app_user)', () => {
     expect(kpis.confirmedThisMonth).toBe(0);
   });
 
+  it('una moneda escrita en minúsculas o con espacios es la misma moneda, en código ISO', async () => {
+    const agency = await tenant('moneda', await platformRootId(admin));
+    const seller = await user('moneda', 'Eva Gil', agency);
+    await order(agency, seller, { status: 'confirmed', amount: 1_000, currency: 'COP' });
+    await order(agency, seller, { status: 'ticketed', amount: 2_000, currency: ' cop ' });
+    const metrics = await service.getSalesMetrics(agency);
+    expect(metrics.byVertical).toEqual([
+      { vertical: 'flights', currency: 'COP', totalAmountMinor: 3_000, count: 2 },
+    ]);
+    expect(metrics.monthlyTrend).toEqual([
+      { month: thisMonth, currency: 'COP', amountMinor: 3_000, count: 2 },
+    ]);
+    expect(metrics.topPerformers).toEqual([
+      { userId: seller, name: 'Eva Gil', currency: 'COP', salesMinor: 3_000, count: 2 },
+    ]);
+    const kpis = await service.getDashboardKpis(agency);
+    expect(kpis.salesThisMonth).toEqual([{ currency: 'COP', amountMinor: 3_000 }]);
+  });
+
   it('Inicio: las ventas del mes por moneda, sin lo de meses anteriores ni de otra agencia', async () => {
     const kpis = await service.getDashboardKpis(agencyA);
     expect(kpis.confirmedThisMonth).toBe(4);
