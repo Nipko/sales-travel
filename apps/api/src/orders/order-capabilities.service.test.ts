@@ -92,7 +92,7 @@ describe('OrderCapabilitiesService.assertSupports', () => {
       service().assertSupports({ provider: 'stub-air', status: 'ticketed' }, 'cancel'),
     ).toThrow(
       new BadRequestException(
-        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
+        'La reserva está emitida. Para cancelarla, anula o reembolsa los tiquetes.',
       ),
     );
   });

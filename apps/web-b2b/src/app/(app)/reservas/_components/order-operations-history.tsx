@@ -110,7 +110,7 @@ export function OrderOperationsHistory({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-medium text-[var(--color-fg)]">
-                      {operationTypeLabel(op.type)}
+                      {operationTypeLabel(op.type, op.ticketOperation)}
                     </span>
                     <span
                       className={cn(

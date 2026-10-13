@@ -82,7 +82,20 @@ export interface OrderCancelAudit {
    * releer la reserva y comparar. Reintentar a ciegas puede cancelar lo que sobrevivió.
    */
   readonly verified: boolean;
+  /**
+   * `true` ⇒ el proveedor aplicó una PARTE: anuló unos tiquetes y otros no. No es éxito ni un
+   * rechazo limpio —la reserva quedó a medias—, así que tampoco se reintenta: se concilia y lo mira
+   * una persona. Ausente = no hubo nada parcial que declarar.
+   */
+  readonly partial?: boolean;
 }
+
+/**
+ * Qué se hace con los tiquetes de una reserva emitida al cancelarla. `VOID` es la anulación IATA:
+ * dentro de la ventana de la aerolínea, sin penalidad. El reembolso entra cuando exista su flujo.
+ */
+export const TICKET_OPERATIONS = ['VOID'] as const;
+export type TicketOperation = (typeof TICKET_OPERATIONS)[number];
 
 /** Ámbito de una compensación selectiva. Ausente = se cancela la reserva entera. */
 export interface OrderCancelScope {
@@ -92,6 +105,13 @@ export interface OrderCancelScope {
    * también lo que estaba bien.
    */
   readonly itemIds?: readonly string[];
+  /**
+   * Una reserva emitida sólo se cancela diciendo qué pasa con sus tiquetes. Con `VOID` se cancela
+   * la reserva entera y se anulan sus tiquetes en la misma operación; el adapter vuelve a comprobar
+   * en el proveedor que se puede y, si no, lanza {@link TicketVoidNotAvailableError} sin mandar
+   * nada. No se combina con `itemIds`.
+   */
+  readonly ticketOperation?: TicketOperation;
 }
 
 export interface AuditedOrderCancelPort {
@@ -150,6 +170,17 @@ export interface ProviderCapabilities {
    * no la hereda por olvido. Distinta de `pay`, que es el pago diferido de LATAM.
    */
   readonly issue?: boolean;
+  /**
+   * Consultar en el proveedor las condiciones de los tiquetes emitidos: si todavía se pueden anular
+   * sin costo o reembolsar (`TicketingPort.checkTickets`). Es una lectura. Ausente = `false`.
+   */
+  readonly ticketCheck?: boolean;
+  /**
+   * Anular (VOID) los tiquetes de una reserva emitida, que la deja cancelada (`OrderCancelScope`
+   * con `ticketOperation: 'VOID'`). Ausente = `false`: es la compuerta que deja cancelar una reserva
+   * emitida, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly void?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;
@@ -614,5 +645,28 @@ export class ProviderOrderAccountUnavailableError extends ConflictException {
       'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pídele al administrador de tu red que la revise en Mi Red → Credenciales.',
     );
     this.name = 'ProviderOrderAccountUnavailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando los tiquetes ya no se pueden anular sin costo. */
+export const TICKET_VOID_NOT_AVAILABLE_MESSAGE =
+  'La aerolínea ya no permite anular estos tiquetes. Revisa las condiciones de reembolso.';
+
+/**
+ * El proveedor no permite anular (VOID) los tiquetes de esta reserva: la ventana de la aerolínea se
+ * cerró, o la comprobación no lo garantiza. Se decide ANTES de mandar nada, con la comprobación en
+ * vivo del proveedor; la ventana se lee, nunca se calcula.
+ *
+ * 409 y no reintentable (`retryable: false`, falla de negocio): repetir la anulación no la vuelve
+ * posible, y el siguiente paso es el reembolso, que es otra operación con penalidad.
+ */
+export class TicketVoidNotAvailableError extends ConflictException {
+  readonly reason = 'TICKET_VOID_NOT_AVAILABLE';
+  readonly retryable = false;
+  readonly failure = { kind: 'BUSINESS', retry: 'NO_RETRY' } as const;
+
+  constructor() {
+    super(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    this.name = 'TicketVoidNotAvailableError';
   }
 }

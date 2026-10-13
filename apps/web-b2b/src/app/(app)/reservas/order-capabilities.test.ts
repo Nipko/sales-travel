@@ -124,3 +124,35 @@ describe('la capacidad de emitir tiquetes (SAB-08)', () => {
     expect(supportsOrderCapability({ ...base, issue: true }, 'issue')).toBe(true);
   });
 });
+
+describe('consultar condiciones y anular tiquetes (SAB-09)', () => {
+  const sabre: OrderCapabilities = {
+    retrieve: true,
+    cancel: false,
+    pay: false,
+    services: false,
+    reshop: false,
+    issue: true,
+    ticketCheck: true,
+    void: true,
+  };
+
+  it('sólo con `true` explícito; ausentes (un API viejo), no se ofrecen', () => {
+    const { ticketCheck: _check, void: _void, ...viejo } = sabre;
+    expect(supportsOrderCapability(viejo, 'ticketCheck')).toBe(false);
+    expect(supportsOrderCapability(viejo, 'void')).toBe(false);
+    expect(supportsOrderCapability(sabre, 'ticketCheck')).toBe(true);
+    expect(supportsOrderCapability(sabre, 'void')).toBe(true);
+  });
+
+  it('no son venta: el superadmin las conserva, como cancelar lo vendido', () => {
+    const view = capabilitiesForViewer(sabre, false);
+    expect(view).toMatchObject({ ticketCheck: true, void: true, issue: false });
+    expect(SALE_ORDER_CAPABILITIES).not.toContain('void');
+    expect(SALE_ORDER_CAPABILITIES).not.toContain('ticketCheck');
+  });
+
+  it('la cancelación genérica de una emitida sigue sin ofrecerse: se anula', () => {
+    expect(supportsOrderCancellation({ ...sabre, cancel: true }, 'ticketed')).toBe(false);
+  });
+});

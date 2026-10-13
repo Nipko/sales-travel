@@ -273,6 +273,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/retrieve',
     'GET /orders/:id/cancellation-estimate',
     'GET /orders/:id/operations',
+    'GET /orders/:id/ticket-check',
     'GET /hotels/reservations/:id',
     'POST /cars/reservation',
     'GET /cars/daily-report',
@@ -290,8 +291,9 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/send-confirmation',
   ),
   ...noVenta(
-    'corrección: cancelar lo vendido, reintentar una cancelación o rechazar un hold',
+    'corrección: cancelar lo vendido (también anulando sus tiquetes), reintentar una cancelación o rechazar un hold',
     'POST /orders/:id/cancel',
+    'POST /orders/:id/void',
     'POST /orders/:id/operations/:opId/retry',
     'POST /hotels/reservations/:id/cancel',
     'POST /cars/reservations/cancel',

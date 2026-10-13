@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, OrderOperationStatus } from '../database/database.types.js';
+import type { TicketOperation } from '../providers/provider.types.js';
 import { persistedPriorOrderStatus } from './cancel-retry-policy.js';
+import { persistedTicketOperation } from './ticket-void.plan.js';
 
 /**
  * Los claims de cancelación que se quedaron en vuelo, en Postgres (HARD-1; 0021 y 0037).
@@ -28,6 +30,11 @@ export interface StaleCancelClaim {
   readonly actorUserId: string | null;
   /** El estado de la orden antes del claim, del resultado durable del claim. */
   readonly priorStatus: string | undefined;
+  /**
+   * Sólo si el claim era una anulación de tiquetes (SAB-09): el cierre lo conserva, para que el
+   * historial y la escalada digan que pudo haber tiquetes anulados y no una cancelación cualquiera.
+   */
+  readonly ticketOperation?: TicketOperation;
 }
 
 /** Lo que queda en la operación al vencer el claim. */
@@ -68,14 +75,18 @@ export class StaleCancelClaimStore {
         .orderBy('op.updated_at')
         .limit(query.limit)
         .execute();
-      return rows.map((row) => ({
-        operationId: row.id,
-        orderId: row.order_id,
-        provider: row.provider,
-        userId: row.user_id,
-        actorUserId: row.actor_user_id,
-        priorStatus: persistedPriorOrderStatus(row.result),
-      }));
+      return rows.map((row) => {
+        const ticketOperation = persistedTicketOperation(row.result);
+        return {
+          operationId: row.id,
+          orderId: row.order_id,
+          provider: row.provider,
+          userId: row.user_id,
+          actorUserId: row.actor_user_id,
+          priorStatus: persistedPriorOrderStatus(row.result),
+          ...(ticketOperation === undefined ? {} : { ticketOperation }),
+        };
+      });
     });
   }
 

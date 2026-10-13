@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import {
@@ -24,6 +25,7 @@ import {
   type PaymentInfo,
   type ProviderIssue,
   type ServiceListResult,
+  type TicketCheckResult,
 } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
@@ -42,10 +44,14 @@ import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.fac
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { stampProviderEnvironment } from '../providers/provider-environment.js';
 import {
+  TicketVoidNotAvailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
+  supportsTicketing,
   type FlightProviderAdapter,
+  type OrderCancelScope,
   type ResolvedProvider,
+  type TicketOperation,
 } from '../providers/provider.types.js';
 import { PostSaleQueueService } from '../queue/post-sale-queue.service.js';
 import {
@@ -69,8 +75,21 @@ import {
   createRequestKey,
   uniqueViolationConstraint,
 } from './order-create-intent.store.js';
-import { ORDER_EVENTS, createdSummary } from './order-events.js';
+import { isTestContentOrder } from './order-confirmation-mail.js';
+import { ORDER_EVENTS, createdSummary, type TicketVoidEscalationReason } from './order-events.js';
 import { issueOperationPolicy } from './ticket-issue.plan.js';
+import {
+  TICKET_VOID_MESSAGES,
+  VOID_REJECTED_LAST_ERROR,
+  VOID_UNVERIFIED_LAST_ERROR,
+  persistedTicketOperation,
+  settleTicketVoid,
+  ticketVoidAvailability,
+  ticketVoidRefusal,
+  type TicketVoidOutcome,
+  type TicketVoidReply,
+  type TicketVoidSettlement,
+} from './ticket-void.plan.js';
 import {
   CANCEL_REJECTED_POLICY,
   CANCEL_SUCCESS_POLICY,
@@ -210,6 +229,40 @@ interface CancellationClaim {
   priorStatus: OrderStatus;
 }
 
+/** Lo que deja una cancelación ejecutada. `voidOutcome` sólo en una anulación de tiquetes. */
+interface CancelRun {
+  result: OrderCancelResult;
+  order?: OrderRow;
+  voidOutcome?: TicketVoidOutcome;
+}
+
+/** El ámbito que se le pide al proveedor: ítems de una compensación, o anular los tiquetes. */
+function cancelScopeOf(
+  itemIds: readonly string[] | undefined,
+  ticketOperation: TicketOperation | undefined,
+): OrderCancelScope | undefined {
+  if (ticketOperation !== undefined) return { ticketOperation };
+  return itemIds === undefined ? undefined : { itemIds };
+}
+
+/** Una anulación que lanzó: en duda si pudo llegar al proveedor; si no, no anuló nada. */
+function thrownVoidOutcome(failure: CancelRetryPolicy): TicketVoidOutcome {
+  if (failure.reconciliationRequired) return 'UNVERIFIED';
+  return failure.retryable ? 'NOT_SENT' : 'REJECTED';
+}
+
+/**
+ * Lo que lee el vendedor cuando una anulación lanzó. Nuestras excepciones HTTP (la ventana ya
+ * cerrada, la cuenta de la reserva que ya no está) salen tal cual; del resto sólo se dice qué se
+ * puede hacer, nunca el error del proveedor.
+ */
+function voidFailure(err: unknown, policy: CancelRetryPolicy): HttpException {
+  if (err instanceof HttpException) return err;
+  if (policy.reconciliationRequired) return new ConflictException(ticketVoidRefusal('unverified'));
+  if (policy.retryable) return new ServiceUnavailableException(ticketVoidRefusal('notSent'));
+  return new ConflictException(ticketVoidRefusal('rejected'));
+}
+
 /** Lo que se escribe junto con el cierre de la operación `cancel`, en su misma transacción. */
 interface CancellationCompletion {
   /** Se suma al resultado durable de la operación (vocabulario cerrado). */
@@ -236,6 +289,8 @@ export interface OrderOperationRow {
   retryable: boolean;
   outcome: CancelOperationOutcome | null;
   reconciliationRequired: boolean;
+  /** Sólo en una cancelación que anuló (o intentó anular) los tiquetes de la reserva. */
+  ticketOperation?: TicketOperation;
 }
 
 export interface CreateOrderDto {
@@ -373,7 +428,7 @@ export class OrdersService {
     tenantId: string,
     order: Pick<OrderRow, 'id' | 'provider'>,
     view: OrderView,
-    source: 'verify' | 'retrieve',
+    source: 'verify' | 'retrieve' | 'void',
     actorUserId?: string,
   ): Promise<void> {
     if (this.flightTracking === undefined || !view.found) return;
@@ -1206,8 +1261,10 @@ export class OrdersService {
     tenantId: string,
     order: OrderRow,
     actorUserId?: string,
+    /** Una anulación de tiquetes lo deja escrito en el claim: el historial y el barrido lo leen. */
+    ticketOperation?: TicketOperation,
   ): Promise<CancellationClaim> {
-    this.assertGenericCancellationAllowed(order);
+    this.assertGenericCancellationAllowed(order, ticketOperation);
     const hotels = this.hotelCancellationsFor(order);
     try {
       return await this.db.withTenant(tenantId, async (trx) => {
@@ -1220,6 +1277,7 @@ export class OrdersService {
             status: 'pending',
             last_error: null,
             result: JSON.stringify({
+              ...(ticketOperation === undefined ? {} : { ticketOperation }),
               status: 'pending',
               ...CANCEL_UNVERIFIED_POLICY,
               priorOrderStatus: order.status,
@@ -1334,9 +1392,13 @@ export class OrdersService {
   }
 
   /**
-   * Ejecuta la cancelación (void) contra el proveedor y registra la operación. LANZA sólo en fallo
+   * Ejecuta la cancelación contra el proveedor y registra la operación. LANZA sólo en fallo
    * TRANSITORIO (el proveedor lanzó: red/timeout/5xx) — un rechazo de negocio devuelve `success:false`
    * sin lanzar. No encola reintentos (lo decide el caller). Usado por la API y por el worker.
+   *
+   * Con `ticketOperation` (SAB-09) la reserva emitida se cancela anulando sus tiquetes, y antes de
+   * cerrar la operación se relee la reserva: un rechazo con tiquetes anulados es una anulación a
+   * medias, y una anulación a medias o sin confirmar se concilia, nunca se repite.
    */
   private async runCancel(
     tenantId: string,
@@ -1348,7 +1410,9 @@ export class OrdersService {
     cancellableItemIds?: readonly string[],
     /** `interactive` si una persona espera la respuesta; los jobs van por el cupo de fondo. */
     purpose: CancelRequestPurpose = 'background',
-  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    /** Qué se hace con los tiquetes de una reserva emitida. Sólo la pide la anulación. */
+    ticketOperation?: TicketOperation,
+  ): Promise<CancelRun> {
     const existing = await this.findById(tenantId, id);
     if (!existing?.provider_order_id) {
       throw new NotFoundException('La reserva no existe o no tiene localizador.');
@@ -1366,6 +1430,11 @@ export class OrdersService {
     let audit: Record<string, unknown> = { audited: false };
     /** `false` ⇒ el proveedor no dijo qué pasó: PROHIBIDO reintentar. */
     let verified = true;
+    /** `true` ⇒ el proveedor aplicó una parte. Se concilia; tampoco se reintenta. */
+    let partial = false;
+    /** El adapter de la reserva, para releerla después de anular. */
+    let flightAdapter: FlightProviderAdapter | undefined;
+    const voidTag = ticketOperation === undefined ? {} : { ticketOperation };
 
     try {
       if (this.isCarOrder(existing)) {
@@ -1374,11 +1443,12 @@ export class OrdersService {
         // La cuenta de la reserva, no la vigente: cancelar con otra no la cancela. Si ya no está
         // disponible, el 409 es determinista y la orden vuelve a su estado (nada salió).
         const { adapter } = await this.flightProviderForOrder(tenantId, existing);
+        flightAdapter = adapter;
         if (supportsAuditedCancel(adapter)) {
           const outcome = await adapter.cancelOrderAudited(
             pnr,
             { tenantId },
-            cancellableItemIds === undefined ? undefined : { itemIds: cancellableItemIds },
+            cancelScopeOf(cancellableItemIds, ticketOperation),
           );
           result = outcome.result;
           audit = {
@@ -1389,6 +1459,11 @@ export class OrdersService {
               : { idempotencyKey: outcome.idempotencyKey }),
           };
           verified = outcome.verified;
+          partial = outcome.partial === true;
+        } else if (ticketOperation !== undefined) {
+          // La cancelación genérica no sabe anular: cancelaría la reserva y dejaría los tiquetes
+          // emitidos a su suerte. Se para antes de mandar nada.
+          throw new BadRequestException(TICKET_VOID_MESSAGES.unsupported);
         } else {
           result = await adapter.cancelOrder(pnr, { tenantId });
         }
@@ -1404,6 +1479,9 @@ export class OrdersService {
         failure,
         actorUserId,
         failure.reconciliationRequired ? undefined : claim.priorStatus,
+        ticketOperation === undefined
+          ? {}
+          : { result: { ...voidTag, voidOutcome: thrownVoidOutcome(failure) } },
       );
       await this.audit.emit({
         eventType: ORDER_EVENTS.cancelled,
@@ -1422,23 +1500,43 @@ export class OrdersService {
           ...(cancellableItemIds === undefined
             ? {}
             : { cancellableItemIds: [...cancellableItemIds] }),
+          ...voidTag,
         },
       });
       if (failure.reconciliationRequired) {
         await this.emitCancellationEscalation(tenantId, id, existing?.provider, actorUserId, {
           reason: failure.reason,
           threw: true,
+          ...voidTag,
         });
       }
       throw err;
     }
 
-    if (!verified) {
+    // Una anulación se contrasta con la reserva antes de cerrar nada (docs/sabre/06 §5.2).
+    const voided: TicketVoidSettlement | undefined =
+      ticketOperation === undefined
+        ? undefined
+        : settleTicketVoid({
+            success: result.success,
+            verified,
+            partial,
+            read:
+              verified && flightAdapter !== undefined
+                ? await this.readAfterVoid(tenantId, existing, pnr, flightAdapter)
+                : undefined,
+          });
+    const reconcile =
+      !verified || voided?.outcome === 'PARTIAL' || voided?.outcome === 'UNVERIFIED';
+
+    if (reconcile) {
       result = {
         ...result,
         success: false,
         error:
-          'El proveedor no confirmó si la cancelación se aplicó. No la reintentes: primero hay que consultar y conciliar la reserva.',
+          ticketOperation === undefined
+            ? 'El proveedor no confirmó si la cancelación se aplicó. No la reintentes: primero hay que consultar y conciliar la reserva.'
+            : TICKET_VOID_MESSAGES.unverified,
       };
     }
 
@@ -1455,17 +1553,26 @@ export class OrdersService {
           ? {}
           : { cancellableItemIds: [...cancellableItemIds] }),
         ...audit,
+        ...(voided === undefined ? {} : { ...voidTag, voidOutcome: voided.outcome }),
       },
     });
 
     // `UNVERIFIED` no es un fallo reintentable: el proveedor no dijo si la cancelación se
     // ejecutó. Reintentar a ciegas puede cancelar lo que sobrevivió, así que esto necesita a una
-    // persona que relea la reserva y compare.
+    // persona que relea la reserva y compare. Una anulación a medias, lo mismo.
     if (!verified) {
-      await this.emitCancellationEscalation(tenantId, id, existing?.provider, actorUserId);
+      await this.emitCancellationEscalation(tenantId, id, existing?.provider, actorUserId, voidTag);
+    } else if (voided?.outcome === 'PARTIAL' || voided?.outcome === 'UNVERIFIED') {
+      const reason: TicketVoidEscalationReason =
+        voided.outcome === 'PARTIAL' ? 'void-partial' : 'void-unverified';
+      await this.emitCancellationEscalation(tenantId, id, existing.provider, actorUserId, {
+        reason,
+        ...voidTag,
+        ...(voided.voidedTickets === undefined ? {} : { voidedTickets: voided.voidedTickets }),
+      });
     }
 
-    const operationPolicy = !verified
+    const operationPolicy = reconcile
       ? CANCEL_UNVERIFIED_POLICY
       : result.success
         ? CANCEL_SUCCESS_POLICY
@@ -1479,8 +1586,12 @@ export class OrdersService {
       result.success
         ? null
         : operationPolicy.reconciliationRequired
-          ? CANCEL_UNVERIFIED_MESSAGE
-          : 'Cancelación rechazada por el proveedor.',
+          ? ticketOperation === undefined
+            ? CANCEL_UNVERIFIED_MESSAGE
+            : VOID_UNVERIFIED_LAST_ERROR
+          : ticketOperation === undefined
+            ? 'Cancelación rechazada por el proveedor.'
+            : VOID_REJECTED_LAST_ERROR,
       operationPolicy,
       actorUserId,
       operationPolicy.reconciliationRequired
@@ -1488,7 +1599,24 @@ export class OrdersService {
         : result.success
           ? 'cancelled'
           : claim.priorStatus,
+      voided === undefined
+        ? {}
+        : {
+            result: {
+              ...voidTag,
+              voidOutcome: voided.outcome,
+              ...(voided.voidedTickets === undefined
+                ? {}
+                : { voidedTickets: voided.voidedTickets }),
+            },
+          },
     );
+
+    // Los documentos quedan como los dejó la anulación (VOIDED), con su evento de cambio.
+    if (voided?.read !== undefined) {
+      await this.recordFlightRead(tenantId, existing, voided.read, 'void', actorUserId);
+    }
+    const voidOutcome = voided === undefined ? {} : { voidOutcome: voided.outcome };
 
     if (result.success) {
       if (finalizedOrder?.status === 'cancelled') {
@@ -1499,10 +1627,67 @@ export class OrdersService {
           actorUserId ?? existing.user_id,
         );
       }
-      return { result, order: finalizedOrder };
+      if (voided !== undefined) {
+        await this.emitTicketsVoided(tenantId, existing, claim.operationId, actorUserId, voided);
+      }
+      return { result, order: finalizedOrder, ...voidOutcome };
     }
 
-    return { result };
+    return { result, ...voidOutcome };
+  }
+
+  /**
+   * La relectura de la reserva después de una anulación que el proveedor contestó. Best-effort:
+   * `undefined` si falla o si la reserva no aparece, y quien decide lo trata como "no se sabe".
+   */
+  private async readAfterVoid(
+    tenantId: string,
+    order: Pick<OrderRow, 'id' | 'provider'>,
+    pnr: string,
+    adapter: FlightProviderAdapter,
+  ): Promise<OrderView | undefined> {
+    try {
+      const view = await adapter.retrieveForDisplay(pnr, { tenantId });
+      return view.found ? view : undefined;
+    } catch (error) {
+      this.logger.warn(
+        `orders.void.read_failed provider=${order.provider} order=${order.id} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * `OrderTicketsVoided`, además del `OrderCancellationAttempted` de la misma operación. No rompe la
+   * anulación, que ya ocurrió: si el evento no se guarda, queda el intento con su `ticketOperation`.
+   */
+  private async emitTicketsVoided(
+    tenantId: string,
+    order: OrderRow,
+    operationId: string,
+    actorUserId: string | undefined,
+    voided: TicketVoidSettlement,
+  ): Promise<void> {
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.ticketsVoided,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: order.provider,
+          operationId,
+          ticketOperation: 'VOID',
+          ...(voided.voidedTickets === undefined ? {} : { documents: voided.voidedTickets }),
+          testContent: isTestContentOrder(order),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `orders.void.event_unsaved provider=${order.provider} order=${order.id} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+    }
   }
 
   /**
@@ -1804,6 +1989,10 @@ export class OrdersService {
    * Un timeout del endpoint de cancelación se registra como UNVERIFIED y nunca llega a BullMQ.
    * Lo llaman sólo los endpoints: una persona espera, y en hoteles la lectura previa al Cancel sale
    * por el cupo de ventas en vez del de fondo (04 §14.3).
+   *
+   * Una anulación de tiquetes NUNCA se encola: la ventana de la aerolínea corre, y un reintento que
+   * la cruce deja de ser una anulación gratis (docs/sabre/06 §5.3). Se vuelve a pedir desde Reservas,
+   * con una consulta nueva de las condiciones.
    */
   private async attemptCancelAndMaybeQueue(
     tenantId: string,
@@ -1811,11 +2000,22 @@ export class OrdersService {
     pnr: string,
     claim: CancellationClaim,
     actorUserId?: string,
-  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    ticketOperation?: TicketOperation,
+  ): Promise<CancelRun> {
     try {
-      return await this.runCancel(tenantId, id, pnr, claim, actorUserId, undefined, 'interactive');
+      return await this.runCancel(
+        tenantId,
+        id,
+        pnr,
+        claim,
+        actorUserId,
+        undefined,
+        'interactive',
+        ticketOperation,
+      );
     } catch (err) {
       const policy = classifyCancelThrownFailure(err);
+      if (ticketOperation !== undefined) throw voidFailure(err, policy);
       if (policy.retryable) {
         await this.queue.enqueueCancelRetry({
           tenantId,
@@ -1836,13 +2036,19 @@ export class OrdersService {
   /**
    * Cancelación desde la API. Un intento anterior fallido se continúa por el endpoint de retry,
    * que valida su política durable; el endpoint principal nunca sirve como segundo write ciego.
+   *
+   * `ticketOperation` es la única forma de cancelar una reserva emitida (SAB-09). Una anulación
+   * nueva puede seguir a un intento anterior que falló sin dejar nada que conciliar: viene con su
+   * propia consulta de las condiciones y su propio claim. Uno pendiente o en duda la bloquea igual.
    */
   async cancelOrder(
     tenantId: string,
     id: string,
     pnr: string,
     actorUserId?: string,
-  ): Promise<{ result: OrderCancelResult; order?: OrderRow }> {
+    options: { readonly ticketOperation?: TicketOperation } = {},
+  ): Promise<CancelRun> {
+    const { ticketOperation } = options;
     const startedAt = Date.now();
     const current = await this.findById(tenantId, id);
     if (!current?.provider_order_id) {
@@ -1851,7 +2057,11 @@ export class OrdersService {
     if (current.status === 'cancelled') {
       throw new ConflictException('La reserva ya está cancelada.');
     }
-    this.assertGenericCancellationAllowed(current);
+    this.assertGenericCancellationAllowed(current, ticketOperation);
+    const hotels = this.hotelCancellationsFor(current);
+    if (ticketOperation !== undefined && (hotels !== undefined || this.isCarOrder(current))) {
+      throw new BadRequestException(TICKET_VOID_MESSAGES.unsupported);
+    }
 
     const previous = await this.latestCancelOperation(tenantId, id);
     if (previous) {
@@ -1859,7 +2069,10 @@ export class OrdersService {
       if (previous.status === 'success' || policy.outcome === 'SUCCEEDED') {
         throw new ConflictException('La reserva ya registra una cancelación exitosa.');
       }
-      if (previous.status === 'failed') {
+      if (
+        previous.status === 'failed' &&
+        (ticketOperation === undefined || policy.reconciliationRequired)
+      ) {
         throw new ConflictException(
           policy.reconciliationRequired
             ? 'La cancelación anterior quedó sin verificar. No se puede enviar otra cancelación hasta conciliar el estado con el proveedor.'
@@ -1874,13 +2087,100 @@ export class OrdersService {
         );
       }
     }
-    const hotels = this.hotelCancellationsFor(current);
     await this.assertCancellable(tenantId, current, hotels);
-    const claim = await this.beginCancellationOperation(tenantId, current, actorUserId);
-    const work = this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
+    const claim = await this.beginCancellationOperation(
+      tenantId,
+      current,
+      actorUserId,
+      ticketOperation,
+    );
+    const work = this.attemptCancelAndMaybeQueue(
+      tenantId,
+      id,
+      pnr,
+      claim,
+      actorUserId,
+      ticketOperation,
+    );
     return hotels === undefined
       ? work
       : this.hotelCancelWithinBudget(hotels, current, startedAt, work);
+  }
+
+  /**
+   * Las condiciones de los tiquetes emitidos, leídas en vivo del proveedor con la cuenta de la
+   * reserva (SAB-09). Es una lectura: no cambia nada y no se guarda, porque la ventana de anulación
+   * cambia con el reloj. `row` es la fila que el controlador ya leyó con el tenant fijado.
+   */
+  async checkTickets(
+    tenantId: string,
+    row: FlightOrderAccountRef & Pick<OrderRow, 'provider_order_id'>,
+  ): Promise<TicketCheckResult> {
+    return this.ticketCheckOf(tenantId, row, 'ticketCheck');
+  }
+
+  /**
+   * Anula los tiquetes de una reserva emitida y la deja cancelada (SAB-09).
+   *
+   *  1. Consulta en vivo las condiciones: si el proveedor no dice que se puede anular sin costo, 409
+   *     sin tocar nada.
+   *  2. La cancelación durable de siempre con `ticketOperation: 'VOID'`: claim (0037), eventos y la
+   *     liberación de la retención de cartera. El adapter vuelve a comprobar justo antes de mandar.
+   *  3. El desenlace para el vendedor: anulada, o en conciliación (a medias o sin confirmar). Un
+   *     rechazo con la reserva intacta es un 409.
+   */
+  async voidTickets(
+    tenantId: string,
+    row: OrderRow,
+    actorUserId: string,
+  ): Promise<TicketVoidReply> {
+    if (!row.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    if (row.status !== 'ticketed') throw new ConflictException(TICKET_VOID_MESSAGES.notTicketed);
+    const check = await this.ticketCheckOf(tenantId, row, 'void');
+    if (ticketVoidAvailability(check, new Date()).status !== 'available') {
+      throw new TicketVoidNotAvailableError();
+    }
+
+    const run = await this.cancelOrder(tenantId, row.id, row.provider_order_id, actorUserId, {
+      ticketOperation: 'VOID',
+    });
+    if (run.voidOutcome === 'VOIDED') {
+      return {
+        outcome: 'VOIDED',
+        message: TICKET_VOID_MESSAGES.voided,
+        orderStatus: run.order?.status ?? 'cancelled',
+      };
+    }
+    if (run.voidOutcome === 'REJECTED') {
+      throw new ConflictException(ticketVoidRefusal('rejected'));
+    }
+    // A medias, sin confirmar o sin desenlace conocido: se concilia y no se repite.
+    return {
+      outcome: run.voidOutcome === 'PARTIAL' ? 'PARTIAL' : 'UNVERIFIED',
+      message: TICKET_VOID_MESSAGES.unverified,
+      orderStatus: 'pending',
+    };
+  }
+
+  /**
+   * La comprobación de los tiquetes con la cuenta de la reserva, si el proveedor declara la
+   * capacidad que se pide y sabe hacerla. Sin eso, 400 sin llamar a nadie.
+   */
+  private async ticketCheckOf(
+    tenantId: string,
+    row: FlightOrderAccountRef & Pick<OrderRow, 'provider_order_id'>,
+    capability: 'ticketCheck' | 'void',
+  ): Promise<TicketCheckResult> {
+    if (!row.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    // Post-venta: sale con la cuenta de la reserva aunque la plataforma haya apagado el proveedor
+    // para ventas nuevas. Anular es deshacer lo vendido, no vender.
+    const { adapter, capabilities } = await this.flightProviderForOrder(tenantId, row);
+    if (capabilities[capability] !== true || !supportsTicketing(adapter)) {
+      throw new BadRequestException(
+        `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
+      );
+    }
+    return adapter.checkTickets(row.provider_order_id, { tenantId });
   }
 
   /**
@@ -1933,7 +2233,9 @@ export class OrdersService {
     if (
       !previous ||
       previous.status !== 'failed' ||
-      !persistedCancelRetryPolicy(previous.result).retryable
+      !persistedCancelRetryPolicy(previous.result).retryable ||
+      // Una anulación no se reintenta sola: la ventana de la aerolínea corre (SAB-09).
+      persistedTicketOperation(previous.result) !== undefined
     ) {
       return;
     }
@@ -2165,11 +2467,15 @@ export class OrdersService {
         }
         const policy =
           row.status === 'success' ? CANCEL_SUCCESS_POLICY : persistedCancelRetryPolicy(row.result);
+        // Una anulación no se reintenta desde el historial: se vuelve a pedir con una consulta nueva
+        // de las condiciones de los tiquetes.
+        const ticketOperation = persistedTicketOperation(row.result);
         return {
           ...base,
-          retryable: row.status === 'failed' && policy.retryable,
+          retryable: row.status === 'failed' && policy.retryable && ticketOperation === undefined,
           outcome: policy.outcome,
           reconciliationRequired: policy.reconciliationRequired,
+          ...(ticketOperation === undefined ? {} : { ticketOperation }),
         } as unknown as OrderOperationRow;
       });
     });
@@ -2200,6 +2506,9 @@ export class OrdersService {
     }
     if (op.status !== 'failed') {
       throw new ConflictException('Sólo se puede reintentar una cancelación fallida.');
+    }
+    if (persistedTicketOperation(op.result) !== undefined) {
+      throw new ConflictException(TICKET_VOID_MESSAGES.noRetry);
     }
     const policy = persistedCancelRetryPolicy(op.result);
     if (!policy.retryable) {
@@ -2244,14 +2553,19 @@ export class OrdersService {
   }
 
   /**
-   * `cancelOrder` elimina una reserva no emitida; no ejecuta VOID ni REFUND de documentos. Una
-   * orden emitida debe permanecer intacta hasta que exista un contrato explícito de post-ticketing.
+   * Una reserva emitida sólo se cancela diciendo qué pasa con sus tiquetes (`ticketOperation`): la
+   * cancelación genérica eliminaría la reserva y dejaría los tiquetes emitidos, cobrados por BSP. Y
+   * al revés: anular tiquetes sólo tiene sentido en una reserva emitida.
    */
-  private assertGenericCancellationAllowed(order: Pick<OrderRow, 'status'>): void {
-    if (order.status === 'ticketed') {
-      throw new BadRequestException(
-        'La reserva está emitida. La cancelación genérica no anula ni reembolsa tiquetes; usa un flujo explícito de VOID/REFUND.',
-      );
+  private assertGenericCancellationAllowed(
+    order: Pick<OrderRow, 'status'>,
+    ticketOperation?: TicketOperation,
+  ): void {
+    if (order.status === 'ticketed' && ticketOperation === undefined) {
+      throw new BadRequestException(TICKET_VOID_MESSAGES.ticketedCancel);
+    }
+    if (ticketOperation !== undefined && order.status !== 'ticketed') {
+      throw new ConflictException(TICKET_VOID_MESSAGES.notTicketed);
     }
   }
 
