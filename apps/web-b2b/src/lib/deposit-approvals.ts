@@ -1,3 +1,4 @@
+import type { Route } from 'next';
 import { nodeKindLabel } from './tenant-network';
 import {
   formatMinor,
@@ -10,7 +11,7 @@ import {
 } from './wallets';
 
 /**
- * Plataforma → Aprobaciones: los depósitos que informaron las agencias de toda la red y esperan que
+ * Plataforma → Carteras: los depósitos que informaron las agencias de toda la red y esperan que
  * alguien los verifique contra el banco (`GET /admin/deposit-reports`). Lectura de la respuesta,
  * filtros y textos, sin I/O.
  *
@@ -72,6 +73,8 @@ export interface ApprovalsFilters {
   /** Un código ISO 4217 o `'all'`. */
   readonly currency: string;
   readonly q: string;
+  /** Un nodo y su red (`?nodo=`, el enlace de la ficha de cada nodo), o `null`: toda la red. */
+  readonly tenantId: string | null;
 }
 
 /** Lo primero que se mira: lo que espera a Planetour. */
@@ -80,7 +83,11 @@ export const DEFAULT_APPROVALS_FILTERS: ApprovalsFilters = {
   financedBy: 'platform',
   currency: 'all',
   q: '',
+  tenantId: null,
 };
+
+/** La pantalla: Plataforma → Carteras. */
+export const PLATFORM_CARTERAS: Route = '/admin/plataforma/carteras';
 
 export const SEARCH_MAX_LENGTH = 100;
 
@@ -207,6 +214,9 @@ export function approvalsSearch(filters: ApprovalsFilters, cursor?: string | nul
   if (filters.currency !== 'all' && isCurrencyCode(filters.currency)) {
     params.set('currency', filters.currency);
   }
+  if (filters.tenantId !== null && isUuid(filters.tenantId)) {
+    params.set('tenantId', filters.tenantId.toLowerCase());
+  }
   // Un tabulador pegado en la búsqueda no rompe la lista: el API rechaza los caracteres de control.
   const q = filters.q
     .replace(/\p{Cc}+/gu, ' ')
@@ -216,6 +226,79 @@ export function approvalsSearch(filters: ApprovalsFilters, cursor?: string | nul
   if (q !== '') params.set('q', q);
   if (cursor !== undefined && cursor !== null && cursor !== '') params.set('cursor', cursor);
   return params.toString();
+}
+
+// ───────────────────────────── La URL de la pantalla ─────────────────────────────
+
+/** `?estado=`: cómo va cada estado en la URL (se comparte y sobrevive a recargar). */
+const STATUS_PARAM: Readonly<Record<DepositReportStatus, string>> = {
+  pending: 'por-aprobar',
+  approved: 'aprobados',
+  rejected: 'rechazados',
+};
+
+/** `?alcance=`: de quién es el dinero. */
+const SCOPE_PARAM: Readonly<Record<FinancedByFilter, string>> = {
+  platform: 'planetour',
+  network: 'otros-nodos',
+  all: 'toda-la-red',
+};
+
+/**
+ * El alcance sin `?alcance=`: lo que espera a Planetour; acotado a un nodo, todo lo de ese nodo
+ * (el enlace "N depósitos por aprobar" de su ficha cuenta todos, los financie quien los financie).
+ */
+export function defaultFinancedBy(tenantId: string | null): FinancedByFilter {
+  return tenantId === null ? 'platform' : 'all';
+}
+
+function keyOf<V extends string>(
+  map: Readonly<Record<V, string>>,
+  value: string | undefined,
+): V | undefined {
+  return (Object.keys(map) as V[]).find((k) => map[k] === value);
+}
+
+type SearchParamsLike =
+  | URLSearchParams
+  | Readonly<Record<string, string | readonly string[] | undefined>>;
+
+function paramOf(params: SearchParamsLike, key: string): string | undefined {
+  if (params instanceof URLSearchParams) return params.get(key) ?? undefined;
+  const value = params[key];
+  return typeof value === 'string' ? value : value?.[0];
+}
+
+/**
+ * Los filtros de `?estado=&alcance=&moneda=&nodo=`. Un valor que no se conoce es el de siempre: un
+ * enlace viejo o editado a mano abre la cola, no un error.
+ */
+export function filtersFromSearchParams(params: SearchParamsLike): ApprovalsFilters {
+  const nodo = paramOf(params, 'nodo');
+  const tenantId = isUuid(nodo) ? nodo.toLowerCase() : null;
+  const moneda = paramOf(params, 'moneda')?.trim().toUpperCase();
+  return {
+    status: keyOf(STATUS_PARAM, paramOf(params, 'estado')) ?? 'pending',
+    financedBy: keyOf(SCOPE_PARAM, paramOf(params, 'alcance')) ?? defaultFinancedBy(tenantId),
+    currency: moneda !== undefined && isCurrencyCode(moneda) ? moneda : 'all',
+    q: '',
+    tenantId,
+  };
+}
+
+/** La URL de la pantalla con estos filtros: sólo lo que se aparta de lo de siempre. */
+export function carterasHref(filters: ApprovalsFilters): Route {
+  const params = new URLSearchParams();
+  if (filters.status !== 'pending') params.set('estado', STATUS_PARAM[filters.status]);
+  if (filters.financedBy !== defaultFinancedBy(filters.tenantId)) {
+    params.set('alcance', SCOPE_PARAM[filters.financedBy]);
+  }
+  if (filters.currency !== 'all' && isCurrencyCode(filters.currency)) {
+    params.set('moneda', filters.currency);
+  }
+  if (filters.tenantId !== null && isUuid(filters.tenantId)) params.set('nodo', filters.tenantId);
+  const query = params.toString();
+  return query === '' ? PLATFORM_CARTERAS : `${PLATFORM_CARTERAS}?${query}`;
 }
 
 /**
@@ -292,8 +375,8 @@ export const SCOPE_HINT: Readonly<Record<FinancedByFilter, string>> = {
   platform:
     'Agencias, consolidadores y sucursales que financia Planetour: el dinero llegó a su cuenta.',
   network:
-    'Agencias que financia un consolidador o una agencia de la red: el dinero llegó a la cuenta de ese nodo y normalmente lo aprueba él.',
-  all: 'Todos los depósitos informados de la red.',
+    'Agencias que financia un consolidador o una agencia de la red: el dinero llegó a la cuenta de ese nodo y lo aprueba él. Aquí sólo los ves.',
+  all: 'Todos los depósitos informados de la red. Apruebas los que financia Planetour.',
 };
 
 /** Quién financia a la agencia: a la cuenta de quién llegó el dinero. */
@@ -305,13 +388,23 @@ export function financierLabel(
 }
 
 /**
- * Quien financia a la agencia cuando no es Planetour: el diálogo de aprobación avisa que el dinero
- * llegó a su cuenta y no a la de la plataforma.
+ * ¿Lo resuelve el superadmin desde la cola? Sólo lo que financia Planetour: lo que financia otro nodo
+ * llegó a la cuenta de ese nodo, que es quien puede verificarlo contra su extracto. Se ve, pero no se
+ * aprueba ni se rechaza desde aquí.
  */
-export function otherFinancierOf(
+export function canResolveReport(
   report: Pick<QueuedDepositReport, 'financier' | 'financedByPlatform'>,
-): string | undefined {
-  return report.financedByPlatform || report.financier === null ? undefined : report.financier.name;
+): boolean {
+  return report.financedByPlatform || report.financier === null;
+}
+
+/** Quién lo aprueba cuando no es Planetour ("Lo aprueba Consolidador Andino"); si no, vacío. */
+export function approverLabel(
+  report: Pick<QueuedDepositReport, 'financier' | 'financedByPlatform'>,
+): string {
+  return canResolveReport(report) || report.financier === null
+    ? ''
+    : `Lo aprueba ${report.financier.name}`;
 }
 
 const MINUTE = 60_000;
@@ -361,6 +454,12 @@ export function emptyCopy(filters: ApprovalsFilters): EmptyCopy {
       text: 'Prueba con otra referencia, otra agencia u otra moneda.',
     };
   }
+  if (filters.tenantId !== null) {
+    return {
+      title: 'No hay depósitos en esta lista.',
+      text: 'Este nodo y su red no tienen depósitos con estos filtros. Mira toda la red para ver los demás.',
+    };
+  }
   if (filters.status === 'approved') {
     return {
       title: 'Todavía no hay depósitos aprobados.',
@@ -380,7 +479,7 @@ export function emptyCopy(filters: ApprovalsFilters): EmptyCopy {
     };
   }
   return {
-    title: 'No hay depósitos por aprobar.',
+    title: 'No hay depósitos por aprobar. Todo al día.',
     text: 'Cuando una agencia informe una transferencia, aparece aquí para que la verifiques contra el extracto.',
   };
 }
@@ -390,8 +489,11 @@ export function approvalsErrorMessage(status: number): string {
   if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   if (status === 403) return 'Sólo el superadmin de la plataforma ve los depósitos de toda la red.';
   if (status === 400) return 'Revisa los filtros: alguno no es válido.';
-  return 'No pudimos cargar los depósitos. Inténtalo de nuevo.';
+  return 'No pudimos cargar los depósitos. Reintenta en unos segundos.';
 }
+
+/** Otro lo resolvió mientras lo mirabas (409 DEPOSIT_REPORT_NOT_PENDING): la lista se relee. */
+export const ALREADY_RESOLVED_MESSAGE = 'Otra persona ya lo resolvió. Actualizamos la lista.';
 
 /** El aviso al resolver uno. */
 export function resolvedMessage(

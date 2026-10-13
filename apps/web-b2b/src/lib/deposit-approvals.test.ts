@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALREADY_RESOLVED_MESSAGE,
   DEFAULT_APPROVALS_FILTERS,
   STALE_AFTER_MS,
   appendPage,
   approvalsErrorMessage,
+  approverLabel,
+  canResolveReport,
+  carterasHref,
   emptiesLoadedPage,
   approvalsSearch,
   emptyCopy,
+  filtersFromSearchParams,
   financierLabel,
-  otherFinancierOf,
   parseDepositApprovals,
   parsePendingDeposits,
   parseQueuedReport,
@@ -144,7 +148,13 @@ describe('approvalsSearch', () => {
   it('toda la red no manda alcance; la moneda, la búsqueda y el cursor sí', () => {
     expect(
       approvalsSearch(
-        { status: 'approved', financedBy: 'all', currency: 'USD', q: '  Sur & Co ' },
+        {
+          status: 'approved',
+          financedBy: 'all',
+          currency: 'USD',
+          q: '  Sur & Co ',
+          tenantId: null,
+        },
         'cur_1',
       ),
     ).toBe('status=approved&currency=USD&q=Sur+%26+Co&cursor=cur_1');
@@ -167,6 +177,59 @@ describe('approvalsSearch', () => {
     expect(search('TRX\t1')).toBe('TRX 1');
     expect(search('\u0000Sur\u0007')).toBe('Sur');
     expect(search('\t\n')).toBeNull();
+  });
+});
+
+describe('acotada a un nodo (?nodo=, el enlace de su ficha)', () => {
+  it('el API recibe el nodo y su red como tenantId', () => {
+    const search = new URLSearchParams(
+      approvalsSearch({ ...DEFAULT_APPROVALS_FILTERS, financedBy: 'all', tenantId: NODE }),
+    );
+    expect(search.get('tenantId')).toBe(NODE);
+    expect(approvalsSearch(DEFAULT_APPROVALS_FILTERS)).not.toContain('tenantId');
+  });
+
+  it('sin ?alcance= mira todo lo del nodo, lo financie quien lo financie', () => {
+    expect(filtersFromSearchParams(new URLSearchParams(`nodo=${NODE.toUpperCase()}`))).toEqual({
+      ...DEFAULT_APPROVALS_FILTERS,
+      financedBy: 'all',
+      tenantId: NODE,
+    });
+  });
+});
+
+describe('los filtros en la URL', () => {
+  it('lo de siempre es la ruta a secas', () => {
+    expect(carterasHref(DEFAULT_APPROVALS_FILTERS)).toBe('/admin/plataforma/carteras');
+    expect(filtersFromSearchParams(new URLSearchParams())).toEqual(DEFAULT_APPROVALS_FILTERS);
+  });
+
+  it('ida y vuelta: estado, alcance, moneda y nodo', () => {
+    const filters = {
+      ...DEFAULT_APPROVALS_FILTERS,
+      status: 'rejected' as const,
+      financedBy: 'network' as const,
+      currency: 'USD',
+      tenantId: NODE,
+    };
+    const href = carterasHref(filters);
+    expect(href).toBe(
+      `/admin/plataforma/carteras?estado=rechazados&alcance=otros-nodos&moneda=USD&nodo=${NODE}`,
+    );
+    expect(filtersFromSearchParams(new URL(href, 'http://x').searchParams)).toEqual(filters);
+    // Lo que manda Next desde la página (`searchParams` como objeto).
+    expect(filtersFromSearchParams({ estado: ['aprobados'], moneda: 'cop' })).toMatchObject({
+      status: 'approved',
+      currency: 'COP',
+    });
+  });
+
+  it('un valor que no se conoce es el de siempre, no un error', () => {
+    expect(
+      filtersFromSearchParams(
+        new URLSearchParams('estado=todo&alcance=x&moneda=pesos&nodo=no-es-uuid'),
+      ),
+    ).toEqual(DEFAULT_APPROVALS_FILTERS);
   });
 });
 
@@ -238,8 +301,15 @@ describe('textos', () => {
   it('quién financia: Planetour o el nodo, con su tipo', () => {
     expect(financierLabel(platformReport)).toBe('Lo financia Planetour');
     expect(financierLabel(report)).toBe('Lo financia Consolidador Andino (consolidador)');
-    expect(otherFinancierOf(platformReport)).toBeUndefined();
-    expect(otherFinancierOf(report)).toBe('Consolidador Andino');
+  });
+
+  it('sólo se resuelve aquí lo que financia Planetour; lo demás lo aprueba su financiador', () => {
+    expect(canResolveReport(platformReport)).toBe(true);
+    expect(approverLabel(platformReport)).toBe('');
+    expect(canResolveReport(report)).toBe(false);
+    expect(approverLabel(report)).toBe('Lo aprueba Consolidador Andino');
+    // La raíz o un nodo legado sin financiador: sólo lo gestiona el superadmin.
+    expect(canResolveReport({ financier: null, financedByPlatform: false })).toBe(true);
   });
 
   it('desde cuándo espera, y se resalta pasadas 48 horas', () => {
@@ -274,7 +344,12 @@ describe('textos', () => {
   });
 
   it('el vacío dice por qué no hay nada', () => {
-    expect(emptyCopy(DEFAULT_APPROVALS_FILTERS).title).toBe('No hay depósitos por aprobar.');
+    expect(emptyCopy(DEFAULT_APPROVALS_FILTERS).title).toBe(
+      'No hay depósitos por aprobar. Todo al día.',
+    );
+    expect(emptyCopy({ ...DEFAULT_APPROVALS_FILTERS, tenantId: NODE }).title).toBe(
+      'No hay depósitos en esta lista.',
+    );
     expect(emptyCopy({ ...DEFAULT_APPROVALS_FILTERS, financedBy: 'network' }).title).toBe(
       'Ningún depósito espera a otro nodo.',
     );
@@ -299,10 +374,16 @@ describe('textos', () => {
       resolvedMessage('reject', report),
       pendingBadgeLabel(1),
       pendingBadgeLabel(4),
+      ALREADY_RESOLVED_MESSAGE,
+      approverLabel(report),
       ...Object.values(emptyCopy(DEFAULT_APPROVALS_FILTERS)),
+      ...Object.values(emptyCopy({ ...DEFAULT_APPROVALS_FILTERS, tenantId: NODE })),
     ];
     expect(texts.flatMap(voseoIn)).toEqual([]);
     expect(approvalsErrorMessage(401)).toBe('Tu sesión venció. Vuelve a iniciar sesión.');
+    expect(approvalsErrorMessage(502)).toBe(
+      'No pudimos cargar los depósitos. Reintenta en unos segundos.',
+    );
     expect(resolvedMessage('approve', report)).toMatch(
       /^Depósito aprobado: se acreditaron \$\s?750\.000 a Agencia Sur\.$/,
     );

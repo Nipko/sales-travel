@@ -87,13 +87,42 @@ function AttentionRow({ item }: { item: AttentionItem }) {
           <p className="text-sm leading-relaxed text-[var(--color-fg-muted)]">{item.summary}</p>
           {item.details.length > 0 ? (
             <ul className="space-y-0.5 pt-0.5 text-xs leading-relaxed text-[var(--color-fg-muted)]">
-              {item.details.map((line) => (
-                <li key={line} className="flex gap-2">
+              {item.details.map((line, i) => (
+                <li key={`${i}-${line}`} className="flex gap-2">
                   <span
                     aria-hidden="true"
                     className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-[var(--color-fg-subtle)]"
                   />
                   <span className="min-w-0 break-words">{line}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {item.entries !== undefined && item.entries.length > 0 ? (
+            <ul
+              aria-label={item.title}
+              className="mt-2 divide-y divide-[var(--color-border)] overflow-hidden rounded-md border border-[var(--color-border)]"
+            >
+              {item.entries.map((entry) => (
+                <li
+                  key={entry.key}
+                  className="flex flex-col gap-0.5 px-3 py-2 text-xs sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
+                >
+                  {entry.href !== undefined ? (
+                    <Link
+                      href={entry.href}
+                      className="min-w-0 break-words font-medium text-[var(--color-fg)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                    >
+                      {entry.text}
+                    </Link>
+                  ) : (
+                    <span className="min-w-0 break-words font-medium text-[var(--color-fg)]">
+                      {entry.text}
+                    </span>
+                  )}
+                  {entry.meta !== undefined ? (
+                    <span className="shrink-0 text-[var(--color-fg-muted)]">{entry.meta}</span>
+                  ) : null}
                 </li>
               ))}
             </ul>

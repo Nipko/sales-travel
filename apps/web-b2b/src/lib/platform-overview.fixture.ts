@@ -23,15 +23,50 @@ const MONTHS = [
 
 type Payload = Record<string, unknown>;
 
+/** `attention.orders` sin reservas con problemas. */
+export function quietOrders(): Payload {
+  return {
+    total: 0,
+    byReason: {
+      review: 0,
+      'verifying-long': 0,
+      'create-stuck': 0,
+      'cancel-failed': 0,
+      'hold-conflict': 0,
+      'hold-orphan': 0,
+      'hcn-missing': 0,
+      reconciliation: 0,
+    },
+    sample: [],
+  };
+}
+
 export function quietAttention(): Payload {
   return {
     depositReports: { total: 0, platform: 0, network: 0 },
+    orders: quietOrders(),
     postSale: { failed: 0, stuck: 0, byType: [] },
     hotelOrdersUnverified: 0,
     walletHoldConflicts: 0,
     reconciliation: { critical: 0, warning: 0, sinceDays: 30 },
+    reconciliationRuns: { sinceDays: 7, failedRuns: 0, byProvider: [] },
     invitations: { pending: 0, expired: 0, expiredSinceDays: 30 },
+    seats: { saturated: [] },
   };
+}
+
+/** Un catálogo de hoteles al día (sincronizado una hora antes de `generatedAt`). */
+export function freshCatalogs(): Payload[] {
+  return [
+    {
+      providerCode: 'tbo-hotels',
+      cities: 1200,
+      syncedLast48h: 1180,
+      failedCities: 0,
+      lastSyncedAt: '2026-10-11T13:00:00.000Z',
+      stale: false,
+    },
+  ];
 }
 
 export function quietProviders(): Payload {
@@ -178,6 +213,7 @@ export function overviewPayload(overrides: Payload = {}): Payload {
     ],
     attention: quietAttention(),
     providers: quietProviders(),
+    catalogs: freshCatalogs(),
     ...overrides,
   };
 }

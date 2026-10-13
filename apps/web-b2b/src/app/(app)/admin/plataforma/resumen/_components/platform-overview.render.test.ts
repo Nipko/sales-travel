@@ -10,6 +10,7 @@ import {
   NODE_SUR,
   overviewPayload,
   quietAttention,
+  quietOrders,
   quietProviders,
 } from '../../../../../../lib/platform-overview.fixture';
 import { OverviewContent, PlatformOverview as PlatformOverviewScreen } from './platform-overview';
@@ -148,34 +149,73 @@ describe('OverviewContent: lo que requiere atención', () => {
     attention: {
       ...quietAttention(),
       depositReports: { total: 3, platform: 2, network: 1 },
-      postSale: { failed: 1, stuck: 0, byType: [{ type: 'cancel', failed: 1, stuck: 0 }] },
-      hotelOrdersUnverified: 2,
-      walletHoldConflicts: 1,
+      orders: {
+        ...quietOrders(),
+        total: 2,
+        byReason: {
+          ...(quietOrders()['byReason'] as Record<string, number>),
+          'hold-conflict': 1,
+          'cancel-failed': 1,
+        },
+        sample: [
+          {
+            orderId: '40000000-0000-4000-8000-000000000001',
+            tenantId: NODE_SUR,
+            tenantName: 'Agencia Sur',
+            orderNumber: 1042,
+            provider: 'latam-ndc',
+            providerOrderId: 'XKJ7PQ',
+            orderStatus: 'confirmed',
+            reason: 'hold-conflict',
+            since: '2026-10-10T15:00:00.000Z',
+          },
+        ],
+      },
+      postSale: { failed: 1, stuck: 0, byType: [{ type: 'pay', failed: 1, stuck: 0 }] },
       reconciliation: { critical: 1, warning: 0, sinceDays: 30 },
       invitations: { pending: 3, expired: 0, expiredSinceDays: 30 },
+      seats: {
+        saturated: [{ tenantId: NODE_ANDES, tenantName: 'Andes Travel', used: 4, limit: 4 }],
+      },
     },
     providers: {
       ...quietProviders(),
       openCircuits: [{ code: 'sabre', state: 'open', failures: 5 }],
       killSwitched: [{ code: 'tbo-hotels', level: 'sales' }],
     },
+    catalogs: [
+      {
+        providerCode: 'tbo-hotels',
+        cities: 10,
+        syncedLast48h: 0,
+        failedCities: 0,
+        lastSyncedAt: '2026-10-08T15:00:00.000Z',
+        stale: true,
+      },
+    ],
   });
   const html = render(o, '2026-10-10T09:00:00.000Z');
   const text = textOf(html);
 
   it('cada tarjeta con su frase', () => {
     expect(text).toContain('Requiere tu atención');
-    expect(text).toContain('7 temas');
+    expect(text).toContain('8 temas');
     expect(text).toContain('Proveedores');
     expect(text).toContain('Sabre GDS: no está respondiendo');
     expect(text).toContain('TBO Holidays: apagado de emergencia (solo ventas)');
-    expect(text).toContain('Retenciones de cartera en conflicto');
+    expect(text).toContain('Reservas con problemas');
+    expect(text).toContain('2 reservas necesitan que alguien las revise.');
+    expect(text).toContain('Retención de cartera en conflicto: 1');
+    expect(text).toContain('Cancelación fallida: 1');
+    expect(text).toContain('Agencia Sur · n.º 1042 · XKJ7PQ');
+    expect(text).toContain('Retención de cartera en conflicto · desde ayer');
     expect(text).toContain('Post-venta con problemas');
     expect(text).toContain('1 operación falló.');
-    expect(text).toContain('Cancelaciones: 1 fallida');
+    expect(text).toContain('Pagos y emisiones: 1 fallida');
     expect(text).toContain('2 depósitos esperan tu aprobación · el más antiguo ayer.');
-    expect(text).toContain('2 reservas de hotel no tienen su estado confirmado con el proveedor.');
     expect(text).toContain('1 diferencia crítica en los últimos 30 días.');
+    expect(text).toContain('Andes Travel: 4 de 4 puestos en uso');
+    expect(text).toContain('TBO Holidays: última sincronización hace 3 días');
     expect(text).toContain('3 pendientes de aceptar.');
   });
 
@@ -189,18 +229,22 @@ describe('OverviewContent: lo que requiere atención', () => {
     const titles = [...html.matchAll(/<h3 class="text-sm font-semibold[^"]*">([^<]+)<\/h3>/g)].map(
       (m) => m[1],
     );
-    expect(titles.slice(0, 5)).toEqual([
+    expect(titles.slice(0, 8)).toEqual([
       'Proveedores',
-      'Retenciones de cartera en conflicto',
+      'Reservas con problemas',
       'Post-venta con problemas',
       'Conciliación con los proveedores',
       'Depósitos por aprobar',
+      'Puestos',
+      'Catálogos de hoteles',
+      'Invitaciones',
     ]);
   });
 
   it('cada tarjeta con destino lleva a su pantalla', () => {
     expect(html).toContain('href="/admin/plataforma/proveedores"');
-    expect(html).toContain('href="/admin/plataforma/aprobaciones"');
+    expect(html).toContain('href="/admin/plataforma/carteras"');
+    expect(html).toContain(`href="/admin/tenants/${NODE_ANDES}/puestos"`);
     expect(html).toContain('href="/admin/usuarios"');
     expect(text).toContain('Ver proveedores');
     expect(text).toContain('Revisar depósitos');

@@ -1,5 +1,5 @@
 import type { Route } from 'next';
-import { STALE_AFTER_MS, sinceLabel } from './deposit-approvals';
+import { PLATFORM_CARTERAS, STALE_AFTER_MS, sinceLabel } from './deposit-approvals';
 import { providerMetaFor } from './provider-display';
 import type { Viewer } from './viewer';
 import { isCurrencyCode, isUuid } from './wallets';
@@ -223,11 +223,114 @@ export interface PostSaleType {
   readonly stuck: number;
 }
 
+// ───────────────────────────── Reservas con problemas ─────────────────────────────
+
+/**
+ * Por qué una reserva necesita a una persona: el vocabulario cerrado de `admin_order_attention()`
+ * (0075 §7, apps/api/src/admin-console/attention.ts). Un motivo que esta versión no conoce se ignora.
+ */
+export const ORDER_ATTENTION_REASONS = [
+  'review',
+  'verifying-long',
+  'create-stuck',
+  'cancel-failed',
+  'hold-conflict',
+  'hold-orphan',
+  'hcn-missing',
+  'reconciliation',
+] as const;
+
+export type OrderAttentionReason = (typeof ORDER_ATTENTION_REASONS)[number];
+
+/** Cómo se nombra cada motivo en el Resumen (y en la consola de Reservas de la red). */
+export const ATTENTION_REASON_LABEL: Readonly<Record<OrderAttentionReason, string>> = {
+  review: 'En revisión con el proveedor',
+  'verifying-long': 'Verificación demorada',
+  'create-stuck': 'Creación sin respuesta',
+  'cancel-failed': 'Cancelación fallida',
+  'hold-conflict': 'Retención de cartera en conflicto',
+  'hold-orphan': 'Saldo retenido sin reserva',
+  'hcn-missing': 'Sin confirmación del hotel (HCN)',
+  reconciliation: 'Diferencia en la conciliación',
+};
+
+/** De lo más grave a lo menos, como ATTENTION_PRIORITY del API. */
+const ATTENTION_REASON_PRIORITY: readonly OrderAttentionReason[] = [
+  'hold-orphan',
+  'hold-conflict',
+  'cancel-failed',
+  'review',
+  'create-stuck',
+  'reconciliation',
+  'hcn-missing',
+  'verifying-long',
+];
+
+/** Lo que tiene plata trabada o una cancelación que no salió: urgente. */
+const CRITICAL_REASONS: ReadonlySet<OrderAttentionReason> = new Set([
+  'hold-orphan',
+  'hold-conflict',
+  'cancel-failed',
+]);
+
+export function isOrderAttentionReason(value: unknown): value is OrderAttentionReason {
+  return (ORDER_ATTENTION_REASONS as readonly unknown[]).includes(value);
+}
+
+export interface OrderAttentionSample {
+  readonly orderId: string;
+  readonly tenantId: string;
+  readonly tenantName: string;
+  readonly orderNumber: number;
+  readonly provider: string;
+  readonly providerOrderId: string | null;
+  readonly orderStatus: string;
+  readonly reason: OrderAttentionReason;
+  /** ISO 8601. */
+  readonly since: string;
+}
+
+export interface OrderAttention {
+  readonly total: number;
+  readonly byReason: Readonly<Record<OrderAttentionReason, number>>;
+  readonly sample: readonly OrderAttentionSample[];
+}
+
+export interface SaturatedSeats {
+  readonly tenantId: string;
+  readonly tenantName: string;
+  readonly used: number;
+  readonly limit: number;
+}
+
+export interface ReconciliationRunsByProvider {
+  readonly providerCode: string;
+  readonly runs: number;
+  readonly failedRuns: number;
+  readonly lastStatus: string | null;
+}
+
+export interface CatalogFreshness {
+  readonly providerCode: string;
+  readonly cities: number;
+  readonly failedCities: number;
+  /** ISO 8601, o `null` si nunca se sincronizó. */
+  readonly lastSyncedAt: string | null;
+  readonly stale: boolean;
+}
+
 export interface OverviewAttention {
   readonly depositReports: {
     readonly total: number;
     readonly platform: number;
     readonly network: number;
+  };
+  readonly orders: OrderAttention;
+  readonly seats: { readonly saturated: readonly SaturatedSeats[] };
+  readonly reconciliationRuns: {
+    readonly sinceDays: number;
+    readonly failedRuns: number;
+    readonly byProvider: readonly ReconciliationRunsByProvider[];
   };
   readonly postSale: {
     readonly failed: number;
@@ -278,6 +381,8 @@ export interface PlatformOverview {
   readonly wallets: readonly WalletExposure[];
   readonly attention: OverviewAttention;
   readonly providers: ProviderSignals;
+  /** La frescura del catálogo de hoteles de cada proveedor (de la plataforma). */
+  readonly catalogs: readonly CatalogFreshness[];
 }
 
 type Rec = Record<string, unknown>;
@@ -494,8 +599,95 @@ function parseWallet(value: unknown): WalletExposure | undefined {
   return money === undefined || n === undefined ? undefined : { ...money, ...n };
 }
 
+function isoInstant(value: unknown): string | undefined {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : undefined;
+}
+
+function parseOrderSample(value: unknown): OrderAttentionSample | undefined {
+  const r = asRecord(value);
+  const orderId = r?.['orderId'];
+  const tenantId = r?.['tenantId'];
+  const tenantName = text(r?.['tenantName']);
+  const orderNumber = count(r?.['orderNumber']);
+  const provider = text(r?.['provider']);
+  const orderStatus = text(r?.['orderStatus']);
+  const reason = r?.['reason'];
+  const since = isoInstant(r?.['since']);
+  const providerOrderId = r?.['providerOrderId'];
+  if (
+    !isUuid(orderId) ||
+    !isUuid(tenantId) ||
+    tenantName === undefined ||
+    orderNumber === undefined ||
+    provider === undefined ||
+    orderStatus === undefined ||
+    !isOrderAttentionReason(reason) ||
+    since === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    orderId: orderId.toLowerCase(),
+    tenantId: tenantId.toLowerCase(),
+    tenantName,
+    orderNumber,
+    provider,
+    providerOrderId: text(providerOrderId) ?? null,
+    orderStatus,
+    reason,
+    since,
+  };
+}
+
+/** Los motivos que esta versión conoce; uno nuevo del API se ignora sin romper la lectura. */
+function parseOrderAttention(value: unknown): OrderAttention | undefined {
+  const r = asRecord(value);
+  const total = count(r?.['total']);
+  const byReason = counts(asRecord(r?.['byReason']), ORDER_ATTENTION_REASONS);
+  const sample = list(r?.['sample'], parseOrderSample);
+  if (total === undefined || byReason === undefined || sample === undefined) return undefined;
+  return { total, byReason, sample };
+}
+
+function parseSaturatedSeats(value: unknown): SaturatedSeats | undefined {
+  const r = asRecord(value);
+  const tenantId = r?.['tenantId'];
+  const tenantName = text(r?.['tenantName']);
+  const n = counts(r, ['used', 'limit']);
+  if (!isUuid(tenantId) || tenantName === undefined || n === undefined || n.limit === 0) {
+    return undefined;
+  }
+  return { tenantId: tenantId.toLowerCase(), tenantName, ...n };
+}
+
+function parseRunsByProvider(value: unknown): ReconciliationRunsByProvider | undefined {
+  const r = asRecord(value);
+  const providerCode = text(r?.['providerCode']);
+  const n = counts(r, ['runs', 'failedRuns']);
+  if (providerCode === undefined || n === undefined) return undefined;
+  return { providerCode, ...n, lastStatus: text(r?.['lastStatus']) ?? null };
+}
+
+function parseCatalog(value: unknown): CatalogFreshness | undefined {
+  const r = asRecord(value);
+  const providerCode = text(r?.['providerCode']);
+  const n = counts(r, ['cities', 'failedCities']);
+  const lastSyncedAt = r?.['lastSyncedAt'];
+  const stale = r?.['stale'];
+  if (providerCode === undefined || n === undefined || typeof stale !== 'boolean') {
+    return undefined;
+  }
+  if (lastSyncedAt !== null && isoInstant(lastSyncedAt) === undefined) return undefined;
+  return { providerCode, ...n, lastSyncedAt: lastSyncedAt as string | null, stale };
+}
+
 function parseAttention(value: unknown): OverviewAttention | undefined {
   const r = asRecord(value);
+  const orders = parseOrderAttention(r?.['orders']);
+  const saturated = list(asRecord(r?.['seats'])?.['saturated'], parseSaturatedSeats);
+  const runsRec = asRecord(r?.['reconciliationRuns']);
+  const runs = counts(runsRec, ['sinceDays', 'failedRuns']);
+  const runsByProvider = list(runsRec?.['byProvider'], parseRunsByProvider);
   const depositReports = counts(asRecord(r?.['depositReports']), ['total', 'platform', 'network']);
   const postSaleRec = asRecord(r?.['postSale']);
   const postSale = counts(postSaleRec, ['failed', 'stuck']);
@@ -518,6 +710,10 @@ function parseAttention(value: unknown): OverviewAttention | undefined {
   ]);
   if (
     depositReports === undefined ||
+    orders === undefined ||
+    saturated === undefined ||
+    runs === undefined ||
+    runsByProvider === undefined ||
     postSale === undefined ||
     byType === undefined ||
     single === undefined ||
@@ -528,6 +724,9 @@ function parseAttention(value: unknown): OverviewAttention | undefined {
   }
   return {
     depositReports,
+    orders,
+    seats: { saturated },
+    reconciliationRuns: { ...runs, byProvider: runsByProvider },
     postSale: { ...postSale, byType },
     ...single,
     reconciliation,
@@ -601,6 +800,7 @@ export function parsePlatformOverview(value: unknown): PlatformOverview | undefi
   const network = parseNetwork(r?.['network']);
   const attention = parseAttention(r?.['attention']);
   const providers = parseProviders(r?.['providers']);
+  const catalogs = list(r?.['catalogs'], parseCatalog);
   if (
     generatedAt === undefined ||
     Number.isNaN(Date.parse(generatedAt)) ||
@@ -612,7 +812,8 @@ export function parsePlatformOverview(value: unknown): PlatformOverview | undefi
     sales === undefined ||
     network === undefined ||
     attention === undefined ||
-    providers === undefined
+    providers === undefined ||
+    catalogs === undefined
   ) {
     return undefined;
   }
@@ -627,6 +828,7 @@ export function parsePlatformOverview(value: unknown): PlatformOverview | undefi
     wallets: list(r?.['wallets'], parseWallet) ?? [],
     attention,
     providers,
+    catalogs,
   };
 }
 
@@ -645,24 +847,26 @@ const SEVERITY_RANK: Readonly<Record<Severity, number>> = { critical: 0, warning
 
 export type AttentionId =
   | 'providers'
-  | 'wallet-holds'
+  | 'orders'
   | 'post-sale'
   | 'deposits'
-  | 'hotel-orders'
   | 'reconciliation'
   | 'wallets'
+  | 'seats'
+  | 'catalogs'
   | 'security'
   | 'invitations';
 
 /** A igual severidad, lo que corta la venta o toca plata va primero. */
 const ATTENTION_ORDER: readonly AttentionId[] = [
   'providers',
-  'wallet-holds',
+  'orders',
   'post-sale',
   'deposits',
-  'hotel-orders',
   'reconciliation',
   'wallets',
+  'seats',
+  'catalogs',
   'security',
   'invitations',
 ];
@@ -672,12 +876,21 @@ export interface AttentionAction {
   readonly href: Route;
 }
 
+/** Un renglón con nombre propio dentro de un tema (una reserva, un nodo), con su enlace si lo hay. */
+export interface AttentionEntry {
+  readonly key: string;
+  readonly text: string;
+  readonly meta?: string;
+  readonly href?: Route;
+}
+
 export interface AttentionItem {
   readonly id: AttentionId;
   readonly severity: Severity;
   readonly title: string;
   readonly summary: string;
   readonly details: readonly string[];
+  readonly entries?: readonly AttentionEntry[];
   readonly action?: AttentionAction;
 }
 
@@ -733,18 +946,84 @@ function providersItem(providers: ProviderSignals): AttentionItem | undefined {
   };
 }
 
-function walletHoldsItem(attention: OverviewAttention): AttentionItem | undefined {
-  const n = attention.walletHoldConflicts;
-  if (n === 0) return undefined;
+/** "Agencia Sur · n.º 1042 · ABC123". */
+function orderEntryText(sample: OrderAttentionSample): string {
+  return [sample.tenantName, `n.º ${sample.orderNumber}`, sample.providerOrderId]
+    .filter((p): p is string => p !== null)
+    .join(' · ');
+}
+
+/**
+ * Reservas con problemas (`admin_order_attention`): cuántas, cuántas por motivo y las que más
+ * esperan. Una cancelación fallida, una retención en conflicto o saldo retenido sin reserva son
+ * urgentes: hay plata trabada o un cliente que cree que canceló.
+ */
+function ordersItem(orders: OrderAttention, now: number): AttentionItem | undefined {
+  if (orders.total === 0) return undefined;
+  const reasons = ATTENTION_REASON_PRIORITY.filter((r) => orders.byReason[r] > 0);
   return {
-    id: 'wallet-holds',
-    severity: 'critical',
-    title: 'Retenciones de cartera en conflicto',
+    id: 'orders',
+    severity: reasons.some((r) => CRITICAL_REASONS.has(r)) ? 'critical' : 'warning',
+    title: 'Reservas con problemas',
     summary:
-      n === 1
-        ? '1 retención figuró confirmada con el proveedor y después no: hay que conciliarla a mano.'
-        : `${n} retenciones figuraron confirmadas con el proveedor y después no: hay que conciliarlas a mano.`,
+      orders.total === 1
+        ? '1 reserva necesita que alguien la revise.'
+        : `${orders.total} reservas necesitan que alguien las revise.`,
+    details: reasons.map((r) => `${ATTENTION_REASON_LABEL[r]}: ${orders.byReason[r]}`),
+    entries: orders.sample.map((sample) => {
+      const since = sinceLabel(sample.since, now);
+      return {
+        key: sample.orderId,
+        text: orderEntryText(sample),
+        meta:
+          since === ''
+            ? ATTENTION_REASON_LABEL[sample.reason]
+            : `${ATTENTION_REASON_LABEL[sample.reason]} · desde ${since}`,
+      };
+    }),
+  };
+}
+
+function seatsItem(seats: readonly SaturatedSeats[]): AttentionItem | undefined {
+  if (seats.length === 0) return undefined;
+  return {
+    id: 'seats',
+    // Con todos los puestos ocupados, la próxima persona de ese nodo no puede entrar.
+    severity: seats.some((s) => s.used >= s.limit) ? 'warning' : 'info',
+    title: 'Puestos',
+    summary:
+      seats.length === 1
+        ? '1 nodo está al límite de sus puestos.'
+        : `${seats.length} nodos están al límite de sus puestos.`,
     details: [],
+    entries: seats.map((s) => ({
+      key: s.tenantId,
+      text: `${s.tenantName}: ${s.used} de ${s.limit} puestos en uso`,
+      href: `/admin/tenants/${s.tenantId}/puestos`,
+    })),
+  };
+}
+
+function catalogsItem(
+  catalogs: readonly CatalogFreshness[],
+  now: number,
+): AttentionItem | undefined {
+  const stale = catalogs.filter((c) => c.stale);
+  if (stale.length === 0) return undefined;
+  return {
+    id: 'catalogs',
+    severity: 'warning',
+    title: 'Catálogos de hoteles',
+    summary:
+      stale.length === 1
+        ? 'El catálogo de 1 proveedor no se sincroniza hace más de un día y medio.'
+        : `Los catálogos de ${stale.length} proveedores no se sincronizan hace más de un día y medio.`,
+    details: stale.map((c) => {
+      const since = c.lastSyncedAt === null ? '' : sinceLabel(c.lastSyncedAt, now);
+      return since === ''
+        ? `${providerName(c.providerCode)}: nunca se sincronizó`
+        : `${providerName(c.providerCode)}: última sincronización ${since}`;
+    }),
   };
 }
 
@@ -780,8 +1059,16 @@ function postSaleLine(row: PostSaleType): string {
   return `${postSaleTypeLabel(row.type)}: ${parts.join(' · ')}`;
 }
 
+/**
+ * La post-venta que falló o no termina, por tipo. Las cancelaciones fallidas no: van con su reserva en
+ * "Reservas con problemas" (cancel-failed), y contarlas aquí también las mostraría dos veces.
+ */
 function postSaleItem(attention: OverviewAttention): AttentionItem | undefined {
-  const { failed, stuck, byType } = attention.postSale;
+  const byType = attention.postSale.byType
+    .map((t) => (t.type === 'cancel' ? { ...t, failed: 0 } : t))
+    .filter((t) => t.failed > 0 || t.stuck > 0);
+  const failed = byType.reduce((n, t) => n + t.failed, 0);
+  const stuck = byType.reduce((n, t) => n + t.stuck, 0);
   if (failed === 0 && stuck === 0) return undefined;
   const failedText = `${plural(failed, 'operación', 'operaciones')} ${failed === 1 ? 'falló' : 'fallaron'}`;
   const stuckText = `${stuck === 1 ? 'sigue' : 'siguen'} sin terminar`;
@@ -796,7 +1083,7 @@ function postSaleItem(attention: OverviewAttention): AttentionItem | undefined {
     severity: failed > 0 ? 'critical' : 'warning',
     title: 'Post-venta con problemas',
     summary,
-    details: byType.filter((t) => t.failed > 0 || t.stuck > 0).map(postSaleLine),
+    details: byType.map(postSaleLine),
   };
 }
 
@@ -807,10 +1094,7 @@ function depositsItem(
 ): AttentionItem | undefined {
   const { platform, network } = attention.depositReports;
   if (platform === 0 && network === 0) return undefined;
-  const action: AttentionAction = {
-    label: 'Revisar depósitos',
-    href: '/admin/plataforma/aprobaciones',
-  };
+  const action: AttentionAction = { label: 'Revisar depósitos', href: PLATFORM_CARTERAS };
   const networkLine =
     network === 1
       ? '1 espera a otro nodo de la red, que normalmente lo aprueba.'
@@ -853,34 +1137,32 @@ function depositsItem(
   };
 }
 
-function hotelOrdersItem(attention: OverviewAttention): AttentionItem | undefined {
-  const n = attention.hotelOrdersUnverified;
-  if (n === 0) return undefined;
-  return {
-    id: 'hotel-orders',
-    severity: 'warning',
-    title: 'Reservas de hotel sin verificar',
-    summary:
-      n === 1
-        ? '1 reserva de hotel no tiene su estado confirmado con el proveedor.'
-        : `${n} reservas de hotel no tienen su estado confirmado con el proveedor.`,
-    details: [],
-  };
-}
-
 function reconciliationItem(attention: OverviewAttention): AttentionItem | undefined {
   const { critical, warning, sinceDays } = attention.reconciliation;
-  if (critical === 0 && warning === 0) return undefined;
+  const runs = attention.reconciliationRuns;
+  if (critical === 0 && warning === 0 && runs.failedRuns === 0) return undefined;
   const parts = [
     critical > 0 ? plural(critical, 'diferencia crítica', 'diferencias críticas') : null,
     warning > 0 ? plural(warning, 'advertencia', 'advertencias') : null,
   ].filter((p): p is string => p !== null);
+  const sentences = [
+    parts.length > 0 ? `${parts.join(' y ')} en los últimos ${sinceDays} días.` : null,
+    runs.failedRuns > 0
+      ? `${plural(runs.failedRuns, 'corrida fallida', 'corridas fallidas')} en los últimos ${runs.sinceDays} días.`
+      : null,
+  ].filter((p): p is string => p !== null);
   return {
     id: 'reconciliation',
-    severity: critical > 0 ? 'critical' : 'info',
+    // Una corrida fallida es una conciliación que no se hizo: no hay diferencias porque no se miró.
+    severity: critical > 0 ? 'critical' : runs.failedRuns > 0 ? 'warning' : 'info',
     title: 'Conciliación con los proveedores',
-    summary: `${parts.join(' y ')} en los últimos ${sinceDays} días.`,
-    details: [],
+    summary: sentences.join(' '),
+    details: runs.byProvider
+      .filter((p) => p.failedRuns > 0)
+      .map(
+        (p) =>
+          `${providerName(p.providerCode)}: ${plural(p.failedRuns, 'corrida fallida', 'corridas fallidas')} de ${p.runs}`,
+      ),
   };
 }
 
@@ -943,18 +1225,19 @@ function invitationsItem(attention: OverviewAttention): AttentionItem | undefine
  * (`undefined` mientras no se leyó, `null` si no hay).
  */
 export function attentionItems(
-  overview: Pick<PlatformOverview, 'attention' | 'providers' | 'wallets' | 'network'>,
+  overview: Pick<PlatformOverview, 'attention' | 'providers' | 'wallets' | 'network' | 'catalogs'>,
   oldestPlatformDeposit: string | null | undefined,
   now: number,
 ): AttentionItem[] {
   const items = [
     providersItem(overview.providers),
-    walletHoldsItem(overview.attention),
+    ordersItem(overview.attention.orders, now),
     postSaleItem(overview.attention),
     depositsItem(overview.attention, oldestPlatformDeposit, now),
-    hotelOrdersItem(overview.attention),
     reconciliationItem(overview.attention),
     walletsItem(overview.wallets),
+    seatsItem(overview.attention.seats.saturated),
+    catalogsItem(overview.catalogs, now),
     securityItem(overview.network),
     invitationsItem(overview.attention),
   ].filter((item): item is AttentionItem => item !== undefined);

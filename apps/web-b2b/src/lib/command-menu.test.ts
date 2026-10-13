@@ -99,18 +99,33 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     ]);
   });
 
-  it('el superadmin ve todo, pero sin las pantallas de venta', () => {
+  it('el superadmin: Plataforma después de Operaciones, sin Gestión ni las pantallas de venta', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
-    expect(sections.map((s) => s.label)).toContain('Plataforma');
+    // Gestión mostraría los datos del tenant de la plataforma, que no vende.
+    expect(sections.map((s) => s.label)).toEqual([
+      'Operaciones',
+      'Plataforma',
+      'Administración',
+      'Mi cuenta',
+    ]);
     const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
     expect(operations).not.toContain('/hoteles');
     expect(operations).toContain('/reservas');
   });
 
-  it('Plataforma arranca por el Resumen, que es donde entra el superadmin', () => {
+  it('Plataforma: Resumen, Agencias, Carteras y Proveedores', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
-    expect(platform[0]).toMatchObject({ label: 'Resumen', href: '/admin/plataforma/resumen' });
-    expect(platform.map((i) => i.href)).toContain('/admin/plataforma/aprobaciones');
+    expect(platform.map((i) => [i.label, i.href])).toEqual([
+      ['Resumen', '/admin/plataforma/resumen'],
+      ['Agencias', '/admin/tenants'],
+      ['Carteras', '/admin/plataforma/carteras'],
+      ['Proveedores', '/admin/plataforma/proveedores'],
+    ]);
+  });
+
+  it('un platform_admin (retirado) no ve Plataforma: sus pantallas son del superadmin', () => {
+    expect(labels('platform_admin', true)).not.toContain('Plataforma');
+    expect(labels('platform_admin', true)).toContain('Gestión');
   });
 });
