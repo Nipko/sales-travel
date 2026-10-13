@@ -211,6 +211,63 @@ describe('cancelBooking — la evidencia se ata a SU reserva', () => {
   });
 });
 
+describe('checkFlightTickets — los importes de la evidencia, leídos campo a campo', () => {
+  const ticketWith = (fields: Record<string, unknown>): Record<string, unknown> => ({
+    tickets: [{ number: '0167489825830', isVoidable: true, isRefundable: true, ...fields }],
+  });
+
+  it('refundTotals, refundFee y las penalidades con su origen', () => {
+    const [ticket] = evidence(
+      ticketWith({
+        refundTotals: { subtotal: '681.00', taxes: '121.00', total: '802.00', currencyCode: 'USD' },
+        refundFee: { amount: '25.00', currencyCode: 'USD' },
+        refundPenalties: [
+          {
+            applicability: 'BEFORE_DEPARTURE',
+            penalty: { amount: '222.0', currencyCode: 'USD' },
+            source: 'Category 33',
+          },
+          { applicability: 'AFTER_DEPARTURE', penalty: { amount: '300.0', currencyCode: 'USD' } },
+        ],
+      }),
+    ).tickets;
+    expect(ticket).toEqual({
+      number: '0167489825830',
+      isVoidable: true,
+      isRefundable: true,
+      refundTotal: { amount: '802.00', currency: 'USD' },
+      refundFee: { amount: '25.00', currency: 'USD' },
+      refundPenalties: [
+        { amount: '222.0', currency: 'USD', source: 'Category 33' },
+        { amount: '300.0', currency: 'USD' },
+      ],
+    });
+  });
+
+  it('un importe ilegible se descarta y NO tumba la evidencia: de ella depende poder cancelar', () => {
+    const read = evidence(
+      ticketWith({
+        refundTotals: 'OCHOCIENTOS',
+        refundFee: { amount: '1,00', currencyCode: 'USD' },
+        refundPenalties: [{ penalty: { amount: '9', currencyCode: 'usd' } }, 'x', { source: 'X' }],
+      }),
+    );
+    expect(read.tickets).toEqual([
+      { number: '0167489825830', isVoidable: true, isRefundable: true },
+    ]);
+    expect(read.cancelOffers).toHaveLength(1);
+  });
+
+  it('un origen de penalidad que no está en el enum no se copia', () => {
+    const [ticket] = evidence(
+      ticketWith({
+        refundPenalties: [{ penalty: { amount: '10.00', currencyCode: 'USD' }, source: 'GARCIA' }],
+      }),
+    ).tickets;
+    expect(ticket?.refundPenalties).toEqual([{ amount: '10.00', currency: 'USD' }]);
+  });
+});
+
 describe('cancelBooking — la oferta de cancelación no se inventa ni se recicla', () => {
   it('un offerItemId que no salió del check se rechaza', () => {
     expect(

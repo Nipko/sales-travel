@@ -7,7 +7,11 @@ import type {
 } from '@sales-travel/domain';
 import { z } from 'zod';
 import { SabreIndexError, parseSabreIndex, toArrayPosition } from '../indices';
-import { classifySabreTicketStatus, sabreDocumentStatusRank } from '../ticketing/document-status';
+import {
+  classifySabreTicketStatus,
+  sabreDocumentStatusRank,
+  sabrePrimaryDocumentNumber,
+} from '../ticketing/document-status';
 import { SABRE_EXTRA_FEATURES } from './get.request.builder';
 
 /**
@@ -394,24 +398,6 @@ function collectTicketNumbers(
   return numbers;
 }
 
-/**
- * `TicketDocument.number`: el número principal, sólo dígitos. Sabre admite `/` y `-`
- * (`^[0-9A-Z/-]+$`, `:3838-3842`); lo que va después de `/` es el sufijo del conjuntivo
- * (`1609786952746/47`), que no identifica otro documento para anular ni devolver.
- */
-const DOCUMENT_NUMBER = /^[0-9]{10,16}$/;
-
-/**
- * El número principal de un `FlightTicket.number`, o `undefined` si no es un número que se pueda
- * guardar. Un guion NO se quita: no se sabe si es un separador de formato (`016-7489825830`) o un
- * rango conjuntivo (`0167489825830-31`), y quitarlo en el segundo caso fabrica un número que no
- * existe. Ése se queda en `ticketNumbers`, como siempre, y no pasa a documento.
- */
-function primaryDocumentNumber(raw: string): string | undefined {
-  const primary = raw.split('/', 1)[0] ?? '';
-  return DOCUMENT_NUMBER.test(primary) ? primary : undefined;
-}
-
 /** `travelerIndex` (1-based) a la posición del pasajero (0-based), si apunta a alguien. */
 function documentTravelerPosition(
   raw: unknown,
@@ -449,7 +435,7 @@ function collectDocuments(
 
   for (const ticket of response.flightTickets) {
     if (typeof ticket.number !== 'string') continue;
-    const number = primaryDocumentNumber(ticket.number);
+    const number = sabrePrimaryDocumentNumber(ticket.number);
     if (number === undefined) {
       addWarning(warnings, 'ticket-number-malformed');
       continue;

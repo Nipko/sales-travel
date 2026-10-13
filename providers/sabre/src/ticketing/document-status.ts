@@ -1,4 +1,8 @@
-import type { TicketDocumentKind, TicketDocumentStatus } from '@sales-travel/domain';
+import type {
+  TicketDocument,
+  TicketDocumentKind,
+  TicketDocumentStatus,
+} from '@sales-travel/domain';
 
 /**
  * El estado de un tiquete o EMD de Sabre, traducido al vocabulario del dominio (RF-15).
@@ -94,4 +98,54 @@ export function sabreDocumentStatusRank(status: TicketDocumentStatus): number {
     case 'UNKNOWN':
       return 0;
   }
+}
+
+/**
+ * `TicketDocument.number`: el número principal, sólo dígitos, de 10 a 16. Sabre admite `/` y `-`
+ * (`^[0-9A-Z/-]+$`, `FlightTicket.number` en `:3838-3842` y `FulfillTicket.number` en `:7978`); lo
+ * que va después de `/` es el sufijo del conjuntivo (`1609786952746/47`), que no identifica otro
+ * documento para anular ni devolver.
+ */
+const DOCUMENT_NUMBER = /^[0-9]{10,16}$/;
+
+/**
+ * El número principal de un número de documento de Sabre, o `undefined` si no es un número que se
+ * pueda guardar. Un guion NO se quita: no se sabe si es un separador de formato (`016-7489825830`)
+ * o un rango conjuntivo (`0167489825830-31`), y quitarlo en el segundo caso fabrica un número que
+ * no existe.
+ *
+ * La comparten la lectura de la reserva y la emisión: los dos devuelven documentos del mismo
+ * contrato y un mismo tiquete tiene que salir con el mismo número por las dos vías.
+ */
+export function sabrePrimaryDocumentNumber(raw: string): string | undefined {
+  const primary = raw.split('/', 1)[0] ?? '';
+  return DOCUMENT_NUMBER.test(primary) ? primary : undefined;
+}
+
+/**
+ * Une dos lecturas de documentos de la MISMA reserva, uno por número. Por cada número gana el
+ * estado de mayor rango ({@link sabreDocumentStatusRank}); a igual rango, la segunda lista —la más
+ * reciente—. El pasajero se conserva de la que lo traiga: la emisión no lo informa y la lectura de
+ * la reserva sí.
+ */
+export function mergeSabreTicketDocuments(
+  earlier: readonly TicketDocument[],
+  later: readonly TicketDocument[],
+): TicketDocument[] {
+  const byNumber = new Map<string, TicketDocument>();
+  for (const document of [...earlier, ...later]) {
+    const previous = byNumber.get(document.number);
+    if (
+      previous !== undefined &&
+      sabreDocumentStatusRank(document.status) < sabreDocumentStatusRank(previous.status)
+    ) {
+      continue;
+    }
+    const travelerIndex = document.travelerIndex ?? previous?.travelerIndex;
+    byNumber.set(document.number, {
+      ...document,
+      ...(travelerIndex === undefined ? {} : { travelerIndex }),
+    });
+  }
+  return [...byNumber.values()];
 }
