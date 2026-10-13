@@ -18,6 +18,7 @@ import { ProviderCredentialsService } from '../provider-credentials/provider-cre
 import type { ResolvedProviderAccount } from '../provider-credentials/provider-credentials.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
+  ProviderOrderAccountUnavailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
   type ProviderFlagsPort,
@@ -90,6 +91,148 @@ describe('SabreProviderFactory — resolución BYOC', () => {
   it('propaga los errores que NO son NotFound (bóveda caída, credencial corrupta)', async () => {
     const factory = factoryWith(() => Promise.reject(new Error('db down')));
     await expect(factory.forTenant('t1')).rejects.toThrow('db down');
+  });
+
+  it('declara la cuenta de la bóveda con que sale y su versión: la orden la guarda', async () => {
+    const updatedAt = new Date('2026-04-01T10:00:00Z');
+    const factory = factoryWith(() => Promise.resolve(resolved({ id: 'acc-vigente', updatedAt })));
+
+    expect(await factory.resolveForTenant('t1')).toMatchObject({
+      accountId: 'acc-vigente',
+      accountUpdatedAt: updatedAt,
+    });
+  });
+});
+
+/**
+ * La post-venta sale con la cuenta (y el PCC) con que se hizo la reserva, no con la vigente del
+ * tenant (RF-29): un PNR sólo existe para la oficina que lo creó.
+ */
+describe('SabreProviderFactory — la cuenta de una orden ya hecha', () => {
+  const ORDEN = 'order-1';
+
+  function factoryWithOrder(
+    resolve: ProviderCredentialsService['resolve'],
+    resolveForOrder: ProviderCredentialsService['resolveForOrder'],
+  ) {
+    const creds = { resolve: vi.fn(resolve), resolveForOrder: vi.fn(resolveForOrder) };
+    const factory = new SabreProviderFactory(creds as unknown as ProviderCredentialsService);
+    return { factory, creds };
+  }
+
+  it('resuelve la cuenta DESDE la orden, con el tenant, y nunca pide la vigente', async () => {
+    const updatedAt = new Date('2026-02-01T00:00:00Z');
+    const { factory, creds } = factoryWithOrder(
+      () => Promise.reject(new Error('la post-venta no puede pedir la cuenta vigente')),
+      () => Promise.resolve(resolved({ id: 'acc-heredada', inherited: true, updatedAt })),
+    );
+
+    const deLaOrden = await factory.resolveForOrder('t1', ORDEN);
+
+    expect(creds.resolveForOrder).toHaveBeenCalledWith('t1', ORDEN);
+    expect(creds.resolve).not.toHaveBeenCalled();
+    expect(deLaOrden).toMatchObject({
+      credentialSource: 'inherited',
+      providerEnvironment: 'test',
+      accountId: 'acc-heredada',
+      accountUpdatedAt: updatedAt,
+    });
+  });
+
+  it('la misma cuenta por la venta y por la orden comparte instancia: mismo token y mismo cupo', async () => {
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved()),
+    );
+
+    const venta = await factory.resolveForTenant('t1');
+    const postVenta = await factory.resolveForOrder('t1', ORDEN);
+
+    expect(postVenta.adapter).toBe(venta.adapter);
+  });
+
+  it('dos cuentas del mismo dueño, mismo PCC y misma versión: un adapter cada una, sin desalojarse', async () => {
+    // La agencia vende con su cuenta nueva y opera reservas viejas con la anterior. Con el dueño y
+    // el PCC solos en la clave, las dos compartían instancia (credenciales de una, reservas de la
+    // otra); con el desalojo por dueño, cada llamada reconstruía el adapter y pedía otro token.
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved({ id: 'acc-nueva' })),
+      () =>
+        Promise.resolve(
+          resolved({
+            id: 'acc-anterior',
+            credentials: { epr: 'OTRO-EPR', password: 'otra-clave', homePcc: HOME_PCC },
+          }),
+        ),
+    );
+
+    const venta = await factory.resolveForTenant('t1');
+    const postVenta = await factory.resolveForOrder('t1', ORDEN);
+    const ventaOtraVez = await factory.resolveForTenant('t1');
+
+    expect(postVenta.adapter).not.toBe(venta.adapter);
+    expect(ventaOtraVez.adapter).toBe(venta.adapter);
+    expect((await factory.resolveForOrder('t1', ORDEN)).adapter).toBe(postVenta.adapter);
+  });
+
+  it('al rotar la credencial de la cuenta de la orden, el adapter se reconstruye', async () => {
+    let updatedAt = new Date('2026-01-01T00:00:00Z');
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ updatedAt })),
+    );
+
+    const antes = await factory.resolveForOrder('t1', ORDEN);
+    updatedAt = new Date('2026-03-01T00:00:00Z');
+
+    expect((await factory.resolveForOrder('t1', ORDEN)).adapter).not.toBe(antes.adapter);
+  });
+
+  it('pasa por la misma puerta de credenciales: incompleta, sin adapter y sin eco del secreto', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ credentials: { epr: EPR, homePcc: HOME_PCC } })),
+    );
+
+    const err = await factory.resolveForOrder('t1', ORDEN).catch((e: unknown) => e);
+    warn.mockRestore();
+
+    // Incompleta es `NotFoundException`: para el registry, "la cuenta de la reserva no está".
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect((err as Error).message).toContain('password');
+    expect((err as Error).message).not.toContain(EPR);
+  });
+
+  it('una cuenta de otro proveedor no se usa, y el motivo no nombra ni la orden ni el tenant', async () => {
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ providerCode: 'otro-proveedor' })),
+    );
+
+    const err = await factory.resolveForOrder('t1', ORDEN).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect((err as Error).message).not.toContain(ORDEN);
+    expect((err as Error).message).not.toContain('t1');
+  });
+
+  it('propaga la `NotFoundException` de la bóveda y cualquier otro fallo, sin caer a la vigente', async () => {
+    const fuera = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.reject(new NotFoundException('fuera de la red')),
+    );
+    const caida = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.reject(new Error('db down')),
+    );
+
+    await expect(fuera.factory.resolveForOrder('t1', ORDEN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(caida.factory.resolveForOrder('t1', ORDEN)).rejects.toThrow('db down');
+    expect(fuera.creds.resolve).not.toHaveBeenCalled();
+    expect(caida.creds.resolve).not.toHaveBeenCalled();
   });
 });
 
@@ -1191,6 +1334,74 @@ describe('FlightProviderRegistry + Sabre', () => {
     // factory devolviera un adapter de plataforma, el registry lo dejaría fuera.
     const registry = registryWith(() => Promise.reject(new NotFoundException('none')));
     expect(await registry.codesForTenant('t1')).toEqual([]);
+  });
+
+  describe('post-venta con la cuenta de la reserva', () => {
+    function registryConOrden(resolveForOrder: ProviderCredentialsService['resolveForOrder']) {
+      const creds = {
+        resolve: vi.fn(() => Promise.resolve(resolved({ id: 'acc-vigente' }))),
+        resolveForOrder: vi.fn(resolveForOrder),
+      };
+      const registry = new FlightProviderRegistry(
+        [new SabreProviderFactory(creds as unknown as ProviderCredentialsService)],
+        { decisionFor: () => Promise.resolve(ENCENDIDO) },
+      );
+      return { registry, creds };
+    }
+
+    it('las órdenes de Sabre guardan la cuenta: su factory sabe volver a operar con ella', () => {
+      const { registry } = registryConOrden(() => Promise.resolve(resolved()));
+      expect(registry.recordsOrderAccount(SABRE_PROVIDER_CODE)).toBe(true);
+    });
+
+    it('una orden con cuenta sale con ESA cuenta aunque el tenant tenga otra vigente', async () => {
+      const { registry, creds } = registryConOrden(() =>
+        Promise.resolve(resolved({ id: 'acc-de-la-orden', inherited: true })),
+      );
+
+      const p = await registry.forOrder('t1', {
+        orderId: 'order-1',
+        provider: SABRE_PROVIDER_CODE,
+        providerAccountId: 'acc-de-la-orden',
+      });
+
+      expect(creds.resolveForOrder).toHaveBeenCalledWith('t1', 'order-1');
+      expect(creds.resolve).not.toHaveBeenCalled();
+      expect(p).toMatchObject({
+        code: SABRE_PROVIDER_CODE,
+        accountId: 'acc-de-la-orden',
+        credentialSource: 'inherited',
+        environment: 'test',
+      });
+    });
+
+    it('si la cuenta de la orden ya no está en la red, 409 y nunca la vigente', async () => {
+      const { registry, creds } = registryConOrden(() =>
+        Promise.reject(new NotFoundException('fuera de la red')),
+      );
+
+      await expect(
+        registry.forOrder('t1', {
+          orderId: 'order-1',
+          provider: SABRE_PROVIDER_CODE,
+          providerAccountId: 'acc-de-la-orden',
+        }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      expect(creds.resolve).not.toHaveBeenCalled();
+    });
+
+    it('una orden vieja, sin cuenta guardada, sigue con la vigente como antes', async () => {
+      const { registry, creds } = registryConOrden(() => Promise.resolve(resolved()));
+
+      const p = await registry.forOrder('t1', {
+        orderId: 'order-1',
+        provider: SABRE_PROVIDER_CODE,
+        providerAccountId: null,
+      });
+
+      expect(creds.resolveForOrder).not.toHaveBeenCalled();
+      expect(p.accountId).toBe('acc-vigente');
+    });
   });
 });
 

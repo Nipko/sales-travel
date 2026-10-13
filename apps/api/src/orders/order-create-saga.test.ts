@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException, ConflictException, HttpException } from '@nestjs/common';
+import { PostgresQueryCompiler, type CompiledQuery, type RootOperationNode } from 'kysely';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import {
   OrderCreateNotSentError,
@@ -27,13 +33,17 @@ import type {
   TenantAdapter,
   TenantProviderFactory,
 } from '../providers/provider.types.js';
-import { ProviderDisabledByPlatformError } from '../providers/provider.types.js';
+import {
+  ProviderDisabledByPlatformError,
+  ProviderOrderAccountUnavailableError,
+} from '../providers/provider.types.js';
 import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-flags.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
+import { ProviderAccountChangedError } from './order-create-intent.store.js';
 import { ORDER_EVENTS } from './order-events.js';
-import { OrdersService, type CreateOrderDto } from './orders.service.js';
+import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { runPostSaleJob, type PostSaleJobHandlers } from './post-sale.worker.js';
 
 /**
@@ -210,6 +220,11 @@ interface FakeDbOptions {
   failOrderFinalize?: boolean;
   failCreateIntentInsert?: boolean;
   failCreateIntentSettlement?: boolean;
+  /**
+   * Cuentas de proveedor que `resolve_order_provider_account` (0045) resuelve para la orden que las
+   * guarda, con su versión (`updated_at`, ISO). La que no está aquí no se resuelve.
+   */
+  providerAccounts?: Readonly<Record<string, string>>;
 }
 
 /** Doble de la base: guarda por tabla y aplica los UPDATE, que es lo que el saga mira. */
@@ -220,6 +235,8 @@ function dbFalsa(
   db: DatabaseService;
   fila: () => Record<string, unknown> | undefined;
   operaciones: () => Record<string, unknown>[];
+  /** SQL crudo que se ejecutó, por función. */
+  consultas: () => readonly string[];
 } {
   const orders = new Map<string, unknown>(Object.entries(semilla ?? {}));
   const operaciones: Record<string, unknown>[] = [];
@@ -372,10 +389,32 @@ function dbFalsa(
     };
     return update;
   };
+  // Lo único que el saga ejecuta como SQL crudo: la versión de la cuenta que el intent guardó.
+  const compiler = new PostgresQueryCompiler();
+  const consultas: string[] = [];
+  const executor = {
+    transformQuery: (node: RootOperationNode) => node,
+    compileQuery: (node: RootOperationNode) => compiler.compileQuery(node),
+    withPlugins: () => executor,
+    executeQuery: (compiled: CompiledQuery) => {
+      if (!compiled.sql.includes('resolve_order_provider_account')) {
+        return Promise.reject(new Error(`SQL crudo inesperado: ${compiled.sql}`));
+      }
+      consultas.push('resolve_order_provider_account');
+      const cuenta = filaOrden()['provider_account_id'];
+      const version =
+        typeof cuenta === 'string' ? (options.providerAccounts ?? {})[cuenta] : undefined;
+      // Como la función de Postgres: sin cuenta que resolver, una fila de nulos.
+      return Promise.resolve({
+        rows: [{ updated_at: version === undefined ? null : new Date(version) }],
+      });
+    },
+  };
   const trx = {
     selectFrom: (tabla: string) => selectEn(tabla),
     insertInto: (tabla: string) => insertEn(tabla),
     updateTable: (tabla: string) => updateEn(tabla),
+    getExecutor: () => executor,
   };
 
   const db = {
@@ -397,6 +436,7 @@ function dbFalsa(
     db,
     fila: () => (orders.size === 0 ? undefined : filaOrden()),
     operaciones: () => operaciones,
+    consultas: () => consultas,
   };
 }
 
@@ -1712,7 +1752,12 @@ describe('habilitación de la plataforma — corta la venta nueva, no la post-ve
   it('una orden YA hecha se sigue leyendo, y su compensación selectiva sigue saliendo', async () => {
     const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
 
-    await b.orders.retrieveFromProvider(TENANT, PNR, PROVEEDOR);
+    await b.orders.retrieveFromProvider(TENANT, {
+      id: 'order-1',
+      provider: PROVEEDOR,
+      provider_order_id: PNR,
+      provider_account_id: null,
+    });
     await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
 
     expect(b.adapter.retrieveForDisplay).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
@@ -1736,5 +1781,215 @@ describe('habilitación de la plataforma — corta la venta nueva, no la post-ve
 
     expect(res.success).toBe(true);
     expect(b.adapter.payOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('post-venta con la cuenta de la reserva (RF-29)', () => {
+  const CUENTA_VIGENTE = 'acc-vigente';
+  const CUENTA_DE_LA_ORDEN = 'acc-de-la-orden';
+  const VERSION_VIGENTE = new Date('2026-05-01T10:00:00.000Z');
+  const ORDEN_CON_CUENTA = {
+    provider: PROVEEDOR,
+    provider_order_id: PNR,
+    status: 'confirmed',
+    user_id: USER,
+    provider_account_id: CUENTA_DE_LA_ORDEN,
+  };
+  const verificada: AdapterOptions = {
+    cancelAudit: {
+      audit: { audited: true, outcome: 'CANCELLED' },
+      idempotencyKey: 'sha256-de-la-peticion',
+      verified: true,
+    },
+  };
+
+  /** Vende con la cuenta vigente del tenant y dice cuál es, pero no sabe operar por cuenta. */
+  class SagaFactoryConCuenta extends SagaFactory {
+    /** Cuántas veces se pidió la cuenta vigente. */
+    vigentes = 0;
+
+    override resolveForTenant(): Promise<TenantAdapter<FlightProviderAdapter>> {
+      this.vigentes += 1;
+      return Promise.resolve({
+        adapter: this.adapter,
+        credentialSource: 'own',
+        accountId: CUENTA_VIGENTE,
+        accountUpdatedAt: VERSION_VIGENTE,
+      });
+    }
+  }
+
+  /** Además opera cada orden con la cuenta que guardó, con un adapter propio para ver cuál salió. */
+  class SagaFactoryPorCuenta extends SagaFactoryConCuenta {
+    disponible = true;
+    readonly resolveForOrder = vi.fn(
+      (_tenantId: string, _orderId: string): Promise<TenantAdapter<FlightProviderAdapter>> =>
+        this.disponible
+          ? Promise.resolve({
+              adapter: this.deLaOrden,
+              credentialSource: 'inherited',
+              accountId: CUENTA_DE_LA_ORDEN,
+              accountUpdatedAt: new Date('2026-03-01T10:00:00.000Z'),
+            })
+          : Promise.reject(new NotFoundException('fuera de la red')),
+    );
+
+    constructor(
+      adapter: SagaAdapter,
+      readonly deLaOrden: SagaAdapter,
+    ) {
+      super(adapter);
+    }
+  }
+
+  function montar(
+    factory: SagaFactory,
+    semilla?: Record<string, unknown>,
+    providerAccounts: Readonly<Record<string, string>> = {},
+  ) {
+    const { db, fila, operaciones, consultas } = dbFalsa(semilla, { providerAccounts });
+    const orders = new OrdersService(
+      db,
+      new FlightProviderRegistry([factory], { decisionFor: () => Promise.resolve(undefined) }),
+      new RecordingQueueService().asService(),
+      {} as unknown as AgentCarsProviderFactory,
+      new RecordingAuditService().asService(),
+      PRICING_SIN_REGLAS,
+    );
+    return { orders, fila, operaciones, consultas };
+  }
+
+  /** La fila tal como la leería el controlador. */
+  function filaDe(b: ReturnType<typeof montar>): OrderRow {
+    return b.fila() as unknown as OrderRow;
+  }
+
+  it('la venta de un proveedor que opera por cuenta la guarda, y el intent comprueba su versión', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, undefined, { [CUENTA_VIGENTE]: VERSION_VIGENTE.toISOString() });
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(b.fila()).toMatchObject({ provider_account_id: CUENTA_VIGENTE });
+    expect(b.consultas()).toEqual(['resolve_order_provider_account']);
+    expect(factory.adapter.createOrder).toHaveBeenCalledTimes(1);
+    // La venta y su cierre salen con la cuenta vigente: la orden se opera por cuenta después.
+    expect(factory.resolveForOrder).not.toHaveBeenCalled();
+    expect(factory.deLaOrden.retrieveForDisplay).not.toHaveBeenCalled();
+  });
+
+  it('si la cuenta cambió entre resolverla y abrir la orden, 409 y nada sale al proveedor', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, undefined, { [CUENTA_VIGENTE]: '2026-06-01T00:00:00.000Z' });
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ProviderAccountChangedError,
+    );
+
+    expect(b.fila()).toBeUndefined();
+    expect(factory.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(factory.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('un proveedor que no opera por cuenta no la guarda, aunque diga con cuál vende', async () => {
+    const factory = new SagaFactoryConCuenta(new SagaAdapter());
+    const b = montar(factory);
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(b.fila()?.['provider_account_id']).toBeUndefined();
+    expect(b.consultas()).toEqual([]);
+    expect(factory.adapter.createOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('consultar, verificar y cancelar una orden con cuenta salen con la de la orden', async () => {
+    const vigente = new SagaAdapter(verificada);
+    const factory = new SagaFactoryPorCuenta(vigente, new SagaAdapter(verificada));
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await b.orders.retrieveOrder(TENANT, filaDe(b));
+    await b.orders.verifyCreationById(TENANT, 'order-1');
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(factory.resolveForOrder).toHaveBeenCalledWith(TENANT, 'order-1');
+    expect(factory.deLaOrden.retrieveForDisplay).toHaveBeenCalledTimes(2);
+    expect(factory.deLaOrden.cancelOrder).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
+    expect(b.fila()?.['status']).toBe('cancelled');
+    // La cuenta vigente del tenant no participa: con ella el proveedor no reconoce la reserva.
+    expect(factory.vigentes).toBe(0);
+    expect(vigente.retrieveForDisplay).not.toHaveBeenCalled();
+    expect(vigente.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('la compensación selectiva también sale con la cuenta de la orden', async () => {
+    const factory = new SagaFactoryPorCuenta(
+      new SagaAdapter(verificada),
+      new SagaAdapter(verificada),
+    );
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
+
+    expect(factory.deLaOrden.cancelScopes).toEqual([{ itemIds: ['12'] }]);
+    expect(factory.adapter.cancelScopes).toEqual([]);
+    expect(factory.vigentes).toBe(0);
+  });
+
+  it('pagar, listar servicios y recotizar también salen con la cuenta de la orden', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, ORDEN_CON_CUENTA);
+    const fila = filaDe(b);
+
+    await b.orders
+      .payOrder(TENANT, 'order-1', fila, { type: 'Cash', amount: 100, currency: 'USD' }, USER)
+      .catch(() => undefined);
+    await b.orders.listServices(TENANT, fila).catch(() => undefined);
+    await b.orders
+      .reshopOrder(TENANT, fila, {} as Parameters<OrdersService['reshopOrder']>[2], USER)
+      .catch(() => undefined);
+
+    expect(factory.deLaOrden.payOrder).toHaveBeenCalledTimes(1);
+    expect(factory.deLaOrden.listServices).toHaveBeenCalledTimes(1);
+    expect(factory.deLaOrden.reshopWithTickets).toHaveBeenCalledTimes(1);
+    expect(factory.adapter.payOrder).not.toHaveBeenCalled();
+    expect(factory.adapter.listServices).not.toHaveBeenCalled();
+    expect(factory.adapter.reshopWithTickets).not.toHaveBeenCalled();
+    expect(factory.vigentes).toBe(0);
+  });
+
+  it('con la cuenta de la orden fuera de la red: 409 al consultar y al cancelar, sin claim ni llamada', async () => {
+    const factory = new SagaFactoryPorCuenta(
+      new SagaAdapter(verificada),
+      new SagaAdapter(verificada),
+    );
+    factory.disponible = false;
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await expect(b.orders.retrieveOrder(TENANT, filaDe(b))).rejects.toBeInstanceOf(
+      ProviderOrderAccountUnavailableError,
+    );
+    await expect(b.orders.cancelOrder(TENANT, 'order-1', PNR, USER)).rejects.toBeInstanceOf(
+      ProviderOrderAccountUnavailableError,
+    );
+
+    // Nunca cae a la vigente, no deja una cancelación fallida en el historial y la orden sigue igual.
+    expect(factory.vigentes).toBe(0);
+    expect(factory.adapter.cancelOrder).not.toHaveBeenCalled();
+    expect(factory.deLaOrden.cancelOrder).not.toHaveBeenCalled();
+    expect(b.operaciones()).toEqual([]);
+    expect(b.fila()?.['status']).toBe('confirmed');
+  });
+
+  it('una orden SIN cuenta guardada (anterior, o de otro proveedor) sigue con la vigente', async () => {
+    const vigente = new SagaAdapter(verificada);
+    const factory = new SagaFactoryPorCuenta(vigente, new SagaAdapter(verificada));
+    const b = montar(factory, { ...ORDEN_CON_CUENTA, provider_account_id: null });
+
+    await b.orders.retrieveOrder(TENANT, filaDe(b));
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(factory.resolveForOrder).not.toHaveBeenCalled();
+    expect(vigente.retrieveForDisplay).toHaveBeenCalledTimes(1);
+    expect(vigente.cancelOrder).toHaveBeenCalledTimes(1);
   });
 });

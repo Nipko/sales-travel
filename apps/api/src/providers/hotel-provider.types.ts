@@ -214,9 +214,15 @@ export interface HotelProviderFactory
  * Sin `environment`: ese campo lo leen la búsqueda y las órdenes de VUELOS para marcar las tarifas
  * de una cuenta de pruebas. Hoteles no lo hereda; si declara el entorno de su cuenta, lo hace con un
  * campo propio de este tipo y con el mismo vocabulario (`test` | `live`).
+ *
+ * Sin `accountId` ni `accountUpdatedAt` por lo mismo: la reserva de hoteles toma la cuenta de la
+ * huella que dejó la búsqueda (`HotelProviderAccountFingerprint`), no del proveedor resuelto.
  */
 export interface ResolvedHotelProvider
-  extends Omit<ResolvedProvider<HotelProviderAdapter>, 'capabilities' | 'environment'> {
+  extends Omit<
+    ResolvedProvider<HotelProviderAdapter>,
+    'capabilities' | 'environment' | 'accountId' | 'accountUpdatedAt'
+  > {
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
   /** Lo que el factory declaró para el breaker; se pasa tal cual en cada llamada al adapter. */

@@ -113,6 +113,10 @@ export interface StubFactoryOptions extends StubAdapterOptions {
   failResolve?: boolean;
   /** Entorno que declara la cuenta. Ausente = el factory no dice nada (se lee como `live`). */
   providerEnvironment?: ProviderEnvironment;
+  /** Cuenta de la bóveda que declara `resolveForTenant` (`TenantAdapter.accountId`). */
+  accountId?: string;
+  /** Su versión (`TenantAdapter.accountUpdatedAt`). */
+  accountUpdatedAt?: Date;
 }
 
 export class StubProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
@@ -152,6 +156,10 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
       ...(this.opts.providerEnvironment === undefined
         ? {}
         : { providerEnvironment: this.opts.providerEnvironment }),
+      ...(this.opts.accountId === undefined ? {} : { accountId: this.opts.accountId }),
+      ...(this.opts.accountUpdatedAt === undefined
+        ? {}
+        : { accountUpdatedAt: this.opts.accountUpdatedAt }),
     });
   }
 
