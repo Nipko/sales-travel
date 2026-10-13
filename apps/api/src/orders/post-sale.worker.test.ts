@@ -6,6 +6,7 @@ import type { ReconciliationService } from '../reconciliation/reconciliation.ser
 import type { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import type { OrdersService } from './orders.service.js';
 import type { PostSaleSweeper } from './post-sale-sweeper.js';
+import type { FlightTicketIssueService } from './ticket-issue.service.js';
 // `vi.mock` sube antes de los imports: el worker ya ve el BullMQ falso.
 import { PostSaleWorker, runPostSaleJob, type PostSaleJobHandlers } from './post-sale.worker.js';
 
@@ -58,6 +59,9 @@ const reconciliation = {
 } as unknown as ReconciliationService;
 const run = vi.fn<PostSaleSweeper['run']>();
 const sweeper = { run } as unknown as PostSaleSweeper;
+const runIssueById = vi.fn<FlightTicketIssueService['runIssueById']>(() => Promise.resolve());
+const runVerifyJob = vi.fn<FlightTicketIssueService['runVerifyJob']>(() => Promise.resolve());
+const ticketIssues = { runIssueById, runVerifyJob } as unknown as FlightTicketIssueService;
 const TENANT = '11111111-1111-4111-8111-111111111111';
 
 describe('PostSaleWorker en el apagado', () => {
@@ -85,6 +89,7 @@ describe('PostSaleWorker en el apagado', () => {
       hotelCancellations,
       hcn,
       reconciliation,
+      ticketIssues,
     );
 
     worker.onModuleInit();
@@ -114,6 +119,7 @@ describe('PostSaleWorker en el apagado', () => {
       hotelCancellations,
       hcn,
       reconciliation,
+      ticketIssues,
     );
 
     worker.onModuleInit();
@@ -126,7 +132,15 @@ describe('PostSaleWorker en el apagado', () => {
 
 describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () => {
   function manejadores(): PostSaleJobHandlers {
-    return { orders, hotelBookings, hotelCancellations, hcn, reconciliation, sweeper };
+    return {
+      orders,
+      hotelBookings,
+      hotelCancellations,
+      hcn,
+      reconciliation,
+      sweeper,
+      ticketIssues,
+    };
   }
 
   beforeEach(() => {
@@ -136,6 +150,36 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
     runReconcileJob.mockClear();
     runDaily.mockClear();
     run.mockReset();
+    runIssueById.mockClear();
+    runVerifyJob.mockClear();
+  });
+
+  it('`issue` va a la emisión con la orden, la operación y quien la pidió (SAB-08)', async () => {
+    const data = {
+      tenantId: TENANT,
+      orderId: 'o1',
+      operationId: 'op-1',
+      actorUserId: 'u-1',
+    };
+
+    await runPostSaleJob(manejadores(), 'issue', data);
+
+    expect(runIssueById).toHaveBeenCalledWith(TENANT, 'o1', 'op-1', 'u-1');
+    expect(runVerifyJob).not.toHaveBeenCalled();
+    expect(runJob).not.toHaveBeenCalled();
+  });
+
+  it('`verify-issue` va a la relectura de la emisión, con el último intento avisado (SAB-08)', async () => {
+    const data = { tenantId: TENANT, orderId: 'o1', operationId: 'op-1', step: 2 };
+
+    await runPostSaleJob(manejadores(), 'verify-issue', data, { made: 0, max: 5 });
+    await runPostSaleJob(manejadores(), 'verify-issue', data, { made: 4, max: 5 });
+
+    expect(runVerifyJob.mock.calls).toEqual([
+      [data, { final: false }],
+      [data, { final: true }],
+    ]);
+    expect(runIssueById).not.toHaveBeenCalled();
   });
 
   it('`verify-hotel-booking` va a la verificación con el payload tal cual (lo valida ella)', async () => {
@@ -230,6 +274,7 @@ describe('runPostSaleJob — verificación de hoteles y barrido (PR-4.7)', () =>
       hotelCancellations,
       hcn,
       reconciliation,
+      ticketIssues,
     );
     worker.onModuleInit();
     const procesar = bull.procesador;

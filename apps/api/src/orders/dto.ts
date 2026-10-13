@@ -39,3 +39,17 @@ export const PayOrderSchema = z.object({
   payment: z.record(z.unknown()),
 });
 export type PayOrderInput = z.infer<typeof PayOrderSchema>;
+
+/**
+ * Pedir la emisión de una reserva. El total y la moneda son los que el vendedor tenía en pantalla
+ * al confirmar: si la orden ya dice otra cosa, no se emite (409). Sin forma de pago: la decide la
+ * cuenta del proveedor (CASH, ON_ACCOUNT o INVOICE) y nunca es una tarjeta (D1). `strict` por lo
+ * mismo que `CreateOrderSchema`: un `payment` que se descarta en silencio parece cobrado.
+ */
+export const IssueOrderSchema = z
+  .object({
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type IssueOrderInput = z.infer<typeof IssueOrderSchema>;

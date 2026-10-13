@@ -518,6 +518,44 @@ describe('FlightProviderRegistry', () => {
       );
     });
 
+    it('`forOrderSale`: emitir una orden con el proveedor apagado es 400, sin bóveda', async () => {
+      const stub = new StubProviderFactory({ code: 'alfa-air' });
+      const r = registry(
+        [stub],
+        flags((tenantId) => (tenantId === TENANT ? apagadoPara(TENANT) : undefined)).port,
+      );
+
+      const err = await r
+        .forOrderSale(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: null })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+      expect(stub.resolveCalls).toEqual([]);
+      // Otro tenant, con el proveedor encendido, sí emite.
+      await expect(
+        r.forOrderSale(OTRO_TENANT, {
+          orderId: 'o-2',
+          provider: 'alfa-air',
+          providerAccountId: null,
+        }),
+      ).resolves.toMatchObject({ code: 'alfa-air' });
+    });
+
+    it('`forOrderSale`: encendido, sale con la cuenta de la ORDEN como `forOrder`', async () => {
+      const r = registry([new StubProviderFactory({ code: 'alfa-air' })]);
+
+      await expect(
+        r.forOrderSale(TENANT, {
+          orderId: 'o-1',
+          provider: 'alfa-air',
+          providerAccountId: 'acc-1',
+        }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      await expect(
+        r.forOrderSale(TENANT, { orderId: 'o-1', provider: 'no-existe', providerAccountId: null }),
+      ).rejects.toBeInstanceOf(ProviderNotAvailableError);
+    });
+
     it('`byCode` (post-venta) NO mira la habilitación: lo ya vendido se sigue operando', async () => {
       const { port, decisionFor } = flags(() => APAGADO_GLOBAL);
       const r = registry([new StubProviderFactory({ code: 'alfa-air' })], port);

@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  Optional,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -27,6 +28,7 @@ import {
   StaleCancelClaimService,
   type StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
+import { FlightTicketIssueService, type TicketIssueSweepReport } from './ticket-issue.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -49,7 +51,9 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * reservas de hotel sin respuesta, la de sus cancelaciones en curso o sin verificar (PR-5.3), el seguimiento
  * del HCN (PR-5.4): sus lecturas perdidas, sus entradas en ventana y las órdenes confirmadas que se
  * quedaron sin plan; y las cuentas propias del tenant que se quedaron sin conciliación del día
- * (PR-5.5), que sin Redis es la única vía por la que se concilian.
+ * (PR-5.5), que sin Redis es la única vía por la que se concilian. Y las emisiones de tiquetes que la
+ * cola perdió (SAB-08): las pedidas que nunca salieron se abandonan sin emitir nada, y las ya
+ * mandadas sin desenlace pasan a conciliación; ninguna se reenvía.
  *
  * `orders`, `order_operations` y `hotel_order_tracking` tienen RLS forzada y la API corre como
  * `app_user`, sin rol de mantenimiento ni función que la salte: el barrido recorre los tenants uno
@@ -75,6 +79,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   hcn: HcnSweepReport;
   /** Las conciliaciones atrasadas que se encolaron (o corrieron aquí). */
   reconciliation: ReconciliationDispatchReport;
+  /** Las emisiones de tiquetes pendientes que la cola perdió. */
+  ticketIssues: TicketIssueSweepReport;
 };
 
 @Injectable()
@@ -94,6 +100,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly hcn: HcnTrackingService,
     private readonly reconciliation: ReconciliationService,
     private readonly staleClaims: StaleCancelClaimService,
+    /** La emisión de tiquetes (SAB-08). Opcional sólo para los dobles: en la app siempre está. */
+    @Optional() private readonly ticketIssues?: FlightTicketIssueService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -171,6 +179,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
         skipped: 0,
       },
       reconciliation: { accounts: 0, queued: 0, ran: 0, failed: 0 },
+      ticketIssues: { examined: 0, abandoned: 0, reconciling: 0, skipped: 0 },
     };
 
     for (const { id } of tenants) {
@@ -227,6 +236,19 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
         this.logger.warn(
           `post_sale.sweep.reconciliation.tenant_failed tenant=${id} error=${errorName(err)}`,
         );
+      }
+      if (this.ticketIssues !== undefined) {
+        try {
+          const issues = await this.ticketIssues.sweepTenant(id, now);
+          for (const key of Object.keys(issues) as (keyof TicketIssueSweepReport)[]) {
+            report.ticketIssues[key] += issues[key];
+          }
+        } catch (err) {
+          failed = true;
+          this.logger.warn(
+            `post_sale.sweep.ticket_issues.tenant_failed tenant=${id} error=${errorName(err)}`,
+          );
+        }
       }
       if (failed) report.tenantsFailed += 1;
     }

@@ -27,11 +27,12 @@ import {
 } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
-import type {
-  DB,
-  OrderOperationStatus,
-  OrderOperationType,
-  OrderStatus,
+import {
+  PROVIDER_WRITE_OPERATION_TYPES,
+  type DB,
+  type OrderOperationStatus,
+  type OrderOperationType,
+  type OrderStatus,
 } from '../database/database.types.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
@@ -69,6 +70,7 @@ import {
   uniqueViolationConstraint,
 } from './order-create-intent.store.js';
 import { ORDER_EVENTS, createdSummary } from './order-events.js';
+import { issueOperationPolicy } from './ticket-issue.plan.js';
 import {
   CANCEL_REJECTED_POLICY,
   CANCEL_SUCCESS_POLICY,
@@ -1240,6 +1242,7 @@ export class OrdersService {
             'Otra ejecución cambió la reserva antes de adquirir el claim de cancelación.',
           );
         }
+        await this.assertNoPendingProviderWrite(trx, order.id);
         await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId: operation.id, priorStatus: order.status };
       });
@@ -1251,6 +1254,28 @@ export class OrdersService {
         );
       }
       throw error;
+    }
+  }
+
+  /**
+   * Una cancelación no corre con una escritura pendiente en el proveedor (emitir, modificar o
+   * agregar servicios, 0083): cancelar una reserva mientras se emiten sus tiquetes deja tiquetes
+   * sobre una reserva caída. Se mira DESPUÉS de bloquear la fila de la orden, dentro del claim: la
+   * emisión toma el mismo lock y exige la orden `confirmed`, así que una de las dos ve a la otra.
+   * Lanzar deshace el claim entero.
+   */
+  private async assertNoPendingProviderWrite(trx: Transaction<DB>, orderId: string): Promise<void> {
+    const pending = await trx
+      .selectFrom('order_operations')
+      .select('id')
+      .where('order_id', '=', orderId)
+      .where('status', '=', 'pending')
+      .where('type', 'in', [...PROVIDER_WRITE_OPERATION_TYPES])
+      .executeTakeFirst();
+    if (pending) {
+      throw new ConflictException(
+        'Hay una emisión en curso para esta reserva. Espera a que termine antes de cancelarla.',
+      );
     }
   }
 
@@ -1761,6 +1786,7 @@ export class OrdersService {
             'La reserva cambió antes de adquirir el claim de reintento de cancelación.',
           );
         }
+        await this.assertNoPendingProviderWrite(trx, order.id);
         await hotels?.markRequested(trx, tenantId, order.id);
         return { operationId, priorStatus: order.status };
       });
@@ -2120,6 +2146,15 @@ export class OrdersService {
           last_error: row.last_error,
           created_at: row.created_at,
         };
+        if (row.type === 'issue') {
+          // La emisión: fallida sin emitir se puede volver a pedir (desde Reservas, no desde aquí);
+          // en duda, se concilia y nunca se reemite.
+          return {
+            ...base,
+            ...issueOperationPolicy(row.status, row.result),
+            outcome: null,
+          } as unknown as OrderOperationRow;
+        }
         if (row.type !== 'cancel') {
           return {
             ...base,

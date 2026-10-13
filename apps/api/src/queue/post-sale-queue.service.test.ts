@@ -8,10 +8,12 @@ import {
   cancelRetryJobId,
   compensationJobId,
   hcnCheckJobId,
+  issueTicketsJobId,
   postSaleJobId,
   reconcileAccountJobId,
   verifyCancellationJobId,
   verifyHotelBookingJobId,
+  verifyIssueJobId,
   type CompensateJob,
 } from './post-sale-queue.service.js';
 import { bullMqJobIdRejection } from './__fixtures__/recording-queue.service.js';
@@ -431,5 +433,74 @@ describe('conciliación por cuenta (PR-5.5)', () => {
     const cola = colaConRedis();
     cola.fallo = new Error('ECONNREFUSED');
     await expect(cola.scheduleReconciliation()).resolves.toBe(false);
+  });
+});
+
+describe('emisión de tiquetes (SAB-08)', () => {
+  it('`issue` y `verify-issue` son jobs de tres segmentos que BullMQ acepta', () => {
+    const emision = issueTicketsJobId({ tenantId: TENANT, orderId: ORDEN, operationId: OPERACION });
+    const relectura = verifyIssueJobId({
+      tenantId: TENANT,
+      orderId: ORDEN,
+      operationId: OPERACION,
+      step: 2,
+    });
+
+    expect(emision).toBe(`issue:${ORDEN}:${OPERACION}`);
+    expect(relectura).toBe(`verify-issue:${ORDEN}:${OPERACION}-2`);
+    expect(bullMqJobIdRejection(emision)).toBeUndefined();
+    expect(bullMqJobIdRejection(relectura)).toBeUndefined();
+  });
+
+  it('la emisión llega con UN intento y sin backoff: la cola nunca la repite', async () => {
+    const cola = colaConRedis();
+
+    await expect(
+      cola.enqueueIssue({ tenantId: TENANT, orderId: ORDEN, operationId: OPERACION }),
+    ).resolves.toBe(true);
+
+    expect(cola.llamadas).toEqual([
+      {
+        name: POST_SALE_JOBS.issue,
+        data: { tenantId: TENANT, orderId: ORDEN, operationId: OPERACION },
+        opts: {
+          attempts: 1,
+          removeOnComplete: 100,
+          removeOnFail: 500,
+          jobId: `issue:${ORDEN}:${OPERACION}`,
+        },
+      },
+    ]);
+  });
+
+  it('la relectura llega con su retardo y los reintentos de una lectura', async () => {
+    const cola = colaConRedis();
+
+    await expect(
+      cola.enqueueVerifyIssue(
+        { tenantId: TENANT, orderId: ORDEN, operationId: OPERACION, step: 0 },
+        { delayMs: 120_000 },
+      ),
+    ).resolves.toBe(true);
+
+    expect(cola.llamadas[0]?.opts).toEqual({
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 10_000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+      jobId: `verify-issue:${ORDEN}:${OPERACION}-0`,
+      delay: 120_000,
+    });
+  });
+
+  it('sin Redis no encola la emisión y lo dice con `false`', async () => {
+    vi.stubEnv('REDIS_HOST', '');
+    const cola = new ColaGrabadora();
+    cola.onModuleInit();
+
+    await expect(
+      cola.enqueueIssue({ tenantId: TENANT, orderId: ORDEN, operationId: OPERACION }),
+    ).resolves.toBe(false);
+    expect(cola.llamadas).toEqual([]);
   });
 });

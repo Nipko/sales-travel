@@ -11,10 +11,11 @@ import {
   type TicketingDeadline,
   type TicketingDeadlineZone,
 } from '@sales-travel/domain';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import { DatabaseService } from '../database/database.service.js';
 import type {
+  DB,
   FlightDocumentKind,
   FlightDocumentStatus,
   TicketingDeadlineZone as DbTicketingDeadlineZone,
@@ -355,6 +356,22 @@ export class FlightOrderTrackingStore {
     orderId: string,
     read: FlightOrderRead,
   ): Promise<FlightDocumentChanges> {
+    return this.db.withTenant(tenantId, (trx) =>
+      this.recordReadWithin(trx, tenantId, orderId, read),
+    );
+  }
+
+  /**
+   * {@link recordRead} dentro de la transacción de quien llama, que ya fijó el tenant. Es para la
+   * emisión: la orden pasa a `ticketed`, sus documentos se guardan y la operación se cierra en la
+   * misma transacción, o no pasa nada de eso.
+   */
+  async recordReadWithin(
+    trx: Transaction<DB>,
+    tenantId: string,
+    orderId: string,
+    read: FlightOrderRead,
+  ): Promise<FlightDocumentChanges> {
     const deadline = read.ticketingDeadline;
     const updates = {
       last_read_at: read.at,
@@ -371,82 +388,80 @@ export class FlightOrderTrackingStore {
           }),
     };
 
-    return this.db.withTenant(tenantId, async (trx) => {
+    await trx
+      .insertInto('flight_order_tracking')
+      .values({ order_id: orderId, tenant_id: tenantId, ...updates })
+      .onConflict((oc) => oc.column('order_id').doUpdateSet(updates))
+      .execute();
+
+    if (read.documents.length === 0) return { added: 0, statusChanged: 0 };
+
+    const rows = await trx
+      .selectFrom('order_flight_documents')
+      .select(['number', 'kind', 'traveler_index', 'status', 'provider_status_code'])
+      .where('order_id', '=', orderId)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+    const existing = new Map<string, StoredFlightDocument>(
+      rows.map((row) => [
+        row.number,
+        {
+          number: row.number,
+          kind: row.kind,
+          travelerIndex: row.traveler_index,
+          status: row.status,
+          providerStatusCode: row.provider_status_code,
+        },
+      ]),
+    );
+
+    let added = 0;
+    let statusChanged = 0;
+    for (const observed of read.documents) {
+      const write = nextFlightDocumentState(existing.get(observed.number), observed, read.at);
+      if (write === null) continue;
+      const columns = {
+        kind: write.kind,
+        status: write.status,
+        traveler_index: write.travelerIndex,
+        provider_status_code: write.providerStatusCode,
+        ...(write.issuedAt === undefined ? {} : { issued_at: write.issuedAt }),
+        ...(write.voidedAt === undefined ? {} : { voided_at: write.voidedAt }),
+        ...(write.refundedAt === undefined ? {} : { refunded_at: write.refundedAt }),
+      };
+      if (write.change === 'added') {
+        await trx
+          .insertInto('order_flight_documents')
+          .values({ tenant_id: tenantId, order_id: orderId, number: observed.number, ...columns })
+          .execute();
+        added += 1;
+        continue;
+      }
+      // El primer instante de cada estado no se pisa: `coalesce` deja el que ya estaba.
       await trx
-        .insertInto('flight_order_tracking')
-        .values({ order_id: orderId, tenant_id: tenantId, ...updates })
-        .onConflict((oc) => oc.column('order_id').doUpdateSet(updates))
-        .execute();
-
-      if (read.documents.length === 0) return { added: 0, statusChanged: 0 };
-
-      const rows = await trx
-        .selectFrom('order_flight_documents')
-        .select(['number', 'kind', 'traveler_index', 'status', 'provider_status_code'])
+        .updateTable('order_flight_documents')
+        .set({
+          kind: columns.kind,
+          status: columns.status,
+          traveler_index: columns.traveler_index,
+          provider_status_code: columns.provider_status_code,
+          ...(write.issuedAt === undefined
+            ? {}
+            : { issued_at: sql<Date>`coalesce(issued_at, ${write.issuedAt})` }),
+          ...(write.voidedAt === undefined
+            ? {}
+            : { voided_at: sql<Date>`coalesce(voided_at, ${write.voidedAt})` }),
+          ...(write.refundedAt === undefined
+            ? {}
+            : { refunded_at: sql<Date>`coalesce(refunded_at, ${write.refundedAt})` }),
+        })
         .where('order_id', '=', orderId)
         .where('tenant_id', '=', tenantId)
+        .where('number', '=', observed.number)
         .execute();
-      const existing = new Map<string, StoredFlightDocument>(
-        rows.map((row) => [
-          row.number,
-          {
-            number: row.number,
-            kind: row.kind,
-            travelerIndex: row.traveler_index,
-            status: row.status,
-            providerStatusCode: row.provider_status_code,
-          },
-        ]),
-      );
-
-      let added = 0;
-      let statusChanged = 0;
-      for (const observed of read.documents) {
-        const write = nextFlightDocumentState(existing.get(observed.number), observed, read.at);
-        if (write === null) continue;
-        const columns = {
-          kind: write.kind,
-          status: write.status,
-          traveler_index: write.travelerIndex,
-          provider_status_code: write.providerStatusCode,
-          ...(write.issuedAt === undefined ? {} : { issued_at: write.issuedAt }),
-          ...(write.voidedAt === undefined ? {} : { voided_at: write.voidedAt }),
-          ...(write.refundedAt === undefined ? {} : { refunded_at: write.refundedAt }),
-        };
-        if (write.change === 'added') {
-          await trx
-            .insertInto('order_flight_documents')
-            .values({ tenant_id: tenantId, order_id: orderId, number: observed.number, ...columns })
-            .execute();
-          added += 1;
-          continue;
-        }
-        // El primer instante de cada estado no se pisa: `coalesce` deja el que ya estaba.
-        await trx
-          .updateTable('order_flight_documents')
-          .set({
-            kind: columns.kind,
-            status: columns.status,
-            traveler_index: columns.traveler_index,
-            provider_status_code: columns.provider_status_code,
-            ...(write.issuedAt === undefined
-              ? {}
-              : { issued_at: sql<Date>`coalesce(issued_at, ${write.issuedAt})` }),
-            ...(write.voidedAt === undefined
-              ? {}
-              : { voided_at: sql<Date>`coalesce(voided_at, ${write.voidedAt})` }),
-            ...(write.refundedAt === undefined
-              ? {}
-              : { refunded_at: sql<Date>`coalesce(refunded_at, ${write.refundedAt})` }),
-          })
-          .where('order_id', '=', orderId)
-          .where('tenant_id', '=', tenantId)
-          .where('number', '=', observed.number)
-          .execute();
-        if (write.change === 'status') statusChanged += 1;
-      }
-      return { added, statusChanged };
-    });
+      if (write.change === 'status') statusChanged += 1;
+    }
+    return { added, statusChanged };
   }
 
   /** El seguimiento de las órdenes pedidas que lo tienen. Las de otro tenant no aparecen. */

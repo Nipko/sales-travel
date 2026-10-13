@@ -918,6 +918,9 @@ export interface PackageItemsTable {
 /**
  * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
  * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
+ *
+ * `issue`, `modify` y `add-services` son escrituras en el proveedor de una orden de vuelo: como
+ * máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083).
  */
 export type OrderOperationType =
   | 'cancel'
@@ -926,7 +929,17 @@ export type OrderOperationType =
   | 'retrieve'
   | 'hcn-check'
   | 'hcn-ticket'
-  | 'reconcile';
+  | 'reconcile'
+  | 'issue'
+  | 'modify'
+  | 'add-services';
+
+/** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
+export const PROVIDER_WRITE_OPERATION_TYPES = [
+  'issue',
+  'modify',
+  'add-services',
+] as const satisfies readonly OrderOperationType[];
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
 export interface OrderOperationsTable {

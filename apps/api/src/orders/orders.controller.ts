@@ -12,6 +12,7 @@ import {
   Optional,
   Param,
   Post,
+  ServiceUnavailableException,
   UseFilters,
 } from '@nestjs/common';
 import type { ProviderIssue } from '@sales-travel/domain';
@@ -25,11 +26,16 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { MailerService } from '../mail/mailer.service.js';
-import { isTestSelectedOffer } from '../providers/provider-environment.js';
-import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../mail/templates.js';
+import { hotelOrderConfirmationEmailHtml } from '../mail/templates.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
+import {
+  CreateOrderSchema,
+  IssueOrderSchema,
+  PayOrderSchema,
+  ReshopOrderSchema,
+  type IssueOrderInput,
+} from './dto.js';
 import {
   FlightOrderTrackingStore,
   publicFlightOrderTracking,
@@ -39,7 +45,13 @@ import {
   HotelOrderReadsService,
   type PublicHotelOrderTracking,
 } from './hotel-order-reads.service.js';
+import {
+  flightOrderConfirmationMail,
+  isTestContentOrder,
+  orderContactEmail,
+} from './order-confirmation-mail.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
+import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -66,17 +78,6 @@ const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
   services: false,
   reshop: false,
 };
-
-/**
- * ¿La orden es una reserva de la cuenta de pruebas del proveedor?
- *
- * Lo lee de `selected_offer.provider.environment`, que escribe el servidor al crear la orden desde
- * la cuenta resuelta (nunca el navegador). Una reserva de prueba no genera un tiquete válido: no se
- * le confirma al pasajero por correo sin que el vendedor lo pida, y si lo pide va marcada.
- */
-function isTestContent(row: Pick<OrderRow, 'selected_offer'>): boolean {
-  return isTestSelectedOffer(row.selected_offer);
-}
 
 /**
  * Selecciona campos estructurados antes de que la incidencia salga del backend. `message` y
@@ -116,6 +117,8 @@ export class OrdersController {
      * Opcional sólo para los dobles de las suites que no los miran: en la app siempre está.
      */
     @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
+    /** La emisión de tiquetes (SAB-08). Opcional por lo mismo: en la app siempre está. */
+    @Optional() private readonly ticketIssues?: FlightTicketIssueService,
   ) {}
 
   /** Vuelo = ni hotel ni auto. Una orden de un proveedor de vuelos ya retirado también cuenta. */
@@ -172,7 +175,7 @@ export class OrdersController {
     // Tampoco sale con una reserva de la cuenta de pruebas del proveedor: el pasajero recibiría un
     // localizador que no le sirve para viajar. Si el vendedor quiere mandarla, la reenvía a mano y
     // sale marcada como prueba (`send-confirmation`).
-    if (saga.kind === 'settled' && saga.status === 'confirmed' && !isTestContent(order)) {
+    if (saga.kind === 'settled' && saga.status === 'confirmed' && !isTestContentOrder(order)) {
       void this.sendConfirmationEmail(tenantId, order);
     }
 
@@ -232,12 +235,7 @@ export class OrdersController {
   }
 
   private contactEmail(order: OrderRow): string {
-    const ci = order.contact_info;
-    if (ci && typeof ci === 'object' && 'email' in ci) {
-      const email = (ci as { email?: unknown }).email;
-      return typeof email === 'string' ? email : '';
-    }
-    return '';
+    return orderContactEmail(order);
   }
 
   private async sendConfirmationEmail(tenantId: string, order: OrderRow): Promise<boolean> {
@@ -270,19 +268,9 @@ export class OrdersController {
     order: OrderRow,
     brand: Awaited<ReturnType<BrandingService['resolve']>>,
   ): { subject: string; html: string; text: string } {
-    return orderConfirmationEmailHtml({
-      orderNumber: order.order_number,
-      pnr: order.provider_order_id,
-      searchCriteria: order.search_criteria,
-      passengers: order.passengers,
-      totalAmount: order.total_amount,
-      currency: order.currency,
-      brand,
-      ticketed: order.status === 'ticketed',
-      // Sólo llega aquí una de prueba si el vendedor la reenvió a mano: asunto «[PRUEBA] » y el
-      // aviso de que no es un tiquete válido para viajar.
-      testContent: isTestContent(order),
-    });
+    // Sólo llega aquí una de prueba si el vendedor la reenvió a mano: asunto «[PRUEBA] » y el aviso
+    // de que no es un tiquete válido para viajar.
+    return flightOrderConfirmationMail(order, brand);
   }
 
   @Get()
@@ -417,6 +405,42 @@ export class OrdersController {
     return result;
   }
 
+  /**
+   * Pide la emisión de los tiquetes de una reserva confirmada. Responde 202 con la operación: la
+   * emisión corre en la cola de post-venta y la pantalla la sigue por `GET :id/operations`.
+   *
+   * Es VENTA (`@SalesOperation`): compromete el dinero de la reserva, y el superadmin no vende.
+   * Emite cualquiera que vende (SAB-FD-3 A). Sin tarjeta: la forma de pago es la de la cuenta.
+   */
+  @SalesOperation()
+  @Roles(...SELLING_ROLES)
+  @Post(':id/issue')
+  @HttpCode(202)
+  async issue(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(IssueOrderSchema)) body: IssueOrderInput,
+  ): Promise<{ operationId: string; status: 'pending' }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    if (row.status !== 'confirmed') {
+      throw new ConflictException(ISSUE_CLAIM_MESSAGES['not-confirmed']);
+    }
+    this.assertSupports(row, 'issue');
+    // Lo que el vendedor vio al confirmar es lo que se emite: si la orden cambió, se vuelve a mirar.
+    if (row.total_amount !== body.expectedTotalMinor || row.currency !== body.currency) {
+      throw new ConflictException(
+        'El total cambió desde que abriste la reserva. Vuelve a consultarla antes de emitir.',
+      );
+    }
+    if (this.ticketIssues === undefined) {
+      throw new ServiceUnavailableException('La emisión de tiquetes no está disponible.');
+    }
+    return this.ticketIssues.requestIssue(tenantId, row, userId);
+  }
+
   @SalesOperation()
   @Post(':id/services')
   async listServices(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
@@ -510,7 +534,7 @@ export class OrdersController {
       errorMessage: row.error_message,
       // Reserva de la cuenta de pruebas del proveedor: la pantalla la marca para que nadie la
       // gestione como una venta real.
-      testContent: isTestContent(row),
+      testContent: isTestContentOrder(row),
       providerTracking: tracking ?? null,
       flightTracking: flightTracking ?? null,
       createdAt: row.created_at,

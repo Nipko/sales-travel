@@ -1639,6 +1639,10 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
           runDaily: vi.fn(() => Promise.resolve({ accounts: 0, queued: 0, ran: 0, failed: 0 })),
         },
         sweeper: { run: vi.fn(() => Promise.reject(new Error('no se esperaba el barrido'))) },
+        ticketIssues: {
+          runIssueById: vi.fn(() => Promise.reject(new Error('no se esperaba una emisión'))),
+          runVerifyJob: vi.fn(() => Promise.resolve()),
+        },
       },
       runCancelById,
       verifyCreationById,
