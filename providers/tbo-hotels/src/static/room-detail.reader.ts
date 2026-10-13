@@ -177,9 +177,29 @@ function pick(
   return undefined;
 }
 
+/**
+ * Como {@link pick}, pero un texto en blanco cuenta como ausente: con `RoomName: ""` y
+ * `Name: "Deluxe"`, la habitación se llama Deluxe en vez de quedar sin nombre y descartada.
+ */
+function pickField(
+  record: Json,
+  aliases: readonly string[],
+): { key: string; value: unknown } | undefined {
+  for (const alias of aliases) {
+    for (const key of keysFor(record, alias)) {
+      const value = record[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string' && value.trim().length === 0) continue;
+      return { key, value };
+    }
+  }
+  return undefined;
+}
+
 /** Cuántos grupos de campo de habitación trae un objeto (id, nombre, tamaño, descripción, fotos). */
 function roomFieldGroups(record: Json): number {
-  return FIELD_GROUPS.filter((group) => pick(record, FIELD_ALIASES[group]) !== undefined).length;
+  return FIELD_GROUPS.filter((group) => pickField(record, FIELD_ALIASES[group]) !== undefined)
+    .length;
 }
 
 /** `Clave:tipoJSON` de cada clave del hotel. Nunca el valor. */
@@ -278,9 +298,28 @@ function readContainer(
   return { shape: 'unreadable', candidates: [] };
 }
 
-/** La primera clave contenedora presente y no nula de `record`, por orden de preferencia. */
+function isEmptyContainer(value: unknown): boolean {
+  if (isList(value)) return value.length === 0;
+  if (isRecord(value)) return Object.keys(value).length === 0;
+  return typeof value === 'string' && value.trim().length === 0;
+}
+
+/**
+ * La clave contenedora de `record`, por orden de preferencia: la primera con algo dentro y, si todas
+ * vienen vacías, la primera presente y no nula. Con `Rooms: []` y `RoomDetails: [ … ]` las
+ * habitaciones son las de `RoomDetails`, no "ninguna".
+ */
 function findContainer(record: Json): { key: string; value: unknown } | undefined {
-  return pick(record, TBO_ROOM_CONTAINER_KEYS);
+  let firstEmpty: { key: string; value: unknown } | undefined;
+  for (const alias of TBO_ROOM_CONTAINER_KEYS) {
+    for (const key of keysFor(record, alias)) {
+      const value = record[key];
+      if (value === undefined || value === null) continue;
+      if (!isEmptyContainer(value)) return { key, value };
+      firstEmpty ??= { key, value };
+    }
+  }
+  return firstEmpty;
 }
 
 function sameHotel(value: unknown, hotelId: string): boolean {
@@ -421,18 +460,24 @@ function normalizeRoomId(value: unknown): IdRead {
   return ROOM_ID.test(text) ? { id: text } : { id: null, note: 'invalid' };
 }
 
-function readName(record: Json, at: string, scope: TboRoomDetailScope): string | null {
-  const found = pick(record, FIELD_ALIASES.name);
+/** El nombre tal como vino (para la clave) y en una línea (para mostrar). */
+interface NameRead {
+  readonly raw: string;
+  readonly text: string | null;
+}
+
+function readName(record: Json, at: string, scope: TboRoomDetailScope): NameRead | null {
+  const found = pickField(record, FIELD_ALIASES.name);
   if (found === undefined) return null;
   if (typeof found.value !== 'string') {
     scope.observer.note('FIELD_INVALID', `${at}.${found.key}:invalid_type`);
     return null;
   }
-  return normalizeTboText(found.value, Number.MAX_SAFE_INTEGER);
+  return { raw: found.value, text: normalizeTboText(found.value, Number.MAX_SAFE_INTEGER) };
 }
 
 function readSize(record: Json, at: string, scope: TboRoomDetailScope): string | null {
-  const found = pick(record, FIELD_ALIASES.size);
+  const found = pickField(record, FIELD_ALIASES.size);
   if (found === undefined) return null;
   if (typeof found.value === 'string' || typeof found.value === 'number') {
     return normalizeTboText(found.value, TBO_ROOM_DETAIL_LIMITS.maxSizeTextLength);
@@ -442,7 +487,7 @@ function readSize(record: Json, at: string, scope: TboRoomDetailScope): string |
 }
 
 function readDescription(record: Json, at: string, scope: TboRoomDetailScope): string | null {
-  const found = pick(record, FIELD_ALIASES.description);
+  const found = pickField(record, FIELD_ALIASES.description);
   if (found === undefined) return null;
   let html: string;
   if (typeof found.value === 'string') {
@@ -474,11 +519,18 @@ function readDescription(record: Json, at: string, scope: TboRoomDetailScope): s
   return plain.length === 0 ? null : plain.slice(0, TBO_ROOM_DETAIL_LIMITS.maxDescriptionLength);
 }
 
-/** Las URLs candidatas de un valor de imagen: texto con una o varias, lista u objetos con `Url`. */
+/**
+ * Las URLs candidatas de un valor de imagen: texto con una o varias, lista u objetos con `Url`. Sólo
+ * el texto suelto se parte: dentro de una lista o de un objeto cada texto es UNA URL, y partirla por
+ * un espacio o una coma de su query dejaría otra URL de TBO, válida y equivocada.
+ */
 function imageTexts(value: unknown, depth = 0): string[] {
-  if (typeof value === 'string') return value.split(/[\s,|]+/).filter((text) => text.length > 0);
+  if (typeof value === 'string') {
+    const texts = depth === 0 ? value.split(/[\s,|]+/) : [value.trim()];
+    return texts.filter((text) => text.length > 0);
+  }
   if (isRecord(value)) {
-    const found = pick(value, IMAGE_OBJECT_KEYS);
+    const found = pickField(value, IMAGE_OBJECT_KEYS);
     return found === undefined ? [] : imageTexts(found.value, depth + 1);
   }
   if (isList(value) && depth < 2) return value.flatMap((item) => imageTexts(item, depth + 1));
@@ -535,7 +587,8 @@ function readImages(record: Json, at: string, scope: TboRoomDetailScope): string
           scope.observer.note('IMAGE_DROPPED', `${at}.${key}:over_limit`);
           continue;
         }
-        if (image.upgraded) scope.observer.note('IMAGE_HTTPS_UPGRADED', `${at}.${key}:upgraded`);
+        // Sin issue: es la forma del ejemplo de p. 57, no una anomalía; el conteo basta.
+        if (image.upgraded) scope.observer.note('IMAGE_HTTPS_UPGRADED');
         images.push(image.url);
       }
     }
@@ -551,7 +604,7 @@ function readRoom(
   const { raw, fallbackId } = candidate;
   scope.observer.collectUnknownKeys(raw, ROOM_KNOWN_KEYS, candidate.prefix);
 
-  const idField = pick(raw, FIELD_ALIASES.id);
+  const idField = pickField(raw, FIELD_ALIASES.id);
   const idRead =
     idField !== undefined
       ? normalizeRoomId(idField.value)
@@ -559,8 +612,10 @@ function readRoom(
         ? normalizeRoomId(fallbackId)
         : ({ id: null, note: 'missing' } as const);
 
-  const fullName = readName(raw, at, scope);
-  const nameKey = normalizeTboRoomName(fullName ?? '')
+  const name = readName(raw, at, scope);
+  // La clave sale del texto TAL COMO VINO, igual que la web la saca del nombre de Search: quitar
+  // antes un carácter de control juntaría dos palabras que allá quedan separadas.
+  const nameKey = normalizeTboRoomName(name?.raw ?? '')
     .slice(0, TBO_ROOM_DETAIL_LIMITS.maxNameLength)
     .trim();
   if (idRead.id === null && nameKey.length === 0) {
@@ -570,14 +625,15 @@ function readRoom(
   if (idRead.id === null && idRead.note === 'invalid') {
     scope.observer.note('ROOM_ID_INVALID', `${at}.${idField?.key ?? 'Id'}:invalid`);
   } else if (idRead.id === null) {
-    scope.observer.note('ROOM_ID_MISSING', `${at}.RoomId:missing`);
+    // Sin issue: `0` es "mapping isn't available" (p. 57), no una anomalía; el conteo basta.
+    scope.observer.note('ROOM_ID_MISSING');
   }
 
   return {
     roomKey: idRead.id ?? tboSyntheticRoomKey(nameKey),
     roomId: idRead.id,
     nameKey,
-    name: (fullName ?? '').slice(0, TBO_ROOM_DETAIL_LIMITS.maxNameLength).trim(),
+    name: (name?.text ?? '').slice(0, TBO_ROOM_DETAIL_LIMITS.maxNameLength).trim(),
     sizeText: readSize(raw, at, scope),
     description: readDescription(raw, at, scope),
     images: readImages(raw, at, scope),

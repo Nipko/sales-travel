@@ -1212,6 +1212,50 @@ describe('TboStaticContentClient: detalle por habitación (IsRoomDetailRequired;
     expect(withKey(bodies)).toEqual([true, false]);
   });
 
+  it('con la clave vino un hotel y el respaldo sin ella falla: se queda lo que vino, no el error', async () => {
+    const { h, bodies, gate, metrics } = roomsTbo(
+      hotels(['1000000'], true),
+      tboCode(500, 'Unexpected Error'),
+    );
+    const result = await h.client.getHotelDetails(
+      ['1000000', '1000001'],
+      'en',
+      { maxAttempts: 1 },
+      { roomDetail: true },
+    );
+    expect(withKey(bodies)).toEqual([true, false]);
+    expect(result.roomDetail).toBe('served');
+    expect(result.contents.map((c) => c.hotelId)).toEqual(['1000000']);
+    expect(result.missingHotelCodes).toEqual(['1000001']);
+    expect(result.roomContents.map((r) => r.hotelId)).toEqual(['1000000']);
+    expect(gate.consecutiveRejections).toBe(0);
+    expect(metrics).toContainEqual({
+      name: 'tbo.hotelDetails.room_detail_fallback_failed',
+      tags: { reason: 'missing_hotels' },
+    });
+    const failed = logsOf(h).find(
+      (log) => log.message === 'tbo.static.room_detail_fallback_failed',
+    );
+    expect(failed).toMatchObject({
+      level: 'info',
+      meta: {
+        op: 'hotelDetails',
+        reason: 'missing_hotels',
+        requestId: result.requestId,
+        errorClass: 'TboApiError',
+        kind: 'UPSTREAM',
+      },
+    });
+  });
+
+  it('con la clave no vino ningún hotel y el respaldo falla: sale el error del respaldo', async () => {
+    const { h } = roomsTbo(noHotels, tboCode(500, 'Unexpected Error'));
+    const error = await h.client
+      .getHotelDetails(['1000000'], 'en', { maxAttempts: 1 }, { roomDetail: true })
+      .catch((err: unknown) => err);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+  });
+
   it('tres rechazos seguidos suspenden la clave en el proceso, con UN warn', async () => {
     const { h, bodies, gate } = roomsTbo(noHotels);
     for (let i = 0; i < 3; i += 1) {

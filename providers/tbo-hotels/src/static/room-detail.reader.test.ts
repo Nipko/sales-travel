@@ -209,6 +209,17 @@ describe('readTboRoomDetails: dónde busca el contenedor', () => {
     expect(result.rooms.map((r) => r.roomId)).toEqual(['1']);
   });
 
+  it('una clave preferida VACÍA no tapa a otra con habitaciones', () => {
+    const { result } = read({ ...HOTEL, Rooms: [], RoomDetails: [room] });
+    expect(result).toMatchObject({ shape: 'array', hotelKey: 'RoomDetails' });
+    expect(result.rooms.map((r) => r.roomId)).toEqual(['1']);
+    expect(read({ ...HOTEL, Rooms: {}, RoomList: [] }).result).toEqual({
+      rooms: [],
+      shape: 'map',
+      hotelKey: 'Rooms',
+    });
+  });
+
   it('una lista de listas se aplana un nivel', () => {
     const { result } = read(withRooms([[room], [{ RoomName: 'Suite', RoomId: 2 }]]));
     expect(result.shape).toBe('array');
@@ -448,6 +459,19 @@ describe('readTboRoomDetails: alias de campo', () => {
     expect(single({ RoomName: 'Doble', [key]: value })?.images).toEqual([EXAMPLE1, EXAMPLE2]);
   });
 
+  it('un alias en blanco deja paso al siguiente: `RoomName: ""` con `Name`', () => {
+    expect(
+      single({ RoomName: ' ', Name: 'Deluxe', RoomId: '', RoomID: 7, Description: 'Vista' }),
+    ).toMatchObject({ name: 'Deluxe', nameKey: 'deluxe', roomId: '7', description: 'Vista' });
+  });
+
+  it('imágenes: un texto DENTRO de una lista o de un objeto es UNA URL, no se parte', () => {
+    const withSpace = 'https://www.tboholidays.com/imageresource.aspx?img=ab cd';
+    const encoded = 'https://www.tboholidays.com/imageresource.aspx?img=ab%20cd';
+    expect(single({ RoomName: 'Doble', imageURL: [withSpace] })?.images).toEqual([encoded]);
+    expect(single({ RoomName: 'Doble', Image: { Url: withSpace } })?.images).toEqual([encoded]);
+  });
+
   it('imágenes: de varias claves, sin repetir', () => {
     expect(
       single({ RoomName: 'Doble', imageURL: [EXAMPLE1], Photos: [EXAMPLE1, EXAMPLE2] })?.images,
@@ -565,6 +589,20 @@ describe('readTboRoomDetails: normalización', () => {
       'https://www.tboholidays.com/imageresource.aspx?img=e',
     ]);
     expect(diagnostics.notes).toEqual({ IMAGE_HTTPS_UPGRADED: 4 });
+  });
+
+  it('subir a https o un `RoomId` 0 se cuentan, pero no son anomalías: sin warn por lote', () => {
+    const { diagnostics, recorded } = read(
+      withRooms([
+        {
+          RoomName: 'Doble',
+          RoomId: 0,
+          imageURL: ['www.tboholidays.com/imageresource.aspx?img=a'],
+        },
+      ]),
+    );
+    expect(diagnostics.notes).toEqual({ IMAGE_HTTPS_UPGRADED: 1, ROOM_ID_MISSING: 1 });
+    expect(recorded.logs.filter((log) => log.message === 'tbo.static.anomalies')).toEqual([]);
   });
 
   it('fuera de los dominios de TBO no se sube nada: se descarta (IMAGE_DROPPED)', () => {
@@ -708,6 +746,16 @@ describe('normalizeTboRoomName: ESPEJO de `normalizeRoomName` de la web', () => 
       expect(normalizeTboRoomName(name), name).toBe(key);
       expect(web.normalizeRoomName(name), name).toBe(key);
     }
+  });
+
+  it('la clave sale del nombre TAL COMO VINO: un carácter de control separa como en la web', async () => {
+    const web = (await import(pathToFileURL(WEB).href)) as {
+      normalizeRoomName: (name: string) => string;
+    };
+    const name = 'Doble\u0001Estándar';
+    const { result } = read(withRooms([{ RoomName: name, RoomId: 1 }]));
+    expect(result.rooms[0]?.nameKey).toBe(web.normalizeRoomName(name));
+    expect(result.rooms[0]?.name).toBe('DobleEstándar');
   });
 
   it('el lector guarda esa clave en `nameKey`', () => {

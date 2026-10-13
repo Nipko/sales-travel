@@ -398,8 +398,23 @@ export class TboStaticContentClient {
         : withRooms.outcome === 'NO_HOTELS_FOUND'
           ? 'no_hotels_found'
           : 'missing_hotels';
-    // Si esto lanza, se propaga: sin la clave TBO tampoco contesta, y ése es el error de siempre.
-    const plain = await this.#hotelDetails(hotelCodes, lang, call, false, 'fallback');
+    let plain: TboHotelDetailsResult;
+    try {
+      plain = await this.#hotelDetails(hotelCodes, lang, call, false, 'fallback');
+    } catch (err) {
+      // Con la clave ya vino contenido de hotel: un fallo del respaldo no se lo quita a quien
+      // espera. Los hoteles que faltaron siguen en `missingHotelCodes` para su respaldo de siempre.
+      if (withRooms === undefined || withRooms.contents.length === 0) throw err;
+      this.#count('tbo.hotelDetails.room_detail_fallback_failed', { reason });
+      this.#log('info', 'tbo.static.room_detail_fallback_failed', {
+        op: 'hotelDetails',
+        lang,
+        reason,
+        requestId: withRooms.requestId,
+        ...failureMeta(err),
+      });
+      return withRooms;
+    }
     const served = new Set(withRooms?.contents.map((content) => content.hotelId) ?? []);
     const recovered = plain.contents.filter((content) => !served.has(content.hotelId)).length;
     // Sin la clave tampoco vino más: TBO no tiene ese contenido y la respuesta con la clave vale.

@@ -454,7 +454,9 @@ bajo demanda (TBO-06). Sin pedirlo, el body y la salida son los de siempre.
 - **El contenido del hotel nunca empeora.** Si con la clave TBO falla, contesta "No Hotels Found" o le faltan hoteles,
   el cliente repite el lote SIN la clave y devuelve lo que traiga (`roomDetail: 'fallback'`). Si sin la clave vinieron
   hoteles que con ella no, es un rechazo; tres seguidos suspenden la clave hasta reiniciar el proceso, con un `warn`
-  `tbo.static.room_detail_suspended`. La variable `TBO_ROOM_DETAILS=off` del deploy la apaga del todo.
+  `tbo.static.room_detail_suspended`. Si el lote sin la clave falla y con ella ya vino algún hotel, se devuelve lo que
+  vino con la clave (`tbo.static.room_detail_fallback_failed`) en vez del error. La variable `TBO_ROOM_DETAILS=off` del
+  deploy la apaga del todo.
 - **¿Search manda `RoomID`?** Cada pack lo cuenta por su forma en `tbo.search.room_id` (`present`, `zero`, `absent`).
 
 ---
