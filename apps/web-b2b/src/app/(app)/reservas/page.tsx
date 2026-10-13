@@ -1,7 +1,6 @@
 'use client';
 
 import { flightTime } from '../../../lib/flight-format';
-import { TicketingDeadlineBadge } from '../cotizaciones/_components/ticketing-deadline-badge';
 import {
   AlertTriangle,
   Car,
@@ -52,6 +51,8 @@ import {
 } from './order-capabilities';
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
+import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
+import { parseFlightTracking, retrieveSummary } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
@@ -122,6 +123,8 @@ interface Order {
   testContent?: boolean;
   /** Sólo en hoteles: subestado, estado del proveedor y HCN, sin PII (RF-26). */
   providerTracking?: unknown;
+  /** Sólo en vuelos: localizadores de la aerolínea, tiquetes y plazo guardados (0082). */
+  flightTracking?: unknown;
   createdAt: string;
 }
 
@@ -298,6 +301,13 @@ export default function ReservasPage() {
     setDetailOrder((prev) => (prev ? patch(prev) : prev));
   }, []);
 
+  /** "Consultar estado" de vuelo: lo guardado tras la lectura, sin releer toda la lista. */
+  const applyFlightTracking = useCallback((orderId: string, flightTracking: unknown) => {
+    const patch = (o: Order) => (o.id === orderId ? { ...o, flightTracking } : o);
+    setOrders((prev) => prev.map(patch));
+    setDetailOrder((prev) => (prev ? patch(prev) : prev));
+  }, []);
+
   async function handleRetrieve(order: Order) {
     if (!order.pnr) return;
     setActionLoading(order.id);
@@ -306,24 +316,26 @@ export default function ReservasPage() {
       const res = await fetch(`/api/orders/${order.id}/retrieve`, { method: 'POST' });
       const data = (await res.json()) as {
         found?: boolean;
-        status?: string;
-        ticketNumbers?: string[];
+        flightTracking?: unknown;
         error?: string;
       };
       if (data.found) {
-        const tickets = data.ticketNumbers?.join(', ');
+        // Lo que la consulta trajo queda en la fila (localizadores, tiquetes y plazo), no en un
+        // aviso que se pierde al cerrarlo.
+        if (data.flightTracking === undefined) void loadOrders(false);
+        else applyFlightTracking(order.id, data.flightTracking);
         setActionResult({
           orderId: order.id,
           type: 'retrieve',
           success: true,
-          message: `Estado: ${data.status}${tickets ? ` | Tickets: ${tickets}` : ''}`,
+          message: retrieveSummary(parseFlightTracking(data.flightTracking)),
         });
       } else {
         setActionResult({
           orderId: order.id,
           type: 'retrieve',
           success: false,
-          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en el proveedor'),
+          message: humanizeOrderError(data.error ?? 'No encontramos la reserva en el proveedor.'),
         });
       }
     } catch {
@@ -722,13 +734,7 @@ export default function ReservasPage() {
                       {dateLabel && <span>{dateLabel}</span>}
                       {paxNames && <span className="truncate">· {paxNames}</span>}
                     </div>
-                    {showDeadline && (
-                      <TicketingDeadlineBadge
-                        raw={order.selectedOffer?.provider?.raw}
-                        fromOrder
-                        className="mt-1.5"
-                      />
-                    )}
+                    {showDeadline && <FlightDeadlineBadge order={order} className="mt-1.5" />}
                     {/* En el teléfono, "Cancelación en curso" al costado aplasta la fila: va abajo. */}
                     {hotelState ? (
                       <HotelOrderStatusChip state={hotelState} className="mt-1.5 sm:hidden" />
@@ -1416,6 +1422,9 @@ function OrderDetailModal({
               </p>
             </section>
           )}
+
+          {/* Vuelo: localizadores de la aerolínea, tiquetes y plazo guardados de la última lectura. */}
+          {!isCar && <FlightOrderTracking order={order} />}
 
           <section>
             <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
