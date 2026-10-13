@@ -6,6 +6,7 @@ import { ProvidersModule } from '../providers/providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
+import { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
@@ -45,6 +46,7 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
   providers: [
     OrdersService,
     ExternalOrderIntentService,
+    FlightOrderTrackingStore,
     HotelOrderTrackingStore,
     HotelOrderReadsService,
     HotelOrderCancellationStore,

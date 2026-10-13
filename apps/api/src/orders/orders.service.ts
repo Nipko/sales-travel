@@ -61,6 +61,7 @@ import {
   HotelOrderCancellationService,
   type HotelCancelAttempt,
 } from './hotel-order-cancellation.service.js';
+import { FlightOrderTrackingStore, flightReadOf } from './flight-order-tracking.store.js';
 import { HotelOrderReadsService, type HotelOrderReadResult } from './hotel-order-reads.service.js';
 import {
   OrderCreateIntentStore,
@@ -318,6 +319,11 @@ export class OrdersService {
      * Opcional por el mismo motivo: en la app siempre está (`OrdersModule` la provee).
      */
     @Optional() private readonly holds?: BookingHoldLedger,
+    /**
+     * Localizadores de la aerolínea, documentos y plazo de emisión de las órdenes de vuelo (0082).
+     * Opcional por el mismo motivo: en la app siempre está, y sin él las lecturas no se guardan.
+     */
+    @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -350,6 +356,50 @@ export class OrdersService {
       // Una fila leída sin la columna (un doble, una consulta vieja) cuenta como sin cuenta.
       providerAccountId: order.provider_account_id ?? null,
     });
+  }
+
+  /**
+   * Guarda lo que una lectura del proveedor dijo de una reserva de vuelo: localizadores de la
+   * aerolínea, documentos y plazo de emisión (0082). Si algún documento apareció o cambió de
+   * estado, lo dice un `domain_event` con conteos.
+   *
+   * Best-effort de verdad: la lectura ya ocurrió y su resultado es lo que importa a quien llamó
+   * (cerrar la creación, verificarla, contestar la consulta). Un fallo de la base o del canal de
+   * auditoría se registra en el log, por nombre y nunca con el mensaje, y el flujo sigue.
+   */
+  private async recordFlightRead(
+    tenantId: string,
+    order: Pick<OrderRow, 'id' | 'provider'>,
+    view: OrderView,
+    source: 'verify' | 'retrieve',
+    actorUserId?: string,
+  ): Promise<void> {
+    if (this.flightTracking === undefined || !view.found) return;
+    try {
+      const changes = await this.flightTracking.recordRead(
+        tenantId,
+        order.id,
+        flightReadOf(view, new Date()),
+      );
+      if (changes.added + changes.statusChanged === 0) return;
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.flightDocumentsChanged,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: order.provider,
+          source,
+          added: changes.added,
+          statusChanged: changes.statusChanged,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `flights.tracking.record_failed provider=${order.provider} order=${order.id} source=${source} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+    }
   }
 
   /** ¿La cancelación de esta orden sale por el factory de autos y no por el registry de vuelos? */
@@ -974,6 +1024,10 @@ export class OrdersService {
       view = null;
     }
 
+    // Antes que el resto del cierre: si el log o la auditoría fallan después, el vendedor igual ve
+    // el localizador de la aerolínea en Reservas.
+    if (view !== null) await this.recordFlightRead(tenantId, order, view, 'verify', userId);
+
     await this.logOperation(
       tenantId,
       order.id,
@@ -1115,7 +1169,11 @@ export class OrdersService {
     if (this.hotelReads?.handles(row.provider) === true) {
       return this.hotelReads.retrieve(tenantId, row.id, actorUserId);
     }
-    return this.retrieveFromProvider(tenantId, row);
+    // Un vuelo: lo que la consulta trajo queda guardado en la reserva (0082), y la respuesta es la
+    // misma lectura.
+    const view = await this.retrieveFromProvider(tenantId, row);
+    await this.recordFlightRead(tenantId, row, view, 'retrieve', actorUserId);
+    return view;
   }
 
   /**
@@ -1880,6 +1938,7 @@ export class OrdersService {
 
     const provider = await this.flightProviderForOrder(tenantId, order);
     const view = await provider.adapter.retrieveForDisplay(order.provider_order_id, { tenantId });
+    await this.recordFlightRead(tenantId, order, view, 'verify', actorUserId);
 
     await this.logOperation(tenantId, orderId, 'retrieve', 'success', null, actorUserId);
     await this.audit.emit({

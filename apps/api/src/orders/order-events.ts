@@ -37,6 +37,12 @@ export const ORDER_EVENTS = {
    * la fila de seguimiento para que lo revise una persona.
    */
   providerStatusChanged: 'OrderProviderStatusChanged',
+  /**
+   * Una lectura de una reserva de vuelo vio documentos (tiquetes o EMD) nuevos o con otro estado
+   * (0082). El `payload` lleva conteos (`added`, `statusChanged`) y la fuente de la lectura, nunca
+   * los números: el panel de red lo muestra a cualquier admin del subárbol.
+   */
+  flightDocumentsChanged: 'OrderFlightDocumentsChanged',
   /** El número de confirmación del HOTEL apareció o cambió. Es un localizador, como el PNR. */
   hotelConfirmationNumberReceived: 'HotelConfirmationNumberReceived',
   /** Se agotaron el SLA y los reintentos sin HCN: hay tarea de operaciones (RF-27). */

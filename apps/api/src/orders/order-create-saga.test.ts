@@ -41,6 +41,11 @@ import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-f
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
+import type {
+  FlightDocumentChanges,
+  FlightOrderRead,
+  FlightOrderTrackingStore,
+} from './flight-order-tracking.store.js';
 import { ProviderAccountChangedError } from './order-create-intent.store.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
@@ -456,6 +461,7 @@ function banco(
   dbOptions: FakeDbOptions = {},
   flags: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) },
   holds?: BookingHoldLedger,
+  flightTracking?: FlightOrderTrackingStore,
 ): Banco {
   const adapter = new SagaAdapter(opts);
   const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], flags);
@@ -474,6 +480,7 @@ function banco(
       undefined,
       undefined,
       holds,
+      flightTracking,
     ),
     adapter,
     audit,
@@ -1991,5 +1998,215 @@ describe('post-venta con la cuenta de la reserva (RF-29)', () => {
     expect(factory.resolveForOrder).not.toHaveBeenCalled();
     expect(vigente.retrieveForDisplay).toHaveBeenCalledTimes(1);
     expect(vigente.cancelOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Localizadores, documentos y plazo guardados en la reserva (0082)
+// ---------------------------------------------------------------------------------------------
+
+/** Doble del store: graba las lecturas, contesta con los cambios pedidos o falla. */
+class TrackingQueGraba {
+  readonly lecturas: { tenantId: string; orderId: string; read: FlightOrderRead }[] = [];
+  falla: Error | undefined;
+  cambios: FlightDocumentChanges = { added: 0, statusChanged: 0 };
+
+  readonly recordRead = vi.fn(
+    (tenantId: string, orderId: string, read: FlightOrderRead): Promise<FlightDocumentChanges> => {
+      if (this.falla !== undefined) return Promise.reject(this.falla);
+      this.lecturas.push({ tenantId, orderId, read });
+      return Promise.resolve(this.cambios);
+    },
+  );
+
+  asStore(): FlightOrderTrackingStore {
+    return this as unknown as FlightOrderTrackingStore;
+  }
+}
+
+const TIQUETE = '0457123456789';
+
+/** Lo que una lectura de cierre de un vuelo emitido trae: localizador, tiquete y plazo. */
+function vistaConSeguimiento(): OrderView {
+  return {
+    ...vistaViva(),
+    airlineLocators: [{ carrierCode: 'LA', locator: 'XKCD12' }],
+    ticketNumbers: [TIQUETE],
+    documents: [
+      {
+        number: TIQUETE,
+        kind: 'TICKET',
+        status: 'ISSUED',
+        travelerIndex: 0,
+        providerStatusCode: 'TE',
+      },
+    ],
+    ticketingDeadline: { date: '2026-09-08', time: '23:59', zone: 'PROVIDER_LOCAL' },
+  };
+}
+
+const ORDEN_GUARDADA = { status: 'confirmed', provider_order_id: PNR };
+
+/** `banco` con el store de seguimiento y nada más fuera de lo normal. */
+function bancoConSeguimiento(
+  opts: AdapterOptions,
+  tracking: TrackingQueGraba,
+  semilla?: Record<string, unknown>,
+): Banco {
+  return banco(opts, {}, semilla, {}, undefined, undefined, tracking.asStore());
+}
+
+describe('la reserva guarda localizadores, tiquetes y plazo de cada lectura (0082)', () => {
+  it('la lectura de cierre de la creación queda guardada, y el alta de un tiquete es un evento con conteos', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(tracking.lecturas[0]).toMatchObject({
+      tenantId: TENANT,
+      orderId: 'order-1',
+      read: {
+        airlineLocators: [{ carrierCode: 'LA', locator: 'XKCD12' }],
+        documents: [{ number: TIQUETE, kind: 'TICKET', status: 'ISSUED', travelerIndex: 0 }],
+        ticketingDeadline: { date: '2026-09-08', time: '23:59', zone: 'PROVIDER_LOCAL' },
+      },
+    });
+    const evento = b.audit.first(ORDER_EVENTS.flightDocumentsChanged);
+    expect(evento).toMatchObject({
+      tenantId: TENANT,
+      actorUserId: USER,
+      aggregateId: 'order-1',
+      payload: { provider: PROVEEDOR, source: 'verify', added: 1, statusChanged: 0 },
+    });
+    // Conteos, nunca números: el panel de red lo ve cualquier admin del subárbol.
+    expect(JSON.stringify(evento)).not.toContain(TIQUETE);
+  });
+
+  it('sin cambios en los documentos no hay evento', async () => {
+    const tracking = new TrackingQueGraba();
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)).toBeUndefined();
+  });
+
+  it('si guardar falla, la creación se cierra igual y confirmada', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    const { order, saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+    expect(order.status).toBe('confirmed');
+    expect(b.audit.first(ORDER_EVENTS.verified)).toBeDefined();
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)).toBeUndefined();
+    expect(b.audit.first(ORDER_EVENTS.escalated)).toBeUndefined();
+  });
+
+  it('si el evento falla, la creación también se cierra', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+    const emit = b.audit.emit.bind(b.audit);
+    vi.spyOn(b.audit, 'emit').mockImplementation((event) =>
+      event.eventType === ORDER_EVENTS.flightDocumentsChanged
+        ? Promise.reject(new Error('domain_events no disponible'))
+        : emit(event),
+    );
+
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+  });
+
+  it('una lectura de cierre que falló o que no encontró la reserva no guarda nada', async () => {
+    const falla = new TrackingQueGraba();
+    await bancoConSeguimiento({ viewThrows: new Error('timeout') }, falla).orders.createOrder(
+      TENANT,
+      USER,
+      dto(),
+    );
+    expect(falla.recordRead).not.toHaveBeenCalled();
+
+    const noEsta = new TrackingQueGraba();
+    await bancoConSeguimiento(
+      { view: { found: false, airlineLocators: [], warnings: [] } },
+      noEsta,
+    ).orders.createOrder(TENANT, USER, dto());
+    expect(noEsta.recordRead).not.toHaveBeenCalled();
+  });
+
+  it('la verificación diferida guarda lo que leyó', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 0, statusChanged: 1 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+
+    await b.orders.verifyCreationById(TENANT, 'order-1', USER);
+
+    expect(tracking.lecturas.map((l) => l.orderId)).toEqual(['order-1']);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)?.payload).toEqual({
+      provider: PROVEEDOR,
+      source: 'verify',
+      added: 0,
+      statusChanged: 1,
+    });
+  });
+
+  it('si guardar falla, la verificación diferida sigue y deja su evento', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+
+    await expect(b.orders.verifyCreationById(TENANT, 'order-1', USER)).resolves.toBeUndefined();
+    expect(b.audit.first(ORDER_EVENTS.verified)).toBeDefined();
+  });
+
+  it('la consulta manual guarda y devuelve la misma lectura, aunque guardar falle', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+    const fila = b.fila() as unknown as OrderRow;
+
+    await expect(b.orders.retrieveOrder(TENANT, fila, USER)).resolves.toEqual(
+      vistaConSeguimiento(),
+    );
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)?.payload).toMatchObject({
+      source: 'retrieve',
+    });
+
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    await expect(b.orders.retrieveOrder(TENANT, fila, USER)).resolves.toEqual(
+      vistaConSeguimiento(),
+    );
+  });
+
+  it('un proveedor sin estados de documento (sólo ticketNumbers) los guarda como tiquetes sin confirmar', async () => {
+    const tracking = new TrackingQueGraba();
+    const b = bancoConSeguimiento(
+      { view: { ...vistaViva(), ticketNumbers: [TIQUETE, 'NO-ES-UN-NUMERO'] } },
+      tracking,
+      ORDEN_GUARDADA,
+    );
+
+    await b.orders.retrieveOrder(TENANT, b.fila() as unknown as OrderRow, USER);
+
+    expect(tracking.lecturas[0]?.read.documents).toEqual([
+      { number: TIQUETE, kind: 'TICKET', status: 'UNKNOWN' },
+    ]);
+  });
+
+  it('sin store (los dobles de otras suites) la lectura sigue igual', async () => {
+    const b = banco({ view: vistaConSeguimiento() }, {}, ORDEN_GUARDADA);
+    await expect(
+      b.orders.retrieveOrder(TENANT, b.fila() as unknown as OrderRow, USER),
+    ).resolves.toEqual(vistaConSeguimiento());
   });
 });
