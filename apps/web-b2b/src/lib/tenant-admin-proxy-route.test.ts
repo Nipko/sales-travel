@@ -78,6 +78,10 @@ describe('las rutas de enviar el enlace y desbloquear', () => {
       'send-password-reset',
       () => import('../app/api/tenants/[tenantId]/members/[userId]/send-password-reset/route'),
     ],
+    [
+      'require-password-reset',
+      () => import('../app/api/tenants/[tenantId]/members/[userId]/require-password-reset/route'),
+    ],
     ['unlock', () => import('../app/api/tenants/[tenantId]/members/[userId]/unlock/route')],
   ])(
     '%s: desde el panel reenvía al API; desde otro sitio o con un id raro, no',

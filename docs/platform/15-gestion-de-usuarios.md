@@ -12,43 +12,45 @@ Cada paquete actualiza su fila al cerrarse: **hecho** con el PR, o **pendiente**
 - **2FA obligatorio** para `tenant_admin` y superiores.
 - **Suspender una membership corta sólo ese nodo** (y cierra las sesiones de ese subárbol); suspender
   la cuenta es de toda la plataforma y sólo lo hace el superadmin.
-- **Soporte a un miembro** (restablecer 2FA, cerrar sesiones, enviar el enlace, desbloquear): tocan la
-  identidad global, así que el actor tiene que administrar **todos** los nodos donde la persona tiene
-  membership activa y superarla en rango en cada uno, o ser superadmin. Nunca sobre uno mismo
-  (`assertCanSupportMember`, `apps/api/src/tenants/tenant-admin.policy.ts`).
+- **Soporte a un miembro** (restablecer 2FA, cerrar sesiones, enviar el enlace, forzar el cambio de
+  contraseña, desbloquear): tocan la identidad global, así que el actor tiene que administrar
+  **todos** los nodos donde la persona tiene membership activa y superarla en rango en cada uno, o
+  ser superadmin. Nunca sobre uno mismo (`assertCanSupportMember`,
+  `apps/api/src/tenants/tenant-admin.policy.ts`).
 
 "Admin de nodo" = `consolidator_admin`, `tenant_admin`, `agency_admin` o `admin` sobre ese nodo o un
 ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`ROLE_RANK`).
 
 ## Matriz
 
-| Acción                                                               | Dónde                                     | Quién puede                                                                     | Estado                                               |
-| -------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Invitar a alguien a un nodo (una pendiente por correo y nodo)        | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                            | **Hecho (doc 14, USR-8)**                            |
-| Reenviar una invitación (token nuevo, 7 días)                        | Equipo → Invitaciones / Invitar (409)     | Admin del nodo que supere el rol invitado; superadmin                           | **Hecho (doc 14, USR-8)**: avisa si el correo falla  |
-| Revocar una invitación                                               | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                           | **Hecho (USR-8)**                                    |
-| Cambiar el rol en un nodo                                            | Equipo → fila                             | Admin del nodo que supere el rol actual y el nuevo; superadmin. Nunca el propio | Hecho                                                |
-| Suspender / reactivar el acceso a un nodo                            | Equipo → acciones                         | Admin del nodo que supere su rol; superadmin. Nunca el propio                   | Hecho (PR #14)                                       |
-| Cerrar todas sus sesiones                                            | Equipo → acciones → Seguridad             | Soporte a un miembro                                                            | Hecho                                                |
-| Restablecer su 2FA                                                   | Equipo → acciones → Seguridad             | Soporte a un miembro                                                            | Hecho                                                |
-| **Enviarle un enlace para restablecer la contraseña**                | Equipo → acciones → Acceso                | Soporte a un miembro. 409 si su cuenta o su acceso al nodo están suspendidos    | **Hecho (USR-2)**                                    |
-| **Desbloquear la cuenta** (bloqueo por intentos fallidos)            | Equipo → acciones → Acceso (si bloqueada) | Soporte a un miembro                                                            | **Hecho (USR-2)**                                    |
-| Liberar un puesto (cerrar una sesión que ocupa cupo)                 | Equipo → Puestos                          | Admin del nodo de esa sesión; superadmin. Nunca la propia                       | Hecho (PR #12)                                       |
-| Fijar puestos e inactividad de un nodo                               | Gestión de Agencias                       | Superadmin                                                                      | Hecho (PR #12)                                       |
-| Forzar cambio de contraseña en el próximo ingreso                    | Equipo → acciones → Acceso                | Soporte a un miembro                                                            | Pendiente (USR-3)                                    |
-| Suspender / reactivar la cuenta en toda la plataforma                | Plataforma → Usuarios → acciones          | Superadmin. Nunca la propia ni la del último superadmin activo                  | **Hecho (USR-4)**: la confirmación dice lo que corta |
-| Buscar a cualquier persona de la red (nombre, correo, filtros)       | Plataforma → Usuarios                     | Superadmin                                                                      | **Hecho (USR-4)**                                    |
-| Ver la ficha de una persona y cerrar una sesión puntual              | Ficha del usuario                         | Admin de su subárbol (lo suyo); superadmin (todo)                               | Pendiente (USR-5, USR-7)                             |
-| Ver el historial de una persona y la actividad de la red             | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                     | Pendiente (USR-6)                                    |
-| Invitar o promover a un admin de consolidador                        | Equipo                                    | Superadmin                                                                      | Pendiente (USR-9)                                    |
-| Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol) | Equipo                                    | Admin del nodo; superadmin                                                      | Pendiente (USR-10)                                   |
-| Quitar a una persona de un nodo (baja blanda)                        | Equipo → acciones                         | —                                                                               | Pendiente (USR-11; founder D2 = A)                   |
-| Avisarle por correo cada cambio de seguridad hecho por un admin      | Automático                                | —                                                                               | Pendiente (USR-12)                                   |
-| Reconfirmar el 2FA antes de las acciones de alto impacto             | Automático                                | —                                                                               | Pendiente (USR-13; founder D1 = C)                   |
-| Forzar cambio de contraseña en bloque a cuentas heredadas            | Plataforma                                | Superadmin                                                                      | Pendiente (USR-14; founder D3 = B)                   |
-| Ver invitaciones pendientes y vencidas de toda la red                | Plataforma → Invitaciones                 | Superadmin                                                                      | Pendiente (USR-15)                                   |
-| Exportar usuarios a CSV                                              | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                  | Pendiente (USR-16)                                   |
-| Editar el propio nombre                                              | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                    | Pendiente (USR-18)                                   |
+| Acción                                                                         | Dónde                                     | Quién puede                                                                               | Estado                                                                    |
+| ------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Invitar a alguien a un nodo (una pendiente por correo y nodo)                  | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                                      | **Hecho (doc 14, USR-8)**                                                 |
+| Reenviar una invitación (token nuevo, 7 días)                                  | Equipo → Invitaciones / Invitar (409)     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (doc 14, USR-8)**: avisa si el correo falla                       |
+| Revocar una invitación                                                         | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (USR-8)**                                                         |
+| Cambiar el rol en un nodo                                                      | Equipo → fila                             | Admin del nodo que supere el rol actual y el nuevo; superadmin. Nunca el propio           | Hecho                                                                     |
+| Suspender / reactivar el acceso a un nodo                                      | Equipo → acciones                         | Admin del nodo que supere su rol; superadmin. Nunca el propio                             | Hecho (PR #14)                                                            |
+| Cerrar todas sus sesiones                                                      | Equipo → acciones → Seguridad             | Soporte a un miembro                                                                      | Hecho                                                                     |
+| Restablecer su 2FA                                                             | Equipo → acciones → Seguridad             | Soporte a un miembro                                                                      | Hecho                                                                     |
+| **Enviarle un enlace para restablecer la contraseña**                          | Equipo → acciones → Acceso                | Soporte a un miembro. 409 si su cuenta o su acceso al nodo están suspendidos              | **Hecho (USR-2)**                                                         |
+| **Desbloquear la cuenta** (bloqueo por intentos fallidos)                      | Equipo → acciones → Acceso (si bloqueada) | Soporte a un miembro                                                                      | **Hecho (USR-2)**                                                         |
+| Liberar un puesto (cerrar una sesión que ocupa cupo)                           | Equipo → Puestos                          | Admin del nodo de esa sesión; superadmin. Nunca la propia                                 | Hecho (PR #12)                                                            |
+| Fijar puestos e inactividad de un nodo                                         | Gestión de Agencias                       | Superadmin                                                                                | Hecho (PR #12)                                                            |
+| **Forzar cambio de contraseña en el próximo ingreso**                          | Equipo → acciones → Acceso                | Soporte a un miembro. Los mismos 409 que enviar el enlace                                 | **Hecho (USR-3)**: el login responde 403 hasta que la elija               |
+| Suspender / reactivar la cuenta en toda la plataforma                          | Plataforma → Usuarios → acciones          | Superadmin. Nunca la propia ni la del último superadmin activo                            | **Hecho (USR-4)**: la confirmación dice lo que corta                      |
+| Buscar a cualquier persona de la red (nombre, correo, filtros)                 | Plataforma → Usuarios                     | Superadmin                                                                                | **Hecho (USR-4)**                                                         |
+| Ver la ficha de una persona (perfil, seguridad, nodos, sesiones, invitaciones) | Ficha del usuario                         | Admin del nodo, sobre alguien de su subárbol (también uno mismo); superadmin (todo)       | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
+| Cerrar una sesión puntual                                                      | Ficha del usuario → Sesiones              | Admin del nodo que supere su rol sobre el nodo de esa sesión; superadmin. Nunca la propia | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
+| Ver el historial de una persona y la actividad de la red                       | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                               | **Hecho (USR-6)**: Actividad filtrable; el historial en la ficha es USR-7 |
+| Invitar o promover a un admin de consolidador                                  | Equipo                                    | Superadmin                                                                                | Pendiente (USR-9)                                                         |
+| Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | Pendiente (USR-10)                                                        |
+| Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
+| Avisarle por correo cada cambio de seguridad hecho por un admin                | Automático                                | —                                                                                         | Pendiente (USR-12)                                                        |
+| Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | Pendiente (USR-13; founder D1 = C)                                        |
+| Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
+| Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Invitaciones                 | Superadmin                                                                                | Pendiente (USR-15)                                                        |
+| Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
+| Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | Pendiente (USR-18)                                                        |
 
 ## Enviar el enlace y desbloquear (USR-2)
 
@@ -97,6 +99,92 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 - Web: `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts`, `tenant-admin-team.test.ts`,
   `tenant-admin-seats-client.test.ts` y `team.render.test.ts` (menú agrupado, "Desbloquear cuenta"
   sólo con bloqueo).
+
+## Forzar el cambio de contraseña (USR-3)
+
+Para cuando se sospecha que la contraseña de alguien está comprometida: a diferencia de enviarle el
+enlace, la vieja deja de servir en el acto. Nadie elige la contraseña nueva por la persona.
+
+### Base
+
+- `0062_password_reset_required.sql`: `users.password_reset_required_at` (desde cuándo tiene que elegir
+  una contraseña nueva). `user_admin_overview` se borra y se vuelve a crear con la columna
+  `password_reset_required`, el `search_path` endurecido de 0060 y los permisos de 0055 (sólo
+  `app_user`). La API vieja la consulta por nombre de columna: la migración puede correr antes que la
+  API nueva.
+
+### API
+
+- `POST /tenants/:id/members/:userId/require-password-reset` → `200 { sent, revokedSessions }`.
+  Soporte a un miembro (`assertCanSupportMember`) y los mismos 409 que enviar el enlace
+  (`MEMBER_ACCOUNT_SUSPENDED`, `MEMBERSHIP_SUSPENDED`). En una transacción que bloquea la fila del
+  usuario, `PasswordResetService.requireReset` marca la cuenta (si ya estaba, conserva desde cuándo),
+  cierra todas sus sesiones (`revoke_user_sessions`, motivo `password_reset_required`), deja sin efecto
+  sus enlaces pendientes, emite uno nuevo y registra `auth.password_reset.required_by_admin`
+  (`{ targetUserId, revokedSessions }`). El correo ("Elige una contraseña nueva · PlaneTour") sale
+  después del commit; si no sale, `sent: false` y `auth.password_reset.email_failed`
+  (`{ targetUserId, via: 'required' }`). Volver a forzarlo a quien ya lo tiene pendiente sólo reenvía
+  el enlace y cuenta para el 429 de 3 enlaces en 15 minutos; la primera vez nunca. `@Throttle` de 10
+  por minuto.
+- **Login**: después de verificar la contraseña (el bloqueo, la cuenta suspendida y la contraseña
+  incorrecta siguen dando el 401 de siempre) y antes del 2FA y del equipo de confianza, si la cuenta
+  está marcada responde 403 `PASSWORD_RESET_REQUIRED` ("Tienes que elegir una contraseña nueva: te
+  enviamos un enlace a tu correo."). No cuenta como fallo, no emite sesión ni ocupa puesto, y registra
+  `auth.login.password_reset_required` (`{ linkSent }`). Si no tiene un enlace pendiente de los
+  últimos 10 minutos, le envía uno nuevo (sin invalidar el anterior) por el correo de su nodo más
+  antiguo. El código del 2FA y liberar un puesto también responden el 403 si el admin lo forzó en el
+  medio; liberar un puesto lo mira antes de desconectar a la otra persona.
+- Mientras la marca está, `SessionService.validate` no acepta ninguna sesión de la persona: un login
+  que pasó la contraseña justo antes de forzarlo no deja una sesión viva.
+- La marca la levantan el canje del enlace (el del admin o el de "Olvidé mi contraseña") y el cambio
+  de contraseña, en el mismo `UPDATE` que fija la contraseña nueva. Con la marca puesta, el canje
+  rechaza la misma contraseña de antes (400 `PASSWORD_REUSED`, el enlace sigue vigente): el admin la
+  forzó porque pudo quedar expuesta, y aceptarla la dejaría servir otra vez. `/restablecer` lo dice
+  ("Elige una contraseña distinta de la anterior…") en vez de "el enlace venció".
+- El canje toma la fila del usuario antes que la del enlace, en el mismo orden que forzar el cambio y
+  enviar el enlace: al revés, canjear mientras un admin lo forzaba terminaba en deadlock (500).
+- "Enviar enlace" a quien tiene el cambio pendiente usa el correo de "Elige una contraseña nueva" (el
+  otro dice que la actual sigue funcionando). "Olvidé mi contraseña" ahora busca el nodo de la persona
+  con su id en el contexto: antes la RLS de `memberships` no lo dejaba ver y el correo salía siempre
+  por el del sistema.
+- `GET /tenants/network/users` suma `passwordResetRequired`.
+
+### Panel
+
+- Equipo → menú de cada miembro → **Acceso** → **Forzar cambio de contraseña** (después de "Enviar
+  enlace…"), con confirmación destructiva: "Se cierran todas sus sesiones y no puede volver a ingresar
+  hasta que elija una contraseña nueva con el enlace que le enviamos a su correo. Úsalo si crees que
+  su contraseña está comprometida." Con el acceso suspendido se ve deshabilitado con el motivo. Si el
+  correo no salió, el aviso es una advertencia que pide revisar el correo del nodo y enviarle el
+  enlace de nuevo.
+- La fila de quien lo tiene pendiente muestra **Cambio de contraseña pendiente**.
+- Login: el 403 vuelve a la contraseña con el aviso "Tienes que elegir una contraseña nueva. Te
+  enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar." y el enlace
+  **¿No te llegó? Pide otro enlace** (a `/olvide-password`). Igual desde el paso del código o de
+  liberar un puesto.
+- Ruta del panel con chequeo de mismo origen:
+  `/api/tenants/[tenantId]/members/[userId]/require-password-reset`.
+
+### Tests
+
+- `apps/api/src/auth/auth.service.password-reset-required.test.ts`: 403 tipado, sin contar el fallo,
+  sin desafío ni equipo de confianza, sin sesión; suspendida, bloqueada o con la contraseña incorrecta
+  da el 401; forzado en medio del paso del código o antes de liberar un puesto (sin desconectar a
+  nadie).
+- `apps/api/src/auth/password-reset.service.test.ts`: `requireReset` (orden y transacción), el
+  reenvío a lo sumo cada 10 minutos, `reset` y `change` levantan la marca, `reset` toma el usuario
+  antes que el enlace y rechaza la misma contraseña sólo con la marca, la plantilla nueva en tú y
+  escapada.
+- `apps/api/src/tenants/member-support.service.test.ts`: autorización reusada, 409, 429 sólo al
+  volver a forzarlo, correo después del commit y su fallo auditado.
+- `apps/api/src/auth/password-reset-required.integration.test.ts` (se salta sin `PGHOST`): forzar →
+  login 403 → canjear el enlace → login con la nueva; reenvío a los 10 minutos; 2FA sin desafío;
+  sesión emitida tarde que no vale; "Olvidé mi contraseña" levanta la marca; la misma contraseña no
+  sirve y el enlace sigue vigente; canjear mientras otro lo fuerza no se traba; `user_admin_overview`
+  como `app_user`.
+- Web: `login-state.test.ts`, `login-steps.render.test.ts`, `tenant-admin-team.test.ts`,
+  `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts`, `team.render.test.ts` y
+  `restablecer/actions.test.ts`.
 
 ## Invitaciones confiables (USR-8)
 
@@ -228,3 +316,184 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 - `apps/api/src/tenants/admin.controller.test.ts`: autorización, orden de la suspensión, esquemas.
 - Web: `platform-users.test.ts`, `platform-users-proxy.test.ts` y `platform-users.render.test.ts`
   (columnas, chips, estados, menú, filtros, en tú).
+
+## Ficha del usuario y cierre de una sesión (USR-5)
+
+La API de la ficha de una persona: lo que el admin necesita para dar soporte con datos reales. El
+panel lateral que la muestra es USR-7.
+
+### Base
+
+- `0064_admin_user_detail.sql`: dos funciones `SECURITY DEFINER STABLE` (las tablas de sesiones,
+  códigos de recuperación y equipos de confianza tienen RLS por usuario), con el `search_path`
+  endurecido, sólo para `app_user`. No autorizan: la API decide antes. Como 0063, además callan ante
+  quien no podría verlo aunque la API lo olvide.
+  - `admin_user_sessions(p_user, p_root)`: las sesiones vivas (no revocadas, no vencidas, dentro de
+    su inactividad, como `user_admin_overview`) con nodo, IP (`host()`), navegador, si pasaron el
+    2FA y el cupo que ocupan. Con `p_root`, sólo las del subárbol de ese nodo y sólo si quien llama
+    lo administra (`can_read_membership`); con `NULL`, todas y sólo para un superadmin.
+  - `admin_user_security(p_user)`: desde cuándo tiene 2FA, códigos de recuperación sin usar, equipos
+    de confianza que de verdad le ahorran el código (no revocados, no vencidos y posteriores al último
+    cambio de contraseña y al último enrolamiento, como `TrustedDeviceService`), último cambio de
+    contraseña, intentos fallidos y bloqueo vigente. Sólo para la persona, un superadmin o quien
+    administra algún nodo donde ella tiene membership.
+
+### API
+
+- `GET /tenants/:id/members/:userId` → `MemberDetail`. Primero que el actor administre `:id`
+  (`roleOver`; 403 `TENANT_NOT_MANAGED` sin leer nada de la persona), después que la persona tenga una
+  membership (de cualquier estado) en el subárbol de `:id`, leída con la RLS del actor (404
+  `MEMBER_NOT_FOUND`). Uno mismo puede verse.
+  - `user`: `id`, `email`, `name`, `status`, `createdAt`, `emailVerified`, `lastLoginAt`,
+    `passwordChangedAt` y `passwordResetRequired` (USR-3).
+  - `security`: `mfaEnabled`, `mfaEnabledAt`, `recoveryCodesLeft`, `trustedDevices`, `lockedUntil`
+    (sólo vigente), `failedLoginAttempts`.
+  - `memberships[]` (`tenantId`, `tenantName`, `tenantType`, `role`, `status`, `createdAt`): las que
+    la RLS le deja ver, filtradas a los nodos que de verdad administra (`rolesOver`, que como
+    `canManageTenant` no cuenta un nodo bajo uno suspendido). El superadmin, todas.
+  - `sessions[]`: las de `admin_user_sessions(persona, :id)`, con `current` en la propia sesión de
+    quien se mira a sí mismo.
+  - `invitedBy`: `{ email, at }` de la última invitación aceptada para su correo en el subárbol
+    (`email` es `null` si quien invitó ya no existe), o `null`.
+  - `invitationsSent`: `{ pending, items }`, las pendientes que envió en el subárbol (ni aceptadas ni
+    revocadas, venzan o no) y hasta 20 de ellas, de la más nueva a la más vieja.
+- `GET /admin/users/:userId` → la misma forma con todo: todas sus memberships, sesiones sin raíz,
+  invitaciones de toda la plataforma. Sólo superadmin (403 `SUPERADMIN_ONLY` "Esta acción es sólo
+  para el superadmin." antes de leer nada; el chequeo vive en `MemberDetailService.platformDetail`);
+  404 `USER_NOT_FOUND` si la cuenta no existe. No choca con `GET /admin/users/:userId/impact` ni con
+  `PATCH /admin/users/status`.
+- `POST /tenants/:id/members/:userId/sessions/:sessionId/revoke` → `200 { ok: true }`. Nunca la propia
+  (403 `MEMBER_SELF_ACTION`: "Tus propias sesiones se cierran desde Mi cuenta → Seguridad…", sin leer
+  nada); 403 `TENANT_NOT_MANAGED` si no administra `:id`; 404 `SESSION_NOT_FOUND` ("Esa sesión ya no
+  está abierta.") si la sesión no está entre las abiertas de esa persona en el subárbol (cerrada, de
+  otra persona o de un nodo hermano: un solo motivo). Salvo el superadmin, el actor tiene que superar
+  en rango, sobre el nodo de ESA sesión, al rol con que la persona opera ahí (sus memberships
+  **activas** en el nodo o en un ancestro, o un rol de plataforma; leídas con la persona en el
+  contexto, como el soporte a un miembro): si no, 403 `ROLE_NOT_GRANTABLE`. `revoke_session(id,
+'revoked_by_admin')` y `auth.session.revoked_by_admin` (`{ targetUserId, sessionId, viaTenantId }`,
+  nodo de la sesión) en una transacción; si se cerró en el medio, el mismo 404. Su próximo request
+  responde `SESSION_REVOKED`.
+  - Es más estricto que **liberar un puesto** (Equipo → Puestos), que sólo pide administrar el nodo
+    de la sesión: liberar un puesto es gestionar el cupo; acá se elige a una persona, y un admin no
+    le corta la sesión a otro de su rango (un `tenant_admin` no cierra la de otro `tenant_admin`, ni
+    la de un `consolidator_admin` que opera en su agencia).
+  - Un acceso suspendido no da rango, igual que al cerrar todas sus sesiones: quien fue
+    `tenant_admin` de la agencia (suspendido) y hoy sólo vende en una sub-agencia es un vendedor ahí,
+    y el admin de la agencia le puede cerrar esa sesión.
+  - Desde Plataforma → Usuarios no hay ruta propia: el superadmin cierra una sesión por la de Equipo
+    con `:id` = el nodo de esa sesión (`sessions[].tenantId`). Una sesión sin nodo (`tenantId: null`,
+    sólo en su ficha) no se cierra de a una: "Cerrar todas sus sesiones".
+- Nunca salen hashes de tokens, secretos de MFA ni contraseñas: de los códigos y los equipos, sólo
+  cuántos hay. La IP y el navegador de cada sesión sí, como en Puestos.
+
+### Tests
+
+- `apps/api/src/tenants/member-detail.service.test.ts`: orden de la autorización (403 sin leer a la
+  persona, 404 leído con la RLS del actor y nada más), alcance de cada consulta (subárbol de la ruta o
+  toda la plataforma), filtro de nodos administrados, pase del superadmin, rango sobre el nodo de la
+  sesión con el rol leído en el contexto de la persona, revocación y evento en la misma transacción,
+  respuesta sin secretos.
+- `apps/api/src/tenants/member-detail.controller.test.ts`: 401 sin sesión, ids con Zod, 200 al
+  cerrar, `RolesGuard` con la metadata real.
+- `apps/api/src/tenants/member-detail.integration.test.ts` (se salta sin `PGHOST`): un admin de nodo
+  no ve sesiones ni nodos del hermano o del padre, el del consolidador sí; las funciones de 0064 sólo
+  para `app_user` y mudas ante quien no podría verlo; códigos sin usar y equipos válidos;
+  invitaciones acotadas al subárbol; evento en la misma transacción (si no entra, la sesión sigue
+  abierta), no se cierra dos veces, rango (un acceso suspendido no lo da) y pase del superadmin;
+  ninguna contraseña ni hash en la
+  respuesta.
+
+## Historial por usuario y Actividad de la red (USR-6)
+
+Responder "qué hizo esta persona y qué le hicieron" con el audit log (`domain_events`, 0015), y que
+la Actividad de Mi Red se lea en castellano, se filtre y se pagine. La API del historial está; el
+panel que lo muestra en la ficha es USR-7.
+
+Un evento es **de la persona** si lo hizo ella (`actor_user_id`), si el agregado es su cuenta
+(`aggregate_type = 'user'`, `aggregate_id`) o si la nombra como objetivo (`payload.targetUserId`, lo
+que dejan las acciones de un admin sobre un miembro; comparado en minúsculas porque algunos bordes lo
+guardan como lo mandó el cliente).
+
+### Base
+
+- `0065_user_audit_trail.sql` (`domain_events` es una tabla plana, no una hypertable):
+  - `idx_domain_events_actor_time (actor_user_id, occurred_at DESC)` e
+    `idx_domain_events_target_user` sobre `lower(payload->>'targetUserId')` y `occurred_at`, parcial
+    (sólo los eventos que traen `targetUserId`, que son pocos).
+  - `audit_event_target_user(payload, aggregate_type, aggregate_id, actor)` (`IMMUTABLE`): la cuenta
+    sobre la que se hizo el evento si no es la de quien lo hizo (`targetUserId`, o la cuenta del
+    agregado); `NULL` si no hay o no tiene forma de UUID, para no romper la consulta. Es el "a quién"
+    del historial y de la Actividad.
+  - `platform_user_audit_trail(p_user, p_before, p_before_id, p_limit)` (`SECURITY DEFINER STABLE`,
+    `search_path` endurecido, sólo `app_user`): el historial en toda la plataforma, **eventos sin
+    nodo incluidos** (login fallido, pedir restablecer la contraseña, la suspensión global), que la
+    RLS de `domain_events` (0029) no le deja leer a nadie. Del más nuevo al más viejo, hasta 101 filas
+    (100 + 1 para saber si hay otra página). Sin `meta`. La API comprueba antes que quien pregunta es
+    superadmin; además la función no devuelve filas si `app.current_user_id` no lo es (como 0063).
+
+### API
+
+- `GET /tenants/:id/members/:userId/audit?before=&limit=` → `{ events, nextBefore }`. Primero que el
+  actor administre `:id` (`canManageTenant`; 403 `TENANT_NOT_MANAGED` sin leer nada de la persona),
+  después que la persona tenga una membership (de cualquier estado) en el subárbol, leída con la RLS
+  del actor (404 `MEMBER_NOT_FOUND`). Se lee con el contexto del actor (RLS por subárbol) y acotado
+  al subárbol de `:id`: un evento sin nodo o de otra red nunca entra. `limit` de 1 a 100, 30 por
+  defecto.
+- `GET /admin/users/:userId/audit?before=&limit=` → la misma forma, por la función de 0065. Sólo
+  superadmin (403 `SUPERADMIN_ONLY` antes de leer nada); 404 `USER_NOT_FOUND` si la cuenta no existe.
+- `GET /tenants/network/audit?tenantId=&limit=&before=&category=&actorUserId=` → la misma forma. La
+  consulta pasa por Zod (`NetworkAuditQuerySchema`, `.strict()`: un parámetro de más es 400; sin
+  `tenantId` también, antes era 403). 403 `TENANT_NOT_MANAGED` ("No administras este
+  nodo.") si no administra el nodo. `limit` de 1 a 200, 50 por defecto. Filtros, por el prefijo de
+  `event_type`:
+  - `users`: `auth.%`, `users.%`, `User%`, `Membership%`;
+  - `credentials`: `ProviderCredentials%`;
+  - `pricing`: `Markup%`;
+  - `network`: `Tenant%` y `tenant.%` (marca, configuración, puestos);
+  - `actorUserId`: sólo lo que hizo esa persona.
+- Cada evento (`AuditEntry`): `id`, `occurredAt`, `eventType`, `tenantId`, `tenantName`,
+  `actorEmail`, **`targetEmail`** (nuevo: "a quién") y `payload` tal cual se guardó (nunca lleva
+  secretos). Nunca sale `meta` (IP, navegador, sesión).
+- Desde Equipo y desde Mi Red, `targetEmail` sólo se nombra si esa persona tiene una membership (de
+  cualquier estado) en el subárbol que se mira: un evento del subárbol puede apuntar a alguien de
+  otra red (la suspensión global queda con el nodo de la sesión del superadmin), y ese correo no es
+  de esta red. El historial del superadmin lo nombra siempre.
+- El cursor `before` es el `nextBefore` de la página anterior: base64url de `{ occurredAt, id }`, con
+  el instante en microsegundos. El orden es `(occurred_at, id)` descendente: los eventos de una misma
+  transacción comparten `now()`, y un corte sólo por tiempo saltaba o repetía los del borde.
+
+### Panel
+
+- **Mi Red → Actividad** (`red/page.tsx`): filtros _Todo_, _Usuarios_, _Credenciales_, _Precios_ y
+  _Red_ (botones con `aria-pressed`); cada evento con su frase ("Cambio de rol"), el detalle ("a
+  ana@agencia.com · de Vendedor a Admin agencia"), el nodo y quién lo hizo, y la hora; _Cargar más_
+  por `before`; vacío "Sin actividad para este filtro." (o "Sin actividad registrada todavía." en
+  _Todo_); un error se dice con su motivo y _Reintentar_.
+- `apps/web-b2b/src/lib/audit-format.ts`: `eventLabel` (un tipo sin frase se muestra con su código en
+  monoespaciada), `eventDetail` (sólo correos, roles y estados, nunca ids), `categoryOf` (espejo de
+  los filtros del API), `parseAuditPage` (nunca lanza) y `auditLoadError`. Las frases de los eventos
+  de USR-11 (`MembershipRemoved`) y USR-16 (`users.exported`) ya están.
+- BFF `GET /api/tenants/network/audit`: `networkAuditTarget` reconstruye la consulta parámetro por
+  parámetro (nodo, tamaño, cursor, categoría, persona; uno desconocido o repetido es 400) y
+  `forwardRead` devuelve el estado y el motivo del API.
+
+### Tests
+
+- `apps/api/src/audit/audit.service.test.ts`: con el compilador real de Kysely, el contexto de quien
+  mira, el predicado de cada categoría, el de "de la persona" y el del subárbol, el cursor con
+  desempate por id, el tamaño acotado, la fila de más que decide `nextBefore` y que sin membership en
+  el subárbol (o sin cuenta) no se lee el historial.
+- `apps/api/src/audit/audit.schemas.test.ts`: las consultas de la Actividad y del historial (tamaños,
+  categorías, cursor emitido por el API, parámetros de más).
+- `apps/api/src/audit/user-audit.controller.test.ts`: 401, 403 sin leer nada (nodo no administrado;
+  `/admin` a quien no es superadmin), 404 fuera del subárbol o sin cuenta, el cursor llega leído, Zod
+  en la ruta y la consulta, `RolesGuard` con la metadata real.
+- `apps/api/src/audit/user-audit.integration.test.ts` (se salta sin `PGHOST`): el admin de un nodo
+  nunca ve un evento sin nodo ni de otra red o del nodo hermano, el del consolidador sí ve el del
+  hermano (con el id en mayúsculas); el superadmin ve el login fallido y la suspensión global; la
+  función no le responde a otro ni la ejecuta `PUBLIC`; el cursor no salta ni repite cinco eventos de
+  una misma transacción; los filtros y el "a quién" de la Actividad; nada de lo que sale trae el
+  enlace de restablecer, su hash, contraseñas ni `meta`.
+- `apps/web-b2b/src/lib/audit-format.test.ts` y `tenant-admin-proxy.test.ts`: las frases y los
+  detalles, la lectura tolerante de la página, los mensajes de error y la consulta reconstruida del
+  BFF.

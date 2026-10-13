@@ -63,9 +63,9 @@ const CURSOR_ID = z.string().uuid();
 /**
  * ¿Es un instante que existe? `Date.parse` acepta "2026-02-30" o "24:00" corriéndolos al día
  * siguiente, y Postgres los rechaza con un 500 al compararlos en el cursor. Los campos tienen que
- * volver iguales de un `Date` armado con ellos.
+ * volver iguales de un `Date` armado con ellos. También lo usa el cursor del historial (audit.schemas).
  */
-function realInstant(text: string): boolean {
+export function realInstant(text: string): boolean {
   const match = CURSOR_INSTANT.exec(text);
   if (match === null) return false;
   const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);

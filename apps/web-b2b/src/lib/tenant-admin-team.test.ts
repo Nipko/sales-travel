@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ANONYMOUS_ACTOR,
   MFA_REQUIRED_ROLES,
+  PASSWORD_RESET_PENDING_HINT,
+  PASSWORD_RESET_PENDING_LABEL,
   accessSuspended,
   canActOn,
   demotes,
@@ -40,6 +42,7 @@ const RAW = {
   mfaEnabled: false,
   lockedUntil: null,
   activeSessions: 1,
+  passwordResetRequired: false,
 };
 
 function member(patch: Partial<NetworkMember> = {}): NetworkMember {
@@ -54,13 +57,21 @@ describe('parseMembers: GET /tenants/network/users', () => {
   });
 
   it('un API anterior sin los campos nuevos: "no lo dice", no "nunca"', () => {
-    const { lastLoginAt: _a, mfaEnabled: _b, lockedUntil: _c, activeSessions: _d, ...legacy } = RAW;
+    const {
+      lastLoginAt: _a,
+      mfaEnabled: _b,
+      lockedUntil: _c,
+      activeSessions: _d,
+      passwordResetRequired: _e,
+      ...legacy
+    } = RAW;
     const parsed = parseMembers({ users: [legacy] })?.[0];
     expect(parsed).toMatchObject({
       lastLoginAt: undefined,
       mfaEnabled: undefined,
       lockedUntil: undefined,
       activeSessions: undefined,
+      passwordResetRequired: undefined,
     });
   });
 
@@ -427,6 +438,11 @@ describe('enviar el enlace para restablecer la contraseña y desbloquear', () =>
         label: 'Enviar enlace para restablecer contraseña',
         disabled: false,
       },
+      {
+        action: 'require-password-reset',
+        label: 'Forzar cambio de contraseña',
+        disabled: false,
+      },
     ]);
     expect(groups[1]?.items.map((i) => [i.action, i.disabled])).toEqual([
       ['revoke-sessions', false],
@@ -434,17 +450,28 @@ describe('enviar el enlace para restablecer la contraseña y desbloquear', () =>
     ]);
 
     const locked = memberMenuGroups(member({ lockedUntil: '2026-10-11T12:10:00.000Z' }), NOW);
-    expect(locked[0]?.items.map((i) => i.action)).toEqual(['send-password-reset', 'unlock']);
+    expect(locked[0]?.items.map((i) => i.action)).toEqual([
+      'send-password-reset',
+      'require-password-reset',
+      'unlock',
+    ]);
   });
 
-  it('con el acceso suspendido, "Enviar enlace" se ve deshabilitado y dice por qué', () => {
+  it('con el acceso suspendido, "Enviar enlace" y "Forzar cambio" se ven deshabilitados y dicen por qué', () => {
     for (const patch of [{ userStatus: 'suspended' }, { membershipStatus: 'suspended' }]) {
       const [access] = memberMenuGroups(member(patch), NOW);
-      expect(access?.items[0]).toEqual({
-        action: 'send-password-reset',
-        label: 'Enviar enlace para restablecer contraseña (acceso suspendido)',
-        disabled: true,
-      });
+      expect(access?.items).toEqual([
+        {
+          action: 'send-password-reset',
+          label: 'Enviar enlace para restablecer contraseña (acceso suspendido)',
+          disabled: true,
+        },
+        {
+          action: 'require-password-reset',
+          label: 'Forzar cambio de contraseña (acceso suspendido)',
+          disabled: true,
+        },
+      ]);
     }
   });
 
@@ -455,5 +482,68 @@ describe('enviar el enlace para restablecer la contraseña y desbloquear', () =>
       label: 'Restablecer 2FA (no lo tiene activo)',
       disabled: true,
     });
+  });
+});
+
+describe('forzar el cambio de contraseña', () => {
+  it('lee la marca del API', () => {
+    expect(
+      parseMembers({ users: [{ ...RAW, passwordResetRequired: true }] })?.[0]
+        ?.passwordResetRequired,
+    ).toBe(true);
+    expect(
+      parseMembers({ users: [{ ...RAW, passwordResetRequired: 'sí' }] })?.[0]
+        ?.passwordResetRequired,
+    ).toBeUndefined();
+  });
+
+  it('los textos: que se cierran sus sesiones, que no entra hasta elegirla y para qué sirve', () => {
+    expect(memberActionCopy('require-password-reset', member())).toEqual({
+      label: 'Forzar cambio de contraseña',
+      title: 'Forzar a Ana Pérez a cambiar su contraseña',
+      description:
+        'Se cierran todas sus sesiones y no puede volver a ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo. Úsalo si crees que su contraseña está comprometida.',
+      confirmLabel: 'Forzar cambio',
+      done: 'Ana Pérez tiene que elegir una contraseña nueva. Le enviamos el enlace y cerramos sus sesiones.',
+    });
+  });
+
+  it('el aviso: hecho, o hecho sin correo (advertencia, con qué hacer)', () => {
+    const ana = member();
+    const done = parseMemberActionResult({ sent: true, revokedSessions: 2 });
+    expect(done).toMatchObject({ sent: true, revokedSessions: 2 });
+    expect(memberActionDoneMessage('require-password-reset', ana, done)).toBe(
+      'Ana Pérez tiene que elegir una contraseña nueva. Le enviamos el enlace y cerramos sus sesiones.',
+    );
+    expect(memberActionNoticeTone('require-password-reset', done)).toBe('success');
+
+    const notSent = parseMemberActionResult({ sent: false, revokedSessions: 0 });
+    expect(memberActionDoneMessage('require-password-reset', ana, notSent)).toBe(
+      'Ana Pérez tiene que elegir una contraseña nueva y cerramos sus sesiones, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo y envíale el enlace de nuevo.',
+    );
+    expect(memberActionNoticeTone('require-password-reset', notSent)).toBe('warning');
+    expect(parseMemberActionResult({ revokedSessions: -1 }).revokedSessions).toBeUndefined();
+  });
+
+  it('con el cambio pendiente, "Enviar enlace" no promete que la actual sigue funcionando', () => {
+    const pending = memberActionCopy(
+      'send-password-reset',
+      member({ passwordResetRequired: true }),
+    );
+    expect(pending.label).toBe('Enviar enlace para restablecer contraseña');
+    expect(pending.description).toBe(
+      'Le enviamos a ana@agencia.co un enlace nuevo para que elija su contraseña. Vence en 60 minutos y deja sin efecto los enlaces anteriores. Tú no ves el enlace ni la contraseña, y hasta que la elija no puede ingresar.',
+    );
+    expect(pending.description).not.toMatch(/sigue funcionando/);
+    expect(memberActionCopy('send-password-reset', member()).description).toMatch(
+      /sigue funcionando/,
+    );
+  });
+
+  it('la marca de la fila dice qué le pasa', () => {
+    expect(PASSWORD_RESET_PENDING_LABEL).toBe('Cambio de contraseña pendiente');
+    expect(PASSWORD_RESET_PENDING_HINT).toBe(
+      'No puede ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo.',
+    );
   });
 });

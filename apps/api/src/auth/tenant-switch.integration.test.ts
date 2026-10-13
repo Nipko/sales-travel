@@ -15,6 +15,7 @@ import { JwtService } from './jwt.service.js';
 import { LoginAttemptsService } from './login-attempts.service.js';
 import { MfaChallengeService } from './mfa-challenge.service.js';
 import type { MfaService } from './mfa.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import { PasswordService } from './password.service.js';
 import { PgSeatRepository } from './seat.repository.js';
 import { SeatService } from './seat.service.js';
@@ -74,6 +75,7 @@ d('cambiar de agencia y agencia por defecto, contra Postgres como app_user', () 
     new MfaChallengeService(database, new LoginAttemptsService(database)),
     new TrustedDeviceService(database),
     new LoginAttemptsService(database),
+    {} as PasswordResetService,
   );
   const me = new MeController(database);
 

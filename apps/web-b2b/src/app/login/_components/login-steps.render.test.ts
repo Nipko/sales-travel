@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { voseoIn } from '../../../lib/voseo';
 import {
   LOGIN_MESSAGES,
   parseSeatsFull,
@@ -147,6 +148,29 @@ describe('CredentialsStep', () => {
     expect(status).toContain('bloqueamos la cuenta por 15 minutos');
     expect(status).toContain('href="/olvide-password"');
     expect(status).toContain('Restablecer contraseña');
+  });
+
+  it('cambio de contraseña pedido por un admin: dónde está el enlace y cómo pedir otro', () => {
+    const html = credentials({
+      attempt: 1,
+      email: EMAIL,
+      notice: LOGIN_MESSAGES.passwordResetRequired,
+      passwordResetRequired: true,
+    });
+    const id = html.match(/<div id="([^"]+)" role="status"/)?.[1];
+    const status = html.match(/<div id="[^"]+" role="status"[^>]*>(.*?)<\/div><\/div>/)?.[1];
+    expect(status).toContain(
+      'Tienes que elegir una contraseña nueva. Te enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar.',
+    );
+    expect(status).toContain('href="/olvide-password"');
+    expect(status).toContain('¿No te llegó? Pide otro enlace');
+    expect(status).not.toContain('Restablecer contraseña');
+    // No es un error de credenciales: los campos no quedan marcados como inválidos.
+    expect(html).not.toContain('aria-invalid');
+    // El foco va a la contraseña (el email ya está): el aviso la describe.
+    const password = inputs(html).find((i) => i.includes('name="password"'));
+    expect(attr(password, 'aria-describedby')).toBe(id);
+    expect(voseoIn(html)).toEqual([]);
   });
 
   it('muestra el motivo del cierre sólo en la primera pantalla', () => {

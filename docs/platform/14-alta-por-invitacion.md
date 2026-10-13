@@ -70,5 +70,8 @@ propio cambio: `0056_membership_scoped_revocation`, `revoke_user_sessions_for_te
 
 ## Fuera de alcance
 
-Usuarios ya creados con una contraseña elegida por un admin siguen con ella. Si el founder lo pide, se
-les fuerza un restablecimiento (revocar sesiones + correo de restablecer).
+Usuarios ya creados con una contraseña elegida por un admin siguen con ella hasta que alguien la
+cambie. Desde USR-3 (doc 15) existe el **restablecimiento forzado por persona**: _Equipo → acciones
+→ Acceso → Forzar cambio de contraseña_ cierra sus sesiones, le envía el enlace a su correo y el login
+la rechaza (403 `PASSWORD_RESET_REQUIRED`) hasta que elija una contraseña nueva; nadie la elige por
+ella. Forzarlo en bloque a esas cuentas heredadas es USR-14 (founder D3 = B, pendiente).

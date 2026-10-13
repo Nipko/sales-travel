@@ -9,7 +9,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
-import { AuditService, type AuditEntry } from '../audit/audit.service.js';
+import {
+  decodeAuditCursor,
+  NetworkAuditQuerySchema,
+  type NetworkAuditQuery,
+} from '../audit/audit.schemas.js';
+import { AuditService, type AuditPage } from '../audit/audit.service.js';
 import { AllowWithoutMfa } from '../auth/decorators/allow-without-mfa.decorator.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -29,6 +34,7 @@ import {
   type UpdateBrandingDto,
   type UpdateConfigDto,
 } from './branding.schemas.js';
+import { TenantNotManagedError } from './tenant-admin.policy.js';
 
 /**
  * Branding EFECTIVO: lo que hay que pintar. Los campos que el tenant no configuró
@@ -100,21 +106,26 @@ export class TenantsController {
     return { summary };
   }
 
-  /** Actividad reciente (audit log) de toda la red bajo el tenant indicado. */
+  /**
+   * Actividad (audit log) de toda la red bajo el tenant indicado, de a páginas (`before`), con
+   * filtro opcional por categoría y por quién lo hizo.
+   */
   @Roles(...AGENCY_ADMIN_ROLES)
   @Get('network/audit')
   async getNetworkAudit(
     @CurrentUser() userId: string | undefined,
-    @Query('tenantId') tenantId: string,
-    @Query('limit') limit?: string,
-  ): Promise<{ events: AuditEntry[] }> {
+    @Query(new ZodValidationPipe(NetworkAuditQuerySchema)) query: NetworkAuditQuery,
+  ): Promise<AuditPage> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
-    if (!(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('not authorized for this network');
+    if (!(await this.network.canManageTenant(userId, query.tenantId))) {
+      throw new TenantNotManagedError();
     }
-    const events = await this.audit.networkAudit(tenantId, Number(limit) || 50);
-    return { events };
+    return this.audit.networkAudit(userId, query.tenantId, {
+      before: query.before === undefined ? undefined : decodeAuditCursor(query.before),
+      limit: query.limit,
+      category: query.category,
+      actorUserId: query.actorUserId,
+    });
   }
 
   /** Usuarios (memberships) de un nodo de la red. Gateado por canManageTenant. */

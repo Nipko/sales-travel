@@ -76,6 +76,7 @@ interface SessionRow {
   idle: boolean;
   user_status: UserStatus;
   password_changed_at: Date | null;
+  password_reset_required: boolean;
   mfa_enabled_at: Date | null;
   role: Role | null;
   membership_status: string | null;
@@ -104,9 +105,10 @@ export class SessionService {
    * Valida la sesión y resuelve el rol efectivo y el estado del MFA, en una sola consulta.
    *
    * Una sesión que no sirve vuelve con el motivo, que el panel le muestra al usuario: revocada
-   * (con el motivo de la revocación), vencida, usuario suspendido, token anterior al último cambio
-   * de contraseña o inactiva. Una sesión viva que superó su inactividad se revoca ACÁ con
-   * `idle_timeout`: la inactividad la aplica el servidor, no el reloj del navegador.
+   * (con el motivo de la revocación), vencida, usuario suspendido, cambio de contraseña pendiente,
+   * token anterior al último cambio de contraseña o inactiva. Una sesión viva que superó su
+   * inactividad se revoca ACÁ con `idle_timeout`: la inactividad la aplica el servidor, no el reloj
+   * del navegador.
    *
    * El rol se lee de la base, NO del JWT, para que una degradación de rol o una membership
    * suspendida apliquen en el acto. Tampoco hay rol si el nodo, o alguno de sus ancestros, no está
@@ -154,6 +156,7 @@ export class SessionService {
                s.last_seen_at <= now() - s.idle_timeout_seconds * interval '1 second'  AS idle,
                u.status              AS user_status,
                u.password_changed_at,
+               u.password_reset_required_at IS NOT NULL AS password_reset_required,
                u.mfa_enabled_at,
                m.role                AS role,
                m.status              AS membership_status,
@@ -216,6 +219,10 @@ export class SessionService {
     if (row.revoked_at !== null) return invalid(reasonForRevocation(row.revoked_reason));
     if (row.expired) return invalid('SESSION_EXPIRED');
     if (row.user_status !== 'active') return invalid('SESSION_REVOKED');
+    // Un admin le pidió elegir una contraseña nueva (0062). Forzarlo cierra sus sesiones, pero un
+    // login que pasó la contraseña justo antes podía emitir una después: mientras la marca esté,
+    // ninguna sirve.
+    if (row.password_reset_required === true) return invalid('SESSION_REVOKED');
 
     // Un cambio de contraseña invalida todo token emitido antes, aunque su sesión siga viva. El
     // `iat` del JWT tiene resolución de segundos: se compara contra el segundo del cambio, o el

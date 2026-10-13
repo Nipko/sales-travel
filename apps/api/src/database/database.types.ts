@@ -164,6 +164,12 @@ export interface UsersTable {
   mfa_pending_secret: string | null;
   /** 0061: última agencia con la que operó. Preferencia del login, no autoriza nada. */
   last_tenant_id: string | null;
+  /**
+   * 0062: un admin le pidió elegir una contraseña nueva. Mientras no es null, el login responde 403
+   * PASSWORD_RESET_REQUIRED y ninguna sesión suya vale; la limpian el canje del enlace y el cambio de
+   * contraseña.
+   */
+  password_reset_required_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

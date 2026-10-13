@@ -15,6 +15,7 @@ import {
   MfaAccountLockedError,
   MfaChallengeExpiredError,
   MfaCodeInvalidError,
+  PasswordResetRequiredError,
   SeatReleaseExpiredError,
   SeatReleaseForbiddenError,
   SessionNotFoundError,
@@ -26,6 +27,7 @@ import { ACCESS_TTL_MS, JwtService, type SeatReleaseClaims } from './jwt.service
 import { LOCKOUT_MINUTES, LoginAttemptsService } from './login-attempts.service.js';
 import { MfaChallengeService } from './mfa-challenge.service.js';
 import { MfaService } from './mfa.service.js';
+import { PasswordResetService } from './password-reset.service.js';
 import { PasswordService } from './password.service.js';
 import { requiresMfa } from './roles.js';
 import { SeatService, type IssueSessionParams } from './seat.service.js';
@@ -113,6 +115,7 @@ export class AuthService {
     private readonly challenges: MfaChallengeService,
     private readonly trustedDevices: TrustedDeviceService,
     private readonly attempts: LoginAttemptsService,
+    private readonly resets: PasswordResetService,
   ) {}
 
   /**
@@ -323,7 +326,14 @@ export class AuthService {
   async login(dto: LoginDto): Promise<LoginResult> {
     const user = await this.db.db
       .selectFrom('users')
-      .select(['id', 'password_hash', 'status', 'locked_until', 'mfa_enabled_at'])
+      .select([
+        'id',
+        'password_hash',
+        'status',
+        'locked_until',
+        'mfa_enabled_at',
+        'password_reset_required_at',
+      ])
       .where('email', '=', dto.email)
       .executeTakeFirst();
 
@@ -361,6 +371,12 @@ export class AuthService {
       }
       throw new UnauthorizedException('invalid credentials');
     }
+
+    // Un admin le pidió elegir una contraseña nueva: la vieja, aunque sea correcta, no abre sesión.
+    // Va después de verificarla (el 403 sólo lo ve quien la acertó, y el tiempo de respuesta del
+    // resto no cambia) y antes del segundo factor y del equipo de confianza. No es un fallo: no suma
+    // al bloqueo.
+    if (user.password_reset_required_at) await this.refuseUntilReset(user.id);
 
     // Con MFA activo la contraseña sola NO emite sesión. El contador de fallos NO se limpia
     // acá: si se limpiara, quien tiene la contraseña volvería a cero antes de cada tanda de
@@ -472,7 +488,7 @@ export class AuthService {
 
     const user = await this.db.db
       .selectFrom('users')
-      .select(['status', 'password_changed_at', 'mfa_enabled_at'])
+      .select(['status', 'password_changed_at', 'mfa_enabled_at', 'password_reset_required_at'])
       .where('id', '=', claims.userId)
       .executeTakeFirst();
     if (
@@ -483,6 +499,9 @@ export class AuthService {
     ) {
       throw new SeatReleaseExpiredError();
     }
+    // Un admin forzó el cambio de contraseña después del intento que emitió el permiso: no hay
+    // sesión (finishLogin también lo frena), y antes de desconectar a otra persona, no después.
+    if (user.password_reset_required_at) await this.refuseUntilReset(claims.userId);
     if (!(await this.seats.canRelease(claims.userId, claims.poolTenantId))) {
       throw new SeatReleaseForbiddenError();
     }
@@ -523,13 +542,16 @@ export class AuthService {
    * GET /me/memberships (`isDefault`): la última agencia con la que operó, si sigue operando.
    */
   private async finishLogin(userId: string, opts: FinishLoginOptions): Promise<AuthResult> {
-    const [memberships, lastTenantId] = await Promise.all([
+    const [memberships, account] = await Promise.all([
       this.activeMemberships(userId),
-      this.lastTenantOf(userId),
+      this.loginAccountOf(userId),
     ]);
+    // El login ya lo frenó antes del segundo factor, pero el desafío MFA y el permiso para liberar un
+    // puesto viven unos minutos: si el admin forzó el cambio en el medio, tampoco hay sesión.
+    if (account.resetRequired) await this.refuseUntilReset(userId);
     const membership = pickDefaultMembership(memberships, {
       requested: opts.tenantId,
-      last: lastTenantId,
+      last: account.lastTenantId,
     });
     // Un equipo de confianza sólo tiene sentido si esta sesión pasó el segundo factor.
     const remember = opts.remember === true && opts.mfaVerified;
@@ -614,12 +636,48 @@ export class AuthService {
 
   /** La última agencia con la que operó (0061). Sólo una preferencia: se valida al usarla. */
   private async lastTenantOf(userId: string): Promise<string | null> {
+    return (await this.loginAccountOf(userId)).lastTenantId;
+  }
+
+  /**
+   * Lo que el ingreso mira de la cuenta al emitir la sesión: la última agencia (0061) y si un admin
+   * le pidió elegir una contraseña nueva (0062).
+   */
+  private async loginAccountOf(
+    userId: string,
+  ): Promise<{ lastTenantId: string | null; resetRequired: boolean }> {
     const row = await this.db.db
       .selectFrom('users')
-      .select('last_tenant_id')
+      .select(['last_tenant_id', 'password_reset_required_at'])
       .where('id', '=', userId)
       .executeTakeFirst();
-    return row?.last_tenant_id ?? null;
+    return {
+      lastTenantId: row?.last_tenant_id ?? null,
+      resetRequired: Boolean(row?.password_reset_required_at),
+    };
+  }
+
+  /**
+   * Rechaza el ingreso de quien tiene que elegir una contraseña nueva (403 PASSWORD_RESET_REQUIRED)
+   * y, si hace falta, le reenvía el enlace (PasswordResetService.remindRequiredReset: a lo sumo uno
+   * cada 10 minutos). No emite sesión ni ocupa puesto. Si el reenvío falla, el rechazo sale igual:
+   * la persona puede pedir otro enlace desde "Olvidé mi contraseña".
+   */
+  private async refuseUntilReset(userId: string): Promise<never> {
+    let linkSent = false;
+    try {
+      ({ linkSent } = await this.resets.remindRequiredReset(userId));
+    } catch {
+      // Ver arriba: sin el correo, el 403 igual le dice qué hacer.
+    }
+    await this.audit.emit({
+      eventType: 'auth.login.password_reset_required',
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: userId,
+      payload: { linkSent },
+    });
+    throw new PasswordResetRequiredError();
   }
 
   /**

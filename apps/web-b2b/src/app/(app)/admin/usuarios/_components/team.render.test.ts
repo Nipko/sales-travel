@@ -321,6 +321,18 @@ describe('MemberActionItems: el menú de acciones de un miembro', () => {
     expect(actionsMenu(expired)).not.toContain('Desbloquear cuenta');
   });
 
+  it('"Forzar cambio de contraseña" va en Acceso, después de "Enviar enlace"', () => {
+    const html = actionsMenu(parsedMember());
+    const send = html.indexOf('Enviar enlace para restablecer contraseña');
+    const force = html.indexOf('Forzar cambio de contraseña');
+    expect(force).toBeGreaterThan(send);
+    expect(force).toBeLessThan(html.indexOf('Seguridad'));
+    const item = html.split('<div role="menuitem"').find((i) => i.includes('Forzar cambio')) ?? '';
+    expect(item).not.toContain('aria-disabled');
+    const suspended = actionsMenu(parsedMember({ membershipStatus: 'suspended' }));
+    expect(suspended).toContain('Forzar cambio de contraseña (acceso suspendido)');
+  });
+
   it('con el acceso suspendido, "Enviar enlace" queda deshabilitado y dice por qué', () => {
     const sendItem = (html: string) =>
       html.split('<div role="menuitem"').find((item) => item.includes('Enviar enlace')) ?? '';
@@ -458,5 +470,32 @@ describe('PendingInvitationNotice: la invitación ya pendiente se ofrece reenvia
     );
     expect(busy).toContain('Reenviando…');
     expect(busy).toMatch(/<button[^>]* disabled=""/);
+  });
+});
+
+describe('MemberList: cambio de contraseña pendiente', () => {
+  it('la fila lo marca, con el porqué para el lector de pantalla, y sólo si está pendiente', () => {
+    const pending = members(
+      parseMembers({ users: [{ ...MEMBER, passwordResetRequired: true }] }) ?? [],
+    );
+    expect(pending).toContain('Cambio de contraseña pendiente');
+    expect(pending).toContain(
+      'No puede ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo.',
+    );
+    expect(pending).toContain('sr-only');
+    // Con el tono del tema, como el 2FA pendiente: los tonos fijos no llegan a AA en oscuro.
+    const at = pending.indexOf('Cambio de contraseña pendiente');
+    const open = pending.lastIndexOf('<span class="', at) + '<span class="'.length;
+    expect(pending.slice(open, pending.indexOf('"', open))).toContain(
+      'text-[color-mix(in_oklab,var(--color-warning)_60%,var(--color-fg))]',
+    );
+    expect(voseoIn(pending)).toEqual([]);
+
+    for (const value of [false, undefined]) {
+      const html = members(
+        parseMembers({ users: [{ ...MEMBER, passwordResetRequired: value }] }) ?? [],
+      );
+      expect(html).not.toContain('Cambio de contraseña pendiente');
+    }
   });
 });

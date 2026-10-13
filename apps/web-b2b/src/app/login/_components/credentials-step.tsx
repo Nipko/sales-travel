@@ -76,6 +76,13 @@ export function CredentialsStep({
               </Link>
             </p>
           ) : null}
+          {state.passwordResetRequired ? (
+            <p>
+              <Link href="/olvide-password" className={RESET_LINK_CLASS}>
+                {LOGIN_MESSAGES.passwordResetRequiredLink}
+              </Link>
+            </p>
+          ) : null}
         </FormAlert>
       ) : null}
 

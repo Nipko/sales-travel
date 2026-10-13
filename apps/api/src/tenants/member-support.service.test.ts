@@ -70,6 +70,9 @@ function banco(opts: Banco = {}) {
   };
   const resets = {
     issueToken: vi.fn(() => Promise.resolve({ token: TOKEN, expiresAt: EXPIRES })),
+    requireReset: vi.fn(() =>
+      Promise.resolve({ token: TOKEN, expiresAt: EXPIRES, revokedSessions: 2 }),
+    ),
     resetLink: vi.fn((token: string) => `https://panel.example/restablecer?token=${token}`),
     sendResetEmail: vi.fn(() => Promise.resolve(opts.mailOk ?? true)),
   };
@@ -181,14 +184,26 @@ describe('MemberSupportService: el orden de la autorización', () => {
   });
 });
 
-/** Lo que contesta la base dentro de la transacción de "Enviar enlace". */
-function envio(
-  opts: { user?: { email: string; status: string } | undefined; recent?: number } = {},
-) {
-  const user = 'user' in opts ? opts.user : { email: 'beto@agencia.co', status: 'active' };
+interface Objetivo {
+  email: string;
+  status: string;
+  password_reset_required_at: Date | null;
+}
+
+const BETO: Objetivo = {
+  email: 'beto@agencia.co',
+  status: 'active',
+  password_reset_required_at: null,
+};
+
+/** Lo que contesta la base dentro de la transacción de "Enviar enlace" y de "Forzar cambio". */
+function envio(opts: { user?: Objetivo | undefined; recent?: number } = {}) {
+  const user = 'user' in opts ? opts.user : BETO;
   const recent = opts.recent ?? 0;
   return (q: CompiledQuery): unknown[] => {
-    if (q.sql.startsWith('select "email", "status" from "users"')) return user ? [user] : [];
+    if (q.sql.startsWith('select "email", "status", "password_reset_required_at" from "users"')) {
+      return user ? [user] : [];
+    }
     if (q.sql.includes('from "password_reset_tokens"')) return [{ n: String(recent) }];
     if (q.sql.includes('from "tenants"')) return [{ name: 'Agencia Norte' }];
     throw new Error(`consulta no prevista: ${q.sql}`);
@@ -245,7 +260,7 @@ describe('MemberSupportService.sendPasswordReset', () => {
 
   it('con la cuenta suspendida en la plataforma es 409 y no emite nada', async () => {
     const { service, resets, audit } = banco({
-      respond: envio({ user: { email: 'beto@agencia.co', status: 'suspended' } }),
+      respond: envio({ user: { ...BETO, status: 'suspended' } }),
     });
 
     expect(await motivo(service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe(
@@ -339,6 +354,149 @@ describe('MemberSupportService.sendPasswordReset', () => {
       '404/MEMBER_NOT_FOUND',
     );
     expect(resets.issueToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('MemberSupportService.sendPasswordReset con el cambio forzado pendiente', () => {
+  it('el correo es el de "elegir una contraseña nueva": no dice que la actual sigue funcionando', async () => {
+    const { service, resets } = banco({
+      respond: envio({ user: { ...BETO, password_reset_required_at: new Date() } }),
+    });
+
+    expect(await motivo(service.sendPasswordReset(ACTOR, NODO, TARGET))).toBe('ok');
+    expect(resets.sendResetEmail).toHaveBeenCalledWith(
+      NODO,
+      'beto@agencia.co',
+      expect.any(String),
+      'required',
+      'Agencia Norte',
+    );
+  });
+});
+
+describe('MemberSupportService.requirePasswordReset', () => {
+  it('reusa la autorización: uno mismo, fuera de la red y de rango igual o superior son 403', async () => {
+    const self = banco({ respond: envio() });
+    expect(await motivo(self.service.requirePasswordReset(ACTOR, NODO, ACTOR))).toBe(
+      '403/MEMBER_SELF_ACTION',
+    );
+    expect(self.db.withRequestContext).not.toHaveBeenCalled();
+
+    const outside = banco({
+      respond: envio(),
+      active: [
+        { tenant_id: NODO, role: 'vendedor' },
+        { tenant_id: OTRA_RED, role: 'vendedor' },
+      ],
+    });
+    expect(await motivo(outside.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '403/MEMBER_OUTSIDE_NETWORK',
+    );
+
+    const outranked = banco({
+      respond: envio(),
+      inRoute: { tenant_id: NODO, role: 'tenant_admin', status: 'active' },
+      active: [{ tenant_id: NODO, role: 'tenant_admin' }],
+    });
+    expect(await motivo(outranked.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '403/ROLE_NOT_GRANTABLE',
+    );
+
+    for (const b of [self, outside, outranked]) {
+      expect(b.resets.requireReset).not.toHaveBeenCalled();
+      expect(b.resets.sendResetEmail).not.toHaveBeenCalled();
+    }
+  });
+
+  it('los mismos 409: su acceso al nodo o su cuenta suspendidos, sin marcar nada', async () => {
+    const membership = banco({
+      respond: envio(),
+      inRoute: { tenant_id: NODO, role: 'vendedor', status: 'suspended' },
+    });
+    expect(await motivo(membership.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '409/MEMBERSHIP_SUSPENDED',
+    );
+    expect(membership.db.withRequestContext).toHaveBeenCalledTimes(2);
+
+    const account = banco({ respond: envio({ user: { ...BETO, status: 'suspended' } }) });
+    expect(await motivo(account.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '409/MEMBER_ACCOUNT_SUSPENDED',
+    );
+
+    const gone = banco({ respond: envio({ user: undefined }) });
+    expect(await motivo(gone.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '404/MEMBER_NOT_FOUND',
+    );
+
+    for (const b of [membership, account, gone]) {
+      expect(b.resets.requireReset).not.toHaveBeenCalled();
+      expect(b.resets.sendResetEmail).not.toHaveBeenCalled();
+    }
+  });
+
+  it('marca y cierra sesiones en la transacción del actor, y el correo sale después', async () => {
+    const { service, db, resets, audit, k } = banco({ respond: envio({ recent: 9 }) });
+
+    const res = await service.requirePasswordReset(ACTOR, NODO, TARGET);
+
+    expect(res).toEqual({ sent: true, revokedSessions: 2 });
+    expect(JSON.stringify(res)).not.toContain(TOKEN);
+    expect(db.withRequestContext).toHaveBeenNthCalledWith(
+      3,
+      { userId: ACTOR },
+      expect.any(Function),
+    );
+    expect(k.queries[0]?.sql).toMatch(/from "users" where "id" = \$1 for no key update$/);
+    // La primera vez no mira el límite de enlaces: nunca impide cortar una contraseña comprometida.
+    expect(k.indexOf('from "password_reset_tokens"')).toBe(-1);
+    expect(resets.requireReset).toHaveBeenCalledWith(expect.anything(), {
+      actorUserId: ACTOR,
+      targetUserId: TARGET,
+      tenantId: NODO,
+    });
+
+    expect(resets.sendResetEmail).toHaveBeenCalledWith(
+      NODO,
+      'beto@agencia.co',
+      `https://panel.example/restablecer?token=${TOKEN}`,
+      'required',
+      'Agencia Norte',
+    );
+    const markOrder = resets.requireReset.mock.invocationCallOrder[0]!;
+    const sendOrder = resets.sendResetEmail.mock.invocationCallOrder[0]!;
+    expect(sendOrder).toBeGreaterThan(markOrder);
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('si ya estaba obligado, pedirlo de nuevo cuenta para el límite de enlaces: 429 con 3', async () => {
+    const pendiente = { ...BETO, password_reset_required_at: new Date() };
+
+    const limited = banco({ respond: envio({ user: pendiente, recent: 3 }) });
+    expect(await motivo(limited.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe(
+      '429/PASSWORD_RESET_RATE_LIMITED',
+    );
+    expect(limited.resets.requireReset).not.toHaveBeenCalled();
+
+    const again = banco({ respond: envio({ user: pendiente, recent: 2 }) });
+    expect(await motivo(again.service.requirePasswordReset(ACTOR, NODO, TARGET))).toBe('ok');
+    expect(again.resets.requireReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el correo no sale: sent:false, las sesiones igual se cerraron y el fallo queda auditado', async () => {
+    const { service, audit } = banco({ respond: envio(), mailOk: false });
+
+    expect(await service.requirePasswordReset(ACTOR, NODO, TARGET)).toEqual({
+      sent: false,
+      revokedSessions: 2,
+    });
+    expect(audit.emit).toHaveBeenCalledWith({
+      eventType: 'auth.password_reset.email_failed',
+      tenantId: NODO,
+      actorUserId: ACTOR,
+      aggregateType: 'user',
+      aggregateId: TARGET,
+      payload: { targetUserId: TARGET, via: 'required' },
+    });
   });
 });
 

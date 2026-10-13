@@ -10,6 +10,7 @@ import {
   membershipImpactTarget,
   membershipRolePlan,
   membershipStatusPlan,
+  networkAuditTarget,
   seatPolicyPlan,
   seatReleaseTarget,
   seatsViewTarget,
@@ -105,10 +106,18 @@ describe('puestos: rutas del API', () => {
     });
   });
 
-  it('enviar el enlace para restablecer la contraseña y desbloquear', () => {
+  it('enviar el enlace para restablecer la contraseña, forzar el cambio y desbloquear', () => {
     expect(memberActionTarget(ID, USER, 'send-password-reset')).toEqual({
       ok: true,
       path: `/tenants/${ID.toLowerCase()}/members/${USER}/send-password-reset`,
+    });
+    expect(memberActionTarget(ID, USER, 'require-password-reset')).toEqual({
+      ok: true,
+      path: `/tenants/${ID.toLowerCase()}/members/${USER}/require-password-reset`,
+    });
+    expect(memberActionTarget(ID, '../unlock', 'require-password-reset')).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
     });
     expect(memberActionTarget(ID, USER, 'unlock')).toEqual({
       ok: true,
@@ -395,6 +404,63 @@ describe('memberships: rol y estado', () => {
     expect(membershipStatusPlan({ userId: MEMBER, status: 'active' })).toEqual({
       ok: false,
       error: 'Nodo inválido.',
+    });
+  });
+});
+
+describe('networkAuditTarget: GET /tenants/network/audit', () => {
+  const q = (params: Record<string, string> | [string, string][]) => new URLSearchParams(params);
+  const CURSOR = 'eyJvY2N1cnJlZEF0IjoiMjAyNi0xMC0xM1QxMjowMDowMFoifQ';
+
+  it('reconstruye la consulta parámetro por parámetro, con los ids en minúsculas', () => {
+    expect(networkAuditTarget(q({ tenantId: ID }))).toEqual({
+      ok: true,
+      path: `/tenants/network/audit?tenantId=${ID.toLowerCase()}`,
+    });
+    expect(
+      networkAuditTarget(
+        q({ tenantId: ID, limit: '50', before: CURSOR, category: 'users', actorUserId: PARENT }),
+      ),
+    ).toEqual({
+      ok: true,
+      path:
+        `/tenants/network/audit?tenantId=${ID.toLowerCase()}&limit=50&before=${CURSOR}` +
+        `&category=users&actorUserId=${PARENT}`,
+    });
+  });
+
+  it('sin nodo o con un nodo que no es UUID: no sale', () => {
+    expect(networkAuditTarget(q({}))).toEqual({ ok: false, error: 'Nodo inválido.' });
+    expect(networkAuditTarget(q({ tenantId: '../admin' }))).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+  });
+
+  it('un parámetro desconocido, repetido o fuera de forma no lo armó el panel', () => {
+    for (const params of [
+      { tenantId: ID, extra: '1' } as Record<string, string>,
+      { tenantId: ID, limit: '0' },
+      { tenantId: ID, limit: '201' },
+      { tenantId: ID, limit: '5.5' },
+      { tenantId: ID, before: 'con espacio' },
+      { tenantId: ID, before: 'x'.repeat(201) },
+      { tenantId: ID, category: 'orders' },
+    ]) {
+      expect(networkAuditTarget(q(params)).ok, JSON.stringify(params)).toBe(false);
+    }
+    expect(
+      networkAuditTarget(
+        q([
+          ['tenantId', ID],
+          ['category', 'users'],
+          ['category', 'pricing'],
+        ]),
+      ).ok,
+    ).toBe(false);
+    expect(networkAuditTarget(q({ tenantId: ID, actorUserId: 'ana' }))).toEqual({
+      ok: false,
+      error: 'Persona inválida.',
     });
   });
 });

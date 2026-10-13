@@ -6,6 +6,7 @@ import {
   CirclePlay,
   KeyRound,
   Lock,
+  LockKeyhole,
   LockOpen,
   LogOut,
   MoreHorizontal,
@@ -25,6 +26,8 @@ import { exactTime } from '../../../../../lib/tenant-admin-format';
 import {
   MFA_STATE_HINT,
   MFA_STATE_LABEL,
+  PASSWORD_RESET_PENDING_HINT,
+  PASSWORD_RESET_PENDING_LABEL,
   canActOn,
   grantableRoles,
   isSelf,
@@ -394,6 +397,16 @@ function MemberRow({
               {access.locked}
             </span>
           ) : null}
+          {member.passwordResetRequired === true ? (
+            <span
+              className={cn('flex items-center gap-1 text-[11px] font-medium', TONE_TEXT.warning)}
+              title={PASSWORD_RESET_PENDING_HINT}
+            >
+              <LockKeyhole aria-hidden="true" className="size-3 shrink-0" />
+              {PASSWORD_RESET_PENDING_LABEL}
+              <span className="sr-only">. {PASSWORD_RESET_PENDING_HINT}</span>
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -432,6 +445,7 @@ const SEPARATOR = 'my-1 h-px bg-[var(--color-border)]';
 
 const ACTION_ICON: Readonly<Record<MemberAction, typeof KeyRound>> = {
   'send-password-reset': KeyRound,
+  'require-password-reset': LockKeyhole,
   unlock: LockOpen,
   'revoke-sessions': LogOut,
   'reset-mfa': ShieldOff,
