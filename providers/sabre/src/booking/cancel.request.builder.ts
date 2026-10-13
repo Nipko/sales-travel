@@ -127,7 +127,12 @@ export type SabreCancelRule =
   | 'TICKET_CHECK_REPORTED_ERRORS'
   | 'TICKET_CHECK_FOR_ANOTHER_BOOKING'
   | 'OFFER_ITEM_ID_NOT_OFFERED'
-  | 'CANCEL_OFFER_EXPIRED';
+  | 'CANCEL_OFFER_EXPIRED'
+  /**
+   * Se pidió anular (VOID) y la comprobación previa no lo permite: en ATPCO, algún tiquete no es
+   * `isVoidable`; en NDC, no hay una oferta `VOID` vigente. Se decide antes del cable.
+   */
+  | 'VOID_NOT_AVAILABLE';
 
 /**
  * Cancelación mal formada **antes** de salir al cable. Bug nuestro, no del proveedor: ni cuenta
@@ -512,8 +517,14 @@ function ndcFlightItems(content: SabreCancelContentContext): readonly SabreBooki
   return content.items.filter((item) => item.kind === 'FLIGHT' && item.lane === 'NDC');
 }
 
-/** `YYYY-MM-DD` + `HH:MM` UTC → instante. Devuelve `undefined` si la oferta no declara caducidad. */
-function offerExpiryMs(offer: SabreCancelOffer): number | undefined {
+/**
+ * `YYYY-MM-DD` + `HH:MM` UTC → instante. Devuelve `undefined` si la oferta no declara caducidad.
+ *
+ * Se exporta para que quien ELIGE una oferta (`cancelOfferFor`) y el builder, que la vuelve a
+ * comprobar, usen la misma regla: dos lecturas de la caducidad que discrepan dejan pasar una oferta
+ * que el builder después rechaza, o al revés.
+ */
+export function cancelOfferExpiryMs(offer: SabreCancelOffer): number | undefined {
   if (offer.expirationDate === undefined) return undefined;
   const time = offer.expirationTime ?? '23:59';
   const parsed = Date.parse(`${offer.expirationDate}T${time}:00Z`);
@@ -640,7 +651,7 @@ export function buildSabreCancelBookingRequest(
         'el offerItemId no está entre las cancelOffers que devolvió checkFlightTickets',
       );
     }
-    const expiry = offerExpiryMs(offer);
+    const expiry = cancelOfferExpiryMs(offer);
     const now = Date.parse(options.now ?? new Date().toISOString());
     if (expiry !== undefined && !Number.isNaN(now) && now > expiry) {
       throw new SabreCancelBookingBuildError(
