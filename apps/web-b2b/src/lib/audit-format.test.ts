@@ -47,6 +47,7 @@ describe('eventLabel', () => {
       'auth.password_changed': 'Cambió su contraseña',
       'auth.mfa.enabled': '2FA activado',
       'auth.mfa.disabled': '2FA desactivado',
+      'auth.mfa.step_up': 'Reconfirmó su 2FA para una acción de alto impacto',
       'users.exported': 'Exportó la lista de usuarios',
       TenantCreated: 'Nodo creado',
       ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',

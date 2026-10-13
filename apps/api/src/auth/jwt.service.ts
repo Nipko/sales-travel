@@ -47,6 +47,11 @@ export interface SeatReleaseClaims {
   tenantId: string | null;
   /** El intento original pasó el segundo factor. */
   mfa: boolean;
+  /**
+   * Cuándo lo probó (ver IssueSessionParams.mfaVerifiedAt): la sesión que completa el ingreso lo
+   * conserva. Un permiso firmado antes de este claim usa su `iat`.
+   */
+  mfaVerifiedAt?: Date;
   /** El intento original pidió "recordar este equipo". */
   remember: boolean;
   /** Un solo uso: se consume en `consumed_tokens`. */
@@ -154,6 +159,9 @@ export class JwtService implements OnModuleInit {
       pool: claims.poolTenantId,
       ...(claims.tenantId ? { tid: claims.tenantId } : {}),
       mfa: claims.mfa,
+      ...(claims.mfaVerifiedAt
+        ? { mfa_at: Math.floor(claims.mfaVerifiedAt.getTime() / 1000) }
+        : {}),
       remember: claims.remember,
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -175,6 +183,7 @@ export class JwtService implements OnModuleInit {
     });
     const pool = payload['pool'];
     const tid = payload['tid'];
+    const mfaAt = payload['mfa_at'];
     if (
       typeof payload.sub !== 'string' ||
       typeof payload.jti !== 'string' ||
@@ -189,6 +198,13 @@ export class JwtService implements OnModuleInit {
       poolTenantId: pool,
       tenantId: typeof tid === 'string' ? tid : null,
       mfa: payload['mfa'] === true,
+      ...(payload['mfa'] === true
+        ? {
+            mfaVerifiedAt: new Date(
+              (typeof mfaAt === 'number' && Number.isFinite(mfaAt) ? mfaAt : payload.iat) * 1000,
+            ),
+          }
+        : {}),
       remember: payload['remember'] === true,
       jti: payload.jti,
       issuedAt: new Date(payload.iat * 1000),

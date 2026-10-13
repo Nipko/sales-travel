@@ -1,6 +1,7 @@
 import { Controller, HttpCode, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { RequireRecentMfa } from '../auth/decorators/require-recent-mfa.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -10,6 +11,10 @@ import { MemberSupportService } from './member-support.service.js';
 /**
  * Acciones de soporte sobre un miembro desde Equipo. Quién puede: ver assertCanSupportMember
  * (administrar todos sus nodos y superarlo en rango, o superadmin; nunca sobre uno mismo).
+ *
+ * Restablecer su 2FA y forzar el cambio de contraseña le abren la puerta de la cuenta a otro: piden
+ * el 2FA de los últimos minutos (`@RequireRecentMfa`, USR-13). Enviarle el enlace, sólo si es admin
+ * (lo decide el servicio). Desbloquear y cerrar sesiones son el soporte de todos los días: no.
  */
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('tenants')
@@ -17,6 +22,7 @@ export class MemberSupportController {
   constructor(private readonly support: MemberSupportService) {}
 
   /** Restablece su 2FA: sin factor, sin códigos, sin equipos de confianza y sin sesiones. */
+  @RequireRecentMfa()
   @Post(':id/members/:userId/reset-mfa')
   @HttpCode(200)
   async resetMfa(
@@ -62,6 +68,7 @@ export class MemberSupportController {
    * el enlace ni el token.
    */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @RequireRecentMfa()
   @Post(':id/members/:userId/require-password-reset')
   @HttpCode(200)
   async requirePasswordReset(

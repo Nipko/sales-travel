@@ -157,7 +157,7 @@ describe('AuthService.login con el cambio de contraseña pendiente', () => {
     createChallenge = vi.fn(() =>
       Promise.resolve({ id: randomUUID(), expiresAt: new Date(Date.now() + 300_000) }),
     );
-    useDevice = vi.fn(() => Promise.resolve(true));
+    useDevice = vi.fn(() => Promise.resolve(new Date()));
     remindRequiredReset = vi.fn(() => Promise.resolve({ linkSent: true }));
     releaseSession = vi.fn(() => Promise.resolve(true));
   });

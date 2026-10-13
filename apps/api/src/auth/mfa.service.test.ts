@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { scriptedKysely } from '../__fixtures__/scripted-kysely.js';
 import type { AuditEvent, AuditService } from '../audit/audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import {
   MfaCodeRejectedError,
+  MfaNotEnabledError,
   MfaReauthInvalidError,
   MfaReauthLockedError,
+  SessionInvalidError,
 } from './auth-errors.js';
 import {
   LOCKOUT_THRESHOLD,
@@ -241,5 +244,134 @@ describe('MfaService: el bloqueo de la cuenta dentro de una sesión', () => {
       MfaReauthLockedError,
     );
     expect(password.verify).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Reconfirmar el 2FA de la sesión (POST /auth/step-up, USR-13): sólo con un TOTP vigente, cada
+ * intento suma al bloqueo de la cuenta y un acierto pone `mfa_verified_at` de ESTA sesión en ahora.
+ */
+describe('MfaService.stepUp', () => {
+  const USER = 'u-step-up';
+  const SESSION = '5e551011-0000-4000-8000-000000000001';
+  const VERIFIED = new Date('2026-10-13T15:00:00.000Z');
+  let lockout: FakeLockout;
+  let events: AuditEvent[];
+
+  function build(opts: { mfaEnabled?: boolean; sessionRows?: unknown[] } = {}) {
+    const k = scriptedKysely((q) =>
+      q.sql.startsWith('update "sessions"')
+        ? (opts.sessionRows ?? [{ mfa_verified_at: VERIFIED }])
+        : [],
+    );
+    const db = {
+      db: query([{ mfa_enabled_at: opts.mfaEnabled === false ? null : new Date('2026-01-01') }]),
+      withRequestContext: (_ctx: unknown, fn: (trx: unknown) => Promise<unknown>) =>
+        k.db.transaction().execute(fn),
+    } as unknown as DatabaseService;
+    const audit = {
+      emit: vi.fn((e: AuditEvent) => {
+        events.push(e);
+        return Promise.resolve();
+      }),
+    } as unknown as AuditService;
+    const mfa = new MfaService(
+      db,
+      {} as TotpService,
+      {} as PasswordService,
+      audit,
+      lockout as unknown as LoginAttemptsService,
+    );
+    const verifyTotp = vi.spyOn(mfa, 'verifyTotp').mockResolvedValue(false);
+    return { mfa, verifyTotp, k };
+  }
+
+  async function rejection(p: Promise<unknown>): Promise<unknown> {
+    try {
+      await p;
+    } catch (err) {
+      return err;
+    }
+    throw new Error('se esperaba un rechazo');
+  }
+
+  beforeEach(() => {
+    lockout = new FakeLockout();
+    events = [];
+  });
+
+  it('con un TOTP vigente pone en ahora el 2FA de ESTA sesión y lo audita', async () => {
+    const { mfa, verifyTotp, k } = build();
+    verifyTotp.mockResolvedValue(true);
+
+    expect(await mfa.stepUp(USER, SESSION, '123456')).toEqual({ verifiedAt: VERIFIED });
+
+    expect(verifyTotp).toHaveBeenCalledWith(USER, '123456');
+    const update = k.queries.find((q) => q.sql.startsWith('update "sessions"'));
+    expect(update?.sql).toContain('"mfa_verified_at" = now()');
+    expect(update?.sql).toContain('"revoked_at" is null');
+    expect(update?.parameters).toEqual([SESSION, USER]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        eventType: 'auth.mfa.step_up',
+        actorUserId: USER,
+        aggregateId: USER,
+        payload: { sessionId: SESSION },
+      }),
+    ]);
+    expect(lockout).toMatchObject({ failed: 0, locked: false });
+  });
+
+  it('cada código malo cuenta contra la cuenta y el que llega al umbral bloquea (429)', async () => {
+    const { mfa, verifyTotp, k } = build();
+    for (let i = 1; i < LOCKOUT_THRESHOLD; i++) {
+      const err = await rejection(mfa.stepUp(USER, SESSION, '000000'));
+      expect(err).toBeInstanceOf(MfaCodeRejectedError);
+      expect((err as MfaCodeRejectedError).getStatus()).toBe(400);
+    }
+    const locking = await rejection(mfa.stepUp(USER, SESSION, '000000'));
+    expect(locking).toBeInstanceOf(MfaReauthLockedError);
+    expect((locking as MfaReauthLockedError).getStatus()).toBe(429);
+
+    // Bloqueada: ni el código bueno se prueba, y la sesión no se toca.
+    verifyTotp.mockResolvedValue(true);
+    expect(await rejection(mfa.stepUp(USER, SESSION, '123456'))).toBeInstanceOf(
+      MfaReauthLockedError,
+    );
+    expect(verifyTotp).toHaveBeenCalledTimes(LOCKOUT_THRESHOLD);
+    expect(k.queries).toEqual([]);
+    expect(
+      events.filter(
+        (e) =>
+          e.eventType === 'auth.mfa.reauth_failed' &&
+          (e.payload as { action?: string }).action === 'step_up',
+      ),
+    ).toHaveLength(LOCKOUT_THRESHOLD);
+  });
+
+  it('un código de recuperación no sirve para reconfirmar, y no cuenta', async () => {
+    const { mfa, verifyTotp } = build();
+    expect(await rejection(mfa.stepUp(USER, SESSION, 'ABCDE-12345'))).toBeInstanceOf(
+      MfaCodeRejectedError,
+    );
+    expect(verifyTotp).not.toHaveBeenCalled();
+    expect(lockout.failed).toBe(0);
+  });
+
+  it('sin 2FA activo: 409 MFA_NOT_ENABLED, sin probar nada', async () => {
+    const { mfa, verifyTotp } = build({ mfaEnabled: false });
+    const err = await rejection(mfa.stepUp(USER, SESSION, '123456'));
+    expect(err).toBeInstanceOf(MfaNotEnabledError);
+    expect(verifyTotp).not.toHaveBeenCalled();
+    expect(lockout.failed).toBe(0);
+  });
+
+  it('si la sesión se cerró en el medio: 401 SESSION_REVOKED y sin evento de éxito', async () => {
+    const { mfa, verifyTotp } = build({ sessionRows: [] });
+    verifyTotp.mockResolvedValue(true);
+    const err = await rejection(mfa.stepUp(USER, SESSION, '123456'));
+    expect(err).toBeInstanceOf(SessionInvalidError);
+    expect((err as SessionInvalidError).reason).toBe('SESSION_REVOKED');
+    expect(events.some((e) => e.eventType === 'auth.mfa.step_up')).toBe(false);
   });
 });

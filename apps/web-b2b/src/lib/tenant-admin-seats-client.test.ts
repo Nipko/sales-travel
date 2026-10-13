@@ -8,6 +8,7 @@ import {
   runMemberAction,
   saveSeatPolicy,
 } from './tenant-admin-seats-client';
+import { isStepUpCancelled, registerStepUpPrompt } from './step-up';
 
 const TENANT = '33333333-3333-4333-8333-333333333333';
 
@@ -132,6 +133,7 @@ describe('runMemberAction', () => {
     expect(await runMemberAction(TENANT, 'u1', 'reset-mfa')).toEqual({
       ok: false,
       message: 'No lo pudimos hacer: Pertenece a otra red que no administras.',
+      reason: 'X',
     });
   });
 
@@ -170,6 +172,7 @@ describe('runMemberAction', () => {
     expect(await runMemberAction(TENANT, 'u1', 'send-password-reset')).toEqual({
       ok: false,
       message: 'Ya se enviaron varios enlaces a esta persona hace poco.',
+      reason: 'PASSWORD_RESET_RATE_LIMITED',
     });
   });
 
@@ -184,6 +187,54 @@ describe('runMemberAction', () => {
     const res = await runMemberAction(TENANT, 'u1', 'reset-mfa');
     expect(res.ok).toBe(false);
     expect(res.ok ? '' : res.message).not.toMatch(/JSON/);
+  });
+
+  describe('con el 2FA de hace más de 10 minutos (USR-13)', () => {
+    const STEP_UP_BODY = {
+      error: 'Confirma con tu código de verificación en dos pasos para seguir.',
+      reason: 'MFA_RECENT_REQUIRED',
+    };
+
+    function replies(...list: Array<[number, unknown]>) {
+      const fetchMock = vi.fn();
+      for (const [status, body] of list) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status }));
+      }
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('pide el código y repite la acción una vez', async () => {
+      const fetchMock = replies([403, STEP_UP_BODY], [200, { ok: true }]);
+      const prompt = vi.fn(() => Promise.resolve(true));
+      const unregister = registerStepUpPrompt(prompt);
+      try {
+        expect(await runMemberAction(TENANT, 'u1', 'reset-mfa')).toEqual({
+          ok: true,
+          data: {},
+        });
+      } finally {
+        unregister();
+      }
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        `/api/tenants/${TENANT}/members/u1/reset-mfa`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('si se cierra el diálogo, la acción no se repite y no hay error que mostrar', async () => {
+      const fetchMock = replies([403, STEP_UP_BODY]);
+      const unregister = registerStepUpPrompt(() => Promise.resolve(false));
+      try {
+        expect(isStepUpCancelled(await runMemberAction(TENANT, 'u1', 'reset-mfa'))).toBe(true);
+      } finally {
+        unregister();
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

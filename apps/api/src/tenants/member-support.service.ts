@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { PasswordResetService } from '../auth/password-reset.service.js';
+import { assertRecentMfa } from '../auth/recent-mfa.js';
+import { isAdminRole } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus } from '../database/database.types.js';
 import { SecurityNoticeService } from '../mail/security-notice.service.js';
@@ -25,6 +27,14 @@ export const REVOKED_BY_ADMIN_REASON = 'revoked_by_admin';
 /** Enlaces para restablecer la contraseña de una persona que frenan uno más, y en qué ventana. */
 export const RESET_LINKS_PER_WINDOW = 3;
 export const RESET_LINKS_WINDOW_MINUTES = 15;
+
+/** Lo que la autorización sabe del objetivo: su acceso al nodo de la ruta y dónde más opera. */
+interface AuthorizedTarget {
+  /** Su membership en el nodo de la ruta; cuenta aunque esté suspendida. */
+  status: MembershipStatus;
+  /** La del nodo de la ruta y sus activas en toda la plataforma. */
+  memberships: TargetMembership[];
+}
 
 /**
  * Soporte a un miembro del equipo: restablecer su 2FA (perdió el teléfono y los códigos), cerrar
@@ -118,6 +128,11 @@ export class MemberSupportService {
    * los enlaces anteriores y su contraseña actual sigue valiendo hasta que la cambie. La respuesta
    * dice si el correo salió (`sent`), nunca el enlace.
    *
+   * Si la persona tiene un rol de admin en alguno de sus nodos, pide además el 2FA de los últimos
+   * minutos (USR-13, D1 = C): el enlace abre una cuenta con poder sobre la red, y con una sesión
+   * robada alcanzaría con tener también su buzón. Se mira después de autorizar, para no pedirle el
+   * código a quien igual no podía hacerlo.
+   *
    * El enlace y su evento quedan en la misma transacción, que bloquea la fila del usuario: dos envíos
    * en paralelo se ordenan y el segundo ya cuenta el enlace del primero para el límite. El correo
    * sale después del commit: si no sale, el enlace igual existe y se audita el fallo.
@@ -127,8 +142,9 @@ export class MemberSupportService {
     tenantId: string,
     targetUserId: string,
   ): Promise<{ sent: boolean; expiresAt: string }> {
-    const membershipStatus = await this.authorize(actorUserId, tenantId, targetUserId);
-    if (membershipStatus === 'suspended') throw new MembershipSuspendedError();
+    const authorized = await this.authorize(actorUserId, tenantId, targetUserId);
+    if (authorized.status === 'suspended') throw new MembershipSuspendedError();
+    if (authorized.memberships.some((m) => isAdminRole(m.role))) assertRecentMfa();
 
     const issued = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
       const target = await trx
@@ -207,8 +223,8 @@ export class MemberSupportService {
     tenantId: string,
     targetUserId: string,
   ): Promise<{ sent: boolean; revokedSessions: number }> {
-    const membershipStatus = await this.authorize(actorUserId, tenantId, targetUserId);
-    if (membershipStatus === 'suspended') throw new MembershipSuspendedError();
+    const { status } = await this.authorize(actorUserId, tenantId, targetUserId);
+    if (status === 'suspended') throw new MembershipSuspendedError();
 
     const required = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
       const target = await trx
@@ -328,13 +344,13 @@ export class MemberSupportService {
    *
    * Devuelve el estado de su membership en el nodo de la ruta, que cuenta aunque esté suspendida:
    * enviarle el enlace lo rechaza recién después de autorizar, así el 409 no le cuenta nada a quien
-   * no podía actuar.
+   * no podía actuar. Y sus memberships, para saber si es admin en alguna.
    */
   private async authorize(
     actorUserId: string,
     tenantId: string,
     targetUserId: string,
-  ): Promise<MembershipStatus> {
+  ): Promise<AuthorizedTarget> {
     if (actorUserId === targetUserId) throw new MemberSelfActionError();
 
     const routeRole = await this.network.roleOver(actorUserId, tenantId);
@@ -367,7 +383,7 @@ export class MemberSupportService {
       targetMemberships: memberships,
       actorRoles,
     });
-    return inRoute.status;
+    return { status: inRoute.status, memberships };
   }
 
   /**

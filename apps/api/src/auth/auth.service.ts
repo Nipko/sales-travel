@@ -91,6 +91,8 @@ type LoginMethod = 'password' | 'mfa' | 'trusted_device' | 'seat_release';
 
 interface FinishLoginOptions {
   mfaVerified: boolean;
+  /** Cuándo se probó el segundo factor, si no fue en este ingreso (ver IssueSessionParams). */
+  mfaVerifiedAt?: Date;
   mfaEnabled: boolean;
   method: LoginMethod;
   remember?: boolean;
@@ -383,12 +385,15 @@ export class AuthService {
     // códigos. Se limpia al emitir la sesión (finishLogin).
     if (user.mfa_enabled_at) {
       // "Recordar este equipo": un equipo de confianza válido de ESTE usuario reemplaza al código.
-      if (
-        dto.trustedDeviceToken &&
-        (await this.trustedDevices.use(user.id, dto.trustedDeviceToken).catch(() => false))
-      ) {
+      // La sesión cuenta el segundo factor desde que se confió en el equipo, no desde ahora: entrar
+      // sin tipear el código no reconfirma las acciones de alto impacto (USR-13).
+      const trustedAt = dto.trustedDeviceToken
+        ? await this.trustedDevices.use(user.id, dto.trustedDeviceToken).catch(() => null)
+        : null;
+      if (trustedAt) {
         return this.finishLogin(user.id, {
           mfaVerified: true,
+          mfaVerifiedAt: trustedAt,
           mfaEnabled: true,
           method: 'trusted_device',
         });
@@ -526,6 +531,7 @@ export class AuthService {
 
     return this.finishLogin(claims.userId, {
       mfaVerified: claims.mfa,
+      ...(claims.mfaVerifiedAt ? { mfaVerifiedAt: claims.mfaVerifiedAt } : {}),
       mfaEnabled: user.mfa_enabled_at !== null,
       method: 'seat_release',
       remember: claims.remember,
@@ -561,6 +567,7 @@ export class AuthService {
       tenantId: membership?.tenantId ?? null,
       role: membership?.role,
       mfaVerified: opts.mfaVerified,
+      ...(opts.mfaVerifiedAt ? { mfaVerifiedAt: opts.mfaVerifiedAt } : {}),
       remember,
     });
     await this.attempts.registerSuccess(userId);
@@ -704,7 +711,8 @@ export class AuthService {
    * tenant destino y emite un token nuevo con ese `tid` (firmado, no falsificable).
    * Base para que el tenant venga del JWT en vez del header `x-tenant-id`.
    *
-   * La sesión nueva hereda el segundo factor de la actual (ya lo pasó) y la reemplaza. Si el
+   * La sesión nueva hereda el segundo factor de la actual (ya lo pasó), con su instante: cambiar de
+   * agencia no reconfirma las acciones de alto impacto (USR-13). Y la reemplaza. Si el
    * destino consume de otro cupo y está lleno, 409 SEATS_FULL y la sesión actual sigue. Un destino
    * suspendido (él o un ancestro) tampoco: 403 TENANT_SUSPENDED, sin tocar la sesión actual.
    * El destino queda como la agencia por defecto del próximo login.
@@ -744,6 +752,7 @@ export class AuthService {
       tenantId: membership.tenant_id,
       role: membership.role,
       mfaVerified: current?.mfaVerified === true,
+      mfaVerifiedAt: current?.mfaVerifiedAt ?? null,
       ...(currentSessionId
         ? { current: { sessionId: currentSessionId, reason: REVOKED_TENANT_SWITCHED } }
         : {}),
@@ -785,6 +794,7 @@ export class AuthService {
       tenantId: snapshot?.tenantId ?? membership?.tenantId ?? null,
       role: membership?.role,
       mfaVerified: snapshot?.mfaVerified === true,
+      mfaVerifiedAt: snapshot?.mfaVerifiedAt ?? null,
       replaceReason: 'password_changed',
       enforceSeatLimit: false,
     });

@@ -8,6 +8,7 @@ import type { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import type { NetworkService } from '../network/network.service.js';
+import { requestContextStorage, type RequestContext } from '../request-context/request-context.js';
 import { MemberSupportService } from './member-support.service.js';
 
 const ACTOR = '99999999-9999-4999-8999-999999999999';
@@ -348,6 +349,97 @@ describe('MemberSupportService.sendPasswordReset', () => {
       aggregateType: 'user',
       aggregateId: TARGET,
       payload: { targetUserId: TARGET, via: 'admin' },
+    });
+  });
+
+  describe('a alguien con un rol de admin, con el 2FA de los últimos minutos (USR-13)', () => {
+    const MIN = 60_000;
+    /** El actor con 2FA activo que lo pasó hace `minutes` minutos (`null`: sin 2FA). */
+    function actor(minutes: number | null): RequestContext {
+      return {
+        userId: ACTOR,
+        mfaEnabled: minutes !== null,
+        mfaVerified: minutes !== null,
+        ...(minutes !== null ? { mfaVerifiedAt: new Date(Date.now() - minutes * MIN) } : {}),
+      };
+    }
+    const asActor = <T>(minutes: number | null, fn: () => Promise<T>) =>
+      requestContextStorage.run(actor(minutes), fn);
+    const adminHere = {
+      inRoute: { tenant_id: NODO, role: 'admin', status: 'active' },
+      active: [{ tenant_id: NODO, role: 'admin' }],
+    } satisfies Banco;
+
+    it('sin el 2FA reciente: 403 MFA_RECENT_REQUIRED y no emite nada', async () => {
+      const { service, db, resets } = banco({ respond: envio(), ...adminHere });
+
+      expect(await motivo(asActor(11, () => service.sendPasswordReset(ACTOR, NODO, TARGET)))).toBe(
+        '403/MFA_RECENT_REQUIRED',
+      );
+      // Autorizó (las dos lecturas) y no abrió la transacción del enlace.
+      expect(db.withRequestContext).toHaveBeenCalledTimes(2);
+      expect(resets.issueToken).not.toHaveBeenCalled();
+      expect(resets.sendResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('sin 2FA activo: 403 MFA_REQUIRED_FOR_ACTION', async () => {
+      const { service, resets } = banco({ respond: envio(), ...adminHere });
+      expect(
+        await motivo(asActor(null, () => service.sendPasswordReset(ACTOR, NODO, TARGET))),
+      ).toBe('403/MFA_REQUIRED_FOR_ACTION');
+      expect(resets.issueToken).not.toHaveBeenCalled();
+    });
+
+    it('reconfirmado hace menos de 10 minutos, sale', async () => {
+      const { service, resets } = banco({ respond: envio(), ...adminHere });
+      expect(await motivo(asActor(9, () => service.sendPasswordReset(ACTOR, NODO, TARGET)))).toBe(
+        'ok',
+      );
+      expect(resets.sendResetEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('cuenta el rol de admin en cualquiera de sus nodos, no sólo en el de la ruta', async () => {
+      const { service } = banco({
+        respond: envio(),
+        active: [
+          { tenant_id: NODO, role: 'vendedor' },
+          { tenant_id: OTRA_RED, role: 'agency_admin' },
+        ],
+        actorRoles: [
+          [NODO, 'tenant_admin'],
+          [OTRA_RED, 'tenant_admin'],
+        ],
+      });
+      expect(await motivo(asActor(30, () => service.sendPasswordReset(ACTOR, NODO, TARGET)))).toBe(
+        '403/MFA_RECENT_REQUIRED',
+      );
+    });
+
+    it('a quien no podía igual no se le pide el código: primero la autorización y el 409', async () => {
+      const outranked = banco({
+        respond: envio(),
+        inRoute: { tenant_id: NODO, role: 'tenant_admin', status: 'active' },
+        active: [{ tenant_id: NODO, role: 'tenant_admin' }],
+      });
+      expect(
+        await motivo(asActor(30, () => outranked.service.sendPasswordReset(ACTOR, NODO, TARGET))),
+      ).toBe('403/ROLE_NOT_GRANTABLE');
+
+      const suspended = banco({
+        respond: envio(),
+        ...adminHere,
+        inRoute: { tenant_id: NODO, role: 'admin', status: 'suspended' },
+      });
+      expect(
+        await motivo(asActor(30, () => suspended.service.sendPasswordReset(ACTOR, NODO, TARGET))),
+      ).toBe('409/MEMBERSHIP_SUSPENDED');
+    });
+
+    it('a un vendedor no se le pide: es el soporte de todos los días', async () => {
+      const { service } = banco({ respond: envio() });
+      expect(
+        await motivo(asActor(null, () => service.sendPasswordReset(ACTOR, NODO, TARGET))),
+      ).toBe('ok');
     });
   });
 

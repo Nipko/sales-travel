@@ -15,6 +15,7 @@ import {
   MfaReauthInvalidError,
   MfaReauthLockedError,
   MfaRequiredByRoleError,
+  SessionInvalidError,
 } from './auth-errors.js';
 import { LOCKOUT_MINUTES, LoginAttemptsService } from './login-attempts.service.js';
 import {
@@ -268,6 +269,54 @@ export class MfaService {
   }
 
   /**
+   * Reconfirma el segundo factor de ESTA sesión (POST /auth/step-up) antes de una acción de alto
+   * impacto (USR-13): con un TOTP vigente, `sessions.mfa_verified_at` pasa a ahora y la ventana de
+   * RECENT_MFA_WINDOW_MINUTES vuelve a empezar. Sólo esta sesión: las demás del usuario no cambian.
+   *
+   * Sólo TOTP, como regenerar los códigos: un código de recuperación se gasta y, si se perdió el
+   * teléfono, el camino es volver a ingresar con uno. Cada intento suma al bloqueo de la cuenta
+   * (withLockout), igual que en el login: si no, sería un oráculo del TOTP con una sesión robada.
+   * Lo que no tiene forma de TOTP se rechaza sin contar. Sin 2FA activo: 409 MFA_NOT_ENABLED.
+   */
+  async stepUp(userId: string, sessionId: string, code: string): Promise<{ verifiedAt: Date }> {
+    const user = await this.db.db
+      .selectFrom('users')
+      .select('mfa_enabled_at')
+      .where('id', '=', userId)
+      .executeTakeFirst();
+    if (!user?.mfa_enabled_at) throw new MfaNotEnabledError();
+
+    const parsed = classifyMfaCode(code);
+    if (parsed.kind !== 'totp') throw new MfaCodeRejectedError();
+    const value = parsed.value;
+    if (!(await this.withLockout(userId, 'step_up', () => this.verifyTotp(userId, value)))) {
+      throw new MfaCodeRejectedError();
+    }
+
+    const row = await this.db.withRequestContext({ userId }, (trx) =>
+      trx
+        .updateTable('sessions')
+        .set({ mfa_verified_at: sql<Date>`now()` })
+        .where('id', '=', sessionId)
+        .where('user_id', '=', userId)
+        .where('revoked_at', 'is', null)
+        .returning('mfa_verified_at')
+        .executeTakeFirst(),
+    );
+    // La sesión se cerró entre la validación del request y acá (otro dispositivo, un admin).
+    if (!row?.mfa_verified_at) throw new SessionInvalidError('SESSION_REVOKED');
+
+    await this.audit.emit({
+      eventType: 'auth.mfa.step_up',
+      actorUserId: userId,
+      aggregateType: 'user',
+      aggregateId: userId,
+      payload: { sessionId },
+    });
+    return { verifiedAt: row.mfa_verified_at };
+  }
+
+  /**
    * Verifica el segundo factor del login: un TOTP (6 dígitos) o un código de recuperación (10 hex,
    * con o sin guion). Cada forma se prueba sólo como lo que es. Devuelve false sin lanzar: el
    * llamador decide el mensaje.
@@ -407,7 +456,7 @@ export class MfaService {
    */
   private async withLockout(
     userId: string,
-    action: 'rotation' | 'recovery_codes' | 'disable',
+    action: 'rotation' | 'recovery_codes' | 'disable' | 'step_up',
     check: () => Promise<boolean>,
   ): Promise<boolean> {
     const reserved = await this.attempts.reserve(userId);

@@ -59,6 +59,7 @@ import {
   type PlatformUser,
 } from '../../../../../../lib/platform-users';
 import { DIRECTORY_ROLES } from '../../../../../../lib/platform-users-proxy';
+import { isStepUpCancelled } from '../../../../../../lib/step-up';
 import { exactTime } from '../../../../../../lib/tenant-admin-format';
 import {
   MFA_STATE_HINT,
@@ -289,8 +290,10 @@ export function PlatformUsersPanel({
     if (!ok) return ACTION_CANCELLED;
 
     setBusyUserId(user.id);
+    // Alto impacto: puede pedir el código del 2FA en el medio y repetirse (USR-13).
     const res = await setPlatformUserStatus(user.id, status);
     setBusyUserId(null);
+    if (isStepUpCancelled(res)) return ACTION_CANCELLED;
     if (!res.ok) return { status: 'failed', message: res.message };
     replaceUser({
       ...user,

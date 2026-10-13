@@ -64,6 +64,20 @@ export const MfaCodeSchema = z.object({
 });
 export type MfaCodeDto = z.infer<typeof MfaCodeSchema>;
 
+/**
+ * POST /auth/step-up: el código de 6 dígitos de la app, sin espacios ni guiones de por medio (el
+ * panel ya los saca). Los de recuperación no sirven para reconfirmar (ver MfaService.stepUp).
+ */
+export const StepUpSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/, 'el código tiene 6 dígitos'),
+  })
+  .strict();
+export type StepUpDto = z.infer<typeof StepUpSchema>;
+
 export const MfaVerifySchema = z.object({
   mfaToken: z.string().min(10).max(4096),
   code: MfaCode,

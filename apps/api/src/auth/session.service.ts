@@ -32,6 +32,12 @@ export interface ValidSession {
   /** ESTA sesión pasó el segundo factor (`sessions.mfa_verified_at`). */
   mfaVerified: boolean;
   /**
+   * Cuándo lo pasó por última vez, en el reloj de ESTE proceso: se arma con la antigüedad que mide la
+   * base (`now() - mfa_verified_at`), así la ventana de la reconfirmación (USR-13) no depende de que
+   * los relojes de la API y de Postgres coincidan. Ausente si la sesión no lo pasó.
+   */
+  mfaVerifiedAt?: Date;
+  /**
    * El tenant pedido (`requestedTenantId`) consume de otro cupo que la sesión: no se adoptó, y el
    * rol es el del tenant firmado. El middleware vuelve al `tid` del token.
    */
@@ -72,6 +78,7 @@ interface SessionRow {
   last_seen_at: Date;
   idle_timeout_seconds: number;
   mfa_verified_at: Date | null;
+  mfa_verified_age_seconds: number | null;
   expired: boolean;
   idle: boolean;
   user_status: UserStatus;
@@ -152,6 +159,7 @@ export class SessionService {
                s.last_seen_at,
                s.idle_timeout_seconds,
                s.mfa_verified_at,
+               EXTRACT(EPOCH FROM now() - s.mfa_verified_at)::float8                   AS mfa_verified_age_seconds,
                s.expires_at <= now()                                                   AS expired,
                s.last_seen_at <= now() - s.idle_timeout_seconds * interval '1 second'  AS idle,
                u.status              AS user_status,
@@ -261,6 +269,14 @@ export class SessionService {
       mfaRequired: row.mfa_required === true,
       mfaEnabled: row.mfa_enabled_at !== null,
       mfaVerified: row.mfa_verified_at !== null,
+      ...(row.mfa_verified_at !== null
+        ? {
+            mfaVerifiedAt: verifiedAtOnLocalClock(
+              row.mfa_verified_at,
+              row.mfa_verified_age_seconds,
+            ),
+          }
+        : {}),
       idleTimeoutSeconds: row.idle_timeout_seconds,
       lastSeenAt,
       expiresAt: row.expires_at,
@@ -375,11 +391,15 @@ export class SessionService {
     return res.rows[0]?.revoked ?? 0;
   }
 
-  /** El tenant y el estado del MFA con que se emitió una sesión propia (switch-tenant, cambio de contraseña). */
+  /**
+   * El tenant y el estado del MFA con que se emitió una sesión propia (switch-tenant, cambio de
+   * contraseña). `mfaVerifiedAt` es el instante de la base, tal cual: la sesión que la reemplaza lo
+   * hereda en vez de estrenar uno (ver IssueSessionParams.mfaVerifiedAt).
+   */
   async snapshot(
     sessionId: string,
     userId: string,
-  ): Promise<{ tenantId: string | null; mfaVerified: boolean } | null> {
+  ): Promise<{ tenantId: string | null; mfaVerified: boolean; mfaVerifiedAt: Date | null } | null> {
     const row = await this.db.withRequestContext({ userId }, (trx) =>
       trx
         .selectFrom('sessions')
@@ -388,7 +408,13 @@ export class SessionService {
         .where('user_id', '=', userId)
         .executeTakeFirst(),
     );
-    return row ? { tenantId: row.tenant_id, mfaVerified: row.mfa_verified_at !== null } : null;
+    return row
+      ? {
+          tenantId: row.tenant_id,
+          mfaVerified: row.mfa_verified_at !== null,
+          mfaVerifiedAt: row.mfa_verified_at,
+        }
+      : null;
   }
 
   /** Sesiones vivas del usuario (no revocadas, no vencidas ni inactivas), para el panel de dispositivos. */
@@ -419,4 +445,23 @@ export class SessionService {
 
 function invalid(reason: SessionFailureReason): InvalidSession {
   return { ok: false, reason };
+}
+
+/**
+ * `mfa_verified_at` llevado al reloj de este proceso con la antigüedad que midió la base. Sin la
+ * antigüedad (no debería faltar: sale de la misma consulta), el instante de la base tal cual.
+ *
+ * Nunca en el futuro: un instante adelantado (un reloj corrido al heredarlo) dejaría la ventana de
+ * la reconfirmación abierta más de lo que dice; se toma como recién.
+ */
+export function verifiedAtOnLocalClock(
+  verifiedAt: Date,
+  ageSeconds: number | null,
+  nowMs: number = Date.now(),
+): Date {
+  const at =
+    ageSeconds === null || !Number.isFinite(ageSeconds)
+      ? verifiedAt.getTime()
+      : nowMs - ageSeconds * 1000;
+  return new Date(Math.min(at, nowMs));
 }

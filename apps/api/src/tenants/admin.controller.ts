@@ -12,6 +12,7 @@ import {
 import type { Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { RequireRecentMfa } from '../auth/decorators/require-recent-mfa.decorator.js';
 import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
@@ -426,7 +427,10 @@ export class AdminController {
    * El estado anterior se lee con la fila tomada: después del commit, si de verdad cambió, la persona
    * recibe el aviso de que su cuenta fue suspendida o reactivada (por el correo de su nodo, aunque
    * quede suspendida: es a quien más le importa saberlo).
+   *
+   * Alto impacto: pide el 2FA de los últimos minutos (`@RequireRecentMfa`, USR-13, D1 = C).
    */
+  @RequireRecentMfa()
   @Patch('users/status')
   async setUserStatus(
     @CurrentUser() userId: string | undefined,
