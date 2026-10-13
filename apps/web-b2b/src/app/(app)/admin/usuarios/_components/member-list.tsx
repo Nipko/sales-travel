@@ -53,6 +53,7 @@ import {
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
 import { LastAccessSortButton, MemberFilters } from './member-filters';
+import { MemberNameButton } from './member-sheet';
 import { ROLE_CONFIG, roleLabel, type InvitableRole } from './roles';
 import { useNow } from './seats-ui';
 
@@ -141,6 +142,7 @@ export function MemberList({
   onDismissError,
   onRetry,
   onInvite,
+  onOpen,
   onChangeRole,
   onSetStatus,
   onAction,
@@ -164,6 +166,8 @@ export function MemberList({
   onDismissError: () => void;
   onRetry: () => void;
   onInvite: () => void;
+  /** Abre la ficha del miembro. Sin él, el nombre es sólo texto. */
+  onOpen?: (member: NetworkMember) => void;
   onChangeRole: (member: NetworkMember, role: string) => void;
   onSetStatus: (member: NetworkMember, status: 'active' | 'suspended') => void;
   onAction: (member: NetworkMember, action: MemberAction) => void;
@@ -300,6 +304,7 @@ export function MemberList({
                 busy={busyUserId === m.userId}
                 error={memberError?.userId === m.userId ? memberError.message : undefined}
                 onDismissError={onDismissError}
+                onOpen={onOpen === undefined ? undefined : () => onOpen(m)}
                 onChangeRole={(role) => onChangeRole(m, role)}
                 onSetStatus={(status) => onSetStatus(m, status)}
                 onAction={(action) => onAction(m, action)}
@@ -320,6 +325,7 @@ function MemberRow({
   busy,
   error,
   onDismissError,
+  onOpen,
   onChangeRole,
   onSetStatus,
   onAction,
@@ -331,6 +337,7 @@ function MemberRow({
   busy: boolean;
   error: string | undefined;
   onDismissError: () => void;
+  onOpen: (() => void) | undefined;
   onChangeRole: (role: string) => void;
   onSetStatus: (status: 'active' | 'suspended') => void;
   onAction: (action: MemberAction) => void;
@@ -355,7 +362,11 @@ function MemberRow({
     >
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-fg)]">
-          <span className="truncate">{name}</span>
+          {onOpen !== undefined ? (
+            <MemberNameButton name={name} onOpen={onOpen} />
+          ) : (
+            <span className="truncate">{name}</span>
+          )}
           {self ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
               Tú
@@ -538,25 +549,22 @@ const ACTION_ICON: Readonly<Record<MemberAction, typeof KeyRound>> = {
 };
 
 /**
- * Lo de adentro del menú de un miembro: las acciones de soporte por grupo (Acceso, Seguridad) y, al
- * final, suspender o reactivar. Aparte del menú para poder pintarlo abierto en un test.
+ * Las acciones de soporte de un miembro por grupo (Acceso, Seguridad). Las comparten el menú de la
+ * fila, el de su ficha y el de la ficha del directorio de la plataforma.
  *
  * `onPick` recibe lo que hay que hacer: el menú lo corre recién al cerrarse (ver MemberActions).
  */
-export function MemberActionItems({
+export function SupportActionGroups({
   member,
   now,
   onPick,
-  onSetStatus,
   onAction,
 }: {
   member: NetworkMember;
   now: number;
   onPick: (run: () => void) => () => void;
-  onSetStatus: (status: 'active' | 'suspended') => void;
   onAction: (action: MemberAction) => void;
 }) {
-  const suspended = member.membershipStatus === 'suspended';
   const groupId = useId();
 
   return (
@@ -588,18 +596,51 @@ export function MemberActionItems({
           </Fragment>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * Lo de adentro del menú de un miembro: las acciones de soporte (Acceso, Seguridad) y, al final, su
+ * membresía en este nodo (suspender o reactivar). Aparte del menú para poder pintarlo abierto en un
+ * test; la ficha del miembro lo usa tal cual en su pie.
+ */
+export function MemberActionItems({
+  member,
+  now,
+  onPick,
+  onSetStatus,
+  onAction,
+}: {
+  member: NetworkMember;
+  now: number;
+  onPick: (run: () => void) => () => void;
+  onSetStatus: (status: 'active' | 'suspended') => void;
+  onAction: (action: MemberAction) => void;
+}) {
+  const suspended = member.membershipStatus === 'suspended';
+  const headingId = useId();
+
+  return (
+    <>
+      <SupportActionGroups member={member} now={now} onPick={onPick} onAction={onAction} />
       <DropdownMenu.Separator className={SEPARATOR} />
-      <DropdownMenu.Item
-        className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
-        onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
-      >
-        {suspended ? (
-          <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
-        ) : (
-          <UserMinus aria-hidden="true" className="size-4" />
-        )}
-        {suspended ? 'Reactivar' : 'Suspender'}
-      </DropdownMenu.Item>
+      <DropdownMenu.Group aria-labelledby={headingId}>
+        <DropdownMenu.Label id={headingId} className={MENU_LABEL}>
+          Membresía
+        </DropdownMenu.Label>
+        <DropdownMenu.Item
+          className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
+          onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
+        >
+          {suspended ? (
+            <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+          ) : (
+            <UserMinus aria-hidden="true" className="size-4" />
+          )}
+          {suspended ? 'Reactivar' : 'Suspender'}
+        </DropdownMenu.Item>
+      </DropdownMenu.Group>
     </>
   );
 }

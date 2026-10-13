@@ -2,11 +2,14 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { parseMemberDetail } from '../../../../../../lib/member-detail';
+import { apiDetail, iso, MIN, NOW } from '../../../../../../lib/member-detail.fixture';
 import { parsePlatformUser, type PlatformUser } from '../../../../../../lib/platform-users';
 import { voseoIn } from '../../../../../../lib/voseo';
 import {
   DirectoryFiltersBar,
   DirectoryResults,
+  PlatformSheetMenuItems,
   UserActionItems,
   type DirectoryState,
 } from './platform-users-panel';
@@ -230,6 +233,73 @@ describe('DirectoryResults', () => {
       },
     );
     expect(html).toContain('No pudimos conectar con el servidor.');
+  });
+});
+
+describe('la ficha desde el directorio', () => {
+  it('el nombre de cada persona abre su ficha', () => {
+    const html = results(
+      { status: 'ready', users: [user()], nextCursor: null },
+      { onOpen: () => {} },
+    );
+    expect(html).toMatch(
+      /<button type="button" aria-haspopup="dialog" aria-label="Ver la ficha de Ana Pérez"/,
+    );
+    expect(results({ status: 'ready', users: [user()], nextCursor: null })).not.toContain(
+      'Ver la ficha de',
+    );
+  });
+
+  function sheetMenu(patch: Record<string, unknown> = {}, withStatus = true): string {
+    const detail = parseMemberDetail(apiDetail(patch));
+    if (detail === undefined) throw new Error('fixture inválida');
+    return renderToStaticMarkup(
+      createElement(
+        DropdownMenu.Root,
+        { open: true, modal: false },
+        createElement(DropdownMenu.Trigger, null, 'Acciones'),
+        createElement(
+          DropdownMenu.Content,
+          null,
+          createElement(PlatformSheetMenuItems, {
+            detail,
+            now: NOW,
+            onPick: (run: () => void) => run,
+            onAction: () => {},
+            onSetStatus: withStatus ? () => {} : undefined,
+          }),
+        ),
+      ),
+    );
+  }
+
+  it('el menú de la ficha: soporte por grupos, la cuenta y "Ver en Equipo"', () => {
+    const html = sheetMenu({
+      security: { ...(apiDetail().security as object), lockedUntil: iso(NOW + 10 * MIN) },
+    });
+    const headings = [...html.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)].map(
+      (m) => new RegExp(`id="${m[1]}"[^>]*>([^<]+)</div>`).exec(html)?.[1],
+    );
+    expect(headings).toEqual(['Acceso', 'Seguridad', 'Cuenta']);
+    expect(html).toContain('Enviar enlace para restablecer contraseña');
+    expect(html).toContain('Forzar cambio de contraseña');
+    expect(html).toContain('Cerrar sus sesiones');
+    expect(html).toContain('Restablecer 2FA');
+    expect(html).toContain('Suspender en toda la plataforma');
+    expect(html).toContain('href="/admin/usuarios?tenant=0b6f6a52-7a47-4c8e-9a3b-1a2b3c4d5e6f"');
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('una cuenta suspendida se reactiva; sin nodos no hay soporte ni "Ver en Equipo"', () => {
+    const suspended = sheetMenu({ user: { ...(apiDetail().user as object), status: 'suspended' } });
+    expect(suspended).toContain('Reactivar cuenta');
+    // Con la cuenta suspendida, un enlace no le serviría para entrar.
+    expect(suspended).toContain('(acceso suspendido)');
+    const noNodes = sheetMenu({ memberships: [] });
+    expect(noNodes).not.toContain('Enviar enlace');
+    expect(noNodes).not.toContain('Ver en Equipo');
+    expect(noNodes).toContain('Suspender en toda la plataforma');
+    expect(sheetMenu({}, false)).not.toContain('Suspender en toda la plataforma');
   });
 });
 

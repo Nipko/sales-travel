@@ -12,6 +12,8 @@ vi.mock('./api', () => ({ apiWithStatus: mocks.apiWithStatus }));
 
 import {
   DIRECTORY_ROLES,
+  platformUserAuditTarget,
+  platformUserDetailTarget,
   platformUserImpactTarget,
   platformUsersListTarget,
   platformUserStatusPlan,
@@ -137,6 +139,35 @@ describe('platformUserImpactTarget y platformUserStatusPlan', () => {
     ],
   ])('rechaza: %s', (_q, raw, error) => {
     expect(platformUserStatusPlan(raw)).toEqual({ ok: false, error });
+  });
+});
+
+describe('la ficha de una persona: platformUserDetailTarget y platformUserAuditTarget', () => {
+  const CURSOR = 'eyJvY2N1cnJlZEF0IjoiMjAyNi0xMC0xM1QxMjowMDowMFoifQ';
+
+  it('la ficha va al id en minúsculas; otro id no compone ruta (ni choca con status)', () => {
+    expect(platformUserDetailTarget(USER.toUpperCase())).toEqual({
+      ok: true,
+      path: `/admin/users/${USER}`,
+    });
+    for (const id of ['status', '../tenants', '']) {
+      expect(platformUserDetailTarget(id)).toEqual({ ok: false, error: 'Usuario inválido.' });
+    }
+  });
+
+  it('el historial reconstruye cursor y tamaño; lo demás no pasa', () => {
+    expect(platformUserAuditTarget(USER, new URLSearchParams())).toEqual({
+      ok: true,
+      path: `/admin/users/${USER}/audit`,
+    });
+    expect(
+      platformUserAuditTarget(USER, new URLSearchParams({ before: CURSOR, limit: '20' })),
+    ).toEqual({ ok: true, path: `/admin/users/${USER}/audit?before=${CURSOR}&limit=20` });
+    expect(platformUserAuditTarget(USER, new URLSearchParams({ tenantId: NODE }))).toEqual({
+      ok: false,
+      error: 'La consulta del historial no es válida. Recarga la página.',
+    });
+    expect(platformUserAuditTarget('nadie', new URLSearchParams()).ok).toBe(false);
   });
 });
 

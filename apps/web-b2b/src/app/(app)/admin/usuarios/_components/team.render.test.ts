@@ -330,11 +330,11 @@ function parsedMember(patch: Record<string, unknown> = {}): NetworkMember {
 }
 
 describe('MemberActionItems: el menú de acciones de un miembro', () => {
-  it('agrupa Acceso y Seguridad con encabezados que nombran cada grupo', () => {
+  it('agrupa Acceso, Seguridad y Membresía con encabezados que nombran cada grupo', () => {
     const html = actionsMenu(parsedMember());
     const groups = [...html.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)];
-    expect(groups).toHaveLength(2);
-    for (const [i, heading] of ['Acceso', 'Seguridad'].entries()) {
+    expect(groups).toHaveLength(3);
+    for (const [i, heading] of ['Acceso', 'Seguridad', 'Membresía'].entries()) {
       const id = groups[i]?.[1] ?? '';
       expect(html).toMatch(new RegExp(`id="${id}"[^>]*>${heading}</div>`));
     }

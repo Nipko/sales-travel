@@ -117,11 +117,75 @@ export function memberActionTarget(
   };
 }
 
-/** Los filtros de la Actividad de la red. Espejo de AUDIT_CATEGORIES del API. */
-const AUDIT_CATEGORIES: readonly string[] = ['users', 'credentials', 'pricing', 'network'];
 /** El `nextBefore` que emite el API: base64url, opaco. Si es uno suyo lo decide él. */
 const AUDIT_CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
 const AUDIT_LIMIT = /^\d{1,3}$/;
+
+/** `GET /tenants/:id/members/:userId`: la ficha de una persona del equipo del nodo. */
+export function memberDetailTarget(tenantId: string, userId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  if (!isUuid(userId)) return { ok: false, error: 'Miembro inválido.' };
+  return { ok: true, path: `/tenants/${tenantId.toLowerCase()}/members/${userId.toLowerCase()}` };
+}
+
+/**
+ * `POST /tenants/:id/members/:userId/sessions/:sessionId/revoke`: cerrar UNA sesión de la persona.
+ * Desde el directorio de la plataforma también va por acá, con el nodo de esa sesión.
+ */
+export function memberSessionRevokeTarget(
+  tenantId: string,
+  userId: string,
+  sessionId: string,
+): TenantAdminProxyTarget {
+  const member = memberDetailTarget(tenantId, userId);
+  if (!member.ok) return member;
+  if (!isUuid(sessionId)) return { ok: false, error: 'Sesión inválida.' };
+  return { ok: true, path: `${member.path}/sessions/${sessionId.toLowerCase()}/revoke` };
+}
+
+const USER_AUDIT_PARAMS: readonly string[] = ['before', 'limit'];
+const USER_AUDIT_INVALID = 'La consulta del historial no es válida. Recarga la página.';
+
+/**
+ * La consulta del historial de una persona (`?before=&limit=`), reconstruida: el cursor con la forma
+ * de los que emite el API y el tamaño entre 1 y 100. Lo que no sea eso, `undefined`. La comparten la
+ * ficha de Equipo y la del directorio de la plataforma.
+ */
+export function userAuditQuery(query: URLSearchParams): string | undefined {
+  for (const name of query.keys()) {
+    if (!USER_AUDIT_PARAMS.includes(name)) return undefined;
+  }
+  const out = new URLSearchParams();
+  const before = query.getAll('before');
+  const limit = query.getAll('limit');
+  if (before.length > 1 || limit.length > 1) return undefined;
+  if (before[0] !== undefined) {
+    if (!AUDIT_CURSOR.test(before[0])) return undefined;
+    out.set('before', before[0]);
+  }
+  if (limit[0] !== undefined) {
+    const n = AUDIT_LIMIT.test(limit[0]) ? Number(limit[0]) : NaN;
+    if (!(n >= 1 && n <= 100)) return undefined;
+    out.set('limit', String(n));
+  }
+  return out.toString();
+}
+
+/** `GET /tenants/:id/members/:userId/audit?…`: el historial de una persona del equipo del nodo. */
+export function memberAuditTarget(
+  tenantId: string,
+  userId: string,
+  query: URLSearchParams,
+): TenantAdminProxyTarget {
+  const member = memberDetailTarget(tenantId, userId);
+  if (!member.ok) return member;
+  const qs = userAuditQuery(query);
+  if (qs === undefined) return { ok: false, error: USER_AUDIT_INVALID };
+  return { ok: true, path: qs === '' ? `${member.path}/audit` : `${member.path}/audit?${qs}` };
+}
+
+/** Los filtros de la Actividad de la red. Espejo de AUDIT_CATEGORIES del API. */
+const AUDIT_CATEGORIES: readonly string[] = ['users', 'credentials', 'pricing', 'network'];
 const AUDIT_PARAMS: readonly string[] = ['tenantId', 'limit', 'before', 'category', 'actorUserId'];
 const AUDIT_INVALID = 'Los filtros de la actividad no son válidos. Recarga la página.';
 

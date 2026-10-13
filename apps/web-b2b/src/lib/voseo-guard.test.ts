@@ -37,6 +37,8 @@ const SCANNED = [
   // Plataforma → Usuarios: el directorio de toda la red y la suspensión de una cuenta.
   'lib/platform-users.ts',
   'lib/platform-users-proxy.ts',
+  // La ficha de un usuario, desde Equipo y desde el directorio.
+  'lib/member-detail.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */
