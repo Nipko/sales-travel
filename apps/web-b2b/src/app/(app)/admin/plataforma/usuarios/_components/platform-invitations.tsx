@@ -76,16 +76,20 @@ export function useDebounced<T>(value: T, delayMs: number): T {
  *
  * Después de una acción la fila cambia en el lugar (lib/platform-invitations.ts), sin recargar: las
  * páginas traídas con "Cargar más" siguen ahí. `onChanged` avisa para que la pestaña actualice su
- * contador; `viewerEmail` es quien pasa a respaldar una invitación que reenvía.
+ * contador; `viewerEmail` es quien pasa a respaldar una invitación que reenvía. `revision` cambia
+ * cuando algo de afuera revocó invitaciones (suspender una cuenta en la pestaña Usuarios revoca las
+ * que emitió): la lista se vuelve a pedir con los mismos filtros, porque sigue montada.
  */
 export function PlatformInvitations({
   nodes,
   viewerEmail,
+  revision = 0,
   onRetryNodes,
   onChanged,
 }: {
   nodes: NodeOptions;
   viewerEmail: string | null;
+  revision?: number;
   onRetryNodes: () => void;
   onChanged: () => void;
 }) {
@@ -122,7 +126,7 @@ export function PlatformInvitations({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, revision]);
 
   async function loadMore() {
     if (list.status !== 'ready' || list.view.nextCursor === null) return;
@@ -342,7 +346,8 @@ export function InvitationFiltersBar({
                 {nodes.status === 'ready'
                   ? nodes.nodes.map((n) => (
                       <option key={n.id} value={n.id}>
-                        {' '.repeat(Math.max(0, n.depth - 1) * 2)}
+                        {/* Espacio duro: el navegador recorta y junta los comunes de un <option>. */}
+                        {'\u00a0'.repeat(Math.max(0, n.depth - 1) * 2)}
                         {n.name}
                         {n.status !== 'active' ? ' (suspendido)' : ''}
                       </option>

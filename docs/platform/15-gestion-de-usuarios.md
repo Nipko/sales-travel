@@ -692,8 +692,11 @@ todas.
 - **Plataforma → Usuarios** suma pestañas (`SectionTabs`): _Usuarios_ (el directorio de USR-4) e
   _Invitaciones_, con el número de pendientes de toda la red (un `GET /api/admin/invitations?limit=1`
   aparte, que se repite cada vez que una invitación cambia; sin número si falla, nunca un cero
-  inventado). Las dos quedan montadas al cambiar (`SectionTabPanel keepMounted`): cada una conserva
-  sus filtros y lo que cargó. La de invitaciones se monta recién la primera vez que se abre.
+  inventado; si salen dos seguidos, sólo pinta el último). Las dos quedan montadas al cambiar
+  (`SectionTabPanel keepMounted`): cada una conserva sus filtros y lo que cargó. La de invitaciones
+  se monta recién la primera vez que se abre. Suspender una cuenta en _Usuarios_ revoca las
+  invitaciones que emitió: si revocó alguna, la lista de _Invitaciones_ (con sus mismos filtros) y el
+  número de la pestaña se vuelven a pedir, para no seguir mostrándolas.
 - **Filtros**: _Pendientes_, _Vencidas_ y _Todas_ con sus números, "Busca por correo" (espera de
   300 ms) y _Nodo_ (en el orden del árbol, con su subárbol), y _Limpiar filtros_.
 - **Cada fila**: correo (con _Vencida_ si ya venció), "{Rol} · {Nodo} · Vence en {n} días / Vence hoy /

@@ -216,6 +216,16 @@ describe('InvitationFiltersBar', () => {
         status: 'active',
         depth: 1,
       },
+      {
+        id: '5e1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+        slug: 'sub-norte',
+        name: 'Sub Norte',
+        tenantType: 'subagency',
+        isBranch: false,
+        parentTenantId: NORTE,
+        status: 'suspended',
+        depth: 2,
+      },
     ],
   };
 
@@ -226,6 +236,8 @@ describe('InvitationFiltersBar', () => {
     expect(html).toContain('Incluye todo lo que cuelga de él.');
     expect(html).toContain('>Todos los nodos<');
     expect(html).toContain('Agencia Norte');
+    // La sangría del árbol va con espacios duros: los comunes, el navegador los borra del <option>.
+    expect(html).toContain('>\u00a0\u00a0Sub Norte (suspendido)</option>');
     expect(html).toContain('aria-label="Estado"');
     expect(html).toMatch(/aria-pressed="true"[^>]*>Pendientes<span[^>]*>\(4\)/);
     expect(html).toMatch(/aria-pressed="false"[^>]*>Vencidas<span[^>]*>\(2\)/);

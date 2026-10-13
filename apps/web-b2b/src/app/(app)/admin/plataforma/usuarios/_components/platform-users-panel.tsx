@@ -156,6 +156,9 @@ export function PlatformUsersPanel({
   const [tab, setTab] = useState<PanelTab>('users');
   const [invitationsOpened, setInvitationsOpened] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState<number | null>(null);
+  // Sube cuando suspender una cuenta revocó invitaciones: la pestaña Invitaciones vuelve a pedirlas.
+  const [invitationsRevision, setInvitationsRevision] = useState(0);
+  const countRequest = useRef(0);
   const [confirm, confirmDialog] = useConfirm();
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Omit<DirectoryFilters, 'q'>>({});
@@ -203,10 +206,12 @@ export function PlatformUsersPanel({
     void loadNodes();
   }, [loadNodes]);
 
-  // Sin el número, la pestaña dice sólo "Invitaciones": no inventa un cero.
+  // Sin el número, la pestaña dice sólo "Invitaciones": no inventa un cero. Con dos acciones
+  // seguidas salen dos pedidos; sólo pinta el último, para que uno viejo no lo pise.
   const loadPendingCount = useCallback(async () => {
+    const asked = ++countRequest.current;
     const res = await loadPendingInvitationCount();
-    if (res.ok) setPendingInvitations(res.data);
+    if (res.ok && asked === countRequest.current) setPendingInvitations(res.data);
   }, []);
 
   useEffect(() => {
@@ -292,6 +297,12 @@ export function PlatformUsersPanel({
       status: res.data.status,
       activeSessions: res.data.status === 'suspended' ? 0 : user.activeSessions,
     });
+    // Suspender revoca las invitaciones que emitió: la otra pestaña y su número no pueden seguir
+    // mostrándolas.
+    if (res.data.revokedInvitations > 0) {
+      setInvitationsRevision((r) => r + 1);
+      void loadPendingCount();
+    }
     toast.success(statusDoneMessage(user, res.data));
     return ACTION_DONE;
   }
@@ -391,6 +402,7 @@ export function PlatformUsersPanel({
             <PlatformInvitations
               nodes={nodes}
               viewerEmail={viewerEmail}
+              revision={invitationsRevision}
               onRetryNodes={() => void loadNodes()}
               onChanged={() => void loadPendingCount()}
             />
