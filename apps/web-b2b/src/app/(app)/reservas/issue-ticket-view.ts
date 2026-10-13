@@ -43,7 +43,11 @@ export interface IssuableOrder {
   readonly status: string;
   readonly pnr: string | null;
   readonly capabilities?: Partial<OrderCapabilities>;
-  readonly totalAmount: number;
+  /**
+   * En unidades menores. El API lo manda como TEXTO (`"34012"`): `orders.total_amount` es BIGINT y
+   * `pg` no lo convierte. Se acepta de las dos formas y se normaliza al mandarlo.
+   */
+  readonly totalAmount: number | string;
   readonly currency: string;
 }
 
@@ -61,12 +65,20 @@ export function canIssueTicket(order: IssuableOrder): boolean {
   );
 }
 
-/** Lo que se manda: el total y la moneda que el vendedor ve. Si cambiaron, el API no emite. */
+/** El total de la orden en unidades menores, como número: el API lo manda como texto. */
+export function orderTotalMinor(order: Pick<IssuableOrder, 'totalAmount'>): number {
+  return typeof order.totalAmount === 'number' ? order.totalAmount : Number(order.totalAmount);
+}
+
+/**
+ * Lo que se manda: el total y la moneda que el vendedor ve. Si cambiaron, el API no emite. El total
+ * sale como NÚMERO: tal como llega del API (texto), el BFF lo rechazaba y nadie podía emitir.
+ */
 export function issueRequestBody(order: Pick<IssuableOrder, 'totalAmount' | 'currency'>): {
   expectedTotalMinor: number;
   currency: string;
 } {
-  return { expectedTotalMinor: order.totalAmount, currency: order.currency };
+  return { expectedTotalMinor: orderTotalMinor(order), currency: order.currency };
 }
 
 /** La emisión más reciente del historial (el API lo devuelve del más nuevo al más viejo). */
@@ -150,10 +162,15 @@ export type IssueResponse =
   | { readonly ok: true; readonly operationId: string }
   | { readonly ok: false; readonly message: string };
 
+/**
+ * El texto para el vendedor. `message` primero: el API responde `{ statusCode, error, message }` y
+ * `error` es el nombre del estado HTTP (`Conflict`), no un texto para el vendedor. `error` sólo
+ * cuando no hay `message`, que es la forma de las rutas del panel.
+ */
 function messageOf(data: unknown): string | undefined {
   if (typeof data !== 'object' || data === null) return undefined;
   const record = data as Record<string, unknown>;
-  for (const key of ['error', 'message']) {
+  for (const key of ['message', 'error']) {
     const value = record[key];
     if (typeof value === 'string' && value.trim().length > 0) return value;
     if (Array.isArray(value)) {

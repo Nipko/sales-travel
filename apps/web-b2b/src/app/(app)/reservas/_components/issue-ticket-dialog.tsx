@@ -15,6 +15,7 @@ import {
   issueBlock,
   issueRequestBody,
   issueResponseOf,
+  orderTotalMinor,
   type IssuableOrder,
 } from '../issue-ticket-view';
 import { FlightDeadlineBadge, type FlightTrackingOrder } from './flight-order-tracking';
@@ -141,7 +142,7 @@ export function IssueTicketDialog({
         <dl className="flex items-baseline justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3">
           <dt className="text-[var(--color-fg-muted)]">Total</dt>
           <dd className="text-lg font-semibold tabular-nums tracking-tight text-[var(--color-fg)]">
-            {formatMoney({ amountMinor: order.totalAmount, currency: order.currency })}
+            {formatMoney({ amountMinor: orderTotalMinor(order), currency: order.currency })}
           </dd>
         </dl>
 

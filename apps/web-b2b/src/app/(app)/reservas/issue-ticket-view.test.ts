@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { issueBodyOf } from '../../api/orders/[id]/issue/issue-proxy';
 import type { OrderOperationView } from './cancel-retry-policy';
 import {
   ISSUE_MESSAGES,
@@ -68,6 +69,12 @@ describe('canIssueTicket', () => {
 describe('issueRequestBody', () => {
   it('manda el total y la moneda que ve el vendedor, y nada más', () => {
     expect(issueRequestBody(ORDEN)).toEqual({ expectedTotalMinor: 34012, currency: 'USD' });
+  });
+
+  it('el total llega del API como texto (BIGINT) y sale como número, que es lo que acepta el BFF', () => {
+    const body = issueRequestBody({ ...ORDEN, totalAmount: '34012' });
+    expect(body).toEqual({ expectedTotalMinor: 34012, currency: 'USD' });
+    expect(issueBodyOf(body)).toEqual(body);
   });
 });
 
@@ -190,6 +197,16 @@ describe('issueResponseOf', () => {
       message: 'uno. dos',
     });
     expect(issueResponseOf(503, { error: 'sin cola' })).toEqual({ ok: false, message: 'sin cola' });
+  });
+
+  it('con la forma del API ({ statusCode, error, message }) se lee el mensaje, no «Conflict»', () => {
+    expect(
+      issueResponseOf(409, {
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Ya hay una emisión en curso para esta reserva.',
+      }),
+    ).toEqual({ ok: false, message: 'Ya hay una emisión en curso para esta reserva.' });
   });
 
   it('un 202 sin operación, o una respuesta sin mensaje, no se da por buena', () => {
