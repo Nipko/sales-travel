@@ -20,10 +20,22 @@ const CONTROL = /[\u0000-\u001F\u007F-\u009F]/g;
 /** Medio par UTF-16 sin su otra mitad: lo deja un recorte por largo justo sobre un emoji. */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
+/**
+ * Invisibles que `\s` no cubre: espacio de ancho cero, unión de palabras y marcas y controles de
+ * dirección. Sólo con ellos la etiqueta saldría vacía, y uno al final haría pasar por distinto un
+ * servicio repetido. Quedan los que unen emojis o letras (U+200C, U+200D).
+ */
+const INVISIBLE = /[\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069]/g;
+
 /** Un servicio como etiqueta: una línea, sin bordes en blanco y recortado; vacío no es servicio. */
 function amenityLabel(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const text = value.replace(LONE_SURROGATE, '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+  const text = value
+    .replace(LONE_SURROGATE, '')
+    .replace(INVISIBLE, '')
+    .replace(CONTROL, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (text.length === 0) return undefined;
   // Por puntos de código: un recorte por unidades UTF-16 puede partir un emoji en dos.
   const chars = Array.from(text);

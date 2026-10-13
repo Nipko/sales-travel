@@ -11,6 +11,15 @@ import {
  */
 
 describe('roomAmenitiesOf — el contrato con la web', () => {
+  /*
+   * MUTACIÓN: la web repite estos topes (checkout/_components/prebook-view.ts) y descarta el
+   * servicio que pasa de 80 caracteres; subirlos acá sin bajarlos allá los haría desaparecer.
+   */
+  it('los topes son los que la web espera: 60 por habitación y 80 caracteres', () => {
+    expect(ROOM_AMENITIES_MAX).toBe(60);
+    expect(ROOM_AMENITY_MAX_CHARS).toBe(80);
+  });
+
   it('una lista por habitación, en el orden del proveedor', () => {
     expect(
       roomAmenitiesOf([
@@ -41,6 +50,21 @@ describe('roomAmenitiesOf — el contrato con la web', () => {
         ['  Room\nservice\t(24 hours) ', '\u0000', '   ', 7, null, 'Safe\u0085box'],
       ]),
     ).toEqual([['Room service (24 hours)', 'Safe box']]);
+  });
+
+  it('los invisibles salen: sólo con ellos no hay etiqueta, y no esconden un repetido', () => {
+    expect(
+      roomAmenitiesOf([
+        [
+          '\u200B\u2060',
+          '\u202EFree WiFi\u202C',
+          'Free WiFi\u200B',
+          '\u2066Mini\u200Bbar\u2069',
+          'Family room \u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
+        ],
+      ]),
+    ).toEqual([['Free WiFi', 'Minibar', 'Family room \u{1F468}\u200D\u{1F469}\u200D\u{1F467}']]);
+    expect(roomAmenitiesOf([['\u200E', '\u200F\u202A']])).toBeUndefined();
   });
 
   it(`a lo sumo ${ROOM_AMENITIES_MAX} por habitación, contados después de quitar los repetidos`, () => {
