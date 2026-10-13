@@ -112,11 +112,17 @@ export function SectionTabPanel<K extends string>({
   id,
   idPrefix,
   hidden,
+  keepMounted = false,
   children,
 }: {
   id: K;
   idPrefix: string;
   hidden: boolean;
+  /**
+   * Oculto, deja el contenido montado: al volver a la pestaña siguen sus filtros, lo que ya cargó y
+   * su posición, en vez de pedir todo de nuevo.
+   */
+  keepMounted?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -129,7 +135,7 @@ export function SectionTabPanel<K extends string>({
       // El panel entra en el orden de tabulación: su foco tiene que verse (WCAG 2.4.7).
       className="mt-4 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
     >
-      {hidden ? null : children}
+      {hidden && !keepMounted ? null : children}
     </div>
   );
 }
