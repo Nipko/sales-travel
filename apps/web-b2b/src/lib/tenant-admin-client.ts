@@ -45,21 +45,30 @@ export interface NewNodeInput {
   readonly idleTimeoutMinutes?: number;
 }
 
-/** Qué pasó con el admin inicial (TenantsService.create): siempre se invita. */
-export type InitialAdminOutcome = 'invited' | 'invite_failed';
+/**
+ * Qué pasó con el admin inicial (TenantsService.create): siempre se invita. `invited_email_failed`:
+ * la invitación quedó pendiente pero el correo no salió; se reenvía desde Equipo.
+ */
+export type InitialAdminOutcome = 'invited' | 'invited_email_failed' | 'invite_failed';
+
+const OUTCOMES: readonly string[] = ['invited', 'invited_email_failed', 'invite_failed'];
+
+function isOutcome(value: string | undefined): value is InitialAdminOutcome {
+  return value !== undefined && OUTCOMES.includes(value);
+}
 
 export interface CreatedNode {
   readonly tenant: TenantStateView;
   readonly admin?: {
     readonly email: string;
     readonly status: InitialAdminOutcome;
-    /** Cuándo vence la invitación (ISO); sólo si salió. */
+    /** Cuándo vence la invitación (ISO); sólo si se creó. */
     readonly expiresAt?: string;
   };
 }
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 /** Los mensajes del API que todavía salen en inglés, dichos para el superadmin. */
 const KNOWN_MESSAGES: Readonly<Record<string, string>> = {
@@ -73,13 +82,13 @@ export function tenantAdminErrorMessage(
   message: string | undefined,
   kind: 'read' | 'write',
 ): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   const text = message?.trim() ?? '';
   if (text !== '') return KNOWN_MESSAGES[text] ?? text;
   if (status === 403) return 'Sólo el superadmin de la plataforma puede armar y corregir la red.';
   return kind === 'write'
-    ? 'No se pudo guardar el cambio. Probá de nuevo.'
-    : 'No se pudo cargar la red. Probá de nuevo.';
+    ? 'No se pudo guardar el cambio. Inténtalo de nuevo.'
+    : 'No se pudo cargar la red. Inténtalo de nuevo.';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -155,14 +164,13 @@ export function parseCreatedNode(value: unknown): CreatedNode | undefined {
   const email = str(admin?.['email']);
   const status = str(admin?.['status']);
   const expiresAt = str(admin?.['expiresAt']);
-  const outcome = status === 'invited' || status === 'invite_failed' ? status : undefined;
-  if (email === undefined || outcome === undefined) return { tenant };
+  if (email === undefined || !isOutcome(status)) return { tenant };
   return {
     tenant,
     admin:
-      outcome === 'invited' && expiresAt !== undefined
-        ? { email, status: outcome, expiresAt }
-        : { email, status: outcome },
+      status !== 'invite_failed' && expiresAt !== undefined
+        ? { email, status, expiresAt }
+        : { email, status },
   };
 }
 

@@ -18,7 +18,7 @@ export const PLATFORM_ROLES: readonly string[] = ['superadmin', 'platform_admin'
 
 /** El texto del API para el 403 de venta, el mismo en la web. */
 export const SUPERADMIN_CANNOT_SELL =
-  'El superadministrador no vende: usá un usuario de una sucursal';
+  'El superadministrador no vende: usa un usuario de una sucursal';
 
 export interface Viewer {
   /** Tiene un rol de plataforma en algún nodo: no vende. */

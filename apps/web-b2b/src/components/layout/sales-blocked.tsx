@@ -24,8 +24,8 @@ export function SalesBlockedNotice() {
           {SUPERADMIN_CANNOT_SELL}
         </h1>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
-          Planetour vende por sus sucursales, cada una con sus vendedores. Con tu usuario armás y
-          corregís la red: si todavía no hay una sucursal, creala desde Gestión de Agencias y sumale
+          Planetour vende por sus sucursales, cada una con sus vendedores. Con tu usuario armas y
+          corriges la red: si todavía no hay una sucursal, créala desde Gestión de Agencias y súmale
           sus vendedores.
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">

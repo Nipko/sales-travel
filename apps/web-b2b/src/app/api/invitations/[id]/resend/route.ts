@@ -1,15 +1,15 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { invitationActionTarget } from '../../../../../lib/tenant-admin-proxy';
+import { forwardAction } from '../../../../../lib/tenant-admin-proxy-route';
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Params = { params: Promise<{ id: string }> };
+
+/**
+ * Reenvía una invitación pendiente con un enlace nuevo (el anterior deja de valer). La respuesta
+ * dice si el correo salió; el rango lo decide el API.
+ */
+export async function POST(req: Request, { params }: Params): Promise<NextResponse> {
   const { id } = await params;
   const tenantId = new URL(req.url).searchParams.get('tenantId') ?? '';
-  const res = await api<unknown>(
-    `/invitations/${encodeURIComponent(id)}/resend?tenantId=${encodeURIComponent(tenantId)}`,
-    { method: 'POST' },
-  );
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  }
-  return NextResponse.json(res.data);
+  return forwardAction(req, invitationActionTarget(id, tenantId, 'resend'));
 }

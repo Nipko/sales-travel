@@ -1,15 +1,12 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { invitationActionTarget } from '../../../../../lib/tenant-admin-proxy';
+import { forwardAction } from '../../../../../lib/tenant-admin-proxy-route';
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Params = { params: Promise<{ id: string }> };
+
+/** Revoca una invitación pendiente: su enlace deja de funcionar. El rango lo decide el API. */
+export async function POST(req: Request, { params }: Params): Promise<NextResponse> {
   const { id } = await params;
   const tenantId = new URL(req.url).searchParams.get('tenantId') ?? '';
-  const res = await api<unknown>(
-    `/invitations/${encodeURIComponent(id)}/revoke?tenantId=${encodeURIComponent(tenantId)}`,
-    { method: 'POST' },
-  );
-  if (!res.ok) {
-    return NextResponse.json({ error: res.error.message }, { status: res.error.status });
-  }
-  return NextResponse.json(res.data);
+  return forwardAction(req, invitationActionTarget(id, tenantId, 'revoke'));
 }

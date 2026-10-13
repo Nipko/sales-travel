@@ -68,7 +68,7 @@ export function TrustedDevices({
     <div className="space-y-4">
       {devices.length === 0 ? (
         <p className="text-sm text-[var(--color-fg-muted)]">
-          No tenés equipos de confianza. Al ingresar con el código podés marcar «Recordar este
+          No tienes equipos de confianza. Al ingresar con el código puedes marcar «Recordar este
           equipo» para no tener que ingresarlo durante 30 días en ese navegador.
         </p>
       ) : (

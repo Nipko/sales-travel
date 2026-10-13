@@ -126,32 +126,32 @@ export function nextAttempt(prev: unknown): number {
 // Los números del bloqueo son los de `apps/api/src/auth/auth.service.ts` (LOCKOUT_THRESHOLD,
 // LOCKOUT_MINUTES): si cambian allá, cambian acá.
 export const LOGIN_MESSAGES = {
-  missing: 'Ingresá tu correo y tu contraseña.',
+  missing: 'Ingresa tu correo y tu contraseña.',
   invalid: 'El correo o la contraseña no son correctos.',
   lockoutHint:
     'Después de 5 intentos fallidos bloqueamos la cuenta por 15 minutos; restablecer la contraseña la desbloquea en el momento.',
-  rateLimited: 'Hiciste muchos intentos seguidos. Esperá un minuto y probá de nuevo.',
-  unavailable: 'No pudimos conectar con el servidor. Probá de nuevo en unos segundos.',
-  unexpected: 'No pudimos completar el ingreso. Probá de nuevo.',
-  mfaExpired: 'Por seguridad, la verificación venció. Ingresá tu contraseña de nuevo.',
+  rateLimited: 'Hiciste muchos intentos seguidos. Espera un minuto e inténtalo de nuevo.',
+  unavailable: 'No pudimos conectar con el servidor. Inténtalo de nuevo en unos segundos.',
+  unexpected: 'No pudimos completar el ingreso. Inténtalo de nuevo.',
+  mfaExpired: 'Por seguridad, la verificación venció. Ingresa tu contraseña de nuevo.',
   mfaLocked:
     'Hubo demasiados intentos fallidos, así que bloqueamos la cuenta por 15 minutos. Restablecer la contraseña la desbloquea en el momento.',
-  mfaLost: 'Se perdió el paso de verificación. Ingresá tu contraseña de nuevo.',
-  totpFormat: 'Ingresá los 6 dígitos del código.',
+  mfaLost: 'Se perdió el paso de verificación. Ingresa tu contraseña de nuevo.',
+  totpFormat: 'Ingresa los 6 dígitos del código.',
   // Guion que no corta la línea (U+2011): el ejemplo partido en dos renglones parecía dos códigos.
-  recoveryFormat: 'Revisá el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.',
+  recoveryFormat: 'Revisa el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.',
   releaseExpired:
-    'El permiso para liberar un puesto venció. Ingresá de nuevo para ver quién está conectado.',
-  releaseMissing: 'Elegí a quién desconectar.',
+    'El permiso para liberar un puesto venció. Ingresa de nuevo para ver quién está conectado.',
+  releaseMissing: 'Elige a quién desconectar.',
   releaseForbidden:
-    'Ya no administrás el nodo de estos puestos: pedile a un administrador que libere uno.',
+    'Ya no administras el nodo de estos puestos: pídele a un administrador que libere uno.',
   releaseSessionGone:
-    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Ingresá de nuevo.',
-  seatsTakenAgain: 'Alguien ocupó el puesto antes que vos. Revisá la lista de nuevo.',
+    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Ingresa de nuevo.',
+  seatsTakenAgain: 'Alguien ocupó el puesto antes que tú. Revisa la lista de nuevo.',
 } as const;
 
 export function mfaInvalidMessage(attemptsLeft: number | null): string {
-  if (attemptsLeft === null) return 'El código no es correcto. Probá de nuevo.';
+  if (attemptsLeft === null) return 'El código no es correcto. Inténtalo de nuevo.';
   if (attemptsLeft === 1) return 'El código no es correcto. Te queda 1 intento.';
   return `El código no es correcto. Te quedan ${attemptsLeft} intentos.`;
 }

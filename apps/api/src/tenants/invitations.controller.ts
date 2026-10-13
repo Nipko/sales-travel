@@ -32,6 +32,11 @@ export class InvitationsController {
     private readonly network: NetworkService,
   ) {}
 
+  /**
+   * Con throttle: cada invitación manda un correo desde la cuenta del nodo, y un admin (o una sesión
+   * robada) no puede usarla para llenar buzones ajenos.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post()
   async invite(
@@ -44,11 +49,11 @@ export class InvitationsController {
     // quien es consolidator_admin en su red y admin en otra no invita tenant_admins en la segunda.
     const actorRole = await this.network.roleOver(userId, body.tenantId);
     if (actorRole === undefined) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     // No se puede invitar a alguien con rango igual o superior al propio.
     if (!canGrantRole(actorRole, body.role)) {
-      throw new ForbiddenException('no podés invitar con un rol igual o superior al tuyo');
+      throw new ForbiddenException('no puedes invitar con un rol igual o superior al tuyo');
     }
 
     return this.invitations.invite({
@@ -61,38 +66,44 @@ export class InvitationsController {
 
   @Roles(...AGENCY_ADMIN_ROLES)
   @Get()
-  async list(@CurrentUser() userId: string | undefined, @Query('tenantId') tenantId?: string) {
+  async list(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+  ) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId es obligatorio');
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     return { invitations: await this.invitations.listPending(userId, tenantId) };
   }
 
+  /**
+   * Revoca una invitación pendiente. Como reenviar, el rango se mide sobre el nodo de la invitación:
+   * el servicio lo compara con su rol.
+   */
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post(':id/revoke')
   async revoke(
     @CurrentUser() userId: string | undefined,
-    @Param('id') id: string,
-    @Query('tenantId') tenantId?: string,
+    @Param('id', new ZodValidationPipe(UuidParamSchema)) id: string,
+    @Query('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
   ) {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId es obligatorio');
 
-    const superadmin = await this.network.isSuperadmin(userId);
-    if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+    const actorRole = await this.network.roleOver(userId, tenantId);
+    if (actorRole === undefined) {
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
-    return this.invitations.revoke(userId, tenantId, id);
+    return this.invitations.revoke(userId, actorRole, tenantId, id);
   }
 
   /**
    * Reenvía una invitación pendiente con un enlace nuevo (el anterior deja de valer). El rango se
    * mide sobre el nodo de la invitación, como al invitar: el servicio lo compara con su rol.
    */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post(':id/resend')
   async resend(
@@ -104,7 +115,7 @@ export class InvitationsController {
 
     const actorRole = await this.network.roleOver(userId, tenantId);
     if (actorRole === undefined) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
     return this.invitations.resend({ actorUserId: userId, actorRole, tenantId, invitationId: id });
   }

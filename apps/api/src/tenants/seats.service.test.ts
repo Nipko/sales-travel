@@ -39,10 +39,10 @@ describe('SeatsService: quien no administra el nodo', () => {
     const { service, network, db } = banco();
 
     expect(await motivo(service.view(ACTOR, NODO))).toBe(
-      '403/TENANT_NOT_MANAGED No administrás este nodo.',
+      '403/TENANT_NOT_MANAGED No administras este nodo.',
     );
     expect(await motivo(service.release(ACTOR, NODO, SESION))).toBe(
-      '403/TENANT_NOT_MANAGED No administrás este nodo.',
+      '403/TENANT_NOT_MANAGED No administras este nodo.',
     );
     expect(network.canManageTenant).toHaveBeenCalledWith(ACTOR, NODO);
     expect(db.withRequestContext).not.toHaveBeenCalled();

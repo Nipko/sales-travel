@@ -441,7 +441,7 @@ export function formatClockTime(ms: number, timeZone?: string): string {
 
 /** El aviso de vencimiento absoluto (SPEC §3). */
 export function expiryWarningText(expiresAtMs: number, timeZone?: string): string {
-  return `Tu sesión vence a las ${formatClockTime(expiresAtMs, timeZone)}; guardá tu trabajo.`;
+  return `Tu sesión vence a las ${formatClockTime(expiresAtMs, timeZone)}; guarda tu trabajo.`;
 }
 
 // ---------------------------------------------------------------------------------------------

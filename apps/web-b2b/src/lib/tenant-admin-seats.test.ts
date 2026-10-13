@@ -171,15 +171,15 @@ describe('sesiones', () => {
 
   it('errores al desconectar', () => {
     expect(seatReleaseError(404, undefined)).toMatch(/ya se había cerrado/);
-    expect(seatReleaseError(403, 'no administrás el nodo de esa sesión')).toBe(
-      'No lo pudimos hacer: no administrás el nodo de esa sesión',
+    expect(seatReleaseError(403, 'no administras el nodo de esa sesión')).toBe(
+      'No lo pudimos hacer: no administras el nodo de esa sesión',
     );
-    expect(seatReleaseError(403, '')).toMatch(/pedíselo/);
-    expect(seatReleaseError(400, 'No podés liberar tu propia sesión.')).toBe(
-      'No podés liberar tu propia sesión.',
+    expect(seatReleaseError(403, '')).toMatch(/pídeselo/);
+    expect(seatReleaseError(400, 'No puedes liberar tu propia sesión.')).toBe(
+      'No puedes liberar tu propia sesión.',
     );
     expect(seatReleaseError(401, 'x')).toMatch(/sesión venció/);
-    expect(seatReleaseError(502, '')).toMatch(/Probá de nuevo/);
+    expect(seatReleaseError(502, '')).toMatch(/Inténtalo de nuevo/);
   });
 });
 
@@ -236,7 +236,7 @@ describe('política de puestos (superadmin)', () => {
 
   it('cupo propio vacío o fuera de rango no se envía', () => {
     expect(validateSeatPolicy({ seatsMode: 'own', seats: '', idle: '' }).seats).toMatch(
-      /Indicá cuántos/,
+      /Indica cuántos/,
     );
     expect(validateSeatPolicy({ seatsMode: 'own', seats: '20000', idle: '' }).seats).toMatch(
       /entre 1 y/,

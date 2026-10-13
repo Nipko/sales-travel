@@ -75,6 +75,11 @@ const ADMIN_NAV_ROLES: readonly string[] = [
   'admin',
 ];
 
+/** ¿Ve la sección Administración (Mi Red, Mi Agencia, Equipo…) con este rol en la agencia activa? */
+export function seesAdministration(role: string | undefined): boolean {
+  return ADMIN_NAV_ROLES.includes(role ?? '');
+}
+
 export interface NavSection {
   label: string;
   items: NavItem[];
@@ -90,7 +95,7 @@ export function navSections(role: string | undefined, viewer: Viewer): NavSectio
     { label: 'Operaciones', items: navForViewer(operationsNav, viewer) },
     { label: 'Gestión', items: managementNav },
   ];
-  if (ADMIN_NAV_ROLES.includes(role ?? '')) {
+  if (seesAdministration(role)) {
     sections.push({ label: 'Administración', items: adminNav });
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.

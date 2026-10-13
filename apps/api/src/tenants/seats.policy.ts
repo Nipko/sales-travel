@@ -36,7 +36,7 @@ export class SeatReleaseSelfError extends ForbiddenException {
   readonly reason = 'SEAT_RELEASE_SELF';
 
   constructor() {
-    super('No podés liberar tu propio puesto desde acá: usá "Cerrar sesión".');
+    super('No puedes liberar tu propio puesto desde aquí: usa "Cerrar sesión".');
     this.name = 'SeatReleaseSelfError';
   }
 }

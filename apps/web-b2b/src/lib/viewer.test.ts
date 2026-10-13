@@ -46,7 +46,7 @@ describe('viewerOf: el superadmin es una identidad del usuario', () => {
 
   it('el aviso dice lo mismo que el 403 del API', () => {
     expect(SUPERADMIN_CANNOT_SELL).toBe(
-      'El superadministrador no vende: usá un usuario de una sucursal',
+      'El superadministrador no vende: usa un usuario de una sucursal',
     );
   });
 });

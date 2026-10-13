@@ -259,9 +259,7 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
 
   it('fuera de la red, 403', async () => {
     const { controller, service } = invitaciones(undefined);
-    await expect(invitar(controller, 'vendedor')).rejects.toThrow(
-      'target tenant is outside your network',
-    );
+    await expect(invitar(controller, 'vendedor')).rejects.toThrow('Ese nodo no está en tu red.');
     expect(service.invite).not.toHaveBeenCalled();
   });
 
@@ -291,6 +289,109 @@ describe('InvitationsController: el rango se mide sobre el nodo destino (G-06)',
     const { controller, service } = invitaciones('superadmin');
     await invitar(controller, 'tenant_admin');
     expect(service.invite).toHaveBeenCalled();
+  });
+});
+
+describe('InvitationsController.revoke: el rango se mide sobre el nodo de la invitación', () => {
+  const INVITACION = '44444444-4444-4444-8444-444444444444';
+
+  function revocar(roleOver: Role | undefined) {
+    const service = { revoke: vi.fn(() => Promise.resolve({ ok: true as const })) };
+    const network = { roleOver: vi.fn(() => Promise.resolve(roleOver)) };
+    const controller = new InvitationsController(
+      service as unknown as InvitationsService,
+      network as unknown as NetworkService,
+    );
+    return { controller, service, network };
+  }
+
+  it('fuera de la red, 403 sin llegar al servicio', async () => {
+    const { controller, service } = revocar(undefined);
+    await expect(controller.revoke(ACTOR, INVITACION, NODO)).rejects.toThrow(
+      'Ese nodo no está en tu red.',
+    );
+    expect(service.revoke).not.toHaveBeenCalled();
+  });
+
+  it('le pasa al servicio el rol con que administra el nodo', async () => {
+    const { controller, service, network } = revocar('admin');
+    await controller.revoke(ACTOR, INVITACION, NODO);
+    expect(network.roleOver).toHaveBeenCalledWith(ACTOR, NODO);
+    expect(service.revoke).toHaveBeenCalledWith(ACTOR, 'admin', NODO, INVITACION);
+  });
+
+  it('sin sesión, 401', async () => {
+    const { controller } = revocar('admin');
+    await expect(controller.revoke(undefined, INVITACION, NODO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+});
+
+describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => {
+  it('sobre sí mismo', async () => {
+    const { controller } = banco({ roleOver: 'tenant_admin' });
+    const yo = { userId: ACTOR, tenantId: NODO };
+
+    await expect(controller.changeRole(ACTOR, { ...yo, role: 'vendedor' })).rejects.toThrow(
+      'no puedes cambiar tu propio rol',
+    );
+    await expect(
+      controller.setMembershipStatus(ACTOR, { ...yo, status: 'suspended' }),
+    ).rejects.toThrow('no puedes cambiar el estado de tu propia membresía');
+    await expect(
+      controller.membershipImpact(ACTOR, { ...yo, status: 'suspended' }),
+    ).rejects.toThrow('no puedes cambiar tu propia membresía');
+    const plataforma = banco({ superadmin: true });
+    await expect(
+      plataforma.controller.setUserStatus(ACTOR, { userId: ACTOR, status: 'suspended' }),
+    ).rejects.toThrow('no puedes suspender tu propio usuario');
+  });
+
+  it('fuera de la red, sin membresía en el nodo o sin ser superadmin', async () => {
+    const cambio = { userId: OTRO, tenantId: NODO, role: 'vendedor' as const };
+
+    await expect(
+      banco({ roleOver: undefined }).controller.changeRole(ACTOR, cambio),
+    ).rejects.toThrow('No administras este nodo.');
+    await expect(
+      banco({ roleOver: 'tenant_admin', membresia: undefined }).controller.changeRole(
+        ACTOR,
+        cambio,
+      ),
+    ).rejects.toThrow('Ese usuario no es miembro de este nodo.');
+    await expect(banco({ superadmin: false }).controller.listTenants(ACTOR)).rejects.toThrow(
+      'Esta acción es sólo para el superadmin.',
+    );
+  });
+
+  it('el último administrador activo del nodo', async () => {
+    // La misma lectura doble devuelve la membership y el conteo de admins restantes (cero).
+    const { controller } = banco({
+      roleOver: 'tenant_admin',
+      membresia: { id: 'm-9', role: 'admin', count: '0' } as { id: string; role: Role },
+    });
+
+    await expect(
+      controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'suspended' }),
+    ).rejects.toThrow(
+      'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
+    );
+  });
+
+  it('invitaciones: rango y nodo', async () => {
+    const network = {
+      roleOver: vi.fn(() => Promise.resolve('admin' as Role)),
+      isSuperadmin: vi.fn(() => Promise.resolve(false)),
+    };
+    const controller = new InvitationsController(
+      { invite: vi.fn() } as unknown as InvitationsService,
+      network as unknown as NetworkService,
+    );
+
+    await expect(
+      controller.invite(ACTOR, { email: 'x@example.com', tenantId: NODO, role: 'admin' }),
+    ).rejects.toThrow('no puedes invitar con un rol igual o superior al tuyo');
   });
 });
 
@@ -325,7 +426,12 @@ describe('RolesGuard con la metadata REAL del controlador', () => {
 describe('SeatsController y MemberSupportController: sin sesión no llegan al servicio', () => {
   it('401 y el servicio no se entera', async () => {
     const seats = { view: vi.fn(), release: vi.fn() };
-    const support = { resetMfa: vi.fn(), revokeSessions: vi.fn() };
+    const support = {
+      resetMfa: vi.fn(),
+      revokeSessions: vi.fn(),
+      sendPasswordReset: vi.fn(),
+      unlock: vi.fn(),
+    };
     const seatsCtl = new SeatsController(seats as unknown as SeatsService);
     const supportCtl = new MemberSupportController(support as unknown as MemberSupportService);
 
@@ -337,6 +443,12 @@ describe('SeatsController y MemberSupportController: sin sesión no llegan al se
       UnauthorizedException,
     );
     await expect(supportCtl.revokeSessions(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.sendPasswordReset(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    await expect(supportCtl.unlock(undefined, NODO, OTRO)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
     for (const fn of [...Object.values(seats), ...Object.values(support)]) {
@@ -355,6 +467,36 @@ describe('SeatsController y MemberSupportController: sin sesión no llegan al se
     await seatsCtl.release(ACTOR, NODO, OTRO);
     expect(seats.view).toHaveBeenCalledWith(ACTOR, NODO);
     expect(seats.release).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+  });
+
+  it('enviar el enlace y desbloquear: el actor y los ids llegan tal cual, la respuesta también', async () => {
+    const support = {
+      sendPasswordReset: vi.fn(() =>
+        Promise.resolve({ sent: true, expiresAt: '2026-10-11T13:00:00.000Z' }),
+      ),
+      unlock: vi.fn(() => Promise.resolve({ unlocked: false })),
+    };
+    const supportCtl = new MemberSupportController(support as unknown as MemberSupportService);
+
+    expect(await supportCtl.sendPasswordReset(ACTOR, NODO, OTRO)).toEqual({
+      sent: true,
+      expiresAt: '2026-10-11T13:00:00.000Z',
+    });
+    expect(await supportCtl.unlock(ACTOR, NODO, OTRO)).toEqual({ unlocked: false });
+    expect(support.sendPasswordReset).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+    expect(support.unlock).toHaveBeenCalledWith(ACTOR, NODO, OTRO);
+  });
+
+  it('enviar el enlace tiene su propio límite por minuto', () => {
+    const handler = Object.getOwnPropertyDescriptor(
+      MemberSupportController.prototype,
+      'sendPasswordReset',
+    )?.value as unknown;
+    expect(typeof handler).toBe('function');
+    const limit = Reflect.getMetadata('THROTTLER:LIMITdefault', handler as object) as unknown;
+    const ttl = Reflect.getMetadata('THROTTLER:TTLdefault', handler as object) as unknown;
+    expect(limit).toBe(10);
+    expect(ttl).toBe(60_000);
   });
 });
 

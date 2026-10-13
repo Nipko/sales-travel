@@ -20,7 +20,7 @@ import { TotpField } from './totp-field';
 import { useSecurityForm } from './use-security-form';
 
 export const QR_LABEL = 'Código QR para agregar tu cuenta a la app de autenticación';
-export const SCAN_TITLE = 'Escaneá este código con tu app de autenticación';
+export const SCAN_TITLE = 'Escanea este código con tu app de autenticación';
 
 function StepBadge({ n }: { n: number }) {
   return (
@@ -60,12 +60,12 @@ function ManualKey({ secret }: { secret: string }) {
           className="size-4 shrink-0 text-[var(--color-fg-muted)] transition-transform group-open:rotate-90"
           aria-hidden="true"
         />
-        ¿No podés escanear? Ingresá la clave a mano
+        ¿No puedes escanear? Ingresa la clave a mano
       </summary>
       <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
         <p className="text-xs text-[var(--color-fg-muted)]">
-          En tu app elegí «Ingresar una clave de configuración» (o parecido), poné tu email como
-          nombre de la cuenta y elegí «Basada en el tiempo».
+          En tu app elige «Ingresar una clave de configuración» (o parecido), pon tu email como
+          nombre de la cuenta y elige «Basada en el tiempo».
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <code
@@ -86,7 +86,7 @@ function ManualKey({ secret }: { secret: string }) {
         </p>
         {copied === 'failed' ? (
           <p role="alert" className="text-xs text-[var(--color-danger)]">
-            No pudimos copiar: seleccioná la clave y copiala a mano.
+            No pudimos copiar: selecciona la clave y cópiala a mano.
           </p>
         ) : null}
       </div>
@@ -125,11 +125,11 @@ export function MfaSetupStep({
           <StepBadge n={1} />
           <div className="min-w-0 space-y-0.5">
             <p className="text-sm font-semibold text-[var(--color-fg)]">
-              Abrí tu app de autenticación
+              Abre tu app de autenticación
             </p>
             <p className="text-xs text-[var(--color-fg-muted)]">
-              Google Authenticator, Microsoft Authenticator, Authy o 1Password. Si no tenés ninguna,
-              bajala gratis de la tienda de tu teléfono.
+              Google Authenticator, Microsoft Authenticator, Authy o 1Password. Si no tienes
+              ninguna, bájala gratis de la tienda de tu teléfono.
             </p>
           </div>
         </li>
@@ -146,7 +146,7 @@ export function MfaSetupStep({
               {SCAN_TITLE}
             </h3>
             <p className="text-xs text-[var(--color-fg-muted)]">
-              En la app tocá «+» o «Agregar cuenta» y apuntá la cámara al código.
+              En la app toca «+» o «Agregar cuenta» y apunta la cámara al código.
             </p>
             {/* Borde propio para que el QR se recorte sobre el fondo en modo oscuro; el margen
                 blanco de 4 módulos ya viene dentro del dibujo. */}
@@ -171,7 +171,7 @@ export function MfaSetupStep({
           <form onSubmit={form.onSubmit} noValidate className="min-w-0 flex-1 space-y-3">
             <TotpField
               id={`${baseId}-code`}
-              label="Ingresá el código de 6 dígitos que muestra la app"
+              label="Ingresa el código de 6 dígitos que muestra la app"
               hint="Se envía solo al completar el sexto dígito."
               error={form.error}
               failureKey={form.failureKey}
@@ -222,7 +222,7 @@ function PhoneChangeGate({
   return (
     <form onSubmit={form.onSubmit} className="space-y-4">
       <p className="text-sm text-[var(--color-fg-muted)]">
-        Primero confirmá que sos vos. Tu app actual sigue funcionando hasta que termines de
+        Primero confirma que eres tú. Tu app actual sigue funcionando hasta que termines de
         configurar la nueva.
       </p>
       <div className="max-w-sm space-y-1.5">
@@ -298,7 +298,7 @@ export function MfaEnrollment({
       const res = await settleAction(enrollMfaAction);
       if (!res) return;
       if ('transport' in res || res.error || !res.secret || !res.otpauthUri) {
-        setError(res.error ?? 'No pudimos empezar. Intentá de nuevo.');
+        setError(res.error ?? 'No pudimos empezar. Inténtalo de nuevo.');
         return;
       }
       setEnrollment({ secret: res.secret, otpauthUri: res.otpauthUri });

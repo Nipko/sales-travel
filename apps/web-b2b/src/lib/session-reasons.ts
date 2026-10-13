@@ -104,8 +104,8 @@ export function motivoMessage(
     case 'liberada':
       return 'Un administrador liberó tu puesto.';
     case 'expirada':
-      return 'Tu sesión venció. Volvé a ingresar.';
+      return 'Tu sesión venció. Vuelve a ingresar.';
     case 'cerrada':
-      return 'Tu sesión se cerró. Volvé a ingresar.';
+      return 'Tu sesión se cerró. Vuelve a ingresar.';
   }
 }

@@ -1,3 +1,4 @@
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -8,8 +9,10 @@ import {
   teamActorOf,
   type NetworkMember,
 } from '../../../../../lib/tenant-admin-team';
+import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
-import { MemberList, type MemberRowError } from './member-list';
+import { PendingInvitationNotice } from './invite-dialog';
+import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
 import { SeatsCard, type SeatsState } from './seats-ui';
 
 /*
@@ -88,7 +91,8 @@ describe('SeatsCard', () => {
     expect(html).toContain('203.0.113.7');
     expect(html).toContain('aria-label="Desconectar a Ana Pérez"');
     expect(html).not.toContain('aria-label="Desconectar a Yo"');
-    expect(html).toContain('Vos');
+    expect(html).toContain('>Tú</span>');
+    expect(voseoIn(html)).toEqual([]);
   });
 
   it('sin límite: sin barra', () => {
@@ -113,7 +117,7 @@ describe('SeatsCard', () => {
       }),
     });
     expect(html).toContain('Este nodo no cuenta puestos');
-    expect(html).toContain('no ocupan puesto y no se listan acá');
+    expect(html).toContain('no ocupan puesto y no se listan aquí');
     expect(html).not.toMatch(/Nadie de este nodo|\(0\)|0 personas|conectadas? ahora/);
   });
 
@@ -121,9 +125,9 @@ describe('SeatsCard', () => {
     const empty = seatsCard({ status: 'ready', view: seatsView({ sessions: [], inUse: 0 }) });
     expect(empty).toContain('Ocupan un puesto ahora (0)');
     expect(empty).toContain('Nadie de este nodo ocupa un puesto ahora.');
-    const error = seatsCard({ status: 'error', message: 'No administrás este nodo.' });
+    const error = seatsCard({ status: 'error', message: 'No administras este nodo.' });
     expect(error).toContain('role="alert"');
-    expect(error).toContain('No administrás este nodo.');
+    expect(error).toContain('No administras este nodo.');
     expect(error).toContain('Reintentar');
     expect(error).not.toContain('Nadie de este nodo');
   });
@@ -153,7 +157,10 @@ function members(
 ): string {
   const state =
     items === 'error'
-      ? ({ status: 'error', message: 'No tenés permiso para ver el equipo de este nodo.' } as const)
+      ? ({
+          status: 'error',
+          message: 'No tienes permiso para ver el equipo de este nodo.',
+        } as const)
       : items === 'loading'
         ? ({ status: 'loading' } as const)
         : ({ status: 'ready', items } as const);
@@ -179,14 +186,14 @@ describe('MemberList', () => {
   it('un error no se muestra como "no tiene usuarios"', () => {
     const html = members('error');
     expect(html).toContain('role="alert"');
-    expect(html).toContain('No tenés permiso');
+    expect(html).toContain('No tienes permiso');
     expect(html).not.toContain('no tiene usuarios');
   });
 
   it('vacío con llamado a invitar', () => {
     const html = members([]);
     expect(html).toContain('Esta agencia no tiene usuarios todavía.');
-    expect(html).toContain('Invitá a tu primer vendedor');
+    expect(html).toContain('Invita a tu primer vendedor');
   });
 
   it('columnas nuevas: último acceso, 2FA pendiente, bloqueo; con etiquetas para el teléfono', () => {
@@ -208,7 +215,7 @@ describe('MemberList', () => {
       parseMembers({
         users: [MEMBER, { ...MEMBER, userId: 'u3', name: 'Carla', email: 'carla@agencia.co' }],
       }) ?? [];
-    const message = 'No lo pudimos hacer: También pertenece a una agencia que no administrás.';
+    const message = 'No lo pudimos hacer: También pertenece a una agencia que no administras.';
     const html = members(list, { userId: 'u3', message });
     // '<li ' y no '<li': el ícono de alerta dibuja <line>.
     const rows = html.split('<li ').slice(1);
@@ -252,7 +259,79 @@ describe('MemberList', () => {
     const list = parseMembers({ users: [{ ...MEMBER, userId: 'me', name: 'Yo' }] }) ?? [];
     const html = members(list);
     expect(html).not.toContain('Acciones sobre Yo');
-    expect(html).toContain('Vos');
+    expect(html).toContain('>Tú</span>');
+  });
+
+  it('el primer pintado va en tú: vacío, error y lista', () => {
+    const list = parseMembers({ users: [MEMBER, { ...MEMBER, userId: 'me', name: 'Yo' }] }) ?? [];
+    for (const html of [members([]), members('error'), members(list)]) {
+      expect(voseoIn(html)).toEqual([]);
+    }
+  });
+});
+
+/** El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). */
+function actionsMenu(member: NetworkMember): string {
+  return renderToStaticMarkup(
+    createElement(
+      DropdownMenu.Root,
+      { open: true, modal: false },
+      createElement(DropdownMenu.Trigger, null, 'Acciones'),
+      createElement(
+        DropdownMenu.Content,
+        null,
+        createElement(MemberActionItems, {
+          member,
+          now: Date.now(),
+          onPick: (run: () => void) => run,
+          onSetStatus: () => {},
+          onAction: () => {},
+        }),
+      ),
+    ),
+  );
+}
+
+function parsedMember(patch: Record<string, unknown> = {}): NetworkMember {
+  const member = parseMembers({ users: [{ ...MEMBER, ...patch }] })?.[0];
+  if (member === undefined) throw new Error('fixture inválida');
+  return member;
+}
+
+describe('MemberActionItems: el menú de acciones de un miembro', () => {
+  it('agrupa Acceso y Seguridad con encabezados que nombran cada grupo', () => {
+    const html = actionsMenu(parsedMember());
+    const groups = [...html.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)];
+    expect(groups).toHaveLength(2);
+    for (const [i, heading] of ['Acceso', 'Seguridad'].entries()) {
+      const id = groups[i]?.[1] ?? '';
+      expect(html).toMatch(new RegExp(`id="${id}"[^>]*>${heading}</div>`));
+    }
+    expect(html.indexOf('Enviar enlace para restablecer contraseña')).toBeLessThan(
+      html.indexOf('Cerrar sus sesiones'),
+    );
+    expect(html.indexOf('Restablecer 2FA')).toBeLessThan(html.indexOf('Suspender'));
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('"Desbloquear cuenta" aparece sólo con un bloqueo vigente', () => {
+    expect(actionsMenu(parsedMember())).toContain('Desbloquear cuenta');
+    expect(actionsMenu(parsedMember({ lockedUntil: null }))).not.toContain('Desbloquear cuenta');
+    const expired = parsedMember({ lockedUntil: new Date(Date.now() - 60_000).toISOString() });
+    expect(actionsMenu(expired)).not.toContain('Desbloquear cuenta');
+  });
+
+  it('con el acceso suspendido, "Enviar enlace" queda deshabilitado y dice por qué', () => {
+    const sendItem = (html: string) =>
+      html.split('<div role="menuitem"').find((item) => item.includes('Enviar enlace')) ?? '';
+    for (const patch of [{ membershipStatus: 'suspended' }, { userStatus: 'suspended' }]) {
+      const item = sendItem(actionsMenu(parsedMember(patch)));
+      expect(item).toMatch(/^ aria-disabled="true"/);
+      expect(item).toContain('Enviar enlace para restablecer contraseña (acceso suspendido)');
+    }
+    expect(sendItem(actionsMenu(parsedMember()))).not.toContain('aria-disabled');
+    expect(actionsMenu(parsedMember())).not.toContain('(acceso suspendido)');
+    expect(actionsMenu(parsedMember({ membershipStatus: 'suspended' }))).toContain('Reactivar');
   });
 });
 
@@ -320,8 +399,10 @@ describe('InvitationList', () => {
         resendingId: null,
       }),
     );
-    expect(idle).toContain('venció');
+    expect(idle).toContain('>Vencida</span>');
     expect(idle).toContain('>Reenviar<');
+    expect(idle).not.toMatch(/<button[^>]* disabled=""[^>]*aria-label="Reenviar/);
+    expect(idle).not.toContain('vence en');
 
     const busy = renderToStaticMarkup(
       createElement(InvitationList, {
@@ -333,7 +414,49 @@ describe('InvitationList', () => {
     );
     expect(busy).toContain('Reenviando…');
     expect(busy).toMatch(
-      /<button[^>]*disabled[^>]*aria-label="Reenviar la invitación a tarde@gmail.com"/,
+      /<button[^>]* disabled=""[^>]*aria-label="Reenviar la invitación a tarde@gmail.com"/,
     );
+  });
+});
+
+describe('PendingInvitationNotice: la invitación ya pendiente se ofrece reenviar', () => {
+  it('dice para quién y ofrece "Reenviar la invitación", que espera mientras sale', () => {
+    const html = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        resending: false,
+        onResend: () => {},
+      }),
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain('Ya hay una invitación pendiente para beto@agencia.co.');
+    expect(html).toContain('Reenviar la invitación');
+    expect(html).not.toContain('disabled=""');
+    // Sin la fila en la lista, igual dice que reenviar conserva el rol y cómo cambiarlo.
+    expect(html).toContain('con el mismo rol');
+    expect(html).toContain('Para darle otro rol, revoca esa invitación');
+    expect(voseoIn(html)).toEqual([]);
+
+    const withRole = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        role: 'admin',
+        resending: false,
+        onResend: () => {},
+      }),
+    );
+    expect(withRole).toContain('Está pendiente como Manager.');
+    expect(withRole).toContain('un enlace nuevo con ese rol');
+    expect(voseoIn(withRole)).toEqual([]);
+
+    const busy = renderToStaticMarkup(
+      createElement(PendingInvitationNotice, {
+        email: 'beto@agencia.co',
+        resending: true,
+        onResend: () => {},
+      }),
+    );
+    expect(busy).toContain('Reenviando…');
+    expect(busy).toMatch(/<button[^>]* disabled=""/);
   });
 });

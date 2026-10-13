@@ -54,11 +54,11 @@ function recoveryCode(formData: FormData): string | null {
   return /^[0-9A-F]{10}$/.test(raw) ? raw : null;
 }
 
-const CODE_MISSING = 'Ingresá los 6 dígitos que muestra tu app de autenticación.';
+const CODE_MISSING = 'Ingresa los 6 dígitos que muestra tu app de autenticación.';
 // Guion que no corta (U+2011), como en el login: partido en dos renglones parecía dos códigos.
 const RECOVERY_CODE_MISSING =
-  'Revisá el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.';
-const PASSWORD_MISSING = 'Ingresá tu contraseña actual.';
+  'Revisa el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.';
+const PASSWORD_MISSING = 'Ingresa tu contraseña actual.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -106,7 +106,7 @@ function toEnrollment(body: unknown): EnrollResult {
   ) {
     return { ok: true, secret: body['secret'], otpauthUri: body['otpauthUri'] };
   }
-  return { error: 'No pudimos generar el código QR. Intentá de nuevo.' };
+  return { error: 'No pudimos generar el código QR. Inténtalo de nuevo.' };
 }
 
 function toCodes(body: unknown): CodesResult {
@@ -115,7 +115,7 @@ function toCodes(body: unknown): CodesResult {
     ? raw.filter((c): c is string => typeof c === 'string' && c.trim() !== '').map((c) => c.trim())
     : [];
   if (codes.length === 0) {
-    return { error: 'No recibimos los códigos de recuperación. Recargá la página.' };
+    return { error: 'No recibimos los códigos de recuperación. Recarga la página.' };
   }
   return { ok: true, recoveryCodes: codes };
 }
@@ -238,7 +238,7 @@ function alreadyGone(failure: ApiFailure, reason: string): boolean {
 /** Cierra UNA sesión propia de otro dispositivo (la actual se cierra con "Cerrar sesión"). */
 export async function revokeSessionAction(sessionId: string): Promise<ActionResult> {
   if (typeof sessionId !== 'string' || !UUID.test(sessionId)) {
-    return { error: 'No encontramos esa sesión. Recargá la página.' };
+    return { error: 'No encontramos esa sesión. Recarga la página.' };
   }
   const res = await callSecurityApi(`/auth/sessions/${sessionId}/revoke`);
   if (!res.ok && !alreadyGone(res.failure, 'SESSION_NOT_FOUND')) {
@@ -262,7 +262,7 @@ export async function revokeTrustedDeviceAction(
   current: boolean,
 ): Promise<ActionResult> {
   if (typeof deviceId !== 'string' || !UUID.test(deviceId)) {
-    return { error: 'No encontramos ese equipo. Recargá la página.' };
+    return { error: 'No encontramos ese equipo. Recarga la página.' };
   }
   const res = await callSecurityApi(`/auth/trusted-devices/${deviceId}/revoke`);
   if (!res.ok && !alreadyGone(res.failure, 'TRUSTED_DEVICE_NOT_FOUND')) {

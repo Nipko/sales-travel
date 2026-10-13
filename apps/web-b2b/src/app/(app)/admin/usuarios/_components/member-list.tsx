@@ -4,7 +4,9 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   CircleAlert,
   CirclePlay,
+  KeyRound,
   Lock,
+  LockOpen,
   LogOut,
   MoreHorizontal,
   RefreshCw,
@@ -16,7 +18,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useRef } from 'react';
+import { Fragment, useId, useRef } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { cn } from '../../../../../lib/cn';
 import { exactTime } from '../../../../../lib/tenant-admin-format';
@@ -27,6 +29,7 @@ import {
   grantableRoles,
   isSelf,
   memberAccess,
+  memberMenuGroups,
   memberName,
   memberStatus,
   mfaState,
@@ -189,7 +192,7 @@ export function MemberList({
           </p>
           <Button size="sm" className="mt-4" onClick={onInvite}>
             <UserPlus aria-hidden="true" />
-            Invitá a tu primer vendedor
+            Invita a tu primer vendedor
           </Button>
         </div>
       ) : filtered.length === 0 ? (
@@ -277,7 +280,7 @@ function MemberRow({
           <span className="truncate">{name}</span>
           {self ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
-              Vos
+              Tú
             </span>
           ) : null}
         </p>
@@ -291,6 +294,7 @@ function MemberRow({
           <MemberActions
             name={name}
             member={member}
+            now={now}
             busy={busy}
             onSetStatus={onSetStatus}
             onAction={onAction}
@@ -380,7 +384,11 @@ function MemberRow({
           {access.locked !== undefined ? (
             <span
               className={cn('flex items-center gap-1 text-[11px] font-medium', TONE_TEXT.danger)}
-              title="Demasiados intentos fallidos. Se desbloquea solo."
+              title={
+                actionable
+                  ? 'Demasiados intentos fallidos. Se desbloquea solo, o desde "Desbloquear cuenta" en sus acciones.'
+                  : 'Demasiados intentos fallidos. Se desbloquea solo.'
+              }
             >
               <Lock aria-hidden="true" className="size-3" />
               {access.locked}
@@ -418,20 +426,99 @@ function MemberRow({
 const ITEM =
   'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium text-[var(--color-fg)] outline-none transition-colors data-[highlighted]:bg-[var(--color-surface-muted)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50';
 
+const MENU_LABEL = 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-[var(--color-fg-subtle)]';
+
+const SEPARATOR = 'my-1 h-px bg-[var(--color-border)]';
+
+const ACTION_ICON: Readonly<Record<MemberAction, typeof KeyRound>> = {
+  'send-password-reset': KeyRound,
+  unlock: LockOpen,
+  'revoke-sessions': LogOut,
+  'reset-mfa': ShieldOff,
+};
+
+/**
+ * Lo de adentro del menú de un miembro: las acciones de soporte por grupo (Acceso, Seguridad) y, al
+ * final, suspender o reactivar. Aparte del menú para poder pintarlo abierto en un test.
+ *
+ * `onPick` recibe lo que hay que hacer: el menú lo corre recién al cerrarse (ver MemberActions).
+ */
+export function MemberActionItems({
+  member,
+  now,
+  onPick,
+  onSetStatus,
+  onAction,
+}: {
+  member: NetworkMember;
+  now: number;
+  onPick: (run: () => void) => () => void;
+  onSetStatus: (status: 'active' | 'suspended') => void;
+  onAction: (action: MemberAction) => void;
+}) {
+  const suspended = member.membershipStatus === 'suspended';
+  const groupId = useId();
+
+  return (
+    <>
+      {memberMenuGroups(member, now).map((group, i) => {
+        const headingId = `${groupId}-${i}`;
+        return (
+          <Fragment key={group.heading}>
+            {i > 0 ? <DropdownMenu.Separator className={SEPARATOR} /> : null}
+            <DropdownMenu.Group aria-labelledby={headingId}>
+              <DropdownMenu.Label id={headingId} className={MENU_LABEL}>
+                {group.heading}
+              </DropdownMenu.Label>
+              {group.items.map((item) => {
+                const Icon = ACTION_ICON[item.action];
+                return (
+                  <DropdownMenu.Item
+                    key={item.action}
+                    className={ITEM}
+                    disabled={item.disabled}
+                    onSelect={onPick(() => onAction(item.action))}
+                  >
+                    <Icon aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+                    {item.label}
+                  </DropdownMenu.Item>
+                );
+              })}
+            </DropdownMenu.Group>
+          </Fragment>
+        );
+      })}
+      <DropdownMenu.Separator className={SEPARATOR} />
+      <DropdownMenu.Item
+        className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
+        onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
+      >
+        {suspended ? (
+          <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+        ) : (
+          <UserMinus aria-hidden="true" className="size-4" />
+        )}
+        {suspended ? 'Reactivar' : 'Suspender'}
+      </DropdownMenu.Item>
+    </>
+  );
+}
+
 function MemberActions({
   name,
   member,
+  now,
   busy,
   onSetStatus,
   onAction,
 }: {
   name: string;
   member: NetworkMember;
+  now: number;
   busy: boolean;
   onSetStatus: (status: 'active' | 'suspended') => void;
   onAction: (action: MemberAction) => void;
 }) {
-  const suspended = member.membershipStatus === 'suspended';
   const triggerRef = useRef<HTMLButtonElement>(null);
   // La acción elegida corre cuando el menú ya cerró y devolvió el foco a su botón: si abriera su
   // confirmación antes, Radix le quitaba el foco al diálogo para devolvérselo al botón.
@@ -439,7 +526,6 @@ function MemberActions({
   const later = (action: () => void) => () => {
     pending.current = action;
   };
-  const canReset = member.mfaEnabled !== false;
 
   return (
     <DropdownMenu.Root modal={false}>
@@ -463,7 +549,7 @@ function MemberActions({
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-50 min-w-[220px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-lg)]"
+          className="z-50 min-w-[240px] max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[var(--shadow-lg)]"
           onCloseAutoFocus={(e) => {
             const action = pending.current;
             if (action === null) return;
@@ -473,33 +559,13 @@ function MemberActions({
             action();
           }}
         >
-          {/* Siempre disponible: `activeSessions` cuenta sólo las sesiones de este subárbol y el
-              miembro puede tener la suya abierta en otro de sus nodos. La acción las cierra todas,
-              y si no había ninguna el aviso lo dice. */}
-          <DropdownMenu.Item className={ITEM} onSelect={later(() => onAction('revoke-sessions'))}>
-            <LogOut aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
-            Cerrar sus sesiones
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            className={ITEM}
-            disabled={!canReset}
-            onSelect={later(() => onAction('reset-mfa'))}
-          >
-            <ShieldOff aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
-            {canReset ? 'Restablecer 2FA' : 'Restablecer 2FA (no lo tiene activo)'}
-          </DropdownMenu.Item>
-          <DropdownMenu.Separator className="my-1 h-px bg-[var(--color-border)]" />
-          <DropdownMenu.Item
-            className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
-            onSelect={later(() => onSetStatus(suspended ? 'active' : 'suspended'))}
-          >
-            {suspended ? (
-              <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
-            ) : (
-              <UserMinus aria-hidden="true" className="size-4" />
-            )}
-            {suspended ? 'Reactivar' : 'Suspender'}
-          </DropdownMenu.Item>
+          <MemberActionItems
+            member={member}
+            now={now}
+            onPick={later}
+            onSetStatus={onSetStatus}
+            onAction={onAction}
+          />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
