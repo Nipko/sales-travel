@@ -17,6 +17,9 @@ import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-car
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
+import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
+import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { requestedIssueResult } from './ticket-issue.plan.js';
 import { FlightTicketIssueService } from './ticket-issue.service.js';
@@ -392,7 +395,7 @@ d('emisión de tiquetes (0083) contra Postgres', () => {
         new RecordingAuditService().asService(),
         { getApplicableRules: () => Promise.resolve([]) } as unknown as PricingService,
       );
-      return { issues, orders, queue, issueTickets };
+      return { issues, orders, queue, issueTickets, registry };
     }
 
     it('pedir y emitir deja la orden emitida, sus tiquetes guardados y el evento en la misma transacción', async () => {
@@ -423,6 +426,37 @@ d('emisión de tiquetes (0083) contra Postgres', () => {
       expect(historial).toEqual([
         expect.objectContaining({ type: 'issue', status: 'success', retryable: false }),
       ]);
+    });
+
+    it('el controlador pide la emisión con la orden leída de Postgres (total BIGINT en texto)', async () => {
+      const s = servicio();
+      const o = await orden(agenciaA);
+      const controller = new OrdersController(
+        s.orders,
+        database,
+        {} as unknown as MailerService,
+        {} as unknown as BrandingService,
+        { resolve: () => Promise.resolve(agenciaA) } as unknown as ActiveTenantService,
+        s.registry,
+        {
+          handles: () => false,
+          capabilitiesOf: () => undefined,
+        } as unknown as HotelOrderReadsService,
+        tracking,
+        s.issues,
+      );
+      const fila = await s.orders.findById(agenciaA, o);
+      if (fila === undefined) throw new Error('sin orden');
+      // Lo que la pantalla manda: el total que vio, en número.
+      const cuerpo = { expectedTotalMinor: 34012, currency: fila.currency };
+
+      const pedido202 = await controller.issue(usuario, o, cuerpo);
+
+      expect(pedido202.status).toBe('pending');
+      expect(s.queue.issues).toEqual([expect.objectContaining({ orderId: o })]);
+      await expect(
+        controller.issue(usuario, o, { ...cuerpo, expectedTotalMinor: 34013 }),
+      ).rejects.toThrow('El total cambió desde que abriste la reserva.');
     });
 
     it('una cancelación no corre con una emisión en curso: 409 y no toma nada', async () => {

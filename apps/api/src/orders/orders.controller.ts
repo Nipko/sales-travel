@@ -34,6 +34,7 @@ import {
   IssueOrderSchema,
   PayOrderSchema,
   ReshopOrderSchema,
+  isSameMinorAmount,
   type IssueOrderInput,
 } from './dto.js';
 import {
@@ -424,13 +425,17 @@ export class OrdersController {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
-    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    // En español: el diálogo de emisión muestra este texto tal cual.
+    if (!row?.provider_order_id) throw new NotFoundException(ISSUE_CLAIM_MESSAGES['not-found']);
     if (row.status !== 'confirmed') {
       throw new ConflictException(ISSUE_CLAIM_MESSAGES['not-confirmed']);
     }
     this.assertSupports(row, 'issue');
     // Lo que el vendedor vio al confirmar es lo que se emite: si la orden cambió, se vuelve a mirar.
-    if (row.total_amount !== body.expectedTotalMinor || row.currency !== body.currency) {
+    if (
+      !isSameMinorAmount(row.total_amount, body.expectedTotalMinor) ||
+      row.currency !== body.currency
+    ) {
       throw new ConflictException(
         'El total cambió desde que abriste la reserva. Vuelve a consultarla antes de emitir.',
       );

@@ -53,3 +53,19 @@ export const IssueOrderSchema = z
   })
   .strict();
 export type IssueOrderInput = z.infer<typeof IssueOrderSchema>;
+
+/**
+ * ¿El total guardado de la orden es el que el vendedor vio? `orders.total_amount` es BIGINT (0023)
+ * y `pg` entrega BIGINT como TEXTO (`'34012'`), aunque `OrderRow` lo declare `number`: comparado
+ * con `!==` contra el número del cuerpo, toda emisión salía con «el total cambió». Se compara el
+ * valor entero, venga como número o como texto; cualquier otra forma no coincide.
+ */
+export function isSameMinorAmount(stored: unknown, expected: number): boolean {
+  if (!Number.isSafeInteger(expected)) return false;
+  if (typeof stored === 'number') return stored === expected;
+  if (typeof stored === 'bigint') return stored === BigInt(expected);
+  if (typeof stored === 'string' && /^-?\d{1,19}$/.test(stored)) {
+    return BigInt(stored) === BigInt(expected);
+  }
+  return false;
+}

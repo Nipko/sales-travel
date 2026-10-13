@@ -22,7 +22,7 @@ import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.fac
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { IssueOrderSchema } from './dto.js';
+import { IssueOrderSchema, isSameMinorAmount } from './dto.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { OrdersController } from './orders.controller.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
@@ -120,7 +120,9 @@ describe('POST /orders/:id/issue — compuertas', () => {
     ['no tiene PNR', fila({ provider_order_id: null })],
   ])('si la orden %s, 404', async (_caso, row) => {
     const b = banco({ row });
-    await expect(b.controller.issue(USER, ORDER, CUERPO)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(b.controller.issue(USER, ORDER, CUERPO)).rejects.toThrow(
+      new NotFoundException('La reserva no existe o no tiene localizador.'),
+    );
     expect(b.requestIssue).not.toHaveBeenCalled();
   });
 
@@ -158,6 +160,34 @@ describe('POST /orders/:id/issue — compuertas', () => {
     expect(b.requestIssue).not.toHaveBeenCalled();
   });
 
+  it('el total como lo entrega `pg` (BIGINT en texto) se compara por su valor', async () => {
+    // `orders.total_amount` es BIGINT (0023) y `pg` lo devuelve como texto: con `!==` contra el
+    // número del cuerpo, toda emisión salía con «el total cambió».
+    const enTexto = fila({ total_amount: '34012' as unknown as number });
+    const b = banco({ row: enTexto });
+    await expect(b.controller.issue(USER, ORDER, CUERPO)).resolves.toEqual({
+      operationId: 'op-1',
+      status: 'pending',
+    });
+    expect(b.requestIssue).toHaveBeenCalledOnce();
+
+    const otro = banco({ row: fila({ total_amount: '34013' as unknown as number }) });
+    await expect(otro.controller.issue(USER, ORDER, CUERPO)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(otro.requestIssue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['texto con decimales', '34012.00'],
+    ['texto vacío', ''],
+    ['nulo', null],
+  ])('un total guardado que no es un entero (%s) no coincide: 409', async (_caso, total) => {
+    const b = banco({ row: fila({ total_amount: total as unknown as number }) });
+    await expect(b.controller.issue(USER, ORDER, CUERPO)).rejects.toBeInstanceOf(ConflictException);
+    expect(b.requestIssue).not.toHaveBeenCalled();
+  });
+
   it('sin el servicio de emisión cableado, 503 en vez de un 500', async () => {
     await expect(
       banco({ sinEmision: true }).controller.issue(USER, ORDER, CUERPO),
@@ -186,6 +216,21 @@ describe('POST /orders/:id/issue — el cuerpo (Zod estricto)', () => {
     ['sin moneda', { expectedTotalMinor: 34012 }],
   ])('rechaza %s', (_caso, cuerpo) => {
     expect(() => pipe.transform(cuerpo)).toThrow();
+  });
+});
+
+describe('isSameMinorAmount — el total guardado contra el que vio el vendedor', () => {
+  it.each([
+    [34012, 34012, true],
+    ['34012', 34012, true],
+    [34012n, 34012, true],
+    ['9007199254740993', Number.MAX_SAFE_INTEGER, false],
+    ['34012', 34013, false],
+    [' 34012', 34012, false],
+    [undefined, 0, false],
+    [34012, 34012.5, false],
+  ])('%s contra %s → %s', (guardado, visto, igual) => {
+    expect(isSameMinorAmount(guardado, visto)).toBe(igual);
   });
 });
 
