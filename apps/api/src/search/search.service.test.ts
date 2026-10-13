@@ -609,6 +609,23 @@ describe('SearchService.searchFlights', () => {
       expect(res.offers).toHaveLength(2);
     });
 
+    it("las tarifas de una cuenta de pruebas no cuentan para saltarse el 'fallback'", async () => {
+      // Cinco tarifas de pruebas en la primera ola no son cinco tarifas vendibles: el respaldo
+      // real tiene que salir igual, o el vendedor sólo vería lo que no emite un tiquete válido.
+      const muchas = [1, 2, 3, 4, 5].map((n) => offer({ id: `offer-${n}` }));
+      const b = banco({
+        providers: [
+          { code: PRINCIPAL, offers: muchas, providerEnvironment: 'test' },
+          { code: 'alfa-air', callPolicy: 'fallback' },
+        ],
+      });
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(b.llamadas('alfa-air')).toBe(1);
+      expect(res.offers.some((o) => o.provider.name === 'alfa-air')).toBe(true);
+    });
+
     it('si la ola de fallback también falla, el error queda visible en `providers`', async () => {
       const b = banco({
         providers: [

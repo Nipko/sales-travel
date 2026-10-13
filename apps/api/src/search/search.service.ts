@@ -13,7 +13,7 @@ import {
   type SkippedProvider,
   type UnavailableProvider,
 } from '../providers/provider.types.js';
-import { stampProviderEnvironment } from '../providers/provider-environment.js';
+import { isTestOffer, stampProviderEnvironment } from '../providers/provider-environment.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService, type ProviderSearchSlice } from './search-telemetry.service.js';
@@ -269,7 +269,9 @@ export class SearchService {
     for (const f of primera.failed) failures.set(f.code, f.reason);
 
     if (olaDos.length > 0) {
-      if (items.length < FALLBACK_MIN_OFFERS) {
+      // Sólo cuenta lo que se puede vender: diez tarifas de una cuenta de pruebas no le ahorran
+      // al vendedor el proveedor de respaldo real, porque ninguna emite un tiquete válido.
+      if (items.filter((offer) => !isTestOffer(offer)).length < FALLBACK_MIN_OFFERS) {
         const segunda = await fanOut(
           olaDos.map((p) => this.toRun(p, criteria, tenantId, counts, durations)),
         );

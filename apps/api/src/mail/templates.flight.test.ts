@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   TEST_CONTENT_NOTICE,
   TEST_CONTENT_SUBJECT_PREFIX,
+  TEST_QUOTE_NOTICE,
   orderConfirmationEmailHtml,
+  quotationEmailHtml,
 } from './templates.js';
 
 /**
@@ -46,6 +48,35 @@ describe('orderConfirmationEmailHtml — reserva de prueba', () => {
       expect(mail.subject).toBe('Reserva registrada #12 · PNR ABC123');
       expect(mail.html).not.toContain(TEST_CONTENT_NOTICE);
       expect(mail.text).not.toContain(TEST_CONTENT_NOTICE);
+    }
+  });
+});
+
+describe('quotationEmailHtml — tarifa de una cuenta de pruebas', () => {
+  const COTIZACION = {
+    quoteNumber: 31,
+    customerName: 'Ana',
+    searchCriteria: { origin: 'BOG', destination: 'LIM', departureDate: '2026-12-01' },
+    selectedOffer: { total: { amountMinor: 50_000, currency: 'USD' } },
+  };
+
+  it('el cliente la recibe marcada en el asunto, arriba del cuerpo y en el texto plano', () => {
+    const mail = quotationEmailHtml({ ...COTIZACION, testContent: true });
+
+    expect(mail.subject).toBe('[PRUEBA] Tu cotización de vuelo #31 · BOG → LIM');
+    expect(mail.html).toContain(TEST_QUOTE_NOTICE);
+    expect(mail.html.indexOf(TEST_QUOTE_NOTICE)).toBeLessThan(mail.html.indexOf('Hola Ana'));
+    expect(mail.text.startsWith(`${TEST_QUOTE_NOTICE}\n\nCotización #31`)).toBe(true);
+  });
+
+  it('una cotización real no cambia', () => {
+    for (const mail of [
+      quotationEmailHtml(COTIZACION),
+      quotationEmailHtml({ ...COTIZACION, testContent: false }),
+    ]) {
+      expect(mail.subject).toBe('Tu cotización de vuelo #31 · BOG → LIM');
+      expect(mail.html).not.toContain(TEST_QUOTE_NOTICE);
+      expect(mail.text.startsWith('Cotización #31')).toBe(true);
     }
   });
 });

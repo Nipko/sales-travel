@@ -67,13 +67,39 @@ function row(label: string, value: string): string {
   </tr>`;
 }
 
+/**
+ * Asunto de un correo con contenido del entorno de pruebas del proveedor: la confirmación de una
+ * reserva de prueba que el vendedor decidió reenviar, o la cotización de una tarifa de pruebas.
+ */
+export const TEST_CONTENT_SUBJECT_PREFIX = '[PRUEBA] ';
+
+/** El aviso del cuerpo de una reserva de prueba, el mismo en HTML y en texto plano. */
+export const TEST_CONTENT_NOTICE = 'Reserva de prueba: no es un tiquete válido para viajar.';
+
+/** El aviso del cuerpo de una cotización con una tarifa de pruebas. */
+export const TEST_QUOTE_NOTICE =
+  'Cotización de prueba: esta tarifa no se puede reservar como un tiquete válido para viajar.';
+
+/** Ámbar con texto oscuro (#78350f sobre #fffbeb): contraste AA holgado en cualquier cliente. */
+function testContentBanner(notice: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;margin-bottom:18px">
+      <tr><td style="padding:12px 18px;font-size:13px;line-height:1.5;color:#78350f;font-weight:700">${esc(notice)}</td></tr>
+    </table>`;
+}
+
 export function quotationEmailHtml(input: {
   quoteNumber: number;
   customerName: string | null;
   searchCriteria: unknown;
   selectedOffer: unknown;
   brand?: EmailBrand | null;
+  /**
+   * `true` = la tarifa la cotizó una cuenta de pruebas del proveedor. Al cliente le llega marcada
+   * en el asunto y en el cuerpo: si respondiera para reservarla, no tendría un tiquete válido.
+   */
+  testContent?: boolean;
 }): { subject: string; html: string; text: string } {
+  const testContent = input.testContent === true;
   const sc = obj(input.searchCriteria);
   const offer = obj(input.selectedOffer);
   const total = obj(offer['total']);
@@ -90,6 +116,7 @@ export function quotationEmailHtml(input: {
   const hello = input.customerName ? `Hola ${esc(input.customerName)},` : 'Hola,';
 
   const body = `
+    ${testContent ? testContentBanner(TEST_QUOTE_NOTICE) : ''}
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${hello}<br>Te compartimos tu cotización de vuelo:</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #f4f4f5;border-bottom:1px solid #f4f4f5;margin-bottom:18px">
       ${row('Cotización', `#${input.quoteNumber}`)}
@@ -106,17 +133,11 @@ export function quotationEmailHtml(input: {
     <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">La tarifa está sujeta a disponibilidad y puede cambiar. Responde este correo para confirmar tu reserva.</p>`;
 
   return {
-    subject: `Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
+    subject: `${testContent ? TEST_CONTENT_SUBJECT_PREFIX : ''}Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
     html: layout('Cotización de vuelo', body, input.brand),
-    text: `Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Responde para reservar.`,
+    text: `${testContent ? `${TEST_QUOTE_NOTICE}\n\n` : ''}Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Responde para reservar.`,
   };
 }
-
-/** Asunto de la confirmación de una reserva de prueba que el vendedor decidió reenviar. */
-export const TEST_CONTENT_SUBJECT_PREFIX = '[PRUEBA] ';
-
-/** El aviso del cuerpo, el mismo en HTML y en texto plano. */
-export const TEST_CONTENT_NOTICE = 'Reserva de prueba: no es un tiquete válido para viajar.';
 
 export function orderConfirmationEmailHtml(input: {
   orderNumber: number;
@@ -160,12 +181,7 @@ export function orderConfirmationEmailHtml(input: {
     .filter(Boolean)
     .join(', ');
 
-  // Ámbar con texto oscuro (#78350f sobre #fffbeb): contraste AA holgado en cualquier cliente.
-  const testBanner = testContent
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;margin-bottom:18px">
-      <tr><td style="padding:12px 18px;font-size:13px;line-height:1.5;color:#78350f;font-weight:700">${esc(TEST_CONTENT_NOTICE)}</td></tr>
-    </table>`
-    : '';
+  const testBanner = testContent ? testContentBanner(TEST_CONTENT_NOTICE) : '';
 
   const body = `
     ${testBanner}

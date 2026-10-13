@@ -56,6 +56,10 @@ const StoredOfferEnvironmentSchema = z.object({
  * Sólo `test` explícito cuenta como prueba. Cualquier otra cosa (sin campo, `live`, un valor que no
  * se reconoce, otra vertical) se lee como real: el valor lo escribe siempre el servidor al crear la
  * orden, así que un valor desconocido no es algo que un cliente pueda colar.
+ *
+ * También lee la oferta guardada en una cotización. Ahí la escribió el navegador (con la marca que
+ * le puso la búsqueda), así que sólo sirve para AVISAR —un `test` falso no le quita nada a nadie—,
+ * nunca para decidir algo que una reserva real necesite.
  */
 export function isTestSelectedOffer(selectedOffer: unknown): boolean {
   const parsed = StoredOfferEnvironmentSchema.safeParse(selectedOffer);

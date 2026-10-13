@@ -4,7 +4,9 @@ import { ArrowRight, Clock, FileText, Plane, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
+import { TestContentBadge } from '../../../../components/test-content-badge';
 import { cn } from '../../../../lib/cn';
+import { isTestFare } from '../../../../lib/test-content';
 
 interface QuotationSummary {
   id: string;
@@ -20,6 +22,8 @@ interface QuotationSummary {
     currency: string;
   };
   selectedOffer: {
+    /** `environment: 'test'` = tarifa de una cuenta de pruebas (ver `lib/test-content.ts`). */
+    provider?: { environment?: string };
     total: { amountMinor: number; currency: string };
     expiresAtSource?: 'provider' | 'platform-policy';
     pricing?: { finalMinor: number };
@@ -197,7 +201,7 @@ export default function QuotationsListPage() {
 
                 {/* Info */}
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-sm font-medium text-[var(--color-fg)]">
                       #{q.quoteNumber} · {q.searchCriteria.origin} → {q.searchCriteria.destination}
                     </p>
@@ -206,6 +210,9 @@ export default function QuotationsListPage() {
                         I/V
                       </span>
                     )}
+                    {/* La lista también: una cotización de una tarifa de pruebas no se le manda
+                        a un cliente como si fuera real. */}
+                    {isTestFare(q.selectedOffer) ? <TestContentBadge /> : null}
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-xs text-[var(--color-fg-muted)]">
                     <span>{q.searchCriteria.departureDate}</span>
