@@ -29,7 +29,6 @@ import {
   PASSWORD_RESET_PENDING_HINT,
   PASSWORD_RESET_PENDING_LABEL,
   canActOn,
-  grantableRoles,
   isSelf,
   memberAccess,
   memberMenuGroups,
@@ -42,7 +41,7 @@ import {
   type NetworkMember,
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
-import { INVITABLE_ROLES, ROLE_CONFIG, roleLabel } from './roles';
+import { ROLE_CONFIG, roleLabel, type InvitableRole } from './roles';
 import { useNow } from './seats-ui';
 
 type MembersState =
@@ -123,6 +122,7 @@ export function MemberList({
   state,
   search,
   actor,
+  roles,
   tenantName,
   busyUserId,
   memberError,
@@ -136,6 +136,8 @@ export function MemberList({
   state: MembersState;
   search: string;
   actor: TeamActor;
+  /** Los roles que puede dar en este nodo: los del actor y los que admite el tipo de nodo. */
+  roles: readonly InvitableRole[];
   tenantName: string | undefined;
   busyUserId: string | null;
   /**
@@ -224,6 +226,7 @@ export function MemberList({
                 key={m.userId}
                 member={m}
                 actor={actor}
+                roles={roles}
                 now={now}
                 busy={busyUserId === m.userId}
                 error={memberError?.userId === m.userId ? memberError.message : undefined}
@@ -243,6 +246,7 @@ export function MemberList({
 function MemberRow({
   member,
   actor,
+  roles,
   now,
   busy,
   error,
@@ -253,6 +257,7 @@ function MemberRow({
 }: {
   member: NetworkMember;
   actor: TeamActor;
+  roles: readonly InvitableRole[];
   now: number;
   busy: boolean;
   error: string | undefined;
@@ -263,7 +268,6 @@ function MemberRow({
 }) {
   const self = isSelf(actor, member);
   const actionable = canActOn(actor, member);
-  const roles = grantableRoles(INVITABLE_ROLES, actor);
   const roleEditable = actionable && roles.length > 0;
   const status = memberStatus(member);
   const access = memberAccess(member, now);

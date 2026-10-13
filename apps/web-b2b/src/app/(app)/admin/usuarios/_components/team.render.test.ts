@@ -4,15 +4,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { parseSeatsView, type SeatsView } from '../../../../../lib/tenant-admin-seats';
 import {
+  grantableRoles,
   parseInvitations,
   parseMembers,
   teamActorOf,
   type NetworkMember,
+  type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
 import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
 import { PendingInvitationNotice } from './invite-dialog';
 import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
+import { invitableRolesIn } from './roles';
 import { SeatsCard, type SeatsState } from './seats-ui';
 
 /*
@@ -151,9 +154,13 @@ const MEMBER = {
   activeSessions: 0,
 };
 
+const CONSOLIDATOR_ADMIN = teamActorOf('me', [{ role: 'consolidator_admin', status: 'active' }]);
+
 function members(
   items: readonly NetworkMember[] | 'error' | 'loading',
   memberError: MemberRowError | null = null,
+  actor: TeamActor = CONSOLIDATOR_ADMIN,
+  tenantType = 'agency',
 ): string {
   const state =
     items === 'error'
@@ -168,7 +175,8 @@ function members(
     createElement(MemberList, {
       state,
       search: '',
-      actor: teamActorOf('me', [{ role: 'consolidator_admin', status: 'active' }]),
+      actor,
+      roles: grantableRoles(invitableRolesIn(tenantType), actor),
       tenantName: 'Agencia Norte',
       busyUserId: null,
       memberError,
@@ -267,6 +275,16 @@ describe('MemberList', () => {
     for (const html of [members([]), members('error'), members(list)]) {
       expect(voseoIn(html)).toEqual([]);
     }
+  });
+
+  it('en un consolidador, el superadmin puede promover a admin de consolidador desde la fila', () => {
+    const superadmin = teamActorOf('root', [{ role: 'superadmin', status: 'active' }]);
+    const list = parseMembers({ users: [MEMBER] }) ?? [];
+    const option = '<option value="consolidator_admin">Admin de consolidador</option>';
+    expect(members(list, null, superadmin, 'consolidator')).toContain(option);
+    expect(members(list, null, superadmin, 'agency')).not.toContain('consolidator_admin');
+    // Quien ya es admin de consolidador no da su propio rol, ni en su consolidador.
+    expect(members(list, null, CONSOLIDATOR_ADMIN, 'consolidator')).not.toContain(option);
   });
 });
 

@@ -26,13 +26,16 @@ export function roleLabel(role: string): string {
 
 /**
  * Roles que se pueden invitar o asignar. Espejo de ASSIGNABLE_ROLES en el backend, con lo que
- * puede hacer cada uno dicho en una línea para quien invita.
+ * puede hacer cada uno dicho en una línea para quien invita. Cada quien ve sólo los que están por
+ * debajo del suyo (`grantableRoles`): el de consolidador, en la práctica, sólo el superadmin.
  */
-export const INVITABLE_ROLES: readonly {
+export interface InvitableRole {
   readonly value: string;
   readonly label: string;
   readonly hint: string;
-}[] = [
+}
+
+export const INVITABLE_ROLES: readonly InvitableRole[] = [
   { value: 'vendedor', label: 'Vendedor', hint: 'Busca, cotiza y reserva para sus clientes.' },
   {
     value: 'admin',
@@ -50,8 +53,23 @@ export const INVITABLE_ROLES: readonly {
     hint: 'Administra el nodo y su red. Se le exige verificación en dos pasos.',
   },
   {
+    value: 'consolidator_admin',
+    label: 'Admin de consolidador',
+    hint: 'Administra el consolidador y toda su red de agencias. Se le exige verificación en dos pasos.',
+  },
+  {
     value: 'cliente_final',
     label: 'Cliente',
     hint: 'Sólo ve sus propias reservas; no entra al panel de gestión.',
   },
 ];
+
+/**
+ * Los que se ofrecen en un nodo de tipo `tenantType`: el de consolidador, sólo en un consolidador.
+ * En una agencia su descripción no sería cierta y en la raíz administraría toda la plataforma. El
+ * API no lo impide (lo decide el superadmin); la pantalla no lo sugiere donde no corresponde.
+ */
+export function invitableRolesIn(tenantType: string | undefined): readonly InvitableRole[] {
+  if (tenantType === 'consolidator') return INVITABLE_ROLES;
+  return INVITABLE_ROLES.filter((r) => r.value !== 'consolidator_admin');
+}

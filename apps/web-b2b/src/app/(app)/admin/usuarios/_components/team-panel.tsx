@@ -42,7 +42,7 @@ import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
 import { InviteDialog } from './invite-dialog';
 import { MemberList, type MemberRowError } from './member-list';
-import { INVITABLE_ROLES, roleLabel } from './roles';
+import { invitableRolesIn, roleLabel } from './roles';
 import { SeatsCard, useSeatsView } from './seats-ui';
 
 /**
@@ -390,7 +390,9 @@ export function TeamPanel({
   }
 
   const tenants = network.status === 'ready' ? network.tenants : [];
-  const selectedName = tenants.find((t) => t.id === tenantId)?.name;
+  const selected = tenants.find((t) => t.id === tenantId);
+  const selectedName = selected?.name;
+  const roles = grantableRoles(invitableRolesIn(selected?.tenantType), actor);
 
   return (
     <div className="space-y-6">
@@ -522,6 +524,7 @@ export function TeamPanel({
           state={members}
           search={search}
           actor={actor}
+          roles={roles}
           tenantName={selectedName}
           busyUserId={busyUserId}
           memberError={memberError}
@@ -541,7 +544,7 @@ export function TeamPanel({
         <InviteDialog
           tenantId={tenantId}
           tenantName={selectedName}
-          roles={grantableRoles(INVITABLE_ROLES, actor)}
+          roles={roles}
           pendingRoleOf={(id) =>
             invitations.status === 'ready'
               ? invitations.items.find((i) => i.id === id)?.role
