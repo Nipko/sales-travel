@@ -124,6 +124,23 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/** Medio par UTF-16 sin su otra mitad. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * Texto que `jsonb` acepta. Postgres rechaza la llamada ENTERA ante un medio par UTF-16 suelto
+ * (22P02) o un `\u0000` (22P05), y un recorte por largo en el ACL puede partir un emoji en dos: sin
+ * esto, ese hotel fallaría al guardar en cada intento y se le volvería a pedir al proveedor cada
+ * vez que vence la caché de fallos, sin quedar nunca anotado.
+ */
+function jsonbText(value: string): string {
+  return value.replace(LONE_SURROGATE, '').replaceAll('\u0000', '');
+}
+
+function jsonbTextOrNull(value: string | null): string | null {
+  return value === null ? null : jsonbText(value);
+}
+
 /** Filas por llamada a `hotel_catalog_store_contents` (su tope es 50). */
 const CONTENT_STORE_CHUNK = 50;
 
@@ -357,9 +374,9 @@ export class HotelCatalogStore {
 
   /**
    * Reemplaza las habitaciones del hotel en ese idioma y anota qué respondió el proveedor, por
-   * `hotel_catalog_store_room_contents` (0070). Las habitaciones van recortadas a su tope y sólo con
-   * `rooms`; las que la función no acepta vuelven contadas en `rejected`. Lanza si el hotel no está
-   * en el catálogo de ese proveedor.
+   * `hotel_catalog_store_room_contents` (0070). Las habitaciones van recortadas a su tope, sólo con
+   * `rooms` y con texto que `jsonb` acepta; las que la función no acepta vuelven contadas en
+   * `rejected`. Lanza si el hotel no está en el catálogo de ese proveedor.
    */
   async storeRoomContents(
     providerCode: string,
@@ -371,13 +388,13 @@ export class HotelCatalogStore {
     const payload =
       outcome === 'rooms'
         ? rooms.slice(0, HOTEL_ROOM_CONTENT_MAX_ROOMS).map((room) => ({
-            roomKey: room.roomKey,
-            roomRef: room.roomRef,
-            nameKey: room.nameKey,
-            name: room.name,
-            sizeText: room.sizeText,
-            description: room.description,
-            images: [...room.images],
+            roomKey: jsonbText(room.roomKey),
+            roomRef: jsonbTextOrNull(room.roomRef),
+            nameKey: jsonbText(room.nameKey),
+            name: jsonbText(room.name),
+            sizeText: jsonbTextOrNull(room.sizeText),
+            description: jsonbTextOrNull(room.description),
+            images: room.images.map(jsonbText),
           }))
         : [];
     const result = await sql<{ stored: number | string; rejected: number | string }>`

@@ -229,6 +229,20 @@ d('contenido por habitación contra Postgres, como app_user (0070)', () => {
     ]);
   });
 
+  it('un emoji partido por el recorte del ACL no tumba el guardado de todo el hotel', async () => {
+    const res = await store.storeRoomContents(PROVEEDOR, H(2), 'en', 'rooms', [
+      habitacion(1, { description: `Vista al jardín ${'\uD83D'}`, name: `Deluxe ${'\uDE00'}` }),
+      habitacion(2),
+    ]);
+
+    expect(res).toEqual({ stored: 2, rejected: 0 });
+    const filas = await store.roomContents(PROVEEDOR, H(2), ['en']);
+    expect(filas.map((f) => [f.name, f.description])).toEqual([
+      ['Deluxe', 'Vista al jardín'],
+      ['Deluxe Room 2', 'Vista al jardín; cama king'],
+    ]);
+  });
+
   it('si llegaron habitaciones y no entró ninguna, queda `unreadable`, no `rooms` con cero', async () => {
     expect(await guardarCrudo(H(3), 'pt', 'rooms', [habitacion(1, { roomKey: '0' })])).toEqual({
       stored: 0,

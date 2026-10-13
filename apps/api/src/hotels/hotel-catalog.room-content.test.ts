@@ -179,6 +179,36 @@ describe('storeRoomContents: por la función de 0070', () => {
     expect(JSON.parse(String(none?.parameters[4]))).toEqual([]);
   });
 
+  it('un emoji partido por un recorte o un `\\u0000` no tumban la llamada: salen del texto', async () => {
+    const { db, store } = tienda();
+    const partida = {
+      ...habitacion(1),
+      roomRef: null,
+      nameKey: 'suite\u0000',
+      name: `Suite ${'\uD83D'}`,
+      sizeText: '30 m2 \uDE00',
+      description: `Vista 😀 al mar ${'\uD83D'}`,
+      images: ['https://img.example/1.jpg\u0000'],
+    };
+
+    await store.storeRoomContents(PROVEEDOR, HOTEL, 'es', 'rooms', [partida]);
+
+    const [q] = db.consultasMarcadas('store-room-contents');
+    const json = String(q?.parameters[4]);
+    expect(json).not.toMatch(/\\u(d[89ab][0-9a-f]{2}|d[c-f][0-9a-f]{2}|0000)/i);
+    expect(JSON.parse(json)).toEqual([
+      {
+        ...habitacion(1),
+        roomRef: null,
+        nameKey: 'suite',
+        name: 'Suite ',
+        sizeText: '30 m2 ',
+        description: 'Vista 😀 al mar ',
+        images: ['https://img.example/1.jpg'],
+      },
+    ]);
+  });
+
   it('los conteos de la base se leen como números; sin fila, cero', async () => {
     expect(
       await tienda({ guardar: [{ stored: '2', rejected: '1' }] }).store.storeRoomContents(
