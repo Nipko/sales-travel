@@ -151,7 +151,7 @@ export function actionDialogCopy(
     case 'retry-cancel':
       return {
         title: 'Reintentar la cancelación',
-        description: `La agencia ya pidió cancelar y el intento falló antes de llegar al proveedor. Se reintenta ese mismo pedido, en nombre de ${node}.`,
+        description: `Ya se pidió cancelar esta reserva y el intento falló antes de llegar al proveedor. Se reintenta ese mismo pedido, en nombre de ${node}.`,
         confirmLabel: 'Reintentar',
         pendingLabel: 'Reintentando…',
         destructive: false,
@@ -251,13 +251,90 @@ export function parseConfirmationSent(
   return { sent, to: to.slice(0, 254) };
 }
 
+/**
+ * Lo que respondió el proveedor al consultarlo, como lo devuelve el API (sin pasajeros). En vuelos
+ * no queda guardado en la reserva: si la pantalla no lo muestra, la consulta no sirvió de nada.
+ */
+export interface ProviderReadingView {
+  readonly found: boolean;
+  /** Su estado en el proveedor, en su código; `null` si no lo informó. */
+  readonly status: string | null;
+  readonly airlineLocators: readonly { readonly carrierCode: string; readonly locator: string }[];
+  readonly ticketNumbers: readonly string[];
+  readonly hotelConfirmationNumber: string | null;
+  /** ISO 8601; `null` si no vino o no se lee. */
+  readonly readAt: string | null;
+}
+
 export interface RetrieveResult {
   /** Si el proveedor tiene la reserva. */
   readonly found: boolean;
   /** Su estado en el proveedor, en su código; `null` si no lo informó. */
   readonly providerStatus: string | null;
+  /** La lectura completa, para mostrarla en la ficha. */
+  readonly reading: ProviderReadingView;
   /** La ficha releída; `undefined` si no vino o no se pudo leer (se vuelve a pedir). */
   readonly detail: PlatformOrderDetail | undefined;
+}
+
+/** Un código corto del proveedor (estado, localizador, tiquete), recortado; `null` si no hay. */
+function shortCode(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed.slice(0, max);
+}
+
+const READING_MAX_LIST = 50;
+
+function parseAirlineLocators(value: unknown): ProviderReadingView['airlineLocators'] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, READING_MAX_LIST).flatMap((item) => {
+    const r = asRecord(item);
+    const carrierCode = shortCode(r?.['carrierCode'], 3);
+    const locator = shortCode(r?.['locator'], 20);
+    return carrierCode === null || locator === null ? [] : [{ carrierCode, locator }];
+  });
+}
+
+function parseTicketNumbers(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, READING_MAX_LIST).flatMap((item) => {
+    const ticket = shortCode(item, 20);
+    return ticket === null ? [] : [ticket];
+  });
+}
+
+/** La lectura del proveedor en la ficha: qué dijo, su código y lo que trajo. */
+export interface ProviderReadingLines {
+  readonly headline: string;
+  /** El estado en el código del proveedor, si lo informó. */
+  readonly code: string | null;
+  readonly details: readonly string[];
+}
+
+export function providerReadingLinesOf(reading: ProviderReadingView): ProviderReadingLines {
+  if (!reading.found) {
+    return { headline: 'El proveedor no encuentra la reserva.', code: null, details: [] };
+  }
+  const details: string[] = [];
+  if (reading.airlineLocators.length > 0) {
+    const locators = reading.airlineLocators.map((l) => `${l.carrierCode} ${l.locator}`);
+    details.push(`Localizadores de aerolínea: ${locators.join(', ')}`);
+  }
+  if (reading.ticketNumbers.length > 0) {
+    details.push(`Tiquetes: ${reading.ticketNumbers.join(', ')}`);
+  }
+  if (reading.hotelConfirmationNumber !== null) {
+    details.push(`Confirmación del hotel: ${reading.hotelConfirmationNumber}`);
+  }
+  return {
+    headline:
+      reading.status === null
+        ? 'El proveedor tiene la reserva, sin estado informado.'
+        : 'El proveedor tiene la reserva.',
+    code: reading.status,
+    details,
+  };
 }
 
 /** `POST …/retrieve`: la lectura del proveedor y la ficha ya actualizada. */
@@ -265,10 +342,19 @@ export function parseRetrieveResult(body: unknown): RetrieveResult | undefined {
   const r = asRecord(body);
   const reading = asRecord(r?.['reading']);
   if (reading === undefined || typeof reading['found'] !== 'boolean') return undefined;
-  const status = reading['status'];
+  const status = shortCode(reading['status'], 60);
+  const readAt = reading['readAt'];
   return {
     found: reading['found'],
-    providerStatus: typeof status === 'string' && status.trim() !== '' ? status.slice(0, 60) : null,
+    providerStatus: status,
+    reading: {
+      found: reading['found'],
+      status,
+      airlineLocators: parseAirlineLocators(reading['airlineLocators']),
+      ticketNumbers: parseTicketNumbers(reading['ticketNumbers']),
+      hotelConfirmationNumber: shortCode(reading['hotelConfirmationNumber'], 60),
+      readAt: typeof readAt === 'string' && !Number.isNaN(Date.parse(readAt)) ? readAt : null,
+    },
     detail: r?.['detail'] === null ? undefined : parsePlatformOrderDetail(r?.['detail']),
   };
 }
@@ -319,13 +405,26 @@ export const RETRY_SENT_TOAST = 'Reintento enviado. Te avisamos el resultado en 
 export type ConsoleCancelOutcome =
   /** El proveedor la aceptó: cancelada, o en curso si todavía la procesa. */
   | { readonly kind: 'done'; readonly inProgress: boolean }
-  /** El proveedor no la aceptó, o el servidor la rechazó: la reserva sigue como estaba. */
+  /**
+   * Llegó a decidirse y no canceló: el proveedor la rechazó, no confirmó si se aplicó, o el servidor
+   * encontró otro intento en curso. La reserva pudo cambiar (un intento fallido nuevo, o por
+   * conciliar): la ficha se relee, y su historial dice en qué quedó.
+   */
+  | { readonly kind: 'not-cancelled'; readonly message: string }
+  /** Rechazado antes de tocar nada (el motivo, el número escrito, permisos): se corrige y se reenvía. */
   | { readonly kind: 'failed'; readonly message: string }
   /** Sin respuesta: pudo haber salido. Nunca se ofrece repetirla sin mirar el estado. */
   | { readonly kind: 'unknown'; readonly message: string };
 
 export const CANCEL_UNKNOWN_MESSAGE =
   'No recibimos la respuesta y la cancelación pudo haber salido. No la repitas: espera unos minutos y revisa el estado de la reserva.';
+
+/**
+ * Un `success: false` no dice si la reserva sigue vigente: también es la respuesta de una cancelación
+ * que el proveedor no confirmó y que hay que conciliar. Lo dice el historial de la ficha.
+ */
+export const CANCEL_NOT_DONE_MESSAGE =
+  'El proveedor no confirmó la cancelación. Revisa el historial de operaciones de la ficha antes de volver a intentar: ahí ves si la reserva sigue vigente o si hay que conciliarla con el proveedor.';
 
 /** Estados en que el pedido pudo haber llegado al proveedor aunque no haya respuesta. */
 function unanswered(status: number): boolean {
@@ -334,7 +433,9 @@ function unanswered(status: number): boolean {
 
 /**
  * Qué pasó con `POST …/cancel` o `…/operations/:opId/retry`. Un 200 no siempre es "cancelada": el
- * proveedor puede rechazarla (`success: false`) o seguir procesándola (`settlement: in-progress`).
+ * proveedor puede no aceptarla o no confirmarla (`success: false`) o seguir procesándola
+ * (`settlement: in-progress`). Un 409 es el servidor que la frenó por el estado de la reserva (otro
+ * intento en curso, uno sin verificar) o después de enviarla: también se relee la ficha.
  */
 export function consoleCancelOutcomeOf(status: number, body: unknown): ConsoleCancelOutcome {
   if (unanswered(status)) return { kind: 'unknown', message: CANCEL_UNKNOWN_MESSAGE };
@@ -343,13 +444,7 @@ export function consoleCancelOutcomeOf(status: number, body: unknown): ConsoleCa
     if (typeof r['success'] !== 'boolean') {
       return { kind: 'unknown', message: CANCEL_UNKNOWN_MESSAGE };
     }
-    if (!r['success']) {
-      return {
-        kind: 'failed',
-        message:
-          'El proveedor no aceptó la cancelación: la reserva sigue vigente. Revisa su política antes de volver a intentar.',
-      };
-    }
+    if (!r['success']) return { kind: 'not-cancelled', message: CANCEL_NOT_DONE_MESSAGE };
     const warnings = Array.isArray(r['warnings']) ? r['warnings'] : [];
     return {
       kind: 'done',
@@ -358,10 +453,8 @@ export function consoleCancelOutcomeOf(status: number, body: unknown): ConsoleCa
     };
   }
   const error = r['error'];
-  return {
-    kind: 'failed',
-    message: actionErrorMessage(status, typeof error === 'string' ? error : undefined),
-  };
+  const message = actionErrorMessage(status, typeof error === 'string' ? error : undefined);
+  return status === 409 ? { kind: 'not-cancelled', message } : { kind: 'failed', message };
 }
 
 export function cancelDoneToast(orderNumber: number, inProgress: boolean): string {

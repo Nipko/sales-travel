@@ -191,6 +191,59 @@ describe('la ficha con la post-venta', () => {
     expect(button(html, 'Reintentar')).toBeUndefined();
   });
 
+  it('un vuelo consultado: lo que respondió el proveedor, aclarando que no queda guardado', () => {
+    const before = text(
+      renderToStaticMarkup(createElement(OrderDetailContent, { detail: FLIGHT, now: NOW })),
+    );
+    expect(before).toContain('Sin lectura guardada del proveedor.');
+
+    const html = renderToStaticMarkup(
+      createElement(OrderDetailContent, {
+        detail: FLIGHT,
+        now: NOW,
+        reading: {
+          found: true,
+          status: 'TICKETED',
+          airlineLocators: [{ carrierCode: 'LA', locator: 'XYZ987' }],
+          ticketNumbers: ['0451234567890'],
+          hotelConfirmationNumber: null,
+          readAt: '2026-10-13T15:00:00.000Z',
+        },
+      }),
+    );
+    const t = text(html);
+    expect(t).not.toContain('Sin lectura guardada del proveedor.');
+    expect(t).toContain('El proveedor tiene la reserva.');
+    expect(html).toContain(
+      '<code class="text-[11px] text-[var(--color-fg-muted)]">TICKETED</code>',
+    );
+    expect(t).toContain('Localizadores de aerolínea: LA XYZ987');
+    expect(t).toContain('Tiquetes: 0451234567890');
+    expect(t).toContain('Es una lectura en vivo: no queda guardada en la reserva.');
+    expect(html).toContain('dateTime="2026-10-13T15:00:00.000Z"');
+    expect(voseoIn(t)).toEqual([]);
+  });
+
+  it('un hotel con su lectura guardada la muestra a ella, no la de la consulta', () => {
+    const t = text(
+      renderToStaticMarkup(
+        createElement(OrderDetailContent, {
+          detail: HOTEL,
+          now: NOW,
+          reading: {
+            found: false,
+            status: null,
+            airlineLocators: [],
+            ticketNumbers: [],
+            hotelConfirmationNumber: null,
+            readAt: null,
+          },
+        }),
+      ),
+    );
+    expect(t).not.toContain('El proveedor no encuentra la reserva.');
+  });
+
   it('la Actividad nombra la acción del superadmin y su motivo', () => {
     const t = text(
       renderToStaticMarkup(createElement(OrderDetailContent, { detail: HOTEL, now: NOW })),

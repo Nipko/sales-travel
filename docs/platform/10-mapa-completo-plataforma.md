@@ -1006,7 +1006,10 @@ GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de
 -- admin_order_tenant, lee la orden con ese tenant y corre en su contexto (runWithTenantContext):
 -- los servicios de Reservas de la agencia, con sus reglas y el superadmin como actor. Deja
 -- `platform.order.action` {action, orderId, operationId?, reason, outcome ok|error,
--- errorReason?, result?} en el nodo de la reserva: lo ven la agencia y la plataforma.
+-- errorReason?, result?} en el nodo de la reserva: lo ven la agencia y la plataforma. Una
+-- cancelación respondida que no canceló dice por qué con el intento del historial:
+-- PROVIDER_REJECTED (la reserva sigue), PROVIDER_UNVERIFIED (hay que conciliar) o
+-- PROVIDER_NOT_CANCELLED (no se pudo leer).
 POST   /admin/orders/:id/send-confirmation -- reenvía la confirmación con la marca y el correo del
                                          -- nodo (confirmada o emitida, 409; sin correo, 404).
                                          -- → { sent, to }

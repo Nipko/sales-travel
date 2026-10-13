@@ -420,6 +420,39 @@ d('Reservas de la red: acciones de post-venta del superadmin (como app_user)', (
     expect(adapter.cancelOrder).toHaveBeenCalledOnce();
   });
 
+  it('cancelar y que el proveedor la rechace: la reserva y la retención quedan como estaban', async () => {
+    const o = await order();
+    const before = await balance();
+    const adapter = factory.adapterFor(agency);
+    adapter.cancelOrder.mockResolvedValueOnce({
+      success: false,
+      warnings: [],
+      error: 'Fuera de política',
+    });
+
+    const result = await comoSuperadmin(() =>
+      actions.cancel(superadmin, o.id, { reason: MOTIVO, orderNumber: o.number }),
+    );
+
+    expect(result).toMatchObject({ success: false });
+    expect(await orderStatus(o.id)).toBe('confirmed');
+    expect(await holdStatus(o.id)).toBe('captured');
+    expect(await balance()).toBe(before);
+    expect(await cancelOps(o.id)).toEqual([
+      expect.objectContaining({ status: 'failed', actor_user_id: superadmin }),
+    ]);
+    expect((await events(o.id, ADMIN_ORDER_ACTION_EVENT)).map((e) => e.payload)).toEqual([
+      {
+        action: 'cancel',
+        orderId: o.id,
+        reason: MOTIVO,
+        outcome: 'error',
+        errorReason: 'PROVIDER_REJECTED',
+        result: { success: false },
+      },
+    ]);
+  });
+
   it('reenviar la confirmación: la marca y el correo del nodo de la reserva, no los de la plataforma', async () => {
     const o = await order();
 

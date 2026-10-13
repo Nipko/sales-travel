@@ -112,15 +112,33 @@ export function adminProviderReading(
   };
 }
 
+/**
+ * Por qué una cancelación respondida no canceló, según el intento que quedó en el historial: el
+ * proveedor la rechazó (la reserva sigue como estaba), no confirmó si se aplicó (hay que conciliar
+ * antes de cualquier otro pedido) o no se pudo saber.
+ */
+type CancelNotDone = 'PROVIDER_REJECTED' | 'PROVIDER_UNVERIFIED' | 'PROVIDER_NOT_CANCELLED';
+
+/** Lo que devolvió el servicio de la agencia y, si no canceló, por qué. */
+interface CancelDone {
+  readonly result: OrderCancelResult;
+  readonly notDone?: CancelNotDone;
+}
+
 /** Una cancelación (nueva o reintentada) salió bien si el proveedor la aceptó. */
-function cancelOutcome(result: OrderCancelResult): ActionOutcome {
+function cancelOutcome(done: CancelDone): ActionOutcome {
+  const { result } = done;
   const summary = {
     success: result.success,
     ...(result.settlement === undefined ? {} : { settlement: result.settlement }),
   };
   return result.success
     ? { outcome: 'ok', result: summary }
-    : { outcome: 'error', errorReason: 'PROVIDER_REJECTED', result: summary };
+    : {
+        outcome: 'error',
+        errorReason: done.notDone ?? 'PROVIDER_NOT_CANCELLED',
+        result: summary,
+      };
 }
 
 /**
@@ -202,7 +220,7 @@ export class AdminOrderActionsService {
     operationId: string,
     body: AdminOrderActionDto,
   ): Promise<OrderCancelResult> {
-    return this.act(
+    const done = await this.act(
       actorUserId,
       orderId,
       { action: 'retry-cancel', reason: body.reason, operationId: operationId.toLowerCase() },
@@ -215,10 +233,11 @@ export class AdminOrderActionsService {
           operationId.toLowerCase(),
           actorUserId,
         );
-        return result;
+        return this.cancelDone(owner, row.id, result);
       },
       cancelOutcome,
     );
+    return done.result;
   }
 
   /**
@@ -249,7 +268,7 @@ export class AdminOrderActionsService {
     orderId: string,
     body: AdminOrderCancelDto,
   ): Promise<OrderCancelResult> {
-    return this.act(
+    const done = await this.act(
       actorUserId,
       orderId,
       { action: 'cancel', reason: body.reason },
@@ -258,10 +277,36 @@ export class AdminOrderActionsService {
         const pnr = this.assertLocator(row);
         this.capabilities.assertSupports(row, 'cancel');
         const { result } = await this.orders.cancelOrder(owner, row.id, pnr, actorUserId);
-        return result;
+        return this.cancelDone(owner, row.id, result);
       },
       cancelOutcome,
     );
+    return done.result;
+  }
+
+  /**
+   * Un `success: false` no siempre es un rechazo: también lo devuelve la cancelación que el
+   * proveedor no confirmó, que deja la reserva por conciliar. La auditoría los distingue con el
+   * intento que quedó en el historial; si no se puede leer, lo dice sin adivinar.
+   */
+  private async cancelDone(
+    owner: string,
+    orderId: string,
+    result: OrderCancelResult,
+  ): Promise<CancelDone> {
+    if (result.success) return { result };
+    try {
+      const latest = (await this.orders.listOperations(owner, orderId)).find(
+        (op) => op.type === 'cancel',
+      );
+      if (latest === undefined) return { result, notDone: 'PROVIDER_NOT_CANCELLED' };
+      return {
+        result,
+        notDone: latest.reconciliationRequired ? 'PROVIDER_UNVERIFIED' : 'PROVIDER_REJECTED',
+      };
+    } catch {
+      return { result, notDone: 'PROVIDER_NOT_CANCELLED' };
+    }
   }
 
   private assertLocator(row: Pick<OrderRow, 'provider_order_id'>): string {

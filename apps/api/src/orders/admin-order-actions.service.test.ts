@@ -97,6 +97,15 @@ function banco(opts: { row?: OrderRow | undefined } = {}) {
       });
     }),
     cancellationEstimate: vi.fn(() => ({ kind: 'unavailable', reason: 'no-snapshot' })),
+    /** El historial después de una cancelación que no canceló: un rechazo del proveedor. */
+    listOperations: vi.fn(
+      (): Promise<
+        { type: string; status: string; reconciliationRequired: boolean; retryable: boolean }[]
+      > =>
+        Promise.resolve([
+          { type: 'cancel', status: 'failed', reconciliationRequired: false, retryable: false },
+        ]),
+    ),
   };
   const confirmation = {
     resend: vi.fn(() => {
@@ -273,12 +282,32 @@ describe('reintentar una cancelación', () => {
       reason: MOTIVO,
     });
     expect(res.success).toBe(false);
+    expect(b.orders.listOperations).toHaveBeenCalledWith(DUENO, ORDEN_ID);
     expect(b.audit.emit).toHaveBeenCalledWith(
       evento({
         action: 'retry-cancel',
         operationId: OPERACION.toLowerCase(),
         outcome: 'error',
         errorReason: 'PROVIDER_REJECTED',
+        result: { success: false },
+      }),
+    );
+  });
+
+  it('el proveedor que no confirma si se aplicó: la auditoría dice que hay que conciliar', async () => {
+    const b = banco();
+    b.orders.retryOperation.mockResolvedValueOnce({ result: { success: false, warnings: [] } });
+    b.orders.listOperations.mockResolvedValueOnce([
+      { type: 'pay', status: 'success', reconciliationRequired: false, retryable: false },
+      { type: 'cancel', status: 'failed', reconciliationRequired: true, retryable: false },
+    ]);
+    await b.service.retryCancellation(SUPERADMIN, ORDEN, OPERACION, { reason: MOTIVO });
+    expect(b.audit.emit).toHaveBeenCalledWith(
+      evento({
+        action: 'retry-cancel',
+        operationId: OPERACION.toLowerCase(),
+        outcome: 'error',
+        errorReason: 'PROVIDER_UNVERIFIED',
         result: { success: false },
       }),
     );
@@ -295,6 +324,8 @@ describe('cancelar en nombre de la agencia', () => {
     expect(res).toMatchObject({ success: true, settlement: 'in-progress' });
     expect(b.orders.cancelOrder).toHaveBeenCalledWith(DUENO, ORDEN_ID, 'PNR001', SUPERADMIN);
     expect(b.seen['cancelOrder']).toBe(DUENO);
+    // Salió bien: no hace falta mirar el historial.
+    expect(b.orders.listOperations).not.toHaveBeenCalled();
     expect(b.audit.emit).toHaveBeenCalledWith(
       evento({
         action: 'cancel',
@@ -302,6 +333,39 @@ describe('cancelar en nombre de la agencia', () => {
         result: { success: true, settlement: 'in-progress' },
       }),
     );
+  });
+
+  it('sin cancelar y sin historial que lo explique, la auditoría no adivina', async () => {
+    const sinIntento = banco();
+    sinIntento.orders.cancelOrder.mockResolvedValueOnce({
+      result: { success: false, warnings: [] } as never,
+    });
+    sinIntento.orders.listOperations.mockResolvedValueOnce([]);
+    const res = await sinIntento.service.cancel(SUPERADMIN, ORDEN, {
+      reason: MOTIVO,
+      orderNumber: 1042,
+    });
+    expect(res).toEqual({ success: false, warnings: [] });
+
+    const historialCaido = banco();
+    historialCaido.orders.cancelOrder.mockResolvedValueOnce({
+      result: { success: false, warnings: [] } as never,
+    });
+    historialCaido.orders.listOperations.mockRejectedValueOnce(new Error('db caída'));
+    await expect(
+      historialCaido.service.cancel(SUPERADMIN, ORDEN, { reason: MOTIVO, orderNumber: 1042 }),
+    ).resolves.toEqual({ success: false, warnings: [] });
+
+    for (const b of [sinIntento, historialCaido]) {
+      expect(b.audit.emit).toHaveBeenCalledWith(
+        evento({
+          action: 'cancel',
+          outcome: 'error',
+          errorReason: 'PROVIDER_NOT_CANCELLED',
+          result: { success: false },
+        }),
+      );
+    }
   });
 
   it('otro número: 400 y no se cancela nada, pero el intento queda', async () => {

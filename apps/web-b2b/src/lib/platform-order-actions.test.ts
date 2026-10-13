@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { OrderOperationView } from '../app/(app)/reservas/cancel-retry-policy';
 import { CANCELLATION_STILL_RUNNING } from '../app/(app)/reservas/hotel-cancellation-view';
 import {
+  CANCEL_NOT_DONE_MESSAGE,
   CANCEL_UNKNOWN_MESSAGE,
   ORDER_ACTION_REASON_MAX,
   RETRY_SENT_TOAST,
@@ -17,6 +18,7 @@ import {
   parseRetrieveResult,
   penaltyLineOf,
   platformOrderActionsOf,
+  providerReadingLinesOf,
   retryDoneToast,
   typedConfirmationHint,
   typedOrderNumberMatches,
@@ -283,6 +285,14 @@ describe('las respuestas', () => {
     expect(parseRetrieveResult({ reading: { found: false, status: null }, detail: null })).toEqual({
       found: false,
       providerStatus: null,
+      reading: {
+        found: false,
+        status: null,
+        airlineLocators: [],
+        ticketNumbers: [],
+        hotelConfirmationNumber: null,
+        readAt: null,
+      },
       detail: undefined,
     });
     expect(parseRetrieveResult({ detail: DETAIL_PAYLOAD })).toBeUndefined();
@@ -299,13 +309,23 @@ describe('las respuestas', () => {
     expect(
       consoleCancelOutcomeOf(200, { success: true, warnings: [CANCELLATION_STILL_RUNNING] }),
     ).toEqual({ kind: 'done', inProgress: true });
-    expect(consoleCancelOutcomeOf(200, { success: false, warnings: [] })).toMatchObject({
-      kind: 'failed',
-      message: expect.stringMatching(/sigue vigente/),
-    });
+    // success: false también es la cancelación que el proveedor no confirmó: no se promete que la
+    // reserva siga vigente, se manda al historial (la ficha se relee).
+    expect(
+      consoleCancelOutcomeOf(200, { success: false, warnings: [], error: 'texto del proveedor' }),
+    ).toEqual({ kind: 'not-cancelled', message: CANCEL_NOT_DONE_MESSAGE });
+    // Un 409 es el estado de la reserva: también se relee la ficha.
     expect(
       consoleCancelOutcomeOf(409, { error: 'Sólo se puede reintentar una cancelación fallida.' }),
-    ).toEqual({ kind: 'failed', message: 'Sólo se puede reintentar una cancelación fallida.' });
+    ).toEqual({
+      kind: 'not-cancelled',
+      message: 'Sólo se puede reintentar una cancelación fallida.',
+    });
+    // Un 400 no tocó nada: se corrige en el diálogo.
+    expect(consoleCancelOutcomeOf(400, { error: 'El número de orden no coincide.' })).toEqual({
+      kind: 'failed',
+      message: 'El número de orden no coincide.',
+    });
     for (const status of [0, 500, 502, 524]) {
       expect(consoleCancelOutcomeOf(status, undefined), String(status)).toEqual({
         kind: 'unknown',
@@ -313,6 +333,63 @@ describe('las respuestas', () => {
       });
     }
     expect(consoleCancelOutcomeOf(200, 'raro')).toMatchObject({ kind: 'unknown' });
+  });
+});
+
+describe('la lectura del proveedor en la ficha', () => {
+  const READ_AT = '2026-10-13T15:00:00.000Z';
+
+  it('de un vuelo: estado, localizadores de aerolínea y tiquetes, acotados', () => {
+    const res = parseRetrieveResult({
+      reading: {
+        found: true,
+        status: ' TICKETED ',
+        airlineLocators: [
+          { carrierCode: 'LA', locator: 'XYZ987' },
+          { carrierCode: '', locator: 'X' },
+          'raro',
+        ],
+        ticketNumbers: ['0451234567890', '', 42],
+        hotelConfirmationNumber: null,
+        readAt: READ_AT,
+      },
+      detail: null,
+    });
+    expect(res?.reading).toEqual({
+      found: true,
+      status: 'TICKETED',
+      airlineLocators: [{ carrierCode: 'LA', locator: 'XYZ987' }],
+      ticketNumbers: ['0451234567890'],
+      hotelConfirmationNumber: null,
+      readAt: READ_AT,
+    });
+    expect(providerReadingLinesOf(res!.reading)).toEqual({
+      headline: 'El proveedor tiene la reserva.',
+      code: 'TICKETED',
+      details: ['Localizadores de aerolínea: LA XYZ987', 'Tiquetes: 0451234567890'],
+    });
+  });
+
+  it('de un hotel, sin estado o sin reserva', () => {
+    const base = {
+      found: true,
+      status: null,
+      airlineLocators: [],
+      ticketNumbers: [],
+      hotelConfirmationNumber: 'HCN-1',
+      readAt: 'no es fecha',
+    };
+    expect(parseRetrieveResult({ reading: base, detail: null })?.reading.readAt).toBeNull();
+    expect(providerReadingLinesOf({ ...base, readAt: null })).toEqual({
+      headline: 'El proveedor tiene la reserva, sin estado informado.',
+      code: null,
+      details: ['Confirmación del hotel: HCN-1'],
+    });
+    expect(providerReadingLinesOf({ ...base, found: false, readAt: null })).toEqual({
+      headline: 'El proveedor no encuentra la reserva.',
+      code: null,
+      details: [],
+    });
   });
 });
 
@@ -352,6 +429,7 @@ describe('los errores', () => {
       actionReasonError('') ?? '',
       actionReasonError('abc') ?? '',
       CANCEL_UNKNOWN_MESSAGE,
+      CANCEL_NOT_DONE_MESSAGE,
       penaltyLineOf({ kind: 'not-estimated' }, FLIGHT).line,
       typedConfirmationHint(1042),
     ].join(' ');

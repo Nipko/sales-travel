@@ -12,7 +12,9 @@ import { formatMoney } from '../../../../../../lib/flight-format';
 import { orderProviderLabel, orderVerticalOf } from '../../../../../../lib/order-vertical';
 import {
   canRetryFromConsole,
+  providerReadingLinesOf,
   type PlatformOrderAction,
+  type ProviderReadingView,
 } from '../../../../../../lib/platform-order-actions';
 import { PLATFORM_TIME_ZONE } from '../../../../../../lib/platform-overview';
 import {
@@ -114,11 +116,17 @@ export function OrderDetailSheet({
   }, [orderId]);
 
   const [action, setAction] = useState<PlatformOrderAction | null>(null);
+  /** La última consulta al proveedor desde esta ficha (en vuelos no queda guardada en la reserva). */
+  const [reading, setReading] = useState<{
+    readonly orderId: string;
+    readonly reading: ProviderReadingView;
+  } | null>(null);
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
   const done = useCallback(
     (result: OrderActionDone) => {
       setAction(null);
+      if (result.reading !== undefined) setReading({ orderId, reading: result.reading });
       if (result.detail !== undefined) {
         // La ficha que devolvió la acción es la más nueva: una lectura anterior en vuelo no la pisa.
         request.current += 1;
@@ -129,7 +137,7 @@ export function OrderDetailSheet({
       }
       onChangedRef.current?.();
     },
-    [refresh],
+    [orderId, refresh],
   );
 
   const panelRef = useModalBehavior(true, onClose);
@@ -225,6 +233,9 @@ export function OrderDetailSheet({
                   detail={state.detail}
                   now={now}
                   onRetry={(op) => setAction({ kind: 'retry-cancel', operationId: op.id })}
+                  {...(reading !== null && reading.orderId === orderId
+                    ? { reading: reading.reading }
+                    : {})}
                 />
               )}
             </div>
@@ -274,6 +285,35 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Lo que respondió el proveedor en la última consulta desde la ficha. `stored`: la reserva guarda
+ * su lectura (hoteles); si no, se aclara que es sólo lo que se vio ahora.
+ */
+function ProviderReading({ reading, stored }: { reading: ProviderReadingView; stored: boolean }) {
+  const view = providerReadingLinesOf(reading);
+  return (
+    <>
+      <p className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-[var(--color-fg)]">{view.headline}</span>
+        {view.code !== null ? (
+          <code className="text-[11px] text-[var(--color-fg-muted)]">{view.code}</code>
+        ) : null}
+      </p>
+      {view.details.map((line) => (
+        <p key={line} className="text-[11px] text-[var(--color-fg-muted)] [overflow-wrap:anywhere]">
+          {line}
+        </p>
+      ))}
+      {reading.readAt !== null ? (
+        <p className="text-[11px] text-[var(--color-fg-muted)]">
+          Consultado <time dateTime={reading.readAt}>{formatOrderDate(reading.readAt)}</time>
+          {stored ? '.' : '. Es una lectura en vivo: no queda guardada en la reserva.'}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 const noRetry = () => false;
 const noop = () => undefined;
 const reloadNothing = (): Promise<void> => Promise.resolve();
@@ -281,15 +321,19 @@ const reloadNothing = (): Promise<void> => Promise.resolve();
 /**
  * Lo que se ve con la ficha ya leída. Sin estado propio: se prueba renderizándolo. Con `onRetry`, el
  * historial ofrece "Reintentar" en la cancelación que falló antes de enviarse (la regla de la agencia).
+ * `reading`: la última consulta al proveedor desde la ficha; se muestra si la reserva no tiene una
+ * lectura guardada (los vuelos no la guardan).
  */
 export function OrderDetailContent({
   detail,
   now,
   onRetry,
+  reading,
 }: {
   detail: PlatformOrderDetail;
   now: number;
   onRetry?: (operation: OrderOperationView) => void;
+  reading?: ProviderReadingView;
 }) {
   const { order } = detail;
   const hotel = orderVerticalOf(order) === 'hotels';
@@ -368,6 +412,8 @@ export function OrderDetailContent({
                     </p>
                   ) : null}
                 </>
+              ) : reading !== undefined ? (
+                <ProviderReading reading={reading} stored={hotel} />
               ) : (
                 <p className="text-xs text-[var(--color-fg-muted)]">
                   Sin lectura guardada del proveedor.

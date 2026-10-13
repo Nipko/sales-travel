@@ -25,6 +25,7 @@ import {
   type ConsoleCancelOutcome,
   type PenaltyState,
   type PlatformOrderAction,
+  type ProviderReadingView,
 } from '../../../../../../lib/platform-order-actions';
 import type { PlatformOrderDetail } from '../../../../../../lib/platform-orders';
 import {
@@ -39,6 +40,8 @@ import {
 export interface OrderActionDone {
   /** La ficha releída por el API (consultar al proveedor); sin ella, la ficha se vuelve a pedir. */
   readonly detail?: PlatformOrderDetail;
+  /** Lo que respondió el proveedor al consultarlo: en vuelos sólo existe en la pantalla. */
+  readonly reading?: ProviderReadingView;
 }
 
 const REASON_HINT = `Entre 5 y ${ORDER_ACTION_REASON_MAX} caracteres. Lo ven la agencia y la plataforma.`;
@@ -112,11 +115,13 @@ export function OrderActionDialog({
 
   function finishCancel(outcome: ConsoleCancelOutcome, retry: boolean) {
     if (outcome.kind === 'failed') {
+      // No se tocó nada: se corrige aquí y se vuelve a enviar.
       setError(outcome.message);
       return;
     }
-    if (outcome.kind === 'unknown') {
-      // Pudo haber salido: no se ofrece repetirla. La ficha se relee para ver qué quedó.
+    if (outcome.kind === 'unknown' || outcome.kind === 'not-cancelled') {
+      // Pudo haber salido, o quedó un intento que la ficha tiene que mostrar (rechazado o por
+      // conciliar): no se ofrece repetirla desde aquí. La ficha se relee y su historial dice qué hacer.
       toast.error(outcome.message);
     } else {
       toast.success(
@@ -151,7 +156,10 @@ export function OrderActionDialog({
         }
         if (res.data.found) toast.success(RETRIEVE_DONE_TOAST);
         else toast.warning(RETRIEVE_NOT_FOUND_TOAST);
-        onDone(res.data.detail === undefined ? {} : { detail: res.data.detail });
+        onDone({
+          reading: res.data.reading,
+          ...(res.data.detail === undefined ? {} : { detail: res.data.detail }),
+        });
         return;
       }
       case 'retry-cancel':
