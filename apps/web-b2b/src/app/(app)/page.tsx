@@ -15,7 +15,13 @@ import { redirect } from 'next/navigation';
 import { Card, CardContent } from '../../components/ui/card';
 import { parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
+import { cn } from '../../lib/cn';
 import { PLATFORM_HOME, shouldLandOnPlatformOverview } from '../../lib/platform-overview';
+import {
+  parseDashboardKpis,
+  salesThisMonthLines,
+  type DashboardKpis,
+} from '../../lib/sales-reports';
 import { getActiveTenant } from '../../lib/session';
 import { canSell, viewerOf, type Viewer } from '../../lib/viewer';
 
@@ -35,7 +41,7 @@ function primaryAction(viewer: Viewer): QuickAction {
     return {
       href: '/cotizaciones',
       title: 'Buscar Vuelos',
-      description: 'Inicie una nueva cotización de pasajes aéreos',
+      description: 'Inicia una nueva cotización de pasajes aéreos',
       icon: Search,
     };
   }
@@ -43,78 +49,64 @@ function primaryAction(viewer: Viewer): QuickAction {
     ? {
         href: '/admin/tenants',
         title: 'Gestión de Agencias',
-        description: 'Arme y corrija la red: sucursales, agencias y consolidadores',
+        description: 'Arma y corrige la red: sucursales, agencias y consolidadores',
         icon: Network,
       }
     : {
         href: '/red',
         title: 'Mi Red',
-        description: 'Nodos, credenciales y reglas de su red',
+        description: 'Nodos, credenciales y reglas de tu red',
         icon: Network,
       };
 }
 
 interface Stat {
   label: string;
-  value: string;
+  /** Una línea, o una por moneda en las ventas del mes. */
+  values: readonly string[];
   delta?: string;
   icon: typeof Calendar;
 }
 
-interface DashboardKpis {
-  quotationsThisMonth: number;
-  confirmedThisMonth: number;
-  activeCustomers: number;
-  salesThisMonthMinor: number;
-  currency: string;
-}
-
-function money(minor: number, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(minor / 100);
-}
-
 /**
  * Antes eran cuatro ceros HARDCODEADOS con leyendas del tipo "Cartera actualizada",
- * indistinguibles de metricas reales: una agencia que si vendio veia cero y podia
- * concluir que la plataforma no registro sus ventas.
+ * indistinguibles de métricas reales: una agencia que sí vendió veía cero y podía
+ * concluir que la plataforma no registró sus ventas. Las ventas van una línea por
+ * moneda: sumar pesos y dólares daría un número que no es de nadie.
  */
 function buildStats(k: DashboardKpis | null): Stat[] {
   if (!k) {
     return [
-      { label: 'Cotizaciones del mes', value: '—', delta: 'Sin datos', icon: Ticket },
-      { label: 'Reservas confirmadas', value: '—', delta: 'Sin datos', icon: Calendar },
-      { label: 'Clientes activos', value: '—', delta: 'Sin datos', icon: Users },
-      { label: 'Ventas del mes', value: '—', delta: 'Sin datos', icon: DollarSign },
+      { label: 'Cotizaciones del mes', values: ['—'], delta: 'Sin datos', icon: Ticket },
+      { label: 'Reservas confirmadas', values: ['—'], delta: 'Sin datos', icon: Calendar },
+      { label: 'Clientes activos', values: ['—'], delta: 'Sin datos', icon: Users },
+      { label: 'Ventas del mes', values: ['—'], delta: 'Sin datos', icon: DollarSign },
     ];
   }
+  const sales = salesThisMonthLines(k.salesThisMonth);
   return [
     {
       label: 'Cotizaciones del mes',
-      value: String(k.quotationsThisMonth),
+      values: [String(k.quotationsThisMonth)],
       delta: k.quotationsThisMonth === 0 ? 'Listo para cotizar' : 'Mes en curso',
       icon: Ticket,
     },
     {
       label: 'Reservas confirmadas',
-      value: String(k.confirmedThisMonth),
-      delta: k.confirmedThisMonth === 0 ? 'Sin emisiones aun' : 'Mes en curso',
+      values: [String(k.confirmedThisMonth)],
+      delta: k.confirmedThisMonth === 0 ? 'Sin emisiones aún' : 'Mes en curso',
       icon: Calendar,
     },
     {
       label: 'Clientes activos',
-      value: String(k.activeCustomers),
+      values: [String(k.activeCustomers)],
       delta: 'En la cartera',
       icon: Users,
     },
     {
       label: 'Ventas del mes',
-      value: money(k.salesThisMonthMinor, k.currency),
-      delta: 'Confirmadas y emitidas',
+      values: sales.length === 0 ? ['—'] : sales,
+      delta: sales.length === 0 ? 'Sin ventas este mes' : 'Confirmadas y emitidas',
       icon: DollarSign,
     },
   ];
@@ -123,7 +115,7 @@ function buildStats(k: DashboardKpis | null): Stat[] {
 export default async function DashboardPage() {
   const [res, kpiRes, activeTenantId] = await Promise.all([
     api<unknown>('/me/memberships'),
-    api<DashboardKpis>('/reports/dashboard').catch(() => null),
+    api<unknown>('/reports/dashboard').catch(() => null),
     getActiveTenant(),
   ]);
   const memberships = res.ok ? parseMemberships(res.data) : [];
@@ -135,8 +127,8 @@ export default async function DashboardPage() {
   ) {
     redirect(PLATFORM_HOME);
   }
-  // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y seria falso.
-  const stats = buildStats(kpiRes?.ok ? kpiRes.data : null);
+  // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y sería falso.
+  const stats = buildStats(kpiRes?.ok ? (parseDashboardKpis(kpiRes.data) ?? null) : null);
   const primary = primaryAction(viewer);
   const PrimaryIcon = primary.icon;
 
@@ -193,7 +185,7 @@ export default async function DashboardPage() {
                     Mis Reservas
                   </h3>
                   <p className="text-xs text-[var(--color-fg-muted)] mt-0.5 leading-relaxed">
-                    Gestione PNRs de clientes y emisiones pendientes
+                    Gestiona PNRs de clientes y emisiones pendientes
                   </p>
                 </div>
               </div>
@@ -217,8 +209,17 @@ export default async function DashboardPage() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-fg-subtle)]">
                     {s.label}
                   </p>
-                  <p className="text-2xl font-bold tracking-tight text-[var(--color-fg)] tabular-nums font-mono">
-                    {s.value}
+                  <p
+                    className={cn(
+                      'font-bold tracking-tight text-[var(--color-fg)] tabular-nums font-mono',
+                      s.values.length > 1 ? 'text-lg leading-snug' : 'text-2xl',
+                    )}
+                  >
+                    {s.values.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
                   </p>
                   {s.delta ? (
                     <div className="inline-flex items-center gap-1 rounded bg-[var(--color-surface-muted)] border border-[var(--color-border)]/50 px-2 py-0.5 text-[9px] font-semibold text-[var(--color-fg-muted)] leading-none">
@@ -250,7 +251,7 @@ export default async function DashboardPage() {
             <div className="px-6 py-14 text-center">
               <p className="text-xs text-[var(--color-fg-muted)] font-medium">
                 {res.ok
-                  ? 'No tiene agencias asignadas a su perfil todavía.'
+                  ? 'No tienes agencias asignadas a tu perfil todavía.'
                   : `Error de conexión: ${res.error.message}`}
               </p>
             </div>

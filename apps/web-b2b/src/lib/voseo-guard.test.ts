@@ -44,6 +44,10 @@ const SCANNED = [
   'lib/platform-orders-client.ts',
   'lib/platform-orders-proxy.ts',
   'lib/platform-order-actions.ts',
+  // Inicio y Reportes de la agencia.
+  'app/(app)/page.tsx',
+  'app/(app)/reportes',
+  'lib/sales-reports.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */
