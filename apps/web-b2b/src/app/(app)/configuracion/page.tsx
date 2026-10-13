@@ -16,6 +16,8 @@ import { useEffect, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { cn } from '../../../lib/cn';
+import { SupportContactCard } from './_components/support-contact-card';
+import { trimmedSupportContact } from './_components/support-contact';
 
 // --- Types ---
 interface TenantConfig {
@@ -30,12 +32,14 @@ interface Branding {
   logoUrl: string | null;
   primaryColor: string | null;
   accentColor: string | null;
+  supportEmail: string | null;
+  supportPhone: string | null;
 }
 
 // --- Constants ---
 const TABS = [
   { id: 'general', label: 'General', icon: Building2 },
-  { id: 'branding', label: 'Branding (Identidad)', icon: Palette },
+  { id: 'branding', label: 'Marca', icon: Palette },
   { id: 'domain', label: 'Dominio', icon: Globe },
   { id: 'team', label: 'Equipo', icon: Users },
 ] as const;
@@ -62,6 +66,8 @@ export default function ConfiguracionPage() {
     logoUrl: null,
     primaryColor: null,
     accentColor: null,
+    supportEmail: null,
+    supportPhone: null,
   });
   const [config, setConfig] = useState<TenantConfig>({
     name: '',
@@ -103,7 +109,7 @@ export default function ConfiguracionPage() {
       const res = await fetch('/api/tenant/branding', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(branding),
+        body: JSON.stringify(trimmedSupportContact(branding)),
       });
       if (res.ok) {
         setMessage({
@@ -526,6 +532,11 @@ function BrandingTab({
           </div>
         </CardContent>
       </Card>
+
+      <SupportContactCard
+        value={{ supportEmail: branding.supportEmail, supportPhone: branding.supportPhone }}
+        onChange={(contact) => setBranding({ ...branding, ...contact })}
+      />
 
       {/* Previsualización en Vivo */}
       {(branding.primaryColor || branding.logoUrl) && (
