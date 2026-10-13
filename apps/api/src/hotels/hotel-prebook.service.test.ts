@@ -11,6 +11,7 @@ import type {
   BookingPermissionsService,
   NonRefundableRatesPolicy,
 } from '../booking-permissions/booking-permissions.service.js';
+import type { BrandingService, SupportContact } from '../branding/branding.service.js';
 import type { TenantType } from '../database/database.types.js';
 import type { BookingHoldPreview, BookingHoldQuote } from '../portfolios/booking-hold.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
@@ -274,6 +275,7 @@ interface Banco {
   breaker: CircuitBreakerService;
   cartera: Cartera;
   permisos: PermisosFake;
+  soporte: Soporte;
 }
 
 type PermisosFake = { nonRefundableRates: Mock<BookingPermissionsService['nonRefundableRates']> };
@@ -307,6 +309,19 @@ function fondos(cartera: Cartera): PortfoliosService {
   return { previewBookingHold: cartera } as unknown as PortfoliosService;
 }
 
+/** El contacto de soporte efectivo de la agencia, el que el Book manda al proveedor. */
+const SOPORTE: SupportContact = { email: 'reservas@agencia.example', phone: '+57 601 555 0000' };
+
+type Soporte = Mock<(tenantId: string) => Promise<SupportContact>>;
+
+function soporteQueResponde(contacto: SupportContact = SOPORTE): Soporte {
+  return vi.fn((_tenantId: string) => Promise.resolve(contacto));
+}
+
+function marca(soporte: Soporte): BrandingService {
+  return { resolveSupportContact: soporte } as unknown as BrandingService;
+}
+
 interface OpcionesBanco {
   reglas?: ApplicableRule[];
   requiresGuestNationality?: boolean;
@@ -318,6 +333,8 @@ interface OpcionesBanco {
   noReembolsablesBloqueadas?: boolean;
   /** El entorno que declara la cuenta del stub, como el de TBO. */
   entorno?: 'test' | 'live';
+  /** La lectura del contacto de soporte de la agencia: por defecto, uno completo. */
+  soporte?: Soporte;
 }
 
 function banco(opts: OpcionesBanco = {}): Banco {
@@ -336,6 +353,7 @@ function banco(opts: OpcionesBanco = {}): Banco {
   const breaker = new CircuitBreakerService();
   const cartera = opts.cartera ?? carteraQueCubre();
   const permisos = permisosFake(opts.noReembolsablesBloqueadas);
+  const soporte = opts.soporte ?? soporteQueResponde();
   const service = new HotelPrebookService(
     hotelRegistry(
       [stub],
@@ -348,8 +366,21 @@ function banco(opts: OpcionesBanco = {}): Banco {
     { emit } as unknown as AuditService,
     fondos(cartera),
     permisos as unknown as BookingPermissionsService,
+    marca(soporte),
   );
-  return { service, contexts, snapshots, cache, stub, puerto, emit, breaker, cartera, permisos };
+  return {
+    service,
+    contexts,
+    snapshots,
+    cache,
+    stub,
+    puerto,
+    emit,
+    breaker,
+    cartera,
+    permisos,
+    soporte,
+  };
 }
 
 async function bancoConBusqueda(opts: OpcionesBanco = {}, ctx = contexto()): Promise<Banco> {
@@ -638,6 +669,83 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
   });
 });
 
+describe('contacto de soporte: el PreBook avisa lo que el Book rechazaría con AGENCY_CONTACT_MISSING', () => {
+  it('con email y teléfono internacional (propios o heredados), la agencia está lista', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.bookingReadiness).toEqual({ agencyContact: 'ok' });
+    // El de la agencia que vende: la herencia de marca la resuelve la base (0030).
+    expect(b.soporte).toHaveBeenCalledWith(AGENCIA);
+  });
+
+  it('sin contacto, sin email válido o con un teléfono sin prefijo de país: missing, como en el Book', async () => {
+    for (const contacto of [
+      { email: null, phone: null },
+      { email: 'no-es-un-email', phone: '+57 601 555 0000' },
+      { email: 'reservas@agencia.example', phone: '601 555 0000' },
+      { email: 'reservas@agencia.example', phone: null },
+    ] satisfies SupportContact[]) {
+      const b = await bancoConBusqueda({ soporte: soporteQueResponde(contacto) });
+
+      const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+      expect(res.bookingReadiness).toEqual({ agencyContact: 'missing' });
+      // Es un aviso: la tarifa revalidada queda, y con el contacto cargado se reserva esta misma.
+      expect(await b.snapshots.get(AGENCIA, res.prebookRef)).toBeDefined();
+    }
+  });
+
+  it('si el contacto no se puede leer, el PreBook sale sin el aviso y lo decide el Book', async () => {
+    const b = await bancoConBusqueda({
+      soporte: vi.fn(() => Promise.reject(new Error(`base caída para ${AGENCIA}`))),
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('bookingReadiness');
+    expect(res.prebookRef).toMatch(/^[0-9a-f-]{36}$/);
+    // La cartera no depende de esta lectura.
+    expect(res.funding).toEqual({ status: 'ok', currency: 'USD' });
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    expect(logs).toContain(
+      `hotels.prebook.agency_contact_check_failed provider=${STUB} error=Error`,
+    );
+    expect(logs.join('\n')).not.toContain(AGENCIA);
+  });
+
+  it('un fallo que no es un Error tampoco tumba el PreBook ni llega al log con su contenido', async () => {
+    const b = await bancoConBusqueda({
+      soporte: soporteQueResponde().mockRejectedValue(`fila de ${AGENCIA}`),
+      cartera: carteraQueCubre().mockRejectedValue(`cartera de ${AGENCIA}`),
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('bookingReadiness');
+    expect(res).not.toHaveProperty('funding');
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    expect(logs).toContain(
+      `hotels.prebook.agency_contact_check_failed provider=${STUB} error=UnknownError`,
+    );
+    expect(logs).toContain(
+      `hotels.prebook.funding_check_failed provider=${STUB} error=UnknownError`,
+    );
+    expect(logs.join('\n')).not.toContain(AGENCIA);
+  });
+
+  it('un PreBook que el proveedor rechaza no pregunta por el contacto', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockRejectedValueOnce(new Error('proveedor caído'));
+
+    await expect(b.service.prebook(AGENCIA, referencia(), USUARIO)).rejects.toThrow(
+      'proveedor caído',
+    );
+    expect(b.soporte).not.toHaveBeenCalled();
+  });
+});
+
 describe('RF-15 CA-3: un cambio se informa y deja rastro, sin PII ni texto del proveedor', () => {
   it('UNCHANGED no emite `HotelOfferRepriced`', async () => {
     const b = await bancoConBusqueda();
@@ -777,6 +885,7 @@ describe('las puertas: todo rechazo ocurre ANTES de llamar al proveedor', () => 
       { emit: vi.fn() } as unknown as AuditService,
       fondos(carteraQueCubre()),
       permisosFake() as unknown as BookingPermissionsService,
+      marca(soporteQueResponde()),
     );
 
     const err: unknown = await service
@@ -1030,6 +1139,98 @@ describe('entorno de la cuenta: el checkout avisa una reserva de prueba', () => 
   });
 });
 
+describe('TBO-12: los servicios de cada habitación del PreBook, para el checkout', () => {
+  /** El PreBook del stub con dos habitaciones y los servicios que diga el proveedor. */
+  function conServicios(
+    roomAmenities: readonly (readonly string[])[] | undefined,
+    habitaciones = 2,
+  ): HotelPrebookWithContext {
+    const base = revalidada();
+    const rooms = Array.from({ length: habitaciones }, (_, i) => ({
+      name: i === 0 ? 'Doble estándar' : 'Suite junior',
+      reference: i,
+      bedOptions: [],
+    }));
+    return {
+      ...base,
+      result: { ...base.result, roompack: { ...base.result.roompack, rooms } },
+      ...(roomAmenities === undefined ? {} : { roomAmenities }),
+    };
+  }
+
+  it('salen una lista por habitación, en su orden, con el tope del contrato', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(
+      conServicios([
+        ['Free WiFi', 'free  wifi', 'Minibar', 'z'.repeat(100)],
+        ['Balcony', 'Jacuzzi'],
+      ]),
+    );
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.roomAmenities).toEqual([
+      ['Free WiFi', 'Minibar', `${'z'.repeat(79)}…`],
+      ['Balcony', 'Jacuzzi'],
+    ]);
+  });
+
+  /*
+   * MUTACIÓN: con los servicios en el snapshot, el Book los cargaría como parte de la tarifa
+   * aceptada; con ellos en el evento, irían a `domain_events` textos del proveedor.
+   */
+  it('no tocan el repricing, el snapshot del Book ni el evento: sólo se muestran', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue({
+      ...conServicios([['Minibar'], ['Jacuzzi']]),
+      comparison: {
+        ...revalidada().comparison,
+        outcome: 'CONDITIONS_CHANGED',
+        changes: ['SIGNALS'],
+      },
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.repricing).toMatchObject({ outcome: 'CONDITIONS_CHANGED', changes: ['SIGNALS'] });
+    const snapshot = await b.snapshots.get(AGENCIA, res.prebookRef);
+    expect(snapshot).toBeDefined();
+    expect(JSON.stringify(snapshot)).not.toMatch(/Minibar|Jacuzzi|roomAmenities/);
+    expect(b.emit).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(b.emit.mock.calls)).not.toMatch(/Minibar|Jacuzzi/);
+  });
+
+  it('un proveedor que no los da no los inventa', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+  });
+
+  it('listas sin nada que mostrar no viajan', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(conServicios([['  '], []]));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+  });
+
+  it('si no hay una lista por habitación no se adivina de cuál es cada una: salen sin servicios y queda el aviso', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(conServicios([['Minibar']], 2));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+    expect(res.prebookRef).toMatch(/^[0-9a-f-]{36}$/);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContain(
+      'hotels.prebook.room_amenities_mismatch provider=stub-hotels lists=1 rooms=2',
+    );
+  });
+});
+
 // ───────────────────────── TBO de punta a punta ─────────────────────────
 
 const TBO = 'tbo-hotels';
@@ -1136,6 +1337,7 @@ function bancoTbo(
     { emit } as unknown as AuditService,
     fondos(carteraQueCubre()),
     permisosFake() as unknown as BookingPermissionsService,
+    marca(soporteQueResponde()),
   );
   return { hotels, prebooks, snapshots, fetch, emit };
 }
@@ -1377,6 +1579,41 @@ describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
     await expect(b.snapshots.get(AGENCIA, res.prebookRef)).resolves.toMatchObject({
       offerRef: otro,
     });
+  });
+
+  it('TBO-12: los 42 `Amenities` de p. 28 salen como servicios de cada una de las dos habitaciones', async () => {
+    const b = bancoTbo();
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(res.roompack.rooms).toHaveLength(2);
+    expect(res.roomAmenities).toHaveLength(2);
+    const [primera, segunda] = res.roomAmenities ?? [];
+    expect(primera).toHaveLength(42);
+    expect(primera?.slice(0, 3)).toEqual(['Non-Smoking', 'Premium bedding', 'Turndown service']);
+    expect(segunda).toEqual(primera);
+  });
+
+  it('TBO-12: otros `Amenities` en el PreBook no son un cambio de la tarifa: C1 sigue UNCHANGED y sin evento', async () => {
+    const b = bancoTbo(() => {
+      const base = fixture('pdf/prebook-limit-multi-room.p28.json') as {
+        HotelResult: { Rooms: Record<string, unknown>[] }[];
+      };
+      const [room] = base.HotelResult[0]?.Rooms ?? [];
+      if (room !== undefined) room['Amenities'] = ['Ocean view', 'ocean VIEW', 'Butler service'];
+      return base;
+    });
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(res.repricing).toMatchObject({ outcome: 'UNCHANGED', changes: [] });
+    expect(b.emit).not.toHaveBeenCalled();
+    expect(res.roomAmenities).toEqual([
+      ['Ocean view', 'Butler service'],
+      ['Ocean view', 'Butler service'],
+    ]);
   });
 
   it('un PreBook con otro total que el buscado → INCREASED, con el evento', async () => {

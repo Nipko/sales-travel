@@ -2,10 +2,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { hotelImageProxyUrl } from '../../../../../lib/hotel-image-proxy';
-import type { HotelRoompack } from '../../actions';
+import type { HotelRoomOccupancy, HotelRoompack } from '../../actions';
+import { hotelRateRows } from '../../_components/hotel-rate-view';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
 import type { RoomContent, RoomContentState } from '../../_components/room-content-view';
 import { RoomPhotosDialog } from '../../_components/room-photo';
+import { RoomSlotFilter } from '../../_components/room-slot-filter';
+import { roomTypeGroups, type RoomSlotChoice } from '../../_components/room-type-groups';
 import type { HotelDetailRatesResult } from '../actions';
 import { LocationCard } from './hotel-content-sections';
 import { HotelDetailRates, RatesRefundNoticeBox } from './hotel-detail-rates';
@@ -192,12 +195,13 @@ function detailRates(
   roompacks: HotelRoompack[],
   extra: Partial<HotelDetailRatesResult> = {},
   roomContent?: RoomContentState,
+  stay: HotelStay = STAY,
 ): string {
   return renderToStaticMarkup(
     createElement(HotelDetailRates, {
       hotelKey: 'dGJvLWhvdGVsc34x',
       searchToken: undefined,
-      stay: STAY,
+      stay,
       nights: 2,
       showProvider: false,
       rates: {
@@ -450,5 +454,149 @@ describe('HotelDetailRates — fotos, tamaño y descripción de cada tipo', () =
       expect(html).not.toContain('data-room-photo-skeleton');
       expect(html).not.toContain('Foto de');
     }
+  });
+});
+
+// ───────────────────────── El tipo de cada habitación (TBO-11) ─────────────────────────
+
+const OCUPACION_1: HotelRoomOccupancy = { adults: 2, childrenAges: [] };
+const OCUPACION_2: HotelRoomOccupancy = { adults: 1, childrenAges: [6] };
+const STAY_2: HotelStay = { ...STAY, rooms: [OCUPACION_1, OCUPACION_2] };
+
+/** Una combinación de dos habitaciones: un pack de TBO con un solo código de reserva. */
+function combinacion(
+  id: string,
+  saleMinor: number,
+  [first, second]: readonly [string, string],
+  extra: Partial<HotelRoompack> = {},
+): HotelRoompack {
+  return tarifa(id, saleMinor, first, {
+    rooms: [
+      { name: first, reference: 1, bedOptions: [], occupancy: OCUPACION_1 },
+      { name: second, reference: 1, bedOptions: [], occupancy: OCUPACION_2 },
+    ],
+    ...extra,
+  });
+}
+
+/** Doble+Doble, Doble+Suite (dos regímenes) y Suite+Suite. */
+const COMBINACIONES = [
+  combinacion('DD', 400_00, ['Doble', 'Doble']),
+  combinacion('DS', 500_00, ['Doble', 'Suite']),
+  combinacion('DS2', 520_00, ['doble', 'suite'], { board: 'BB' }),
+  combinacion('SS', 600_00, ['Suite', 'Suite']),
+];
+
+/** Los títulos de los tipos de habitación de la lista, en su orden. */
+function titulos(html: string): string[] {
+  return [...html.matchAll(/<h3 id="[^"]+"[^>]*>([^<]*)<\/h3>/g)].map((m) => m[1] ?? '');
+}
+
+describe('HotelDetailRates — elegir el tipo de cada habitación', () => {
+  it('con dos habitaciones: un select accesible por habitación, arriba de las combinaciones', () => {
+    const html = detailRates(COMBINACIONES, {}, undefined, STAY_2);
+    expect(html).toMatch(/<fieldset[^>]*><legend[^>]*>Elige el tipo de cada habitación<\/legend>/);
+    expect(html).toContain('El proveedor vende las habitaciones en combinaciones cerradas');
+    expect(html.indexOf('<fieldset')).toBeLessThan(html.indexOf('<section'));
+
+    const selects = [
+      ...html.matchAll(
+        /<label for="([^"]+)"[^>]*>([^<]*)<\/label><select id="\1"[^>]*>(.*?)<\/select>/g,
+      ),
+    ];
+    expect(selects.map((m) => m[2])).toEqual([
+      'Habitación 1 · 2 adultos',
+      'Habitación 2 · 1 adulto, 1 niño (6 años)',
+    ]);
+    const options = selects.map((m) =>
+      [...(m[3] ?? '').matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map(
+        (o) => `${o[1]}=${o[2]}`,
+      ),
+    );
+    // «Cualquier tipo» primero y elegido; cada tipo con cuántas combinaciones lo traen.
+    expect(options).toEqual([
+      ['=Cualquier tipo', 'n:doble=Doble (2)', 'n:suite=Suite (1)'],
+      ['=Cualquier tipo', 'n:doble=Doble (1)', 'n:suite=Suite (2)'],
+    ]);
+    expect(html.match(/<option value="" selected="">Cualquier tipo<\/option>/g)).toHaveLength(2);
+    expect(html).not.toContain(' disabled=""');
+
+    // Sin nada elegido: todas las combinaciones, el aviso vacío y sin «Quitar selección».
+    expect(titulos(html)).toEqual(['2 × Doble', 'Doble + Suite', '2 × Suite']);
+    expect(html).toMatch(/<p role="status" class="[^"]*"><\/p>/);
+    expect(html).not.toContain('Quitar selección');
+  });
+
+  it('con una sola habitación, o una sola combinación, no hay nada que elegir', () => {
+    const una = detailRates([tarifa('A', 400_00, 'Doble'), tarifa('B', 450_00, 'Suite')]);
+    expect(una).not.toContain('Elige el tipo de cada habitación');
+    expect(una).not.toContain('<select');
+
+    const sola = detailRates([COMBINACIONES[1]!, COMBINACIONES[2]!], {}, undefined, STAY_2);
+    expect(sola).not.toContain('Elige el tipo de cada habitación');
+    expect(titulos(sola)).toEqual(['Doble + Suite']);
+  });
+});
+
+describe('RoomSlotFilter — con una elección', () => {
+  const groups = roomTypeGroups(
+    hotelRateRows({ roompacks: COMBINACIONES }, false).map((row) => ({ row })),
+  );
+
+  function filtro(initialChoice: RoomSlotChoice): string {
+    return renderToStaticMarkup(
+      createElement(RoomSlotFilter<(typeof groups)[number]>, {
+        groups,
+        roomsCount: 2,
+        initialChoice,
+        children: (shown) =>
+          createElement(
+            'ul',
+            { 'data-combinaciones': '' },
+            shown.map((g) => createElement('li', { key: g.key }, g.title)),
+          ),
+      }),
+    );
+  }
+
+  function combinaciones(html: string): string[] {
+    const list = /<ul data-combinaciones="">(.*?)<\/ul>/.exec(html)?.[1];
+    return list === undefined
+      ? []
+      : [...list.matchAll(/<li>([^<]*)<\/li>/g)].map((m) => m[1] ?? '');
+  }
+
+  it('sólo las combinaciones que la cumplen, cuántas son y «Quitar selección»', () => {
+    const html = filtro({ 1: 'n:suite' });
+    expect(combinaciones(html)).toEqual(['Doble + Suite', '2 × Suite']);
+    expect(html).toMatch(/<p role="status"[^>]*>2 combinaciones con esta elección<\/p>/);
+    expect(html).toMatch(/<button type="button"[^>]*>.*?Quitar selección<\/button>/);
+    expect(html).toContain('<option value="n:suite" selected="">Suite (2)</option>');
+  });
+
+  it('la opción que no dejaría ninguna combinación no se puede elegir', () => {
+    const html = filtro({ 0: 'n:suite' });
+    expect(combinaciones(html)).toEqual(['2 × Suite']);
+    expect(html).toMatch(/<p role="status"[^>]*>1 combinación con esta elección<\/p>/);
+    // En la habitación 2, «Doble» no combina con una Suite en la 1.
+    expect(html).toContain('<option value="n:doble" disabled="">Doble (0)</option>');
+    expect(html).toContain('<option value="n:suite">Suite (1)</option>');
+  });
+
+  it('sin ninguna combinación: qué habitación cambiar, y la lista no se pinta', () => {
+    const html = filtro({ 0: 'n:suite', 1: 'n:doble' });
+    expect(html).toMatch(
+      /<p role="status"[^>]*><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>No hay combinaciones con esa elección: prueba otro tipo para la habitación 2\.<\/p>/,
+    );
+    expect(html).not.toContain('data-combinaciones');
+    expect(html).toContain('Quitar selección');
+    // La elegida sigue elegida aunque ya no combine: se puede cambiar.
+    expect(html).toContain('<option value="n:doble" selected="">Doble (0)</option>');
+  });
+
+  it('lo elegido que ya no está entre las opciones se olvida', () => {
+    const html = filtro({ 0: 'n:junior-suite' });
+    expect(combinaciones(html)).toEqual(['2 × Doble', 'Doble + Suite', '2 × Suite']);
+    expect(html).not.toContain('Quitar selección');
   });
 });

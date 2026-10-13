@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
 import { BookingPermissionsModule } from '../booking-permissions/booking-permissions.module.js';
+import { NetworkModule } from '../network/network.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PortfoliosModule } from '../portfolios/portfolios.module.js';
+import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
 import { DespegarHotelsProviderModule } from '../providers-despegar/despegar-hotels.module.js';
 import { HotelProvidersModule } from '../providers/hotel-providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
@@ -23,6 +25,8 @@ import {
 } from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { HotelPrebookService } from './hotel-prebook.service.js';
+import { HotelReadinessController } from './hotel-readiness.controller.js';
+import { HotelReadinessService } from './hotel-readiness.service.js';
 import {
   HOTEL_ROOM_CONTENT_SWITCH,
   readHotelRoomContentSwitch,
@@ -71,7 +75,12 @@ import { HotelsService } from './hotels.service.js';
  * interruptor (`HOTEL_ROOM_CONTENT`) se lee una vez, al arrancar.
  *
  * Si la agencia puede reservar tarifas no reembolsables lo fija quien la financia (0055): el PreBook
- * y el Book lo leen de `BookingPermissionsModule`.
+ * y el Book lo leen de `BookingPermissionsModule`. El contacto de soporte que el Book exige lo leen
+ * los dos de `BrandingService` (global), con el mismo predicado: el PreBook sólo lo avisa.
+ *
+ * La guía del superadmin para probar una reserva (`GET /admin/hotels/readiness`) lee la red y sus
+ * vendedores de `NetworkModule` y las excepciones de TBO de `ProviderEnablementModule`, la misma
+ * instancia que leen los registries.
  */
 @Module({
   imports: [
@@ -84,10 +93,13 @@ import { HotelsService } from './hotels.service.js';
     PortfoliosModule,
     BookingPermissionsModule,
     AuditModule,
+    NetworkModule,
+    ProviderEnablementModule,
   ],
-  controllers: [HotelsController],
+  controllers: [HotelsController, HotelReadinessController],
   providers: [
     HotelsService,
+    HotelReadinessService,
     DespegarHotelReservationsService,
     HotelSearchContextStore,
     HotelSearchPagingStore,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { HotelProviderOutcome, HotelRoompack } from '../actions';
 import {
   degradedProviders,
+  disabledProvidersNote,
   emptyResultsView,
   rateProviderLabel,
   testAccountView,
@@ -103,6 +104,112 @@ describe('degradedProviders — el aviso de resultados incompletos', () => {
 
   it('sin nada que avisar, no hay aviso', () => {
     expect(degradedProviders([{ code: 'ok-hotels', status: 'ok', count: 3 }])).toEqual([]);
+  });
+});
+
+describe('disabledProvidersNote — por qué no aparecen los hoteles de un proveedor apagado', () => {
+  const tboApagado: HotelProviderOutcome = {
+    code: 'tbo-hotels',
+    status: 'skipped',
+    count: 0,
+    skipReason: 'opt-in-disabled',
+  };
+  const tboPlataforma: HotelProviderOutcome = {
+    code: 'tbo-hotels',
+    status: 'skipped',
+    count: 0,
+    skipReason: 'platform-disabled',
+    reason: 'Deshabilitado por la plataforma para esta agencia.',
+  };
+  const despegar: HotelProviderOutcome = { code: 'despegar-hotels', status: 'ok', count: 3 };
+
+  it('con la divulgación encendida nombra a TBO y dice a quién pedírselo', () => {
+    expect(disabledProvidersNote([despegar, tboApagado], true)).toEqual({
+      summary: 'TBO Holidays no participa de esta búsqueda.',
+      lines: [
+        'TBO Holidays no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda. Pídele a quien administra tu red que lo habilite.',
+      ],
+    });
+  });
+
+  it('si lo apagó la plataforma, no manda a pedírselo a la red', () => {
+    expect(disabledProvidersNote([despegar, tboPlataforma], true)).toEqual({
+      summary: 'TBO Holidays no participa de esta búsqueda.',
+      lines: ['TBO Holidays está apagado por la plataforma en este momento.'],
+    });
+  });
+
+  it('con la divulgación apagada no nombra al proveedor', () => {
+    for (const tbo of [tboApagado, tboPlataforma]) {
+      const note = disabledProvidersNote([despegar, tbo], false);
+      expect(note).toEqual({
+        summary: 'Un proveedor de hoteles no participa de esta búsqueda.',
+        lines: [
+          'Un proveedor de hoteles no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda.',
+        ],
+      });
+      expect(JSON.stringify(note)).not.toMatch(/TBO|tbo-hotels/);
+    }
+  });
+
+  it('con varios apagados dice cuántos, y con la divulgación encendida una línea por cada uno', () => {
+    const despegarApagado: HotelProviderOutcome = {
+      code: 'despegar-hotels',
+      status: 'skipped',
+      count: 0,
+      skipReason: 'opt-in-disabled',
+    };
+    expect(disabledProvidersNote([tboPlataforma, despegarApagado], true)).toEqual({
+      summary: '2 proveedores de hoteles no participan de esta búsqueda.',
+      lines: [
+        'TBO Holidays está apagado por la plataforma en este momento.',
+        'Despegar Hotels no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda. Pídele a quien administra tu red que lo habilite.',
+      ],
+    });
+    expect(disabledProvidersNote([tboPlataforma, despegarApagado], false)).toEqual({
+      summary: '2 proveedores de hoteles no participan de esta búsqueda.',
+      lines: [
+        '2 proveedores de hoteles no están habilitados para tu agencia: sus hoteles no aparecen en esta búsqueda.',
+      ],
+    });
+  });
+
+  it('el mismo proveedor dos veces cuenta una; si una dice plataforma, manda la plataforma', () => {
+    expect(disabledProvidersNote([tboPlataforma, tboApagado], true)?.lines).toEqual([
+      'TBO Holidays está apagado por la plataforma en este momento.',
+    ]);
+    expect(disabledProvidersNote([tboApagado, tboPlataforma], true)?.lines).toEqual([
+      'TBO Holidays está apagado por la plataforma en este momento.',
+    ]);
+  });
+
+  it('un proveedor sin código no se nombra aunque la divulgación esté encendida', () => {
+    expect(disabledProvidersNote([{ ...tboApagado, code: '' }], true)).toEqual({
+      summary: 'Un proveedor de hoteles no participa de esta búsqueda.',
+      lines: [
+        'Un proveedor de hoteles no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda.',
+      ],
+    });
+  });
+
+  it('el de respaldo que no hizo falta, lo que falta por esta búsqueda o sin cuenta: no es esta nota', () => {
+    expect(
+      disabledProvidersNote(
+        [
+          despegar,
+          { code: 'tbo-hotels', status: 'skipped', count: 0, skipReason: 'fallback-not-needed' },
+          { code: 'moneda-hotels', status: 'skipped', count: 0, skipReason: 'currency-mismatch' },
+          { code: 'sin-cuenta-hotels', status: 'unavailable', count: 0 },
+          { code: 'caido-hotels', status: 'error', count: 0 },
+        ],
+        true,
+      ),
+    ).toBeUndefined();
+    expect(disabledProvidersNote([], true)).toBeUndefined();
+  });
+
+  it('no cambia el aviso de resultados incompletos: un apagado sigue sin ser un faltante', () => {
+    expect(degradedProviders([despegar, tboApagado, tboPlataforma])).toEqual([]);
   });
 });
 

@@ -17,6 +17,7 @@ import type {
   BookingPermissionsService,
   NonRefundableRatesPolicy,
 } from '../booking-permissions/booking-permissions.service.js';
+import type { BrandingService } from '../branding/branding.service.js';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
 import type { PortfoliosService } from '../portfolios/portfolios.service.js';
@@ -185,6 +186,10 @@ function banco(reglas: ApplicableRule[] = REGLAS): Banco {
         Promise.resolve({ status: 'ok', currency: quote.amount.currency }),
     } as unknown as PortfoliosService,
     permisos as unknown as BookingPermissionsService,
+    {
+      resolveSupportContact: () =>
+        Promise.resolve({ email: 'reservas@agencia.example', phone: '+57 601 555 0000' }),
+    } as unknown as BrandingService,
   );
   const resolve = vi.fn((_userId: string) => Promise.resolve(TENANT));
   const disclosure = {

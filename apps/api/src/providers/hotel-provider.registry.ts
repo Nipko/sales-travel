@@ -6,7 +6,9 @@ import {
   hasAccountEnvironment,
   type HotelAccountEnvironment,
   type HotelOrderProviderRef,
+  type HotelProviderAccountProblem,
   type HotelProviderAccountRef,
+  type HotelProviderAccountStatus,
   type HotelProviderCapabilities,
   type HotelProviderFactory,
   type HotelProviderRegistration,
@@ -85,9 +87,18 @@ function accountEnvironmentOf(adapter: object): {
   return hasAccountEnvironment(adapter) ? { accountEnvironment: adapter.accountEnvironment } : {};
 }
 
+/**
+ * `problem` va aparte de `absence.reason` porque la búsqueda le dice `no-credentials` también a una
+ * cuenta que el proveedor no admite (con su propia acción en `detail`), y el diagnóstico del
+ * superadmin las distingue.
+ */
 type HotelProviderResolutionOutcome =
   | { readonly ok: true; readonly provider: ResolvedHotelProvider }
-  | { readonly ok: false; readonly absence: UnavailableProvider };
+  | {
+      readonly ok: false;
+      readonly absence: UnavailableProvider;
+      readonly problem: HotelProviderAccountProblem;
+    };
 
 /**
  * Registry de proveedores de hoteles por tenant. Espejo de `FlightProviderRegistry`.
@@ -184,6 +195,32 @@ export class HotelProviderRegistry {
     const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
     if (!resolved.ok) throw new ProviderNotAvailableError(code);
     return resolved.provider;
+  }
+
+  /**
+   * La cuenta con que saldría un proveedor para el tenant, o por qué no hay una, para el diagnóstico
+   * de la plataforma (`GET /admin/hotels/readiness`). {@link byCode} aplana todo motivo en un 400, y
+   * el superadmin necesita saber si falta la cuenta, si está incompleta o si el proveedor no la
+   * admite: cada una se arregla en otro lado.
+   *
+   * Como {@link byCode}, NO consulta la habilitación: dice qué cuenta tendría el tenant si lo
+   * encendieran. Resolver la cuenta lee la bóveda y arma el adapter; no llama al proveedor.
+   *
+   * @throws ProviderNotAvailableError si el proveedor no está registrado. Un fallo real de la bóveda
+   *   se propaga.
+   */
+  async accountStatusOf(tenantId: string, code: string): Promise<HotelProviderAccountStatus> {
+    const factory = this.factories.find((f) => f.code === code);
+    if (!factory) throw new ProviderNotAvailableError(code);
+
+    const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
+    if (!resolved.ok) return { status: resolved.problem };
+    const { credentialSource, accountEnvironment } = resolved.provider;
+    return {
+      status: 'ok',
+      source: credentialSource,
+      ...(accountEnvironment === undefined ? {} : { environment: accountEnvironment }),
+    };
   }
 
   /**
@@ -408,6 +445,7 @@ export class HotelProviderRegistry {
             reason: 'incomplete-account',
             detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Complétala en Mi Red → Credenciales.`,
           },
+          problem: 'incomplete',
         };
       }
       // Hay cuenta, pero la plataforma no opera con ella: la acción la dice el propio factory.
@@ -415,11 +453,12 @@ export class HotelProviderRegistry {
         return {
           ok: false,
           absence: { code: factory.code, reason: 'no-credentials', detail: err.detail },
+          problem: 'not-allowed',
         };
       }
       // Sin cuenta resoluble y sin fallback: el proveedor no está habilitado para el tenant.
       // Cualquier otro error (bóveda caída, credencial corrupta) sí se propaga.
-      if (err instanceof NotFoundException) return { ok: false, absence: this.sinCuenta(factory) };
+      if (err instanceof NotFoundException) return this.sinCuenta(factory);
       throw err;
     }
 
@@ -429,7 +468,7 @@ export class HotelProviderRegistry {
       this.logger.debug(
         `${factory.code} sin credenciales propias y sin fallback de plataforma: no habilitado`,
       );
-      return { ok: false, absence: this.sinCuenta(factory) };
+      return this.sinCuenta(factory);
     }
 
     // Precedencia: override de entorno > lo que declare la CUENTA del tenant > default del
@@ -452,12 +491,16 @@ export class HotelProviderRegistry {
     };
   }
 
-  private sinCuenta(factory: HotelProviderFactory): UnavailableProvider {
+  private sinCuenta(factory: HotelProviderFactory): HotelProviderResolutionOutcome {
     return {
-      code: factory.code,
-      reason: 'no-credentials',
-      detail:
-        'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
+      ok: false,
+      absence: {
+        code: factory.code,
+        reason: 'no-credentials',
+        detail:
+          'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
+      },
+      problem: 'no-credentials',
     };
   }
 }

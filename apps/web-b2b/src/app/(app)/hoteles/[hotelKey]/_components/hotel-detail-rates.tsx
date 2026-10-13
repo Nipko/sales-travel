@@ -23,6 +23,7 @@ import { RateBookAction } from '../../_components/rate-book-action';
 import type { RateRefundability } from '../../_components/rate-refundability';
 import { groupRoomContent } from '../../_components/room-content-match';
 import type { RoomContentState } from '../../_components/room-content-view';
+import { RoomSlotFilter } from '../../_components/room-slot-filter';
 import { roomTypesCountText } from '../../_components/room-type-groups';
 import { RoomTypeList } from '../../_components/room-type-list';
 import { TestAccountNotice } from '../../_components/test-account-notice';
@@ -466,41 +467,46 @@ export function HotelDetailRates({
               revisar la tarifa, antes de reservar.
             </p>
           ) : null}
-          <div className="-mx-4 border-t border-[var(--color-border)]">
-            <RoomTypeList
-              groups={view.groups}
-              nights={nights}
-              roomsCount={stay.rooms.length}
-              variant="detail"
-              isExpired={(plan) => expired(plan.row)}
-              isUnavailable={unavailable}
-              testAccountCodes={testAccount.codes}
-              roomContent={(group) => groupRoomContent(group, roomContent)}
-              planNotice={({ row, refund }) => {
-                const seller = row.pack.provider?.name;
-                const note =
-                  seller === undefined
-                    ? undefined
-                    : sellingHotelNote(facts.get(seller), shownFacts);
-                return <RateDetailNotice sale={row.sale} refund={refund} sellingNote={note} />;
-              }}
-              planDetails={({ row }) => {
-                const parts = rateDetailParts(row.pack, stay.checkinDate, nights);
-                return parts === undefined ? null : <RateDetailExtras parts={parts} />;
-              }}
-              planAction={(plan) =>
-                unavailable(plan) ? null : (
-                  <RateBookAction
-                    row={plan.row}
-                    bookable={canBook(plan.row)}
-                    expired={expired(plan.row)}
-                    unavailableForAgency={false}
-                    onBook={() => book(plan.row)}
-                  />
-                )
-              }
-            />
-          </div>
+          {/* En una búsqueda de varias habitaciones, el tipo de cada una (TBO-11). */}
+          <RoomSlotFilter groups={view.groups} roomsCount={stay.rooms.length}>
+            {(groups) => (
+              <div className="-mx-4 border-t border-[var(--color-border)]">
+                <RoomTypeList
+                  groups={groups}
+                  nights={nights}
+                  roomsCount={stay.rooms.length}
+                  variant="detail"
+                  isExpired={(plan) => expired(plan.row)}
+                  isUnavailable={unavailable}
+                  testAccountCodes={testAccount.codes}
+                  roomContent={(group) => groupRoomContent(group, roomContent)}
+                  planNotice={({ row, refund }) => {
+                    const seller = row.pack.provider?.name;
+                    const note =
+                      seller === undefined
+                        ? undefined
+                        : sellingHotelNote(facts.get(seller), shownFacts);
+                    return <RateDetailNotice sale={row.sale} refund={refund} sellingNote={note} />;
+                  }}
+                  planDetails={({ row }) => {
+                    const parts = rateDetailParts(row.pack, stay.checkinDate, nights);
+                    return parts === undefined ? null : <RateDetailExtras parts={parts} />;
+                  }}
+                  planAction={(plan) =>
+                    unavailable(plan) ? null : (
+                      <RateBookAction
+                        row={plan.row}
+                        bookable={canBook(plan.row)}
+                        expired={expired(plan.row)}
+                        unavailableForAgency={false}
+                        onBook={() => book(plan.row)}
+                      />
+                    )
+                  }
+                />
+              </div>
+            )}
+          </RoomSlotFilter>
         </>
       )}
     </div>
