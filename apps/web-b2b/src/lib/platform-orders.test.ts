@@ -9,6 +9,7 @@ import {
   clearedFilters,
   emptyCopy,
   eventLabel,
+  eventText,
   filtersFromSearchParams,
   filtersToSearchParams,
   formatOrderDate,
@@ -283,9 +284,45 @@ describe('parsePlatformOrderDetail', () => {
     ]);
     expect(detail?.attention.map((a) => a.reason)).toEqual(['hold-conflict', 'cancel-failed']);
     expect(detail?.events.map((e) => e.eventType)).toEqual([
+      'platform.order.action',
       'OrderCancellationAttempted',
       'OrderCreated',
     ]);
+    expect(detail?.capabilities).toEqual({ retrieve: true, cancel: true });
+  });
+
+  it('las capacidades fallan cerradas: ausentes o raras, ninguna', () => {
+    const { capabilities: _omit, ...withoutCapabilities } = DETAIL_PAYLOAD;
+    expect(parsePlatformOrderDetail(withoutCapabilities)?.capabilities).toEqual({
+      retrieve: false,
+      cancel: false,
+    });
+    expect(
+      parsePlatformOrderDetail({ ...DETAIL_PAYLOAD, capabilities: { retrieve: 'true', cancel: 1 } })
+        ?.capabilities,
+    ).toEqual({ retrieve: false, cancel: false });
+  });
+
+  it('una acción del superadmin trae qué hizo, si salió y el motivo; otro evento no', () => {
+    const detail = parsePlatformOrderDetail(DETAIL_PAYLOAD);
+    expect(detail?.events[0]?.adminAction).toEqual({
+      action: 'retrieve',
+      ok: true,
+      reason: 'La agencia pidió revisar el estado',
+    });
+    expect(detail?.events[1]?.adminAction).toBeNull();
+    const raro = parsePlatformOrderDetail({
+      ...DETAIL_PAYLOAD,
+      events: [
+        {
+          id: 'e1',
+          occurredAt: '2026-10-12T15:10:00.000Z',
+          eventType: 'platform.order.action',
+          payload: { action: 'pay', outcome: 'ok' },
+        },
+      ],
+    });
+    expect(raro?.events[0]?.adminAction).toBeNull();
   });
 
   it('sin la orden o sin su nodo no hay ficha; lo demás se lee por partes', () => {
@@ -303,6 +340,25 @@ describe('parsePlatformOrderDetail', () => {
 });
 
 describe('textos', () => {
+  it('la Actividad nombra la acción del superadmin y si no se completó', () => {
+    const base = { eventType: 'platform.order.action' } as const;
+    expect(eventText({ ...base, adminAction: { action: 'cancel', ok: true, reason: null } })).toBe(
+      'El superadmin canceló la reserva',
+    );
+    expect(
+      eventText({ ...base, adminAction: { action: 'send-confirmation', ok: false, reason: null } }),
+    ).toBe('El superadmin intentó reenviar la confirmación');
+    expect(
+      eventText({ ...base, adminAction: { action: 'retry-cancel', ok: true, reason: null } }),
+    ).toBe('El superadmin reintentó la cancelación');
+    expect(
+      eventText({ ...base, adminAction: { action: 'retrieve', ok: true, reason: null } }),
+    ).toBe('El superadmin consultó el estado al proveedor');
+    expect(eventText({ eventType: 'OrderCreated', adminAction: null })).toBe(
+      'Respondió el proveedor',
+    );
+  });
+
   it('la bandera de atención dice el motivo y desde cuándo', () => {
     expect(
       attentionText({ reason: 'cancel-failed', since: '2026-10-12T15:00:00.000Z' }, NOW.getTime()),

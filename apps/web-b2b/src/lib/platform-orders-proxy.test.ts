@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { adminOrderPlan, adminOrdersPlan } from './platform-orders-proxy';
+import {
+  adminOrderActionPlan,
+  adminOrderCancelPlan,
+  adminOrderEstimateTarget,
+  adminOrderPlan,
+  adminOrderRetryPlan,
+  adminOrdersPlan,
+} from './platform-orders-proxy';
 
 const NODE = '10000000-0000-4000-8000-0000000000AA';
 const ORDER = '20000000-0000-4000-8000-0000000000BB';
@@ -129,5 +136,94 @@ describe('adminOrderPlan', () => {
 
   it('sólo lectura', () => {
     expect(adminOrderPlan('DELETE', ORDER)).toMatchObject({ ok: false, status: 405 });
+  });
+});
+
+const OPERATION = '40000000-0000-4000-8000-0000000000CC';
+const BASE = `/admin/orders/${ORDER.toLowerCase()}`;
+
+describe('las acciones de post-venta', () => {
+  it('reenviar y consultar: sólo el motivo, aunque el navegador mande más', () => {
+    expect(
+      adminOrderActionPlan(ORDER, 'send-confirmation', { reason: 'Lo pidió el cliente', to: 'x' }),
+    ).toEqual({
+      ok: true,
+      path: `${BASE}/send-confirmation`,
+      body: { reason: 'Lo pidió el cliente' },
+    });
+    expect(adminOrderActionPlan(ORDER, 'retrieve', { reason: 'Revisar estado' })).toEqual({
+      ok: true,
+      path: `${BASE}/retrieve`,
+      body: { reason: 'Revisar estado' },
+    });
+  });
+
+  it('sin motivo de texto no viaja; lo corto lo rechaza el API con su mensaje', () => {
+    const raws: unknown[] = [
+      undefined,
+      null,
+      'texto',
+      [],
+      {},
+      { reason: 42 },
+      { reason: 'x'.repeat(2_001) },
+    ];
+    for (const raw of raws) {
+      expect(adminOrderActionPlan(ORDER, 'retrieve', raw)).toEqual({
+        ok: false,
+        error: 'Escribe el motivo: queda en la auditoría.',
+      });
+    }
+    expect(adminOrderActionPlan(ORDER, 'retrieve', { reason: 'abc' })).toMatchObject({ ok: true });
+  });
+
+  it('reintentar: la operación también es un uuid', () => {
+    expect(adminOrderRetryPlan(ORDER, OPERATION, { reason: 'La agencia no entra' })).toEqual({
+      ok: true,
+      path: `${BASE}/operations/${OPERATION.toLowerCase()}/retry`,
+      body: { reason: 'La agencia no entra' },
+    });
+    expect(adminOrderRetryPlan(ORDER, '../cancel', { reason: 'La agencia no entra' })).toEqual({
+      ok: false,
+      error: 'Operación inválida.',
+    });
+    expect(adminOrderRetryPlan(ORDER, OPERATION, {})).toMatchObject({ ok: false });
+  });
+
+  it('cancelar: el motivo y el número de la orden, un entero positivo', () => {
+    expect(
+      adminOrderCancelPlan(ORDER, { reason: 'Pedido del cliente', orderNumber: 1042, force: true }),
+    ).toEqual({
+      ok: true,
+      path: `${BASE}/cancel`,
+      body: { reason: 'Pedido del cliente', orderNumber: 1042 },
+    });
+    for (const orderNumber of [undefined, '1042', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(adminOrderCancelPlan(ORDER, { reason: 'Pedido del cliente', orderNumber })).toEqual({
+        ok: false,
+        error: 'Escribe el número de la orden para confirmar.',
+      });
+    }
+    expect(adminOrderCancelPlan(ORDER, { orderNumber: 1042 })).toMatchObject({ ok: false });
+  });
+
+  it('la penalidad estimada: sólo lectura, sin cuerpo', () => {
+    expect(adminOrderEstimateTarget(ORDER)).toEqual({
+      ok: true,
+      path: `${BASE}/cancellation-estimate`,
+    });
+  });
+
+  it('un id de reserva que no es uuid no compone otra ruta del API', () => {
+    const raw = { reason: 'Pedido del cliente', orderNumber: 1 };
+    for (const id of ['..%2Fusers', `${ORDER}/x`, '']) {
+      expect(adminOrderActionPlan(id, 'retrieve', raw)).toEqual({
+        ok: false,
+        error: 'Reserva inválida.',
+      });
+      expect(adminOrderRetryPlan(id, OPERATION, raw)).toMatchObject({ ok: false });
+      expect(adminOrderCancelPlan(id, raw)).toMatchObject({ ok: false });
+      expect(adminOrderEstimateTarget(id)).toMatchObject({ ok: false });
+    }
   });
 });

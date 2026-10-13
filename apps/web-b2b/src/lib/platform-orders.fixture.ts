@@ -92,6 +92,7 @@ export const DETAIL_PAYLOAD: Record<string, unknown> = {
     email: 'vende@sur.co',
     name: 'Vendedora Sur',
   },
+  capabilities: { retrieve: true, cancel: true },
   operations: [
     {
       id: '40000000-0000-4000-8000-000000000001',
@@ -124,6 +125,21 @@ export const DETAIL_PAYLOAD: Record<string, unknown> = {
     { reason: 'cancel-failed', since: '2026-10-12T14:30:00.000Z' },
   ],
   events: [
+    {
+      id: '50000000-0000-4000-8000-000000000003',
+      occurredAt: '2026-10-12T15:10:00.000Z',
+      eventType: 'platform.order.action',
+      tenantId: NODE_SUR,
+      actorUserId: '30000000-0000-4000-8000-0000000000ff',
+      actorEmail: 'founder@planetour.cloud',
+      payload: {
+        action: 'retrieve',
+        orderId: ORDER_1,
+        reason: 'La agencia pidió revisar el estado',
+        outcome: 'ok',
+        result: { found: true, providerStatus: 'Cancelled' },
+      },
+    },
     {
       id: '50000000-0000-4000-8000-000000000002',
       occurredAt: '2026-10-12T14:30:00.000Z',

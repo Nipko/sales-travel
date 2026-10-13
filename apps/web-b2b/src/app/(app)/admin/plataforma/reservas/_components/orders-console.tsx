@@ -53,7 +53,8 @@ const CLOCK_TICK_MS = 60_000;
 
 /**
  * Plataforma → Reservas de la red: el superadmin busca cualquier reserva de cualquier nodo, ve cuáles
- * esperan a una persona y abre su ficha. Antes se enteraba cuando la agencia se lo contaba.
+ * esperan a una persona y abre su ficha, desde donde hace la post-venta (nunca vende). Antes se
+ * enteraba cuando la agencia se lo contaba.
  *
  * Los filtros viven en la URL (`?atencion=1&estado=…&nodo=…`) y la ficha abierta también
  * (`?orden=`): un enlace abre lo mismo, y el Resumen enlaza aquí. La búsqueda no va en la URL: puede
@@ -184,6 +185,8 @@ export function OrdersConsole({
     [],
   );
   const close = useCallback(() => setSelected(null), []);
+  // Una acción desde la ficha (cancelar, reintentar, consultar) puede cambiar el estado de la fila.
+  const changed = useCallback(() => void load(filters, 'refresh'), [filters, load]);
   const hrefFor = useCallback((row: PlatformOrderRow) => ordersHref(filters, row.id), [filters]);
 
   const activeCount = activeFilterCount(filters);
@@ -309,6 +312,7 @@ export function OrdersConsole({
           orderId={selected.id}
           preview={selected.preview}
           onClose={close}
+          onChanged={changed}
         />
       ) : null}
     </div>
