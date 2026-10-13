@@ -56,6 +56,23 @@ export class MemberSupportController {
     return this.support.sendPasswordReset(userId, tenantId, targetUserId);
   }
 
+  /**
+   * Lo obliga a elegir una contraseña nueva antes de volver a ingresar: cierra sus sesiones y le
+   * envía el enlace. La respuesta dice si el correo salió y cuántas sesiones se cerraron; nunca trae
+   * el enlace ni el token.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post(':id/members/:userId/require-password-reset')
+  @HttpCode(200)
+  async requirePasswordReset(
+    @CurrentUser() userId: string | undefined,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+    @Param('userId', new ZodValidationPipe(UuidParamSchema)) targetUserId: string,
+  ): Promise<{ sent: boolean; revokedSessions: number }> {
+    if (!userId) throw new UnauthorizedException();
+    return this.support.requirePasswordReset(userId, tenantId, targetUserId);
+  }
+
   /** Levanta el bloqueo por intentos fallidos. No toca contraseña, 2FA ni estado. */
   @Post(':id/members/:userId/unlock')
   @HttpCode(200)

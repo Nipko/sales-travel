@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -13,10 +13,24 @@ import { SessionService } from './session.service.js';
 /** Minutos de vida de un enlace para restablecer la contraseña. */
 export const RESET_TOKEN_TTL_MINUTES = 60;
 
+/**
+ * Con un enlace pendiente emitido hace menos que esto, intentar ingresar con la marca de "elegir una
+ * contraseña nueva" no envía otro: así el login repetido no le llena el buzón a nadie.
+ */
+export const REQUIRED_RESET_RESEND_MINUTES = 10;
+
+/** Motivo con que quedan revocadas las sesiones cuando un admin fuerza el cambio de contraseña. */
+export const REVOKED_PASSWORD_RESET_REQUIRED = 'password_reset_required';
+
 /** Un enlace recién emitido. El token en claro sólo sirve para armar el correo. */
 export interface IssuedResetToken {
   readonly token: string;
   readonly expiresAt: Date;
+}
+
+/** Lo que dejó forzar el cambio de contraseña: el enlace para el correo y las sesiones cerradas. */
+export interface RequiredReset extends IssuedResetToken {
+  readonly revokedSessions: number;
 }
 
 /**
@@ -55,18 +69,12 @@ export class PasswordResetService {
 
     const { token } = await this.issueToken(this.db.db, user.id, { invalidatePrevious: false });
 
-    const tenant = await this.db.db
-      .selectFrom('memberships')
-      .select('tenant_id')
-      .where('user_id', '=', user.id)
-      .where('status', '=', 'active')
-      .orderBy('created_at')
-      .executeTakeFirst();
+    const node = await this.mailNodeOf(user.id);
 
     // El resultado del envío no cambia la respuesta (seguiría siendo un oráculo): queda en la
     // auditoría para quien investigue por qué no llegó.
     const sent = await this.sendResetEmail(
-      tenant?.tenant_id ?? null,
+      node?.tenantId ?? null,
       email,
       this.resetLink(token),
       'self',
@@ -151,8 +159,131 @@ export class PasswordResetService {
   }
 
   /**
+   * Obliga a `targetUserId` a elegir una contraseña nueva antes de volver a ingresar: lo marca
+   * (`password_reset_required_at`; si ya estaba, conserva desde cuándo), cierra todas sus sesiones,
+   * deja sin efecto sus enlaces pendientes y emite uno nuevo, y lo audita. Todo en `trx`, la
+   * transacción del llamador: la marca sin su rastro, o sin las sesiones cerradas, no debe existir.
+   *
+   * No autoriza ni envía el correo: el llamador decide quién puede (MemberSupportService) y envía el
+   * enlace después del commit con la variante `required`. El token en claro sólo sirve para ese
+   * correo.
+   */
+  async requireReset(
+    trx: Transaction<DB>,
+    params: { actorUserId: string; targetUserId: string; tenantId: string | null },
+  ): Promise<RequiredReset> {
+    const { actorUserId, targetUserId, tenantId } = params;
+    await trx
+      .updateTable('users')
+      .set({ password_reset_required_at: sql<Date>`COALESCE(password_reset_required_at, now())` })
+      .where('id', '=', targetUserId)
+      .execute();
+
+    const res = await sql<{ revoked: number | string }>`
+      SELECT revoke_user_sessions(${targetUserId}::uuid, ${REVOKED_PASSWORD_RESET_REQUIRED}) AS revoked
+    `.execute(trx);
+    const revokedSessions = Number(res.rows[0]?.revoked ?? 0);
+
+    const { token, expiresAt } = await this.issueToken(trx, targetUserId, {
+      invalidatePrevious: true,
+    });
+
+    await this.audit.emitWithin(trx, {
+      eventType: 'auth.password_reset.required_by_admin',
+      tenantId,
+      actorUserId,
+      aggregateType: 'user',
+      aggregateId: targetUserId,
+      payload: { targetUserId, revokedSessions },
+    });
+    return { token, expiresAt, revokedSessions };
+  }
+
+  /**
+   * Quien tiene que elegir una contraseña nueva intentó ingresar (con la contraseña correcta): si no
+   * tiene un enlace pendiente emitido en los últimos REQUIRED_RESET_RESEND_MINUTES, le envía uno. Así
+   * un enlace vencido no lo deja afuera para siempre y el login repetido no le llena el buzón.
+   *
+   * La fila del usuario queda tomada mientras se decide: dos intentos en paralelo se ordenan y el
+   * segundo ya ve el enlace del primero. No invalida los anteriores (como "Olvidé mi contraseña"): el
+   * que ya tiene en el buzón sigue sirviendo. `linkSent` es si salió un correo ahora.
+   */
+  async remindRequiredReset(userId: string): Promise<{ linkSent: boolean }> {
+    const issued = await this.db.db.transaction().execute(async (trx) => {
+      const user = await trx
+        .selectFrom('users')
+        .select(['email', 'status', 'password_reset_required_at'])
+        .where('id', '=', userId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!user || user.status !== 'active' || user.password_reset_required_at === null) {
+        return null;
+      }
+
+      const recent = await trx
+        .selectFrom('password_reset_tokens')
+        .select('id')
+        .where('user_id', '=', userId)
+        .where('used_at', 'is', null)
+        .where(sql<boolean>`expires_at > now()`)
+        .where(
+          sql<boolean>`created_at > now() - make_interval(mins => ${REQUIRED_RESET_RESEND_MINUTES})`,
+        )
+        .limit(1)
+        .executeTakeFirst();
+      if (recent) return null;
+
+      const { token } = await this.issueToken(trx, userId, { invalidatePrevious: false });
+      return { email: user.email, token };
+    });
+    if (issued === null) return { linkSent: false };
+
+    const node = await this.mailNodeOf(userId);
+    const sent = await this.sendResetEmail(
+      node?.tenantId ?? null,
+      issued.email,
+      this.resetLink(issued.token),
+      'required',
+      node?.name ?? null,
+    );
+    if (!sent) {
+      await this.audit.emit({
+        eventType: 'auth.password_reset.email_failed',
+        actorUserId: userId,
+        aggregateType: 'user',
+        aggregateId: userId,
+        payload: { targetUserId: userId, via: 'required' },
+      });
+    }
+    return { linkSent: sent };
+  }
+
+  /**
+   * El nodo por cuyo correo le escribimos a alguien sin un admin de por medio: su membership activa
+   * más antigua. Se lee con su id en el contexto (policy memberships_self): la API corre como
+   * app_user y, sin él, la RLS de memberships no deja ver ninguna y el correo salía siempre por el
+   * del sistema.
+   */
+  private async mailNodeOf(
+    userId: string,
+  ): Promise<{ tenantId: string; name: string } | undefined> {
+    return this.db.withRequestContext({ userId }, (trx) =>
+      trx
+        .selectFrom('memberships')
+        .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
+        .select(['memberships.tenant_id as tenantId', 'tenants.name as name'])
+        .where('memberships.user_id', '=', userId)
+        .where('memberships.status', '=', 'active')
+        .orderBy('memberships.created_at')
+        .executeTakeFirst(),
+    );
+  }
+
+  /**
    * Canjea el token y fija la contraseña nueva. Revoca TODAS las sesiones del usuario y, por
-   * `password_changed_at`, también sus equipos de confianza.
+   * `password_changed_at`, también sus equipos de confianza. Si un admin le había pedido elegir una
+   * contraseña nueva, la marca se levanta en el mismo UPDATE: sirve tanto el enlace que le envió el
+   * admin como el de "Olvidé mi contraseña".
    *
    * El canje es un UPDATE condicional (`used_at IS NULL`) dentro de la misma transacción que el
    * cambio: leer y después marcar dejaba que el mismo enlace sirviera dos veces en paralelo. Los
@@ -183,6 +314,7 @@ export class PasswordResetService {
           // Un reset exitoso también levanta el lockout: el dueño legítimo recuperó la cuenta.
           failed_login_attempts: 0,
           locked_until: null,
+          password_reset_required_at: null,
         })
         .where('id', '=', row.user_id)
         .execute();
@@ -210,9 +342,10 @@ export class PasswordResetService {
 
   /**
    * Cambio de contraseña autenticado. Revoca TODAS las sesiones (y, por `password_changed_at`, los
-   * equipos de confianza). El dispositivo actual sigue porque el controlador le emite una sesión
-   * nueva (AuthService.reissueAfterPasswordChange): antes esto prometía conservar la actual y la
-   * mataba igual.
+   * equipos de confianza) y levanta la marca de "elegir una contraseña nueva" si la tenía. El
+   * dispositivo actual sigue porque el controlador le emite una sesión nueva
+   * (AuthService.reissueAfterPasswordChange): antes esto prometía conservar la actual y la mataba
+   * igual.
    */
   async change(
     userId: string,
@@ -240,6 +373,7 @@ export class PasswordResetService {
       .set({
         password_hash: await this.password.hash(newPassword),
         password_changed_at: new Date(),
+        password_reset_required_at: null,
       })
       .where('id', '=', userId)
       .execute();

@@ -61,6 +61,7 @@ d('auth premium contra Postgres, como app_user', () => {
   const trusted = new TrustedDeviceService(database);
   const mfa = new MfaService(database, new TotpService(), password, audit, attempts);
   const mailer = { sendToTenant: () => Promise.resolve() } as unknown as MailerService;
+  const reset = new PasswordResetService(database, password, mailer, audit, sessions);
   const auth = new AuthService(
     database,
     jwt,
@@ -73,8 +74,8 @@ d('auth premium contra Postgres, como app_user', () => {
     challenges,
     trusted,
     attempts,
+    reset,
   );
-  const reset = new PasswordResetService(database, password, mailer, audit, sessions);
 
   let platform: string;
   let cons: string;

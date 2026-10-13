@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { PasswordResetService } from '../auth/password-reset.service.js';
 import { DatabaseService } from '../database/database.service.js';
-import type { MembershipStatus } from '../database/database.types.js';
+import type { DB, MembershipStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
 import {
   MemberAccountSuspendedError,
@@ -28,7 +28,8 @@ export const RESET_LINKS_WINDOW_MINUTES = 15;
 /**
  * Soporte a un miembro del equipo: restablecer su 2FA (perdió el teléfono y los códigos), cerrar
  * todas sus sesiones (perdió la notebook) sin suspenderle la membership, enviarle el enlace para que
- * elija una contraseña nueva y levantarle el bloqueo por intentos fallidos.
+ * elija una contraseña nueva, obligarlo a elegirla antes de volver a ingresar y levantarle el bloqueo
+ * por intentos fallidos.
  *
  * Todas tocan la identidad global, no un nodo: la regla de quién puede está en
  * assertCanSupportMember. Lo que hace la base (`admin_reset_user_mfa`, `revoke_user_sessions`) es
@@ -123,24 +124,13 @@ export class MemberSupportService {
     const issued = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
       const target = await trx
         .selectFrom('users')
-        .select(['email', 'status'])
+        .select(['email', 'status', 'password_reset_required_at'])
         .where('id', '=', targetUserId)
         .forNoKeyUpdate()
         .executeTakeFirst();
       if (!target) throw new MemberNotFoundError();
       if (target.status !== 'active') throw new MemberAccountSuspendedError();
-
-      const recent = await trx
-        .selectFrom('password_reset_tokens')
-        .select((eb) => eb.fn.countAll<string>().as('n'))
-        .where('user_id', '=', targetUserId)
-        .where(
-          sql<boolean>`created_at > now() - make_interval(mins => ${RESET_LINKS_WINDOW_MINUTES})`,
-        )
-        .executeTakeFirst();
-      if (Number(recent?.n ?? 0) >= RESET_LINKS_PER_WINDOW) {
-        throw new PasswordResetRateLimitedError();
-      }
+      await this.assertUnderResetLimit(trx, targetUserId);
 
       const { token, expiresAt } = await this.resets.issueToken(trx, targetUserId, {
         invalidatePrevious: true,
@@ -160,14 +150,21 @@ export class MemberSupportService {
         .select('name')
         .where('id', '=', tenantId)
         .executeTakeFirst();
-      return { email: target.email, token, expiresAt, nodeName: node?.name ?? null };
+      return {
+        email: target.email,
+        token,
+        expiresAt,
+        nodeName: node?.name ?? null,
+        // Con el cambio forzado pendiente, el correo no puede decir que la actual sigue funcionando.
+        variant: target.password_reset_required_at === null ? 'admin' : 'required',
+      } as const;
     });
 
     const sent = await this.resets.sendResetEmail(
       tenantId,
       issued.email,
       this.resets.resetLink(issued.token),
-      'admin',
+      issued.variant,
       issued.nodeName,
     );
     if (!sent) {
@@ -181,6 +178,74 @@ export class MemberSupportService {
       });
     }
     return { sent, expiresAt: issued.expiresAt.toISOString() };
+  }
+
+  /**
+   * Lo obliga a elegir una contraseña nueva antes de volver a ingresar: cierra todas sus sesiones,
+   * deja sin efecto sus enlaces anteriores y le envía uno nuevo (PasswordResetService.requireReset).
+   * Hasta que lo use, el login le responde 403 PASSWORD_RESET_REQUIRED. Es para cuando se sospecha
+   * que su contraseña está comprometida: a diferencia de enviarle el enlace, la vieja deja de servir
+   * en el acto.
+   *
+   * Los mismos 409 que enviar el enlace. Si ya estaba obligado, volver a pedirlo sólo le reenvía el
+   * enlace (no hay sesiones que cerrar: ninguna vale mientras tanto), así que cuenta para el mismo
+   * límite de 3 enlaces cada 15 minutos; la primera vez no, para que el límite nunca impida cortarle
+   * el acceso a una contraseña comprometida. Todo en una transacción que bloquea la fila del
+   * usuario; el correo sale después del commit y, si no sale, se audita el fallo.
+   */
+  async requirePasswordReset(
+    actorUserId: string,
+    tenantId: string,
+    targetUserId: string,
+  ): Promise<{ sent: boolean; revokedSessions: number }> {
+    const membershipStatus = await this.authorize(actorUserId, tenantId, targetUserId);
+    if (membershipStatus === 'suspended') throw new MembershipSuspendedError();
+
+    const required = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+      const target = await trx
+        .selectFrom('users')
+        .select(['email', 'status', 'password_reset_required_at'])
+        .where('id', '=', targetUserId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!target) throw new MemberNotFoundError();
+      if (target.status !== 'active') throw new MemberAccountSuspendedError();
+      if (target.password_reset_required_at !== null) {
+        await this.assertUnderResetLimit(trx, targetUserId);
+      }
+
+      const { token, revokedSessions } = await this.resets.requireReset(trx, {
+        actorUserId,
+        targetUserId,
+        tenantId,
+      });
+
+      const node = await trx
+        .selectFrom('tenants')
+        .select('name')
+        .where('id', '=', tenantId)
+        .executeTakeFirst();
+      return { email: target.email, token, revokedSessions, nodeName: node?.name ?? null };
+    });
+
+    const sent = await this.resets.sendResetEmail(
+      tenantId,
+      required.email,
+      this.resets.resetLink(required.token),
+      'required',
+      required.nodeName,
+    );
+    if (!sent) {
+      await this.audit.emit({
+        eventType: 'auth.password_reset.email_failed',
+        tenantId,
+        actorUserId,
+        aggregateType: 'user',
+        aggregateId: targetUserId,
+        payload: { targetUserId, via: 'required' },
+      });
+    }
+    return { sent, revokedSessions: required.revokedSessions };
   }
 
   /**
@@ -224,6 +289,25 @@ export class MemberSupportService {
       return true;
     });
     return { unlocked };
+  }
+
+  /**
+   * 429 con RESET_LINKS_PER_WINDOW enlaces o más de esa persona en los últimos
+   * RESET_LINKS_WINDOW_MINUTES (los que pidió ella también cuentan): frena que un admin le llene el
+   * buzón o deje sin efecto, una y otra vez, el enlace que acaba de recibir.
+   */
+  private async assertUnderResetLimit(trx: Transaction<DB>, targetUserId: string): Promise<void> {
+    const recent = await trx
+      .selectFrom('password_reset_tokens')
+      .select((eb) => eb.fn.countAll<string>().as('n'))
+      .where('user_id', '=', targetUserId)
+      .where(
+        sql<boolean>`created_at > now() - make_interval(mins => ${RESET_LINKS_WINDOW_MINUTES})`,
+      )
+      .executeTakeFirst();
+    if (Number(recent?.n ?? 0) >= RESET_LINKS_PER_WINDOW) {
+      throw new PasswordResetRateLimitedError();
+    }
   }
 
   /**

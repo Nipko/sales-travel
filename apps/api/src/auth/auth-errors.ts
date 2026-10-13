@@ -227,6 +227,21 @@ export class SeatsFullError extends ConflictException {
   }
 }
 
+/**
+ * La contraseña era correcta, pero un admin le pidió elegir una nueva y todavía no lo hizo. 403 y no
+ * 401: el panel muestra qué hacer (abrir el enlace del correo) en vez de "credenciales incorrectas".
+ * Decirlo no enumera nada: sólo llega quien acertó la contraseña, y el enlace va al buzón de la
+ * persona.
+ */
+export class PasswordResetRequiredError extends ForbiddenException {
+  readonly reason = 'PASSWORD_RESET_REQUIRED';
+
+  constructor() {
+    super('Tienes que elegir una contraseña nueva: te enviamos un enlace a tu correo.');
+    this.name = 'PasswordResetRequiredError';
+  }
+}
+
 /** El permiso para liberar un puesto venció, ya se usó o no es válido. 401. */
 export class SeatReleaseExpiredError extends UnauthorizedException {
   readonly reason = 'SEAT_RELEASE_EXPIRED';

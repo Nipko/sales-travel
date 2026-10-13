@@ -18,6 +18,7 @@ import {
   type MfaChallengeService,
 } from './mfa-challenge.service.js';
 import type { MfaService } from './mfa.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import type { PasswordService } from './password.service.js';
 import type { SeatService } from './seat.service.js';
 import type { SessionService } from './session.service.js';
@@ -151,6 +152,7 @@ function build(user: Record<string, unknown> | undefined = undefined): AuthServi
     challenges as unknown as MfaChallengeService,
     { create: createDevice, use: useDevice } as unknown as TrustedDeviceService,
     { registerFailure, registerSuccess, clearFailures } as unknown as LoginAttemptsService,
+    {} as PasswordResetService,
   );
 }
 

@@ -2,30 +2,46 @@ import { escapeHtml, plainText } from '../mail/mail-text.js';
 import type { MailMessage } from '../mail/mailer.service.js';
 
 /**
- * Quién originó el enlace: la propia persona desde "Olvidé mi contraseña" o un admin desde Equipo.
- * El texto cambia porque quien no lo pidió tiene que saber de dónde salió y qué hacer si no lo
- * esperaba.
+ * Quién originó el enlace y para qué: la propia persona desde "Olvidé mi contraseña", un admin desde
+ * Equipo que se lo envía (la contraseña actual sigue valiendo) o un admin que la obliga a elegir una
+ * nueva antes de volver a ingresar (`required`, también el que se reenvía al intentar entrar). El
+ * texto cambia porque quien no lo pidió tiene que saber de dónde salió y qué hacer.
  */
-export type ResetEmailVariant = 'self' | 'admin';
+export type ResetEmailVariant = 'self' | 'admin' | 'required';
 
-const SUBJECT = 'Restablece tu contraseña · PlaneTour';
-const HEADING = 'Restablece tu contraseña';
 const BUTTON = 'Elegir contraseña nueva';
 
 interface ResetEmailCopy {
+  readonly subject: string;
+  readonly heading: string;
   readonly body: string;
   readonly footer: string;
 }
 
+const RESET_HEADING = 'Restablece tu contraseña';
+const REQUIRED_HEADING = 'Elige una contraseña nueva';
+
 function copyFor(variant: ResetEmailVariant, ttlMinutes: number, nodeName: string): ResetEmailCopy {
+  if (variant === 'required') {
+    return {
+      subject: `${REQUIRED_HEADING} · PlaneTour`,
+      heading: REQUIRED_HEADING,
+      body: `Un administrador de ${nodeName} te pidió que elijas una contraseña nueva. Hasta que lo hagas no vas a poder ingresar. El enlace vence en ${ttlMinutes} minutos; si vence, al intentar ingresar te llega otro.`,
+      footer: 'Si crees que es un error, avísale a tu administrador.',
+    };
+  }
   if (variant === 'admin') {
     return {
+      subject: `${RESET_HEADING} · PlaneTour`,
+      heading: RESET_HEADING,
       body: `Un administrador de ${nodeName} te envió este enlace para que elijas una contraseña nueva. Vence en ${ttlMinutes} minutos.`,
       footer:
         'Si no lo esperabas, ignora este correo: tu contraseña actual sigue funcionando. Si crees que es un error, avísale a tu administrador.',
     };
   }
   return {
+    subject: `${RESET_HEADING} · PlaneTour`,
+    heading: RESET_HEADING,
     body: `Recibimos un pedido para cambiar tu contraseña. El enlace vence en ${ttlMinutes} minutos.`,
     footer: 'Si no pediste esto, ignora este correo: tu contraseña no cambia.',
   };
@@ -36,7 +52,7 @@ function copyFor(variant: ResetEmailVariant, ttlMinutes: number, nodeName: strin
  *
  * El nombre del nodo lo elige su propio admin: en el HTML va escapado y en el asunto y el texto sin
  * caracteres de control (mail-text.ts). Sin nombre legible se dice "la plataforma", como en la
- * invitación.
+ * invitación. El asunto no lleva el nombre: es fijo por variante.
  */
 export function passwordResetEmail(
   variant: ResetEmailVariant,
@@ -48,9 +64,9 @@ export function passwordResetEmail(
   const plain = copyFor(variant, ttlMinutes, node);
   const html = copyFor(variant, ttlMinutes, escapeHtml(node));
   return {
-    subject: SUBJECT,
+    subject: plain.subject,
     html: resetEmailHtml(escapeHtml(link), html),
-    text: [HEADING, plain.body, `${BUTTON}: ${link}`, plain.footer].join('\n\n'),
+    text: [plain.heading, plain.body, `${BUTTON}: ${link}`, plain.footer].join('\n\n'),
   };
 }
 
@@ -61,7 +77,7 @@ function resetEmailHtml(href: string, copy: ResetEmailCopy): string {
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:32px">
         <tr><td>
-          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">${HEADING}</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">${copy.heading}</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#52525b">
             ${copy.body}
           </p>

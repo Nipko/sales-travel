@@ -173,6 +173,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:id/members/:userId/reset-mfa',
     'POST /tenants/:id/members/:userId/revoke-sessions',
     'POST /tenants/:id/members/:userId/send-password-reset',
+    'POST /tenants/:id/members/:userId/require-password-reset',
     'POST /tenants/:id/members/:userId/unlock',
     'GET /tenants/:id/branding',
     'GET /tenants/:id/branding/own',
