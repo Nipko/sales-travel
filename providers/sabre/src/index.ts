@@ -184,3 +184,13 @@ export * from './sabre-ancillary.adapter';
 // ---------------------------------------------------------------------------------------------
 
 export * from './ticketing/document-status';
+
+// ---------------------------------------------------------------------------------------------
+// Política de emisión al reservar (SAB-06)
+//
+// Bloque propio y al final: sus nombres llevan `SABRE_BOOKING_TICKETING_`, `SABRE_TICKETING_`,
+// `SabreTicketing*`, `planSabreTicketingPolicy` o `isSabrePccTimeZone`, distintos de los
+// `SABRE_TICKETING_POLICIES`/`SabreTicketingPolicy` del builder, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './booking/ticketing-policy';

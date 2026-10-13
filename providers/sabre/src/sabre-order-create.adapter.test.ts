@@ -1,4 +1,5 @@
 import type { Offer, Segment } from '@sales-travel/canonical';
+import type { LoggerPort } from '@sales-travel/core';
 import {
   OrderCreateNotSentError,
   type OrderCreateRequest,
@@ -6,11 +7,14 @@ import {
   type SearchContext,
 } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
+import priceFixture from './__fixtures__/price-oneway-adult-200.json';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
+import { SABRE_NDC_PAYMENT_TIME_LIMIT_RAW_KEY } from './booking/ticketing-policy';
 import { SABRE_HOSTS, type SabreConfig } from './config';
 import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import { SabreHttpClient } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
+import { mapSabrePriceResponse } from './price/response.mapper';
 import {
   SABRE_BOOKING_USE_CASES,
   SABRE_DEFAULT_BOOKING_USE_CASE,
@@ -19,6 +23,7 @@ import {
   SabreOrderCreateAdapter,
   classifySabrePartialFailure,
   type SabreBookingUseCase,
+  type SabreOrderCreateDeps,
   type SabreOrderCreateOptions,
   type SabreOrderCreateOutcome,
 } from './sabre-order-create.adapter';
@@ -69,15 +74,16 @@ async function book(
   request: OrderCreateRequest,
   response: unknown,
   options: SabreOrderCreateOptions = {},
+  setup: { readonly cfg?: Partial<SabreConfig>; readonly deps?: SabreOrderCreateDeps } = {},
 ): Promise<Wire> {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetchImpl: SabreFetch = (url, init) => {
     calls.push({ url, init });
     return Promise.resolve(new Response(JSON.stringify(response), { status: 200 }));
   };
-  const cfg = config();
+  const cfg: SabreConfig = { ...config(), ...setup.cfg };
   const http = new SabreHttpClient(cfg, tokens, { fetch: fetchImpl, uuid: () => 'conv-fijo' });
-  const adapter = new SabreOrderCreateAdapter(cfg, http);
+  const adapter = new SabreOrderCreateAdapter(cfg, http, setup.deps);
   const ctx: SearchContext = { tenantId: TENANT_ID, requestId: 'req-1' };
 
   const outcome = await adapter.createBooking(request, ctx, options);
@@ -651,5 +657,383 @@ describe('provider_raw', () => {
     // Ni la descripción libre que mandó Sabre con el error del asiento.
     expect(raw).not.toContain('One or some of the seats');
     expect(wire.outcome.providerRaw['accessoryFailures']).toEqual(['seat']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 5. Política y plazo de emisión (SAB-06)
+// ---------------------------------------------------------------------------------------------
+
+/** Reloj fijo de los casos de emisión: martes 13 de octubre de 2026, 12:00 UTC (07:00 en Bogotá). */
+const AHORA = new Date('2026-10-13T12:00:00.000Z');
+const reloj: SabreOrderCreateDeps = { now: () => AHORA };
+
+/** ATPCO revalidado por Flight Check, con el plazo de pago que guardó el mapper (UTC). */
+function flightCheckedOfferWithDeadline(paymentTimeLimit: string): Offer {
+  const base = flightCheckedOffer();
+  return {
+    ...base,
+    provider: {
+      ...base.provider,
+      raw: {
+        ...base.provider.raw,
+        [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: paymentTimeLimit,
+      },
+    },
+  };
+}
+
+function agencyOf(wire: Wire): Record<string, unknown> {
+  const agency = wire.body['agency'];
+  if (agency === undefined || agency === null || typeof agency !== 'object') {
+    throw new Error('el body no llevó bloque agency');
+  }
+  return agency as Record<string, unknown>;
+}
+
+interface LogLine {
+  readonly level: string;
+  readonly message: string;
+  readonly meta: Record<string, unknown> | undefined;
+}
+
+function spyLogger(): { logger: LoggerPort; lines: LogLine[] } {
+  const lines: LogLine[] = [];
+  const push =
+    (level: string) =>
+    (message: string, meta?: Record<string, unknown>): void => {
+      lines.push({ level, message, meta });
+    };
+  const logger: LoggerPort = {
+    debug: push('debug'),
+    info: push('info'),
+    warn: push('warn'),
+    error: push('error'),
+    child: () => logger,
+  };
+  return { logger, lines };
+}
+
+describe('política y plazo de emisión', () => {
+  it('con plazo: el carril verificado sin tarjeta —CASH más TICKETING_TIME_LIMIT— llega al cable', async () => {
+    // El plazo de Flight Check es el 15 a las 03:00 UTC; menos 2 h de margen son las 01:00 UTC del
+    // 15, que en Bogotá (UTC-5) son las 20:00 del 14. El cambio de día es la sonda: con la hora UTC
+    // el plazo saldría un día tarde.
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: {}, receivedFrom: 'PLANETOUR' },
+      { deps: reloj },
+    );
+
+    // La forma del ejemplo verificado de punta a punta (docs/sabre/04 §7.6): ni más ni menos.
+    expect(agencyOf(wire)).toEqual({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingTimeLimitPolicy: {
+        airlineCode: 'AV',
+        ticketingDate: '2026-10-14',
+        ticketingTime: '20:00',
+      },
+    });
+    expect(wire.body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+    expect(wire.body['receivedFrom']).toBe('PLANETOUR');
+    expect(wire.outcome.ticketing).toEqual({
+      policy: 'TICKETING_TIME_LIMIT',
+      requestedPolicy: 'TICKETING_TIME_LIMIT',
+      deadline: {
+        date: '2026-10-14',
+        time: '20:00',
+        pccTimeZone: 'America/Bogota',
+        source: 'PROVIDER',
+      },
+    });
+  });
+
+  it('el margen y la zona son los de la cuenta, no constantes del adapter', async () => {
+    // 23:59:30 UTC del 14 menos 6 h = 17:59:30 UTC = 12:59 en Lima (UTC-5) y 19:59 en Madrid
+    // (UTC+2 en octubre). Los segundos se truncan: 12:59, nunca 13:00.
+    const offer = flightCheckedOfferWithDeadline('2026-10-14T23:59:30.000Z');
+    const lima = await book(
+      request(offer),
+      CONFIRMED_RESPONSE,
+      { ticketing: { leadHours: 6, pccTimeZone: 'America/Lima' } },
+      { deps: reloj },
+    );
+    const madrid = await book(
+      request(offer),
+      CONFIRMED_RESPONSE,
+      { ticketing: { leadHours: 6, pccTimeZone: 'Europe/Madrid' } },
+      { deps: reloj },
+    );
+
+    expect(agencyOf(lima)['ticketingTimeLimitPolicy']).toMatchObject({
+      ticketingDate: '2026-10-14',
+      ticketingTime: '12:59',
+    });
+    expect(agencyOf(madrid)['ticketingTimeLimitPolicy']).toMatchObject({
+      ticketingDate: '2026-10-14',
+      ticketingTime: '19:59',
+    });
+  });
+
+  it('sin margen pedido, el plazo es el del proveedor', async () => {
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { leadHours: 0 } },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)['ticketingTimeLimitPolicy']).toMatchObject({
+      ticketingDate: '2026-10-14',
+      ticketingTime: '22:00',
+    });
+  });
+
+  it('si el margen no cabe, se pide el plazo del proveedor y no uno ya vencido', async () => {
+    // Plazo en una hora, margen de dos: plazo menos margen ya pasó. Pedirlo vencería la reserva al
+    // crearla; se pide el del proveedor y se dice de dónde salió.
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-13T13:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { leadHours: 2 } },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)['ticketingTimeLimitPolicy']).toMatchObject({
+      ticketingDate: '2026-10-13',
+      ticketingTime: '08:00',
+    });
+    expect(wire.outcome.ticketing?.deadline?.source).toBe('PROVIDER_NO_MARGIN');
+  });
+
+  it('sin plazo del proveedor, ahora + 24 h en la hora de la oficina', async () => {
+    const wire = await book(
+      request(atpcoOffer()),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: { now: () => new Date('2026-10-13T12:34:56.000Z') } },
+    );
+    expect(agencyOf(wire)['ticketingTimeLimitPolicy']).toEqual({
+      airlineCode: 'AV',
+      ticketingDate: '2026-10-14',
+      ticketingTime: '07:34',
+    });
+    expect(wire.outcome.ticketing?.deadline?.source).toBe('FALLBACK_WINDOW');
+  });
+
+  it('un plazo sin zona no se convierte: cuenta como «sin plazo»', async () => {
+    // Una hora sin offset es la de algún reloj que no conocemos; inventarle la zona sería pedir
+    // otra hora como plazo.
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-14T20:00:00')),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(wire.outcome.ticketing?.deadline).toMatchObject({
+      date: '2026-10-14',
+      time: '07:00',
+      source: 'FALLBACK_WINDOW',
+    });
+  });
+
+  it('NDC toma el plazo de offers/price, con su offset', async () => {
+    const offer = ndcOffer();
+    const wire = await book(
+      request({
+        ...offer,
+        provider: {
+          ...offer.provider,
+          raw: {
+            ...offer.provider.raw,
+            // 18:30 en São Paulo (UTC-3) = 21:30 UTC = 16:30 en Bogotá; menos 2 h, 14:30.
+            [SABRE_NDC_PAYMENT_TIME_LIMIT_RAW_KEY]: '2026-10-14T18:30:00-03:00',
+          },
+        },
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)).toEqual({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingTimeLimitPolicy: {
+        airlineCode: 'AV',
+        ticketingDate: '2026-10-14',
+        ticketingTime: '14:30',
+      },
+    });
+  });
+
+  it('la llave NDC es la que de verdad escribe el mapper de offers/price', () => {
+    // Sin esto, renombrar la llave en el mapper dejaría a NDC siempre en «sin plazo» con los
+    // tests de arriba en verde, porque construyen la oferta a mano.
+    const payload = structuredClone(priceFixture) as {
+      response: { offers: Array<Record<string, unknown>> };
+    };
+    const first = payload.response.offers[0];
+    if (first === undefined) throw new Error('fixture sin ofertas');
+    first['paymentTimeLimitDateTime'] = '2024-12-12T23:59:00Z';
+    const mapped = mapSabrePriceResponse(payload, {
+      tenantId: TENANT_ID,
+      fetchedAt: '2024-12-12T02:45:00.000Z',
+      requestedTravelers: [
+        {
+          requestPassengerId: 'Passenger1',
+          requestedTravelerIndex: 0,
+          paxType: 'ADT',
+          requestedPtc: 'ADT',
+        },
+      ],
+    });
+    const priced = mapped.priced[0];
+    if (priced === undefined) throw new Error('el mapper no revalidó la oferta');
+
+    const cfg = config();
+    const adapter = new SabreOrderCreateAdapter(
+      cfg,
+      new SabreHttpClient(cfg, tokens, { fetch: () => Promise.reject(new Error('sin red')) }),
+      { now: () => new Date('2024-12-12T02:45:00.000Z') },
+    );
+    const plan = adapter.plan(request(priced.offer), { ticketing: {} });
+
+    // 23:59 UTC menos 2 h = 21:59 UTC = 16:59 en Bogotá.
+    expect(plan.ticketing?.deadline).toEqual({
+      date: '2024-12-12',
+      time: '16:59',
+      pccTimeZone: 'America/Bogota',
+      source: 'PROVIDER',
+    });
+  });
+
+  it('la aerolínea del plazo es la validadora de la tarifa cuando la oferta la trae', async () => {
+    const offer = flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z');
+    const wire = await book(
+      request({
+        ...offer,
+        provider: {
+          ...offer.provider,
+          raw: { ...offer.provider.raw, validatingCarrierCode: 'LA' },
+        },
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)['ticketingTimeLimitPolicy']).toMatchObject({ airlineCode: 'LA' });
+  });
+
+  it('emisión futura: la reserva queda para el PCC de emisión de la cuenta, sin plazo propio', async () => {
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { policy: 'FUTURE_TICKETING' } },
+      { cfg: { ticketingPcc: 'T1CK' }, deps: reloj },
+    );
+
+    expect(agencyOf(wire)).toEqual({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+    });
+    expect(wire.outcome.ticketing).toEqual({
+      policy: 'FUTURE_TICKETING',
+      requestedPolicy: 'FUTURE_TICKETING',
+    });
+    // El PCC viaja al proveedor, que es su destino; a la orden no.
+    expect(JSON.stringify(wire.outcome.providerRaw)).not.toContain('T1CK');
+    expect(wire.outcome.providerRaw['ticketingPolicy']).toBe('FUTURE_TICKETING');
+  });
+
+  it('emisión futura sin PCC de emisión cae a «con plazo» y lo avisa sin nombrar oficinas', async () => {
+    const { logger, lines } = spyLogger();
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: { policy: 'FUTURE_TICKETING' } },
+      { deps: { ...reloj, logger } },
+    );
+
+    expect(agencyOf(wire)['ticketingPolicy']).toBe('TICKETING_TIME_LIMIT');
+    expect(agencyOf(wire)).not.toHaveProperty('futureTicketingPolicy');
+    expect(wire.outcome.ticketing).toMatchObject({
+      policy: 'TICKETING_TIME_LIMIT',
+      requestedPolicy: 'FUTURE_TICKETING',
+      fallback: 'NO_TICKETING_PCC',
+    });
+    expect(wire.outcome.providerRaw['ticketingPolicyFallback']).toBe('NO_TICKETING_PCC');
+
+    const aviso = lines.find((l) => l.message === 'sabre.createBooking.ticketingPolicyFallback');
+    expect(aviso?.level).toBe('warn');
+    expect(aviso?.meta).toMatchObject({
+      requestedPolicy: 'FUTURE_TICKETING',
+      appliedPolicy: 'TICKETING_TIME_LIMIT',
+      reason: 'NO_TICKETING_PCC',
+    });
+    const creacion = lines.find((l) => l.message === 'sabre.createBooking');
+    expect(creacion?.meta).toMatchObject({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingPolicyFallback: 'NO_TICKETING_PCC',
+      ticketingDeadlineSource: 'PROVIDER',
+    });
+    expect(JSON.stringify(lines)).not.toContain('ZZZZ');
+  });
+
+  it('el provider_raw cita la política y el plazo pedido, en vocabulario cerrado', async () => {
+    const wire = await book(
+      request(flightCheckedOfferWithDeadline('2026-10-15T03:00:00.000Z')),
+      CONFIRMED_RESPONSE,
+      { ticketing: {} },
+      { deps: reloj },
+    );
+    expect(wire.outcome.providerRaw['ticketingPolicy']).toBe('TICKETING_TIME_LIMIT');
+    expect(wire.outcome.providerRaw['ticketingDeadline']).toEqual({
+      date: '2026-10-14',
+      time: '20:00',
+      pccTimeZone: 'America/Bogota',
+      source: 'PROVIDER',
+    });
+    expect(wire.outcome.providerRaw).not.toHaveProperty('ticketingPolicyFallback');
+  });
+
+  it('dos fuentes para la política se rechazan antes de la red', async () => {
+    const thrown = await book(request(atpcoOffer()), CONFIRMED_RESPONSE, {
+      ticketing: {},
+      agency: { ticketingPolicy: 'TODAY' },
+    }).catch((err: unknown) => err);
+
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    expect((thrown as Error).message).toContain('una sola fuente');
+  });
+
+  it('una configuración inválida no sale: nombra los campos, nunca los valores', async () => {
+    const thrown = await book(request(atpcoOffer()), CONFIRMED_RESPONSE, {
+      ticketing: { leadHours: 99, pccTimeZone: 'Marte/Base_Alfa' },
+    }).catch((err: unknown) => err);
+
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    const message = (thrown as Error).message;
+    expect(message).toContain('leadHours');
+    expect(message).toContain('pccTimeZone');
+    expect(message).not.toContain('Marte');
+    expect(message).not.toContain('99');
+  });
+
+  it('sin `ticketing` no se inventa una política: el bloque agency no sale', async () => {
+    const wire = await book(request(atpcoOffer()), CONFIRMED_RESPONSE);
+    expect(wire.body).not.toHaveProperty('agency');
+    expect(wire.outcome).not.toHaveProperty('ticketing');
+    expect(wire.outcome.providerRaw).not.toHaveProperty('ticketingPolicy');
+  });
+
+  it('otros campos de agency conviven con la política de la cuenta', async () => {
+    const wire = await book(
+      request(atpcoOffer()),
+      CONFIRMED_RESPONSE,
+      { ticketing: {}, agency: { contactInfo: { emails: ['agencia@ejemplo.test'] } } },
+      { deps: reloj },
+    );
+    expect(agencyOf(wire)).toMatchObject({
+      contactInfo: { emails: ['agencia@ejemplo.test'] },
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+    });
   });
 });

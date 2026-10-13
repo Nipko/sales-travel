@@ -32,6 +32,13 @@ import {
   mapSabreCreateBookingResponse,
   type SabreCreateBookingMapped,
 } from './booking/create.response.mapper';
+import {
+  SabreTicketingPolicyError,
+  SabreTicketingSettingsSchema,
+  planSabreTicketingPolicy,
+  type SabreTicketingDecision,
+  type SabreTicketingSettingsInput,
+} from './booking/ticketing-policy';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
 import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
@@ -77,6 +84,8 @@ export class SabreOrderCreateInputError extends Error {
 
 export interface SabreOrderCreateDeps {
   readonly logger?: LoggerPort;
+  /** El reloj contra el que se calcula el plazo de emisión. Inyectable para poder probarlo. */
+  readonly now?: () => Date;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -164,6 +173,15 @@ export interface SabreOrderCreateOptions {
   readonly receivedFrom?: string;
   readonly agency?: SabreAgencyInput;
   /**
+   * La política de emisión de la cuenta. Con ella, el bloque `agency` sale con `ticketingPolicy` y
+   * su plazo calculado contra ESTA oferta (ver `booking/ticketing-policy.ts`). Se elige aquí y no
+   * en `agency` porque el plazo depende de la oferta, y quien la conoce es este adapter.
+   *
+   * Excluyente con los campos de emisión de {@link agency}: dos fuentes para la misma política no
+   * tienen una respuesta correcta, y se rechaza antes de la red.
+   */
+  readonly ticketing?: SabreTicketingSettingsInput;
+  /**
    * Estado con el que se piden los vuelos ATPCO. Default `NN` — el del contrato (`:5216`,
    * `default: NN`). `YK` construye una **pasiva** y no se pone por accidente: además de registrar
    * un segmento reservado fuera de Sabre, es lo único que hace que la reserva salga SIN cotizar
@@ -233,11 +251,18 @@ export interface SabreOrderCreateOutcome {
   readonly hasBookingSignature: boolean;
   readonly conversationId: string;
   readonly timestamp?: string;
+  /** La política de emisión que viajó, si se pidió con {@link SabreOrderCreateOptions.ticketing}. */
+  readonly ticketing?: SabreTicketingDecision;
   /**
    * Lo que se puede persistir en `orders.provider_raw` **sin PAN y sin PII**: la reserva no
    * viaja entera. Ver {@link providerRawOf}.
    */
   readonly providerRaw: Record<string, unknown>;
+}
+
+/** El plan del builder más la política de emisión que se decidió para esta oferta. */
+export interface SabreOrderCreatePlan extends SabreCreateBookingPlan {
+  readonly ticketing?: SabreTicketingDecision;
 }
 
 export class SabreOrderCreateAdapter implements OrderCreatePort {
@@ -260,7 +285,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
   ): Promise<SabreOrderCreateOutcome> {
     // Todo lo que puede rechazar la petición va ANTES de la red, y se rechaza con el error que el
     // saga lee como «no salió»: una excepción después del POST es un resultado incierto.
-    let plan: SabreCreateBookingPlan;
+    let plan: SabreOrderCreatePlan;
     let useCase: SabreBookingUseCase;
     let tolerance: readonly SabrePartialFailureDomain[];
     try {
@@ -268,7 +293,11 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       useCase = options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE;
       tolerance = toleranceOf(useCase);
     } catch (err) {
-      if (err instanceof SabreOrderCreateInputError || err instanceof SabreCreateBookingError) {
+      if (
+        err instanceof SabreOrderCreateInputError ||
+        err instanceof SabreCreateBookingError ||
+        err instanceof SabreTicketingPolicyError
+      ) {
         throw new OrderCreateNotSentError(err.message, { cause: err });
       }
       throw err;
@@ -306,6 +335,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       dependencyFailed: failures.dependencyFailed,
       hasBookingSignature: mapped.hasBookingSignature,
       ...(advisories.length === 0 ? {} : { advisories }),
+      ...ticketingLogMeta(plan.ticketing),
     });
 
     return {
@@ -320,6 +350,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       hasBookingSignature: mapped.hasBookingSignature,
       conversationId: result.conversationId,
       ...(mapped.timestamp === undefined ? {} : { timestamp: mapped.timestamp }),
+      ...(plan.ticketing === undefined ? {} : { ticketing: plan.ticketing }),
       providerRaw: providerRawOf(mapped, plan, result.conversationId, useCase, tolerance, failures),
     };
   }
@@ -328,11 +359,17 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
    * Traduce y construye, **sin tocar la red**. Se expone para que un test pueda ejercitar la
    * traducción por la puerta pública sin montar un `fetch` falso.
    */
-  plan(request: OrderCreateRequest, options: SabreOrderCreateOptions = {}): SabreCreateBookingPlan {
+  plan(request: OrderCreateRequest, options: SabreOrderCreateOptions = {}): SabreOrderCreatePlan {
     const product = productOf(
       request.offer,
       options.flightStatusCode ?? DEFAULT_FLIGHT_STATUS_CODE,
     );
+    const ticketing =
+      options.ticketing === undefined
+        ? undefined
+        : this.ticketingPlan(request.offer, options.ticketing, options.agency);
+    const agency =
+      ticketing === undefined ? options.agency : { ...options.agency, ...ticketing.agency };
     const input: SabreCreateBookingInput = {
       product,
       travelers: travelersOf(request),
@@ -340,10 +377,10 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       carriers: carriersOf(request.offer),
       ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
       ...(options.receivedFrom === undefined ? {} : { receivedFrom: options.receivedFrom }),
-      ...(options.agency === undefined ? {} : { agency: options.agency }),
+      ...(agency === undefined ? {} : { agency }),
     };
 
-    return buildSabreCreateBookingRequest(input, this.cfg, {
+    const built = buildSabreCreateBookingRequest(input, this.cfg, {
       partialFailureTolerance: [...toleranceOf(options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE)],
       ...(options.haltOnInvalidConnectingTime === undefined
         ? {}
@@ -353,11 +390,68 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
         : { asynchronousUpdateWaitTimeMs: options.asynchronousUpdateWaitTimeMs }),
       ...(options.omitPayment === undefined ? {} : { omitPayment: options.omitPayment }),
     });
+    return ticketing === undefined ? built : { ...built, ticketing: ticketing.decision };
+  }
+
+  /**
+   * La política de emisión para esta oferta. La configuración se vuelve a validar aquí aunque el
+   * llamador ya la haya parseado: este es el borde del contrato, y un plazo calculado con un margen
+   * o una zona que nadie validó acaba impreso en el PNR.
+   */
+  private ticketingPlan(
+    offer: Offer,
+    raw: SabreTicketingSettingsInput,
+    agency: SabreAgencyInput | undefined,
+  ): ReturnType<typeof planSabreTicketingPolicy> {
+    if (
+      agency?.ticketingPolicy !== undefined ||
+      agency?.futureTicketingPolicy !== undefined ||
+      agency?.ticketingTimeLimitPolicy !== undefined
+    ) {
+      throw new SabreOrderCreateInputError(
+        'la política de emisión llegó por `ticketing` y por `agency` a la vez: tiene que tener una sola fuente',
+      );
+    }
+    const parsed = SabreTicketingSettingsSchema.safeParse(raw);
+    if (!parsed.success) {
+      const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))].sort();
+      throw new SabreOrderCreateInputError(
+        `la configuración de emisión no es válida (campos: ${fields.join(', ')})`,
+      );
+    }
+    const planned = planSabreTicketingPolicy({
+      offer,
+      settings: parsed.data,
+      ...(this.cfg.ticketingPcc === undefined ? {} : { ticketingPcc: this.cfg.ticketingPcc }),
+      now: this.deps.now?.() ?? new Date(),
+    });
+    if (planned.decision.fallback !== undefined) {
+      // La cuenta pidió emisión futura y no tiene a quién dejársela. Se reserva igual, con plazo,
+      // porque no reservar por un campo de configuración es peor; pero tiene que verse.
+      this.log('warn', 'sabre.createBooking.ticketingPolicyFallback', {
+        requestedPolicy: planned.decision.requestedPolicy,
+        appliedPolicy: planned.decision.policy,
+        reason: planned.decision.fallback,
+      });
+    }
+    return planned;
   }
 
   private log(level: SabreLogLevel, message: string, meta: Record<string, unknown>): void {
     logRedacted(this.deps.logger, level, message, meta);
   }
+}
+
+/** La política de emisión en la línea de log de la reserva, en vocabulario cerrado. */
+function ticketingLogMeta(decision: SabreTicketingDecision | undefined): Record<string, unknown> {
+  if (decision === undefined) return {};
+  return {
+    ticketingPolicy: decision.policy,
+    ...(decision.fallback === undefined ? {} : { ticketingPolicyFallback: decision.fallback }),
+    ...(decision.deadline === undefined
+      ? {}
+      : { ticketingDeadlineSource: decision.deadline.source }),
+  };
 }
 
 /**
@@ -983,7 +1077,7 @@ function splitLocalIso(value: string, field: string): { date: string; time: stri
  */
 export function providerRawOf(
   mapped: SabreCreateBookingMapped,
-  plan: SabreCreateBookingPlan,
+  plan: SabreOrderCreatePlan,
   conversationId: string,
   useCase: SabreBookingUseCase,
   tolerance: readonly SabrePartialFailureDomain[],
@@ -1010,6 +1104,7 @@ export function providerRawOf(
     errorHandlingPolicy: [...plan.errorHandlingPolicy],
     asynchronousUpdateWaitTimeMs: plan.asynchronousUpdateWaitTimeMs,
     carriers: [...plan.carriers],
+    ...ticketingRawOf(plan.ticketing),
     items: mapped.order.items.map((item) => ({
       kind: item.kind,
       status: item.status,
@@ -1024,5 +1119,28 @@ export function providerRawOf(
       type: issue.type,
       ...(issue.fieldPath === undefined ? {} : { fieldPath: issue.fieldPath }),
     })),
+  };
+}
+
+/**
+ * La política de emisión que viajó, para `orders.provider_raw`: vocabulario cerrado y el plazo
+ * pedido como fecha y hora de la oficina, con su zona. Nada de esto es PII ni identifica una
+ * oficina: el PCC de emisión NO se copia, igual que el de la reserva.
+ */
+function ticketingRawOf(decision: SabreTicketingDecision | undefined): Record<string, unknown> {
+  if (decision === undefined) return {};
+  return {
+    ticketingPolicy: decision.policy,
+    ...(decision.fallback === undefined ? {} : { ticketingPolicyFallback: decision.fallback }),
+    ...(decision.deadline === undefined
+      ? {}
+      : {
+          ticketingDeadline: {
+            date: decision.deadline.date,
+            time: decision.deadline.time,
+            pccTimeZone: decision.deadline.pccTimeZone,
+            source: decision.deadline.source,
+          },
+        }),
   };
 }
