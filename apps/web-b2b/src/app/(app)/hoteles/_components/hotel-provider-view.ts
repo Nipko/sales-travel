@@ -90,6 +90,74 @@ export function degradedProviders(
   });
 }
 
+/** La nota de los proveedores que no participan de la búsqueda por la configuración de la agencia. */
+export interface DisabledProvidersNote {
+  /** Lo que se ve con la nota plegada. */
+  readonly summary: string;
+  /** Lo que se ve al desplegarla: por qué y qué hacer. */
+  readonly lines: readonly string[];
+}
+
+/** Los apagados para la agencia: por el flag de `opt-in` o por la plataforma. */
+const DISABLED_SKIPS: ReadonlySet<string> = new Set(['opt-in-disabled', 'platform-disabled']);
+
+/**
+ * Por qué no aparecen los hoteles de un proveedor apagado para la agencia —sobre todo TBO, que es
+ * `opt-in`—, en vez de callarlo. No es el aviso de resultados incompletos (no falta por ESTA
+ * búsqueda, y el vendedor no lo puede cambiar): es una nota informativa, plegada.
+ *
+ * Con la divulgación encendida nombra a cada proveedor y dice quién lo resuelve; apagada, no lo
+ * nombra (como la pastilla de cada tarifa). El de respaldo que no hizo falta llamar no está apagado:
+ * no se menciona.
+ */
+export function disabledProvidersNote(
+  providers: readonly Pick<HotelProviderOutcome, 'code' | 'status' | 'skipReason'>[],
+  showProvider: boolean,
+): DisabledProvidersNote | undefined {
+  const byCode = new Map<string, 'opt-in-disabled' | 'platform-disabled'>();
+  for (const p of providers) {
+    if (p.status !== 'skipped' || !DISABLED_SKIPS.has(p.skipReason ?? '')) continue;
+    // El de la plataforma manda: no se arregla pidiéndoselo a la red.
+    if (byCode.get(p.code) !== 'platform-disabled') {
+      byCode.set(p.code, p.skipReason as 'opt-in-disabled' | 'platform-disabled');
+    }
+  }
+  const n = byCode.size;
+  if (n === 0) return undefined;
+
+  const named = [...byCode].map(([code, reason]) => ({
+    reason,
+    label: providerTagFor(code, showProvider)?.label,
+  }));
+  if (showProvider && named.every((p) => p.label !== undefined)) {
+    const [first] = named;
+    return {
+      summary:
+        n === 1 && first !== undefined
+          ? `${first.label} no participa de esta búsqueda.`
+          : `${n} proveedores de hoteles no participan de esta búsqueda.`,
+      lines: named.map(({ label, reason }) =>
+        reason === 'platform-disabled'
+          ? `${label} está apagado por la plataforma en este momento.`
+          : `${label} no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda. Pídele a quien administra tu red que lo habilite.`,
+      ),
+    };
+  }
+  return n === 1
+    ? {
+        summary: 'Un proveedor de hoteles no participa de esta búsqueda.',
+        lines: [
+          'Un proveedor de hoteles no está habilitado para tu agencia: sus hoteles no aparecen en esta búsqueda.',
+        ],
+      }
+    : {
+        summary: `${n} proveedores de hoteles no participan de esta búsqueda.`,
+        lines: [
+          `${n} proveedores de hoteles no están habilitados para tu agencia: sus hoteles no aparecen en esta búsqueda.`,
+        ],
+      };
+}
+
 /** El estado vacío de la búsqueda (U-08): qué decir cuando no hay ningún hotel. */
 export interface EmptyResultsView {
   readonly title: string;
