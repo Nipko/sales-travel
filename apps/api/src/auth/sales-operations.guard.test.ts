@@ -307,6 +307,11 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/overview',
   ),
   ...noVenta(
+    'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',
+    'GET /admin/orders',
+    'GET /admin/orders/:id',
+  ),
+  ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
     'GET /tenants/:tenantId/booking-permissions',
     'PUT /tenants/:tenantId/booking-permissions',

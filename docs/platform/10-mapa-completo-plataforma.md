@@ -970,6 +970,27 @@ GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado
                                          -- adonde entra el superadmin al abrir `/` (BFF
                                          -- /api/admin/overview?period=today|7d|30d|month, traducido
                                          -- a días de Bogotá).
+GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
+                                         -- Plataforma → Reservas de la red (implementado, 0076):
+                                         -- admin_search_orders. tenantId con su red (subtree=false,
+                                         -- sólo ese nodo); status = lista separada por comas; días de
+                                         -- Bogotá, ambos incluidos; q = PNR (sin distinguir
+                                         -- mayúsculas), nuestra referencia, n.º de orden, correo
+                                         -- EXACTO del cliente o id; attention=true = sólo las que
+                                         -- necesitan a una persona, cada fila con su motivo más grave.
+                                         -- De la más nueva a la más vieja, paginada por cursor
+                                         -- (created_at con microsegundos + id), hasta 100 por página.
+                                         -- Sin pasajeros ni contacto: el correo que sale es el del
+                                         -- vendedor.
+GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de qué nodo es y se lee
+                                         -- con las lecturas de Reservas de ese nodo (withTenant, RLS
+                                         -- de cada tabla): orden (pasajeros sólo con nombre y tipo,
+                                         -- contacto sólo con correo y teléfono), nodo y su camino,
+                                         -- vendedor, operaciones, seguimiento del hotel, retención,
+                                         -- conciliación, motivos de atención y los últimos 50 eventos
+                                         -- (payload sin claves sensibles, redactPayload). Cada ficha
+                                         -- abierta deja platform.order.viewed en el nodo de la
+                                         -- reserva (lo ve su administrador). 404 ORDER_NOT_FOUND.
 -- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
 -- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants

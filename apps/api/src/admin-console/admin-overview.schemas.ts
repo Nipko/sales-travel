@@ -53,7 +53,11 @@ function inYearRange(value: string): boolean {
   return year >= OVERVIEW_MIN_YEAR && year <= OVERVIEW_MAX_YEAR;
 }
 
-const CalendarDate = z
+/**
+ * Un día calendario `AAAA-MM-DD` que existe, entre {@link OVERVIEW_MIN_YEAR} y
+ * {@link OVERVIEW_MAX_YEAR}. Lo comparten las consolas de la plataforma.
+ */
+export const CalendarDate = z
   .string()
   .regex(ISO_DATE, { message: 'la fecha va como AAAA-MM-DD' })
   .refine(inYearRange, {
@@ -61,7 +65,8 @@ const CalendarDate = z
   })
   .refine(isCalendarDate, { message: 'esa fecha no existe' });
 
-const Uuid = z
+/** Un UUID, en minúsculas. */
+export const Uuid = z
   .string()
   .uuid()
   .transform((v) => v.toLowerCase());
