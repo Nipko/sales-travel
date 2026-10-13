@@ -25,6 +25,7 @@ import {
   SabreOrderCreateAdapter,
   SabreOrderManageAdapter,
   SabreShopOptionsSchema,
+  SabreTicketingSettingsSchema,
   SabreTokenService,
   cancellableItemsOf,
   missingSabreCredentials,
@@ -33,7 +34,9 @@ import {
   type SabreCardBinPricingPolicy,
   type SabreConfig,
   type SabreEnvironment,
+  type SabreOrderCreateOptions,
   type SabreShopOptions,
+  type SabreTicketingSettings,
 } from '@sales-travel/sabre';
 import { z } from '@sales-travel/validation';
 import {
@@ -156,6 +159,66 @@ export function sabreShopOptionsFromAccountConfig(
 }
 
 /**
+ * Quién firma el PNR (`createBooking.receivedFrom`, `booking-management-v1.yml:709`). Sin él, Sabre
+ * escribe «Create Booking» y el historial del PNR no dice desde qué plataforma se reservó.
+ */
+export const SABRE_RECEIVED_FROM = 'PLANETOUR';
+
+/**
+ * La política de emisión que una cuenta puede declarar en su `config`, con el nombre plano del
+ * formulario a la izquierda y el campo del ACL a la derecha.
+ */
+const SABRE_ACCOUNT_TICKETING_KEYS = {
+  ticketingPolicy: 'policy',
+  ticketingLeadHours: 'leadHours',
+  ticketingFormOfPayment: 'formOfPayment',
+  pccTimeZone: 'pccTimeZone',
+} as const satisfies Record<string, keyof SabreTicketingSettings>;
+
+export interface SabreAccountTicketingResult {
+  readonly settings: SabreTicketingSettings;
+  /** Claves de `config` inválidas, nunca sus valores. */
+  readonly invalidFields: readonly string[];
+}
+
+/**
+ * `provider_accounts.config` → política de emisión validada.
+ *
+ * Campo a campo y no en bloque, a diferencia de {@link sabreShopOptionsFromAccountConfig}: un margen
+ * mal escrito no puede devolver a «con plazo» a una cuenta que eligió bien la emisión futura. Cada
+ * valor inválido vuelve a SU default (con plazo, 2 h, CASH, America/Bogota) y sólo se informa el
+ * nombre del campo. Nunca se coerciona de más: `2.5`, `-1` o una forma de pago con tarjeta no
+ * pueden cambiar el PNR.
+ */
+export function sabreTicketingSettingsFromAccountConfig(
+  config: Readonly<Record<string, unknown>>,
+): SabreAccountTicketingResult {
+  const candidate: Record<string, unknown> = {};
+  const configKeyBySetting = new Map<string, string>();
+  for (const [configKey, settingKey] of Object.entries(SABRE_ACCOUNT_TICKETING_KEYS)) {
+    const value = config[configKey];
+    if (value === undefined || value === null) continue;
+    candidate[settingKey] = settingKey === 'leadHours' ? integerConfigValue(value) : value;
+    configKeyBySetting.set(settingKey, configKey);
+  }
+
+  const parsed = SabreTicketingSettingsSchema.safeParse(candidate);
+  if (parsed.success) return { settings: parsed.data, invalidFields: [] };
+
+  const invalid = new Set<string>();
+  for (const issue of parsed.error.issues) {
+    const settingKey = String(issue.path[0] ?? 'ticketing');
+    delete candidate[settingKey];
+    invalid.add(configKeyBySetting.get(settingKey) ?? settingKey);
+  }
+  const retried = SabreTicketingSettingsSchema.safeParse(candidate);
+  return {
+    settings: retried.success ? retried.data : SabreTicketingSettingsSchema.parse({}),
+    invalidFields: [...invalid].sort(),
+  };
+}
+
+/**
  * `config.allowCardBinPricing` sólo puede ser un booleano. `optional()` y no `default(false)`:
  * el default vive en {@link SabreProviderFactory.cardBinPolicy}, donde además se registra, y un
  * `default` aquí escondería que la cuenta no dijo nada.
@@ -185,6 +248,8 @@ interface SabreAdapterSet {
   readonly price: SabreOfferRevalidationRouter;
   readonly create: SabreOrderCreateAdapter;
   readonly manage: SabreOrderManageAdapter;
+  /** La política de emisión de la cuenta, ya validada: viaja en cada reserva. */
+  readonly ticketing: SabreTicketingSettings;
 }
 
 /**
@@ -258,8 +323,17 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     return this.inner.price.priceOffer(offer, criteria, ctx);
   }
 
-  createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
-    return this.inner.create.createOrder(request, ctx);
+  /**
+   * Por `createBooking` y no por el `createOrder` del puerto: las dos entradas tienen que mandar la
+   * MISMA política de emisión y la misma firma, o una reserva quedaría sin plazo según el camino.
+   */
+  async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+    return (await this.inner.create.createBooking(request, ctx, this.bookingOptions())).result;
+  }
+
+  /** Lo que toda reserva de esta cuenta lleva además del pedido: su política de emisión y su firma. */
+  private bookingOptions(): SabreOrderCreateOptions {
+    return { ticketing: this.inner.ticketing, receivedFrom: SABRE_RECEIVED_FROM };
   }
 
   /**
@@ -273,7 +347,8 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     request: OrderCreateRequest,
     ctx: SearchContext,
   ): Promise<OrderCreateAudit> {
-    const outcome = await this.inner.create.createBooking(request, ctx);
+    const outcome = await this.inner.create.createBooking(request, ctx, this.bookingOptions());
+    const ticketing = outcome.ticketing;
 
     return {
       result: outcome.result,
@@ -288,6 +363,19 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
         carriers: [...outcome.carriers],
         conversationId: outcome.conversationId,
         hasBookingSignature: outcome.hasBookingSignature,
+        // Con qué política de emisión quedó el PNR: es lo primero que se pregunta cuando una
+        // reserva vence sin emitir. Vocabulario cerrado; el PCC de emisión no entra.
+        ...(ticketing === undefined
+          ? {}
+          : {
+              ticketingPolicy: ticketing.policy,
+              ...(ticketing.fallback === undefined
+                ? {}
+                : { ticketingPolicyFallback: ticketing.fallback }),
+              ...(ticketing.deadline === undefined
+                ? {}
+                : { ticketingDeadlineSource: ticketing.deadline.source }),
+            }),
       },
       providerRaw: outcome.providerRaw,
       hasVersionStamp: outcome.hasBookingSignature,
@@ -581,6 +669,12 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         `configuración de shop de Sabre inválida para ${ownerTenantId}: campos [${shopOptions.invalidFields.join(', ')}] — se aplican defaults conservadores`,
       );
     }
+    const ticketing = sabreTicketingSettingsFromAccountConfig(config);
+    if (ticketing.invalidFields.length > 0) {
+      this.logger.warn(
+        `configuración de emisión de Sabre inválida para ${ownerTenantId}: campos [${ticketing.invalidFields.join(', ')}] — se aplican los valores por defecto`,
+      );
+    }
     const ndcPrice = new SabreOfferPriceAdapter(cfg, http, { cardBinPricing });
     const atpcoPrice = new SabreFlightCheckAdapter(cfg, http, { logger });
 
@@ -598,6 +692,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       // desenlace, la política pedida y los conteos. Llevan códigos y conteos, nunca PNR ni PII.
       create: new SabreOrderCreateAdapter(cfg, http, { logger }),
       manage: new SabreOrderManageAdapter(cfg, http, { logger }),
+      ticketing: ticketing.settings,
     };
   }
 

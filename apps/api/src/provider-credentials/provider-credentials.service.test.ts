@@ -135,6 +135,26 @@ describe('listSafe — `config` no sale verbatim', () => {
     expect(cuenta?.configVerified).toBe(true);
   });
 
+  it('la lista blanca devuelve la política de emisión de Sabre para poder editarla', async () => {
+    const politica = {
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '6',
+      ticketingFormOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    };
+    const service = servicioCon([
+      {
+        provider_code: 'sabre',
+        config: politica,
+        credentials: { epr: EPR, password: PASSWORD, homePcc: 'AB1C' },
+      },
+    ]);
+
+    const [cuenta] = await service.listSafe('t1');
+    expect(cuenta?.config).toEqual(politica);
+    expect(cuenta?.redactedConfigKeys).toEqual([]);
+  });
+
   it('un proveedor SIN lista blanca no afirma que su config esté vacía: la marca sin verificar', async () => {
     const service = servicioCon([
       {

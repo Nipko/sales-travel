@@ -188,6 +188,36 @@ const AGENT_CARS: ProviderForm = {
  * Los límites de 3–4 caracteres de los PCC no son estética: son los de `SabreConfigSchema`, y un
  * valor fuera de rango hace que `parseSabreConfig` lance en la primera búsqueda, no al guardar.
  */
+/** El margen por defecto del ACL (`SABRE_DEFAULT_TICKETING_LEAD_HOURS`); el panel no lo importa. */
+const SABRE_DEFAULT_TICKETING_LEAD_HOURS = 2;
+
+/** Dentro del rango que acepta el API (0 a 72 horas enteras). */
+const SABRE_TICKETING_LEAD_HOURS_OPTIONS = [0, 1, 2, 3, 4, 6, 8, 12, 24, 48, 72] as const;
+
+function leadHoursLabel(hours: number): string {
+  if (hours === 0) return 'Sin margen';
+  const text = hours === 1 ? '1 hora' : `${String(hours)} horas`;
+  return hours === SABRE_DEFAULT_TICKETING_LEAD_HOURS ? `${text} (recomendado)` : text;
+}
+
+/**
+ * Zonas de las oficinas de la región. El API acepta cualquier zona IANA; el panel ofrece una lista
+ * para que una errata no deje el plazo en otra hora.
+ */
+const SABRE_PCC_TIME_ZONES: readonly ProviderFieldOption[] = [
+  { value: 'America/Bogota', label: 'Bogotá (Colombia)' },
+  { value: 'America/Lima', label: 'Lima (Perú)' },
+  { value: 'America/Sao_Paulo', label: 'São Paulo (Brasil)' },
+  { value: 'America/Guayaquil', label: 'Guayaquil (Ecuador)' },
+  { value: 'America/Panama', label: 'Ciudad de Panamá' },
+  { value: 'America/Mexico_City', label: 'Ciudad de México' },
+  { value: 'America/Santiago', label: 'Santiago (Chile)' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires (Argentina)' },
+  { value: 'America/New_York', label: 'Miami y Nueva York (EE. UU.)' },
+  { value: 'Europe/Madrid', label: 'Madrid (España)' },
+  { value: 'UTC', label: 'UTC' },
+];
+
 const SABRE: ProviderForm = {
   label: 'Sabre',
   note: 'Sabre autentica con un clientId con la forma V1:{EPR}:{PCC}:AA. EPR, contraseña y PCC de la oficina salen del alta que hace tu account manager de Sabre; el resto sólo hace falta si tu contrato lo pide.',
@@ -235,7 +265,7 @@ const SABRE: ProviderForm = {
       minLength: 3,
       maxLength: 4,
       placeholder: 'AB1C',
-      help: 'Déjalo vacío si el segundo PCC sólo sirve para entrar a Sabre Red CERT. Este campo queda reservado para una futura emisión real bajo un PCC distinto, operación que hoy no está habilitada.',
+      help: 'PCC que emite cuando la política es emisión futura. Con plazo de emisión (por defecto), emite la misma oficina que reserva. Déjalo vacío si el segundo PCC sólo sirve para entrar a Sabre Red CERT.',
     },
   ],
   config: [
@@ -319,6 +349,46 @@ const SABRE: ProviderForm = {
         { value: 'true', label: 'Encendido' },
       ],
       help: 'Pide tarifas NDC a Sabre. Déjalo apagado: la plataforma todavía no muestra esas tarifas.',
+    },
+    // La política de emisión. Los valores son exactamente los que acepta
+    // `sabreTicketingSettingsFromAccountConfig`; uno inválido vuelve a su default al reservar.
+    {
+      key: 'ticketingPolicy',
+      label: 'Política de emisión',
+      defaultValue: 'TICKETING_TIME_LIMIT',
+      options: [
+        { value: 'TICKETING_TIME_LIMIT', label: 'Con plazo de emisión (recomendado)' },
+        { value: 'FUTURE_TICKETING', label: 'Emisión futura en el PCC de emisión' },
+      ],
+      help: 'Con plazo: emite la misma oficina antes de la fecha límite. Emisión futura: la reserva queda para que emita el PCC de emisión; sin ese PCC, se reserva con plazo.',
+    },
+    {
+      key: 'ticketingLeadHours',
+      label: 'Margen antes del plazo de la aerolínea',
+      defaultValue: String(SABRE_DEFAULT_TICKETING_LEAD_HOURS),
+      options: SABRE_TICKETING_LEAD_HOURS_OPTIONS.map((hours) => ({
+        value: String(hours),
+        label: leadHoursLabel(hours),
+      })),
+      help: 'Cuántas horas antes del plazo de la aerolínea vence la reserva para emitir. Si la aerolínea no informa plazo, vence en 24 horas.',
+    },
+    {
+      key: 'ticketingFormOfPayment',
+      label: 'Forma de pago al emitir',
+      defaultValue: 'CASH',
+      options: [
+        { value: 'CASH', label: 'Efectivo (CASH), se liquida por BSP' },
+        { value: 'ON_ACCOUNT', label: 'A cuenta (ON_ACCOUNT)' },
+        { value: 'INVOICE', label: 'Factura (INVOICE)' },
+      ],
+      help: 'Nunca con tarjeta: la plataforma no envía datos de tarjeta a Sabre. El cobro al cliente va por el checkout de pagos.',
+    },
+    {
+      key: 'pccTimeZone',
+      label: 'Zona horaria del PCC',
+      defaultValue: 'America/Bogota',
+      options: SABRE_PCC_TIME_ZONES,
+      help: 'La hora de la oficina que emite. El plazo de emisión se le envía a Sabre en esta hora.',
     },
     {
       key: 'agencyIata',

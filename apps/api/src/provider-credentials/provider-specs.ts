@@ -152,7 +152,7 @@ const SABRE: ProviderSpec = {
       minLength: 3,
       maxLength: 4,
       reason:
-        'El PCC de emisión es un pseudo-city de 3 o 4 caracteres. Hoy se conserva como referencia y no participa en búsqueda ni reserva.',
+        'El PCC de emisión es un pseudo-city de 3 o 4 caracteres. Es el PCC que emite cuando la política es emisión futura. Con plazo de emisión (por defecto), emite la misma oficina que reserva.',
     },
     {
       key: 'sabreGroup',
@@ -191,6 +191,12 @@ const SABRE: ProviderSpec = {
     'ndcContent',
     'allowCardBinPricing',
     'maxConcurrentRequests',
+    // La política de emisión (`sabreTicketingSettingsFromAccountConfig`). Sin estar aquí el panel
+    // no podría precargarla al editar y el siguiente guardado la devolvería a los defaults.
+    'ticketingPolicy',
+    'ticketingLeadHours',
+    'ticketingFormOfPayment',
+    'pccTimeZone',
   ],
   // Un PNR vive en la oficina (PCC) y en el sistema (CERT o producción, o el host que lo
   // reemplaza) donde se creó. Las órdenes guardan esta cuenta y operan su post-venta con ella
