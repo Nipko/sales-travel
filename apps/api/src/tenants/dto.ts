@@ -57,8 +57,39 @@ export interface PlatformUsersCursor {
   readonly id: string;
 }
 
-const CURSOR_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+const CURSOR_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/;
 const CURSOR_ID = z.string().uuid();
+
+/**
+ * ¿Es un instante que existe? `Date.parse` acepta "2026-02-30" o "24:00" corriéndolos al día
+ * siguiente, y Postgres los rechaza con un 500 al compararlos en el cursor. Los campos tienen que
+ * volver iguales de un `Date` armado con ellos.
+ */
+function realInstant(text: string): boolean {
+  const match = CURSOR_INSTANT.exec(text);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    year < 1970
+  ) {
+    return false;
+  }
+  const at = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return (
+    at.getUTCFullYear() === year &&
+    at.getUTCMonth() === month - 1 &&
+    at.getUTCDate() === day &&
+    at.getUTCHours() === hour &&
+    at.getUTCMinutes() === minute &&
+    at.getUTCSeconds() === second
+  );
+}
 
 /** El cursor opaco que viaja en `nextCursor`: base64url del JSON `{ createdAt, id }`. */
 export function encodePlatformUsersCursor(cursor: PlatformUsersCursor): string {
@@ -78,8 +109,7 @@ export function decodePlatformUsersCursor(raw: string): PlatformUsersCursor | un
   }
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const { createdAt, id } = parsed as Record<string, unknown>;
-  if (typeof createdAt !== 'string' || !CURSOR_INSTANT.test(createdAt)) return undefined;
-  if (Number.isNaN(Date.parse(createdAt))) return undefined;
+  if (typeof createdAt !== 'string' || !realInstant(createdAt)) return undefined;
   const uuid = CURSOR_ID.safeParse(id);
   return uuid.success ? { createdAt, id: uuid.data.toLowerCase() } : undefined;
 }
@@ -106,7 +136,14 @@ export const DIRECTORY_ROLES = [...ASSIGNABLE_ROLES, 'superadmin'] as const;
  */
 export const ListPlatformUsersQuerySchema = z
   .object({
-    q: z.string().trim().min(1, 'escribe algo para buscar').max(100).optional(),
+    // El NUL no entra en un texto de Postgres: sin esto, la búsqueda respondía 500.
+    q: z
+      .string()
+      .trim()
+      .min(1, 'escribe algo para buscar')
+      .max(100)
+      .refine((v) => !v.includes('\u0000'), 'la búsqueda tiene un carácter inválido')
+      .optional(),
     status: z.enum(['active', 'suspended']).optional(),
     role: z
       .enum(DIRECTORY_ROLES, {

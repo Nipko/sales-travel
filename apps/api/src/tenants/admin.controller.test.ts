@@ -976,6 +976,26 @@ describe('Zod en los bordes', () => {
       ).toBeUndefined();
     });
 
+    it('un cursor con un día u hora que no existe no se lee: Postgres lo rechazaba con un 500', () => {
+      const cursorAt = (createdAt: string) =>
+        decodePlatformUsersCursor(
+          Buffer.from(JSON.stringify({ createdAt, id: OTRO })).toString('base64url'),
+        );
+      expect(cursorAt('2026-02-30T00:00:00Z')).toBeUndefined();
+      expect(cursorAt('2026-01-01T24:00:00.5Z')).toBeUndefined();
+      expect(cursorAt('2026-01-01T23:60:00Z')).toBeUndefined();
+      expect(cursorAt('0000-01-01T00:00:00Z')).toBeUndefined();
+      expect(cursorAt('2024-02-29T23:59:59.999999Z')).toEqual({
+        createdAt: '2024-02-29T23:59:59.999999Z',
+        id: OTRO,
+      });
+    });
+
+    it('una búsqueda con NUL es 400: Postgres no la admite en un texto y respondía 500', () => {
+      expect(() => directorio.transform({ q: 'ana\u0000' })).toThrow(BadRequestException);
+      expect(directorio.transform({ q: 'ana_50%' })).toEqual({ q: 'ana_50%' });
+    });
+
     it('suspender una cuenta: el id en minúsculas, para reconocer el propio', () => {
       expect(
         new ZodValidationPipe(SetUserStatusSchema).transform({
