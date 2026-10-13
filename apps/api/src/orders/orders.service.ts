@@ -61,6 +61,7 @@ import {
   HotelOrderCancellationService,
   type HotelCancelAttempt,
 } from './hotel-order-cancellation.service.js';
+import { FlightOrderTrackingStore, flightReadOf } from './flight-order-tracking.store.js';
 import { HotelOrderReadsService, type HotelOrderReadResult } from './hotel-order-reads.service.js';
 import {
   OrderCreateIntentStore,
@@ -287,6 +288,13 @@ export interface OrderRow {
   updated_at: Date;
 }
 
+/**
+ * Lo que la post-venta de una orden necesita leer de su fila para salir al proveedor: de quién es y
+ * con qué cuenta se hizo. La cuenta es obligatoria en el tipo: un llamador que la olvidara operaría
+ * con la cuenta vigente del tenant, que puede no ser la de la reserva.
+ */
+export type FlightOrderAccountRef = Pick<OrderRow, 'id' | 'provider' | 'provider_account_id'>;
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -311,6 +319,11 @@ export class OrdersService {
      * Opcional por el mismo motivo: en la app siempre está (`OrdersModule` la provee).
      */
     @Optional() private readonly holds?: BookingHoldLedger,
+    /**
+     * Localizadores de la aerolínea, documentos y plazo de emisión de las órdenes de vuelo (0082).
+     * Opcional por el mismo motivo: en la app siempre está, y sin él las lecturas no se guardan.
+     */
+    @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -318,25 +331,80 @@ export class OrdersService {
   }
 
   /**
-   * Proveedor QUE HIZO la reserva, con sus capacidades. Antes se inyectaba el factory de un
-   * proveedor concreto y toda la post-venta salía por ahí sin mirar de quién era la orden: con
-   * dos proveedores eso es cancelar el billete de otro, o no encontrarlo.
+   * Proveedor QUE HIZO la reserva, con la CUENTA con la que la hizo. Antes se inyectaba el factory
+   * de un proveedor concreto y toda la post-venta salía por ahí sin mirar de quién era la orden: con
+   * dos proveedores eso es cancelar el billete de otro, o no encontrarlo. Y con la cuenta vigente
+   * del tenant pasa lo mismo un nivel más abajo: una agencia que después cargó su propia cuenta lee
+   * "no existe" en las reservas que hizo con la heredada, y no las puede cancelar (RF-29).
+   *
+   * Recibe la FILA y no el código a propósito: es la única puerta de la post-venta de vuelos, y un
+   * llamador que sólo tuviera el código no podría pasar la cuenta.
+   *
+   * @throws ProviderOrderAccountUnavailableError (409) si la orden guarda una cuenta que el tenant ya
+   *   no puede usar: no cae a otra.
    */
-  private async flightProvider(
+  private async flightProviderForOrder(
     tenantId: string,
-    providerCode: string | undefined,
+    order: FlightOrderAccountRef,
   ): Promise<ResolvedProvider<FlightProviderAdapter>> {
-    if (!providerCode) {
+    if (!order.provider) {
       throw new NotFoundException('La reserva no existe o no tiene proveedor asociado.');
     }
-    return this.registry.byCode(tenantId, providerCode);
+    return this.registry.forOrder(tenantId, {
+      orderId: order.id,
+      provider: order.provider,
+      // Una fila leída sin la columna (un doble, una consulta vieja) cuenta como sin cuenta.
+      providerAccountId: order.provider_account_id ?? null,
+    });
   }
 
-  private async flightAdapter(
+  /**
+   * Guarda lo que una lectura del proveedor dijo de una reserva de vuelo: localizadores de la
+   * aerolínea, documentos y plazo de emisión (0082). Si algún documento apareció o cambió de
+   * estado, lo dice un `domain_event` con conteos.
+   *
+   * Best-effort de verdad: la lectura ya ocurrió y su resultado es lo que importa a quien llamó
+   * (cerrar la creación, verificarla, contestar la consulta). Un fallo de la base o del canal de
+   * auditoría se registra en el log, por nombre y nunca con el mensaje, y el flujo sigue.
+   */
+  private async recordFlightRead(
     tenantId: string,
-    providerCode: string | undefined,
-  ): Promise<FlightProviderAdapter> {
-    return (await this.flightProvider(tenantId, providerCode)).adapter;
+    order: Pick<OrderRow, 'id' | 'provider'>,
+    view: OrderView,
+    source: 'verify' | 'retrieve',
+    actorUserId?: string,
+  ): Promise<void> {
+    if (this.flightTracking === undefined || !view.found) return;
+    try {
+      const changes = await this.flightTracking.recordRead(
+        tenantId,
+        order.id,
+        flightReadOf(view, new Date()),
+      );
+      if (changes.added + changes.statusChanged === 0) return;
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.flightDocumentsChanged,
+        tenantId,
+        actorUserId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: order.provider,
+          source,
+          added: changes.added,
+          statusChanged: changes.statusChanged,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `flights.tracking.record_failed provider=${order.provider} order=${order.id} source=${source} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+    }
+  }
+
+  /** ¿La cancelación de esta orden sale por el factory de autos y no por el registry de vuelos? */
+  private isCarOrder(order: Pick<OrderRow, 'provider'>): boolean {
+    return order.provider === 'agent-cars';
   }
 
   /**
@@ -423,7 +491,7 @@ export class OrdersService {
     const providerCode = requested.offer.provider.name;
     // Es la única venta de este servicio: si la plataforma apagó el proveedor para el tenant, no se
     // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
-    // `flightProvider`, que no mira la habilitación.
+    // `flightProviderForOrder`, que no mira la habilitación.
     const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
     // El entorno de la cuenta con la que se va a reservar, no el que mandó el navegador: es lo que
     // decide si la orden es una reserva de prueba (sin correo automático al pasajero, marcada en
@@ -435,7 +503,7 @@ export class OrdersService {
 
     // El claim se inserta antes de priceOffer/createOrder. Una colisión termina aquí, sin tocar el
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.
-    const intent = await this.insertCreateIntent(tenantId, userId, dto, providerCode, requestKey);
+    const intent = await this.insertCreateIntent(tenantId, userId, dto, provider, requestKey);
 
     // La verificación de la pantalla es UX; ésta es la puerta de integridad. Un cliente puede
     // saltarse el botón, reenviar una cotización vieja o modificar el JSON. El servidor vuelve
@@ -866,20 +934,32 @@ export class OrdersService {
     );
   }
 
-  /** Inserta y compromete el intent `pending` antes de tocar el proveedor. */
+  /**
+   * Inserta y compromete el intent `pending` antes de tocar el proveedor.
+   *
+   * Con un proveedor que opera su post-venta por cuenta, la fila nace con la cuenta con la que se va
+   * a reservar (`provider_account_id`), y el intent sólo se compromete si esa cuenta sigue en la
+   * versión con que se resolvió (`ProviderAccountChangedError`): reservar con una credencial que
+   * cambió en el medio dejaría una reserva que la cuenta nueva no reconoce. El resto de los
+   * proveedores no la guarda y su post-venta sigue con la cuenta vigente, como hasta ahora.
+   */
   private insertCreateIntent(
     tenantId: string,
     userId: string,
     dto: CreateOrderDto,
-    providerCode: string,
+    provider: ResolvedProvider<FlightProviderAdapter>,
     requestKey: string,
   ): Promise<OrderRow> {
+    const accountId = this.registry.recordsOrderAccount(provider.code)
+      ? provider.accountId
+      : undefined;
+    const version = accountId === undefined ? undefined : provider.accountUpdatedAt?.toISOString();
     return this.intents.insert(
       tenantId,
       {
         userId,
         quotationId: dto.quotationId ?? null,
-        provider: providerCode,
+        provider: provider.code,
         searchCriteria: dto.searchCriteria,
         selectedOffer: dto.offer,
         passengers: dto.passengers,
@@ -889,6 +969,8 @@ export class OrdersService {
         totalAmountMinor: dto.offer.pricing?.finalMinor ?? dto.offer.total.amountMinor,
         currency: dto.offer.total.currency,
         requestKey,
+        ...(accountId === undefined ? {} : { providerAccountId: accountId }),
+        ...(version === undefined ? {} : { providerAccountVersion: version }),
       },
       'pnr',
     );
@@ -941,6 +1023,10 @@ export class OrdersService {
       // mensaje del proveedor no entra en `domain_events`.
       view = null;
     }
+
+    // Antes que el resto del cierre: si el log o la auditoría fallan después, el vendedor igual ve
+    // el localizador de la aerolínea en Reservas.
+    if (view !== null) await this.recordFlightRead(tenantId, order, view, 'verify', userId);
 
     await this.logOperation(
       tenantId,
@@ -1077,29 +1163,33 @@ export class OrdersService {
    */
   async retrieveOrder(
     tenantId: string,
-    row: Pick<OrderRow, 'id' | 'provider' | 'provider_order_id'>,
+    row: FlightOrderAccountRef & Pick<OrderRow, 'provider_order_id'>,
     actorUserId?: string,
   ): Promise<OrderView | HotelOrderReadResult> {
     if (this.hotelReads?.handles(row.provider) === true) {
       return this.hotelReads.retrieve(tenantId, row.id, actorUserId);
     }
-    if (!row.provider_order_id) {
-      throw new NotFoundException('La reserva no existe o no tiene localizador.');
-    }
-    return this.retrieveFromProvider(tenantId, row.provider_order_id, row.provider);
+    // Un vuelo: lo que la consulta trajo queda guardado en la reserva (0082), y la respuesta es la
+    // misma lectura.
+    const view = await this.retrieveFromProvider(tenantId, row);
+    await this.recordFlightRead(tenantId, row, view, 'retrieve', actorUserId);
+    return view;
   }
 
   /**
-   * Lectura de SÓLO VISUALIZACIÓN. No sirve —ni puede servir— como paso previo de una
-   * modificación: su tipo de retorno no lleva firma de concurrencia. Ver RF-09.
+   * Lectura de SÓLO VISUALIZACIÓN, con la cuenta con la que se hizo la reserva. No sirve —ni puede
+   * servir— como paso previo de una modificación: su tipo de retorno no lleva firma de concurrencia.
+   * Ver RF-09.
    */
   async retrieveFromProvider(
     tenantId: string,
-    pnr: string,
-    providerCode: string,
+    order: FlightOrderAccountRef & Pick<OrderRow, 'provider_order_id'>,
   ): Promise<OrderView> {
-    const adapter = await this.flightAdapter(tenantId, providerCode);
-    return adapter.retrieveForDisplay(pnr, { tenantId });
+    if (!order.provider_order_id) {
+      throw new NotFoundException('La reserva no existe o no tiene localizador.');
+    }
+    const { adapter } = await this.flightProviderForOrder(tenantId, order);
+    return adapter.retrieveForDisplay(order.provider_order_id, { tenantId });
   }
 
   /**
@@ -1253,10 +1343,12 @@ export class OrdersService {
     let verified = true;
 
     try {
-      if (existing?.provider === 'agent-cars') {
+      if (this.isCarOrder(existing)) {
         result = await this.cancelAgentCarsOrder(tenantId, existing, pnr);
       } else {
-        const adapter = await this.flightAdapter(tenantId, existing?.provider);
+        // La cuenta de la reserva, no la vigente: cancelar con otra no la cancela. Si ya no está
+        // disponible, el 409 es determinista y la orden vuelve a su estado (nada salió).
+        const { adapter } = await this.flightProviderForOrder(tenantId, existing);
         if (supportsAuditedCancel(adapter)) {
           const outcome = await adapter.cancelOrderAudited(
             pnr,
@@ -1435,6 +1527,22 @@ export class OrdersService {
         `orders.cancel.hold_escalation_unsaved provider=${provider} order=${orderId}`,
       );
     }
+  }
+
+  /**
+   * Antes de tomar el claim: el proveedor de la reserva se puede resolver con la cuenta con que se
+   * hizo. Así el vendedor recibe el motivo real (409 si la cuenta ya no está disponible, 400 si el
+   * proveedor no lo está) y no queda en el historial una cancelación fallida por algo que nunca salió
+   * al proveedor. Las de hotel lo comprueban en su servicio; las de autos no pasan por el registry.
+   */
+  private async assertCancellable(
+    tenantId: string,
+    order: OrderRow,
+    hotels: HotelOrderCancellationService | undefined,
+  ): Promise<void> {
+    if (hotels !== undefined) return hotels.assertCancellable(tenantId, order);
+    if (this.isCarOrder(order)) return;
+    await this.flightProviderForOrder(tenantId, order);
   }
 
   /** El servicio de cancelación de hoteles, si la orden es de un proveedor de hoteles. */
@@ -1741,7 +1849,7 @@ export class OrdersService {
       }
     }
     const hotels = this.hotelCancellationsFor(current);
-    await hotels?.assertCancellable(tenantId, current);
+    await this.assertCancellable(tenantId, current, hotels);
     const claim = await this.beginCancellationOperation(tenantId, current, actorUserId);
     const work = this.attemptCancelAndMaybeQueue(tenantId, id, pnr, claim, actorUserId);
     return hotels === undefined
@@ -1828,8 +1936,9 @@ export class OrdersService {
     if (order.status === 'cancelled') return;
     if (order.status === 'ticketed') return;
 
-    const provider = await this.flightProvider(tenantId, order.provider);
+    const provider = await this.flightProviderForOrder(tenantId, order);
     const view = await provider.adapter.retrieveForDisplay(order.provider_order_id, { tenantId });
+    await this.recordFlightRead(tenantId, order, view, 'verify', actorUserId);
 
     await this.logOperation(tenantId, orderId, 'retrieve', 'success', null, actorUserId);
     await this.audit.emit({
@@ -1920,7 +2029,7 @@ export class OrdersService {
 
   async listServices(tenantId: string, row: OrderRow): Promise<ServiceListResult> {
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
-    const adapter = await this.flightAdapter(tenantId, row.provider);
+    const { adapter } = await this.flightProviderForOrder(tenantId, row);
     return adapter.listServices(
       { orderId: row.provider_order_id!, passengers, itemType: 'BAGGAGE' },
       { tenantId },
@@ -1934,7 +2043,7 @@ export class OrdersService {
     actorUserId?: string,
   ): Promise<OrderReshopResult> {
     const orderId = row.id;
-    const adapter = await this.flightAdapter(tenantId, row.provider);
+    const { adapter } = await this.flightProviderForOrder(tenantId, row);
     let result: OrderReshopResult;
     try {
       result = await adapter.reshopWithTickets(body, { tenantId });
@@ -2081,7 +2190,7 @@ export class OrdersService {
     }
     this.assertGenericCancellationAllowed(order);
     const hotels = this.hotelCancellationsFor(order);
-    await hotels?.assertCancellable(tenantId, order);
+    await this.assertCancellable(tenantId, order, hotels);
     const claim = await this.claimCancelRetry(tenantId, opId, order);
     if (!claim) {
       throw new ConflictException('Otra ejecución ya tomó esta operación de cancelación.');
@@ -2124,7 +2233,7 @@ export class OrdersService {
     };
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
 
-    const adapter = await this.flightAdapter(tenantId, row.provider);
+    const { adapter } = await this.flightProviderForOrder(tenantId, row);
     let result: OrderPayResult;
     try {
       result = await adapter.payOrder(

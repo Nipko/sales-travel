@@ -200,6 +200,33 @@ export interface TenantAdapter<TAdapter> {
    * vendedor nunca le venda a un cliente un tiquete que no sirve para viajar.
    */
   readonly providerEnvironment?: ProviderEnvironment | undefined;
+  /**
+   * Id de la cuenta de la bóveda (`provider_accounts.id`) con que sale el adapter. `undefined` = no
+   * hay una cuenta de la bóveda detrás (credenciales de la plataforma) o el factory no lo dice.
+   *
+   * Existe para que la orden guarde con qué cuenta se reservó (`orders.provider_account_id`): el
+   * proveedor sólo reconoce una reserva con la cuenta que la creó, y la post-venta de una agencia
+   * que después cambió de cuenta tiene que seguir saliendo con la anterior (RF-29). Sólo se graba si
+   * el factory sabe operar con ella después ({@link TenantProviderFactory.resolveForOrder}).
+   */
+  readonly accountId?: string | undefined;
+  /**
+   * `provider_accounts.updated_at` de esa cuenta: la versión con la que se resolvió. El intent de la
+   * orden sólo se compromete si la cuenta sigue en esa versión (`ProviderAccountChangedError`).
+   */
+  readonly accountUpdatedAt?: Date | undefined;
+}
+
+/**
+ * Lo que el registry necesita de una orden YA hecha para resolver su post-venta: el proveedor y la
+ * cuenta con que se reservó.
+ */
+export interface OrderProviderRef {
+  readonly orderId: string;
+  /** `orders.provider`. */
+  readonly provider: string;
+  /** `orders.provider_account_id`; `null` en órdenes que no la guardaron. */
+  readonly providerAccountId: string | null;
 }
 
 /**
@@ -230,6 +257,17 @@ export interface TenantProviderFactory<TAdapter> {
   forTenant(tenantId: string): Promise<TAdapter>;
   resolveForTenant(tenantId: string): Promise<TenantAdapter<TAdapter>>;
   /**
+   * El adapter con la cuenta con la que se hizo UNA orden (`orders.provider_account_id`), para su
+   * post-venta: no la vigente del tenant, que puede ser otra si la agencia cambió de cuenta (RF-29).
+   * La orden se lee con el tenant fijado y la cuenta tiene que seguir en su red.
+   *
+   * Opcional: un proveedor que no lo implementa no guarda la cuenta en sus órdenes, y su post-venta
+   * sale con la cuenta vigente, como siempre. El registry no inventa un reemplazo.
+   *
+   * Lanza `NotFoundException` si la cuenta de la orden ya no está disponible para el tenant.
+   */
+  resolveForOrder?(tenantId: string, orderId: string): Promise<TenantAdapter<TAdapter>>;
+  /**
    * Traduce un error del proveedor a un mensaje para el vendedor. Vive en el factory —y no
    * en el servicio de búsqueda— para que el fan-out no tenga que conocer los tipos de error
    * de ningún proveedor concreto.
@@ -249,6 +287,10 @@ export interface ResolvedProvider<TAdapter> {
    * ofertas u órdenes no puede olvidarse de mirarlo.
    */
   readonly environment: ProviderEnvironment;
+  /** La cuenta de la bóveda con que sale el adapter, si el factory la declara (ver `TenantAdapter`). */
+  readonly accountId?: string;
+  /** Su versión (`provider_accounts.updated_at`) al resolverla. */
+  readonly accountUpdatedAt?: Date;
 }
 
 /**

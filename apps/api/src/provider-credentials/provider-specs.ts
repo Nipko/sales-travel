@@ -75,6 +75,18 @@ export interface ProviderSpec {
   readonly accountIdentity?: {
     readonly credentialKeys: readonly string[];
     readonly configKeys: readonly string[];
+    /**
+     * Campos `encrypted-or-config` de la identidad: el factory los lee del blob y, si no están, de
+     * `config`. Se comparan por ese valor efectivo, así que mudarlos de un lado al otro con el mismo
+     * valor no es otra cuenta. Con el blob guardado ilegible no se comparan, como `credentialKeys`.
+     */
+    readonly eitherKeys?: readonly string[];
+    /**
+     * El valor con que el factory lee un campo de `configKeys` que no vino: ausente y ese valor son
+     * la misma cuenta. Sin esto, guardar desde la pantalla (que siempre manda el entorno) una cuenta
+     * cargada por API sin él contaría como cambio de entorno.
+     */
+    readonly configDefaults?: Readonly<Record<string, string>>;
   };
 }
 
@@ -180,6 +192,17 @@ const SABRE: ProviderSpec = {
     'allowCardBinPricing',
     'maxConcurrentRequests',
   ],
+  // Un PNR vive en la oficina (PCC) y en el sistema (CERT o producción, o el host que lo
+  // reemplaza) donde se creó. Las órdenes guardan esta cuenta y operan su post-venta con ella
+  // (RF-29): cambiarle el PCC o el entorno con reservas vivas las dejaría sin la única oficina que
+  // las reconoce. El EPR no está: es un usuario DENTRO de la oficina, y cambiarlo, como rotar la
+  // contraseña, sigue siendo la misma cuenta. Sin entorno, el factory lee CERT.
+  accountIdentity: {
+    credentialKeys: [],
+    configKeys: ['environment', 'host', 'soapHost'],
+    eitherKeys: ['homePcc'],
+    configDefaults: { environment: 'cert' },
+  },
 };
 
 /**
@@ -458,8 +481,22 @@ function sameIdentity(
   keys: readonly string[],
   before: Record<string, unknown>,
   after: Record<string, unknown>,
+  defaults: Readonly<Record<string, string>> = {},
 ): boolean {
-  return keys.every((key) => identityValue(before[key]) === identityValue(after[key]));
+  return keys.every(
+    (key) =>
+      (identityValue(before[key]) ?? defaults[key]) ===
+      (identityValue(after[key]) ?? defaults[key]),
+  );
+}
+
+/** El valor de un campo `encrypted-or-config` como lo lee el factory: el del blob o, sin él, el de `config`. */
+function effectiveIdentity(
+  key: string,
+  credentials: Record<string, unknown>,
+  config: Record<string, unknown>,
+): string | undefined {
+  return identityValue(credentials[key]) ?? identityValue(config[key]);
 }
 
 /**
@@ -485,10 +522,19 @@ export function accountIdentityChanged(
 ): boolean {
   const identity = providerSpecFor(providerCode)?.accountIdentity;
   if (identity === undefined) return false;
-  if (!sameIdentity(identity.configKeys, before.config, after.config)) return true;
-  if (identity.credentialKeys.length === 0) return false;
+  if (!sameIdentity(identity.configKeys, before.config, after.config, identity.configDefaults)) {
+    return true;
+  }
+  const eitherKeys = identity.eitherKeys ?? [];
+  if (identity.credentialKeys.length === 0 && eitherKeys.length === 0) return false;
   const stored = before.credentials();
-  return stored !== null && !sameIdentity(identity.credentialKeys, stored, after.credentials);
+  if (stored === null) return false;
+  if (!sameIdentity(identity.credentialKeys, stored, after.credentials)) return true;
+  return eitherKeys.some(
+    (key) =>
+      effectiveIdentity(key, stored, before.config) !==
+      effectiveIdentity(key, after.credentials, after.config),
+  );
 }
 
 export interface SafeConfigView {

@@ -175,3 +175,12 @@ export * from './ancillaries/add.response.mapper';
 export * from './ancillaries/remove.request.builder';
 export * from './ancillaries/remove.response.mapper';
 export * from './sabre-ancillary.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Estado de tiquetes y EMD (SAB-05)
+//
+// Bloque propio y al final, como los de arriba: sus nombres llevan `SABRE_TICKET_STATUS_`,
+// `SabreDocument` o `sabreDocument`/`classifySabreTicket`, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './ticketing/document-status';

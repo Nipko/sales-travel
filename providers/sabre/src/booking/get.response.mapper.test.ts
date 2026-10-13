@@ -410,3 +410,261 @@ describe('getBooking — el borde rechaza lo que no encaja', () => {
     expect(view.airlineLocators).toEqual([]);
   });
 });
+
+/**
+ * Los ejemplos OFICIALES de la ayuda del producto, leídos del expediente. Cada bloque JSON se
+ * extrae por la frase que lo precede en el texto (y, si la frase se repite, por la sección donde
+ * está), con un recorrido de llaves que respeta las cadenas.
+ */
+function loadHelpExample(file: string, label: string, after?: string): Record<string, unknown> {
+  const text = readFileSync(
+    join(
+      findRepoRoot(),
+      'docs',
+      'sabre',
+      'evidence',
+      'specs',
+      'help',
+      'booking-management-api-v1',
+      file,
+    ),
+    'utf8',
+  );
+  const from = after === undefined ? 0 : text.indexOf(after);
+  if (from < 0) throw new Error(`no está la sección «${after ?? ''}» en ${file}`);
+  const at = text.indexOf(label, from);
+  if (at < 0) throw new Error(`no está «${label}» en ${file}`);
+  const start = text.indexOf('{', at);
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === '\\') i += 1;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = true;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return JSON.parse(text.slice(start, i + 1)) as Record<string, unknown>;
+    }
+  }
+  throw new Error(`bloque JSON sin cerrar tras «${label}» en ${file}`);
+}
+
+const GET_EXAMPLES = 'help-documentation-get-booking-examples.txt';
+const FULFILL_EXAMPLES = 'help-documentation-fulfill-flight-tickets-examples.txt';
+const CONJUNCTIVE = 'Example response with refunded conjunctive tickets:';
+
+describe('getBooking — RF-15: documentos con su estado, con los ejemplos oficiales', () => {
+  it('el conjuntivo devuelto (TR + TE del mismo tiquete) es UN documento, devuelto', () => {
+    // El reembolso de un conjuntivo deja un ítem `TR` con el número principal, y getBooking trae
+    // también el `TE` original con el número conjuntivo (nota final del mismo archivo).
+    const snapshot = mapSabreGetBookingForDisplay(loadHelpExample(GET_EXAMPLES, CONJUNCTIVE));
+    expect(snapshot.view.documents).toEqual([
+      {
+        number: '1609786952746',
+        kind: 'TICKET',
+        status: 'REFUNDED',
+        travelerIndex: 0,
+        providerStatusCode: 'TR',
+      },
+    ]);
+    // La lista vieja no cambia: sigue con los dos números tal como vinieron.
+    expect(snapshot.view.ticketNumbers).toEqual(['1609786952746', '1609786952746/47']);
+  });
+
+  it('el orden de las dos entradas no cambia el resultado', () => {
+    const example = loadHelpExample(GET_EXAMPLES, CONJUNCTIVE);
+    const tickets = example['flightTickets'] as unknown[];
+    const snapshot = mapSabreGetBookingForDisplay({
+      ...example,
+      flightTickets: [...tickets].reverse(),
+    });
+    expect(snapshot.view.documents?.map((d) => [d.number, d.status, d.travelerIndex])).toEqual([
+      ['1609786952746', 'REFUNDED', 0],
+    ]);
+  });
+
+  it('una reserva NDC sin emitir: el localizador de la aerolínea, sin documentos ni plazo', () => {
+    const snapshot = mapSabreGetBookingForDisplay(
+      loadHelpExample(GET_EXAMPLES, 'Example response with NDC seats:'),
+    );
+    expect(snapshot.view.airlineLocators).toEqual([{ carrierCode: 'LO', locator: 'Z6XNH2' }]);
+    expect(snapshot.view).not.toHaveProperty('documents');
+    // `creationDetails` viene, pero sin `purchaseDeadlineDate`: no hay plazo que inventar.
+    expect(snapshot.view).not.toHaveProperty('ticketingDeadline');
+    expect(snapshot.warnings).not.toContain('ticketing-deadline-malformed');
+  });
+
+  it('TE y ME del ejemplo oficial de fulfill ATPCO: tiquetes y EMD emitidos', () => {
+    // Los `tickets[]` de fulfill comparten con `flightTickets[]` número y ticketStatusCode.
+    const fulfill = loadHelpExample(
+      FULFILL_EXAMPLES,
+      'containing the issued documents (tickets and EMDs)',
+    );
+    const snapshot = mapSabreGetBookingForDisplay({ flightTickets: fulfill['tickets'] });
+    const documents = snapshot.view.documents ?? [];
+    expect(documents.length).toBeGreaterThan(0);
+    expect(new Set(documents.map((d) => d.status))).toEqual(new Set(['ISSUED']));
+    expect(new Set(documents.map((d) => d.kind))).toEqual(new Set(['TICKET', 'EMD']));
+    expect(documents.find((d) => d.number === '0801806412388')?.kind).toBe('EMD');
+    expect(documents.find((d) => d.number === '0806802004064')?.kind).toBe('TICKET');
+  });
+
+  it('TO del ejemplo oficial de fulfill NDC cuenta como emitido', () => {
+    const fulfill = loadHelpExample(
+      FULFILL_EXAMPLES,
+      'A successful operation results',
+      'NDC booking fulfillment',
+    );
+    const snapshot = mapSabreGetBookingForDisplay({ flightTickets: fulfill['tickets'] });
+    expect(snapshot.view.documents).toEqual([
+      { number: '0015752129518', kind: 'TICKET', status: 'ISSUED', providerStatusCode: 'TO' },
+      { number: '0015752129519', kind: 'TICKET', status: 'ISSUED', providerStatusCode: 'TO' },
+    ]);
+    // El ejemplo trae nombres de pasajero en cada tiquete: no pasan a la vista.
+    expect(JSON.stringify(snapshot)).not.toContain('Drake');
+  });
+});
+
+describe('getBooking — RF-15: documentos, casos borde', () => {
+  it('un código fuera de la tabla sale UNKNOWN, con su código y un aviso', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      flightTickets: [{ number: '0167489825830', travelerIndex: 1, ticketStatusCode: 'TV' }],
+    });
+    expect(snapshot.view.documents).toEqual([
+      {
+        number: '0167489825830',
+        kind: 'TICKET',
+        status: 'UNKNOWN',
+        travelerIndex: 0,
+        providerStatusCode: 'TV',
+      },
+    ]);
+    expect(snapshot.warnings).toContain('ticket-status-unknown');
+  });
+
+  it('un EMD emitido es EMD, y el pasajero va por posición desde 0', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      flightTickets: [{ number: '1251934576908', travelerIndex: 2, ticketStatusCode: 'ME' }],
+      travelers: [{}, {}],
+    });
+    expect(snapshot.view.documents).toEqual([
+      {
+        number: '1251934576908',
+        kind: 'EMD',
+        status: 'ISSUED',
+        travelerIndex: 1,
+        providerStatusCode: 'ME',
+      },
+    ]);
+  });
+
+  it('un índice de pasajero fuera de rango no se publica', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      flightTickets: [{ number: '0167489825830', travelerIndex: 3, ticketStatusCode: 'TE' }],
+      travelers: [{}],
+    });
+    expect(snapshot.view.documents?.[0]).not.toHaveProperty('travelerIndex');
+    expect(snapshot.warnings).toContain('traveler-index-out-of-range');
+  });
+
+  it.each([
+    ['0', 'muy corto'],
+    ['016-7489825830', 'con guion: no se sabe si es formato o rango'],
+    ['ABC1234567890', 'con letras'],
+    ['01674898258301234', 'más de 16 dígitos'],
+  ])('%s no pasa a documento (%s), pero sigue en ticketNumbers', (number) => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      flightTickets: [{ number, travelerIndex: 1, ticketStatusCode: 'TE' }],
+    });
+    expect(snapshot.view.documents).toEqual([]);
+    expect(snapshot.view.ticketNumbers).toEqual([number]);
+    expect(snapshot.warnings).toContain('ticket-number-malformed');
+  });
+
+  it('con la sección de tiquetes presente pero sin documentos legibles, la lista es vacía', () => {
+    // Presente manda sobre `ticketNumbers`: quien guarda no cae a "número sin estado".
+    const snapshot = mapSabreGetBookingForDisplay({ flightTickets: [{ number: 42 }] });
+    expect(snapshot.view.documents).toEqual([]);
+  });
+
+  it('sin flightTickets no hay lista: la lectura no trajo la sección', () => {
+    expect(mapSabreGetBookingForDisplay({ bookingId: 'GLEBNY' }).view).not.toHaveProperty(
+      'documents',
+    );
+  });
+});
+
+describe('getBooking — plazo de emisión', () => {
+  it('futureTicketingPolicy, con el ejemplo oficial de una reserva NDC leída al modificarla', () => {
+    const response = loadHelpExample(
+      'help-documentation-modify-booking-examples-0.txt',
+      'The expected response:',
+      'NDC booking – modify traveler information',
+    );
+    const snapshot = mapSabreGetBookingForDisplay(response['booking']);
+    expect(snapshot.view.ticketingDeadline).toEqual({
+      date: '2023-09-30',
+      time: '00:59',
+      zone: 'PROVIDER_LOCAL',
+    });
+    expect(snapshot.view.airlineLocators).toEqual([{ carrierCode: 'QF', locator: 'L9LR6Q' }]);
+  });
+
+  it('en NDC, sin futureTicketingPolicy, el plazo de garantía del precio', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      creationDetails: { purchaseDeadlineDate: '2026-10-20', purchaseDeadlineTime: '15:00' },
+    });
+    expect(snapshot.view.ticketingDeadline).toEqual({
+      date: '2026-10-20',
+      time: '15:00',
+      zone: 'PROVIDER_LOCAL',
+    });
+  });
+
+  it('futureTicketingPolicy gana a purchaseDeadline', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      futureTicketingPolicy: { ticketingDate: '2026-10-18' },
+      creationDetails: { purchaseDeadlineDate: '2026-10-20', purchaseDeadlineTime: '15:00' },
+    });
+    expect(snapshot.view.ticketingDeadline).toEqual({ date: '2026-10-18', zone: 'PROVIDER_LOCAL' });
+  });
+
+  it('una política sin fecha (sólo el PCC de emisión) no es un plazo', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      futureTicketingPolicy: { ticketingPcc: 'G7RE', comment: 'TICKET BEFORE TUES' },
+    });
+    expect(snapshot.view).not.toHaveProperty('ticketingDeadline');
+    // Ni el comentario (texto libre) ni el PCC salen en la vista.
+    expect(JSON.stringify(snapshot)).not.toContain('TICKET BEFORE TUES');
+    expect(JSON.stringify(snapshot)).not.toContain('G7RE');
+  });
+
+  it.each([
+    [{ ticketingDate: '2026-02-30' }, 'una fecha que no existe'],
+    [{ ticketingDate: '30/10/2026' }, 'otro formato'],
+    [{ ticketingDate: 20261030 }, 'un número'],
+    ['2026-10-30', 'el bloque no es un objeto'],
+  ])(
+    '%j no es un plazo (%s) y se avisa, sin tumbar la lectura',
+    (policy: unknown, motivo: string) => {
+      const snapshot = mapSabreGetBookingForDisplay({
+        bookingId: 'GLEBNY',
+        futureTicketingPolicy: policy,
+      });
+      expect(snapshot.view, motivo).not.toHaveProperty('ticketingDeadline');
+      expect(snapshot.warnings).toContain('ticketing-deadline-malformed');
+      expect(snapshot.view.orderId).toBe('GLEBNY');
+    },
+  );
+
+  it('una hora ilegible se pierde sola: el día sigue valiendo', () => {
+    const snapshot = mapSabreGetBookingForDisplay({
+      futureTicketingPolicy: { ticketingDate: '2026-10-30', ticketingTime: '24:00' },
+    });
+    expect(snapshot.view.ticketingDeadline).toEqual({ date: '2026-10-30', zone: 'PROVIDER_LOCAL' });
+    expect(snapshot.warnings).toContain('ticketing-deadline-malformed');
+  });
+});

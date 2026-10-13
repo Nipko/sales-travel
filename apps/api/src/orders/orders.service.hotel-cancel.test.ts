@@ -108,6 +108,20 @@ function ordenHotel(extra: Row = {}): Row {
   };
 }
 
+/**
+ * Una orden de vuelos de un proveedor que no opera su post-venta por cuenta: no guardó ninguna, y
+ * su post-venta sale con la cuenta vigente. Con una cuenta guardada que ese proveedor no sabe
+ * resolver, la post-venta se pararía con 409 antes de tocar nada.
+ */
+function ordenDeVuelo(): Row {
+  return ordenHotel({
+    id: 'f1',
+    provider: 'stub-air',
+    provider_order_id: 'PNR1',
+    provider_account_id: null,
+  });
+}
+
 /** El proveedor de la orden: resuelve SU cuenta (RF-29), o la da por no disponible. */
 class ProveedorDeLaOrden extends StubHotelProviderFactory {
   readonly adapter = new StubHotelAdapter(PROVEEDOR);
@@ -578,7 +592,7 @@ describe('la cuenta de la reserva y lo que no es de hoteles', () => {
   });
 
   it('una orden de vuelos sigue por el adapter de vuelos, sin tocar el seguimiento de hoteles', async () => {
-    const vuelo = ordenHotel({ id: 'f1', provider: 'stub-air', provider_order_id: 'PNR1' });
+    const vuelo = ordenDeVuelo();
     const b = banco([vuelo]);
 
     const { result } = await b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER);
@@ -587,6 +601,22 @@ describe('la cuenta de la reserva y lo que no es de hoteles', () => {
     expect(b.vuelos.adapterFor(TENANT).cancelOrder).toHaveBeenCalledOnce();
     expect(b.cancelBooking).not.toHaveBeenCalled();
     expect(b.mem.calls).toEqual([]);
+  });
+
+  it('un vuelo con una cuenta que su proveedor ya no sabe operar: 409 antes del claim, sin llamar', async () => {
+    // La orden guardó la cuenta con que se reservó y el proveedor de vuelos no la resuelve: salir
+    // con la vigente sería leer o cancelar una reserva que esa cuenta no reconoce (RF-29).
+    const vuelo = ordenDeVuelo();
+    const b = banco([{ ...vuelo, provider_account_id: CUENTA }]);
+
+    await expect(b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER)).rejects.toBeInstanceOf(
+      ProviderOrderAccountUnavailableError,
+    );
+
+    expect(b.vuelos.adapterFor(TENANT).cancelOrder).not.toHaveBeenCalled();
+    expect(b.vuelos.resolveCalls).toEqual([]);
+    expect(b.mem.operations('f1')).toEqual([]);
+    expect(b.mem.order('f1')?.['status']).toBe('confirmed');
   });
 
   it('la compensación selectiva no existe para un hotel', async () => {
@@ -981,7 +1011,7 @@ describe('HARD-1 (3): la petición responde dentro de su presupuesto', () => {
   });
 
   it('una orden de vuelos no tiene presupuesto: espera al proveedor como siempre', async () => {
-    const vuelo = ordenHotel({ id: 'f1', provider: 'stub-air', provider_order_id: 'PNR1' });
+    const vuelo = ordenDeVuelo();
     const b = banco([vuelo], { syncBudgetMs: 0 });
 
     const { result } = await b.service.cancelOrder(TENANT, 'f1', 'PNR1', USER);
@@ -1143,7 +1173,7 @@ describe('HARD-1 (2): el claim que un proceso dejó en vuelo', () => {
   });
 
   it('vuelos: la misma limitación y el mismo remedio seguro, sin la lectura de hoteles', async () => {
-    const vuelo = ordenHotel({ id: 'f1', provider: 'stub-air', provider_order_id: 'PNR1' });
+    const vuelo = ordenDeVuelo();
     const b = banco([vuelo]);
     const cancelOrder = b.vuelos.adapterFor(TENANT).cancelOrder;
     cancelOrder.mockReturnValue(new Promise(() => undefined));

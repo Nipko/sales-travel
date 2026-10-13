@@ -204,6 +204,11 @@ function banco(
   return { orders, factories, insertado, insertadoInicial, audit };
 }
 
+/** Una orden ya hecha con `provider`, sin cuenta guardada: su post-venta sale con la vigente. */
+function ordenGuardada(provider: string) {
+  return { id: 'order-1', provider, provider_order_id: 'PNR123', provider_account_id: null };
+}
+
 /** El `selected_offer` tal como lo escribió el servicio (JSON, como en la columna JSONB). */
 function guardada(fila: Record<string, unknown> | undefined): Offer {
   const raw = fila?.['selected_offer'];
@@ -521,7 +526,7 @@ describe('OrdersService.createOrder — enrutado por proveedor', () => {
   it('la post-venta sale por el proveedor de la reserva, no por uno fijo', async () => {
     const b = banco(['alfa-air', 'beta-air']);
 
-    await b.orders.retrieveFromProvider(TENANT, 'PNR123', 'beta-air');
+    await b.orders.retrieveFromProvider(TENANT, ordenGuardada('beta-air'));
 
     const beta = b.factories.get('beta-air')!.adapterFor(TENANT);
     expect(beta.retrieveForDisplay).toHaveBeenCalledWith('PNR123', { tenantId: TENANT });
@@ -595,7 +600,7 @@ describe('OrdersService.createOrder — enrutado por proveedor', () => {
     const b = banco(['alfa-air']);
     const espia = vi.spyOn(b.factories.get('alfa-air')!, 'resolveForTenant');
 
-    await expect(b.orders.retrieveFromProvider(TENANT, 'PNR123', '')).rejects.toThrow(
+    await expect(b.orders.retrieveFromProvider(TENANT, ordenGuardada(''))).rejects.toThrow(
       /no tiene proveedor/,
     );
     expect(espia).not.toHaveBeenCalled();

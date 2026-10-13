@@ -546,7 +546,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
           publicDetails: { activeOrders: 3 },
         });
         expect((error as Error).message).toContain(
-          'No se puede cambiar el usuario, el entorno ni la URL',
+          'No se puede apuntar a otra cuenta, oficina o entorno del proveedor',
         );
         expect(actualizo(consultas)).toBe(false);
       },
@@ -582,7 +582,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
         credentials: { username: 'otro', password: 'p' },
       }).catch((e: unknown) => e);
       expect(error).toMatchObject({ publicDetails: { activeOrders: null } });
-      expect((error as Error).message).toContain('no se cambia el usuario');
+      expect((error as Error).message).toContain('no se apunta a otra cuenta');
     });
 
     it('con el blob guardado ilegible sólo cuenta la configuración: reescribir la credencial es como se arregla', async () => {
@@ -644,6 +644,102 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
           credentials: { username: 'otro', password: 'p' },
         }),
       ).resolves.toEqual({ id: CUENTA });
+    });
+  });
+
+  describe('Sabre: la oficina y el entorno de un PNR son la cuenta (sus órdenes la guardan)', () => {
+    const SABRE_GUARDADA = { epr: 'EPR-1', password: 'vieja', homePcc: 'A1B2' };
+    const conReservas = (existente: Partial<Existente> = {}) =>
+      servicioConCuenta(
+        {
+          status: 'active',
+          is_inheritable: true,
+          credentials: SABRE_GUARDADA,
+          config: { environment: 'cert' },
+          ...existente,
+        },
+        { own_orders: 1, inherited_orders: 1 },
+      );
+    const sabre = (
+      service: ProviderCredentialsService,
+      cambio: { credentials?: Record<string, unknown>; config?: Record<string, unknown> } = {},
+    ) =>
+      upsert(service, {
+        status: 'active',
+        providerCode: 'sabre',
+        credentials: { ...SABRE_GUARDADA, password: 'nueva' },
+        config: { environment: 'cert' },
+        ...cambio,
+      });
+
+    it.each([
+      ['otro PCC', { credentials: { ...SABRE_GUARDADA, homePcc: 'Z9Y8' } }],
+      ['de CERT a producción', { config: { environment: 'prod' } }],
+      ['otro host REST', { config: { environment: 'cert', host: 'https://otro.example' } }],
+      ['otro host SOAP', { config: { environment: 'cert', soapHost: 'https://otro.example' } }],
+    ])('%s con reservas activas → 409 y no escribe', async (_caso, cambio) => {
+      const { service, consultas } = conReservas();
+
+      const error = await sabre(service, cambio).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ProviderAccountInUseError);
+      expect(error).toMatchObject({ publicDetails: { activeOrders: 2 } });
+      expect((error as Error).message).toContain('oficina');
+      expect(actualizo(consultas)).toBe(false);
+    });
+
+    it.each([
+      ['otra contraseña', {}],
+      ['otro EPR de la misma oficina', { credentials: { ...SABRE_GUARDADA, epr: 'EPR-2' } }],
+    ])('%s se guarda sin consultar: sigue siendo la misma oficina', async (_caso, cambio) => {
+      const { service, consultas } = conReservas();
+
+      await expect(sabre(service, cambio)).resolves.toEqual({ id: CUENTA });
+      expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
+      expect(actualizo(consultas)).toBe(true);
+    });
+
+    it('el PCC se compara como lo lee el factory: mudarlo de `config` al blob con el mismo valor no es otra oficina', async () => {
+      const mudado = conReservas({
+        credentials: { epr: 'EPR-1', password: 'vieja' },
+        config: { environment: 'cert', homePcc: 'A1B2' },
+      });
+      await expect(sabre(mudado.service)).resolves.toEqual({ id: CUENTA });
+
+      const otro = conReservas({
+        credentials: { epr: 'EPR-1', password: 'vieja' },
+        config: { environment: 'cert', homePcc: 'A1B2' },
+      });
+      await expect(
+        sabre(otro.service, { credentials: { ...SABRE_GUARDADA, homePcc: 'Z9Y8' } }),
+      ).rejects.toBeInstanceOf(ProviderAccountInUseError);
+    });
+
+    it('sin entorno guardado el factory lee CERT: guardarla desde la pantalla, con CERT, no cambia nada', async () => {
+      const cargadaPorApi = conReservas({ config: {} });
+      await expect(sabre(cargadaPorApi.service)).resolves.toEqual({ id: CUENTA });
+
+      const aProduccion = conReservas({ config: {} });
+      await expect(
+        sabre(aProduccion.service, { config: { environment: 'prod' } }),
+      ).rejects.toBeInstanceOf(ProviderAccountInUseError);
+    });
+
+    it('con el blob guardado ilegible sólo cuenta la configuración', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const ilegible = conReservas({ credentials: 'ilegible' });
+        await expect(
+          sabre(ilegible.service, { credentials: { ...SABRE_GUARDADA, homePcc: 'Z9Y8' } }),
+        ).resolves.toEqual({ id: CUENTA });
+
+        const otroEntorno = conReservas({ credentials: 'ilegible' });
+        await expect(
+          sabre(otroEntorno.service, { config: { environment: 'prod' } }),
+        ).rejects.toBeInstanceOf(ProviderAccountInUseError);
+      } finally {
+        warn.mockRestore();
+      }
     });
   });
 

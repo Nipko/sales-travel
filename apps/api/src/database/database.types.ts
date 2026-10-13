@@ -577,6 +577,70 @@ export interface HotelOrderTrackingTable {
   updated_at: Generated<Timestamp>;
 }
 
+/*
+ * 0082: vocabularios cerrados de `flight_order_tracking` y `order_flight_documents`. Valores y no
+ * sólo tipos por lo mismo que los de 0042: los CHECK de la migración dicen lo mismo, y un test los
+ * compara con el SQL y con el vocabulario del dominio.
+ */
+export const FLIGHT_DOCUMENT_KINDS = ['TICKET', 'EMD'] as const;
+export type FlightDocumentKind = (typeof FLIGHT_DOCUMENT_KINDS)[number];
+
+export const FLIGHT_DOCUMENT_STATUSES = [
+  'ISSUED',
+  'VOIDED',
+  'REFUNDED',
+  'EXCHANGED',
+  'UNKNOWN',
+] as const;
+export type FlightDocumentStatus = (typeof FLIGHT_DOCUMENT_STATUSES)[number];
+
+export const TICKETING_DEADLINE_ZONES = ['UTC', 'PROVIDER_LOCAL'] as const;
+export type TicketingDeadlineZone = (typeof TICKETING_DEADLINE_ZONES)[number];
+
+/** `DATE` de Postgres: `pg` lo entrega como `Date` a medianoche LOCAL; se lee con `to_char`. */
+type PgDate = ColumnType<Date | null, string | null | undefined, string | null>;
+
+/**
+ * 0082: lo que la última lectura del proveedor dijo de una orden de vuelo. Una fila por orden, con
+ * tenant_id y RLS forzada; `(order_id, tenant_id)` apunta a `(id, tenant_id)` de `orders`. Sin PII.
+ */
+export interface FlightOrderTrackingTable {
+  order_id: string;
+  tenant_id: string;
+  /** `[{ carrierCode, locator }]`. La forma la valida el store; la base, que es una lista. */
+  airline_locators: ColumnType<unknown, string | undefined, string>;
+  /** Va con su zona: los dos o ninguno. */
+  ticketing_deadline_date: PgDate;
+  /** `HH:MM`; sólo con fecha. */
+  ticketing_deadline_time: string | null;
+  ticketing_deadline_zone: TicketingDeadlineZone | null;
+  /** Sólo con zona `UTC`: con la hora de la oficina del proveedor sería un instante inventado. */
+  ticketing_deadline_at: Timestamp | null;
+  last_read_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/** 0082: tiquetes y EMD de una orden de vuelo, uno por `(order_id, number)`. */
+export interface OrderFlightDocumentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  /** Número principal, `^[0-9]{10,16}$`. */
+  number: string;
+  kind: FlightDocumentKind;
+  /** Posición del pasajero en `orders.passengers`, desde 0. */
+  traveler_index: number | null;
+  status: FlightDocumentStatus;
+  /** Código del proveedor, `^[A-Z0-9]{1,4}$`. */
+  provider_status_code: string | null;
+  issued_at: Timestamp | null;
+  voided_at: Timestamp | null;
+  refunded_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface CustomersTable {
   id: Generated<string>;
   tenant_id: string;
@@ -1076,6 +1140,8 @@ export interface DB {
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
   hotel_order_tracking: HotelOrderTrackingTable;
+  flight_order_tracking: FlightOrderTrackingTable;
+  order_flight_documents: OrderFlightDocumentsTable;
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;

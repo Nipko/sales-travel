@@ -1,6 +1,13 @@
-import type { AirlineLocator, OrderForModification, OrderView } from '@sales-travel/domain';
+import type {
+  AirlineLocator,
+  OrderForModification,
+  OrderView,
+  TicketDocument,
+  TicketingDeadline,
+} from '@sales-travel/domain';
 import { z } from 'zod';
 import { SabreIndexError, parseSabreIndex, toArrayPosition } from '../indices';
+import { classifySabreTicketStatus, sabreDocumentStatusRank } from '../ticketing/document-status';
 import { SABRE_EXTRA_FEATURES } from './get.request.builder';
 
 /**
@@ -83,6 +90,8 @@ export type SabreBookingWarningCode =
   | 'flight-without-airline-code'
   | 'flight-without-item-id'
   | 'ticket-number-malformed'
+  | 'ticket-status-unknown'
+  | 'ticketing-deadline-malformed'
   | 'traveler-index-out-of-range'
   | 'booking-signature-absent'
   | 'booking-signature-in-display-response'
@@ -190,6 +199,7 @@ const ProductSchema = z.object({
 const FlightTicketSchema = z.object({
   number: z.unknown().optional(),
   travelerIndex: z.unknown().optional(),
+  ticketStatusCode: z.unknown().optional(),
 });
 
 const ProviderIssueSchema = z.object({
@@ -213,6 +223,11 @@ export const SabreGetBookingResponseSchema = z.object({
   trains: z.array(ProductSchema).optional(),
   cruises: z.array(ProductSchema).optional(),
   flightTickets: z.array(FlightTicketSchema).optional(),
+  // El plazo de emisión (`:1209` y `:4767-4800`; en NDC también `creationDetails`, `:1463-1474`).
+  // Van `unknown` y se leen campo a campo: un plazo ilegible se avisa y se descarta, nunca tumba
+  // la lectura entera. `ticketingPcc`, `queueNumber` y `comment` (texto libre) no se leen.
+  futureTicketingPolicy: z.unknown().optional(),
+  creationDetails: z.unknown().optional(),
   // Ambos son documentos/contabilidad ya cumplida. No se proyecta su contenido (puede llevar
   // PII/PAN); sólo su presencia participa en la postura fail-safe de cancelación.
   nonElectronicTickets: z.array(z.unknown()).optional(),
@@ -380,6 +395,160 @@ function collectTicketNumbers(
 }
 
 /**
+ * `TicketDocument.number`: el número principal, sólo dígitos. Sabre admite `/` y `-`
+ * (`^[0-9A-Z/-]+$`, `:3838-3842`); lo que va después de `/` es el sufijo del conjuntivo
+ * (`1609786952746/47`), que no identifica otro documento para anular ni devolver.
+ */
+const DOCUMENT_NUMBER = /^[0-9]{10,16}$/;
+
+/**
+ * El número principal de un `FlightTicket.number`, o `undefined` si no es un número que se pueda
+ * guardar. Un guion NO se quita: no se sabe si es un separador de formato (`016-7489825830`) o un
+ * rango conjuntivo (`0167489825830-31`), y quitarlo en el segundo caso fabrica un número que no
+ * existe. Ése se queda en `ticketNumbers`, como siempre, y no pasa a documento.
+ */
+function primaryDocumentNumber(raw: string): string | undefined {
+  const primary = raw.split('/', 1)[0] ?? '';
+  return DOCUMENT_NUMBER.test(primary) ? primary : undefined;
+}
+
+/** `travelerIndex` (1-based) a la posición del pasajero (0-based), si apunta a alguien. */
+function documentTravelerPosition(
+  raw: unknown,
+  travelerCount: number | undefined,
+): number | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    const position = toArrayPosition(parseSabreIndex(raw, 'flightTickets[].travelerIndex'));
+    if (travelerCount !== undefined && position >= travelerCount) return undefined;
+    return position;
+  } catch (error) {
+    if (!(error instanceof SabreIndexError)) throw error;
+    return undefined;
+  }
+}
+
+/**
+ * RF-15: los documentos de la reserva con su estado, uno por número principal.
+ *
+ * `undefined` si la respuesta no trae `flightTickets` (una lectura que no pidió `TICKETS`, o una
+ * reserva sin emitir: Sabre purga los arrays vacíos). Con la sección presente, la lista —aunque
+ * quede vacía— es la de esta lectura y manda sobre `ticketNumbers`.
+ *
+ * Dos entradas con el mismo número principal son el mismo tiquete (un conjuntivo devuelto trae su
+ * `TR` y su `TE` original): queda el estado de mayor rango, ver `sabreDocumentStatusRank`. Los
+ * avisos de índice fuera de rango y de número ilegible los da `collectTicketNumbers`.
+ */
+function collectDocuments(
+  response: SabreGetBookingResponse,
+  warnings: SabreBookingWarningCode[],
+): TicketDocument[] | undefined {
+  if (response.flightTickets === undefined) return undefined;
+  const travelerCount = response.travelers?.length;
+  const byNumber = new Map<string, TicketDocument>();
+
+  for (const ticket of response.flightTickets) {
+    if (typeof ticket.number !== 'string') continue;
+    const number = primaryDocumentNumber(ticket.number);
+    if (number === undefined) {
+      addWarning(warnings, 'ticket-number-malformed');
+      continue;
+    }
+    const classified = classifySabreTicketStatus(ticket.ticketStatusCode);
+    if (classified.status === 'UNKNOWN') addWarning(warnings, 'ticket-status-unknown');
+    const travelerIndex = documentTravelerPosition(ticket.travelerIndex, travelerCount);
+    const previous = byNumber.get(number);
+    if (
+      previous !== undefined &&
+      sabreDocumentStatusRank(classified.status) <= sabreDocumentStatusRank(previous.status)
+    ) {
+      continue;
+    }
+    const keptTraveler = travelerIndex ?? previous?.travelerIndex;
+    byNumber.set(number, {
+      number,
+      kind: classified.kind,
+      status: classified.status,
+      ...(keptTraveler === undefined ? {} : { travelerIndex: keptTraveler }),
+      ...(classified.providerStatusCode === undefined
+        ? {}
+        : { providerStatusCode: classified.providerStatusCode }),
+    });
+  }
+
+  return [...byNumber.values()];
+}
+
+const DEADLINE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** `FutureTicketingPolicy.ticketingTime` — `:4788-4793`. El de NDC (`:1470`) es más laxo. */
+const DEADLINE_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** `YYYY-MM-DD` que además existe en el calendario: `2026-02-30` no es una fecha. */
+function calendarDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !DEADLINE_DATE.test(value)) return undefined;
+  const [year = 0, month = 0, day = 0] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+    ? value
+    : undefined;
+}
+
+/**
+ * Un plazo leído de un bloque de la respuesta. `undefined` si el bloque no está o no trae fecha;
+ * con fecha ilegible, además, un aviso. Una hora ilegible se pierde sola: el día sigue sirviendo.
+ */
+function deadlineFrom(
+  block: unknown,
+  dateKey: string,
+  timeKey: string,
+  warnings: SabreBookingWarningCode[],
+): TicketingDeadline | undefined {
+  if (block === undefined) return undefined;
+  if (typeof block !== 'object' || block === null || Array.isArray(block)) {
+    addWarning(warnings, 'ticketing-deadline-malformed');
+    return undefined;
+  }
+  const fields = block as Readonly<Record<string, unknown>>;
+  if (fields[dateKey] === undefined) return undefined;
+  const date = calendarDate(fields[dateKey]);
+  if (date === undefined) {
+    addWarning(warnings, 'ticketing-deadline-malformed');
+    return undefined;
+  }
+  const time = fields[timeKey];
+  if (time === undefined) return { date, zone: 'PROVIDER_LOCAL' };
+  if (typeof time !== 'string' || !DEADLINE_TIME.test(time)) {
+    addWarning(warnings, 'ticketing-deadline-malformed');
+    return { date, zone: 'PROVIDER_LOCAL' };
+  }
+  return { date, time, zone: 'PROVIDER_LOCAL' };
+}
+
+/**
+ * Hasta cuándo se puede emitir la reserva.
+ *
+ * Primero `futureTicketingPolicy.ticketingDate/ticketingTime` (`:4767-4800`): en ATPCO es la fecha
+ * de emisión futura o, sin ella, el `TicketingTimeLimit` del PNR; en NDC, el `paymentTimeLimit` de
+ * la orden. Si no hay, en NDC queda `creationDetails.purchaseDeadlineDate/Time` (`:1463-1474`),
+ * hasta cuándo la aerolínea garantiza el precio.
+ *
+ * La zona es `PROVIDER_LOCAL` en los dos casos: el contrato no dice en qué zona están, y la hora
+ * del PNR es la de la oficina. Se guarda tal cual, sin inventar un instante; quien conozca la zona
+ * del PCC lo calculará.
+ */
+function resolveTicketingDeadline(
+  response: SabreGetBookingResponse,
+  warnings: SabreBookingWarningCode[],
+): TicketingDeadline | undefined {
+  return (
+    deadlineFrom(response.futureTicketingPolicy, 'ticketingDate', 'ticketingTime', warnings) ??
+    deadlineFrom(response.creationDetails, 'purchaseDeadlineDate', 'purchaseDeadlineTime', warnings)
+  );
+}
+
+/**
  * Cancelada sólo si HAY ítems y **todos** están en `Cancelled`. Con cero ítems el resultado es
  * `NO_CONTENT`, nunca `CANCELLED`: no distinguiríamos una reserva vaciada de una lectura filtrada
  * que no pidió la sección.
@@ -397,6 +566,8 @@ function buildSnapshot(
   const airlineLocators = collectAirlineLocators(flights, warnings);
   const items = collectItems(response, warnings);
   const ticketNumbers = collectTicketNumbers(response, warnings);
+  const documents = collectDocuments(response, warnings);
+  const ticketingDeadline = resolveTicketingDeadline(response, warnings);
   const status = resolveStatus(items);
   const hasTicketingDocuments =
     (response.flightTickets?.length ?? 0) > 0 ||
@@ -426,6 +597,8 @@ function buildSnapshot(
     warnings: [...warnings],
     ...(response.bookingId === undefined ? {} : { orderId: response.bookingId }),
     ...(ticketNumbers.length === 0 ? {} : { ticketNumbers }),
+    ...(documents === undefined ? {} : { documents }),
+    ...(ticketingDeadline === undefined ? {} : { ticketingDeadline }),
     status,
   };
 

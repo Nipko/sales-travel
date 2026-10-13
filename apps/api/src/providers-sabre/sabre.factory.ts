@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
 import type { Offer, ProviderEnvironment } from '@sales-travel/canonical';
 import type {
@@ -36,7 +36,10 @@ import {
   type SabreShopOptions,
 } from '@sales-travel/sabre';
 import { z } from '@sales-travel/validation';
-import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import {
+  ProviderCredentialsService,
+  type ResolvedProviderAccount,
+} from '../provider-credentials/provider-credentials.service.js';
 import {
   CallPolicySchema,
   ProviderAccountIncompleteError,
@@ -458,7 +461,37 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // heredable, o cuenta todavía en `status: 'sandbox'`— se propaga tal cual y el registry la
     // traduce a "proveedor no habilitado". Atraparla aquí para caer a env es exactamente lo
     // que este factory NO hace.
-    const resolved = await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE);
+    return this.adapterFor(await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE));
+  }
+
+  /**
+   * La post-venta de una orden sale con la cuenta (y el PCC) con que se creó la reserva (RF-29): un
+   * PNR sólo se lee, se cancela o se emite desde la oficina que lo creó, y una agencia que después
+   * cargó su propia cuenta seguiría viendo "no existe" en las reservas que hizo con la heredada. La
+   * bóveda resuelve la cuenta desde la orden, con el tenant fijado y sólo si sigue en su red.
+   *
+   * Pasa por la misma puerta de credenciales y la misma caché que la venta: con la misma cuenta, el
+   * mismo cliente, el mismo token y el mismo cupo de concurrencia. Sin `try/catch` por lo mismo que
+   * {@link resolveForTenant}: el registry traduce la `NotFoundException` a "la cuenta de la reserva
+   * ya no está disponible".
+   */
+  async resolveForOrder(
+    tenantId: string,
+    orderId: string,
+  ): Promise<TenantAdapter<FlightProviderAdapter>> {
+    const resolved = await this.creds.resolveForOrder(tenantId, orderId);
+    if (resolved.providerCode !== SABRE_PROVIDER_CODE) {
+      // La bóveda ya exige el proveedor de la orden; esto cubre un cableado equivocado del registry.
+      throw new NotFoundException('la cuenta de la orden no es de Sabre');
+    }
+    return this.adapterFor(resolved);
+  }
+
+  /**
+   * El adapter de UNA cuenta ya resuelta (la vigente del tenant o la de una orden), con lo que el
+   * registry necesita saber de ella: origen, política, entorno y cuál es.
+   */
+  private adapterFor(resolved: ResolvedProviderAccount): TenantAdapter<FlightProviderAdapter> {
     const cfg = this.toConfig(resolved.credentials, resolved.config, resolved.ownerTenantId);
 
     // Puerta de credenciales, ANTES de construir nada. Hasta esta tanda esta comprobación
@@ -478,16 +511,28 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // dos cuentas del mismo dueño con PCC distinto NO pueden compartir instancia ni token.
     // No es secreto —se imprime en el billete—, así que puede vivir en una clave de caché.
     // Ya no hace falta marcador de "sin PCC": la puerta de arriba garantiza que está.
-    const key = `byoc:${resolved.ownerTenantId}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
+    //
+    // El id de la cuenta también: la post-venta resuelve la cuenta de cada orden, y un dueño con
+    // dos cuentas de Sabre (dos `label`) no puede recibir el adapter de la otra ni ver cómo una
+    // desaloja a la otra en cada llamada —cada reconstrucción es un token y un cupo nuevos—.
+    const key = `byoc:${resolved.ownerTenantId}:${resolved.id}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
-    const callPolicy = this.declaredCallPolicy(resolved.config, resolved.ownerTenantId);
     // Sólo `prod` es real. CERT —y cualquier cuenta sin entorno legible, que `toConfig` ya manda a
     // CERT— cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la búsqueda las
     // marca y la orden lo guarda para que nadie se las venda a un cliente como reales.
     const providerEnvironment: ProviderEnvironment = cfg.environment === 'prod' ? 'live' : 'test';
+    const account: Omit<TenantAdapter<FlightProviderAdapter>, 'adapter'> = {
+      credentialSource,
+      callPolicy: this.declaredCallPolicy(resolved.config, resolved.ownerTenantId),
+      providerEnvironment,
+      // La orden la guarda para operar su post-venta con ESTA cuenta, y el intent comprueba que
+      // sigue en esta versión antes de comprometerse.
+      accountId: resolved.id,
+      accountUpdatedAt: resolved.updatedAt,
+    };
 
     const cached = this.cache.get(key);
-    if (cached) return { adapter: cached, credentialSource, callPolicy, providerEnvironment };
+    if (cached) return { adapter: cached, ...account };
 
     const adapter = new SabreFlightProviderAdapter(
       this.buildAdapters(cfg, resolved.ownerTenantId, resolved.config),
@@ -495,7 +540,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
 
     this.cache.set(key, adapter);
     this.evictStale(key);
-    return { adapter, credentialSource, callPolicy, providerEnvironment };
+    return { adapter, ...account };
   }
 
   /** Los errores del ACL ya tienen traducción propia, y NO hace eco del texto de Sabre. */
@@ -641,11 +686,14 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     return parsed.data;
   }
 
-  /** Conserva sólo la entrada vigente por owner: al rotar credenciales cambia el `updatedAt`. */
+  /**
+   * Conserva sólo la entrada vigente por cuenta: al rotar credenciales cambia el `updatedAt`, y al
+   * cambiar el PCC, también la clave. Las otras cuentas del mismo dueño no se tocan.
+   */
   private evictStale(currentKey: string): void {
-    const ownerPrefix = currentKey.split(':').slice(0, 2).join(':') + ':';
+    const accountPrefix = currentKey.split(':').slice(0, 3).join(':') + ':';
     for (const k of this.cache.keys()) {
-      if (k !== currentKey && k.startsWith(ownerPrefix)) this.cache.delete(k);
+      if (k !== currentKey && k.startsWith(accountPrefix)) this.cache.delete(k);
     }
   }
 

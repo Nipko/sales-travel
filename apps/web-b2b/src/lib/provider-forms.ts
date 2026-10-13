@@ -219,7 +219,7 @@ const SABRE: ProviderForm = {
       minLength: 3,
       maxLength: 4,
       placeholder: 'AB1C',
-      help: 'Pseudo-city de tu oficina, 3 o 4 caracteres. No es secreto —se imprime en el billete— pero sí determina qué tarifas privadas ves. No lo cambies mientras existan reservas activas hasta que la postventa quede fijada a una versión de cuenta.',
+      help: 'Pseudo-city de tu oficina, 3 o 4 caracteres. No es secreto —se imprime en el billete— pero sí determina qué tarifas privadas ves. Con reservas activas no se puede cambiar: Sabre sólo deja consultarlas y cancelarlas desde la oficina que las creó.',
     },
     {
       key: 'redSignInPcc',

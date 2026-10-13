@@ -68,7 +68,14 @@ export function ticketingState(
   return deadline.date <= fechaLocal(new Date(now.getTime() + 48 * HORA)) ? 'urgent' : 'ok';
 }
 
-function cuandoTexto(deadline: TicketingDeadline): string {
+/**
+ * De qué reloj sale la hora cuando no hay instante:
+ * - `fare`: la fecha y hora de la tarifa (BFM), sin zona en el contrato;
+ * - `office`: el plazo que la reserva tiene en el proveedor, en la hora de la oficina que la emite.
+ */
+export type ProviderClockSource = 'fare' | 'office';
+
+function cuandoTexto(deadline: TicketingDeadline, clock: ProviderClockSource): string {
   if (deadline.kind === 'instant') {
     return new Date(deadline.at).toLocaleString('es-CO', {
       weekday: 'short',
@@ -86,6 +93,11 @@ function cuandoTexto(deadline: TicketingDeadline): string {
     month: 'short',
     timeZone: 'UTC',
   });
+  if (clock === 'office') {
+    return deadline.time === undefined
+      ? `${dia} (fecha local de la oficina emisora)`
+      : `${dia}, ${deadline.time} (hora local de la oficina emisora)`;
+  }
   return deadline.time === undefined
     ? `${dia} (según Sabre)`
     : `${dia}, ${deadline.time} (hora informada por Sabre)`;
@@ -94,13 +106,15 @@ function cuandoTexto(deadline: TicketingDeadline): string {
 /**
  * El texto completo, con el estado ESCRITO: la urgencia no puede ir sólo en el color (WCAG
  * 1.4.1). `fromOrder`: en una reserva el plazo es el de la tarifa al reservar, no el del PNR.
+ * `clock: 'office'`: el plazo es el que la reserva tiene en el proveedor, y su hora es la de la
+ * oficina emisora (sin zona: no se convierte).
  */
 export function describeTicketingDeadline(
   deadline: TicketingDeadline,
   now: Date = new Date(),
-  options: { readonly fromOrder?: boolean } = {},
+  options: { readonly fromOrder?: boolean; readonly clock?: ProviderClockSource } = {},
 ): string {
-  const cuando = cuandoTexto(deadline);
+  const cuando = cuandoTexto(deadline, options.clock ?? 'fare');
   const state = ticketingState(deadline, now);
   if (state === 'expired') {
     return `Plazo de emisión vencido el ${cuando}: verifica la reserva`;

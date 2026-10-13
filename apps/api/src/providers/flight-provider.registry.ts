@@ -8,17 +8,20 @@ import {
   ProviderAccountIncompleteError,
   ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
+  ProviderOrderAccountUnavailableError,
   isDisabledByPlatform,
   isProviderEnabled,
   type CallPolicy,
   type FlightProviderAdapter,
   type FlightProviderResolution,
+  type OrderProviderRef,
   type ProviderCapabilities,
   type ProviderEnablementEntry,
   type ProviderFlagsPort,
   type RegisteredProvider,
   type ResolvedProvider,
   type SkippedProvider,
+  type TenantAdapter,
   type TenantProviderFactory,
   type UnavailableProvider,
 } from './provider.types.js';
@@ -143,8 +146,9 @@ export class FlightProviderRegistry {
   }
 
   /**
-   * Un proveedor concreto, para la post-venta de una orden ya hecha: leerla, cancelarla, pagarla,
-   * sus servicios, el reshop y la verificación de su creación.
+   * Un proveedor concreto con la cuenta VIGENTE del tenant: la base de {@link byCodeForOffer} y la
+   * post-venta de una orden que no guardó cuenta ({@link forOrder}). La post-venta entra siempre por
+   * {@link forOrder}, que es quien sabe si la orden se hizo con otra cuenta.
    *
    * NO consulta la habilitación: ni el flag de `opt-in` ni el apagado de la plataforma. Apagar un
    * proveedor corta las ventas nuevas ({@link byCodeForOffer}), no deja sin post-venta lo que ya
@@ -157,6 +161,54 @@ export class FlightProviderRegistry {
     const resolved = await this.resolve(tenantId, factory, this.policyOf(factory));
     if (!resolved.ok) throw new ProviderNotAvailableError(code);
     return resolved.provider;
+  }
+
+  /**
+   * El proveedor de una orden YA hecha, con la cuenta con la que se reservó (RF-29): la post-venta
+   * de una agencia que después cambió de cuenta sigue saliendo con la anterior, que es la única que
+   * el proveedor reconoce para esa reserva. Leerla con otra diría "no existe" de una reserva viva, y
+   * cancelarla con otra no la cancela.
+   *
+   * Una orden sin cuenta guardada (de un proveedor que no la guarda, o anterior a que la guardara)
+   * sale con la vigente, como {@link byCode}. Una con cuenta nunca cae a otra: si la suya ya no está
+   * disponible para el tenant (salió de su red, se desactivó o quedó incompleta), o el proveedor ya
+   * no sabe operar por cuenta, se para con {@link ProviderOrderAccountUnavailableError}.
+   *
+   * Como {@link byCode}, NO consulta la habilitación: apagar un proveedor corta las ventas nuevas, no
+   * deja sin post-venta lo que ya se vendió.
+   */
+  async forOrder(
+    tenantId: string,
+    order: OrderProviderRef,
+  ): Promise<ResolvedProvider<FlightProviderAdapter>> {
+    const factory = this.factories.find((f) => f.code === order.provider);
+    if (!factory) throw new ProviderNotAvailableError(order.provider);
+    if (order.providerAccountId === null) return this.byCode(tenantId, order.provider);
+    if (factory.resolveForOrder === undefined) {
+      throw new ProviderOrderAccountUnavailableError(factory.code);
+    }
+
+    let resolved;
+    try {
+      resolved = await factory.resolveForOrder(tenantId, order.orderId);
+    } catch (err) {
+      // Incompleta también es `NotFoundException`: para esta reserva, lo mismo que no tenerla.
+      // Cualquier otro error (bóveda caída, credencial corrupta) sí se propaga.
+      if (err instanceof NotFoundException) {
+        throw new ProviderOrderAccountUnavailableError(factory.code);
+      }
+      throw err;
+    }
+    return this.toResolved(factory, resolved, this.policyOf(factory));
+  }
+
+  /**
+   * ¿Las órdenes de este proveedor guardan la cuenta con la que se reservaron? Sólo si su factory
+   * sabe volver a operar con ella ({@link forOrder}): grabar una cuenta que después nadie puede
+   * resolver dejaría a la reserva sin post-venta.
+   */
+  recordsOrderAccount(code: string): boolean {
+    return this.factories.find((f) => f.code === code)?.resolveForOrder !== undefined;
   }
 
   /**
@@ -282,20 +334,30 @@ export class FlightProviderRegistry {
       return { ok: false, absence: this.sinCuenta(factory) };
     }
 
+    return { ok: true, provider: this.toResolved(factory, resolved, callPolicy) };
+  }
+
+  /** Lo que declaró el factory, con la política efectiva y sin huecos en el entorno. */
+  private toResolved(
+    factory: TenantProviderFactory<FlightProviderAdapter>,
+    resolved: TenantAdapter<FlightProviderAdapter>,
+    callPolicy: CallPolicy,
+  ): ResolvedProvider<FlightProviderAdapter> {
     // Precedencia: override de entorno > lo que declare la CUENTA del tenant > default del
     // factory. El override va primero porque es el kill-switch de operaciones (contener el
     // coste de un proveedor que cobra por consulta), y una cuenta no puede desarmarlo.
     return {
-      ok: true,
-      provider: {
-        code: factory.code,
-        adapter: resolved.adapter,
-        credentialSource: resolved.credentialSource,
-        capabilities: factory.capabilities,
-        callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
-        // Sin dato, `live`: es lo que eran todas las cuentas antes de que el factory lo declarara.
-        environment: resolved.providerEnvironment ?? DEFAULT_PROVIDER_ENVIRONMENT,
-      },
+      code: factory.code,
+      adapter: resolved.adapter,
+      credentialSource: resolved.credentialSource,
+      capabilities: factory.capabilities,
+      callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+      // Sin dato, `live`: es lo que eran todas las cuentas antes de que el factory lo declarara.
+      environment: resolved.providerEnvironment ?? DEFAULT_PROVIDER_ENVIRONMENT,
+      ...(resolved.accountId === undefined ? {} : { accountId: resolved.accountId }),
+      ...(resolved.accountUpdatedAt === undefined
+        ? {}
+        : { accountUpdatedAt: resolved.accountUpdatedAt }),
     };
   }
 

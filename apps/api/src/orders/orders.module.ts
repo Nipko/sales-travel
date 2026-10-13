@@ -9,6 +9,7 @@ import { SearchModule } from '../search/search.module.js';
 import { AdminOrdersController } from './admin-orders.controller.js';
 import { AdminOrdersService } from './admin-orders.service.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
+import { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
@@ -54,6 +55,7 @@ import { StaleCancelClaimStore } from './stale-cancel-claim.store.js';
     OrdersService,
     AdminOrdersService,
     ExternalOrderIntentService,
+    FlightOrderTrackingStore,
     HotelOrderTrackingStore,
     HotelOrderReadsService,
     HotelOrderCancellationStore,

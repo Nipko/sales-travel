@@ -7,7 +7,9 @@ import {
   Get,
   Headers,
   HttpCode,
+  Logger,
   NotFoundException,
+  Optional,
   Param,
   Post,
   UseFilters,
@@ -28,6 +30,11 @@ import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
+import {
+  FlightOrderTrackingStore,
+  publicFlightOrderTracking,
+  type PublicFlightOrderTracking,
+} from './flight-order-tracking.store.js';
 import {
   HotelOrderReadsService,
   type PublicHotelOrderTracking,
@@ -94,6 +101,8 @@ function publicIssue(issue: ProviderIssue): PublicProviderIssue {
   TboHotelsExceptionFilter,
 )
 export class OrdersController {
+  private readonly logger = new Logger(OrdersController.name);
+
   constructor(
     private readonly orders: OrdersService,
     private readonly db: DatabaseService,
@@ -102,7 +111,39 @@ export class OrdersController {
     private readonly activeTenant: ActiveTenantService,
     private readonly registry: FlightProviderRegistry,
     private readonly hotelReads: HotelOrderReadsService,
+    /**
+     * Localizadores, documentos y plazo de emisión guardados de las órdenes de vuelo (0082).
+     * Opcional sólo para los dobles de las suites que no los miran: en la app siempre está.
+     */
+    @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
   ) {}
+
+  /** Vuelo = ni hotel ni auto. Una orden de un proveedor de vuelos ya retirado también cuenta. */
+  private isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
+    return !this.hotelReads.handles(row.provider) && row.provider !== 'agent-cars';
+  }
+
+  /**
+   * El seguimiento guardado de las órdenes de vuelo pedidas, en una sola lectura. Si la base falla,
+   * la lista sale igual sin él (`flightTracking: null`): no se tumba Reservas por un dato que se
+   * puede volver a consultar.
+   */
+  private async flightTrackingOf(
+    tenantId: string,
+    rows: readonly Pick<OrderRow, 'id' | 'provider'>[],
+  ): Promise<Map<string, PublicFlightOrderTracking>> {
+    const ids = rows.filter((row) => this.isFlightOrder(row)).map((row) => row.id);
+    if (this.flightTracking === undefined || ids.length === 0) return new Map();
+    try {
+      const records = await this.flightTracking.listTracking(tenantId, ids);
+      return new Map([...records].map(([id, record]) => [id, publicFlightOrderTracking(record)]));
+    } catch (error) {
+      this.logger.warn(
+        `flights.tracking.read_failed orders=${ids.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+      return new Map();
+    }
+  }
 
   @SalesOperation()
   @Post()
@@ -253,7 +294,10 @@ export class OrdersController {
       tenantId,
       rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
     );
-    return { orders: rows.map((r) => this.serialize(r, tracking.get(r.id))) };
+    const flights = await this.flightTrackingOf(tenantId, rows);
+    return {
+      orders: rows.map((r) => this.serialize(r, tracking.get(r.id), flights.get(r.id))),
+    };
   }
 
   @Get(':id')
@@ -265,9 +309,14 @@ export class OrdersController {
     const tracking = this.hotelReads.handles(row.provider)
       ? await this.hotelReads.trackingOf(tenantId, [row.id])
       : undefined;
-    return { order: this.serialize(row, tracking?.get(row.id)) };
+    const flights = await this.flightTrackingOf(tenantId, [row]);
+    return { order: this.serialize(row, tracking?.get(row.id), flights.get(row.id)) };
   }
 
+  /**
+   * Consulta la reserva en el proveedor. En un vuelo, la respuesta suma `flightTracking`: lo que
+   * quedó guardado tras esta lectura, para que la pantalla refresque la fila sin releer la lista.
+   */
   @Post(':id/retrieve')
   async retrieve(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
@@ -276,7 +325,10 @@ export class OrdersController {
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupports(row, 'retrieve');
     // La fila ya se leyó con el tenant fijado: una orden de otra agencia no llega hasta aquí.
-    return this.orders.retrieveOrder(tenantId, row, userId);
+    const result = await this.orders.retrieveOrder(tenantId, row, userId);
+    if (!this.isFlightOrder(row)) return result;
+    const flights = await this.flightTrackingOf(tenantId, [row]);
+    return { ...result, flightTracking: flights.get(row.id) ?? null };
   }
 
   /**
@@ -411,6 +463,10 @@ export class OrdersController {
    * `providerTracking`: el seguimiento de una orden de hotel (subestado, estado del proveedor y
    * HCN), sólo códigos y localizadores. `null` en las demás verticales y en una orden de hotel que
    * todavía no tiene lecturas.
+   *
+   * `flightTracking`: lo guardado de una orden de vuelo (0082): localizadores de la aerolínea,
+   * tiquetes con su estado y plazo de emisión. `null` en las demás verticales y en un vuelo que
+   * todavía no tiene lecturas guardadas.
    */
   private serialize(
     row: {
@@ -433,6 +489,7 @@ export class OrdersController {
       updated_at: Date;
     },
     tracking?: PublicHotelOrderTracking,
+    flightTracking?: PublicFlightOrderTracking,
   ) {
     return {
       id: row.id,
@@ -455,6 +512,7 @@ export class OrdersController {
       // gestione como una venta real.
       testContent: isTestContent(row),
       providerTracking: tracking ?? null,
+      flightTracking: flightTracking ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
