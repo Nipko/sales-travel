@@ -906,6 +906,13 @@ GET    /tenants/:tenantId/portfolios/transactions?currency
 GET    /tenants/:tenantId/portfolios/network-holds?currency&status
 GET    /tenants/:tenantId/portfolios/deposit-reports
 POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
+
+-- El superadmin, sobre toda la red (Plataforma → Aprobaciones). Sólo lectura: se aprueba y se
+-- rechaza con las dos rutas de arriba, en el nodo dueño del informe.
+GET    /admin/deposit-reports?status&financedBy&currency&tenantId&q&cursor&limit
+                                                -- la cola: pendientes del más viejo al más nuevo (o el historial),
+                                                --   con nodo, financiador y totales por moneda; financedBy=platform|network
+GET    /admin/deposit-reports/pending-count     -- { total, platform, network }: el contador del menú
 ```
 
 `network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §14.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.

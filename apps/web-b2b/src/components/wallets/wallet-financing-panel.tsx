@@ -29,6 +29,7 @@ import {
   updateWallet,
   type WalletResult,
 } from '../../lib/wallet-client';
+import { notifyPendingDepositsChanged } from '../../lib/deposit-approvals-client';
 import { savedMessage, type EntryKind } from '../../lib/wallet-forms';
 import {
   financesNetwork,
@@ -80,6 +81,12 @@ type Dialog =
   | { readonly kind: 'entry'; readonly entry: EntryKind; readonly wallet: Wallet }
   | { readonly kind: 'approve'; readonly report: DepositReport }
   | { readonly kind: 'reject'; readonly report: DepositReport };
+
+/** Un depósito resuelto aquí también baja el contador del menú (Plataforma → Aprobaciones). */
+function announceResolved<T>(res: WalletResult<T>): WalletResult<T> {
+  if (res.ok) notifyPendingDepositsChanged();
+  return res;
+}
 
 function loaded<T>(res: WalletResult<T>): Loadable<T> {
   return res.ok
@@ -612,7 +619,7 @@ function FinancingDialog({
           onClose={onClose}
           onSubmit={(body) =>
             write(
-              () => approveDepositReport(tenantId, dialog.report.id, body),
+              () => approveDepositReport(tenantId, dialog.report.id, body).then(announceResolved),
               savedMessage('approve', nodeName, dialog.report.currency),
             )
           }
@@ -626,7 +633,7 @@ function FinancingDialog({
           onClose={onClose}
           onSubmit={(body) =>
             write(
-              () => rejectDepositReport(tenantId, dialog.report.id, body),
+              () => rejectDepositReport(tenantId, dialog.report.id, body).then(announceResolved),
               savedMessage('reject', nodeName, dialog.report.currency),
             )
           }

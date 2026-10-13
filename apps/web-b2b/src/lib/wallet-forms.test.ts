@@ -322,6 +322,21 @@ describe('confirmaciones', () => {
     });
   });
 
+  it('aprobar desde la cola de la plataforma lo que financia otro nodo avisa a qué cuenta llegó', () => {
+    const own = approveReportSummary(REPORT, 'Agencia Sur');
+    expect(own.description).toMatch(/^Verifica que el dinero llegó a tu cuenta\./);
+    expect(own.warning).toBeUndefined();
+
+    const other = approveReportSummary(REPORT, 'Agencia Sur', 'Consolidador Andino');
+    expect(other.description).toMatch(
+      /^Verifica con Consolidador Andino que el dinero llegó a su cuenta\./,
+    );
+    expect(other.warning).toBe(
+      'A Agencia Sur la financia Consolidador Andino: el dinero llegó a su cuenta, no a la tuya. Apruébalo sólo si Consolidador Andino te confirmó que lo recibió.',
+    );
+    expect(other.confirmLabel).toBe(own.confirmLabel);
+  });
+
   it('los avisos de guardado nombran el nodo y la moneda', () => {
     expect(savedMessage('enable', 'Agencia Sur', 'USD')).toBe(
       'Agencia Sur ya tiene cartera en USD.',

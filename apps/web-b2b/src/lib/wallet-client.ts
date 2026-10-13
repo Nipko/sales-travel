@@ -44,10 +44,10 @@ export type WalletResult<T> =
       readonly uncertain?: boolean;
     };
 
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
 const UNCERTAIN =
-  'No pudimos confirmar si se registró. Reintentá sin cambiar los datos: si ya se había registrado, no se duplica.';
+  'No pudimos confirmar si se registró. Reintenta sin cambiar los datos: si ya se había registrado, no se duplica.';
 
 /** El mensaje de un pedido fallido, para la pantalla, si el API no mandó el suyo. */
 export function walletErrorMessage(
@@ -55,15 +55,15 @@ export function walletErrorMessage(
   kind: 'read' | 'write',
   reason?: string,
 ): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   if (reason === 'PORTFOLIO_FINANCIER_REQUIRED' || status === 403) {
     return 'Sólo quien financia a este nodo gestiona sus carteras: su consolidador, su agencia o el superadmin de Planetour.';
   }
-  if (status === 404) return 'No encontramos esa cartera en este nodo. Recargá la página.';
-  if (status === 409) return 'La cartera cambió mientras la mirabas. Recargá la página y revisá.';
+  if (status === 404) return 'No encontramos esa cartera en este nodo. Recarga la página.';
+  if (status === 409) return 'La cartera cambió mientras la mirabas. Recarga la página y revisa.';
   return kind === 'write'
-    ? 'No se pudo guardar el cambio. Probá de nuevo.'
-    : 'No se pudieron cargar las carteras. Probá de nuevo.';
+    ? 'No se pudo guardar el cambio. Inténtalo de nuevo.'
+    : 'No se pudieron cargar las carteras. Inténtalo de nuevo.';
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   Building2,
   Calendar,
   Car,
+  ClipboardCheck,
   FileText,
   Home,
   Hotel,
@@ -25,7 +26,12 @@ export interface NavItem {
   label: string;
   href: Route;
   icon: LucideIcon;
+  /** Un contador al lado (lo que espera acción); el menú lo lee con `useNavBadges`. */
+  badge?: NavBadge;
 }
+
+/** Los contadores que sabe pintar el menú. */
+export type NavBadge = 'pendingDeposits';
 
 export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
@@ -58,7 +64,14 @@ export const accountNav: NavItem[] = [
   { label: 'Seguridad', href: '/configuracion/seguridad', icon: Lock },
 ];
 
+/** La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. */
 export const superAdminNav: NavItem[] = [
+  {
+    label: 'Aprobaciones',
+    href: '/admin/plataforma/aprobaciones',
+    icon: ClipboardCheck,
+    badge: 'pendingDeposits',
+  },
   { label: 'Gestión de Agencias', href: '/admin/tenants', icon: Building2 },
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
@@ -100,6 +113,6 @@ export function navSections(role: string | undefined, viewer: Viewer): NavSectio
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.
   sections.push({ label: 'Mi cuenta', items: accountNav });
-  if (role === 'superadmin') sections.push({ label: 'Super Admin', items: superAdminNav });
+  if (role === 'superadmin') sections.push({ label: 'Plataforma', items: superAdminNav });
   return sections;
 }
