@@ -94,9 +94,9 @@ export class OrdersController {
     @Optional() private readonly ticketIssues?: FlightTicketIssueService,
   ) {}
 
-  /** Vuelo = ni hotel ni auto. Una orden de un proveedor de vuelos ya retirado también cuenta. */
+  /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
   private isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
-    return !this.hotelReads.handles(row.provider) && row.provider !== 'agent-cars';
+    return this.capabilities.isFlightOrder(row);
   }
 
   /**

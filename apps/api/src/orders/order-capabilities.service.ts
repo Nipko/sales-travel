@@ -53,6 +53,15 @@ export class OrderCapabilitiesService {
     }
   }
 
+  /**
+   * ¿Es una orden de vuelo? Ni hotel ni auto: una orden de un proveedor de vuelos ya retirado
+   * también cuenta. Vive aquí, junto a las capacidades de autos, para que el controlador no nombre
+   * proveedores (guard de neutralidad).
+   */
+  isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
+    return !this.hotelReads.handles(row.provider) && row.provider !== 'agent-cars';
+  }
+
   /** Lo declara el registry de la vertical del proveedor; ninguna vertical se fija aquí. */
   capabilitiesFor(provider: string): ProviderCapabilities {
     if (provider === 'agent-cars') return AGENT_CARS_ORDER_CAPABILITIES;
