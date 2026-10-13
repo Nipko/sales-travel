@@ -20,6 +20,9 @@ import * as flightCheckAdapter from './sabre-flight-check.adapter';
 import * as offerPriceAdapter from './sabre-offer-price.adapter';
 import * as orderCreateAdapter from './sabre-order-create.adapter';
 import * as orderManageAdapter from './sabre-order-manage.adapter';
+import * as seatMapAdapter from './sabre-seat-map.adapter';
+import * as getSeatsRequest from './seats/getseats.request.builder';
+import * as getSeatsResponse from './seats/getseats.response.mapper';
 
 /**
  * La SONDA del entry público: que lo que `src/index.ts` publica sea **el mismo objeto** que el
@@ -91,6 +94,10 @@ const PROBED: readonly ProbedModule[] = [
   { name: 'sabre-offer-price.adapter', module: offerPriceAdapter },
   { name: 'sabre-order-create.adapter', module: orderCreateAdapter },
   { name: 'sabre-order-manage.adapter', module: orderManageAdapter },
+  // Mapa de asientos (SAB-15).
+  { name: 'seats/getseats.request.builder', module: getSeatsRequest },
+  { name: 'seats/getseats.response.mapper', module: getSeatsResponse },
+  { name: 'sabre-seat-map.adapter', module: seatMapAdapter },
 ];
 
 describe('el entry público republica los módulos, no copias de ellos', () => {
@@ -155,6 +162,7 @@ describe('los adapters de pricing y orden son alcanzables desde el entry', () =>
     ['DENY_CARD_BIN_PRICING', offerPriceAdapter.DENY_CARD_BIN_PRICING],
     ['SabreOrderCreateAdapter', orderCreateAdapter.SabreOrderCreateAdapter],
     ['SabreOrderManageAdapter', orderManageAdapter.SabreOrderManageAdapter],
+    ['SabreSeatMapAdapter', seatMapAdapter.SabreSeatMapAdapter],
   ])('%s', (_label, value) => {
     const published = Object.values(index as unknown as Record<string, unknown>);
     expect(published).toContain(value);
