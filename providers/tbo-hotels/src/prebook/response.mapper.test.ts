@@ -378,6 +378,34 @@ describe('tolerante donde el contrato se contradice', () => {
     expect(mapping.result.roompack?.atPropertyCharges).toHaveLength(1);
   });
 
+  it('Amenities sin repetidos ni vacíos; un ítem que no es texto se salta y un emoji partido no queda a medias', () => {
+    const cortado = `${'a'.repeat(199)}😀`;
+    const mapping = mapTboPrebookResponse(
+      envelope(
+        multiRoomWith({
+          Amenities: ['Free WiFi', '  free   wifi ', 7, null, '   ', 'Minibar', 'MINIBAR', cortado],
+        }),
+      ),
+      MULTI,
+    );
+    expect(mapping.amenities).toEqual(['Free WiFi', 'Minibar', 'a'.repeat(199)]);
+    expect(mapping.result.total.amountMinor).toBe(30575);
+  });
+
+  it('Amenities que no son una lista no tumban la revalidación: salen vacíos', () => {
+    for (const value of ['Free WiFi', { 0: 'Free WiFi' }, undefined, null]) {
+      const mapping = mapTboPrebookResponse(envelope(multiRoomWith({ Amenities: value })), MULTI);
+      expect(mapping.amenities).toEqual([]);
+    }
+  });
+
+  it('Amenities: a lo sumo 200, contados después de quitar los repetidos', () => {
+    const muchos = Array.from({ length: 260 }, (_, i) => `Servicio ${i % 230}`);
+    const mapping = mapTboPrebookResponse(envelope(multiRoomWith({ Amenities: muchos })), MULTI);
+    expect(mapping.amenities).toHaveLength(200);
+    expect(new Set(mapping.amenities).size).toBe(200);
+  });
+
   it('RateConditions ausente o null es []', () => {
     for (const value of [undefined, null]) {
       const mapping = mapTboPrebookResponse(
