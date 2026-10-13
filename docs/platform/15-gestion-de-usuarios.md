@@ -42,7 +42,8 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Ver la ficha de una persona (perfil, seguridad, nodos, sesiones, invitaciones) | Ficha del usuario                         | Admin del nodo, sobre alguien de su subárbol (también uno mismo); superadmin (todo)       | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
 | Cerrar una sesión puntual                                                      | Ficha del usuario → Sesiones              | Admin del nodo que supere su rol sobre el nodo de esa sesión; superadmin. Nunca la propia | **API hecha (USR-5)**; panel pendiente (USR-7)                            |
 | Ver el historial de una persona y la actividad de la red                       | Ficha / Mi Red → Actividad                | Admin de su subárbol; superadmin (también eventos sin nodo)                               | **Hecho (USR-6)**: Actividad filtrable; el historial en la ficha es USR-7 |
-| Invitar o promover a un admin de consolidador                                  | Equipo                                    | Superadmin                                                                                | Pendiente (USR-9)                                                         |
+| Invitar o promover a un admin de consolidador                                  | Equipo, en un nodo consolidador           | Superadmin                                                                                | **Hecho (USR-9)**: no se ofrece en la raíz ni en agencias                 |
+| Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | Pendiente (USR-10)                                                        |
 | Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
 | Avisarle por correo cada cambio de seguridad hecho por un admin                | Automático                                | —                                                                                         | Pendiente (USR-12)                                                        |
@@ -497,3 +498,37 @@ guardan como lo mandó el cliente).
 - `apps/web-b2b/src/lib/audit-format.test.ts` y `tenant-admin-proxy.test.ts`: las frases y los
   detalles, la lectura tolerante de la página, los mensajes de error y la consulta reconstruida del
   BFF.
+
+## Admins de consolidador y los usuarios desde Gestión de Agencias (USR-9)
+
+Sólo panel: el API ya asignaba `consolidator_admin` (está en `ASSIGNABLE_ROLES` y `canGrantRole` sólo
+deja darlo a quien lo supera), pero Equipo no lo ofrecía y el superadmin no tenía cómo darlo sin
+tocar la base.
+
+### Panel
+
+- `admin/usuarios/_components/roles.ts`: _Admin de consolidador_ entra en `INVITABLE_ROLES` (entre
+  _Admin_ y _Cliente_, la escala de menor a mayor) con su aviso de 2FA. `grantableRoles` lo deja sólo
+  a quien lo supera: en la práctica, el superadmin.
+- `invitableRolesIn(tipo)`: el de consolidador se ofrece sólo si el nodo elegido en Equipo es un
+  consolidador, tanto al invitar como en el selector de rol de cada fila (Equipo calcula la lista una
+  vez y se la pasa a los dos). En una agencia su descripción no sería cierta y en la raíz
+  administraría toda la plataforma. El API no lo impide: es una guía, como el resto de lo que ofrece
+  Equipo.
+- **Gestión de Agencias**: el "3 usuarios" de cada fila es un enlace a Equipo abierto en ese nodo
+  (nombre accesible "Ver 3 usuarios de …", que contiene el texto visible para el control por voz), y
+  la barra de secciones de un nodo suma la pestaña _Usuarios_ al final, que lleva al mismo lugar.
+  Equipo ignora un `?tenant=` fuera de la red de quien mira. El enlace sale de `teamHrefFor`
+  (`lib/tenant-admin-team.ts`).
+
+### Tests
+
+- `roles.test.ts`: `INVITABLE_ROLES` es exactamente `ASSIGNABLE_ROLES`, leído como texto de
+  `apps/api/src/auth/roles.ts` (si la lectura se rompe, el test falla en vez de comparar dos vacíos);
+  cada rol tiene etiqueta; el aviso de 2FA aparece justo en los roles que lo exigen; sólo el
+  superadmin da el de consolidador y sólo en un consolidador.
+- `team.render.test.ts`: la fila ofrece _Admin de consolidador_ al superadmin en un consolidador, no
+  en una agencia ni a un admin de consolidador.
+- `node-section-nav.render.test.ts` y `node-users-link.render.test.ts`: la pestaña y el enlace llevan
+  a `/admin/usuarios?tenant=<id>`, la pestaña nunca es la sección actual y el nombre accesible del
+  enlace (singular, cero, nombre escapado).
