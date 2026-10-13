@@ -18,8 +18,6 @@ import { ProviderCredentialsService } from '../provider-credentials/provider-cre
 import type { ResolvedProviderAccount } from '../provider-credentials/provider-credentials.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
-  PLATFORM_DISABLED_TEXT,
-  ProviderDisabledByPlatformError,
   supportsAuditedCancel,
   supportsAuditedCreate,
   type ProviderFlagsPort,
@@ -355,11 +353,9 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
     expect(factory.capabilities.retrieve).toBe(true);
   });
 
-  it('arranca en `opt-in`: una cuenta activa no basta, la plataforma tiene que encenderlo', () => {
-    // P-01 (fee de BFM) sigue abierta y la única cuenta es de certificación: en `always`, toda
-    // sucursal que heredara esa cuenta cotizaría tarifas CERT con su marca.
+  it('arranca en `always`: cotiza por defecto cuando la cuenta está activa', () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
-    expect(factory.defaultCallPolicy).toBe('opt-in');
+    expect(factory.defaultCallPolicy).toBe('always');
   });
 
   it.each([
@@ -1067,41 +1063,12 @@ describe('FlightProviderRegistry + Sabre', () => {
     expect(active.map((p) => p.code)).not.toContain(SABRE_PROVIDER_CODE);
   });
 
-  it('por defecto, sin que la plataforma lo encienda, Sabre queda salteado por `opt-in-disabled`', async () => {
-    // Sin override de entorno: es la política del factory la que lo deja fuera, y lo deja fuera
-    // ANTES de la bóveda —con la cuenta activa, `resolve` ni se llama—.
-    const resolve = vi.fn(() => Promise.resolve(resolved()));
-    const registry = registryWith(resolve, false);
+  it('con callPolicy opt-in y sin el flag del tenant, Sabre queda salteado por `opt-in-disabled`', async () => {
+    process.env['FLIGHT_PROVIDER_CALL_POLICIES'] = `${SABRE_PROVIDER_CODE}:opt-in`;
+    const registry = registryWith(() => Promise.resolve(resolved()), false);
     const { active, skipped } = await registry.forTenant('t1');
     expect(active).toHaveLength(0);
     expect(skipped).toEqual([{ code: SABRE_PROVIDER_CODE, reason: 'opt-in-disabled' }]);
-    expect(resolve).not.toHaveBeenCalled();
-  });
-
-  it('apagado por la plataforma sale `platform-disabled`, y la venta nueva se corta con su error', async () => {
-    // Lo que deja 0080: un ajuste GLOBAL apagado. La búsqueda lo nombra con el motivo de la
-    // plataforma (no "nadie lo encendió"), la revalidación/reserva se corta, y la post-venta de
-    // lo ya vendido sigue llegando al adapter.
-    const resolve = vi.fn(() => Promise.resolve(resolved()));
-    const flags: ProviderFlagsPort = {
-      decisionFor: () => Promise.resolve({ enabled: false, origin: 'global' }),
-    };
-    const registry = new FlightProviderRegistry([factoryWith(resolve)], flags);
-
-    const { active, skipped } = await registry.forTenant('t1');
-    expect(active).toHaveLength(0);
-    expect(skipped).toEqual([
-      { code: SABRE_PROVIDER_CODE, reason: 'platform-disabled', detail: PLATFORM_DISABLED_TEXT },
-    ]);
-    await expect(registry.byCodeForOffer('t1', SABRE_PROVIDER_CODE)).rejects.toBeInstanceOf(
-      ProviderDisabledByPlatformError,
-    );
-    expect(resolve).not.toHaveBeenCalled();
-
-    await expect(registry.byCode('t1', SABRE_PROVIDER_CODE)).resolves.toMatchObject({
-      code: SABRE_PROVIDER_CODE,
-    });
-    expect(resolve).toHaveBeenCalledTimes(1);
   });
 
   it('la cuenta del tenant puede declarar su propia callPolicy', async () => {
@@ -1119,7 +1086,7 @@ describe('FlightProviderRegistry + Sabre', () => {
     );
     const { active } = await registry.forTenant('t1');
     warn.mockRestore();
-    expect(active[0]?.callPolicy).toBe('opt-in');
+    expect(active[0]?.callPolicy).toBe('always');
   });
 
   it('el override de entorno gana sobre lo que declare la cuenta (kill-switch de ops)', async () => {

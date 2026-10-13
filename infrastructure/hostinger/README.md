@@ -119,7 +119,7 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 | ------------------------- | ------- | ------------------------------------------------------------- |
 | `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                  |
 | `PROVIDERS_DISABLED`      | vacío   | Kill-switch de emergencia por proveedor (§6.1)                |
-| `FLIGHT_PROVIDERS_OPT_IN` | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
+| `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
 | `HOTEL_PROVIDERS_OPT_IN`  | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1) |
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
@@ -200,7 +200,7 @@ estado de un proveedor para una agencia sale de lo primero que opine, en este or
 3. El ajuste global del proveedor.
 4. Las variables legado `FLIGHT_PROVIDERS_OPT_IN` y `HOTEL_PROVIDERS_OPT_IN`, sólo si la base no tiene ningún ajuste de
    ese proveedor para esa agencia, sus ancestros ni global.
-5. La política del proveedor: `opt-in` apagado (TBO, Sabre), `always` encendido (Despegar, LATAM).
+5. La política del proveedor: `opt-in` apagado (TBO), `always` encendido (Despegar, LATAM, Sabre).
 
 **Lo normal: el panel.** En `https://app.planetour.cloud`, con un usuario `superadmin` (§7; `platform_admin` no
 alcanza):
@@ -232,9 +232,8 @@ hay que cambiar las dos.
 proveedor `opt-in` (`código` para todas las agencias, `código@<tenantId>` para una) y cada cambio exigía desplegar.
 Siguen contando, sólo para encender y sólo donde la base no tiene ningún ajuste, para no apagar el día del despliegue lo
 que ya estaba encendido; el panel las muestra como origen _legado_. Se validan al arrancar: una entrada mal escrita
-tumba el despliegue. Si la variable no existe, `deploy.yml` las deja vacías; antes escribía `sabre` en la de vuelos, y
-desde 0080 ya no lo hace: Sabre es `opt-in` y la base tiene un ajuste global que lo apaga, que le gana a la variable
-aunque en GitHub siga valiendo `sabre`. **No se usan para encender nada nuevo.** Para retirar una entrada: poner el
+tumba el despliegue. `deploy.yml` escribe `sabre` en la de vuelos si la variable no existe, sin efecto mientras Sabre
+sea `always`; la de hoteles va vacía. **No se usan para encender nada nuevo.** Para retirar una entrada: poner el
 ajuste equivalente en el panel, comprobar que el origen ya no dice _legado_, y después quitar la entrada de la
 variable y desplegar.
 

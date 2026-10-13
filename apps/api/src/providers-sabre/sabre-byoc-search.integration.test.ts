@@ -265,9 +265,10 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
    * montar: por eso es un parámetro y no un `beforeAll`.
    *
    * `callPolicies` es `FLIGHT_PROVIDER_CALL_POLICIES` (`code:politica`, separado por comas).
-   * Sabre es `opt-in` por defecto (P-01 y la cuenta CERT, ver `defaultCallPolicy`): sin flag no
-   * se llama. Los tests que pasan `opt-in` explícito prueban el mecanismo del override; el de
-   * "por defecto" prueba la política del factory sin ningún override.
+   * Sabre ya NO es `opt-in` por defecto —su `defaultCallPolicy` es `always` desde que una cuenta
+   * activa en el panel debe cotizar sola, sin un flag de entorno que nadie recuerda poner—, así
+   * que probar el camino `opt-in` exige pedirlo explícitamente. Probar contra el default y
+   * probar el mecanismo son dos cosas distintas y acá se hacen las dos.
    */
   function montar(optIn: string, callPolicies = ''): Api {
     process.env['FLIGHT_PROVIDERS_OPT_IN'] = optIn;
@@ -621,7 +622,7 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         isInheritable: false,
       });
       // Credenciales correctas y activas, y aun así el proveedor apagado: la política `opt-in`
-      // pedida también por el override de entorno, más el flag sin este tenant.
+      // pedida a mano (ya no es el default de Sabre) más el flag sin este tenant.
       const api = montar('', `${SABRE_PROVIDER_CODE}:opt-in`);
 
       const res = await buscar(api, agencia);
@@ -633,7 +634,7 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
       expect(sabreLocal.clientIds).toEqual([]);
     });
 
-    it('por DEFECTO una cuenta activa no basta: sin encenderlo, Sabre no se llama', async () => {
+    it('por DEFECTO no hace falta ningún flag: cuenta activa = Sabre cotiza', async () => {
       await cargarCuentaSabre({
         tenantId: agencia,
         epr: 'EPR-PROPIO',
@@ -641,30 +642,11 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         status: 'active',
         isInheritable: false,
       });
-      // Sin flag y sin override: sólo el `defaultCallPolicy: 'opt-in'` de la factory. La única
-      // cuenta que existe es de certificación y P-01 (el fee de BFM) sigue abierta: una cuenta
-      // activa heredada no puede bastar para que una sucursal cotice tarifas CERT con su marca.
-      // Se enciende en Proveedores de la plataforma, para el tenant que corresponda.
+      // Sin flag y sin override: sólo el `defaultCallPolicy: 'always'` de la factory. Es lo que
+      // se le promete al operador en el panel —"activo = se incluye en cada búsqueda"— y lo que
+      // se rompía cuando la política era `opt-in`: cargaba credenciales buenas, las veía en
+      // Activo, y no salía ni una oferta.
       const res = await buscar(montar(''), agencia);
-
-      const sabre = parteDe(res, SABRE_PROVIDER_CODE);
-      expect(sabre?.status).toBe('skipped');
-      expect(sabre?.skipReason).toBe('opt-in-disabled');
-      expect(parteDe(res, OTRO_PROVEEDOR)?.status).toBe('ok');
-      expect(sabreLocal.clientIds).toEqual([]);
-      expect(sabreLocal.shops).toBe(0);
-    });
-
-    it('encendido para el tenant (sin override de política), la cuenta activa cotiza', async () => {
-      await cargarCuentaSabre({
-        tenantId: agencia,
-        epr: 'EPR-PROPIO',
-        homePcc: 'AG01',
-        status: 'active',
-        isInheritable: false,
-      });
-
-      const res = await buscar(montar(`${SABRE_PROVIDER_CODE}@${agencia}`), agencia);
 
       expect(parteDe(res, SABRE_PROVIDER_CODE)?.status).toBe('ok');
       expect(sabreLocal.clientIds).toEqual(['V1:EPR-PROPIO:AG01:AA']);

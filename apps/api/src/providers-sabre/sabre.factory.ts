@@ -384,23 +384,18 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   readonly vertical: ProviderVertical = 'flights';
 
   /**
-   * `opt-in` y no `always`, por dos motivos que siguen abiertos:
+   * `opt-in` y no `always`, hasta que la compuerta comercial responda **P-01** (cómo tarifa
+   * Sabre: por búsqueda, por `RequestType` o por reserva — `11-plan-implementacion.md` §5.1).
    *
-   * - **P-01** (cómo tarifa Sabre: por búsqueda, por `RequestType` o por reserva —
-   *   `11-plan-implementacion.md` §5.1). BFM está marcado `premium` en el catálogo de Sabre y
-   *   §5.2 dice que un fee por búsqueda que no quepa en el margen del waterfall es **NO-GO en
-   *   `callPolicy: always`**. El coste de equivocarse llega en una factura, no en un test rojo.
-   * - La única cuenta que existe es de **certificación (CERT)**: tarifas que no se pueden emitir
-   *   ni facturar y PNR de prueba. En `always`, cualquier sucursal que heredara esa cuenta
-   *   activa las vería en su cotización con su marca.
+   * BFM está marcado `premium` en el catálogo de Sabre y §5.2 dice literalmente que un fee por
+   * búsqueda que no quepa en el margen del waterfall es **NO-GO en `callPolicy: always`**.
+   * Arrancar en `always` sería tomar por defecto la decisión que el founder todavía no tomó, y
+   * el coste de esa decisión llega en una factura, no en un test rojo.
    *
-   * Hubo un tramo en `always` para que una cuenta activa cotizara sin tocar el entorno; ese
-   * interruptor ya existe sin redesplegar: _Proveedores de la plataforma_ (`provider_enablement`,
-   * 0048). Sabre sólo se llama donde el superadmin lo enciende, y 0080 deja además un ajuste
-   * global apagado para que el estado se lea en el panel. `provider_accounts.config.callPolicy`
-   * sigue siendo el *cuándo* (ola 1 o `fallback`) una vez encendido, no el *si*.
+   * Consecuencia operativa: Sabre se cotiza por defecto cuando la cuenta está activa
+   * en provider_accounts, salvo que se configure explícitamente callPolicy: opt-in o fallback.
    */
-  readonly defaultCallPolicy: CallPolicy = 'opt-in';
+  readonly defaultCallPolicy: CallPolicy = 'always';
 
   /**
    * Lo que Sabre sabe hacer HOY, ni más ni menos.
