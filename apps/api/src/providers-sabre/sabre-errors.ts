@@ -26,6 +26,7 @@ import {
   type SabreFailureKind,
   type SabreTicketingRefusal,
 } from '@sales-travel/sabre';
+import { TICKET_VOID_NOT_AVAILABLE_MESSAGE } from '../providers/provider.types.js';
 
 /**
  * Traduce un error LANZADO por el ACL de Sabre a un mensaje en español para el vendedor.
@@ -133,6 +134,12 @@ export function humanizeSabreError(err: unknown): string {
     return `No pudimos armar la emisión de esta reserva (${err.rule}). No se emitió nada; ya quedó registrado para el equipo.`;
   }
   if (err instanceof SabreCancelBookingBuildError) {
+    if (err.rule === 'VOID_NOT_AVAILABLE') return TICKET_VOID_NOT_AVAILABLE_MESSAGE;
+    if (err.rule.startsWith('TICKET_CHECK_')) {
+      // La comprobación de tiquetes también se lee sola, para mostrar sus condiciones: ahí no hay
+      // ninguna cancelación que armar.
+      return `No pudimos leer las condiciones de los tiquetes de esta reserva (${err.rule}). No se cambió nada; ya quedó registrado para el equipo.`;
+    }
     // `rule` es vocabulario NUESTRO y cerrado; es lo único que se cita, porque distingue
     // "falta el chequeo de billetes" de "esta reserva no se puede cancelar así".
     return `No pudimos armar la cancelación de esta reserva (${err.rule}). Ya quedó registrado para el equipo.`;

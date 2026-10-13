@@ -7,6 +7,7 @@ import { OrderCreateNotSentError, type OrderCreateRequest } from '@sales-travel/
 import {
   REDACTED,
   SabreApiError,
+  SabreCancelBookingBuildError,
   SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
   SabreOrderCreateInputError,
@@ -21,13 +22,15 @@ import type { ResolvedProviderAccount } from '../provider-credentials/provider-c
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
   ProviderOrderAccountUnavailableError,
+  TICKET_VOID_NOT_AVAILABLE_MESSAGE,
+  TicketVoidNotAvailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
   supportsTicketing,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
 import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
-import { SabreOperationNotSupportedError } from './sabre-errors.js';
+import { SabreOperationNotSupportedError, humanizeSabreError } from './sabre-errors.js';
 import {
   SABRE_OPERATIONS,
   SABRE_PROVIDER_CODE,
@@ -584,6 +587,9 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
       reshop: false,
       // La emisión está cableada, pero nace apagada: sin `SABRE_OPERATIONS` no se ofrece.
       issue: false,
+      // Igual la anulación y la consulta de condiciones que la acompaña (SAB-09).
+      ticketCheck: false,
+      void: false,
     });
   });
 
@@ -1914,5 +1920,187 @@ describe('SabreProviderFactory — la emisión está CABLEADA al ACL, sin tarjet
 
     expect(rutas).toEqual([RUTA_TOKEN, '/v1/trip/orders/checkFlightTickets']);
     expect(condiciones).toMatchObject({ tickets: [], cancelOffers: [] });
+  });
+});
+
+/**
+ * La anulación (VOID) de una reserva emitida (SAB-09), por la puerta pública del factory: el ámbito
+ * neutral `ticketOperation: 'VOID'` se traduce al VOID del ACL, sólo con `void` encendida, y lo que
+ * el ACL rechaza antes del cable sale como el error neutral de la API. Sabre no se llama.
+ */
+describe('SabreProviderFactory — anular tiquetes (VOID)', () => {
+  const RUTA_CHECK = '/v1/trip/orders/checkFlightTickets';
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function reservaEmitida(): unknown {
+    return {
+      bookingId: PNR,
+      isCancelable: true,
+      isTicketed: true,
+      flights: [
+        {
+          itemId: '1',
+          confirmationId: 'AB123',
+          airlineCode: 'AV',
+          sourceType: 'ATPCO',
+          flightStatusCode: 'HK',
+          flightStatusName: 'Confirmed',
+        },
+      ],
+      flightTickets: [{ number: '0016802004060', travelerIndex: 1, ticketStatusCode: 'TE' }],
+    };
+  }
+
+  /** Anula por el adapter del factory y devuelve lo que salió al cable. */
+  async function anular(
+    o: {
+      operations?: string;
+      isVoidable?: boolean;
+      cancel?: unknown;
+      scope?: { itemIds?: readonly string[] };
+    } = {},
+  ) {
+    vi.stubEnv('SABRE_OPERATIONS', o.operations ?? 'void');
+    const rutas: string[] = [];
+    const cancelaciones: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_GET) return respuesta(reservaEmitida());
+      if (ruta === RUTA_CHECK) {
+        return respuesta({
+          request: { confirmationId: PNR },
+          tickets: [
+            { number: '0016802004060', isVoidable: o.isVoidable ?? true, isRefundable: true },
+          ],
+        });
+      }
+      if (ruta === RUTA_CANCEL) {
+        if (typeof init?.body === 'string') {
+          cancelaciones.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return respuesta(
+          o.cancel ?? { timestamp: '2026-10-13T15:00:02', voidedTickets: ['0016802004060'] },
+        );
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCancel(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const result = await adapter
+      .cancelOrderAudited(
+        PNR,
+        { tenantId: 't1', requestId: 'req-void' },
+        { ticketOperation: 'VOID', ...o.scope },
+      )
+      .catch((error: unknown) => error);
+    return { result, rutas, cancelaciones };
+  }
+
+  it('con `void` encendida, las capacidades `ticketCheck` y `void` salen en true; `issue` no', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'void');
+    expect(factoryWith(() => Promise.resolve(resolved())).capabilities).toMatchObject({
+      issue: false,
+      ticketCheck: true,
+      void: true,
+    });
+  });
+
+  it('VOID se traduce a flightTicketOperation VOID, después de leer y comprobar', async () => {
+    const { result, rutas, cancelaciones } = await anular();
+
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_CHECK, RUTA_CANCEL]);
+    expect(cancelaciones).toHaveLength(1);
+    expect(cancelaciones[0]).toMatchObject({
+      confirmationId: PNR,
+      cancelAll: true,
+      flightTicketOperation: 'VOID',
+      errorHandlingPolicy: 'HALT_ON_ERROR',
+    });
+    expect(result).toMatchObject({
+      result: { success: true },
+      verified: true,
+      audit: {
+        provider: 'sabre',
+        ticketOperation: 'VOID',
+        outcome: 'CANCELLED',
+        voidedTickets: 1,
+        ticketCheckPerformed: true,
+        flightTicketOperation: 'VOID',
+      },
+    });
+    expect(result).not.toHaveProperty('partial');
+    // Conteos, nunca el número del tiquete ni el PNR en lo que va al evento.
+    expect(JSON.stringify((result as { audit: unknown }).audit)).not.toMatch(
+      /0016802004060|QWERTY/,
+    );
+  });
+
+  it('con `void` fuera de SABRE_OPERATIONS rechaza antes de tocar la red', async () => {
+    const { result, rutas } = await anular({ operations: 'issue' });
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('una anulación de una parte de la reserva no existe: se rechaza sin tocar la red', async () => {
+    const { result, rutas } = await anular({ scope: { itemIds: ['1'] } });
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('si la comprobación dice que ya no se puede, sale el error neutral y la cancelación no sale', async () => {
+    const { result, rutas, cancelaciones } = await anular({ isVoidable: false });
+
+    expect(result).toBeInstanceOf(TicketVoidNotAvailableError);
+    expect((result as Error).message).toBe(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_CHECK]);
+    expect(cancelaciones).toEqual([]);
+  });
+
+  it('un rechazo con tiquetes anulados en la respuesta es una anulación a medias (`partial`)', async () => {
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        voidedTickets: ['0016802004060'],
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'UNABLE_TO_VOID_TICKET' }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      result: { success: false },
+      verified: true,
+      partial: true,
+      audit: { outcome: 'FAILED', voidedTickets: 1 },
+    });
+  });
+
+  it('un rechazo limpio no es parcial: la API relee la reserva antes de decidir', async () => {
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'UNABLE_TO_VOID_TICKET' }],
+      },
+    });
+
+    expect(result).toMatchObject({ result: { success: false }, verified: true });
+    expect(result).not.toHaveProperty('partial');
+  });
+
+  it('el traductor de errores dice qué hacer cuando la anulación ya no está disponible', () => {
+    expect(
+      humanizeSabreError(new SabreCancelBookingBuildError('VOID_NOT_AVAILABLE', 'detalle')),
+    ).toBe(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    expect(
+      humanizeSabreError(new SabreCancelBookingBuildError('TICKET_CHECK_MALFORMED', 'detalle')),
+    ).toMatch(
+      /^No pudimos leer las condiciones de los tiquetes de esta reserva \(TICKET_CHECK_MALFORMED\)/,
+    );
   });
 });

@@ -25,6 +25,7 @@ import {
   SABRE_PCC_PATTERN,
   SabreFlightCheckAdapter,
   SabreFlightSearchAdapter,
+  SabreCancelBookingBuildError,
   SabreHttpClient,
   SabreOfferPriceAdapter,
   SabreOrderCreateAdapter,
@@ -52,10 +53,12 @@ import {
 import {
   CallPolicySchema,
   ProviderAccountIncompleteError,
+  TicketVoidNotAvailableError,
   type CallPolicy,
   type CredentialSource,
   type FlightProviderAdapter,
   type OrderCancelAudit,
+  type OrderCancelScope,
   type OrderCreateAudit,
   type ProviderCapabilities,
   type ProviderVertical,
@@ -462,13 +465,30 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
    * Si NINGUNO de los ítems pedidos sigue vivo en la reserva, **no se cancela nada** y se
    * devuelve el hecho. Degradar a `scope: 'ALL'` porque el filtro salió vacío sería justo el
    * cancelAll ciego, escrito de una forma en la que no se ve.
+   *
+   * Con `scope.ticketOperation: 'VOID'` se cancela la reserva entera anulando sus tiquetes, y sólo
+   * si `void` está en `SABRE_OPERATIONS` (segunda defensa detrás de la capacidad). El ACL vuelve a
+   * comprobar los tiquetes justo antes y, si ya no se pueden anular, no manda nada: se traduce a
+   * {@link TicketVoidNotAvailableError}. Una anulación a medias (unos tiquetes sí, otros no) sale
+   * con `partial`, para que se concilie y nunca se reintente.
    */
   async cancelOrderAudited(
     orderId: string,
     ctx: SearchContext,
-    scope?: { readonly itemIds?: readonly string[] },
+    scope?: OrderCancelScope,
   ): Promise<OrderCancelAudit> {
     const itemIds = scope?.itemIds;
+    const ticketOperation = scope?.ticketOperation;
+    if (ticketOperation !== undefined) {
+      if (!this.inner.operations.has('void')) {
+        throw new SabreOperationNotSupportedError('anular tiquetes');
+      }
+      if (itemIds !== undefined && itemIds.length > 0) {
+        // La anulación se lleva la reserva entera: no hay "anular una parte" en este contrato.
+        throw new SabreOperationNotSupportedError('anular los tiquetes de una parte de la reserva');
+      }
+      return this.voidTickets(orderId, ctx);
+    }
     let items: SabreCancelOptions['items'];
 
     if (itemIds !== undefined && itemIds.length > 0) {
@@ -519,6 +539,48 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
       idempotencyKey: outcome.idempotencyKey,
       // `UNVERIFIED` es "el proveedor no dijo qué pasó": el saga NO puede reintentar a ciegas.
       verified: outcome.outcome !== 'UNVERIFIED',
+    };
+  }
+
+  /**
+   * La anulación (VOID) de la reserva entera. `HALT_ON_ERROR`, como toda cancelación: la
+   * documentación de Sabre se contradice sobre si deshace los documentos ya anulados (docs/sabre/06
+   * §5.2), así que un fallo con tiquetes anulados en la respuesta se trata como lo que es, parcial.
+   */
+  private async voidTickets(orderId: string, ctx: SearchContext): Promise<OrderCancelAudit> {
+    let outcome: Awaited<ReturnType<SabreOrderManageAdapter['cancelBooking']>>;
+    try {
+      outcome = await this.inner.manage.cancelBooking(orderId, ctx, { ticketOperation: 'VOID' });
+    } catch (error) {
+      // La comprobación previa dijo que no: nada salió al cable. El rechazo es neutral para que la
+      // API le diga al vendedor qué hacer sin conocer el vocabulario de Sabre.
+      if (error instanceof SabreCancelBookingBuildError && error.rule === 'VOID_NOT_AVAILABLE') {
+        throw new TicketVoidNotAvailableError();
+      }
+      throw error;
+    }
+    const voided = outcome.detail.voidedTickets.length;
+    const partial =
+      outcome.outcome === 'PARTIALLY_CANCELLED' || (!outcome.result.success && voided > 0);
+    return {
+      result: outcome.result,
+      audit: {
+        audited: true,
+        provider: SABRE_PROVIDER_CODE,
+        scope: 'ALL',
+        called: true,
+        ticketOperation: 'VOID',
+        outcome: outcome.outcome,
+        // Conteo, nunca los números: el evento lo ve cualquier admin del subárbol.
+        voidedTickets: voided,
+        errorHandlingPolicy: outcome.errorHandlingPolicy,
+        ticketCheckPerformed: outcome.ticketCheckPerformed,
+        conversationId: outcome.conversationId,
+        ...outcome.shape,
+      },
+      idempotencyKey: outcome.idempotencyKey,
+      verified: outcome.outcome !== 'UNVERIFIED',
+      ...(partial ? { partial: true } : {}),
     };
   }
 
@@ -608,7 +670,8 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * claro en vez de mandarlas a un adapter que no las implementa.
    *
    * `issue` sale de `SABRE_OPERATIONS`: la emisión está cableada, pero nace apagada y se enciende
-   * por despliegue, después de certificarla.
+   * por despliegue, después de certificarla. `ticketCheck` y `void` van juntas detrás de `void`: las
+   * condiciones de los tiquetes sólo se ofrecen donde se puede actuar sobre ellas.
    */
   readonly capabilities: ProviderCapabilities;
 
@@ -626,6 +689,8 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       services: false,
       reshop: false,
       issue: this.operations.has('issue'),
+      ticketCheck: this.operations.has('void'),
+      void: this.operations.has('void'),
     };
     if (this.operations.size > 0) {
       // Encender una operación que mueve dinero tiene que verse en el log de arranque.

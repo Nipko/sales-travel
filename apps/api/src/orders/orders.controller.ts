@@ -5,6 +5,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Header,
   Headers,
   HttpCode,
   Logger,
@@ -53,6 +54,12 @@ import {
 } from './order-confirmation-mail.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
+import {
+  TICKET_VOID_MESSAGES,
+  publicTicketCheck,
+  type PublicTicketCheck,
+  type TicketVoidReply,
+} from './ticket-void.plan.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -329,9 +336,8 @@ export class OrdersController {
    */
   private assertSupports(row: OrderRow, capability: ProviderCapability): void {
     if (capability === 'cancel' && row.status === 'ticketed') {
-      throw new BadRequestException(
-        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
-      );
+      // La única forma de cancelar una reserva emitida es anular (o reembolsar) sus tiquetes.
+      throw new BadRequestException(TICKET_VOID_MESSAGES.ticketedCancel);
     }
     if (!this.capabilitiesForOrder(row)[capability]) {
       throw new BadRequestException(
@@ -444,6 +450,56 @@ export class OrdersController {
       throw new ServiceUnavailableException('La emisión de tiquetes no está disponible.');
     }
     return this.ticketIssues.requestIssue(tenantId, row, userId);
+  }
+
+  /**
+   * Las condiciones de los tiquetes de una reserva emitida, leídas en vivo del proveedor (SAB-09):
+   * si se pueden anular sin costo y hasta cuándo, si son reembolsables. Nunca se calcula ni se
+   * guarda: la ventana de anulación cambia con el reloj, y por eso tampoco se cachea.
+   *
+   * Post-venta de lectura: no es `@SalesOperation`, y la plataforma la ve como la ve la agencia.
+   */
+  @Get(':id/ticket-check')
+  @Header('Cache-Control', 'no-store')
+  async ticketCheck(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<PublicTicketCheck> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    if (row.status !== 'ticketed') {
+      throw new ConflictException(TICKET_VOID_MESSAGES.notTicketedCheck);
+    }
+    this.assertSupports(row, 'ticketCheck');
+    const check = await this.orders.checkTickets(tenantId, row);
+    return publicTicketCheck(check, new Date());
+  }
+
+  /**
+   * Anula (VOID) los tiquetes de una reserva emitida, que queda cancelada (SAB-09). Antes consulta
+   * en vivo las condiciones: si el proveedor no dice que se puede anular sin costo, 409 sin tocar
+   * nada. Corre en el request, con el mismo claim durable que cualquier cancelación, y no se
+   * reintenta sola.
+   *
+   * No es `@SalesOperation`: deshace lo vendido, como cancelar. Anulan los roles que venden
+   * (SAB-FD-3 A).
+   */
+  @Roles(...SELLING_ROLES)
+  @Post(':id/void')
+  @HttpCode(200)
+  async voidTickets(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<TicketVoidReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    if (row.status !== 'ticketed') throw new ConflictException(TICKET_VOID_MESSAGES.notTicketed);
+    this.assertSupports(row, 'void');
+    return this.orders.voidTickets(tenantId, row, userId);
   }
 
   @SalesOperation()

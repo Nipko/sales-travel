@@ -41,6 +41,12 @@ export const ORDER_EVENTS = {
    * (parcial, sin confirmar o para revisar), que se concilia releyendo la reserva y nunca reemitiendo.
    */
   issueFailed: 'OrderTicketIssueFailed',
+  /**
+   * Los tiquetes de la reserva quedaron anulados (VOID) y la reserva, cancelada (SAB-09). Va además
+   * del `OrderCancellationAttempted` de la misma operación, que lleva `ticketOperation: 'VOID'`.
+   * Conteos, nunca los números.
+   */
+  ticketsVoided: 'OrderTicketsVoided',
 
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
@@ -100,6 +106,18 @@ export const TICKET_ISSUE_ESCALATION_REASONS = [
   'issue-order-state-conflict',
 ] as const;
 export type TicketIssueEscalationReason = (typeof TICKET_ISSUE_ESCALATION_REASONS)[number];
+
+/**
+ * Motivos de `OrderEscalated` de la anulación de tiquetes, además de `cancellation-unverified` (el
+ * proveedor no dijo qué pasó). Vocabulario cerrado: el panel filtra por él.
+ */
+export const TICKET_VOID_ESCALATION_REASONS = [
+  /** El proveedor anuló unos tiquetes y otros no: la reserva quedó a medias. */
+  'void-partial',
+  /** La anulación fue rechazada y no se pudo releer la reserva para ver si algo quedó anulado. */
+  'void-unverified',
+] as const;
+export type TicketVoidEscalationReason = (typeof TICKET_VOID_ESCALATION_REASONS)[number];
 
 /** Clasificación de una divergencia con el proveedor (04 §9.4). */
 export const RECONCILIATION_DISCREPANCY_KINDS = [
