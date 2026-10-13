@@ -963,6 +963,20 @@ export interface ProviderEnablementTable {
   updated_at: Timestamp;
 }
 
+/**
+ * 0077: apagado de emergencia de un proveedor puesto desde el panel. `sales` frena las ventas;
+ * `all`, también la post-venta. Lectura abierta para el servidor (lo aplica el circuit breaker);
+ * sólo escribe el superadmin de la plataforma (RLS). Vencida, la fila no apaga nada.
+ */
+export interface ProviderKillSwitchesTable {
+  provider_code: string;
+  level: 'all' | 'sales';
+  reason: string;
+  set_by: string;
+  set_at: Timestamp;
+  expires_at: Timestamp | null;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -1048,6 +1062,7 @@ export interface DB {
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;
+  provider_kill_switches: ProviderKillSwitchesTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

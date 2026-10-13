@@ -246,8 +246,8 @@ export class AdminOverviewService {
    * la plataforma (`provider_enablement`, de lectura abierta en 0048).
    *
    * El apagado de emergencia sale de ProviderEnablementService.list(), el mismo que muestra
-   * Proveedores de la plataforma: hoy es `PROVIDERS_DISABLED`, y cuando se pueda apagar desde el
-   * panel (0077) su `killSwitch` será el nivel efectivo, sin tocar el Resumen.
+   * Proveedores de la plataforma: su `killSwitch` es el nivel efectivo, el más amplio entre
+   * `PROVIDERS_DISABLED` y el apagado desde el panel (0077).
    */
   private async providerSignals(trx: Transaction<DB>): Promise<ProviderSignalsView> {
     const disabled = await trx
