@@ -53,7 +53,13 @@ export function SectionTabs<K extends string>({
       // Si aun así no entran, se desplazan de lado sin barra: la pestaña cortada en el borde dice
       // que hay más. `relative`, para que el `sr-only` del contador de una pestaña que no entra
       // se recorte acá y no haga correr de lado la página entera.
-      className="relative flex gap-4 overflow-x-auto border-b border-[var(--color-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      //
+      // `scrollbarWidth` va en línea: la regla `*` de globals.css (barra fina) no está en una capa
+      // y le gana a cualquier utilidad, así que `[scrollbar-width:none]` no la ocultaba. Y sin
+      // `overflow-y-hidden`, el `-mb-px` de las pestañas desbordaba un píxel hacia abajo y Windows
+      // pintaba una barra vertical junto a ellas.
+      className="relative flex gap-4 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] [&::-webkit-scrollbar]:hidden"
+      style={{ scrollbarWidth: 'none' }}
     >
       {tabs.map((tab, index) => {
         const selected = tab.id === value;
