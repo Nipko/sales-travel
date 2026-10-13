@@ -6,6 +6,7 @@ import {
   isOrderStatus,
   isProviderCode,
 } from './platform-orders';
+import type { TenantAdminProxyPlan, TenantAdminProxyTarget } from './tenant-admin-proxy';
 import type { WalletProxyPlan } from './wallet-proxy';
 import { isUuid } from './wallets';
 
@@ -13,9 +14,11 @@ import { isUuid } from './wallets';
  * A qué ruta del API va cada pedido de Plataforma → Reservas de la red (`/api/admin/orders` →
  * `/admin/orders`, `/api/admin/orders/:id` → `/admin/orders/:id`). Sin I/O.
  *
- * Sólo lectura. La query se rearma parámetro por parámetro desde una lista blanca y lo que no se
- * conoce, o viene repetido, es un 400, como en el API (estricto): un parámetro raro no viaja. Quién
- * puede verla (sólo el superadmin) lo decide el API.
+ * La lista y la ficha sólo leen. La query se rearma parámetro por parámetro desde una lista blanca y
+ * lo que no se conoce, o viene repetido, es un 400, como en el API (estricto): un parámetro raro no
+ * viaja. Las acciones de post-venta de la ficha (reenviar, consultar, reintentar, cancelar) rearman
+ * su cuerpo campo por campo: sólo el motivo, y en cancelar también el número de la orden. Quién
+ * puede (sólo el superadmin) lo decide el API.
  */
 
 const BAD_FILTER = (error: string): WalletProxyPlan => ({ ok: false, status: 400, error });
@@ -142,4 +145,88 @@ export function adminOrderPlan(method: string, orderId: string): WalletProxyPlan
   if (method !== 'GET') return BAD_METHOD;
   if (!isUuid(orderId)) return { ok: false, status: 404, error: 'Reserva inválida.' };
   return { ok: true, method: 'GET', path: `/admin/orders/${orderId.toLowerCase()}` };
+}
+
+// ───────────────────────────── Acciones de post-venta ─────────────────────────────
+
+const BAD_ORDER = 'Reserva inválida.';
+const REASON_REQUIRED = 'Escribe el motivo: queda en la auditoría.';
+const ORDER_NUMBER_REQUIRED = 'Escribe el número de la orden para confirmar.';
+
+/**
+ * Lo más largo que se reenvía. El API acepta hasta 500 caracteres ya recortados; acá sólo se corta lo
+ * absurdo, para que el mensaje de un motivo largo lo dé el API.
+ */
+const REASON_FORWARD_MAX = 2_000;
+
+/** Las acciones sin más cuerpo que el motivo (`POST /admin/orders/:id/<acción>`). */
+export type AdminOrderActionPath = 'send-confirmation' | 'retrieve';
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function reasonOf(raw: unknown): string | undefined {
+  const reason = asRecord(raw)?.['reason'];
+  return typeof reason === 'string' && reason.length <= REASON_FORWARD_MAX ? reason : undefined;
+}
+
+function orderPath(orderId: string): string | undefined {
+  return isUuid(orderId) ? `/admin/orders/${orderId.toLowerCase()}` : undefined;
+}
+
+/** `POST /api/admin/orders/:id/(send-confirmation|retrieve)` → el API, con `{ reason }`. */
+export function adminOrderActionPlan(
+  orderId: string,
+  action: AdminOrderActionPath,
+  raw: unknown,
+): TenantAdminProxyPlan {
+  const base = orderPath(orderId);
+  if (base === undefined) return { ok: false, error: BAD_ORDER };
+  const reason = reasonOf(raw);
+  if (reason === undefined) return { ok: false, error: REASON_REQUIRED };
+  return { ok: true, path: `${base}/${action}`, body: { reason } };
+}
+
+/** `POST /api/admin/orders/:id/operations/:opId/retry` → el API, con `{ reason }`. */
+export function adminOrderRetryPlan(
+  orderId: string,
+  operationId: string,
+  raw: unknown,
+): TenantAdminProxyPlan {
+  const base = orderPath(orderId);
+  if (base === undefined) return { ok: false, error: BAD_ORDER };
+  if (!isUuid(operationId)) return { ok: false, error: 'Operación inválida.' };
+  const reason = reasonOf(raw);
+  if (reason === undefined) return { ok: false, error: REASON_REQUIRED };
+  return {
+    ok: true,
+    path: `${base}/operations/${operationId.toLowerCase()}/retry`,
+    body: { reason },
+  };
+}
+
+/**
+ * `POST /api/admin/orders/:id/cancel` → el API, con `{ reason, orderNumber }`. El número lo escribió
+ * el superadmin para confirmar; si es el de la reserva lo decide el API.
+ */
+export function adminOrderCancelPlan(orderId: string, raw: unknown): TenantAdminProxyPlan {
+  const base = orderPath(orderId);
+  if (base === undefined) return { ok: false, error: BAD_ORDER };
+  const reason = reasonOf(raw);
+  if (reason === undefined) return { ok: false, error: REASON_REQUIRED };
+  const orderNumber = asRecord(raw)?.['orderNumber'];
+  if (typeof orderNumber !== 'number' || !Number.isSafeInteger(orderNumber) || orderNumber < 1) {
+    return { ok: false, error: ORDER_NUMBER_REQUIRED };
+  }
+  return { ok: true, path: `${base}/cancel`, body: { reason, orderNumber } };
+}
+
+/** `GET /api/admin/orders/:id/cancellation-estimate` → el API. Sólo lee. */
+export function adminOrderEstimateTarget(orderId: string): TenantAdminProxyTarget {
+  const base = orderPath(orderId);
+  if (base === undefined) return { ok: false, error: BAD_ORDER };
+  return { ok: true, path: `${base}/cancellation-estimate` };
 }

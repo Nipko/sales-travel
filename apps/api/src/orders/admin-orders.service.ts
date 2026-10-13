@@ -14,6 +14,7 @@ import {
   adminReconciliationItem,
   adminWalletHold,
   sortAttention,
+  type AdminOrderCapabilities,
   type AdminOrderDetail,
   type AdminOrderEventView,
   type AdminOrderSearchRow,
@@ -24,7 +25,8 @@ import {
 import { AdminOrderNotFoundError } from './admin-orders.errors.js';
 import type { AdminOrdersQuery } from './admin-orders.schemas.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
-import { OrdersService } from './orders.service.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
+import { OrdersService, type OrderRow } from './orders.service.js';
 
 /** El evento que deja cada ficha abierta, en el nodo de la reserva. */
 export const ADMIN_ORDER_VIEWED_EVENT = 'platform.order.viewed';
@@ -45,7 +47,9 @@ export const ADMIN_ORDER_RECONCILIATION_LIMIT = 50;
  * orden, y con ese tenant fijado se usan las lecturas de siempre (las de Reservas de la agencia y la
  * RLS de cada tabla). Lo que sale pasa por admin-order-view.ts (pasajeros sin documentos ni fecha de
  * nacimiento, contacto sólo con correo y teléfono, payloads sin claves sensibles), y cada ficha
- * abierta queda en la auditoría del nodo. Sólo lee: nunca vende ni cambia la reserva.
+ * abierta queda en la auditoría del nodo. Sólo lee: nunca vende ni cambia la reserva. Las acciones
+ * de post-venta sobre la reserva son de AdminOrderActionsService, que resuelve el nodo con
+ * {@link AdminOrdersService.ownerOf}.
  */
 @Injectable()
 export class AdminOrdersService {
@@ -54,6 +58,7 @@ export class AdminOrdersService {
     private readonly orders: OrdersService,
     private readonly hotelReads: HotelOrderReadsService,
     private readonly audit: AuditService,
+    private readonly capabilities: OrderCapabilitiesService,
   ) {}
 
   async search(actorUserId: string, query: AdminOrdersQuery): Promise<AdminOrdersPage> {
@@ -122,10 +127,33 @@ export class AdminOrdersService {
     return read.detail;
   }
 
-  private async read(
-    actorUserId: string,
-    id: string,
-  ): Promise<{ owner: string; detail: AdminOrderDetail }> {
+  /**
+   * La ficha recién leída, sin dejar `platform.order.viewed`: la que devuelve una acción después de
+   * hacerla (la acción deja su propio evento). 404 si no existe; 403 si la base dice que quien pide
+   * no es el superadmin.
+   */
+  async snapshot(actorUserId: string, orderId: string): Promise<AdminOrderDetail> {
+    try {
+      return (await this.read(actorUserId, orderId.toLowerCase())).detail;
+    } catch (err) {
+      rethrowAdminDbError(err);
+    }
+  }
+
+  /**
+   * De qué nodo es la reserva `orderId`, de cualquier nodo de la red (`admin_order_tenant`, 0076,
+   * con la guarda del superadmin en la base). 404 si no existe; 403 si la base dice que quien pide
+   * no es el superadmin.
+   */
+  async ownerOf(actorUserId: string, orderId: string): Promise<string> {
+    try {
+      return await this.owner(actorUserId, orderId.toLowerCase());
+    } catch (err) {
+      rethrowAdminDbError(err);
+    }
+  }
+
+  private async owner(actorUserId: string, id: string): Promise<string> {
     const owner = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
       const { rows } = await sql<{ tenant_id: string | null }>`
         SELECT admin_order_tenant(${id}::uuid) AS tenant_id
@@ -133,6 +161,14 @@ export class AdminOrdersService {
       return rows[0]?.tenant_id ?? null;
     });
     if (owner === null) throw new AdminOrderNotFoundError();
+    return owner;
+  }
+
+  private async read(
+    actorUserId: string,
+    id: string,
+  ): Promise<{ owner: string; detail: AdminOrderDetail }> {
+    const owner = await this.owner(actorUserId, id);
 
     // Las lecturas de Reservas de la agencia, con su tenant fijado.
     const row = await this.orders.findById(owner, id);
@@ -190,6 +226,7 @@ export class AdminOrdersService {
       owner,
       detail: {
         order: adminOrderView(row, tracking),
+        capabilities: this.postSaleCapabilities(row),
         tenant: adminOrderTenant(network.tenant, network.path),
         seller: network.seller ?? null,
         operations,
@@ -227,6 +264,12 @@ export class AdminOrdersService {
        LIMIT ${ADMIN_ORDER_EVENTS_LIMIT}
     `.execute(trx);
     return rows.map(adminOrderEvent);
+  }
+
+  /** Lo que la consola puede ofrecer: consultar y cancelar. Lo de venta no sale de aquí. */
+  private postSaleCapabilities(row: OrderRow): AdminOrderCapabilities {
+    const { retrieve, cancel } = this.capabilities.capabilitiesForOrder(row);
+    return { retrieve, cancel };
   }
 
   /** El nodo por el que se filtra existe. `tenants` no tiene RLS. */

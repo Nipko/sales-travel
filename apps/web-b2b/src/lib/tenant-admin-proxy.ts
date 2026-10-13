@@ -25,14 +25,21 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-/** `PATCH /admin/tenants/:id`: estado, sucursal y tipo. Al menos uno. */
+/** Tope del motivo de un cambio de estado de un nodo (UpdateTenantSchema del API). */
+const REASON_MAX = 500;
+
+/**
+ * `PATCH /admin/tenants/:id`: estado, sucursal y tipo. Al menos uno. Suspender lleva el motivo,
+ * recortado (el API lo exige y decide su largo mínimo); reactivar lo admite. Un motivo vacío no
+ * viaja.
+ */
 export function tenantUpdatePlan(tenantId: string, raw: unknown): TenantAdminProxyPlan {
   if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
   const input = asRecord(raw);
   if (input === undefined) return { ok: false, error: 'El cambio no se pudo leer.' };
 
   const body: Record<string, unknown> = {};
-  const { status, isBranch, tenantType } = input;
+  const { status, isBranch, tenantType, reason } = input;
   if (status !== undefined) {
     if (typeof status !== 'string' || !STATUSES.includes(status)) {
       return { ok: false, error: 'El estado tiene que ser activo o suspendido.' };
@@ -54,7 +61,30 @@ export function tenantUpdatePlan(tenantId: string, raw: unknown): TenantAdminPro
   if (Object.keys(body).length === 0) {
     return { ok: false, error: 'Indica qué cambiar: estado, sucursal o tipo.' };
   }
+  if (reason !== undefined && reason !== null && typeof reason !== 'string') {
+    return { ok: false, error: 'El motivo no se pudo leer.' };
+  }
+  const motivo = typeof reason === 'string' ? reason.trim() : '';
+  if (motivo.length > REASON_MAX) {
+    return { ok: false, error: `El motivo puede tener hasta ${REASON_MAX} caracteres.` };
+  }
+  if (motivo !== '') {
+    body['reason'] = motivo;
+  } else if (status === 'suspended') {
+    return { ok: false, error: 'Indica el motivo de la suspensión.' };
+  }
   return { ok: true, path: `/admin/tenants/${tenantId.toLowerCase()}`, body };
+}
+
+/** `GET /admin/tenants/stats`: los números de cada nodo de la red. */
+export function tenantStatsTarget(): TenantAdminProxyTarget {
+  return { ok: true, path: '/admin/tenants/stats' };
+}
+
+/** `GET /admin/tenants/:id/impact`: qué arrastraría suspender el nodo con su red. */
+export function tenantImpactTarget(tenantId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  return { ok: true, path: `/admin/tenants/${tenantId.toLowerCase()}/impact` };
 }
 
 /** `POST /admin/tenants/:id/move`: el nodo con su subárbol bajo otro padre (D6 A). */

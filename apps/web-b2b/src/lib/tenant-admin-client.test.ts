@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { parseAdminNodes, parseCreatedNode, tenantAdminErrorMessage } from './tenant-admin-client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  loadNodeImpact,
+  loadNodeStats,
+  parseAdminNodes,
+  parseCreatedNode,
+  tenantAdminErrorMessage,
+  updateNode,
+} from './tenant-admin-client';
 
 const PLANETOUR = {
   id: 'AAAAAAAA-0000-4000-8000-000000000001',
@@ -137,5 +144,81 @@ describe('tenantAdminErrorMessage', () => {
     expect(tenantAdminErrorMessage(500, undefined, 'write')).toBe(
       'No se pudo guardar el cambio. Inténtalo de nuevo.',
     );
+  });
+});
+
+const NODE = 'cccccccc-0000-4000-8000-000000000003';
+
+function reply(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status });
+}
+
+function mockFetch(res: Response) {
+  const fn = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve(res));
+  vi.stubGlobal('fetch', fn);
+  return fn;
+}
+
+describe('Agencias: suspender con motivo y los números de cada nodo', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('updateNode manda el motivo con la suspensión', async () => {
+    const tenant = { ...PLANETOUR, id: NODE, tenantType: 'agency', status: 'suspended' };
+    const fetch = mockFetch(reply(200, { tenant }));
+    const res = await updateNode(NODE, { status: 'suspended', reason: 'Deuda vencida' });
+    expect(res).toMatchObject({ ok: true, data: { id: NODE, status: 'suspended' } });
+    expect(fetch).toHaveBeenCalledWith(`/api/admin/tenants/${NODE}`, {
+      cache: 'no-store',
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'suspended', reason: 'Deuda vencida' }),
+    });
+  });
+
+  it('el 400 del API (sin motivo) sale con su texto', async () => {
+    mockFetch(reply(400, { error: 'Indica el motivo de la suspensión.' }));
+    expect(await updateNode(NODE, { status: 'suspended', reason: '' })).toEqual({
+      ok: false,
+      message: 'Indica el motivo de la suspensión.',
+    });
+  });
+
+  it('loadNodeStats lee los números por nodo', async () => {
+    const fetch = mockFetch(
+      reply(200, {
+        nodes: [
+          {
+            tenantId: NODE,
+            seatLimit: 5,
+            seatsUsed: 5,
+            liveSessions: 5,
+            activeUsers: 6,
+            orders30d: 0,
+            sales30d: 0,
+            lastOrderAt: null,
+            openOrders: 0,
+            pendingDepositReports: 2,
+            pendingInvitations: 0,
+            held: [],
+          },
+        ],
+      }),
+    );
+    const res = await loadNodeStats();
+    expect(fetch).toHaveBeenCalledWith('/api/admin/tenants/stats', { cache: 'no-store' });
+    expect(res.ok && res.data.get(NODE)).toMatchObject({ seatsUsed: 5, pendingDepositReports: 2 });
+  });
+
+  it('loadNodeImpact pide el impacto del nodo; un 403 dice que es del superadmin', async () => {
+    const fetch = mockFetch(reply(403, { error: '' }));
+    expect(await loadNodeImpact(NODE)).toEqual({
+      ok: false,
+      message: 'Sólo el superadmin de la plataforma puede armar y corregir la red.',
+    });
+    expect(fetch).toHaveBeenCalledWith(`/api/admin/tenants/${NODE}/impact`, {
+      cache: 'no-store',
+    });
   });
 });

@@ -21,8 +21,9 @@ import { isCurrencyCode, isUuid, type Tone } from './wallets';
  * Plataforma → Reservas de la red (`GET /admin/orders`, `GET /admin/orders/:id`): los filtros y su
  * URL, la lectura de las respuestas y los textos de la pantalla. Sin I/O.
  *
- * El superadmin busca cualquier reserva de cualquier nodo y abre su ficha. Sólo lee: no vende ni
- * cambia nada. Todo lo que llega se lee sin confiar en su forma, y lo que no se entiende no se pinta.
+ * El superadmin busca cualquier reserva de cualquier nodo y abre su ficha. Nunca vende: desde la ficha
+ * sólo hace post-venta sobre lo ya vendido (lib/platform-order-actions.ts). Todo lo que llega se lee
+ * sin confiar en su forma, y lo que no se entiende no se pinta.
  */
 
 // ───────────────────────────── Vocabulario ─────────────────────────────
@@ -537,6 +538,23 @@ export interface OrderEventView {
   readonly occurredAt: string;
   readonly eventType: string;
   readonly actorEmail: string | null;
+  /** Sólo en `platform.order.action`: qué hizo el superadmin, cómo terminó y por qué. */
+  readonly adminAction: AdminActionEventView | null;
+}
+
+/** Las acciones de post-venta del superadmin (`action` de `platform.order.action`). */
+export type AdminOrderActionKind = 'send-confirmation' | 'retrieve' | 'retry-cancel' | 'cancel';
+
+export interface AdminActionEventView {
+  readonly action: AdminOrderActionKind;
+  readonly ok: boolean;
+  readonly reason: string | null;
+}
+
+/** Las operaciones de post-venta que el proveedor de la reserva sabe hacer (las decide el API). */
+export interface PlatformOrderCapabilities {
+  readonly retrieve: boolean;
+  readonly cancel: boolean;
 }
 
 export interface PlatformOrderDetail {
@@ -569,6 +587,8 @@ export interface PlatformOrderDetail {
     readonly path: readonly { readonly id: string; readonly name: string }[];
   };
   readonly seller: { readonly email: string; readonly name: string | null } | null;
+  /** Ausentes o raras, falsas: ante un API que no las declara la consola no ofrece la acción. */
+  readonly capabilities: PlatformOrderCapabilities;
   readonly operations: readonly OrderOperationRow[];
   readonly walletHold: OrderWalletHoldView | null;
   readonly reconciliation: readonly OrderReconciliationView[];
@@ -679,13 +699,41 @@ function parseReconciliation(value: unknown): OrderReconciliationView | undefine
   return { kind, severity: severity as Severity, action, createdAt };
 }
 
+/** El evento que deja cada acción del superadmin sobre una reserva (ADMIN_ORDER_ACTION_EVENT). */
+export const ADMIN_ORDER_ACTION_EVENT = 'platform.order.action';
+
+const ADMIN_ACTIONS = new Set<string>(['send-confirmation', 'retrieve', 'retry-cancel', 'cancel']);
+
+function parseAdminAction(eventType: string, payload: unknown): AdminActionEventView | null {
+  if (eventType !== ADMIN_ORDER_ACTION_EVENT) return null;
+  const p = asRecord(payload);
+  const action = p?.['action'];
+  if (typeof action !== 'string' || !ADMIN_ACTIONS.has(action)) return null;
+  return {
+    action: action as AdminOrderActionKind,
+    ok: p?.['outcome'] === 'ok',
+    reason: textOrNull(p?.['reason'], 500),
+  };
+}
+
 function parseEvent(value: unknown): OrderEventView | undefined {
   const r = asRecord(value);
   const id = text(r?.['id'], 64);
   const occurredAt = isoInstant(r?.['occurredAt']);
   const eventType = text(r?.['eventType'], 80);
   if (id === undefined || occurredAt === undefined || eventType === undefined) return undefined;
-  return { id, occurredAt, eventType, actorEmail: textOrNull(r?.['actorEmail'], 254) };
+  return {
+    id,
+    occurredAt,
+    eventType,
+    actorEmail: textOrNull(r?.['actorEmail'], 254),
+    adminAction: parseAdminAction(eventType, r?.['payload']),
+  };
+}
+
+function parseCapabilities(value: unknown): PlatformOrderCapabilities {
+  const r = asRecord(value);
+  return { retrieve: r?.['retrieve'] === true, cancel: r?.['cancel'] === true };
 }
 
 function parseContact(value: unknown): PlatformOrderDetail['order']['contact'] {
@@ -765,6 +813,7 @@ export function parsePlatformOrderDetail(value: unknown): PlatformOrderDetail | 
       sellerEmail === undefined
         ? null
         : { email: sellerEmail, name: textOrNull(seller?.['name'], 200) },
+    capabilities: parseCapabilities(r?.['capabilities']),
     operations: list(r?.['operations'], parseOperation),
     walletHold: parseWalletHold(r?.['walletHold']),
     reconciliation: list(r?.['reconciliation'], parseReconciliation),
@@ -977,6 +1026,27 @@ const EVENT_LABEL: Readonly<Record<string, string>> = {
 
 export function eventLabel(eventType: string): string {
   return EVENT_LABEL[eventType] ?? eventType;
+}
+
+const ADMIN_ACTION_LABEL: Readonly<Record<AdminOrderActionKind, string>> = {
+  'send-confirmation': 'El superadmin reenvió la confirmación',
+  retrieve: 'El superadmin consultó el estado al proveedor',
+  'retry-cancel': 'El superadmin reintentó la cancelación',
+  cancel: 'El superadmin canceló la reserva',
+};
+
+const ADMIN_ACTION_FAILED_LABEL: Readonly<Record<AdminOrderActionKind, string>> = {
+  'send-confirmation': 'El superadmin intentó reenviar la confirmación',
+  retrieve: 'El superadmin intentó consultar el estado al proveedor',
+  'retry-cancel': 'El superadmin intentó reintentar la cancelación',
+  cancel: 'El superadmin intentó cancelar la reserva',
+};
+
+/** El nombre de un evento de la Actividad; una acción del superadmin dice cuál y si salió. */
+export function eventText(event: Pick<OrderEventView, 'eventType' | 'adminAction'>): string {
+  const action = event.adminAction;
+  if (action === null) return eventLabel(event.eventType);
+  return action.ok ? ADMIN_ACTION_LABEL[action.action] : ADMIN_ACTION_FAILED_LABEL[action.action];
 }
 
 /** Estados del proveedor (de hoteles) que dicen que la reserva sigue en pie o ya no. */

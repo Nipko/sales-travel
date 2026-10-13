@@ -549,7 +549,7 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
   });
 
   describe('corrección de un nodo (PATCH)', () => {
-    it('suspender corta el rol del nodo y de su red; reactivar lo devuelve; todo auditado', async () => {
+    it('suspender corta el rol del nodo y de su red; reactivar lo devuelve; todo auditado, con el motivo', async () => {
       const a = await tenant('susp-a', 'agency', platform);
       const s = await tenant('susp-s', 'subagency', a);
       const vendedor = await user('susp-v');
@@ -568,13 +568,18 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
       };
       expect(await rolDeLaSesion()).toBe('vendedor');
 
-      const suspended = await service.update(superadmin, a, { status: 'suspended' });
+      const suspended = await service.update(superadmin, a, {
+        status: 'suspended',
+        reason: 'Deuda vencida con Planetour',
+      });
       expect(suspended).toMatchObject({ id: a, status: 'suspended' });
       // La sesión sigue viva, pero bajo un nodo suspendido no hay rol: RolesGuard corta todo.
       expect(await rolDeLaSesion()).toBe('sin rol');
 
       await service.update(superadmin, a, { status: 'active' });
       expect(await rolDeLaSesion()).toBe('vendedor');
+      await service.update(superadmin, a, { status: 'suspended', reason: 'Otra vez' });
+      await service.update(superadmin, a, { status: 'active', reason: 'Pagó la deuda' });
 
       const log = await events('tenant.updated', a);
       expect(log).toEqual([
@@ -585,6 +590,27 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
             changed: ['status'],
             before: { status: 'active' },
             after: { status: 'suspended' },
+            reason: 'Deuda vencida con Planetour',
+          },
+        },
+        {
+          actor_user_id: superadmin,
+          tenant_id: a,
+          // Reactivar no exige motivo: sin él, el evento no lleva la clave.
+          payload: {
+            changed: ['status'],
+            before: { status: 'suspended' },
+            after: { status: 'active' },
+          },
+        },
+        {
+          actor_user_id: superadmin,
+          tenant_id: a,
+          payload: {
+            changed: ['status'],
+            before: { status: 'active' },
+            after: { status: 'suspended' },
+            reason: 'Otra vez',
           },
         },
         {
@@ -594,6 +620,7 @@ d('alta y corrección de nodos por la API, contra Postgres', () => {
             changed: ['status'],
             before: { status: 'suspended' },
             after: { status: 'active' },
+            reason: 'Pagó la deuda',
           },
         },
       ]);

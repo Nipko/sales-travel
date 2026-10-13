@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { VOSEO_WORDS, voseoIn } from './voseo';
 
 /*
- * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y la
- * seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
+ * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y Reservas
+ * de la red y la seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
  * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite. Los tests
  * quedan afuera.
  */
@@ -42,6 +42,24 @@ const SCANNED = [
   'lib/platform-invitations.ts',
   // La ficha de un usuario, desde Equipo y desde el directorio.
   'lib/member-detail.ts',
+  // Plataforma → Reservas de la red: la consola, su ficha y la post-venta del superadmin.
+  'app/(app)/admin/plataforma/reservas',
+  'app/api/admin/orders',
+  'lib/platform-orders.ts',
+  'lib/platform-orders-client.ts',
+  'lib/platform-orders-proxy.ts',
+  'lib/platform-order-actions.ts',
+  // Plataforma → Agencias: la lista con sus números y suspender o reactivar un nodo.
+  'app/(app)/admin/tenants/_components/network-admin-panel.tsx',
+  'app/(app)/admin/tenants/_components/node-stats.tsx',
+  'app/(app)/admin/tenants/_components/suspend-node-dialog.tsx',
+  'app/api/admin/tenants',
+  'lib/platform-node-stats.ts',
+  'lib/tenant-network.ts',
+  // Inicio y Reportes de la agencia.
+  'app/(app)/page.tsx',
+  'app/(app)/reportes',
+  'lib/sales-reports.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

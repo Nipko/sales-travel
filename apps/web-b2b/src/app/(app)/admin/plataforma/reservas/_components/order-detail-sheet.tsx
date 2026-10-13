@@ -2,6 +2,7 @@
 
 import { RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { NodeKindBadge } from '../../../../../../components/network/node-kind';
 import { Button } from '../../../../../../components/ui/button';
 import { ModalPortal, useModalBehavior } from '../../../../../../components/ui/dialog';
@@ -9,12 +10,18 @@ import { ToneBadge, ToneNotice } from '../../../../../../components/wallets/wall
 import { cn } from '../../../../../../lib/cn';
 import { formatMoney } from '../../../../../../lib/flight-format';
 import { orderProviderLabel, orderVerticalOf } from '../../../../../../lib/order-vertical';
+import {
+  canRetryFromConsole,
+  providerReadingLinesOf,
+  type PlatformOrderAction,
+  type ProviderReadingView,
+} from '../../../../../../lib/platform-order-actions';
 import { PLATFORM_TIME_ZONE } from '../../../../../../lib/platform-overview';
 import {
   ORDER_STATUS_VIEW,
   RECONCILIATION_SEVERITY_VIEW,
   WALLET_HOLD_VIEW,
-  eventLabel,
+  eventText,
   formatOrderDate,
   orderSheetTitle,
   passengerLine,
@@ -26,6 +33,7 @@ import {
   type PlatformOrderRow,
 } from '../../../../../../lib/platform-orders';
 import { loadPlatformOrder } from '../../../../../../lib/platform-orders-client';
+import type { OrderOperationView } from '../../../../reservas/cancel-retry-policy';
 import { HotelOrderStatusChip } from '../../../../reservas/_components/hotel-order-status';
 import {
   OrderOperationsHistory,
@@ -37,6 +45,8 @@ import {
   parseHotelTracking,
   providerStatusViewOf,
 } from '../../../../reservas/hotel-order-view';
+import { OrderActionDialog, type OrderActionDone } from './order-action-dialog';
+import { OrderActions } from './order-actions';
 import { AttentionFlag } from './orders-table';
 
 type DetailState =
@@ -49,7 +59,12 @@ export const AUDIT_FOOTNOTE =
 
 /**
  * La ficha de una reserva de cualquier nodo: panel a la derecha en el escritorio, pantalla completa
- * en el teléfono. Sólo lectura: no tiene pie con botones, se cierra con la X, Escape o el fondo.
+ * en el teléfono. Se cierra con la X, Escape o el fondo.
+ *
+ * Su pie tiene la post-venta del superadmin (OrderActions: consultar, reenviar, cancelar) y el
+ * historial ofrece "Reintentar" en una cancelación que falló; cada una se confirma con su motivo
+ * (OrderActionDialog). Después de una acción la ficha se relee sin volver al esqueleto, y la lista
+ * de atrás se actualiza (`onChanged`): una cancelación cambia el estado de la fila.
  *
  * Mientras llega la ficha, el título sale de la fila que se tocó (`preview`); si se abrió desde un
  * enlace (`?orden=`), dice "Reserva" hasta que llega.
@@ -58,10 +73,13 @@ export function OrderDetailSheet({
   orderId,
   preview,
   onClose,
+  onChanged,
 }: {
   orderId: string;
   preview: Pick<PlatformOrderRow, 'orderNumber' | 'tenantName'> | null;
   onClose: () => void;
+  /** Una acción cambió la reserva (o pudo cambiarla): la lista de atrás se relee. */
+  onChanged?: () => void;
 }) {
   const [state, setState] = useState<DetailState>({ status: 'loading' });
   const [now, setNow] = useState(() => Date.now());
@@ -83,6 +101,44 @@ export function OrderDetailSheet({
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Relee la ficha sin el esqueleto; si falla, deja la que había y lo avisa. */
+  const refresh = useCallback(async () => {
+    const id = ++request.current;
+    const res = await loadPlatformOrder(orderId);
+    if (id !== request.current) return;
+    if (!res.ok) {
+      toast.error(`No pudimos actualizar la ficha: ${res.message}`);
+      return;
+    }
+    setNow(Date.now());
+    setState({ status: 'ready', detail: res.data });
+  }, [orderId]);
+
+  const [action, setAction] = useState<PlatformOrderAction | null>(null);
+  /** La última consulta al proveedor desde esta ficha (en vuelos no queda guardada en la reserva). */
+  const [reading, setReading] = useState<{
+    readonly orderId: string;
+    readonly reading: ProviderReadingView;
+  } | null>(null);
+  const onChangedRef = useRef(onChanged);
+  onChangedRef.current = onChanged;
+  const done = useCallback(
+    (result: OrderActionDone) => {
+      setAction(null);
+      if (result.reading !== undefined) setReading({ orderId, reading: result.reading });
+      if (result.detail !== undefined) {
+        // La ficha que devolvió la acción es la más nueva: una lectura anterior en vuelo no la pisa.
+        request.current += 1;
+        setNow(Date.now());
+        setState({ status: 'ready', detail: result.detail });
+      } else {
+        void refresh();
+      }
+      onChangedRef.current?.();
+    },
+    [orderId, refresh],
+  );
 
   const panelRef = useModalBehavior(true, onClose);
   const detail = state.status === 'ready' ? state.detail : null;
@@ -141,7 +197,12 @@ export function OrderDetailSheet({
           </header>
 
           <div className="scroll-panel relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
+            <div
+              className={cn(
+                'px-5 pt-4',
+                detail !== null ? 'pb-6' : 'pb-[max(1.5rem,env(safe-area-inset-bottom))]',
+              )}
+            >
               {state.status === 'loading' ? (
                 <div className="space-y-4" aria-live="polite">
                   <span className="sr-only">Cargando la reserva…</span>
@@ -168,12 +229,28 @@ export function OrderDetailSheet({
                   </Button>
                 </div>
               ) : (
-                <OrderDetailContent detail={state.detail} now={now} />
+                <OrderDetailContent
+                  detail={state.detail}
+                  now={now}
+                  onRetry={(op) => setAction({ kind: 'retry-cancel', operationId: op.id })}
+                  {...(reading !== null && reading.orderId === orderId
+                    ? { reading: reading.reading }
+                    : {})}
+                />
               )}
             </div>
           </div>
+          {detail !== null ? <OrderActions detail={detail} onAction={setAction} /> : null}
         </div>
       </div>
+      {action !== null && detail !== null ? (
+        <OrderActionDialog
+          action={action}
+          detail={detail}
+          onClose={() => setAction(null)}
+          onDone={done}
+        />
+      ) : null}
     </ModalPortal>
   );
 }
@@ -208,12 +285,56 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Lo que respondió el proveedor en la última consulta desde la ficha. `stored`: la reserva guarda
+ * su lectura (hoteles); si no, se aclara que es sólo lo que se vio ahora.
+ */
+function ProviderReading({ reading, stored }: { reading: ProviderReadingView; stored: boolean }) {
+  const view = providerReadingLinesOf(reading);
+  return (
+    <>
+      <p className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-[var(--color-fg)]">{view.headline}</span>
+        {view.code !== null ? (
+          <code className="text-[11px] text-[var(--color-fg-muted)]">{view.code}</code>
+        ) : null}
+      </p>
+      {view.details.map((line) => (
+        <p key={line} className="text-[11px] text-[var(--color-fg-muted)] [overflow-wrap:anywhere]">
+          {line}
+        </p>
+      ))}
+      {reading.readAt !== null ? (
+        <p className="text-[11px] text-[var(--color-fg-muted)]">
+          Consultado <time dateTime={reading.readAt}>{formatOrderDate(reading.readAt)}</time>
+          {stored ? '.' : '. Es una lectura en vivo: no queda guardada en la reserva.'}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 const noRetry = () => false;
 const noop = () => undefined;
 const reloadNothing = (): Promise<void> => Promise.resolve();
 
-/** Lo que se ve con la ficha ya leída. Sin estado propio: se prueba renderizándolo. */
-export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetail; now: number }) {
+/**
+ * Lo que se ve con la ficha ya leída. Sin estado propio: se prueba renderizándolo. Con `onRetry`, el
+ * historial ofrece "Reintentar" en la cancelación que falló antes de enviarse (la regla de la agencia).
+ * `reading`: la última consulta al proveedor desde la ficha; se muestra si la reserva no tiene una
+ * lectura guardada (los vuelos no la guardan).
+ */
+export function OrderDetailContent({
+  detail,
+  now,
+  onRetry,
+  reading,
+}: {
+  detail: PlatformOrderDetail;
+  now: number;
+  onRetry?: (operation: OrderOperationView) => void;
+  reading?: ProviderReadingView;
+}) {
   const { order } = detail;
   const hotel = orderVerticalOf(order) === 'hotels';
   const tracking = parseHotelTracking(order.providerTracking);
@@ -221,7 +342,7 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
   const hcn = hotel ? hcnViewOf(order) : undefined;
   const mismatch = statusMismatch(order);
   const platformStatus = ORDER_STATUS_VIEW[order.status];
-  // El historial de las Reservas de la agencia, sin reintentar: lo habilita la post-venta (ADM-6).
+  // El historial de las Reservas de la agencia; el reintento lo confirma OrderActionDialog.
   const operations: OrderOperationsState = {
     operations: detail.operations,
     loading: false,
@@ -291,6 +412,8 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
                     </p>
                   ) : null}
                 </>
+              ) : reading !== undefined ? (
+                <ProviderReading reading={reading} stored={hotel} />
               ) : (
                 <p className="text-xs text-[var(--color-fg-muted)]">
                   Sin lectura guardada del proveedor.
@@ -352,7 +475,15 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
       </Section>
 
       {detail.operations.length > 0 ? (
-        <OrderOperationsHistory state={operations} canRetry={noRetry} onRetry={noop} />
+        <OrderOperationsHistory
+          state={operations}
+          canRetry={
+            onRetry === undefined
+              ? noRetry
+              : (op: OrderOperationView) => canRetryFromConsole(detail, op)
+          }
+          onRetry={onRetry ?? noop}
+        />
       ) : (
         <Section title="Historial de operaciones">
           <Quiet>Sin operaciones de post-venta.</Quiet>
@@ -427,11 +558,16 @@ export function OrderDetailContent({ detail, now }: { detail: PlatformOrderDetai
           <ol className="space-y-2 border-l border-[var(--color-border)] pl-3">
             {detail.events.map((e) => (
               <li key={e.id} className="text-xs">
-                <p className="font-medium text-[var(--color-fg)]">{eventLabel(e.eventType)}</p>
+                <p className="font-medium text-[var(--color-fg)]">{eventText(e)}</p>
                 <p className="text-[var(--color-fg-muted)]">
                   <time dateTime={e.occurredAt}>{formatOrderDate(e.occurredAt)}</time>
                   {e.actorEmail !== null ? ` · ${e.actorEmail}` : ''}
                 </p>
+                {e.adminAction?.reason ? (
+                  <p className="mt-0.5 break-words text-[var(--color-fg-muted)]">
+                    Motivo: <span className="text-[var(--color-fg)]">{e.adminAction.reason}</span>
+                  </p>
+                ) : null}
               </li>
             ))}
           </ol>

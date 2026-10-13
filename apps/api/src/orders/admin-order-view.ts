@@ -240,9 +240,20 @@ export interface AdminOrderEventView {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Las operaciones de post-venta que el proveedor de la reserva sabe hacer, como las decide
+ * OrderCapabilitiesService (una emitida no se cancela). Sólo las que la consola ofrece: el
+ * superadmin no vende, así que pagar, servicios y recotizar no aparecen.
+ */
+export interface AdminOrderCapabilities {
+  retrieve: boolean;
+  cancel: boolean;
+}
+
 /** `GET /admin/orders/:id`. */
 export interface AdminOrderDetail {
   order: AdminOrderView;
+  capabilities: AdminOrderCapabilities;
   tenant: AdminOrderTenantView;
   /** Quien la vendió; `null` si su usuario ya no existe. */
   seller: AdminOrderSellerView | null;

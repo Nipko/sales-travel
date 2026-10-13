@@ -23,8 +23,10 @@ import { Button } from '../../../../../components/ui/button';
 import { useConfirm } from '../../../../../components/ui/dialog';
 import { TextInput } from '../../../../../components/ui/field';
 import { cn } from '../../../../../lib/cn';
+import { statusDoneToast, type NodeStats } from '../../../../../lib/platform-node-stats';
 import {
   loadAdminNetwork,
+  loadNodeStats,
   updateNode,
   type AdminNetworkNode,
 } from '../../../../../lib/tenant-admin-client';
@@ -44,6 +46,8 @@ import {
 import { CreateNodeDialog } from './create-node-dialog';
 import { MoveNodeDialog } from './move-node-dialog';
 import { NodeUsersLink } from './node-users-link';
+import { NodeStatsColumns, NodeStatsLine, PendingDepositsBadge, type RowStats } from './node-stats';
+import { SuspendNodeDialog, type NodeStatusMode } from './suspend-node-dialog';
 
 const SUPERADMIN = { superadmin: true } as const;
 
@@ -57,6 +61,25 @@ type PanelState =
 
 type Creating = { readonly kinds: readonly CreatableKind[]; readonly parent?: AdminNetworkNode };
 type Moving = { readonly node: AdminNetworkNode; readonly initialTargetId?: string };
+type ChangingStatus = {
+  readonly node: AdminNetworkNode;
+  readonly mode: NodeStatusMode;
+  readonly suspendedAncestorName: string | null;
+};
+
+/**
+ * Los números de cada nodo (puestos, ventas, depósitos por aprobar). Van aparte de la red: si no se
+ * pueden leer, el árbol se sigue viendo y corrigiendo, sin ellos.
+ */
+type StatsState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'error' }
+  | {
+      readonly status: 'ready';
+      readonly byId: ReadonlyMap<string, NodeStats>;
+      /** Desde cuándo se mide "Última reserva": el momento en que se leyeron. */
+      readonly at: number;
+    };
 
 const STATUS_STYLE: Readonly<Record<string, string>> = {
   active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -66,30 +89,49 @@ const STATUS_STYLE: Readonly<Record<string, string>> = {
 };
 
 /**
- * "Gestión de Agencias": la red de Planetour como árbol, para armarla y corregirla. Quién cuelga
- * de quién, de qué tipo es cada nodo (la sucursal incluida) y si opera; alta con Planetour como
- * padre por defecto, mover un nodo con su subárbol, suspenderlo o reactivarlo y marcar sucursales.
- * Todo es del superadmin: la API lo exige en cada llamada.
+ * "Agencias": la red de Planetour como árbol, para armarla y corregirla. Quién cuelga de quién, de
+ * qué tipo es cada nodo (la sucursal incluida) y si opera, con sus puestos, ventas y depósitos por
+ * aprobar para ver qué nodo está saturado o quieto; alta con Planetour como padre por defecto, mover
+ * un nodo con su subárbol, suspenderlo o reactivarlo (con motivo y viendo antes a quién afecta) y
+ * marcar sucursales. Todo es del superadmin: la API lo exige en cada llamada.
  */
 export function NetworkAdminPanel() {
   const [state, setState] = useState<PanelState>({ status: 'loading' });
+  const [stats, setStats] = useState<StatsState>({ status: 'loading' });
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState<Creating | null>(null);
   const [moving, setMoving] = useState<Moving | null>(null);
+  const [changingStatus, setChangingStatus] = useState<ChangingStatus | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirm, confirmDialog] = useConfirm();
 
-  const load = useCallback(async (initial: boolean) => {
-    if (initial) setState({ status: 'loading' });
-    const res = await loadAdminNetwork();
-    if (res.ok) {
-      setState({ status: 'ready', nodes: res.data });
-      return;
-    }
-    // Una relectura que falla no borra lo que ya se veía: se avisa y se sigue mostrando.
-    if (initial) setState({ status: 'error', message: res.message });
-    else toast.error(res.message);
+  const loadStats = useCallback(async () => {
+    const res = await loadNodeStats();
+    // Una relectura que falla deja los números que ya se veían.
+    setStats((prev) =>
+      res.ok
+        ? { status: 'ready', byId: res.data, at: Date.now() }
+        : prev.status === 'ready'
+          ? prev
+          : { status: 'error' },
+    );
   }, []);
+
+  const load = useCallback(
+    async (initial: boolean) => {
+      if (initial) setState({ status: 'loading' });
+      void loadStats();
+      const res = await loadAdminNetwork();
+      if (res.ok) {
+        setState({ status: 'ready', nodes: res.data });
+        return;
+      }
+      // Una relectura que falla no borra lo que ya se veía: se avisa y se sigue mostrando.
+      if (initial) setState({ status: 'error', message: res.message });
+      else toast.error(res.message);
+    },
+    [loadStats],
+  );
 
   useEffect(() => {
     void load(true);
@@ -107,28 +149,17 @@ export function NetworkAdminPanel() {
 
   const closeCreating = useCallback(() => setCreating(null), []);
   const closeMoving = useCallback(() => setMoving(null), []);
+  const closeChangingStatus = useCallback(() => setChangingStatus(null), []);
 
-  async function toggleStatus(node: AdminNetworkNode) {
+  /** Suspender o reactivar va por su diálogo: el motivo y, al suspender, a quién afecta. */
+  function toggleStatus(node: AdminNetworkNode) {
     const change = statusChange(nodes, node);
     if (change === undefined) return;
-    const ok = await confirm({
-      title: change.title,
-      description: change.description,
-      confirmLabel: change.confirmLabel,
-      destructive: change.destructive,
+    setChangingStatus({
+      node,
+      mode: change.next === 'suspended' ? 'suspend' : 'reactivate',
+      suspendedAncestorName: change.suspendedAncestorName,
     });
-    if (!ok) return;
-    setBusyId(node.id);
-    const res = await updateNode(node.id, { status: change.next });
-    setBusyId(null);
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
-    }
-    toast.success(
-      change.next === 'suspended' ? `${node.name} quedó suspendido.` : `${node.name} quedó activo.`,
-    );
-    void load(false);
   }
 
   async function toggleBranch(node: AdminNetworkNode) {
@@ -160,16 +191,27 @@ export function NetworkAdminPanel() {
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-5 sm:py-8">
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
-            Gestión de Agencias
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">Agencias</h1>
           <p className="mt-1 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
-            La red de Planetour: quién cuelga de quién y si está operando. Cada nodo hereda de su
-            padre credenciales, reglas de precio y marca. Planetour vende por sus sucursales.
+            La red de Planetour: quién cuelga de quién, si está operando y cuánto ocupa y vende.
+            Cada nodo hereda de su padre credenciales, reglas de precio y marca. Planetour vende por
+            sus sucursales.
           </p>
           {nodes.length > 0 ? (
             <p className="mt-2 text-xs text-[var(--color-fg-subtle)]">
               {networkComposition(nodes)}
+            </p>
+          ) : null}
+          {nodes.length > 0 && stats.status === 'error' ? (
+            <p role="status" className="mt-2 text-xs text-[var(--color-fg-muted)]">
+              No pudimos cargar los puestos y las ventas de cada nodo.{' '}
+              <button
+                type="button"
+                onClick={() => void loadStats()}
+                className="font-medium text-[var(--color-fg)] underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              >
+                Reintentar
+              </button>
             </p>
           ) : null}
         </div>
@@ -254,12 +296,17 @@ export function NetworkAdminPanel() {
                   level={query.trim() === '' ? level : 0}
                   parent={node.parentTenantId === null ? undefined : byId.get(node.parentTenantId)}
                   busy={busyId === node.id}
+                  stats={
+                    stats.status === 'ready'
+                      ? { status: 'ready', node: stats.byId.get(node.id), at: stats.at }
+                      : { status: stats.status }
+                  }
                   childKinds={creatableKinds(node, SUPERADMIN)}
                   statusAction={statusChange(nodes, node)?.label}
                   branchAction={branchChange(nodes, node)?.label}
                   onCreateChild={(kinds) => setCreating({ kinds, parent: node })}
                   onMove={() => setMoving({ node })}
-                  onToggleStatus={() => void toggleStatus(node)}
+                  onToggleStatus={() => toggleStatus(node)}
                   onToggleBranch={() => void toggleBranch(node)}
                 />
               ))}
@@ -267,6 +314,21 @@ export function NetworkAdminPanel() {
           )}
         </div>
       )}
+
+      {changingStatus !== null ? (
+        <SuspendNodeDialog
+          node={changingStatus.node}
+          mode={changingStatus.mode}
+          suspendedAncestorName={changingStatus.suspendedAncestorName}
+          onClose={closeChangingStatus}
+          onDone={(next) => {
+            const node = changingStatus.node;
+            setChangingStatus(null);
+            toast.success(statusDoneToast(node.name, next));
+            void load(false);
+          }}
+        />
+      ) : null}
 
       {creating !== null ? (
         <CreateNodeDialog
@@ -344,7 +406,7 @@ function OutsideNetworkNotice({
           </h2>
           <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-fg-muted)]">
             {many ? 'Quedaron' : 'Quedó'} como raíz suelta: no {many ? 'heredan' : 'hereda'}{' '}
-            credenciales, reglas de precio ni marca. {many ? 'Movelos' : 'Movelo'} bajo{' '}
+            credenciales, reglas de precio ni marca. {many ? 'Muévelos' : 'Muévelo'} bajo{' '}
             {platformName} para que {many ? 'vendan' : 'venda'} a su nombre.
           </p>
           <ul className="mt-3 space-y-2">
@@ -392,6 +454,7 @@ function NodeRow({
   level,
   parent,
   busy,
+  stats,
   childKinds,
   statusAction,
   branchAction,
@@ -404,6 +467,7 @@ function NodeRow({
   level: number;
   parent: AdminNetworkNode | undefined;
   busy: boolean;
+  stats: RowStats;
   childKinds: readonly CreatableKind[];
   statusAction: string | undefined;
   branchAction: string | undefined;
@@ -441,6 +505,7 @@ function NodeRow({
               <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
               {statusLabel(node.status)}
             </span>
+            <PendingDepositsBadge stats={stats} nodeName={node.name} />
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-[var(--color-fg-muted)]">
             <code className="font-mono text-[10px] text-[var(--color-fg-subtle)]">{node.slug}</code>
@@ -457,8 +522,11 @@ function NodeRow({
               </>
             ) : null}
           </p>
+          <NodeStatsLine stats={stats} />
         </div>
       </div>
+
+      <NodeStatsColumns stats={stats} />
 
       <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:flex-nowrap">
         <Button asChild variant="ghost" size="sm">

@@ -273,7 +273,7 @@ describe('OrderDetailContent', () => {
     expect(t).toMatch(/\$\s?125\.000/);
     expect(t).toContain('Cancelación');
     expect(t).toContain('Falló');
-    // El reintento lo habilita la post-venta del superadmin (ADM-6), no esta ficha.
+    // Sin `onRetry` no hay reintento: lo ofrece la ficha con su post-venta (order-actions.render).
     expect(html).not.toContain('>Reintentar<');
     expect(t).toContain('En conflicto');
     expect(t).toContain('Cancelada fuera de la plataforma');

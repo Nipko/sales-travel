@@ -430,6 +430,8 @@ export interface StatusChange {
   readonly description: string;
   readonly confirmLabel: string;
   readonly destructive: boolean;
+  /** Al reactivar: el ancestro que sigue suspendido; el nodo no opera hasta que ése vuelva. */
+  readonly suspendedAncestorName: string | null;
 }
 
 /**
@@ -449,9 +451,10 @@ export function statusChange(
       next: 'suspended',
       label: 'Suspender',
       title: `Suspender ${node.name}`,
-      description: `${who} ${dependents > 0 ? 'dejan' : 'deja'} de operar en el acto: sus usuarios pierden el acceso. Las reservas hechas no se tocan. Podés reactivarlo cuando quieras.`,
+      description: `${who} ${dependents > 0 ? 'dejan' : 'deja'} de operar en el acto: sus usuarios pierden el acceso. Las reservas hechas no se tocan. Puedes reactivarlo cuando quieras.`,
       confirmLabel: 'Suspender',
       destructive: true,
+      suspendedAncestorName: null,
     };
   }
   const suspendedAncestor = lineage(nodes, node.id)
@@ -459,14 +462,15 @@ export function statusChange(
     .find((a) => a.status !== 'active');
   return {
     next: 'active',
-    label: 'Activar',
-    title: `Activar ${node.name}`,
+    label: 'Reactivar',
+    title: `Reactivar ${node.name}`,
     description:
       suspendedAncestor === undefined
         ? `${who} ${dependents > 0 ? 'vuelven' : 'vuelve'} a operar: sus usuarios recuperan el acceso.`
         : `${node.name} queda activo, pero no opera mientras ${suspendedAncestor.name} siga suspendido.`,
-    confirmLabel: 'Activar',
+    confirmLabel: 'Reactivar',
     destructive: false,
+    suspendedAncestorName: suspendedAncestor?.name ?? null,
   };
 }
 

@@ -347,20 +347,39 @@ export const CreateTenantSchema = z.object({
 });
 export type CreateTenantDto = z.infer<typeof CreateTenantSchema>;
 
+/** Largo del motivo de un cambio de estado de un nodo: lo que queda en la auditoría. */
+export const TENANT_STATUS_REASON_MIN = 5;
+export const TENANT_STATUS_REASON_MAX = 500;
+
 /**
  * Corrección de un nodo por el superadmin: estado, marca de sucursal y tipo. El tipo sólo cambia
  * dentro de D4 (lo valida la base con los hijos incluidos); la plataforma no se crea ni se toca
  * así. El padre no se cambia acá: eso es mover el nodo con su subárbol.
+ *
+ * Suspender exige el motivo, que queda en el `tenant.updated`: corta el acceso de una red entera y
+ * quien lo lea después tiene que saber por qué. Reactivar lo admite sin exigirlo.
  */
 export const UpdateTenantSchema = z
   .object({
     status: z.enum(['active', 'suspended']).optional(),
     isBranch: z.boolean().optional(),
     tenantType: CreatableTenantTypeSchema.optional(),
+    reason: z
+      .string()
+      .trim()
+      .min(TENANT_STATUS_REASON_MIN, 'el motivo tiene al menos 5 caracteres')
+      .max(TENANT_STATUS_REASON_MAX, 'el motivo tiene como máximo 500 caracteres')
+      // El NUL no entra en un texto de Postgres (jsonb): sin esto, el cambio respondía 500.
+      .refine((v) => !v.includes('\u0000'), 'el motivo tiene un carácter inválido')
+      .optional(),
   })
   .strict()
   .refine((v) => v.status !== undefined || v.isBranch !== undefined || v.tenantType !== undefined, {
-    message: 'indica qué cambiar: status, isBranch o tenantType',
+    message: 'Indica qué cambiar: status, isBranch o tenantType',
+  })
+  .refine((v) => v.status !== 'suspended' || v.reason !== undefined, {
+    message: 'Indica el motivo de la suspensión (5 a 500 caracteres).',
+    path: ['reason'],
   });
 export type UpdateTenantDto = z.infer<typeof UpdateTenantSchema>;
 
