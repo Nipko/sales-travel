@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
-import type { Offer } from '@sales-travel/canonical';
+import type { Offer, ProviderEnvironment } from '@sales-travel/canonical';
 import type {
   FlightSearchCriteria,
   OfferPriceResult,
@@ -481,9 +481,13 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const key = `byoc:${resolved.ownerTenantId}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
     const callPolicy = this.declaredCallPolicy(resolved.config, resolved.ownerTenantId);
+    // Sólo `prod` es real. CERT —y cualquier cuenta sin entorno legible, que `toConfig` ya manda a
+    // CERT— cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la búsqueda las
+    // marca y la orden lo guarda para que nadie se las venda a un cliente como reales.
+    const providerEnvironment: ProviderEnvironment = cfg.environment === 'prod' ? 'live' : 'test';
 
     const cached = this.cache.get(key);
-    if (cached) return { adapter: cached, credentialSource, callPolicy };
+    if (cached) return { adapter: cached, credentialSource, callPolicy, providerEnvironment };
 
     const adapter = new SabreFlightProviderAdapter(
       this.buildAdapters(cfg, resolved.ownerTenantId, resolved.config),
@@ -491,7 +495,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
 
     this.cache.set(key, adapter);
     this.evictStale(key);
-    return { adapter, credentialSource, callPolicy };
+    return { adapter, credentialSource, callPolicy, providerEnvironment };
   }
 
   /** Los errores del ACL ya tienen traducción propia, y NO hace eco del texto de Sabre. */

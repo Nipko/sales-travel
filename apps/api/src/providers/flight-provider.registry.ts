@@ -22,6 +22,7 @@ import {
   type TenantProviderFactory,
   type UnavailableProvider,
 } from './provider.types.js';
+import { DEFAULT_PROVIDER_ENVIRONMENT } from './provider-environment.js';
 
 /**
  * Proveedores a los que la plataforma presta SUS credenciales cuando el tenant no tiene ni
@@ -292,6 +293,8 @@ export class FlightProviderRegistry {
         credentialSource: resolved.credentialSource,
         capabilities: factory.capabilities,
         callPolicy: this.policyOverrides[factory.code] ?? resolved.callPolicy ?? callPolicy,
+        // Sin dato, `live`: es lo que eran todas las cuentas antes de que el factory lo declarara.
+        environment: resolved.providerEnvironment ?? DEFAULT_PROVIDER_ENVIRONMENT,
       },
     };
   }

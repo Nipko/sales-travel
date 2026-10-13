@@ -224,6 +224,46 @@ describe('SabreProviderFactory — entorno', () => {
   });
 });
 
+describe('SabreProviderFactory — la cuenta declara si es de pruebas', () => {
+  async function entornoDe(config: Record<string, unknown>): Promise<string | undefined> {
+    const factory = factoryWith(() => Promise.resolve(resolved({ config })));
+    return (await factory.resolveForTenant('t1')).providerEnvironment;
+  }
+
+  it('CERT (sin `environment`) es una cuenta de pruebas: sus tarifas salen marcadas', async () => {
+    expect(await entornoDe({})).toBe('test');
+  });
+
+  it('un `environment` desconocido, igual que CERT: de pruebas, nunca real', async () => {
+    expect(await entornoDe({ environment: 'produccion' })).toBe('test');
+    expect(await entornoDe({ environment: 'cert' })).toBe('test');
+  });
+
+  it('sólo `prod` explícito es una cuenta real', async () => {
+    expect(await entornoDe({ environment: 'prod' })).toBe('live');
+  });
+
+  it('el adapter cacheado sale con el mismo entorno que el recién construido', async () => {
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+
+    const primera = await factory.resolveForTenant('t1');
+    const segunda = await factory.resolveForTenant('t1');
+
+    expect(segunda.adapter).toBe(primera.adapter);
+    expect([primera.providerEnvironment, segunda.providerEnvironment]).toEqual(['test', 'test']);
+  });
+
+  it('el registry lo entrega a la búsqueda y a la venta', async () => {
+    const registry = new FlightProviderRegistry([factoryWith(() => Promise.resolve(resolved()))], {
+      decisionFor: () => Promise.resolve(ENCENDIDO),
+    });
+
+    const { active } = await registry.forTenant('t1');
+    expect(active.map((p) => p.environment)).toEqual(['test']);
+    expect((await registry.byCodeForOffer('t1', SABRE_PROVIDER_CODE)).environment).toBe('test');
+  });
+});
+
 describe('SabreProviderFactory — shopOptions por cuenta', () => {
   it('sin configuración aplica single, cero rondas pagadas, MFPI apagado y sin NDC', () => {
     const parsed = sabreShopOptionsFromAccountConfig({});

@@ -23,6 +23,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { MailerService } from '../mail/mailer.service.js';
+import { isTestSelectedOffer } from '../providers/provider-environment.js';
 import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../mail/templates.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -58,6 +59,17 @@ const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
   services: false,
   reshop: false,
 };
+
+/**
+ * ¿La orden es una reserva de la cuenta de pruebas del proveedor?
+ *
+ * Lo lee de `selected_offer.provider.environment`, que escribe el servidor al crear la orden desde
+ * la cuenta resuelta (nunca el navegador). Una reserva de prueba no genera un tiquete válido: no se
+ * le confirma al pasajero por correo sin que el vendedor lo pida, y si lo pide va marcada.
+ */
+function isTestContent(row: Pick<OrderRow, 'selected_offer'>): boolean {
+  return isTestSelectedOffer(row.selected_offer);
+}
 
 /**
  * Selecciona campos estructurados antes de que la incidencia salga del backend. `message` y
@@ -115,7 +127,11 @@ export class OrdersController {
     // de cierre no pudo verificar —o que el proveedor ya da por cancelado— no es una reserva
     // confirmada: es una que todavía no sabemos si existe, y mandarle al pasajero "tu reserva
     // está confirmada" es la mentira que se descubre en el mostrador.
-    if (saga.kind === 'settled' && saga.status === 'confirmed') {
+    //
+    // Tampoco sale con una reserva de la cuenta de pruebas del proveedor: el pasajero recibiría un
+    // localizador que no le sirve para viajar. Si el vendedor quiere mandarla, la reenvía a mano y
+    // sale marcada como prueba (`send-confirmation`).
+    if (saga.kind === 'settled' && saga.status === 'confirmed' && !isTestContent(order)) {
       void this.sendConfirmationEmail(tenantId, order);
     }
 
@@ -222,6 +238,9 @@ export class OrdersController {
       currency: order.currency,
       brand,
       ticketed: order.status === 'ticketed',
+      // Sólo llega aquí una de prueba si el vendedor la reenvió a mano: asunto «[PRUEBA] » y el
+      // aviso de que no es un tiquete válido para viajar.
+      testContent: isTestContent(order),
     });
   }
 
@@ -432,6 +451,9 @@ export class OrdersController {
       currency: row.currency,
       orderNumber: row.order_number,
       errorMessage: row.error_message,
+      // Reserva de la cuenta de pruebas del proveedor: la pantalla la marca para que nadie la
+      // gestione como una venta real.
+      testContent: isTestContent(row),
       providerTracking: tracking ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

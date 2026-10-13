@@ -16,6 +16,7 @@ import type {
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
+import type { ProviderEnvironment } from './provider-environment.js';
 
 /**
  * Un adapter de vuelos = los cuatro ports del dominio.
@@ -188,6 +189,17 @@ export interface TenantAdapter<TAdapter> {
    * forzada): sólo el factory, que la resolvió, sabe de quién es.
    */
   readonly accountOwnerTenantId?: string | undefined;
+  /**
+   * Entorno de la cuenta con que sale el adapter: `test` (sandbox, certificación) o `live`.
+   * `undefined` = el factory no lo dice y se lee como `live`, que es lo que eran todas las cuentas
+   * antes de que existiera el campo.
+   *
+   * Lo declara el factory porque es el único que leyó la cuenta: ni el ACL (que no sabe con qué
+   * cuenta lo construyeron) ni el fan-out (que no lee configuraciones de nadie) pueden saberlo. Con
+   * esto la búsqueda marca cada tarifa de una cuenta de pruebas y la orden lo guarda, para que el
+   * vendedor nunca le venda a un cliente un tiquete que no sirve para viajar.
+   */
+  readonly providerEnvironment?: ProviderEnvironment | undefined;
 }
 
 /**
@@ -231,6 +243,12 @@ export interface ResolvedProvider<TAdapter> {
   readonly credentialSource: CredentialSource;
   readonly capabilities: ProviderCapabilities;
   readonly callPolicy: CallPolicy;
+  /**
+   * Entorno de la cuenta resuelta, ya sin huecos: lo que declaró el factory o `live` si no dijo
+   * nada (ver {@link TenantAdapter.providerEnvironment}). Obligatorio a propósito: quien estampa
+   * ofertas u órdenes no puede olvidarse de mirarlo.
+   */
+  readonly environment: ProviderEnvironment;
 }
 
 /**

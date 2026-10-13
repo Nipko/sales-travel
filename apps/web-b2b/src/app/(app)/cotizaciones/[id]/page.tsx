@@ -27,6 +27,8 @@ import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
+import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
+import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
 import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
 import {
@@ -484,6 +486,9 @@ export default function QuotationDetailPage() {
   const fareComponents = fareComponentsForDisplay(selectedOffer);
   const fareSummary = fareFamilySummary(selectedOffer);
   const venta = saleBreakdown(selectedOffer);
+  // La oferta guardada, o la revalidada por el API si ya se verificó el precio: la marca de la
+  // revalidada sale de la cuenta que la cotizó, no de lo que guardó el navegador.
+  const testFare = isTestFare(selectedOffer);
   const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
   const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
 
@@ -533,6 +538,7 @@ export default function QuotationDetailPage() {
                     {selectedOffer.fareFamily.name}
                   </span>
                 )}
+                {testFare ? <TestContentBadge /> : null}
               </div>
 
               <div className="space-y-4">
@@ -1060,6 +1066,11 @@ export default function QuotationDetailPage() {
       */}
       {shouldShowBookingForm(bookingResult) && (
         <div className="mt-5">
+          {/* Se puede reservar igual —sirve para probar el flujo—, pero quien lo hace lo sabe
+              antes de cargar a un pasajero real. */}
+          {testFare ? (
+            <TestContentNotice className="mb-3">{TEST_BOOKING_NOTICE}</TestContentNotice>
+          ) : null}
           <PassengerForm
             paxCount={searchCriteria.paxCount}
             customerName={customerName || undefined}

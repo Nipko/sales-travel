@@ -58,6 +58,11 @@ export interface Offer {
     offerRef: string;
     source?: string;
     raw?: Record<string, unknown>;
+    /**
+     * `test` = la cotizó una cuenta de pruebas del proveedor: no emite tiquetes reales. Lo escribe
+     * el API desde la cuenta que resolvió; ausente es real. Ver `lib/test-content.ts`.
+     */
+    environment?: 'test' | 'live';
   };
   total: Money;
   baseFare: Money;

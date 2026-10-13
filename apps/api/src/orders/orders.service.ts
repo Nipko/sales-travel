@@ -39,6 +39,7 @@ import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
+import { stampProviderEnvironment } from '../providers/provider-environment.js';
 import {
   supportsAuditedCancel,
   supportsAuditedCreate,
@@ -410,20 +411,27 @@ export class OrdersService {
   async createOrder(
     tenantId: string,
     userId: string,
-    dto: CreateOrderDto,
+    requested: CreateOrderDto,
     clientRequestId?: string,
   ): Promise<{ order: OrderRow; providerResult: OrderCreateResult; saga: SagaDecision }> {
-    if (dto.offer.tenantId !== tenantId) {
+    if (requested.offer.tenantId !== tenantId) {
       throw new BadRequestException('La oferta no pertenece a la agencia activa.');
     }
-    this.assertCreateRequestConsistency(dto);
-    const requestKey = createRequestKey(dto.quotationId, clientRequestId);
+    this.assertCreateRequestConsistency(requested);
+    const requestKey = createRequestKey(requested.quotationId, clientRequestId);
 
-    const providerCode = dto.offer.provider.name;
+    const providerCode = requested.offer.provider.name;
     // Es la única venta de este servicio: si la plataforma apagó el proveedor para el tenant, no se
     // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
     // `flightProvider`, que no mira la habilitación.
     const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
+    // El entorno de la cuenta con la que se va a reservar, no el que mandó el navegador: es lo que
+    // decide si la orden es una reserva de prueba (sin correo automático al pasajero, marcada en
+    // Reservas). Se escribe ANTES del claim para que la fila `pending` ya nazca marcada.
+    const dto: CreateOrderDto = {
+      ...requested,
+      offer: stampProviderEnvironment(requested.offer, provider.environment),
+    };
 
     // El claim se inserta antes de priceOffer/createOrder. Una colisión termina aquí, sin tocar el
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.
@@ -452,6 +460,9 @@ export class OrdersService {
         aggregateId: intent.id,
         payload: {
           provider: providerCode,
+          // Una reserva contra una cuenta de pruebas no es una venta: el evento lo dice para que
+          // nadie la concilie ni la cuente como tal.
+          environment: provider.environment,
           offerRef: verifiedDto.offer.provider.offerRef ?? null,
           amountMinor: verifiedDto.offer.pricing?.finalMinor ?? verifiedDto.offer.total.amountMinor,
           currency: verifiedDto.offer.total.currency,
@@ -669,7 +680,9 @@ export class OrdersService {
 
     // El adapter puede construir su respuesta sobre la oferta de entrada y, por tanto, arrastrar
     // un `pricing` manipulado por el cliente. Se quita siempre y se vuelve a calcular desde BD.
-    const { pricing: _untrustedPricing, ...providerOffer } = checked.offer;
+    // El entorno, por lo mismo, se vuelve a escribir desde la cuenta resuelta.
+    const { pricing: _untrustedPricing, ...checkedOffer } = checked.offer;
+    const providerOffer = stampProviderEnvironment(checkedOffer, provider.environment);
     const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
     const offer: Offer =
       rules.length === 0
