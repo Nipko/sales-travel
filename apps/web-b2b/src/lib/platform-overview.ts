@@ -1,4 +1,12 @@
 import type { Route } from 'next';
+import {
+  ATTENTION_REASON_LABEL,
+  ATTENTION_REASON_PRIORITY,
+  CRITICAL_REASONS,
+  ORDER_ATTENTION_REASONS,
+  isOrderAttentionReason,
+  type OrderAttentionReason,
+} from './attention-labels';
 import { PLATFORM_CARTERAS, STALE_AFTER_MS, sinceLabel } from './deposit-approvals';
 import { providerMetaFor } from './provider-display';
 import type { Viewer } from './viewer';
@@ -20,6 +28,17 @@ export const PLATFORM_HOME: Route = '/admin/plataforma/resumen';
  * usuarios de la plataforma (`/admin/plataforma/usuarios`), la tarjeta apunta allá.
  */
 export const INVITATIONS_HREF: Route = '/admin/usuarios';
+
+/** Plataforma → Reservas de la red. */
+export const PLATFORM_RESERVAS: Route = '/admin/plataforma/reservas';
+
+/** Las reservas de la red que necesitan a una persona (`?atencion=1`, lib/platform-orders). */
+export const ATTENTION_ORDERS_HREF: Route = `${PLATFORM_RESERVAS}?atencion=1`;
+
+/** Reservas de la red con la ficha de esta reserva abierta (`?orden=`, lib/platform-orders). */
+export function platformOrderHref(orderId: string): Route {
+  return `${PLATFORM_RESERVAS}?orden=${encodeURIComponent(orderId)}`;
+}
 
 /** Los días del Resumen son de Bogotá, como en el API: Planetour opera desde Colombia. */
 export const PLATFORM_TIME_ZONE = 'America/Bogota';
@@ -224,58 +243,6 @@ export interface PostSaleType {
 }
 
 // ───────────────────────────── Reservas con problemas ─────────────────────────────
-
-/**
- * Por qué una reserva necesita a una persona: el vocabulario cerrado de `admin_order_attention()`
- * (0075 §7, apps/api/src/admin-console/attention.ts). Un motivo que esta versión no conoce se ignora.
- */
-export const ORDER_ATTENTION_REASONS = [
-  'review',
-  'verifying-long',
-  'create-stuck',
-  'cancel-failed',
-  'hold-conflict',
-  'hold-orphan',
-  'hcn-missing',
-  'reconciliation',
-] as const;
-
-export type OrderAttentionReason = (typeof ORDER_ATTENTION_REASONS)[number];
-
-/** Cómo se nombra cada motivo en el Resumen (y en la consola de Reservas de la red). */
-export const ATTENTION_REASON_LABEL: Readonly<Record<OrderAttentionReason, string>> = {
-  review: 'En revisión con el proveedor',
-  'verifying-long': 'Verificación demorada',
-  'create-stuck': 'Creación sin respuesta',
-  'cancel-failed': 'Cancelación fallida',
-  'hold-conflict': 'Retención de cartera en conflicto',
-  'hold-orphan': 'Saldo retenido sin reserva',
-  'hcn-missing': 'Sin confirmación del hotel (HCN)',
-  reconciliation: 'Diferencia en la conciliación',
-};
-
-/** De lo más grave a lo menos, como ATTENTION_PRIORITY del API. */
-const ATTENTION_REASON_PRIORITY: readonly OrderAttentionReason[] = [
-  'hold-orphan',
-  'hold-conflict',
-  'cancel-failed',
-  'review',
-  'create-stuck',
-  'reconciliation',
-  'hcn-missing',
-  'verifying-long',
-];
-
-/** Lo que tiene plata trabada o una cancelación que no salió: urgente. */
-const CRITICAL_REASONS: ReadonlySet<OrderAttentionReason> = new Set([
-  'hold-orphan',
-  'hold-conflict',
-  'cancel-failed',
-]);
-
-export function isOrderAttentionReason(value: unknown): value is OrderAttentionReason {
-  return (ORDER_ATTENTION_REASONS as readonly unknown[]).includes(value);
-}
 
 export interface OrderAttentionSample {
   readonly orderId: string;
@@ -979,8 +946,10 @@ function ordersItem(orders: OrderAttention, now: number): AttentionItem | undefi
           since === ''
             ? ATTENTION_REASON_LABEL[sample.reason]
             : `${ATTENTION_REASON_LABEL[sample.reason]} · desde ${since}`,
+        href: platformOrderHref(sample.orderId),
       };
     }),
+    action: { label: 'Ver todas', href: ATTENTION_ORDERS_HREF },
   };
 }
 

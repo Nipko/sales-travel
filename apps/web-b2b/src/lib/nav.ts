@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   Calendar,
+  CalendarCheck,
   Car,
   FileText,
   Home,
@@ -66,11 +67,13 @@ export const accountNav: NavItem[] = [
 
 /**
  * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
- * se sumen (Usuarios, Reservas, Actividad, Sistema) se agregan a este mismo arreglo.
+ * se sumen (Usuarios, Actividad, Sistema) se agregan a este mismo arreglo.
  */
 export const superAdminNav: NavItem[] = [
   { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
   { label: 'Agencias', href: '/admin/tenants', icon: Building2 },
+  // Las reservas de toda la red. Mis Reservas no: la plataforma no vende y no tiene reservas propias.
+  { label: 'Reservas', href: '/admin/plataforma/reservas', icon: CalendarCheck },
   {
     label: 'Carteras',
     href: '/admin/plataforma/carteras',
@@ -92,6 +95,9 @@ const ADMIN_NAV_ROLES: readonly string[] = [
   'admin',
 ];
 
+/** Mis Reservas: las reservas del tenant activo. */
+const MY_ORDERS_HREF = '/reservas';
+
 export interface NavSection {
   label: string;
   items: NavItem[];
@@ -103,9 +109,13 @@ export interface NavSection {
  */
 export function navSections(role: string | undefined, viewer: Viewer): NavSection[] {
   const platform = role === 'superadmin';
+  // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts). Con la plataforma
+  // activa tampoco Mis Reservas: su tenant no tiene reservas, las de la red están en Plataforma.
+  const operations = navForViewer(operationsNav, viewer).filter(
+    (item) => !platform || item.href !== MY_ORDERS_HREF,
+  );
   const sections: NavSection[] = [
-    // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts).
-    { label: 'Operaciones', items: navForViewer(operationsNav, viewer) },
+    { label: 'Operaciones', items: operations },
     // La plataforma va primero entre lo suyo; Gestión (Clientes, Cartera B2B, Reportes) mostraría
     // los datos del tenant de la plataforma, que no vende: vacíos.
     ...(platform
