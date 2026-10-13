@@ -82,6 +82,17 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
+/** Cabeceras recibidas y el cuerpo se corta a medias, como un socket reseteado. */
+function cutBody(status: number): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"results":[{"ancil'));
+      controller.error(new TypeError('socket hang up 4111111111111111'));
+    },
+  });
+  return new Response(stream, { status });
+}
+
 function client(
   spy: FetchSpy,
   extras: {
@@ -667,5 +678,76 @@ describe('SabreHttpClient — semáforo de concurrencia por cuenta', () => {
 
     gated.releaseNext();
     await ocupa;
+  });
+});
+
+describe('SabreHttpClient — Stateless Ancillaries: agregar y quitar escriben en el PNR (SAB-19)', () => {
+  // Literales y no las constantes del builder: lo que se fija es la ruta del contrato
+  // (`stateless-ancillaries-api-1.0.yml:11`, `:47`, `:66`), no lo que el builder diga hoy. Las dos
+  // llevan `isCommitEnabled`: un alta reintentada tras un timeout cobra la maleta dos veces.
+  const WRITES = ['/v1/dc/ancillaries/add', '/v1/dc/ancillaries/remove'] as const;
+
+  it('las dos rutas de escritura están en la lista', () => {
+    for (const path of WRITES) expect(SABRE_NON_IDEMPOTENT_PATHS).toContain(path);
+  });
+
+  it.each(WRITES)('%s no se reintenta tras un 503 ni un 401, aunque se pida', async (path) => {
+    for (const status of [503, 401]) {
+      const spy = spyFetch(() => json({ message: 'down' }, status));
+      const { http, tokens } = client(spy);
+      await expect(http.postJson(path, {}, { idempotent: true })).rejects.toBeInstanceOf(
+        SabreApiError,
+      );
+      expect(spy.calls).toHaveLength(1);
+      expect(tokens.invalidated).toBe(0);
+    }
+  });
+
+  it('/v1/dc/ancillaries/shop es una lectura: con idempotent sí se reintenta', async () => {
+    const spy = spyFetch((n) =>
+      n === 1 ? json({ message: 'down' }, 503) : json({ offers: [{ id: 'o', items: [{}] }] }),
+    );
+    const { http } = client(spy);
+    const result = await http.postJson('/v1/dc/ancillaries/shop', {}, { idempotent: true });
+    expect(result.status).toBe(200);
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it('un cuerpo cortado tras las cabeceras es fallo de transporte: la escritura no se reintenta', async () => {
+    // `fetch` resuelve con las cabeceras; el alta ya llegó y puede estar aplicada. Antes salía un
+    // `TypeError` crudo, que el adapter lee como «no se escribió nada».
+    for (const path of WRITES) {
+      const spy = spyFetch(() => cutBody(200));
+      const { http } = client(spy);
+      const error = await http.postJson(path, {}, { idempotent: true }).then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      expect(error).toBeInstanceOf(SabreApiError);
+      expect((error as SabreApiError).status).toBe(0);
+      expect((error as SabreApiError).failure.kind).toBe('TRANSPORT');
+      expect((error as SabreApiError).message).not.toContain('socket');
+      expect((error as SabreApiError).message).not.toContain('4111');
+      expect(spy.calls).toHaveLength(1);
+    }
+  });
+
+  it('un cuerpo cortado en /shop sí se reintenta: es una lectura', async () => {
+    const spy = spyFetch((n) => (n === 1 ? cutBody(200) : json({ offers: [{ id: 'o' }] })));
+    const { http } = client(spy);
+    const result = await http.postJson('/v1/dc/ancillaries/shop', {}, { idempotent: true });
+    expect(result.status).toBe(200);
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it('un {} en /v1/dc/ancillaries/remove no es éxito: no es el contrato de Manage Ancillary', async () => {
+    // `SABRE_EMPTY_BODY_SUCCESS_PATHS` admite `{}` en `/v1/ancillaries/remove`, cuyo schema sólo
+    // declara `errors[]`. El de Stateless declara `results[]`: aquí `{}` es un fallo silencioso.
+    const spy = spyFetch(() => json({}));
+    const { http } = client(spy);
+    await expect(http.postJson('/v1/dc/ancillaries/remove', {})).rejects.toBeInstanceOf(
+      SabreApiError,
+    );
+    expect(spy.calls).toHaveLength(1);
   });
 });

@@ -1,9 +1,12 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import { SABRE_HOSTS, type SabreConfig } from '../config';
 import { SabreConfigError } from '../errors';
 import {
   SABRE_BFM_VERSION,
+  SABRE_DATA_SOURCES,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
   type SabreShopOptions,
@@ -62,6 +65,58 @@ function collectValues(node: unknown, key: string): string[] {
   return entries.flatMap(([k, v]) =>
     k === key && typeof v === 'string' ? [v] : collectValues(v, key),
   );
+}
+
+/** Sube hasta la raíz del monorepo: vitest puede arrancar desde la raíz o desde el paquete. */
+function findRepoRoot(): string {
+  let dir = process.cwd();
+  for (;;) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error('no se encontró la raíz del monorepo');
+    dir = parent;
+  }
+}
+
+/**
+ * Fuentes de `TPA_Extensions.DataSources` y su `enum`, leídas de `bargain-finder-max-v5.yml`
+ * (`:6237-6262`) sin cargar un parser de YAML de 3,9 MB. El bloque es plano y de indentación fija,
+ * y `spec-manifest.test.ts` ya vigila que el `.yml` no cambie por debajo.
+ */
+function specDataSources(): ReadonlyMap<string, readonly string[]> {
+  const spec = readFileSync(
+    join(findRepoRoot(), 'docs', 'sabre', 'evidence', 'specs', 'bargain-finder-max-v5.yml'),
+    'utf8',
+  ).split(/\r?\n/);
+  const header = '    OTA_AirLowFareSearchRQ.TravelPreferences.TPA_Extensions.DataSources:';
+  const start = spec.findIndex((line) => line === header);
+  if (start < 0) throw new Error('no se encontró DataSources en el contrato de BFM v5');
+
+  const sources = new Map<string, string[]>();
+  let current: string[] | undefined;
+  let insideEnum = false;
+  for (const line of spec.slice(start + 1)) {
+    if (/^ {4}\S/.test(line)) break;
+    const property = /^ {8}([A-Za-z]+):\s*$/.exec(line);
+    if (property?.[1] !== undefined) {
+      current = [];
+      sources.set(property[1], current);
+      insideEnum = false;
+      continue;
+    }
+    if (/^ {10}enum:\s*$/.test(line)) {
+      insideEnum = true;
+      continue;
+    }
+    const value = /^ {12}- (.+)$/.exec(line);
+    if (insideEnum && current !== undefined && value?.[1] !== undefined) {
+      current.push(value[1].trim());
+      continue;
+    }
+    insideEnum = false;
+  }
+  if (sources.size === 0) throw new Error('DataSources sin propiedades en el contrato');
+  return sources;
 }
 
 describe('versión del servicio', () => {
@@ -174,6 +229,8 @@ describe('MultipleSourcePerItinerary es constante, no opción', () => {
     ['con tier 200ITINS', { itineraryTier: '200ITINS' }],
     ['con numTrips 1', { numTrips: 1 }],
     ['sin preferencia NDC en empate', { preferNdcSourceOnTie: false }],
+    ['con contenido NDC', { ndcContent: true }],
+    ['sin contenido NDC', { ndcContent: false }],
   ];
 
   it.each(optionCases)('%s sigue valiendo true', (_name, options) => {
@@ -183,12 +240,95 @@ describe('MultipleSourcePerItinerary es constante, no opción', () => {
   });
 });
 
-describe('DataSources: NDC y ATPCO a la vez, LCC fuera', () => {
-  it('las tres propiedades viajan con su valor de Ola 1', () => {
+describe('DataSources: ATPCO siempre, NDC sólo si la cuenta lo habilita, LCC fuera', () => {
+  it('por defecto NO pide NDC: el mapper lo descartaría y se paga en latencia y payload', () => {
     expect(build().TravelPreferences.TPA_Extensions.DataSources).toEqual({
-      NDC: 'Enable',
+      NDC: 'Disable',
       ATPCO: 'Enable',
       LCC: 'Disable',
+    });
+  });
+
+  it('con ndcContent pide NDC y ATPCO en la misma llamada', () => {
+    expect(
+      build({}, {}, { ndcContent: true }).TravelPreferences.TPA_Extensions.DataSources,
+    ).toEqual({ NDC: 'Enable', ATPCO: 'Enable', LCC: 'Disable' });
+  });
+
+  it('ndcContent false explícito es lo mismo que no decir nada', () => {
+    expect(
+      build({}, {}, { ndcContent: false }).TravelPreferences.TPA_Extensions.DataSources,
+    ).toEqual(build().TravelPreferences.TPA_Extensions.DataSources);
+  });
+
+  it('el valor llega así al cable, no sólo al objeto', () => {
+    const encendido = JSON.stringify(
+      buildSabreShopRequest(criteria(), cfg(), { ndcContent: true }),
+    );
+    const apagado = JSON.stringify(buildSabreShopRequest(criteria(), cfg()));
+    expect(encendido).toContain('"DataSources":{"NDC":"Enable","ATPCO":"Enable","LCC":"Disable"}');
+    expect(apagado).toContain('"DataSources":{"NDC":"Disable","ATPCO":"Enable","LCC":"Disable"}');
+  });
+
+  it('encender NDC en una petición no lo enciende en la siguiente: el default no se muta', () => {
+    const encendida = build({}, {}, { ndcContent: true });
+    const siguiente = build();
+    expect(encendida.TravelPreferences.TPA_Extensions.DataSources.NDC).toBe('Enable');
+    expect(siguiente.TravelPreferences.TPA_Extensions.DataSources.NDC).toBe('Disable');
+    expect(SABRE_DATA_SOURCES.NDC).toBe('Disable');
+    expect(encendida.TravelPreferences.TPA_Extensions.DataSources).not.toBe(SABRE_DATA_SOURCES);
+  });
+
+  it.each([['true'], ['Enable'], [1], [null]])(
+    'ndcContent=%j no es un booleano: falla con error tipado y sin repetir el valor',
+    (valor) => {
+      const options = { ndcContent: valor } as unknown as SabreShopOptions;
+      let mensaje = '';
+      try {
+        build({}, {}, options);
+      } catch (err) {
+        expect(err).toBeInstanceOf(SabreConfigError);
+        mensaje = (err as Error).message;
+      }
+      expect(mensaje).toContain('ndcContent');
+      expect(mensaje).not.toContain('Enable');
+    },
+  );
+
+  it('ndcContent no cambia nada fuera de DataSources.NDC', () => {
+    const conNdc = build({}, {}, { ndcContent: true });
+    const sinNdc = build();
+    const { DataSources: _a, ...restoConNdc } = conNdc.TravelPreferences.TPA_Extensions;
+    const { DataSources: _b, ...restoSinNdc } = sinNdc.TravelPreferences.TPA_Extensions;
+    expect(restoConNdc).toEqual(restoSinNdc);
+    expect(conNdc.TPA_Extensions).toEqual(sinNdc.TPA_Extensions);
+    expect(conNdc.TravelerInfoSummary).toEqual(sinNdc.TravelerInfoSummary);
+    expect(conNdc.POS).toEqual(sinNdc.POS);
+  });
+
+  it.each([
+    ['apagado por defecto', {}],
+    ['encendido por cuenta', { ndcContent: true }],
+  ] as const)(
+    'con NDC %s, cada fuente y cada valor existen en el contrato congelado',
+    (_caso, options) => {
+      // `Disable` en NDC es un valor que este builder nunca había mandado. El enum sale del `.yml`
+      // y no de memoria: una errata (`Disabled`) no la rechaza nadie hasta que Sabre responde.
+      const contrato = specDataSources();
+      const enviadas = build({}, {}, options).TravelPreferences.TPA_Extensions.DataSources;
+
+      expect(Object.keys(enviadas).sort()).toEqual([...contrato.keys()].sort());
+      for (const [fuente, valor] of Object.entries(enviadas)) {
+        expect(contrato.get(fuente)).toContain(valor);
+      }
+    },
+  );
+
+  it('el contrato declara las tres fuentes con Enable|Disable', () => {
+    expect(Object.fromEntries(specDataSources())).toEqual({
+      ATPCO: ['Enable', 'Disable'],
+      LCC: ['Enable', 'Disable'],
+      NDC: ['Enable', 'Disable'],
     });
   });
 

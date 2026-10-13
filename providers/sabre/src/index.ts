@@ -147,3 +147,31 @@ export * from './sabre-offer-price.adapter';
 export * from './sabre-flight-check.adapter';
 export * from './sabre-order-create.adapter';
 export * from './sabre-order-manage.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Mapa de asientos — Get Seats v3, carril de agencia (SAB-15)
+//
+// Bloque propio y al final a propósito: los tres módulos se publican con `export *` y todos sus
+// nombres llevan el prefijo `SabreGetSeats`/`SABRE_GETSEATS_`/`SabreSeatMap`, así que no pueden
+// volver ambiguo ningún símbolo de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './seats/getseats.request.builder';
+export * from './seats/getseats.response.mapper';
+export * from './sabre-seat-map.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Ancillares ATPCO — Stateless Ancillaries 1.0 (SAB-19)
+//
+// Bloque propio y al final, como el de asientos: los siete módulos se publican con `export *` y
+// todos sus nombres llevan `SabreAncillar`, `SABRE_ANCILLAR` o `sabreAncillar`, así que
+// no pueden volver ambiguo ningún símbolo de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './ancillaries/shop.request.builder';
+export * from './ancillaries/shop.response.mapper';
+export * from './ancillaries/add.request.builder';
+export * from './ancillaries/add.response.mapper';
+export * from './ancillaries/remove.request.builder';
+export * from './ancillaries/remove.response.mapper';
+export * from './sabre-ancillary.adapter';
