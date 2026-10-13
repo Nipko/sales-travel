@@ -18,9 +18,13 @@ import { AdminController } from './admin.controller.js';
 import {
   ChangeRoleSchema,
   CreateTenantSchema,
+  decodePlatformUsersCursor,
+  encodePlatformUsersCursor,
   InviteUserSchema,
+  ListPlatformUsersQuerySchema,
   MembershipImpactQuerySchema,
   MoveTenantSchema,
+  SetUserStatusSchema,
   TenantIdParamSchema,
   UpdateSeatsSchema,
   UpdateTenantSchema,
@@ -30,6 +34,8 @@ import { InvitationsController } from './invitations.controller.js';
 import type { InvitationsService } from './invitations.service.js';
 import { MemberSupportController } from './member-support.controller.js';
 import type { MemberSupportService } from './member-support.service.js';
+import { LastSuperadminError, UserNotFoundError } from './platform-users.errors.js';
+import type { PlatformUsersService } from './platform-users.service.js';
 import { SeatsController } from './seats.controller.js';
 import { TenantSeatsSuperadminOnlyError } from './seats.policy.js';
 import type { SeatsService } from './seats.service.js';
@@ -65,6 +71,11 @@ function banco({
     orphanedInvitations: vi.fn(() => Promise.resolve([])),
     revokeOrphaned: vi.fn(() => Promise.resolve([])),
   };
+  const platformUsers = {
+    list: vi.fn(() => Promise.resolve({ users: [], nextCursor: null })),
+    footprint: vi.fn(() => Promise.resolve({ activeMemberships: 0, liveSessions: 0 })),
+    assertNotLastSuperadmin: vi.fn(() => Promise.resolve()),
+  };
   const controller = new AdminController(
     db as unknown as DatabaseService,
     network as unknown as NetworkService,
@@ -73,8 +84,9 @@ function banco({
     tenants as unknown as TenantsService,
     seats as unknown as SeatsService,
     invitations as unknown as InvitationsService,
+    platformUsers as unknown as PlatformUsersService,
   );
-  return { controller, network, tenants, db, seats, invitations };
+  return { controller, network, tenants, db, seats, invitations, platformUsers };
 }
 
 describe('AdminController: corrección de la red, sólo superadmin', () => {
@@ -395,6 +407,190 @@ describe('los rechazos llegan a Equipo tal cual: en tú y en castellano', () => 
   });
 });
 
+/**
+ * Una base que corre lo que le pasan: el UPDATE de `users` toca `filas` filas. Para seguir el orden
+ * de la suspensión de una cuenta (guarda, cambio, sesiones, invitaciones, evento) sin Postgres.
+ */
+function bancoCuenta({ filas = 1n, superadmin = true } = {}) {
+  const orden: string[] = [];
+  const update = {
+    set: vi.fn(() => update),
+    where: vi.fn(() => update),
+    execute: vi.fn(() => {
+      orden.push('update');
+      return Promise.resolve([]);
+    }),
+    executeTakeFirstOrThrow: vi.fn(() => {
+      orden.push('update');
+      return Promise.resolve({ numUpdatedRows: filas });
+    }),
+  };
+  const trx = { updateTable: vi.fn(() => update) };
+  const db = {
+    withRequestContext: vi.fn((_ctx: unknown, fn: (t: unknown) => Promise<unknown>) => fn(trx)),
+  };
+  const sessions = {
+    revokeAllForUser: vi.fn(() => {
+      orden.push('sesiones');
+      return Promise.resolve(2);
+    }),
+  };
+  const invitations = {
+    orphanedInvitations: vi.fn(() => {
+      orden.push('huérfanas');
+      return Promise.resolve([{ id: 'i-1' }, { id: 'i-2' }, { id: 'i-3' }]);
+    }),
+    revokeOrphaned: vi.fn(() => {
+      orden.push('invitaciones');
+      return Promise.resolve([{ id: 'i-1' }]);
+    }),
+  };
+  const audit = {
+    emitWithin: vi.fn(() => {
+      orden.push('evento');
+      return Promise.resolve();
+    }),
+  };
+  const platformUsers = {
+    list: vi.fn(() => Promise.resolve({ users: [], nextCursor: null })),
+    footprint: vi.fn(() => Promise.resolve({ activeMemberships: 2, liveSessions: 1 })),
+    assertNotLastSuperadmin: vi.fn(() => {
+      orden.push('guarda');
+      return Promise.resolve();
+    }),
+  };
+  const controller = new AdminController(
+    db as unknown as DatabaseService,
+    { isSuperadmin: vi.fn(() => Promise.resolve(superadmin)) } as unknown as NetworkService,
+    audit as unknown as AuditService,
+    sessions as unknown as SessionService,
+    {} as TenantsService,
+    {} as SeatsService,
+    invitations as unknown as InvitationsService,
+    platformUsers as unknown as PlatformUsersService,
+  );
+  return { controller, orden, update, sessions, invitations, audit, platformUsers };
+}
+
+describe('Plataforma → Usuarios: directorio y cuenta en toda la plataforma, sólo superadmin', () => {
+  it.each([
+    ['el directorio', (c: AdminController, u?: string) => c.listUsers(u, { q: 'ana' })],
+    ['el impacto de suspender', (c: AdminController, u?: string) => c.userImpact(u, OTRO)],
+    [
+      'suspender la cuenta',
+      (c: AdminController, u?: string) => c.setUserStatus(u, { userId: OTRO, status: 'suspended' }),
+    ],
+  ])('%s: 401 sin sesión y 403 a un admin de red; el servicio no se entera', async (_q, call) => {
+    const { controller, platformUsers, db } = banco({
+      superadmin: false,
+      roleOver: 'consolidator_admin',
+    });
+
+    await expect(call(controller, undefined)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(call(controller, ACTOR)).rejects.toThrow(
+      'Esta acción es sólo para el superadmin.',
+    );
+    for (const fn of Object.values(platformUsers)) expect(fn).not.toHaveBeenCalled();
+    expect(db.withRequestContext).not.toHaveBeenCalled();
+  });
+
+  it('el directorio le pasa al servicio el actor y los filtros tal cual', async () => {
+    const { controller, platformUsers } = banco({ superadmin: true });
+    const query = { q: 'ana', status: 'active' as const, limit: 20 };
+
+    await expect(controller.listUsers(ACTOR, query)).resolves.toEqual({
+      users: [],
+      nextCursor: null,
+    });
+    expect(platformUsers.list).toHaveBeenCalledWith(ACTOR, query);
+  });
+
+  it('impacto: nodos y sesiones de la cuenta, y las invitaciones que revocaría sin escribir nada', async () => {
+    const { controller, platformUsers, invitations, update, orden } = bancoCuenta();
+
+    await expect(controller.userImpact(ACTOR, OTRO)).resolves.toEqual({
+      activeMemberships: 2,
+      liveSessions: 1,
+      invitationsToRevoke: 3,
+    });
+    expect(platformUsers.footprint).toHaveBeenCalledWith(ACTOR, OTRO);
+    // Simula la suspensión y pregunta por TODAS sus invitaciones, sin acotar a un nodo.
+    expect(update.set).toHaveBeenCalledWith({ status: 'suspended' });
+    expect(invitations.orphanedInvitations).toHaveBeenCalledWith(expect.anything(), {
+      inviterUserId: OTRO,
+    });
+    expect(orden).toEqual(['update', 'huérfanas']);
+    expect(invitations.revokeOrphaned).not.toHaveBeenCalled();
+  });
+
+  it('impacto: sobre uno mismo es 403 sin mirar nada; una cuenta que no existe, 404', async () => {
+    const yo = bancoCuenta();
+    await expect(yo.controller.userImpact(ACTOR, ACTOR)).rejects.toThrow(
+      'no puedes suspender tu propio usuario',
+    );
+    expect(yo.platformUsers.footprint).not.toHaveBeenCalled();
+
+    const nadie = bancoCuenta();
+    nadie.platformUsers.footprint.mockRejectedValueOnce(new UserNotFoundError());
+    await expect(nadie.controller.userImpact(ACTOR, OTRO)).rejects.toMatchObject({
+      reason: 'USER_NOT_FOUND',
+      message: 'Ese usuario no existe.',
+    });
+    expect(nadie.invitations.orphanedInvitations).not.toHaveBeenCalled();
+  });
+
+  it('suspender: guarda del último superadmin, cambio, sesiones, invitaciones y evento, en ese orden', async () => {
+    const { controller, orden, platformUsers } = bancoCuenta();
+
+    await expect(
+      controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
+    ).resolves.toEqual({
+      id: OTRO,
+      status: 'suspended',
+      revokedSessions: 2,
+      revokedInvitations: 1,
+    });
+    expect(platformUsers.assertNotLastSuperadmin).toHaveBeenCalledWith(expect.anything(), OTRO);
+    expect(orden).toEqual(['guarda', 'update', 'sesiones', 'invitaciones', 'evento']);
+  });
+
+  it('suspender al último superadmin activo: 409 con motivo y no cambia nada', async () => {
+    const { controller, platformUsers, update, sessions, audit } = bancoCuenta();
+    platformUsers.assertNotLastSuperadmin.mockRejectedValueOnce(new LastSuperadminError());
+
+    const res = controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' });
+    await expect(res).rejects.toBeInstanceOf(LastSuperadminError);
+    await expect(res).rejects.toMatchObject({
+      reason: 'LAST_SUPERADMIN',
+      message: 'Es el último superadmin activo: no se puede suspender.',
+    });
+    expect(update.executeTakeFirstOrThrow).not.toHaveBeenCalled();
+    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(audit.emitWithin).not.toHaveBeenCalled();
+  });
+
+  it('una cuenta que no existe: 404 con motivo, sin revocar nada ni dejar evento', async () => {
+    const { controller, sessions, invitations, audit } = bancoCuenta({ filas: 0n });
+
+    await expect(
+      controller.setUserStatus(ACTOR, { userId: OTRO, status: 'suspended' }),
+    ).rejects.toMatchObject({ reason: 'USER_NOT_FOUND', message: 'Ese usuario no existe.' });
+    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(invitations.revokeOrphaned).not.toHaveBeenCalled();
+    expect(audit.emitWithin).not.toHaveBeenCalled();
+  });
+
+  it('reactivar no pasa por la guarda ni revoca nada; queda el evento', async () => {
+    const { controller, orden, platformUsers } = bancoCuenta();
+
+    await expect(
+      controller.setUserStatus(ACTOR, { userId: OTRO, status: 'active' }),
+    ).resolves.toEqual({ id: OTRO, status: 'active', revokedSessions: 0, revokedInvitations: 0 });
+    expect(platformUsers.assertNotLastSuperadmin).not.toHaveBeenCalled();
+    expect(orden).toEqual(['update', 'evento']);
+  });
+});
+
 describe('RolesGuard con la metadata REAL del controlador', () => {
   const guard = new RolesGuard(new Reflector());
   const ctxOf = (controller: unknown) =>
@@ -685,6 +881,128 @@ describe('Zod en los bordes', () => {
       ['campos de más', { ...ids, status: 'suspended', dryRun: 'false' }],
     ])('rechaza: %s', (_q, query) => {
       expect(() => impacto.transform(query)).toThrow(BadRequestException);
+    });
+  });
+
+  describe('directorio de usuarios de la plataforma', () => {
+    const directorio = new ZodValidationPipe(ListPlatformUsersQuerySchema);
+
+    it('sin filtros; los filtros que vienen, con la búsqueda recortada, el nodo en minúsculas y el tamaño como texto', () => {
+      expect(directorio.transform({})).toEqual({});
+      expect(
+        directorio.transform({
+          q: '  ana  ',
+          status: 'suspended',
+          role: 'superadmin',
+          tenantId: NODO.toUpperCase(),
+          mfa: 'off',
+          locked: 'true',
+          neverLoggedIn: 'true',
+          limit: '20',
+        }),
+      ).toEqual({
+        q: 'ana',
+        status: 'suspended',
+        role: 'superadmin',
+        tenantId: NODO,
+        mfa: 'off',
+        locked: 'true',
+        neverLoggedIn: 'true',
+        limit: 20,
+      });
+    });
+
+    it('el cursor va y vuelve igual, con microsegundos y el id en minúsculas', () => {
+      const cursor = encodePlatformUsersCursor({
+        createdAt: '2026-10-11T12:00:00.123456Z',
+        id: OTRO,
+      });
+      expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(directorio.transform({ cursor })).toEqual({ cursor });
+      expect(decodePlatformUsersCursor(cursor)).toEqual({
+        createdAt: '2026-10-11T12:00:00.123456Z',
+        id: OTRO,
+      });
+      const mayusculas = encodePlatformUsersCursor({
+        createdAt: '2026-10-11T12:00:00Z',
+        id: OTRO.toUpperCase(),
+      });
+      expect(decodePlatformUsersCursor(mayusculas)?.id).toBe(OTRO);
+    });
+
+    it.each([
+      ['una búsqueda vacía', { q: '   ' }],
+      ['una búsqueda de más de 100', { q: 'a'.repeat(101) }],
+      ['un estado desconocido', { status: 'invited' }],
+      ['un rol retirado', { role: 'platform_admin' }],
+      ['un rol inventado', { role: 'jefe' }],
+      ['un nodo que no es uuid', { tenantId: 'planetour' }],
+      ['2FA que no es on/off', { mfa: 'yes' }],
+      ['un filtro de bandera en false', { locked: 'false' }],
+      ['tamaño 0', { limit: '0' }],
+      ['tamaño 101', { limit: '101' }],
+      ['tamaño con decimales', { limit: '5.5' }],
+      ['un cursor que no es base64url', { cursor: 'no es un cursor' }],
+      [
+        'un cursor sin instante válido',
+        {
+          cursor: Buffer.from(JSON.stringify({ createdAt: 'ayer', id: OTRO })).toString(
+            'base64url',
+          ),
+        },
+      ],
+      [
+        'un cursor sin uuid',
+        {
+          cursor: Buffer.from(
+            JSON.stringify({ createdAt: '2026-10-11T12:00:00Z', id: '1' }),
+          ).toString('base64url'),
+        },
+      ],
+      ['parámetros de más', { q: 'ana', page: '2' }],
+    ])('rechaza: %s', (_q, query) => {
+      expect(() => directorio.transform(query)).toThrow(BadRequestException);
+    });
+
+    it('un cursor que no es JSON o no es objeto no se lee', () => {
+      expect(decodePlatformUsersCursor(Buffer.from('{').toString('base64url'))).toBeUndefined();
+      expect(decodePlatformUsersCursor(Buffer.from('7').toString('base64url'))).toBeUndefined();
+      expect(
+        decodePlatformUsersCursor(
+          Buffer.from(JSON.stringify({ createdAt: '2026-13-45T99:99:99Z', id: OTRO })).toString(
+            'base64url',
+          ),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('un cursor con un día u hora que no existe no se lee: Postgres lo rechazaba con un 500', () => {
+      const cursorAt = (createdAt: string) =>
+        decodePlatformUsersCursor(
+          Buffer.from(JSON.stringify({ createdAt, id: OTRO })).toString('base64url'),
+        );
+      expect(cursorAt('2026-02-30T00:00:00Z')).toBeUndefined();
+      expect(cursorAt('2026-01-01T24:00:00.5Z')).toBeUndefined();
+      expect(cursorAt('2026-01-01T23:60:00Z')).toBeUndefined();
+      expect(cursorAt('0000-01-01T00:00:00Z')).toBeUndefined();
+      expect(cursorAt('2024-02-29T23:59:59.999999Z')).toEqual({
+        createdAt: '2024-02-29T23:59:59.999999Z',
+        id: OTRO,
+      });
+    });
+
+    it('una búsqueda con NUL es 400: Postgres no la admite en un texto y respondía 500', () => {
+      expect(() => directorio.transform({ q: 'ana\u0000' })).toThrow(BadRequestException);
+      expect(directorio.transform({ q: 'ana_50%' })).toEqual({ q: 'ana_50%' });
+    });
+
+    it('suspender una cuenta: el id en minúsculas, para reconocer el propio', () => {
+      expect(
+        new ZodValidationPipe(SetUserStatusSchema).transform({
+          userId: OTRO.toUpperCase(),
+          status: 'suspended',
+        }),
+      ).toEqual({ userId: OTRO, status: 'suspended' });
     });
   });
 

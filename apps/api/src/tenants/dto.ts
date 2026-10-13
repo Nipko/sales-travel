@@ -41,10 +41,134 @@ export const SetMembershipStatusSchema = z.object({
 export type SetMembershipStatusDto = z.infer<typeof SetMembershipStatusSchema>;
 
 export const SetUserStatusSchema = z.object({
-  userId: z.string().uuid(),
+  // En minúsculas, como lo devuelve Postgres: si no, el chequeo de "tu propio usuario" no lo veía.
+  userId: z
+    .string()
+    .uuid()
+    .transform((v) => v.toLowerCase()),
   status: z.enum(['active', 'suspended']),
 });
 export type SetUserStatusDto = z.infer<typeof SetUserStatusSchema>;
+
+/** Dónde va el directorio: la última fila de la página anterior, en el orden (created_at, id). */
+export interface PlatformUsersCursor {
+  /** ISO 8601 en UTC con microsegundos, como lo guarda Postgres: con milisegundos saltaba filas. */
+  readonly createdAt: string;
+  readonly id: string;
+}
+
+const CURSOR_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/;
+const CURSOR_ID = z.string().uuid();
+
+/**
+ * ¿Es un instante que existe? `Date.parse` acepta "2026-02-30" o "24:00" corriéndolos al día
+ * siguiente, y Postgres los rechaza con un 500 al compararlos en el cursor. Los campos tienen que
+ * volver iguales de un `Date` armado con ellos.
+ */
+function realInstant(text: string): boolean {
+  const match = CURSOR_INSTANT.exec(text);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined ||
+    year < 1970
+  ) {
+    return false;
+  }
+  const at = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return (
+    at.getUTCFullYear() === year &&
+    at.getUTCMonth() === month - 1 &&
+    at.getUTCDate() === day &&
+    at.getUTCHours() === hour &&
+    at.getUTCMinutes() === minute &&
+    at.getUTCSeconds() === second
+  );
+}
+
+/** El cursor opaco que viaja en `nextCursor`: base64url del JSON `{ createdAt, id }`. */
+export function encodePlatformUsersCursor(cursor: PlatformUsersCursor): string {
+  return Buffer.from(JSON.stringify({ createdAt: cursor.createdAt, id: cursor.id })).toString(
+    'base64url',
+  );
+}
+
+/** El cursor leído, o `undefined` si no es uno que haya emitido el directorio. */
+export function decodePlatformUsersCursor(raw: string): PlatformUsersCursor | undefined {
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(raw)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined;
+  const { createdAt, id } = parsed as Record<string, unknown>;
+  if (typeof createdAt !== 'string' || !realInstant(createdAt)) return undefined;
+  const uuid = CURSOR_ID.safeParse(id);
+  return uuid.success ? { createdAt, id: uuid.data.toLowerCase() } : undefined;
+}
+
+/** Un filtro de la URL que sólo se activa: `?locked=true`. Ausente es "no filtrar". */
+const FlagSchema = z.literal('true', { errorMap: () => ({ message: 'sólo admite "true"' }) });
+
+/** Personas por página del directorio si no se pide otro tamaño. */
+export const PLATFORM_USERS_PAGE_SIZE = 50;
+
+/**
+ * Los roles por los que se filtra el directorio: los asignables y el superadmin. `platform_admin`
+ * está retirado (D7 B) y no se ofrece.
+ */
+export const DIRECTORY_ROLES = [...ASSIGNABLE_ROLES, 'superadmin'] as const;
+
+/**
+ * El directorio de usuarios de toda la plataforma (GET /admin/users, sólo superadmin). Todos los
+ * filtros se combinan; `role` y `tenantId` juntos piden una membership con ese rol en el subárbol de
+ * ese nodo. Parámetros de más son 400.
+ *
+ * Sin transformaciones que cambien el tipo (el cursor sigue en texto, los filtros en `'true'`):
+ * ZodValidationPipe exige que la entrada y la salida del esquema coincidan.
+ */
+export const ListPlatformUsersQuerySchema = z
+  .object({
+    // El NUL no entra en un texto de Postgres: sin esto, la búsqueda respondía 500.
+    q: z
+      .string()
+      .trim()
+      .min(1, 'escribe algo para buscar')
+      .max(100)
+      .refine((v) => !v.includes('\u0000'), 'la búsqueda tiene un carácter inválido')
+      .optional(),
+    status: z.enum(['active', 'suspended']).optional(),
+    role: z
+      .enum(DIRECTORY_ROLES, {
+        errorMap: () => ({ message: `rol inválido: usa uno de ${DIRECTORY_ROLES.join(', ')}` }),
+      })
+      .optional(),
+    /** El nodo, con todo su subárbol. */
+    tenantId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase())
+      .optional(),
+    mfa: z.enum(['on', 'off']).optional(),
+    locked: FlagSchema.optional(),
+    neverLoggedIn: FlagSchema.optional(),
+    /** El `nextCursor` de la página anterior. Lo lee el servicio (decodePlatformUsersCursor). */
+    cursor: z
+      .string()
+      .refine((raw) => decodePlatformUsersCursor(raw) !== undefined, 'cursor inválido')
+      .optional(),
+    /** Sin valor, {@link PLATFORM_USERS_PAGE_SIZE}. */
+    limit: intInRange(1, 100).optional(),
+  })
+  .strict();
+export type ListPlatformUsersQuery = z.infer<typeof ListPlatformUsersQuerySchema>;
 
 /**
  * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET

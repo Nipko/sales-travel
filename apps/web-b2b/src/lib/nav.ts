@@ -15,6 +15,7 @@ import {
   Settings,
   Shield,
   Ticket,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -76,6 +77,7 @@ export const superAdminNav: NavItem[] = [
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
   { label: 'Proveedores de la plataforma', href: '/admin/plataforma/proveedores', icon: Plug },
+  { label: 'Usuarios de la plataforma', href: '/admin/plataforma/usuarios', icon: UserCog },
 ];
 
 /** Roles que ven la sección Administración. */

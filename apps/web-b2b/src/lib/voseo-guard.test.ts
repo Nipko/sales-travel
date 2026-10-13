@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { VOSEO_WORDS, voseoIn } from './voseo';
 
 /*
- * El acceso (login, contraseña, invitación, verificación), Equipo y la seguridad de la cuenta van
- * en "tú" neutro (decisión del founder). Este guarda falla con archivo:línea si vuelve a entrar un
- * voseo, en un texto o en un comentario que lo cite. Los tests quedan afuera.
+ * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y la
+ * seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
+ * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite. Los tests
+ * quedan afuera.
  */
 
 const SRC_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -20,10 +21,12 @@ const SCANNED = [
   'app/invitacion',
   'app/verificar',
   'app/(app)/admin/usuarios',
+  'app/(app)/admin/plataforma/usuarios',
   'app/(app)/configuracion',
   'app/api/auth',
   'app/api/invitations',
   'app/api/session',
+  'app/api/admin/users',
   'components/auth',
   'components/layout',
   // El "no pudimos conectar" de cada pedido al API: llega al acceso y a Equipo.
@@ -31,6 +34,9 @@ const SCANNED = [
   'lib/read-json.ts',
   'lib/session-reasons.ts',
   'lib/viewer.ts',
+  // Plataforma → Usuarios: el directorio de toda la red y la suspensión de una cuenta.
+  'lib/platform-users.ts',
+  'lib/platform-users-proxy.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */
@@ -59,7 +65,7 @@ function allowed(file: string, line: string): boolean {
   return ALLOWED.some((entry) => entry.file === file && line.includes(entry.line));
 }
 
-describe('los textos del acceso, Equipo y la seguridad de la cuenta van en tú', () => {
+describe('los textos del acceso, Equipo, Plataforma → Usuarios y la seguridad de la cuenta van en tú', () => {
   const libDir = join(SRC_DIR, 'lib');
   const files = [
     ...SCANNED.flatMap((p) => sources(join(SRC_DIR, p))),
@@ -74,6 +80,9 @@ describe('los textos del acceso, Equipo y la seguridad de la cuenta van en tú',
     expect(rels).toContain('app/login/login-state.ts');
     expect(rels).toContain('app/(app)/admin/usuarios/_components/member-list.tsx');
     expect(rels).toContain('lib/tenant-admin-team.ts');
+    expect(rels).toContain(
+      'app/(app)/admin/plataforma/usuarios/_components/platform-users-panel.tsx',
+    );
     expect(rels.some((f) => f.endsWith('.test.ts'))).toBe(false);
   });
 
