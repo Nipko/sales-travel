@@ -1,13 +1,12 @@
-import { NextResponse } from 'next/server';
-import { api } from '../../../../../lib/api';
+import type { NextResponse } from 'next/server';
+import { networkAuditTarget } from '../../../../../lib/tenant-admin-proxy';
+import { forwardRead } from '../../../../../lib/tenant-admin-proxy-route';
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const tenantId = url.searchParams.get('tenantId') ?? '';
-  const limit = url.searchParams.get('limit') ?? '50';
-  const res = await api<unknown>(
-    `/tenants/network/audit?tenantId=${encodeURIComponent(tenantId)}&limit=${encodeURIComponent(limit)}`,
-  );
-  if (!res.ok) return NextResponse.json({ events: [] }, { status: res.error.status });
-  return NextResponse.json(res.data);
+/**
+ * La Actividad de la red (Mi Red). La consulta se reconstruye parámetro por parámetro (nodo,
+ * tamaño, cursor, categoría y persona); el estado y el motivo del API llegan a la pantalla, que
+ * distingue un 403 de un 5xx. Quién puede verla (administrar el nodo) lo decide el API.
+ */
+export async function GET(req: Request): Promise<NextResponse> {
+  return forwardRead(networkAuditTarget(new URL(req.url).searchParams));
 }
