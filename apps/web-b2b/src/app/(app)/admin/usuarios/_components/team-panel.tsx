@@ -14,6 +14,7 @@ import {
   type IssuedInvitation,
 } from '../../../../../lib/invitation-notice';
 import { readJson } from '../../../../../lib/read-json';
+import { queryWithTeamTenant } from '../../../../../lib/team-filters';
 import {
   loadInvitations,
   loadMembers,
@@ -41,6 +42,7 @@ import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/ten
 import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
 import { InviteDialog } from './invite-dialog';
+import { useTeamFilters } from './member-filters';
 import { MemberList, type MemberRowError } from './member-list';
 import { invitableRolesIn, offeredRoleLabel } from './roles';
 import { SeatsCard, useSeatsView } from './seats-ui';
@@ -142,6 +144,7 @@ export function TeamPanel({
     status: 'loading',
   });
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useTeamFilters();
   // Errores que no son de un miembro (revocar una invitación). Los de una acción sobre un miembro
   // van en su fila (`memberError`): acá arriba quedaban fuera de vista con la lista larga.
   const [actionError, setActionError] = useState('');
@@ -214,6 +217,21 @@ export function TeamPanel({
     setMemberError(null);
     void load();
   }, [load]);
+
+  /**
+   * El nodo elegido queda en la URL junto a los filtros: una recarga o un enlace abren el mismo nodo
+   * con los mismos filtros, no la raíz con filtros de otro.
+   */
+  function chooseTenant(id: string) {
+    setTenantId(id);
+    const { pathname, search: query, hash } = window.location;
+    try {
+      // `null`: el router de Next conserva su propio estado.
+      window.history.replaceState(null, '', `${pathname}${queryWithTeamTenant(query, id)}${hash}`);
+    } catch {
+      // El navegador limitó los cambios de URL: el nodo cambia igual, sólo no se recuerda.
+    }
+  }
 
   function failOn(member: NetworkMember, message: string) {
     setMemberError({ userId: member.userId, message });
@@ -447,7 +465,7 @@ export function TeamPanel({
           <select
             id="tenant"
             value={tenantId}
-            onChange={(e) => setTenantId(e.target.value)}
+            onChange={(e) => chooseTenant(e.target.value)}
             disabled={network.status !== 'ready' || tenants.length === 0}
             className={selectClass}
           >
@@ -523,6 +541,8 @@ export function TeamPanel({
         <MemberList
           state={members}
           search={search}
+          filters={filters}
+          onFiltersChange={setFilters}
           actor={actor}
           roles={roles}
           tenantName={selectedName}
