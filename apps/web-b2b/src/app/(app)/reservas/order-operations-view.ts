@@ -14,6 +14,7 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
   'hcn-check': 'Consulta del número de confirmación del hotel',
   'hcn-ticket': 'Tarea de operaciones: conseguir el número de confirmación del hotel',
   reconcile: 'Conciliación con el proveedor',
+  issue: 'Emisión',
 };
 
 /** Un tipo que esta versión no conoce sale por su código: al menos es diagnosticable. */
@@ -39,8 +40,16 @@ function toneOf(status: string): OperationTone {
 export function operationStatusView(op: {
   readonly type: string;
   readonly status: string;
+  readonly reconciliationRequired?: boolean;
 }): OperationStatusView {
   const tone = toneOf(op.status);
+  if (op.type === 'issue') {
+    // Una emisión en duda no "falló": puede haber tiquetes. Se revisa, no se vuelve a pedir.
+    if (tone === 'failed' && op.reconciliationRequired === true) {
+      return { tone: 'pending', label: 'Sin confirmar' };
+    }
+    return { tone, label: tone === 'ok' ? 'Emitida' : tone === 'failed' ? 'Falló' : 'En curso' };
+  }
   if (op.type === 'hcn-ticket') {
     return { tone, label: tone === 'ok' ? 'Resuelta' : tone === 'failed' ? 'Falló' : 'Abierta' };
   }

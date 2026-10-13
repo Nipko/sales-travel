@@ -19,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
 import { useViewer } from '../../../components/layout/viewer-context';
 import { Button } from '../../../components/ui/button';
@@ -54,6 +55,9 @@ import { pendingOrderReconciliationMessage } from './pending-order-reconciliatio
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
 import { parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
+import { IssueTicketDialog } from './_components/issue-ticket-dialog';
+import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
+import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
 import { TestOrderTag } from './_components/test-order-tag';
@@ -212,6 +216,8 @@ export default function ReservasPage() {
     retryOperationId?: string;
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** La reserva cuya emisión se está confirmando (SAB-08). */
+  const [issuing, setIssuing] = useState<Order | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
@@ -293,6 +299,25 @@ export default function ReservasPage() {
       if (found) setDetailOrder(found);
     });
   }, [loadOrders]);
+
+  /**
+   * El desenlace de una emisión que se seguía: el aviso y la fila. La lista se relee porque el
+   * estado lo decide el servidor (emitida, sin confirmar o fallida).
+   */
+  const onIssueSettled = useCallback(
+    (orderId: string, settlement: IssueSettlement) => {
+      const issued = settlement.kind === 'settled' && settlement.outcome.kind === 'issued';
+      const message =
+        settlement.kind === 'timeout' ? settlement.message : settlement.outcome.message;
+      if (issued) toast.success(message);
+      else if (settlement.kind === 'timeout') toast.message(message);
+      else toast.error(message);
+      setActionResult({ orderId, type: 'issue', success: issued, message });
+      void loadOrders(false);
+    },
+    [loadOrders],
+  );
+  const { tracked: issuesInFlight, track: trackIssue } = useIssueTracker(onIssueSettled);
 
   /** "Actualizar estado" de hotel: el seguimiento nuevo, sin releer toda la lista. */
   const applyTracking = useCallback((orderId: string, tracking: HotelOrderTracking) => {
@@ -836,6 +861,19 @@ export default function ReservasPage() {
                       ) : null
                     ) : (
                       <>
+                        {/* Emitir sin tarjeta, con la forma de pago de la cuenta (SAB-08). */}
+                        {canIssueTicket(order) && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={actionLoading === order.id || order.id in issuesInFlight}
+                            onClick={() => setIssuing(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Ticket aria-hidden="true" className="size-3.5" />
+                            {order.id in issuesInFlight ? 'Emitiendo…' : 'Emitir tiquete'}
+                          </Button>
+                        )}
                         {(order.status === 'pending' || order.status === 'confirmed') &&
                           supportsOrderCapability(order.capabilities, 'pay') && (
                             <Button
@@ -1091,6 +1129,8 @@ export default function ReservasPage() {
               setPaymentData(null);
               setDetailOrder(null);
             }}
+            issueInFlight={detailOrder.id in issuesInFlight}
+            onIssueRequest={() => setIssuing(detailOrder)}
           />
         ))}
 
@@ -1105,6 +1145,26 @@ export default function ReservasPage() {
           onClose={(attempted) => {
             setHotelCancel(null);
             if (attempted) void loadOrders(false);
+          }}
+        />
+      )}
+
+      {/* Emisión de tiquetes: confirmación, y el seguimiento sigue en la página (SAB-08). */}
+      {issuing && (
+        <IssueTicketDialog
+          key={issuing.id}
+          order={issuing}
+          onClose={() => setIssuing(null)}
+          onRequested={(operationId) => {
+            trackIssue(issuing.id, operationId);
+            toast.message(ISSUE_MESSAGES.started);
+            setActionResult({
+              orderId: issuing.id,
+              type: 'issue',
+              success: true,
+              message: ISSUE_MESSAGES.started,
+            });
+            setIssuing(null);
           }}
         />
       )}
@@ -1136,11 +1196,16 @@ function OrderDetailModal({
   onClose,
   onCancelRequest,
   onPayRequest,
+  issueInFlight,
+  onIssueRequest,
 }: {
   order: Order;
   onClose: () => void;
   onCancelRequest: () => void;
   onPayRequest: () => void;
+  /** Hay una emisión de esta reserva siguiéndose en la página. */
+  issueInFlight: boolean;
+  onIssueRequest: () => void;
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const isCar = isCarOrder(order);
@@ -1158,6 +1223,7 @@ function OrderDetailModal({
     !!order.pnr &&
     (order.status === 'pending' || order.status === 'confirmed') &&
     supportsOrderCapability(order.capabilities, 'pay');
+  const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -1550,9 +1616,9 @@ function OrderDetailModal({
                           <span
                             className={cn(
                               'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                              op.status === 'success'
+                              operationStatusView(op).tone === 'ok'
                                 ? 'bg-green-50 text-green-700'
-                                : op.status === 'failed'
+                                : operationStatusView(op).tone === 'failed'
                                   ? 'bg-red-50 text-red-700'
                                   : 'bg-amber-50 text-amber-700',
                             )}
@@ -1598,6 +1664,16 @@ function OrderDetailModal({
               className="gap-1.5 text-xs text-red-600 hover:text-red-700"
             >
               <XCircle className="size-3.5" /> Cancelar reserva
+            </Button>
+          )}
+          {canIssue && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onIssueRequest}
+              className="gap-1.5 text-xs"
+            >
+              <Ticket aria-hidden="true" className="size-3.5" /> Emitir tiquete
             </Button>
           )}
           {canPay && (

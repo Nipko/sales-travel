@@ -1,6 +1,13 @@
-export type OrderCapability = 'retrieve' | 'cancel' | 'pay' | 'services' | 'reshop';
+/**
+ * `issue` es emitir los tiquetes de una reserva confirmada, sin tarjeta (SAB-08). Distinta de
+ * `pay`, que es el pago diferido de un proveedor que cobra al emitir.
+ */
+export type OrderCapability = 'retrieve' | 'cancel' | 'pay' | 'services' | 'reshop' | 'issue';
 
-export type OrderCapabilities = Readonly<Record<OrderCapability, boolean>>;
+/** `issue` es opcional en el API: un proveedor que no la declara no emite. */
+export type OrderCapabilities = Readonly<Record<Exclude<OrderCapability, 'issue'>, boolean>> & {
+  readonly issue?: boolean;
+};
 
 /** Ausencia no significa soporte: ante un API viejo/desconocido la UI falla cerrada. */
 export function supportsOrderCapability(
@@ -62,13 +69,14 @@ export function supportsOrderCancellation(
 }
 
 /**
- * Las acciones de una orden que son VENTA en la API (`@SalesOperation()`): pagar o emitir, vender
+ * Las acciones de una orden que son VENTA en la API (`@SalesOperation()`): pagar, emitir, vender
  * servicios adicionales y recotizar. Consultar y cancelar son post-venta.
  */
 export const SALE_ORDER_CAPABILITIES = [
   'pay',
   'services',
   'reshop',
+  'issue',
 ] as const satisfies readonly OrderCapability[];
 
 /**

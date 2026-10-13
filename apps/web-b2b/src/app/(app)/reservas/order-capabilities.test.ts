@@ -79,6 +79,7 @@ describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () 
     pay: true,
     services: true,
     reshop: true,
+    issue: true,
   };
 
   it('quien vende conserva todo, tal cual lo mandó el API', () => {
@@ -93,16 +94,33 @@ describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () 
       pay: false,
       services: false,
       reshop: false,
+      // Emitir tiquetes también es venta (SAB-08): el superadmin no ve el botón.
+      issue: false,
     });
     expect(latam.pay).toBe(true);
   });
 
   it('las de venta son exactamente las que la API marca @SalesOperation en órdenes', () => {
-    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['pay', 'reshop', 'services']);
+    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['issue', 'pay', 'reshop', 'services']);
   });
 
   it('sin capabilities sigue fallando cerrada', () => {
     expect(capabilitiesForViewer(undefined, false)).toBeUndefined();
     expect(supportsOrderCapability(capabilitiesForViewer(undefined, false), 'pay')).toBe(false);
+  });
+});
+
+describe('la capacidad de emitir tiquetes (SAB-08)', () => {
+  it('sólo con `issue: true` explícito; ausente o apagada, no se ofrece', () => {
+    const base: OrderCapabilities = {
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    };
+    expect(supportsOrderCapability(base, 'issue')).toBe(false);
+    expect(supportsOrderCapability({ ...base, issue: false }, 'issue')).toBe(false);
+    expect(supportsOrderCapability({ ...base, issue: true }, 'issue')).toBe(true);
   });
 });
