@@ -498,8 +498,8 @@ d('auth premium contra Postgres, como app_user', () => {
     const MIN = 60_000;
 
     /** Una persona con el 2FA activo; quedan libres el paso actual y el siguiente. */
-    async function enrolled(label: string, tenantId: string = free) {
-      const u = await user(label, tenantId, 'vendedor');
+    async function enrolled(label: string, tenantId: string = free, role = 'vendedor') {
+      const u = await user(label, tenantId, role);
       const { secret } = await mfa.beginEnrollment(u.id, u.email);
       await mfa.confirmEnrollment(u.id, undefined, totp.generate(secret, totp.currentStep() - 1));
       return { ...u, code: (offset: number) => totp.generate(secret, totp.currentStep() + offset) };
@@ -601,6 +601,57 @@ d('auth premium contra Postgres, como app_user', () => {
       expect(err).toBeInstanceOf(SessionInvalidError);
       expect((err as SessionInvalidError).reason).toBe('SESSION_REVOKED');
       expect(await verifiedAt(current.token)).toEqual(before);
+    });
+
+    it('liberar un puesto para entrar conserva el instante del intento, no lo estrena', async () => {
+      // Cupo de uno, ocupado; quien entra administra el nodo y lo hace con un equipo de confianza
+      // de hace una hora: la sesión que sale de liberar el puesto no reconfirma nada.
+      const full = await tenant('su-full', 'consolidator', platform, { seats: 1 });
+      const holder = await user('su-holder', full, 'vendedor');
+      const held = await issueFor(holder.id, full);
+      const boss = await enrolled('su-release', full, 'agency_admin');
+      const device = await trusted.create(boss.id, {});
+      await admin.query(
+        `UPDATE users SET mfa_enabled_at = now() - interval '2 hours',
+                          password_changed_at = now() - interval '2 hours'
+          WHERE id = $1`,
+        [boss.id],
+      );
+      const { rows } = await admin.query<{ created_at: Date }>(
+        `UPDATE trusted_devices SET created_at = now() - interval '1 hour'
+          WHERE user_id = $1 RETURNING created_at`,
+        [boss.id],
+      );
+      const trustedAt = rows[0]!.created_at;
+
+      const err = (await rejection(
+        auth.login({ email: boss.email, password: PASSWORD, trustedDeviceToken: device.token }),
+      )) as SeatsFullError;
+      expect(err).toBeInstanceOf(SeatsFullError);
+      const result = await auth.releaseSeat(err.publicDetails.release!.token, held.sessionId);
+
+      // El claim va al segundo: el instante es el del equipo, no el de ahora.
+      const at = await verifiedAt(result.token);
+      expect(Math.abs(at!.getTime() - trustedAt.getTime())).toBeLessThan(1_000);
+      const afterRelease = await freshness(result.token, full);
+      expect(() => assertRecentMfa(10, afterRelease)).toThrow(MfaRecentRequiredError);
+    });
+
+    it('un instante heredado nunca queda en el futuro: lo topea el reloj de la base', async () => {
+      const u = await enrolled('su-future');
+      const issued = await seats.issue({
+        userId: u.id,
+        tenantId: free,
+        mfaVerified: true,
+        // Un reloj de la API una hora adelantado (el claim `mfa_at` del permiso sale de ahí).
+        mfaVerifiedAt: new Date(Date.now() + 3600_000),
+        expiresAt: new Date(Date.now() + 3600_000),
+      });
+      const { rows } = await admin.query<{ ahead: boolean }>(
+        `SELECT mfa_verified_at > now() AS ahead FROM sessions WHERE id = $1`,
+        [issued.sessionId],
+      );
+      expect(rows[0]!.ahead).toBe(false);
     });
   });
 

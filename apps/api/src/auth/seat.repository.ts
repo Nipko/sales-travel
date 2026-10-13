@@ -243,7 +243,7 @@ class PgSeatTransaction implements SeatTransaction {
         tenant_id: session.tenantId,
         seat_tenant_id: session.seatTenantId,
         idle_timeout_seconds: session.idleTimeoutSeconds,
-        mfa_verified_at: session.mfaVerified ? (session.mfaVerifiedAt ?? sql<Date>`now()`) : null,
+        mfa_verified_at: session.mfaVerified ? verifiedAtSql(session.mfaVerifiedAt) : null,
         expires_at: session.expiresAt,
         ip: session.ip,
         user_agent: session.userAgent?.slice(0, 512) ?? null,
@@ -252,4 +252,14 @@ class PgSeatTransaction implements SeatTransaction {
       .executeTakeFirstOrThrow();
     return row.id;
   }
+}
+
+/**
+ * Cuándo pasó el segundo factor la sesión nueva: recién (`now()`), o el instante heredado (cambio de
+ * agencia, equipo de confianza, permiso para liberar un puesto) topeado con `now()`. El heredado
+ * puede venir del reloj de la API (el claim `mfa_at` del permiso): adelantado, la ventana de la
+ * reconfirmación (USR-13) quedaría abierta de más.
+ */
+function verifiedAtSql(inherited: Date | null | undefined) {
+  return inherited ? sql<Date>`LEAST(${inherited}::timestamptz, now())` : sql<Date>`now()`;
 }

@@ -450,13 +450,18 @@ function invalid(reason: SessionFailureReason): InvalidSession {
 /**
  * `mfa_verified_at` llevado al reloj de este proceso con la antigüedad que midió la base. Sin la
  * antigüedad (no debería faltar: sale de la misma consulta), el instante de la base tal cual.
+ *
+ * Nunca en el futuro: un instante adelantado (un reloj corrido al heredarlo) dejaría la ventana de
+ * la reconfirmación abierta más de lo que dice; se toma como recién.
  */
 export function verifiedAtOnLocalClock(
   verifiedAt: Date,
   ageSeconds: number | null,
   nowMs: number = Date.now(),
 ): Date {
-  return ageSeconds === null || !Number.isFinite(ageSeconds)
-    ? verifiedAt
-    : new Date(nowMs - ageSeconds * 1000);
+  const at =
+    ageSeconds === null || !Number.isFinite(ageSeconds)
+      ? verifiedAt.getTime()
+      : nowMs - ageSeconds * 1000;
+  return new Date(Math.min(at, nowMs));
 }

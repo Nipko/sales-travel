@@ -168,8 +168,19 @@ describe('assertRecentMfa y mfaVerifiedWithin', () => {
     expect(local).toEqual(new Date(NOW.getTime() - 120_000));
     expect(mfaVerifiedWithin({ mfaVerifiedAt: local }, 2, NOW.getTime())).toBe(true);
     // Sin la antigüedad, el instante de la base tal cual.
-    expect(verifiedAtOnLocalClock(dbClock, null, NOW.getTime())).toBe(dbClock);
-    expect(verifiedAtOnLocalClock(dbClock, Number.NaN, NOW.getTime())).toBe(dbClock);
+    const past = new Date(NOW.getTime() - 120_000);
+    expect(verifiedAtOnLocalClock(past, null, NOW.getTime())).toEqual(past);
+    expect(verifiedAtOnLocalClock(past, Number.NaN, NOW.getTime())).toEqual(past);
+  });
+
+  it('un instante en el futuro cuenta como recién, no alarga la ventana', () => {
+    // Una antigüedad negativa (heredado de un reloj adelantado) o, sin ella, un instante adelantado.
+    const ahead = verifiedAtOnLocalClock(new Date(NOW.getTime()), -3600, NOW.getTime());
+    expect(ahead).toEqual(NOW);
+    const future = new Date(NOW.getTime() + 3600_000);
+    expect(verifiedAtOnLocalClock(future, null, NOW.getTime())).toEqual(NOW);
+    // Once minutos después ya no vale: con el instante adelantado habría valido una hora más.
+    expect(mfaVerifiedWithin({ mfaVerifiedAt: ahead }, 10, NOW.getTime() + 11 * MIN)).toBe(false);
   });
 
   it('el servicio la llama con el contexto del request', () => {
