@@ -44,6 +44,13 @@ const SCANNED = [
   'lib/platform-orders-client.ts',
   'lib/platform-orders-proxy.ts',
   'lib/platform-order-actions.ts',
+  // Plataforma → Agencias: la lista con sus números y suspender o reactivar un nodo.
+  'app/(app)/admin/tenants/_components/network-admin-panel.tsx',
+  'app/(app)/admin/tenants/_components/node-stats.tsx',
+  'app/(app)/admin/tenants/_components/suspend-node-dialog.tsx',
+  'app/api/admin/tenants',
+  'lib/platform-node-stats.ts',
+  'lib/tenant-network.ts',
   // Inicio y Reportes de la agencia.
   'app/(app)/page.tsx',
   'app/(app)/reportes',

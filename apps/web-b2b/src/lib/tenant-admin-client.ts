@@ -1,3 +1,9 @@
+import {
+  parseNodeImpact,
+  parseNodeStatsList,
+  type NodeImpact,
+  type NodeStats,
+} from './platform-node-stats';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
 import { isTenantType, type NetworkNode } from './tenant-network';
@@ -215,9 +221,26 @@ export function createNode(input: NewNodeInput): Promise<Loaded<CreatedNode>> {
   return call('/api/admin/tenants', json('POST', input), parseCreatedNode);
 }
 
+/** Los números de cada nodo de la red, por id (`GET /admin/tenants/stats`). */
+export function loadNodeStats(): Promise<Loaded<ReadonlyMap<string, NodeStats>>> {
+  return call('/api/admin/tenants/stats', {}, parseNodeStatsList);
+}
+
+/** Qué arrastraría suspender el nodo con su red (`GET /admin/tenants/:id/impact`). */
+export function loadNodeImpact(tenantId: string): Promise<Loaded<NodeImpact>> {
+  return call(`/api/admin/tenants/${encodeURIComponent(tenantId)}/impact`, {}, parseNodeImpact);
+}
+
+/**
+ * Corrige un nodo. Suspenderlo lleva el motivo (el API lo exige); reactivarlo lo admite. El motivo
+ * queda en la auditoría del nodo.
+ */
 export function updateNode(
   tenantId: string,
-  patch: { readonly status?: 'active' | 'suspended'; readonly isBranch?: boolean },
+  patch:
+    | { readonly status: 'suspended'; readonly reason: string }
+    | { readonly status: 'active'; readonly reason?: string }
+    | { readonly isBranch: boolean },
 ): Promise<Loaded<TenantStateView>> {
   return call(
     `/api/admin/tenants/${encodeURIComponent(tenantId)}`,
