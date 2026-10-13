@@ -1578,14 +1578,25 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
   );
 }
 
+interface AuditReady {
+  readonly status: 'ready';
+  /**
+   * Qué carga de la lista es (una por filtro y reintento). "Cargar más" sólo toca la lista que lo
+   * pidió: si mientras tanto cambió el filtro, su página, su error y su "cargando" se descartan.
+   */
+  readonly list: number;
+  readonly events: readonly AuditEntryView[];
+  readonly nextBefore: string | null;
+  readonly loadingMore: boolean;
+  readonly moreError: string;
+}
+
 type AuditLoad =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly message: string }
-  | {
-      readonly status: 'ready';
-      readonly events: readonly AuditEntryView[];
-      readonly nextBefore: string | null;
-    };
+  | AuditReady;
+
+let auditListSeq = 0;
 
 type AuditFetch =
   | { readonly ok: true; readonly page: AuditPageView }
@@ -1641,19 +1652,22 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
   const [filter, setFilter] = useState<AuditFilter>('all');
   const [state, setState] = useState<AuditLoad>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    setMoreError('');
-    setLoadingMore(false);
     void fetchAuditPage(networkAuditUrl(rootId, filter)).then((result) => {
       if (cancelled) return;
       setState(
         result.ok
-          ? { status: 'ready', events: result.page.events, nextBefore: result.page.nextBefore }
+          ? {
+              status: 'ready',
+              list: ++auditListSeq,
+              events: result.page.events,
+              nextBefore: result.page.nextBefore,
+              loadingMore: false,
+              moreError: '',
+            }
           : { status: 'error', message: result.error },
       );
     });
@@ -1663,26 +1677,23 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
   }, [rootId, filter, attempt]);
 
   async function loadMore() {
-    if (state.status !== 'ready' || state.nextBefore === null) return;
-    const before = state.nextBefore;
-    setLoadingMore(true);
-    setMoreError('');
+    if (state.status !== 'ready' || state.nextBefore === null || state.loadingMore) return;
+    const { list, nextBefore: before } = state;
+    const sameList = (prev: AuditLoad): prev is AuditReady =>
+      prev.status === 'ready' && prev.list === list;
+    setState((prev) => (sameList(prev) ? { ...prev, loadingMore: true, moreError: '' } : prev));
     const result = await fetchAuditPage(networkAuditUrl(rootId, filter, before));
-    setLoadingMore(false);
-    if (!result.ok) {
-      setMoreError(result.error);
-      return;
-    }
-    // Si mientras tanto cambió el filtro, la página ya no es de esta lista: se descarta.
-    setState((prev) =>
-      prev.status === 'ready' && prev.nextBefore === before
-        ? {
-            status: 'ready',
-            events: [...prev.events, ...result.page.events],
-            nextBefore: result.page.nextBefore,
-          }
-        : prev,
-    );
+    setState((prev) => {
+      if (!sameList(prev)) return prev;
+      if (!result.ok) return { ...prev, loadingMore: false, moreError: result.error };
+      return {
+        ...prev,
+        events: [...prev.events, ...result.page.events],
+        nextBefore: result.page.nextBefore,
+        loadingMore: false,
+        moreError: '',
+      };
+    });
   }
 
   return (
@@ -1723,7 +1734,12 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
       </div>
 
       {state.status === 'loading' ? (
-        <div aria-busy="true" aria-label="Cargando la actividad" className="space-y-1.5">
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando la actividad"
+          className="space-y-1.5"
+        >
           {[0, 1, 2].map((i) => (
             <div
               key={i}
@@ -1753,21 +1769,21 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
               <AuditRow key={e.id} entry={e} />
             ))}
           </ul>
-          {state.nextBefore !== null || moreError ? (
+          {state.nextBefore !== null || state.moreError ? (
             <div className="mt-3 flex flex-col items-center gap-2">
-              {moreError ? (
+              {state.moreError ? (
                 <p role="alert" className="text-xs text-[var(--color-danger)]">
-                  {moreError}
+                  {state.moreError}
                 </p>
               ) : null}
               {state.nextBefore !== null ? (
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={loadingMore}
+                  disabled={state.loadingMore}
                   onClick={() => void loadMore()}
                 >
-                  {loadingMore ? 'Cargando…' : 'Cargar más'}
+                  {state.loadingMore ? 'Cargando…' : 'Cargar más'}
                 </Button>
               ) : null}
             </div>
