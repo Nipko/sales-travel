@@ -87,6 +87,7 @@ function usuario(extra: Partial<NetworkUser> = {}): NetworkUser {
     mfaEnabled: false,
     lockedUntil: null,
     activeSessions: 0,
+    passwordResetRequired: false,
     ...extra,
   };
 }
