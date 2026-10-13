@@ -793,8 +793,8 @@ Sin cambios en la base ni en el panel.
 - `apps/api/src/mail/security-notices.ts`: en tú, "Hola, {nombre}:" (o "Hola:"), lo que pasó y, al
   final de todas, "Si no lo esperabas, avísale a tu administrador de inmediato.". La contraseña
   cambiada suma "Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»…"; restablecer el 2FA
-  cuenta que los códigos de recuperación ya no sirven y que los equipos de confianza vuelven a pedir
-  el segundo paso; suspender el acceso a un nodo aclara que los demás no cambian.
+  cuenta que los códigos de recuperación y los equipos de confianza ya no sirven (sin 2FA no queda
+  un segundo paso que saltar); suspender el acceso a un nodo aclara que los demás no cambian.
 - El rol va con el nombre con que Equipo lo ofrece (_Admin de agencia_, _Manager_, _Vendedor_…) y,
   si exige 2FA, lo dice.
 - Nunca llevan enlaces ni tokens (el pie lo aclara: "no trae enlaces ni te pide datos"): un aviso de

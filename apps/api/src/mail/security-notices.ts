@@ -68,7 +68,7 @@ function copyFor(kind: SecurityNoticeKind, node: string, role: Role | null): Not
         title: 'Restablecimos tu verificación en dos pasos',
         paragraphs: [
           `Un administrador de ${node} restableció tu verificación en dos pasos. Al próximo ingreso puedes configurarla de nuevo.`,
-          'Tus códigos de recuperación ya no sirven, tus equipos de confianza vuelven a pedir el segundo paso y cerramos tus sesiones abiertas.',
+          'Tus códigos de recuperación y tus equipos de confianza ya no sirven, y cerramos tus sesiones abiertas.',
         ],
       };
     case 'sessions_revoked':

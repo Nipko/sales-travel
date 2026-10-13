@@ -92,7 +92,7 @@ describe('avisos de seguridad: qué dice cada uno', () => {
 
   it('restablecer el 2FA cuenta todo lo que arrastró: códigos, equipos de confianza y sesiones', () => {
     expect(aviso('mfa_reset').text).toContain(
-      'Tus códigos de recuperación ya no sirven, tus equipos de confianza vuelven a pedir el segundo paso y cerramos tus sesiones abiertas.',
+      'Tus códigos de recuperación y tus equipos de confianza ya no sirven, y cerramos tus sesiones abiertas.',
     );
   });
 
