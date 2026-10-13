@@ -530,13 +530,25 @@ export class ProviderNotAvailableError extends BadRequestException {
 export class ProviderDisabledByPlatformError extends ProviderNotAvailableError {
   readonly reason = 'PROVIDER_DISABLED_BY_PLATFORM';
 
-  constructor(providerCode: string) {
-    super(
-      providerCode,
-      `El proveedor '${providerCode}' está deshabilitado por la plataforma para esta agencia: no admite ventas nuevas. Lo ya vendido se sigue consultando y cancelando.`,
-    );
+  constructor(
+    providerCode: string,
+    message = `El proveedor '${providerCode}' está deshabilitado por la plataforma para esta agencia: no admite ventas nuevas. Lo ya vendido se sigue consultando y cancelando.`,
+  ) {
+    super(providerCode, message);
     this.name = 'ProviderDisabledByPlatformError';
   }
+}
+
+/**
+ * El apagado de emergencia (`PROVIDERS_DISABLED` o el del panel, 0077) frena una venta nueva que el
+ * circuit breaker no ve: la que sigue una oferta emitida antes del apagado. Mismo 400 y mismo motivo
+ * máquina que el apagado por agencia, con un mensaje que no habla de "esta agencia".
+ */
+export function killSwitchedSaleError(providerCode: string): ProviderDisabledByPlatformError {
+  return new ProviderDisabledByPlatformError(
+    providerCode,
+    `El proveedor '${providerCode}' está apagado temporalmente por la plataforma: no admite ventas nuevas por ahora.`,
+  );
 }
 
 /**

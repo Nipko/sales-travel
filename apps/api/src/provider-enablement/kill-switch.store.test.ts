@@ -301,8 +301,20 @@ describe('KillSwitchStore', () => {
         const { store, audit } = montar(lock === undefined ? {} : { lock });
         await expect(store.clear(SUPERADMIN, 'tbo-hotels', null)).resolves.toBeUndefined();
         expect(audit.events).toEqual([]);
-        expect(store.lecturas).not.toHaveBeenCalled();
       }
+    });
+
+    it('levantar lo que otra réplica ya levantó relee: la copia de ésta no lo sigue aplicando', async () => {
+      const { store, audit } = montar({});
+      store.lecturas.mockResolvedValueOnce([apagado()]);
+      await store.refresh();
+      expect(store.panelLevel('tbo-hotels')).toBe('all');
+
+      // En la base ya no está: lo levantó otra réplica, que ésta todavía no releyó.
+      await expect(store.clear(SUPERADMIN, 'tbo-hotels', null)).resolves.toBeUndefined();
+
+      expect(audit.events).toEqual([]);
+      expect(store.panelLevel('tbo-hotels')).toBeUndefined();
     });
 
     it('si la base no deja borrar lo que deja ver, quien pide ya no es superadmin: 403', async () => {
@@ -311,6 +323,32 @@ describe('KillSwitchStore', () => {
         SuperadminRequiredError,
       );
       expect(audit.events).toEqual([]);
+    });
+
+    it('el 42501 de la RLS al poner es el 403 de la guarda; otro error sale tal cual', async () => {
+      const rechazo = Object.assign(new Error('new row violates row-level security policy'), {
+        code: '42501',
+      });
+      const caida = Object.assign(new Error('connection terminated'), { code: '57P01' });
+      for (const [err, esperado] of [
+        [rechazo, SuperadminRequiredError],
+        [caida, Error],
+      ] as const) {
+        const db = {
+          withRequestContext: () => Promise.reject(err),
+        } as unknown as DatabaseService;
+        const store = new AlmacenProbado(db, new RecordingAuditService().asService());
+        const got = await store
+          .set(SUPERADMIN, 'tbo-hotels', {
+            level: 'all',
+            reason: 'Sin permiso',
+            expiresInMinutes: null,
+          })
+          .catch((e: unknown) => e);
+        expect(got).toBeInstanceOf(esperado);
+        if (esperado === Error) expect(got).toBe(caida);
+        expect(store.panelLevel('tbo-hotels')).toBeUndefined();
+      }
     });
   });
 

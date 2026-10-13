@@ -180,7 +180,7 @@ export class KillSwitchStore implements OnApplicationBootstrap, OnModuleDestroy 
       readonly expiresInMinutes: number | null;
     },
   ): Promise<PanelKillSwitch> {
-    const written = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+    const written = await this.writeAsSuperadmin(actorUserId, async (trx) => {
       const before = await this.lockActive(trx, providerCode);
       const expiresAt =
         input.expiresInMinutes === null
@@ -246,7 +246,7 @@ export class KillSwitchStore implements OnApplicationBootstrap, OnModuleDestroy 
     providerCode: string,
     reason: string | null,
   ): Promise<PanelKillSwitch | undefined> {
-    const removed = await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+    const removed = await this.writeAsSuperadmin(actorUserId, async (trx) => {
       const before = await this.lockActive(trx, providerCode);
       if (before === undefined) return undefined;
       const res = await trx
@@ -268,11 +268,28 @@ export class KillSwitchStore implements OnApplicationBootstrap, OnModuleDestroy 
       return before;
     });
 
-    if (removed !== undefined) {
-      this.applyLocal((m) => m.delete(providerCode));
-      await this.refresh();
-    }
+    if (removed !== undefined) this.applyLocal((m) => m.delete(providerCode));
+    // También sin nada que borrar: si otra réplica ya lo levantó, la copia de ésta lo seguía
+    // aplicando hasta la próxima relectura y el panel recibía el proveedor todavía apagado.
+    await this.refresh();
     return removed;
+  }
+
+  /**
+   * La transacción de una escritura, con el superadmin en el contexto. La RLS de 0077 rechaza con
+   * 42501 a quien dejó de ser superadmin entre la guarda de la app y el INSERT: es el mismo 403 que
+   * da la guarda, no un 500.
+   */
+  private async writeAsSuperadmin<T>(
+    actorUserId: string,
+    fn: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.db.withRequestContext({ userId: actorUserId }, fn);
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code === '42501') throw new SuperadminRequiredError();
+      throw err;
+    }
   }
 
   /** La lectura de verdad. Protegida para poder simular una base que falla en los tests. */

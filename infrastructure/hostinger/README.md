@@ -228,6 +228,10 @@ _Apagado de emergencia_ corta el proveedor para toda la plataforma, en segundos 
 - _Solo ventas_: frena búsquedas, pre-reservas y reservas nuevas; lo ya vendido se sigue consultando y cancelando.
 - _Todo_: también la post-venta (consultas, cancelaciones y conciliación).
 
+En vuelos, la venta que sigue a una oferta ya buscada (revalidar y crear la orden) también se corta, con cualquiera de
+los dos niveles. La post-venta de vuelos (leer, cancelar, pagar una orden) **no** pasa por el circuit breaker: ni _Todo_
+ni `PROVIDERS_DISABLED` la frenan hoy.
+
 Pide motivo, un vencimiento (1 h, 4 h, 24 h o sin vencimiento) y escribir el código del proveedor para confirmar. La
 réplica del api que lo recibe lo aplica al instante y las demás en 10 s como mucho; vencido, el proveedor vuelve solo.
 _Reanudar proveedor_ lo levanta antes. Cada uno queda en `domain_events` (`platform.provider_kill_switch.set` y

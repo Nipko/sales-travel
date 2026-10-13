@@ -1,5 +1,6 @@
 import { Logger, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { KillSwitchStore } from '../provider-enablement/kill-switch.store.js';
 import { FlightProviderRegistry } from './flight-provider.registry.js';
 import {
   PLATFORM_DISABLED_TEXT,
@@ -340,6 +341,67 @@ describe('FlightProviderRegistry', () => {
       expect((err as ProviderDisabledByPlatformError).reason).toBe('PROVIDER_DISABLED_BY_PLATFORM');
       expect((err as ProviderDisabledByPlatformError).getStatus()).toBe(400);
       expect(stub.resolveCalls).toEqual([]);
+    });
+
+    describe('`byCodeForOffer` con el apagado de emergencia', () => {
+      function conPanel(level: 'all' | 'sales' | undefined): KillSwitchStore {
+        return { panelLevel: () => level } as unknown as KillSwitchStore;
+      }
+
+      it.each(['all', 'sales'] as const)(
+        'el del panel (%s) corta la venta de una oferta ya emitida, sin bóveda ni habilitación',
+        async (level) => {
+          const stub = new StubProviderFactory({ code: 'alfa-air' });
+          const { port, decisionFor } = flags(false);
+          const r = new FlightProviderRegistry([stub], port, conPanel(level));
+
+          const err = await r.byCodeForOffer(TENANT, 'alfa-air').catch((e: unknown) => e);
+
+          expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+          expect((err as ProviderDisabledByPlatformError).reason).toBe(
+            'PROVIDER_DISABLED_BY_PLATFORM',
+          );
+          expect((err as ProviderDisabledByPlatformError).getStatus()).toBe(400);
+          expect((err as Error).message).toContain('apagado temporalmente por la plataforma');
+          expect((err as Error).message).not.toContain('esta agencia');
+          expect(stub.resolveCalls).toEqual([]);
+          expect(decisionFor).not.toHaveBeenCalled();
+        },
+      );
+
+      it('el de la variable (`código:ventas`) también, sin el almacén del panel', async () => {
+        vi.stubEnv('PROVIDERS_DISABLED', 'alfa-air:ventas');
+        const stub = new StubProviderFactory({ code: 'alfa-air' });
+        const r = registry([stub, new StubProviderFactory({ code: 'beta-air' })]);
+
+        await expect(r.byCodeForOffer(TENANT, 'alfa-air')).rejects.toBeInstanceOf(
+          ProviderDisabledByPlatformError,
+        );
+        await expect(r.byCodeForOffer(TENANT, 'beta-air')).resolves.toMatchObject({
+          code: 'beta-air',
+        });
+        expect(stub.resolveCalls).toEqual([]);
+      });
+
+      it('la post-venta (`byCode`) no lo mira: lo ya vendido se sigue operando', async () => {
+        const r = new FlightProviderRegistry(
+          [new StubProviderFactory({ code: 'alfa-air' })],
+          flags(false).port,
+          conPanel('sales'),
+        );
+        await expect(r.byCode(TENANT, 'alfa-air')).resolves.toMatchObject({ code: 'alfa-air' });
+      });
+
+      it('sin apagado, la venta sigue', async () => {
+        const r = new FlightProviderRegistry(
+          [new StubProviderFactory({ code: 'alfa-air' })],
+          flags(false).port,
+          conPanel(undefined),
+        );
+        await expect(r.byCodeForOffer(TENANT, 'alfa-air')).resolves.toMatchObject({
+          code: 'alfa-air',
+        });
+      });
     });
 
     it('`byCodeForOffer`: un `opt-in` que nadie encendió no se corta, como antes (la oferta ya la emitió)', async () => {

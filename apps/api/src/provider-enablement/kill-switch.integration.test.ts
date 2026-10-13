@@ -7,6 +7,7 @@ import { AuditService, type AuditEvent } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { HOTEL_EVENTS } from '../hotels/hotel-events.js';
+import { SuperadminRequiredError } from '../network/superadmin.errors.js';
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 import {
@@ -295,16 +296,23 @@ d('provider_kill_switches (0077) contra Postgres', () => {
       expect(store.panelLevel(A)).toBeUndefined();
     });
 
-    it('quien no es superadmin no apaga ni por el almacén: lo para la base', async () => {
+    it('quien no es superadmin no apaga ni por el almacén: lo para la base, con el 403 de la guarda', async () => {
       const store = new KillSwitchStore(database, new AuditService(database));
-      await expect(
-        store.set(admin, A, {
+      const err = await store
+        .set(admin, A, {
           level: 'all',
           reason: 'Intento sin permiso',
           expiresInMinutes: null,
-        }),
-      ).rejects.toMatchObject({ code: '42501' });
+        })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SuperadminRequiredError);
+      expect((err as SuperadminRequiredError).getStatus()).toBe(403);
       expect(await eventos(A)).toEqual([]);
+      const { rows } = await pool.query(
+        'SELECT 1 FROM provider_kill_switches WHERE provider_code = $1',
+        [A],
+      );
+      expect(rows).toEqual([]);
     });
 
     it('el breaker lo aplica al confirmar, otra réplica al releer, y levantarlo lo devuelve', async () => {
