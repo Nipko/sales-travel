@@ -1082,6 +1082,13 @@ cada `fetchToken()`.
 > (`0012_provider_accounts.sql:26`); (c) la UI de agencia necesita mostrarlo, y `credentials` nunca sale por API.
 > El factory combina ambos lados, igual que `latam-ndc.factory.ts`.
 
+**Con reservas activas, la oficina y el entorno de la cuenta no se cambian.** Cada orden de Sabre guarda la cuenta
+de la bóveda con que se reservó y su post-venta sale con ella (RF-29). Un PNR vive en su PCC y en su sistema: con
+reservas activas hechas con la cuenta, cambiarle `homePcc` (del blob o de `config`, por su valor efectivo),
+`environment` (sin él, CERT), `host` o `soapHost` responde 409 `PROVIDER_ACCOUNT_IN_USE`, como desactivarla
+(`accountIdentity` de la spec de Sabre en `apps/api/src/provider-credentials/provider-specs.ts`). El EPR y la
+contraseña de la misma oficina sí se cambian.
+
 ### 8.3 Interface y factory — espejo del patrón `latam-ndc`
 
 ```ts

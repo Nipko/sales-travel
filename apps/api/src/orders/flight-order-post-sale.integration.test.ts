@@ -66,8 +66,17 @@ class ComoAppUser extends DatabaseService {
   }
 }
 
+/**
+ * `current_date` de la base en la sesión de la API: 0081 compara contra él, y los casos de abajo
+ * caen justo en el borde (ayer cuenta, anteayer no). Con la fecha UTC de este proceso, una base en
+ * otra zona (la local está en America/Bogota) cambiaba de día cinco horas antes y el test fallaba de
+ * noche.
+ */
+let hoyDeLaBase: string | undefined;
+
 function fecha(diasDesdeHoy: number): string {
-  return new Date(Date.now() + diasDesdeHoy * 86_400_000).toISOString().slice(0, 10);
+  const hoy = hoyDeLaBase === undefined ? Date.now() : Date.parse(`${hoyDeLaBase}T00:00:00Z`);
+  return new Date(hoy + diasDesdeHoy * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Los criterios de un vuelo como los guarda la orden (`FlightSearchCriteria`). */
@@ -202,6 +211,13 @@ d('post-venta de vuelos con la cuenta de la reserva (0045, 0081) contra Postgres
   beforeAll(async () => {
     process.env['PROVIDER_CREDENTIALS_KEY'] ??= randomBytes(32).toString('base64');
     database.onModuleInit();
+    // Ningún tenant: sólo se lee la fecha, con la misma sesión (rol y zona) que usa la API.
+    hoyDeLaBase = await database.withTenant('00000000-0000-0000-0000-000000000000', async (trx) => {
+      const r = await sql<{
+        hoy: string;
+      }>`SELECT to_char(current_date, 'YYYY-MM-DD') AS hoy`.execute(trx);
+      return r.rows[0]!.hoy;
+    });
 
     consolidador = await crearTenant(`fo-c-${sfx}`, 'consolidator', null);
     agenciaA = await crearTenant(`fo-a-${sfx}`, 'agency', consolidador);
@@ -402,6 +418,38 @@ d('post-venta de vuelos con la cuenta de la reserva (0045, 0081) contra Postgres
       expect(await conteo(consolidadorConteo, cuentaHotel)).toEqual([
         { own_orders: 0, inherited_orders: 1 },
       ]);
+    });
+
+    it('con vuelos por volar no se le cambia la oficina ni el entorno; la contraseña, sí', async () => {
+      const cambio = (credentials: Record<string, unknown>, config: Record<string, unknown>) =>
+        creds.upsert({
+          tenantId: consolidadorConteo,
+          providerCode: SABRE_PROVIDER_CODE,
+          credentials: { epr: 'EPR-NO-REAL', password: 'rotada', homePcc: 'A1B2', ...credentials },
+          config,
+          status: 'active',
+          isInheritable: true,
+        });
+
+      // Las reservas viven en el PCC A1B2 de CERT: con otro PCC o en producción no existen.
+      for (const [credentials, config] of [
+        [{ homePcc: 'Z9Y8' }, {}],
+        [{}, { environment: 'prod' }],
+      ] as const) {
+        const error = await cambio(credentials, config).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ProviderAccountInUseError);
+        expect(error).toMatchObject({ publicDetails: { activeOrders: 6 } });
+      }
+
+      // Otra contraseña, u otro EPR, de la misma oficina en el mismo entorno: la misma cuenta.
+      await expect(cambio({ epr: 'OTRO-EPR' }, { environment: 'cert' })).resolves.toEqual({
+        id: cuentaConteo,
+      });
+      // Y la reserva se sigue operando con ella, ya con el EPR nuevo.
+      await expect(creds.resolveForOrder(agenciaConteo, vivos[0]!)).resolves.toMatchObject({
+        id: cuentaConteo,
+        credentials: { epr: 'OTRO-EPR', homePcc: 'A1B2' },
+      });
     });
 
     it('con vuelos por volar no se desactiva; ya volados o cerrados, sí', async () => {
