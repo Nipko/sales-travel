@@ -14,8 +14,10 @@ import { TBO_CONTENT_LANGUAGES, type TboContentLanguage } from './content.types'
  *   el orden y nunca se recortan: partir en lotes es decisión del sync.
  * - **`Language` en mayúsculas** (`ES`, `PT`, `EN`), aunque la lista del PDF no nombre `EN` (p. 58;
  *   CE-11; Q-66).
- * - **Sin `IsRoomDetailRequired`**: el detalle por habitación queda apagado hasta tener un fixture
- *   real (RF-32; 05 §2.6.3; Q-65). El `.strict()` del body de salida impide mandarlo por descuido.
+ * - **`IsRoomDetailRequired: true` sólo si se pide** (`roomDetail`, p. 56-57; RF-32; 05 §2.6.3).
+ *   Sin la opción la clave no sale, ni como `false`: el body es el de siempre. El PDF no dice dónde
+ *   viene el bloque de habitaciones (Q-65); lo lee `room-detail.reader.ts` y, si TBO lo rechaza, el
+ *   cliente repite el lote sin la clave. El `.strict()` impide mandar cualquier otra clave.
  */
 
 export const TBO_HOTEL_DETAILS_LIMITS = Object.freeze({
@@ -39,6 +41,7 @@ const TboHotelDetailsRequestSchema = z
   .object({
     Hotelcodes: z.string().regex(/^[A-Za-z0-9]+(,[A-Za-z0-9]+)*$/),
     Language: z.enum(['ES', 'PT', 'EN']),
+    IsRoomDetailRequired: z.literal(true).optional(),
   })
   .strict()
   .superRefine((body, ctx) => {
@@ -66,9 +69,15 @@ function fail(issues: readonly string[]): never {
   throw new TboRequestBuildError(TBO_OPERATIONS.hotelDetails.path, 'SCHEMA', issues);
 }
 
+export interface TboHotelDetailsRequestOptions {
+  /** Pedir el detalle por habitación (`IsRoomDetailRequired: true`, p. 56). */
+  readonly roomDetail?: boolean;
+}
+
 export function buildTboHotelDetailsRequest(
   hotelCodes: readonly string[],
   lang: TboContentLanguage,
+  options: TboHotelDetailsRequestOptions = {},
 ): TboHotelDetailsRequest {
   if (!TBO_CONTENT_LANGUAGES.includes(lang)) fail(['lang:invalid_enum_value']);
   if (hotelCodes.length === 0) fail(['hotelCodes:too_small']);
@@ -84,6 +93,7 @@ export function buildTboHotelDetailsRequest(
   const parsed = TboHotelDetailsRequestSchema.safeParse({
     Hotelcodes: unique.join(','),
     Language: LANGUAGE_CODES[lang],
+    ...(options.roomDetail === true ? { IsRoomDetailRequired: true } : {}),
   });
   if (!parsed.success) fail(zodIssueRefs(parsed.error));
   return parsed.data;
