@@ -3,6 +3,7 @@ import type { HotelRoompack } from '../../actions';
 import type { RateSelection } from '../../_components/hotel-rate-selection';
 import {
   acceptedPrebookOf,
+  agencyContactNotice,
   checkoutExpiryNotice,
   continueGate,
   isRetryablePrebookStatus,
@@ -146,6 +147,23 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
       'providerEnvironment',
     );
     expect(parsePrebook(apiResponse())).not.toHaveProperty('providerEnvironment');
+  });
+
+  it('trae si la agencia tiene el contacto que exige el Book; uno desconocido o ausente no frena nada', () => {
+    expect(
+      parsePrebook(apiResponse({ bookingReadiness: { agencyContact: 'missing' } }))
+        ?.bookingReadiness,
+    ).toEqual({ agencyContact: 'missing' });
+    expect(
+      parsePrebook(apiResponse({ bookingReadiness: { agencyContact: 'ok' } }))?.bookingReadiness,
+    ).toEqual({ agencyContact: 'ok' });
+    for (const bookingReadiness of [{ agencyContact: 'unknown' }, {}, 'missing', null]) {
+      const parsed = parsePrebook(apiResponse({ bookingReadiness }));
+      // La tarifa se lee igual: sin el dato, decide el Book.
+      expect(parsed?.prebookRef).toBe(PREBOOK_REF);
+      expect(parsed).not.toHaveProperty('bookingReadiness');
+    }
+    expect(parsePrebook(apiResponse())).not.toHaveProperty('bookingReadiness');
   });
 
   it('sin `prebookRef` válido, sin precio o con otro vocabulario no hay tarifa que aceptar', () => {
@@ -408,6 +426,77 @@ describe('continueGate — qué falta para seguir', () => {
     });
   });
 
+  it('sin el contacto de soporte que exige el Book no se cargan huéspedes, aunque la cartera alcance', () => {
+    const missing = { agencyContact: 'missing' } as const;
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: { status: 'ok' },
+        bookingReadiness: missing,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'Falta el contacto de soporte de tu agencia: sin él, esta reserva se rechazaría.',
+    });
+    // Vencida o "sólo con aéreo" se dice primero: con esas, el contacto no cambia nada.
+    expect(
+      continueGate({
+        expired: true,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        bookingReadiness: missing,
+      }).reason,
+    ).toMatch(/venció/);
+    expect(
+      continueGate({
+        expired: false,
+        blocked: true,
+        change: undefined,
+        accepted: false,
+        bookingReadiness: missing,
+      }).reason,
+    ).toBe('Esta tarifa no se puede reservar como hotel suelto.');
+    // Antes que la cartera: el Book lo rechaza antes de tocarla.
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: undefined,
+        accepted: false,
+        funding: { status: 'blocked', reason: 'PORTFOLIO_FUNDS_INSUFFICIENT', message: 'x' },
+        bookingReadiness: missing,
+      }).reason,
+    ).toMatch(/contacto de soporte/);
+    // Y aunque el vendedor haya aceptado un cambio de precio.
+    expect(
+      continueGate({
+        expired: false,
+        blocked: false,
+        change: { requiresAcceptance: true },
+        accepted: true,
+        bookingReadiness: missing,
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('con el contacto completo, o sin saberlo, el contacto no frena nada', () => {
+    for (const readiness of [{ agencyContact: 'ok' } as const, undefined]) {
+      expect(
+        continueGate({
+          expired: false,
+          blocked: false,
+          change: undefined,
+          accepted: false,
+          ...(readiness === undefined ? {} : { bookingReadiness: readiness }),
+        }),
+      ).toEqual({ ok: true });
+    }
+  });
+
   it('sin cambio o con una baja, sigue', () => {
     expect(
       continueGate({ expired: false, blocked: false, change: undefined, accepted: false }).ok,
@@ -420,6 +509,23 @@ describe('continueGate — qué falta para seguir', () => {
         accepted: false,
       }).ok,
     ).toBe(true);
+  });
+});
+
+describe('agencyContactNotice — el contacto de soporte antes de los huéspedes', () => {
+  it('sin contacto: el mismo texto que el rechazo del Book, con el camino a Mi Agencia', () => {
+    expect(agencyContactNotice({ agencyContact: 'missing' })).toEqual({
+      title: 'Falta el contacto de soporte de tu agencia.',
+      detail:
+        'Para reservar hoteles, tu agencia necesita un email y un teléfono de soporte en formato internacional (por ejemplo, +57 300 123 4567). Configúralos en Mi Agencia → Marca o pídeselos a tu consolidador.',
+      href: '/configuracion',
+      linkLabel: 'Ir a Mi Agencia',
+    });
+  });
+
+  it('con el contacto, o sin saberlo, no hay aviso', () => {
+    expect(agencyContactNotice({ agencyContact: 'ok' })).toBeUndefined();
+    expect(agencyContactNotice(undefined)).toBeUndefined();
   });
 });
 

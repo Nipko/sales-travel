@@ -71,6 +71,17 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
     expect(typeof res.receivedAt).toBe('number');
   });
 
+  it('trae al navegador si a la agencia le falta el contacto de soporte que exige el Book', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREBOOK, bookingReadiness: { agencyContact: 'missing' } },
+    });
+    const res = await prebookRateAction(REFERENCE);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.prebook.bookingReadiness).toEqual({ agencyContact: 'missing' });
+  });
+
   it('una referencia que no es nuestra no llega al API', async () => {
     const res = await prebookRateAction({
       providerCode: 'tbo-hotels',

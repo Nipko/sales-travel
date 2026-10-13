@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowRight, Info, Receipt } from 'lucide-react';
+import { ArrowRight, Ban, Info, Receipt, Settings } from 'lucide-react';
+import Link from 'next/link';
 import { useId } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { Card } from '../../../../../components/ui/card';
@@ -9,7 +10,8 @@ import { formatMoney } from '../../_components/hotel-format';
 import { OwnMarginLine, RateItem, stayLabel } from '../../_components/hotel-rate-item';
 import type { HotelRateRow } from '../../_components/hotel-rate-view';
 import { TestBookingNotice } from '../../_components/test-account-notice';
-import type { ContinueGate } from './prebook-view';
+import { SECONDARY_ACTION } from './action-styles';
+import type { AgencyContactNoticeView, ContinueGate } from './prebook-view';
 
 /*
  * La tarifa revalidada (U-09): la misma fila que el listado y el detalle —misma pastilla de
@@ -42,6 +44,32 @@ export function PrebookSummary({
         <RateItem row={row} expired={expired} />
       </ul>
     </Card>
+  );
+}
+
+/**
+ * Falta el contacto de soporte que el Book manda al proveedor: arriba de la tarifa y antes de los
+ * huéspedes, con el mismo formato que el aviso de cartera porque frena igual («Continuar con los
+ * huéspedes» queda deshabilitado).
+ */
+export function AgencyContactNotice({ view }: { view: AgencyContactNoticeView | undefined }) {
+  if (view === undefined) return null;
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/5 px-4 py-3 text-sm text-[var(--color-fg)] sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex items-start gap-2.5">
+        <Ban aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[var(--color-danger)]" />
+        <p>
+          <strong className="font-semibold">{view.title}</strong> {view.detail}
+        </p>
+      </div>
+      <Link href={view.href} className={SECONDARY_ACTION}>
+        <Settings aria-hidden="true" className="size-3.5" />
+        {view.linkLabel}
+      </Link>
+    </div>
   );
 }
 

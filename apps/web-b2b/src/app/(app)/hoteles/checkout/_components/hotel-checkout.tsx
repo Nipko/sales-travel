@@ -33,9 +33,10 @@ import { draftFitsRooms, emptyGuestDraft, type GuestDraft } from './guest-form-v
 import { NonRefundableNotice } from './non-refundable-notice';
 import { nonRefundableAt } from './non-refundable-view';
 import { PriceChangeNotice } from './price-change-notice';
-import { PrebookSummary, PrebookTotal } from './prebook-summary';
+import { AgencyContactNotice, PrebookSummary, PrebookTotal } from './prebook-summary';
 import {
   acceptedPrebookOf,
+  agencyContactNotice,
   continueGate,
   priceChangeView,
   signalsView,
@@ -341,6 +342,7 @@ function PrebookReady({
   );
   const signals = useMemo(() => signalsView(prebook.signals), [prebook.signals]);
   const funding = useMemo(() => fundingNotice(prebook.funding), [prebook.funding]);
+  const agencyContact = agencyContactNotice(prebook.bookingReadiness);
   // Con el reloj del servidor: si el 100 % empezó a regir después del PreBook, también se avisa.
   const nonRefundable = useMemo(
     () => nonRefundableAt(prebook, Date.now() + clockOffsetMs),
@@ -352,6 +354,9 @@ function PrebookReady({
     change,
     accepted,
     ...(prebook.funding === undefined ? {} : { funding: prebook.funding }),
+    ...(prebook.bookingReadiness === undefined
+      ? {}
+      : { bookingReadiness: prebook.bookingReadiness }),
   });
   const hotelLink = hotelLinkOf(selection);
   const nights = stayNights(selection.stay);
@@ -369,6 +374,7 @@ function PrebookReady({
         <p>Revisa la tarifa antes de cargar los huéspedes.</p>
       </CheckoutExpiry>
 
+      <AgencyContactNotice view={agencyContact} />
       <FundingNotice view={funding} />
       {nonRefundable ? (
         <NonRefundableNotice

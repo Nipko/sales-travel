@@ -44,6 +44,14 @@ export interface HotelPrebookRepricing {
   readonly changes: readonly string[];
 }
 
+/**
+ * Lo que el Book le va a exigir a la agencia, dicho por el PreBook con el mismo predicado: con
+ * `agencyContact: 'missing'` el Book rechaza con `AGENCY_CONTACT_MISSING`.
+ */
+export interface PrebookBookingReadiness {
+  readonly agencyContact: 'ok' | 'missing';
+}
+
 /** Lo que el paso 1 usa de `POST /hotels/prebook` con el cuerpo neutral. */
 export interface HotelPrebook {
   /** Con esto se pide el Book (PR-6.4): el resto del snapshot queda en el servidor. */
@@ -73,6 +81,10 @@ export interface HotelPrebook {
    * checkout avisa que la reserva no es real.
    */
   readonly providerEnvironment?: HotelAccountEnvironment;
+  /**
+   * Si la agencia tiene hoy lo que el Book le va a exigir. Sin él no se sabe, y decide el Book.
+   */
+  readonly bookingReadiness?: PrebookBookingReadiness;
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -182,6 +194,16 @@ function codesOf(value: unknown): string[] | undefined {
 }
 
 /**
+ * Sólo los dos valores conocidos. Otra cosa no frena nada acá: el Book decide igual, y frenar por
+ * un valor que no se entiende dejaría sin reservar a una agencia que quizá está lista.
+ */
+function readinessOf(value: unknown): PrebookBookingReadiness | undefined {
+  if (!isRecord(value)) return undefined;
+  const contact = value['agencyContact'];
+  return contact === 'ok' || contact === 'missing' ? { agencyContact: contact } : undefined;
+}
+
+/**
  * La respuesta del PreBook neutral, o `undefined` si no es una tarifa revalidada completa: sin
  * `prebookRef` no hay Book posible, y sin precio ni política no hay nada que aceptar.
  */
@@ -206,6 +228,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
   const funding = parseFunding(value['funding']);
   const nonRefundable = parseNonRefundable(value['nonRefundable']);
   const environment = value['providerEnvironment'];
+  const bookingReadiness = readinessOf(value['bookingReadiness']);
   return {
     prebookRef,
     providerCode,
@@ -225,6 +248,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
     ...(environment === 'test' || environment === 'live'
       ? { providerEnvironment: environment }
       : {}),
+    ...(bookingReadiness === undefined ? {} : { bookingReadiness }),
   };
 }
 
@@ -455,6 +479,40 @@ export function checkoutExpiryNotice(
   return undefined;
 }
 
+// ───────────────────────── Contacto de soporte de la agencia ─────────────────────────
+
+/** Mi Agencia: ahí se completa el contacto, o lo completa quien administra la agencia. */
+export const AGENCY_SETTINGS_HREF = '/configuracion';
+
+const AGENCY_CONTACT_GATE_REASON =
+  'Falta el contacto de soporte de tu agencia: sin él, esta reserva se rechazaría.';
+
+export interface AgencyContactNoticeView {
+  readonly title: string;
+  readonly detail: string;
+  readonly href: typeof AGENCY_SETTINGS_HREF;
+  readonly linkLabel: string;
+}
+
+/**
+ * El aviso de arriba cuando la agencia no tiene el contacto que el Book manda al proveedor (email y
+ * teléfono internacional, propios o heredados de su consolidador). Mismo texto que el rechazo del
+ * Book (`AGENCY_CONTACT_MISSING`), para que el vendedor lea una sola regla. Sin el dato del PreBook
+ * no se avisa nada: decide el Book.
+ */
+export function agencyContactNotice(
+  readiness: PrebookBookingReadiness | undefined,
+): AgencyContactNoticeView | undefined {
+  if (readiness?.agencyContact !== 'missing') return undefined;
+  return {
+    title: 'Falta el contacto de soporte de tu agencia.',
+    detail:
+      'Para reservar hoteles, tu agencia necesita un email y un teléfono de soporte en formato internacional (por ejemplo, +57 300 123 4567). Configúralos en Mi Agencia → Marca o pídeselos a tu consolidador.',
+    href: AGENCY_SETTINGS_HREF,
+    linkLabel: 'Ir a Mi Agencia',
+  };
+}
+
 // ───────────────────────── Seguir al paso 2 ─────────────────────────
 
 export interface ContinueGate {
@@ -464,9 +522,10 @@ export interface ContinueGate {
 }
 
 /**
- * Qué falta para pasar a los huéspedes, en el orden en que el vendedor lo resuelve. Una cartera que
- * no cubre la tarifa, la de la agencia o la de un nivel de su red, frena acá y no en el Book:
- * cargar los huéspedes sería en vano.
+ * Qué falta para pasar a los huéspedes, en el orden en que el vendedor lo resuelve. Lo que el Book
+ * va a rechazar de la agencia —sin contacto de soporte, o una cartera que no cubre la tarifa, la de
+ * la agencia o la de un nivel de su red— frena acá y no en el Book: cargar los huéspedes sería en
+ * vano. El contacto va antes que la cartera porque el Book lo rechaza antes de tocarla.
  */
 export function continueGate(input: {
   readonly expired: boolean;
@@ -474,12 +533,16 @@ export function continueGate(input: {
   readonly change: Pick<PriceChangeView, 'requiresAcceptance'> | undefined;
   readonly accepted: boolean;
   readonly funding?: PrebookFunding;
+  readonly bookingReadiness?: PrebookBookingReadiness;
 }): ContinueGate {
   if (input.expired) {
     return { ok: false, reason: 'La tarifa venció: vuelve al hotel para buscarla de nuevo.' };
   }
   if (input.blocked) {
     return { ok: false, reason: 'Esta tarifa no se puede reservar como hotel suelto.' };
+  }
+  if (input.bookingReadiness?.agencyContact === 'missing') {
+    return { ok: false, reason: AGENCY_CONTACT_GATE_REASON };
   }
   if (input.funding?.status === 'blocked') {
     return { ok: false, reason: fundingGateReason(input.funding) };
