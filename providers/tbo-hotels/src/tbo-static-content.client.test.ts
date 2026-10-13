@@ -602,7 +602,7 @@ describe('TboStaticContentClient: construcción', () => {
 describe('TboStaticContentClient: sólo contenido, sin venta (06 §4.2)', () => {
   const SALES = /search|prebook|book|cancel|booking|rates|availability|send/i;
 
-  it('su superficie son exactamente los cinco métodos de contenido', () => {
+  it('su superficie son exactamente los cinco métodos de contenido y dos lecturas', () => {
     const own = Object.getOwnPropertyNames(TboStaticContentClient.prototype).sort();
     expect(own).toEqual(
       [
@@ -613,6 +613,7 @@ describe('TboStaticContentClient: sólo contenido, sin venta (06 §4.2)', () => 
         'listCities',
         'listCityHotels',
         'listCountries',
+        'roomDetailAvailable',
       ].sort(),
     );
     expect(own.filter((name) => SALES.test(name))).toEqual([]);
@@ -1076,6 +1077,20 @@ describe('TboStaticContentClient: detalle por habitación (IsRoomDetailRequired;
     expect(result.roomDetail).toBe('switched_off');
     expect(result.roomContents).toEqual([]);
     expect(result.contents).toHaveLength(1);
+  });
+
+  it('`roomDetailAvailable`: sólo con el interruptor en `on` y la compuerta abierta', () => {
+    expect(roomsTbo(ok(conHabitaciones)).h.client.roomDetailAvailable).toBe(true);
+    expect(
+      roomsTbo(ok(conHabitaciones), ok(sinHabitaciones), { roomDetails: 'off' }).h.client
+        .roomDetailAvailable,
+    ).toBe(false);
+    const suspendida = new TboRoomDetailGate(1);
+    suspendida.recordRejection();
+    expect(
+      roomsTbo(ok(conHabitaciones), ok(sinHabitaciones), { roomDetailGate: suspendida }).h.client
+        .roomDetailAvailable,
+    ).toBe(false);
   });
 
   it('un valor del interruptor fuera de la lista es un error de configuración', () => {

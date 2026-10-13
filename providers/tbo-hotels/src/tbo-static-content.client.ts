@@ -270,6 +270,15 @@ export class TboStaticContentClient {
     return this.#client.accountRef;
   }
 
+  /**
+   * Si un `getHotelDetails` con `roomDetail` saldría hoy con `IsRoomDetailRequired`: el interruptor
+   * en `on` y la compuerta del proceso abierta. Con `false`, pedir habitaciones sería gastar un
+   * HotelDetails para traer sólo el contenido del hotel: quien sólo quiere las habitaciones no llama.
+   */
+  get roomDetailAvailable(): boolean {
+    return this.#policy.roomDetails === 'on' && !this.#policy.roomDetailGate.suspended;
+  }
+
   /** `GET CountryList` (p. 51). */
   async listCountries(call: TboStaticCallOptions = {}): Promise<TboCountryListResult> {
     const result = await this.#send('countryList', undefined, TboCountryListEnvelopeSchema, call);
