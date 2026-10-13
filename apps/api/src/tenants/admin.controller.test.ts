@@ -260,14 +260,26 @@ describe('AdminController: el rango se mide sobre el nodo destino (G-06)', () =>
 });
 
 /**
- * El cambio de rol o de estado de una membership con su transacción de verdad (cambio, evento,
- * commit): la membership destino es `membresia` y el actor la administra como `roleOver`.
+ * El cambio de rol o de estado de una membership con su transacción de verdad (fila tomada, cambio,
+ * evento, commit): la membership destino es `membresia` y el actor la administra como `roleOver`.
+ * `bloqueada` es lo que encuentra la transacción al tomar la fila, si otro admin la cambió después
+ * de la primera lectura.
  */
 function bancoMembresia(
   membresia: { id: string; role: Role; status: MembershipStatus },
   roleOver: Role = 'tenant_admin',
+  bloqueada: { role: Role; status: MembershipStatus } = membresia,
 ) {
   const orden: string[] = [];
+  const select = {
+    select: vi.fn(() => select),
+    where: vi.fn(() => select),
+    forNoKeyUpdate: vi.fn(() => select),
+    executeTakeFirst: vi.fn((): Promise<{ role: Role; status: MembershipStatus } | undefined> => {
+      orden.push('fila');
+      return Promise.resolve({ role: bloqueada.role, status: bloqueada.status });
+    }),
+  };
   const update = {
     set: vi.fn(() => update),
     where: vi.fn(() => update),
@@ -276,7 +288,7 @@ function bancoMembresia(
       return Promise.resolve({ numUpdatedRows: 1n });
     }),
   };
-  const trx = { updateTable: vi.fn(() => update) };
+  const trx = { selectFrom: vi.fn(() => select), updateTable: vi.fn(() => update) };
   const db = {
     withRequestContext: vi
       .fn()
@@ -317,7 +329,7 @@ function bancoMembresia(
     {} as PlatformUsersService,
     notices as unknown as SecurityNoticeService,
   );
-  return { controller, orden, audit, notices };
+  return { controller, orden, audit, notices, select };
 }
 
 describe('AdminController: la persona se entera por su correo de su rol y su acceso', () => {
@@ -328,7 +340,7 @@ describe('AdminController: la persona se entera por su correo de su rol y su acc
 
     await controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'admin' });
 
-    expect(orden).toEqual(['update', 'evento', 'commit', 'aviso']);
+    expect(orden).toEqual(['fila', 'update', 'evento', 'commit', 'aviso']);
     expect(notices.notify).toHaveBeenCalledTimes(1);
     expect(notices.notify).toHaveBeenCalledWith('role_changed', {
       userId: OTRO,
@@ -355,7 +367,7 @@ describe('AdminController: la persona se entera por su correo de su rol y su acc
       status: 'suspended',
     });
 
-    expect(orden).toEqual(['update', 'sesiones', 'evento', 'commit', 'aviso']);
+    expect(orden).toEqual(['fila', 'update', 'sesiones', 'evento', 'commit', 'aviso']);
     expect(notices.notify).toHaveBeenCalledWith('membership_suspended', {
       userId: OTRO,
       tenantId: NODO,
@@ -383,6 +395,53 @@ describe('AdminController: la persona se entera por su correo de su rol y su acc
     });
     expect(igual.audit.emitWithin).toHaveBeenCalledTimes(1);
     expect(igual.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('compara con la fila tomada en la transacción, no con la lectura de antes', async () => {
+    // Otro admin lo suspendió entre la primera lectura y este cambio: suspenderlo otra vez no avisa.
+    const yaSuspendido = bancoMembresia(VENDEDOR, 'tenant_admin', {
+      role: 'vendedor',
+      status: 'suspended',
+    });
+    await yaSuspendido.controller.setMembershipStatus(ACTOR, {
+      userId: OTRO,
+      tenantId: NODO,
+      status: 'suspended',
+    });
+    expect(yaSuspendido.select.forNoKeyUpdate).toHaveBeenCalledTimes(1);
+    expect(yaSuspendido.notices.notify).not.toHaveBeenCalled();
+
+    // Reactivarlo sí cambia lo que había, aunque la primera lectura dijera activo.
+    const reactivado = bancoMembresia(VENDEDOR, 'tenant_admin', {
+      role: 'vendedor',
+      status: 'suspended',
+    });
+    await reactivado.controller.setMembershipStatus(ACTOR, {
+      userId: OTRO,
+      tenantId: NODO,
+      status: 'active',
+    });
+    expect(reactivado.notices.notify).toHaveBeenCalledWith('membership_reactivated', {
+      userId: OTRO,
+      tenantId: NODO,
+    });
+
+    // Lo mismo con el rol: otro admin ya le dio el que se pide.
+    const yaManager = bancoMembresia(VENDEDOR, 'tenant_admin', { role: 'admin', status: 'active' });
+    await yaManager.controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'admin' });
+    expect(yaManager.select.forNoKeyUpdate).toHaveBeenCalledTimes(1);
+    expect(yaManager.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('si la RLS ya no deja tomar la fila: 403, sin cambio ni aviso', async () => {
+    const { controller, select, orden, notices } = bancoMembresia(VENDEDOR);
+    select.executeTakeFirst.mockResolvedValueOnce(undefined);
+
+    await expect(
+      controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'suspended' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(orden).not.toContain('update');
+    expect(notices.notify).not.toHaveBeenCalled();
   });
 
   it('si algo falla dentro de la transacción, no hay aviso', async () => {

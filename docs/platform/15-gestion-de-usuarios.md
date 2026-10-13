@@ -780,10 +780,12 @@ Sin cambios en la base ni en el panel.
   nodo. Esa membership se lee con su id en el contexto (`mail/mail-node.ts`, el mismo de "Olvidé mi
   contraseña", que antes era privado de `PasswordResetService`). A una cuenta suspendida también le
   llega: es a quien más le importa.
-- `PATCH /admin/users/status` lee el estado anterior de la cuenta con la fila tomada
-  (`FOR NO KEY UPDATE`): una cuenta que no existe es 404 antes del UPDATE. `PATCH
-/admin/memberships/status` compara con el estado que ya leía de la membership destino, y
-  `PATCH /admin/memberships/role` con su rol actual.
+- "Si cambió" se decide con lo que había al tomar la fila (`FOR NO KEY UPDATE`) dentro de la
+  transacción del cambio, no con una lectura anterior que otro admin pudo dejar vieja: dos cambios
+  en paralelo no dan dos avisos ni uno que no es el último. `PATCH /admin/users/status` lee así el
+  estado anterior de la cuenta (una cuenta que no existe es 404 antes del UPDATE), y
+  `PATCH /admin/memberships/status` y `PATCH /admin/memberships/role`, el estado y el rol de la
+  membership (403 si la RLS ya no la deja tomar, como el UPDATE).
 - `MailerService` ya no escribe en el log el destinatario de un correo que no tiene por dónde salir,
   y el error del SMTP va con las direcciones reemplazadas (`redactAddresses`): un correo es un dato
   personal.

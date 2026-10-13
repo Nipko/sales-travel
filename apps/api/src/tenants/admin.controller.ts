@@ -65,7 +65,6 @@ import {
 interface TargetMembership {
   id: string;
   role: Role;
-  status: MembershipStatus;
 }
 
 /** Lo que arrastró un cambio sobre una membership o un usuario, además del cambio mismo. */
@@ -115,8 +114,8 @@ export class AdminController {
    *
    * Una degradación puede dejar invitaciones que el usuario emitió y ya no podría emitir (un
    * tenant_admin que invitó a un admin y queda como admin): se revocan en la misma transacción que
-   * el cambio y su evento. Después del commit, si el rol de verdad cambió, la persona recibe el aviso
-   * `role_changed` con el rol nuevo.
+   * el cambio y su evento. Después del commit, si el rol de verdad cambió (contra el que había al
+   * tomar la fila, `lockMembership`), la persona recibe el aviso `role_changed` con el rol nuevo.
    */
   @Patch('memberships/role')
   async changeRole(
@@ -142,9 +141,10 @@ export class AdminController {
       await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
     }
 
-    const effects = await this.db.withRequestContext(
+    const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx) => {
+        const previous = await this.lockMembership(trx, current.id);
         await this.writeRole(trx, current.id, body.role);
         const revoked = await this.invitations.revokeOrphaned(trx, {
           inviterUserId: body.userId,
@@ -165,10 +165,10 @@ export class AdminController {
             revokedInvitations: revoked.length,
           },
         });
-        return { revokedInvitations: revoked.length };
+        return { revokedInvitations: revoked.length, changed: previous.role !== body.role };
       },
     );
-    if (current.role !== body.role) {
+    if (changed) {
       this.notices.notify('role_changed', {
         userId: body.userId,
         tenantId: body.tenantId,
@@ -339,8 +339,9 @@ export class AdminController {
    * sesiones del subárbol del nodo, para liberar su puesto y decirle por qué quedó afuera; las que
    * tiene en otros nodos siguen (antes se cerraban todas, y un vendedor de dos agencias quedaba
    * afuera de las dos). También se revocan las invitaciones que emitió y ya no podría emitir. Todo
-   * en una transacción, con su evento. Después del commit, si el estado de verdad cambió, la persona
-   * recibe el aviso de que su acceso a ese nodo fue suspendido o reactivado.
+   * en una transacción, con su evento. Después del commit, si el estado de verdad cambió (contra el
+   * que había al tomar la fila, `lockMembership`), la persona recibe el aviso de que su acceso a ese
+   * nodo fue suspendido o reactivado.
    */
   @Patch('memberships/status')
   async setMembershipStatus(
@@ -362,9 +363,10 @@ export class AdminController {
       await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
     }
 
-    const effects = await this.db.withRequestContext(
+    const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
-      async (trx): Promise<ChangeEffects> => {
+      async (trx): Promise<ChangeEffects & { changed: boolean }> => {
+        const previous = await this.lockMembership(trx, target.id);
         await this.writeStatus(trx, target.id, body.status);
 
         let revokedSessions = 0;
@@ -399,11 +401,11 @@ export class AdminController {
             revokedInvitations,
           },
         });
-        return { revokedSessions, revokedInvitations };
+        return { revokedSessions, revokedInvitations, changed: previous.status !== body.status };
       },
     );
 
-    if (target.status !== body.status) {
+    if (changed) {
       this.notices.notify(
         body.status === 'suspended' ? 'membership_suspended' : 'membership_reactivated',
         { userId: body.userId, tenantId: body.tenantId },
@@ -500,7 +502,7 @@ export class AdminController {
     const target = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
       trx
         .selectFrom('memberships')
-        .select(['id', 'role', 'status'])
+        .select(['id', 'role'])
         .where('user_id', '=', targetUserId)
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst(),
@@ -517,6 +519,26 @@ export class AdminController {
     if (result.numUpdatedRows === 0n) {
       throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
     }
+  }
+
+  /**
+   * El rol y el estado de la membership con la fila tomada, dentro de la transacción del cambio: el
+   * aviso a la persona compara con esto y no con la lectura de antes, que otro admin pudo dejar vieja
+   * (dos cambios en paralelo darían dos avisos, o uno que no es el último). 403 si la RLS no la deja
+   * ver, como el UPDATE que sigue.
+   */
+  private async lockMembership(
+    trx: Transaction<DB>,
+    membershipId: string,
+  ): Promise<{ role: Role; status: MembershipStatus }> {
+    const row = await trx
+      .selectFrom('memberships')
+      .select(['role', 'status'])
+      .where('id', '=', membershipId)
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+    if (row === undefined) throw new ForbiddenException('Ese usuario no es miembro de este nodo.');
+    return row;
   }
 
   private async writeRole(trx: Transaction<DB>, membershipId: string, role: Role): Promise<void> {
