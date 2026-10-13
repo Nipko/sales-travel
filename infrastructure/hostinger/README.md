@@ -263,6 +263,33 @@ sea `always`; la de hoteles va vacía. **No se usan para encender nada nuevo.** 
 ajuste equivalente en el panel, comprobar que el origen ya no dice _legado_, y después quitar la entrada de la
 variable y desplegar.
 
+### 6.2 Procesos automáticos: si el barrido de post-venta dejó de correr
+
+El panel lo dice sin leer logs: **Plataforma → Sistema › Procesos** muestra la última corrida correcta del barrido de
+post-venta (cada 15 minutos, dentro del api), la conciliación diaria por proveedor, la frescura de los catálogos de
+hoteles y cuándo corre cada cron. Si el barrido no tiene una corrida correcta en 45 minutos, el Resumen lo pone en
+_Requiere tu atención_ (tarjeta **Procesos**). Sin barrido no se verifican las reservas y cancelaciones de hotel que
+quedaron sin respuesta ni se recupera la conciliación del día.
+
+Cada corrida deja `system.post_sale_sweep.completed` (conteos y duración) o `.failed` (la clase del error) en
+`domain_events`, en el tenant de la plataforma. Qué revisar, en orden:
+
+En el VPS, en `/opt/sales-travel`:
+
+```bash
+# ¿El api está arriba y sin reinicios en bucle?
+docker compose ps api
+# ¿Qué dice el barrido? (post_sale.sweep.*, y si corre con BullMQ o con el temporizador del proceso)
+docker compose logs --since 2h api | grep -E 'post_sale.sweep|barrido de post-venta'
+# Las últimas corridas registradas
+docker compose exec -T postgres psql -U postgres -d sales_travel -c \
+  "SELECT occurred_at, event_type, payload->>'durationMs' AS ms, payload->>'errorClass' AS error FROM domain_events WHERE event_type LIKE 'system.post_sale_sweep.%' ORDER BY occurred_at DESC LIMIT 10"
+```
+
+Con Redis caído el barrido sigue con el temporizador del proceso (lo dice el log); si el api no arranca o se reinicia,
+`docker compose restart api`. Los crones de GitHub (aeropuertos, catálogo de Despegar, catálogo de TBO) se ven y se
+relanzan en Actions → el workflow → **Run workflow**.
+
 ---
 
 ## 7. El superadmin

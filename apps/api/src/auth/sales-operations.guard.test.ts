@@ -314,6 +314,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/overview',
   ),
   ...noVenta(
+    'Sistema › Procesos: si el barrido, la conciliación y los catálogos están corriendo (sólo lectura)',
+    'GET /admin/system/jobs',
+  ),
+  ...noVenta(
     'Agencias en números: puestos, ventas y pendientes de cada nodo, y el impacto de suspender uno (sólo lectura)',
     'GET /admin/tenants/stats',
     'GET /admin/tenants/:id/impact',

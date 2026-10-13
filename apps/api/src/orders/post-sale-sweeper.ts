@@ -4,6 +4,7 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { HcnTrackingService, type HcnSweepReport } from '../hotels/hcn-tracking.service.js';
 import {
@@ -23,6 +24,11 @@ import {
   HotelOrderCancellationService,
   type HotelCancelVerifySweepReport,
 } from './hotel-order-cancellation.service.js';
+import {
+  POST_SALE_SWEEP_EVENTS,
+  POST_SALE_SWEEP_JOB_ID,
+  SYSTEM_JOB_AGGREGATE,
+} from './post-sale-sweep-events.js';
 import {
   StaleCancelClaimService,
   type StaleCancelClaimSweepReport,
@@ -62,6 +68,11 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * payloads: es justo cuando la cola no encola nada que el barrido es la única vía de que una
  * reserva sin respuesta se lea.
  * Dos corridas a la vez no se estorban: cada paso es un CAS sobre la fila.
+ *
+ * Cada corrida deja su rastro en `domain_events` (POST_SALE_SWEEP_EVENTS), en la raíz `platform` y
+ * sin actor: `completed` con los conteos y la duración, o `failed` con la clase del error. Es lo que
+ * mira Plataforma → Sistema › Procesos para avisar si el barrido dejó de correr. La emisión es
+ * best-effort, como toda auditoría: no frena ni cambia el resultado de la corrida.
  */
 export type PostSaleSweepReport = HotelVerificationSweepReport & {
   tenants: number;
@@ -84,6 +95,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
   private scheduleWait: NodeJS.Timeout | undefined;
   private running = false;
   private stopped = false;
+  /** La raíz `platform`, donde queda el rastro de cada corrida. No cambia: se busca una vez. */
+  private platformRoot: string | undefined;
 
   constructor(
     private readonly db: DatabaseService,
@@ -94,6 +107,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly hcn: HcnTrackingService,
     private readonly reconciliation: ReconciliationService,
     private readonly staleClaims: StaleCancelClaimService,
+    private readonly audit: AuditService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -131,7 +145,71 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     this.stopTimers();
   }
 
+  /**
+   * Una corrida, con su rastro: `completed` al terminar o `failed` si se cae entera (hoy, sólo si no
+   * se puede leer la lista de tenants: lo de cada tenant ya se cuenta en `tenantsFailed`). El error
+   * se relanza igual, para que quien la llamó (el job de BullMQ o el temporizador) lo vea.
+   */
   async run(now: number = Date.now()): Promise<PostSaleSweepReport> {
+    const startedAt = Date.now();
+    let report: PostSaleSweepReport;
+    try {
+      report = await this.sweep(now);
+    } catch (err) {
+      await this.trace(POST_SALE_SWEEP_EVENTS.failed, { errorClass: errorName(err) });
+      throw err;
+    }
+    await this.trace(POST_SALE_SWEEP_EVENTS.completed, {
+      durationMs: Math.max(0, Date.now() - startedAt),
+      tenants: report.tenants,
+      tenantsFailed: report.tenantsFailed,
+      examined: report.examined,
+      adopted: report.adopted,
+      staleCancelClaims: { ...report.staleCancelClaims },
+      cancellations: { ...report.cancellations },
+      hcn: { ...report.hcn },
+      reconciliation: { ...report.reconciliation },
+    });
+    return report;
+  }
+
+  /**
+   * El rastro de una corrida, en la raíz `platform` (la lee el superadmin con la RLS de siempre,
+   * domain_events_subtree_read). Sin raíz —una base sin sembrar— queda sin tenant: no se pierde, pero
+   * la consola no la ve. `AuditService.emit` no lanza.
+   */
+  private async trace(eventType: string, payload: Record<string, unknown>): Promise<void> {
+    await this.audit.emit({
+      eventType,
+      tenantId: (await this.platformRootId()) ?? null,
+      actorUserId: null,
+      aggregateType: SYSTEM_JOB_AGGREGATE,
+      aggregateId: POST_SALE_SWEEP_JOB_ID,
+      payload,
+    });
+  }
+
+  /**
+   * La raíz `platform`, con el mismo criterio que TenantsService.platformRootId (la base admite una
+   * sola, 0050). Se lee acá y no con ese servicio para no arrastrar la red y las invitaciones al
+   * módulo del worker. `tenants` no tiene RLS. Si no se pudo leer, se reintenta en la próxima corrida.
+   */
+  private async platformRootId(): Promise<string | undefined> {
+    if (this.platformRoot !== undefined) return this.platformRoot;
+    try {
+      const row = await this.db.db
+        .selectFrom('tenants')
+        .select('id')
+        .where('tenant_type', '=', 'platform')
+        .executeTakeFirst();
+      this.platformRoot = row?.id;
+    } catch (err) {
+      this.logger.warn(`post_sale.sweep.platform_root_failed error=${errorName(err)}`);
+    }
+    return this.platformRoot;
+  }
+
+  private async sweep(now: number): Promise<PostSaleSweepReport> {
     const tenants = await this.db.db.selectFrom('tenants').select('id').orderBy('id').execute();
     const report: PostSaleSweepReport = {
       tenants: tenants.length,

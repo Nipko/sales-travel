@@ -632,6 +632,7 @@ d('Resumen de la plataforma (funciones de 0075 como app_user)', () => {
       orders: _orders,
       seats: _seats,
       reconciliationRuns: _runs,
+      jobs: _jobs,
       ...counters
     } = view.attention;
     expect(counters).toEqual({

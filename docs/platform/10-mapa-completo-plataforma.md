@@ -969,7 +969,9 @@ GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado
                                          -- conciliación, invitaciones), las reservas con problemas
                                          -- (admin_order_attention: total, por motivo y muestra de 10),
                                          -- puestos al 90 %, corridas de conciliación de 7 días,
-                                         -- frescura de los catálogos de hoteles y señales de
+                                         -- frescura de los catálogos de hoteles, si el barrido de
+                                         -- post-venta dejó de correr (attention.jobs: sin corrida
+                                         -- correcta en 45 min) y señales de
                                          -- proveedores. Sólo lee; las funciones platform_overview_* y
                                          -- admin_* exigen en la base is_platform_superadmin() (42501
                                          -- admin_superadmin_required → 403 SUPERADMIN_REQUIRED con
@@ -977,6 +979,29 @@ GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado
                                          -- adonde entra el superadmin al abrir `/` (BFF
                                          -- /api/admin/overview?period=today|7d|30d|month, traducido
                                          -- a días de Bogotá).
+GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos (implementado, sin
+                                         -- migración): lo que corre solo, sin leer los logs.
+                                         -- postSaleSweep {lastRunAt, lastOk, lastOkAt, durationMs,
+                                         -- tenantsFailed, runs24h, failures24h, stale} del rastro del
+                                         -- barrido: cada corrida de PostSaleSweeper deja
+                                         -- system.post_sale_sweep.completed {durationMs, tenants,
+                                         -- tenantsFailed, examined, adopted, staleCancelClaims,
+                                         -- cancellations, hcn, reconciliation} o .failed {errorClass}
+                                         -- en domain_events, en la raíz platform y sin actor (sólo
+                                         -- conteos y códigos; ~35.000 filas al año). Se lee con la
+                                         -- RLS de siempre (domain_events_subtree_read): la red no lo
+                                         -- ve. stale = sin corrida correcta en 45 min (corre cada 15).
+                                         -- reconciliation = admin_reconciliation_health(7 días) por
+                                         -- proveedor, con stale a las 36 h sin terminar una corrida;
+                                         -- catalogs = hotel_provider_city por proveedor (hoy sólo
+                                         -- TBO: el sync de Despegar reemplaza hotel_inventory y no
+                                         -- escribe ciudades), stale a las 36 h; airports {count};
+                                         -- schedules = el barrido, la conciliación (04:30 UTC) y los
+                                         -- crones de sync-airports.yml, sync-hotel-inventory.yml y
+                                         -- sync-tbo-hotel-inventory.yml (un test los compara con los
+                                         -- workflows). La actividad de la red (networkAudit) deja
+                                         -- fuera los eventos system.*. En el panel:
+                                         -- /admin/plataforma/sistema (BFF /api/admin/system/jobs).
 GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
                                          -- Plataforma → Reservas de la red (implementado, 0076):
                                          -- admin_search_orders. tenantId con su red (subtree=false,

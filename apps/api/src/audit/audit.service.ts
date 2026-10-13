@@ -25,6 +25,13 @@ export interface AuditEntry {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Los eventos de las tareas automáticas (`system.*`, p. ej. cada corrida del barrido de post-venta,
+ * orders/post-sale-sweep-events.ts). Son latidos, no acciones de una persona: la actividad de la red
+ * los deja fuera y los lee Plataforma → Sistema › Procesos.
+ */
+export const SYSTEM_EVENT_PREFIX = 'system.';
+
 /** La fila de `domain_events` de un evento, con el actor y el tenant del request si no vienen. */
 function auditRow(event: AuditEvent): Insertable<DomainEventsTable> {
   const ctx = currentContext();
@@ -78,6 +85,9 @@ export class AuditService {
   /**
    * Eventos recientes de toda la red bajo `rootTenantId` (subárbol por path). La AUTORIZACIÓN
    * (que el usuario gestione el root) se valida en el controlador antes de llamar.
+   *
+   * Sin los `system.*` ({@link SYSTEM_EVENT_PREFIX}): el barrido deja uno en la raíz `platform`
+   * cada 15 minutos y la actividad de la plataforma sólo mostraría eso.
    */
   async networkAudit(rootTenantId: string, limit = 50): Promise<AuditEntry[]> {
     const lim = Math.min(200, Math.max(1, Math.trunc(limit)));
@@ -99,6 +109,7 @@ export class AuditService {
       JOIN tenants root ON root.id = ${rootTenantId}::uuid
       LEFT JOIN users u ON u.id = e.actor_user_id
       WHERE t.path OPERATOR(public.<@) root.path
+        AND e.event_type NOT LIKE ${`${SYSTEM_EVENT_PREFIX}%`}
       ORDER BY e.occurred_at DESC
       LIMIT ${lim}
     `;
