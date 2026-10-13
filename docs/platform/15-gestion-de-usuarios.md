@@ -871,7 +871,9 @@ de sus nodos, no sólo en el de la ruta.
   cambio de contraseña heredan el instante de la sesión que reemplazan; entrar con un equipo de
   confianza cuenta desde que se confió en él (`TrustedDeviceService.use` devuelve ese instante);
   completar un ingreso liberando un puesto conserva el del intento original (claim `mfa_at` del
-  permiso). `IssueSessionParams.mfaVerifiedAt` lo lleva hasta el `INSERT` de la sesión.
+  permiso). `IssueSessionParams.mfaVerifiedAt` lo lleva hasta el `INSERT` de la sesión, que lo
+  topea con `now()` de la base (`LEAST`): el claim sale del reloj de la API y, adelantado, dejaría la
+  ventana abierta de más. Por lo mismo `SessionService.validate` nunca arma un instante en el futuro.
 
 ### Panel
 
@@ -908,10 +910,33 @@ de sus nodos, no sólo en el de la ruta.
   autorización y del 409; a un vendedor, no.
 - `apps/api/src/auth/auth-premium.integration.test.ts` (Postgres, como `app_user`): la ventana corre
   desde el código, `stepUp` la renueva y el mismo código no sirve dos veces; cambiar de contraseña o
-  de agencia hereda el instante; el equipo de confianza cuenta desde su alta; sesión revocada, 401.
+  de agencia hereda el instante; el equipo de confianza cuenta desde su alta; liberar un puesto al
+  entrar conserva el instante del intento (aun con un equipo de confianza de hace una hora); un
+  instante heredado en el futuro queda topeado por la base; sesión revocada, 401.
 - `seat.service.test.ts`, `jwt-tokens.test.ts`, `auth.service.*.test.ts`, `dto.test.ts` y
   `auth.controller.step-up.test.ts`: el instante heredado de punta a punta y el borde del endpoint.
 - Panel: `lib/step-up.test.ts` (reintento único, cancelar, sin bucle, sin diálogo, código
   compartido, el cuerpo del BFF y los mensajes, en tú), `components/step-up-dialog.render.test.ts`,
   `app/api/auth/step-up/route.test.ts`, y el reintento en `tenant-admin-seats-client.test.ts` y
   `platform-users.test.ts`.
+
+### Despliegue y uso real
+
+- Sin migración. Las sesiones vivas al desplegar ya tienen `mfa_verified_at` (el del login): la
+  primera acción crítica después de 10 minutos pide el código. Un permiso para liberar un puesto
+  firmado antes del despliegue no trae `mfa_at` y cuenta desde su emisión (`iat`), a lo sumo 5
+  minutos después del código.
+- API y panel van juntos. Si el API sale antes, el panel viejo muestra el 403 como un error ("Confirma
+  con tu código…") y la acción no se hace hasta que salga el panel; si el panel sale antes, el
+  diálogo nunca se abre (el API viejo no responde ese 403).
+- **Quién pierde algo**: un `agency_admin` o un `admin` sin el 2FA activo (esos roles no lo
+  exigen) ya no puede restablecer el 2FA de alguien, forzarle el cambio de contraseña ni enviarle el
+  enlace a un admin: recibe 403 `MFA_REQUIRED_FOR_ACTION` hasta que active el 2FA en Seguridad. Lo
+  demás del soporte (enviar el enlace a un vendedor, desbloquear, cerrar sesiones) sigue igual. El
+  superadmin y los roles que exigen el 2FA no cambian, salvo el código cada 10 minutos.
+- **Lo que no cubre**: en una cuenta SIN 2FA, una sesión robada puede activarlo con su propio
+  teléfono (el primer enrolamiento no pide la contraseña) y quedar reconfirmada en el acto. Activarlo
+  así cierra las demás sesiones de la persona (se nota: queda afuera y sin su código), pero no lo
+  impide, y hoy activarlo no manda aviso por correo. Cerrar ese hueco es pedir la contraseña en el
+  primer enrolamiento o exigir el 2FA a los admins de agencia: queda para una decisión aparte.
+  Tampoco lo piden, por D1, suspender en un solo nodo, cambiar un rol ni invitar.
