@@ -40,6 +40,7 @@ function query(rows: unknown[]): unknown {
 }
 
 const USER = 'user-reset';
+const OTHER_SESSION = 'sesion-de-otra-persona';
 const jwt = new JwtService();
 
 interface UserRow {
@@ -49,6 +50,7 @@ interface UserRow {
   locked_until: Date | null;
   mfa_enabled_at: Date | null;
   password_reset_required_at: Date | null;
+  password_changed_at: Date | null;
   last_tenant_id: string | null;
 }
 
@@ -62,6 +64,7 @@ let issue: ReturnType<typeof vi.fn>;
 let createChallenge: ReturnType<typeof vi.fn>;
 let useDevice: ReturnType<typeof vi.fn>;
 let remindRequiredReset: ReturnType<typeof vi.fn>;
+let releaseSession: ReturnType<typeof vi.fn>;
 
 function build(): AuthService {
   const db = {
@@ -85,7 +88,17 @@ function build(): AuthService {
     {} as MailerService,
     {} as SessionService,
     { verifyCode: vi.fn(() => Promise.resolve(true)) } as unknown as MfaService,
-    { issue } as unknown as SeatService,
+    {
+      issue,
+      consumeReleaseToken: vi.fn(() => Promise.resolve(true)),
+      canRelease: vi.fn(() => Promise.resolve(true)),
+      poolSessions: vi.fn(() =>
+        Promise.resolve([
+          { sessionId: OTHER_SESSION, userId: 'otra-persona', tenantId: 'tenant-1' },
+        ]),
+      ),
+      releaseSession,
+    } as unknown as SeatService,
     {
       create: createChallenge,
       reserveAttempt: vi.fn(() =>
@@ -125,6 +138,7 @@ describe('AuthService.login con el cambio de contraseña pendiente', () => {
       locked_until: null,
       mfa_enabled_at: null,
       password_reset_required_at: new Date('2026-10-13T10:00:00.000Z'),
+      password_changed_at: null,
       last_tenant_id: null,
     };
     passwordOk = true;
@@ -145,6 +159,7 @@ describe('AuthService.login con el cambio de contraseña pendiente', () => {
     );
     useDevice = vi.fn(() => Promise.resolve(true));
     remindRequiredReset = vi.fn(() => Promise.resolve({ linkSent: true }));
+    releaseSession = vi.fn(() => Promise.resolve(true));
   });
 
   it('con la contraseña correcta: 403 PASSWORD_RESET_REQUIRED, sin sesión ni puesto', async () => {
@@ -258,5 +273,39 @@ describe('AuthService.login con el cambio de contraseña pendiente', () => {
     );
     expect(issue).not.toHaveBeenCalled();
     expect(remindRequiredReset).toHaveBeenCalledWith(USER);
+  });
+
+  it('marcada antes de liberar un puesto: 403 sin desconectar a nadie ni abrir sesión', async () => {
+    const { token } = await jwt.signSeatRelease({
+      userId: USER,
+      poolTenantId: 'tenant-1',
+      tenantId: 'tenant-1',
+      mfa: false,
+      remember: false,
+      jti: randomUUID(),
+    });
+
+    expect(await rejection(build().releaseSeat(token, OTHER_SESSION))).toBeInstanceOf(
+      PasswordResetRequiredError,
+    );
+    expect(releaseSession).not.toHaveBeenCalled();
+    expect(issue).not.toHaveBeenCalled();
+    expect(remindRequiredReset).toHaveBeenCalledWith(USER);
+  });
+
+  it('sin la marca, liberar un puesto desconecta a la otra persona y abre la sesión', async () => {
+    user.password_reset_required_at = null;
+    const { token } = await jwt.signSeatRelease({
+      userId: USER,
+      poolTenantId: 'tenant-1',
+      tenantId: 'tenant-1',
+      mfa: false,
+      remember: false,
+      jti: randomUUID(),
+    });
+
+    expect(await build().releaseSeat(token, OTHER_SESSION)).toMatchObject({ userId: USER });
+    expect(releaseSession).toHaveBeenCalledWith(OTHER_SESSION, expect.any(String));
+    expect(issue).toHaveBeenCalledTimes(1);
   });
 });

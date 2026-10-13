@@ -7,6 +7,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import { PasswordReuseError } from './auth-errors.js';
 import { passwordResetEmail } from './password-reset-email.js';
 import {
   PasswordResetService,
@@ -29,11 +30,15 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/** La fila que lee "elegir una contraseña nueva" al intentar ingresar (tomada con FOR NO KEY UPDATE). */
+/**
+ * La fila del usuario tomada con FOR NO KEY UPDATE: la que lee "elegir una contraseña nueva" al
+ * intentar ingresar y la que toma el canje del enlace antes de marcarlo usado.
+ */
 interface Cuenta {
   email: string;
   status: string;
   password_reset_required_at: Date | null;
+  password_hash?: string;
 }
 
 interface Banco {
@@ -66,6 +71,9 @@ function banco(opts: Banco = {}) {
     if (q.sql.includes('from "memberships"')) return membership ? [membership] : [];
     if (q.sql.startsWith('select "id" from "password_reset_tokens"')) {
       return opts.recentToken ? [{ id: 'enlace-reciente' }] : [];
+    }
+    if (q.sql.startsWith('select "user_id" from "password_reset_tokens"')) {
+      return [{ user_id: USER }];
     }
     if (q.sql.startsWith('update "password_reset_tokens"') && q.sql.includes('returning')) {
       return [{ user_id: USER }];
@@ -382,6 +390,79 @@ describe('reset y change levantan la marca de "elegir una contraseña nueva"', (
     const at = columns.findIndex((c) => c.startsWith('"password_reset_required_at"'));
     expect(update?.parameters[at]).toBeNull();
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER, 'password_reset');
+  });
+
+  it('reset: toma la fila del usuario antes que la del enlace (el orden de forzar el cambio)', async () => {
+    const { service, k } = banco();
+
+    await service.reset('token-del-correo', 'una-contraseña-nueva-larga');
+
+    const lock = k.queries.findIndex(
+      (q) => q.sql.includes('from "users"') && q.sql.endsWith('for no key update'),
+    );
+    const redeem = k.queries.findIndex(
+      (q) => q.sql.startsWith('update "password_reset_tokens"') && q.sql.includes('returning'),
+    );
+    expect(lock).toBeGreaterThanOrEqual(0);
+    expect(redeem).toBeGreaterThan(lock);
+  });
+
+  it('reset con el cambio forzado: la misma contraseña de antes es PASSWORD_REUSED y no cambia nada', async () => {
+    const { service, k, sessions, audit } = banco({
+      cuenta: { ...REQUERIDA, password_hash: 'hash-viejo' },
+      verify: [true],
+    });
+
+    const err = await service
+      .reset('token-del-correo', 'la-misma-de-antes')
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PasswordReuseError);
+    expect((err as PasswordReuseError).getStatus()).toBe(400);
+    expect((err as PasswordReuseError).reason).toBe('PASSWORD_REUSED');
+    expect(k.queries.some((q) => q.sql.startsWith('update "users"'))).toBe(false);
+    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('reset con el cambio forzado y una contraseña distinta: la acepta', async () => {
+    const { service, k } = banco({
+      cuenta: { ...REQUERIDA, password_hash: 'hash-viejo' },
+      verify: [false],
+    });
+
+    expect(await service.reset('token-del-correo', 'una-contraseña-nueva-larga')).toEqual({
+      ok: true,
+    });
+    expect(k.queries.some((q) => q.sql.startsWith('update "users"'))).toBe(true);
+  });
+
+  it('reset sin el cambio forzado: no compara con la anterior ("Olvidé mi contraseña")', async () => {
+    const { service } = banco({
+      cuenta: { ...REQUERIDA, password_reset_required_at: null, password_hash: 'hash-viejo' },
+      verify: [true],
+    });
+
+    expect(await service.reset('token-del-correo', 'la-misma-de-antes')).toEqual({ ok: true });
+  });
+
+  it('reset con un enlace que no existe, ya usado o vencido: 400 sin tocar al usuario', async () => {
+    const k = scriptedKysely((q: CompiledQuery) => {
+      if (q.sql.includes('"password_reset_tokens"')) return [];
+      throw new Error(`consulta no prevista: ${q.sql}`);
+    });
+    const service = new PasswordResetService(
+      { db: k.db } as unknown as DatabaseService,
+      { hash: vi.fn(() => Promise.resolve('hash-nuevo')) } as unknown as PasswordService,
+      {} as MailerService,
+      {} as AuditService,
+      {} as SessionService,
+    );
+
+    await expect(service.reset('token-desconocido', 'una-contraseña-nueva-larga')).rejects.toThrow(
+      'el enlace de restablecimiento es inválido o venció',
+    );
+    expect(k.queries.some((q) => q.sql.includes('"users"'))).toBe(false);
   });
 
   it('change: igual en el cambio autenticado', async () => {

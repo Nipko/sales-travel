@@ -488,7 +488,7 @@ export class AuthService {
 
     const user = await this.db.db
       .selectFrom('users')
-      .select(['status', 'password_changed_at', 'mfa_enabled_at'])
+      .select(['status', 'password_changed_at', 'mfa_enabled_at', 'password_reset_required_at'])
       .where('id', '=', claims.userId)
       .executeTakeFirst();
     if (
@@ -499,6 +499,9 @@ export class AuthService {
     ) {
       throw new SeatReleaseExpiredError();
     }
+    // Un admin forzó el cambio de contraseña después del intento que emitió el permiso: no hay
+    // sesión (finishLogin también lo frena), y antes de desconectar a otra persona, no después.
+    if (user.password_reset_required_at) await this.refuseUntilReset(claims.userId);
     if (!(await this.seats.canRelease(claims.userId, claims.poolTenantId))) {
       throw new SeatReleaseForbiddenError();
     }

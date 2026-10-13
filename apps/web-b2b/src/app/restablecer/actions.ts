@@ -10,6 +10,12 @@ export interface ResetState {
 /** Mismo mínimo que exige la API (Zod: min 12). Se valida acá para dar feedback inmediato. */
 const MIN_PASSWORD = 12;
 
+/** El motivo del 400 cuando, con el cambio forzado por un admin, eligió la misma contraseña. */
+const PASSWORD_REUSED = 'PASSWORD_REUSED';
+
+const PASSWORD_REUSED_MESSAGE =
+  'Elige una contraseña distinta de la anterior: un administrador te pidió cambiarla.';
+
 function asString(value: FormDataEntryValue | null): string {
   return typeof value === 'string' ? value : '';
 }
@@ -34,6 +40,8 @@ export async function resetPasswordAction(
   });
 
   if (!res.ok) {
+    // Un admin le pidió cambiarla porque la actual pudo quedar expuesta: el enlace sigue sirviendo.
+    if (res.error.reason === PASSWORD_REUSED) return { error: PASSWORD_REUSED_MESSAGE };
     if (res.error.status === 400) {
       return { error: 'El enlace ya se usó o venció. Pide uno nuevo.' };
     }

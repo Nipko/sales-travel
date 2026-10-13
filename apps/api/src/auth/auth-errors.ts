@@ -242,6 +242,20 @@ export class PasswordResetRequiredError extends ForbiddenException {
   }
 }
 
+/**
+ * Al canjear el enlace con el cambio forzado pendiente, la contraseña nueva es la misma de antes. Un
+ * admin la forzó porque la actual pudo quedar expuesta: aceptarla levantaría la marca y la dejaría
+ * servir otra vez. 400 con su motivo: el enlace sigue vigente para elegir otra.
+ */
+export class PasswordReuseError extends BadRequestException {
+  readonly reason = 'PASSWORD_REUSED';
+
+  constructor() {
+    super('Elige una contraseña distinta de la anterior.');
+    this.name = 'PasswordReuseError';
+  }
+}
+
 /** El permiso para liberar un puesto venció, ya se usó o no es válido. 401. */
 export class SeatReleaseExpiredError extends UnauthorizedException {
   readonly reason = 'SEAT_RELEASE_EXPIRED';

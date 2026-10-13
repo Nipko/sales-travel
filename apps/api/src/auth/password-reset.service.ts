@@ -6,6 +6,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { currentContext } from '../request-context/request-context.js';
+import { PasswordReuseError } from './auth-errors.js';
 import { passwordResetEmail, type ResetEmailVariant } from './password-reset-email.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
@@ -288,22 +289,56 @@ export class PasswordResetService {
    * El canje es un UPDATE condicional (`used_at IS NULL`) dentro de la misma transacción que el
    * cambio: leer y después marcar dejaba que el mismo enlace sirviera dos veces en paralelo. Los
    * demás enlaces pendientes del usuario también se dan por usados.
+   *
+   * La fila del usuario se toma ANTES que la del enlace, en el mismo orden que forzar el cambio y
+   * enviar el enlace desde Equipo (usuario → enlaces). Al revés, un canje en paralelo con "Forzar
+   * cambio de contraseña" se trababa con él (deadlock) y uno de los dos terminaba en 500.
+   *
+   * Con el cambio forzado pendiente, la contraseña nueva no puede ser la misma de antes
+   * (PasswordReuseError): el admin lo forzó porque pudo quedar expuesta. El rollback deja el enlace
+   * vigente para elegir otra.
    */
   async reset(token: string, newPassword: string): Promise<{ ok: true }> {
     const hash = await this.password.hash(newPassword);
     const now = new Date();
+    const tokenHash = sha256(token);
 
     const userId = await this.db.db.transaction().execute(async (trx) => {
+      const owner = await trx
+        .selectFrom('password_reset_tokens')
+        .select('user_id')
+        .where('token_hash', '=', tokenHash)
+        .where('used_at', 'is', null)
+        .where('expires_at', '>', now)
+        .executeTakeFirst();
+      if (!owner) {
+        throw new BadRequestException('el enlace de restablecimiento es inválido o venció');
+      }
+      const user = await trx
+        .selectFrom('users')
+        .select(['password_hash', 'password_reset_required_at'])
+        .where('id', '=', owner.user_id)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+
       const row = await trx
         .updateTable('password_reset_tokens')
         .set({ used_at: now })
-        .where('token_hash', '=', sha256(token))
+        .where('token_hash', '=', tokenHash)
         .where('used_at', 'is', null)
         .where('expires_at', '>', now)
         .returning('user_id')
         .executeTakeFirst();
       if (!row) {
         throw new BadRequestException('el enlace de restablecimiento es inválido o venció');
+      }
+
+      if (
+        user?.password_reset_required_at &&
+        user.password_hash &&
+        (await this.password.verify(newPassword, user.password_hash))
+      ) {
+        throw new PasswordReuseError();
       }
 
       await trx

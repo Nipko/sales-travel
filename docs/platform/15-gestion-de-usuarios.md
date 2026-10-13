@@ -132,11 +132,16 @@ enlace, la vieja deja de servir en el acto. Nadie elige la contraseña nueva por
   `auth.login.password_reset_required` (`{ linkSent }`). Si no tiene un enlace pendiente de los
   últimos 10 minutos, le envía uno nuevo (sin invalidar el anterior) por el correo de su nodo más
   antiguo. El código del 2FA y liberar un puesto también responden el 403 si el admin lo forzó en el
-  medio.
+  medio; liberar un puesto lo mira antes de desconectar a la otra persona.
 - Mientras la marca está, `SessionService.validate` no acepta ninguna sesión de la persona: un login
   que pasó la contraseña justo antes de forzarlo no deja una sesión viva.
 - La marca la levantan el canje del enlace (el del admin o el de "Olvidé mi contraseña") y el cambio
-  de contraseña, en el mismo `UPDATE` que fija la contraseña nueva.
+  de contraseña, en el mismo `UPDATE` que fija la contraseña nueva. Con la marca puesta, el canje
+  rechaza la misma contraseña de antes (400 `PASSWORD_REUSED`, el enlace sigue vigente): el admin la
+  forzó porque pudo quedar expuesta, y aceptarla la dejaría servir otra vez. `/restablecer` lo dice
+  ("Elige una contraseña distinta de la anterior…") en vez de "el enlace venció".
+- El canje toma la fila del usuario antes que la del enlace, en el mismo orden que forzar el cambio y
+  enviar el enlace: al revés, canjear mientras un admin lo forzaba terminaba en deadlock (500).
 - "Enviar enlace" a quien tiene el cambio pendiente usa el correo de "Elige una contraseña nueva" (el
   otro dice que la actual sigue funcionando). "Olvidé mi contraseña" ahora busca el nodo de la persona
   con su id en el contexto: antes la RLS de `memberships` no lo dejaba ver y el correo salía siempre
@@ -163,18 +168,22 @@ enlace, la vieja deja de servir en el acto. Nadie elige la contraseña nueva por
 
 - `apps/api/src/auth/auth.service.password-reset-required.test.ts`: 403 tipado, sin contar el fallo,
   sin desafío ni equipo de confianza, sin sesión; suspendida, bloqueada o con la contraseña incorrecta
-  da el 401; forzado en medio del paso del código.
+  da el 401; forzado en medio del paso del código o antes de liberar un puesto (sin desconectar a
+  nadie).
 - `apps/api/src/auth/password-reset.service.test.ts`: `requireReset` (orden y transacción), el
-  reenvío a lo sumo cada 10 minutos, `reset` y `change` levantan la marca, la plantilla nueva en tú y
+  reenvío a lo sumo cada 10 minutos, `reset` y `change` levantan la marca, `reset` toma el usuario
+  antes que el enlace y rechaza la misma contraseña sólo con la marca, la plantilla nueva en tú y
   escapada.
 - `apps/api/src/tenants/member-support.service.test.ts`: autorización reusada, 409, 429 sólo al
   volver a forzarlo, correo después del commit y su fallo auditado.
 - `apps/api/src/auth/password-reset-required.integration.test.ts` (se salta sin `PGHOST`): forzar →
   login 403 → canjear el enlace → login con la nueva; reenvío a los 10 minutos; 2FA sin desafío;
-  sesión emitida tarde que no vale; "Olvidé mi contraseña" levanta la marca; `user_admin_overview`
+  sesión emitida tarde que no vale; "Olvidé mi contraseña" levanta la marca; la misma contraseña no
+  sirve y el enlace sigue vigente; canjear mientras otro lo fuerza no se traba; `user_admin_overview`
   como `app_user`.
 - Web: `login-state.test.ts`, `login-steps.render.test.ts`, `tenant-admin-team.test.ts`,
-  `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts` y `team.render.test.ts`.
+  `tenant-admin-proxy.test.ts`, `tenant-admin-proxy-route.test.ts`, `team.render.test.ts` y
+  `restablecer/actions.test.ts`.
 
 ## Invitaciones confiables (USR-8)
 

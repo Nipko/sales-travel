@@ -366,6 +366,67 @@ d('forzar el cambio de contraseña, contra Postgres como app_user', () => {
     session(await auth.login({ email: email('eli'), password: NEW_PASSWORD }));
   });
 
+  it('con el cambio forzado, la misma contraseña de antes no sirve y el enlace sigue vigente', async () => {
+    const iris = await user('iris', 'vendedor');
+    await support.requirePasswordReset(adminId, agency, iris);
+    const link = lastMailedToken();
+
+    expect(await rejection(resets.reset(link, PASSWORD))).toBe('400/PASSWORD_REUSED');
+    expect(await account(iris)).toMatchObject({ required: true });
+    expect(await tokens(iris)).toEqual([{ token_hash: sha256(link), used: false }]);
+    expect(await rejection(auth.login({ email: email('iris'), password: PASSWORD }))).toBe(
+      '403/PASSWORD_RESET_REQUIRED',
+    );
+
+    await resets.reset(link, NEW_PASSWORD);
+    expect(await account(iris)).toMatchObject({ required: false });
+    session(await auth.login({ email: email('iris'), password: NEW_PASSWORD }));
+  });
+
+  it('canjear el enlace mientras otro lo fuerza no se traba: la fila del usuario va primero', async () => {
+    const juan = await user('juan', 'vendedor');
+    await resets.request(email('juan'));
+    const link = lastMailedToken();
+
+    // Lo que hace forzar el cambio (y enviar el enlace desde Equipo): primero toma la fila del
+    // usuario y después da por usados sus enlaces.
+    const forcing = await admin.connect();
+    try {
+      await forcing.query('BEGIN');
+      await forcing.query('SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE', [juan]);
+
+      // `rejection` relanza lo que no es un error HTTP (un deadlock, por ejemplo): queda en `err`.
+      const redeem = rejection(resets.reset(link, NEW_PASSWORD)).then(
+        (outcome) => ({ outcome }),
+        (err: unknown) => ({ err }),
+      );
+      // El canje queda esperando la fila del usuario...
+      for (let i = 0; i < 100; i++) {
+        const { rows } = await admin.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND datname = current_database()
+              AND query ILIKE '%"users"%'`,
+        );
+        if (rows[0]!.n > 0) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      // ...sin haber tomado su enlace: si lo hubiera tomado antes, esto sería un deadlock y uno de
+      // los dos terminaría con error.
+      await forcing.query(
+        `UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`,
+        [juan],
+      );
+      await forcing.query('COMMIT');
+
+      // El enlace quedó sin efecto antes del canje: el 400 de siempre, no un error de la base.
+      expect(await redeem).toEqual({ outcome: '400/?' });
+    } finally {
+      forcing.release();
+    }
+    // La contraseña no cambió.
+    session(await auth.login({ email: email('juan'), password: PASSWORD }));
+  });
+
   it('volver a forzarlo con 3 enlaces recientes es 429; la primera vez, nunca', async () => {
     const fede = await user('fede', 'vendedor');
     for (let i = 0; i < 3; i++) await resets.request(email('fede'));
