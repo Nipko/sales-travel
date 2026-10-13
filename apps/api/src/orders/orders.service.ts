@@ -85,6 +85,7 @@ import {
   persistedTicketOperation,
   settleTicketVoid,
   ticketVoidAvailability,
+  ticketVoidRefusal,
   type TicketVoidOutcome,
   type TicketVoidReply,
   type TicketVoidSettlement,
@@ -257,9 +258,9 @@ function thrownVoidOutcome(failure: CancelRetryPolicy): TicketVoidOutcome {
  */
 function voidFailure(err: unknown, policy: CancelRetryPolicy): HttpException {
   if (err instanceof HttpException) return err;
-  if (policy.reconciliationRequired) return new ConflictException(TICKET_VOID_MESSAGES.unverified);
-  if (policy.retryable) return new ServiceUnavailableException(TICKET_VOID_MESSAGES.notSent);
-  return new ConflictException(TICKET_VOID_MESSAGES.rejected);
+  if (policy.reconciliationRequired) return new ConflictException(ticketVoidRefusal('unverified'));
+  if (policy.retryable) return new ServiceUnavailableException(ticketVoidRefusal('notSent'));
+  return new ConflictException(ticketVoidRefusal('rejected'));
 }
 
 /** Lo que se escribe junto con el cierre de la operación `cancel`, en su misma transacción. */
@@ -2151,7 +2152,7 @@ export class OrdersService {
       };
     }
     if (run.voidOutcome === 'REJECTED') {
-      throw new ConflictException(TICKET_VOID_MESSAGES.rejected);
+      throw new ConflictException(ticketVoidRefusal('rejected'));
     }
     // A medias, sin confirmar o sin desenlace conocido: se concilia y no se repite.
     return {

@@ -34,6 +34,29 @@ export const TICKET_VOID_MESSAGES = {
     'Una anulación no se reintenta desde el historial. Vuelve a consultar las condiciones de los tiquetes y anúlalos de nuevo.',
 } as const;
 
+/**
+ * El motivo máquina de cada rechazo de `POST /orders/:id/void` (sale como `reason` en el cuerpo).
+ * Con él la pantalla distingue un 409 «quedó en duda, no repitas» de un 409 «la aerolínea dijo que
+ * no» sin comparar textos, y un 503 en el que no salió nada de un 5xx que no se sabe si llegó.
+ */
+export const TICKET_VOID_REASONS = {
+  /** Ya no se puede anular sin costo (lo lleva `TicketVoidNotAvailableError`). */
+  notAvailable: 'TICKET_VOID_NOT_AVAILABLE',
+  /** Pudo llegar al proveedor y no se sabe qué hizo: se concilia, nunca se repite. */
+  unverified: 'TICKET_VOID_UNVERIFIED',
+  /** La aerolínea la rechazó y la reserva sigue con sus tiquetes emitidos. */
+  rejected: 'TICKET_VOID_REJECTED',
+  /** No salió nada: se puede volver a pedir, con una consulta nueva de las condiciones. */
+  notSent: 'TICKET_VOID_NOT_SENT',
+} as const;
+
+/** El cuerpo de un rechazo de la anulación: el texto para el vendedor y su motivo máquina. */
+export function ticketVoidRefusal(
+  kind: Exclude<keyof typeof TICKET_VOID_REASONS, 'notAvailable'>,
+): { readonly message: string; readonly reason: string } {
+  return { message: TICKET_VOID_MESSAGES[kind], reason: TICKET_VOID_REASONS[kind] };
+}
+
 /** El `last_error` durable de la operación: qué se puede hacer, nunca el error del proveedor. */
 export const VOID_UNVERIFIED_LAST_ERROR = 'Anulación sin confirmar; requiere conciliación.';
 export const VOID_REJECTED_LAST_ERROR = 'Anulación rechazada por la aerolínea.';

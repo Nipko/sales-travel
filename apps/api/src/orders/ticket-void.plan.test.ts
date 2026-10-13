@@ -1,10 +1,14 @@
 import type { OrderView, TicketCheckResult } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
+import { TicketVoidNotAvailableError } from '../providers/provider.types.js';
 import {
+  TICKET_VOID_MESSAGES,
+  TICKET_VOID_REASONS,
   persistedTicketOperation,
   publicTicketCheck,
   settleTicketVoid,
   ticketVoidAvailability,
+  ticketVoidRefusal,
   voidedTicketCount,
 } from './ticket-void.plan.js';
 
@@ -231,5 +235,27 @@ describe('persistedTicketOperation y voidedTicketCount', () => {
     ).toBe(0);
     expect(voidedTicketCount(vista(['VOIDED'], false))).toBe(0);
     expect(voidedTicketCount({ found: true, airlineLocators: [], warnings: [] })).toBe(0);
+  });
+});
+
+describe('los rechazos de la anulación llevan su motivo máquina', () => {
+  it('cada rechazo: el texto para el vendedor y un motivo con la forma que deja salir el filtro', () => {
+    for (const kind of ['unverified', 'rejected', 'notSent'] as const) {
+      const refusal = ticketVoidRefusal(kind);
+      expect(refusal).toEqual({
+        message: TICKET_VOID_MESSAGES[kind],
+        reason: TICKET_VOID_REASONS[kind],
+      });
+      expect(refusal.reason).toMatch(/^[A-Z][A-Z0-9_]{0,63}$/);
+    }
+  });
+
+  it('la ventana cerrada usa el mismo vocabulario que su error', () => {
+    expect(new TicketVoidNotAvailableError().reason).toBe(TICKET_VOID_REASONS.notAvailable);
+  });
+
+  it('los cuatro motivos son distintos: la pantalla decide con ellos', () => {
+    const reasons = Object.values(TICKET_VOID_REASONS);
+    expect(new Set(reasons).size).toBe(reasons.length);
   });
 });

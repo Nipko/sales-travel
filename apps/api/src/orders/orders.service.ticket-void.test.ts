@@ -27,7 +27,7 @@ import { memoryHotelCancellation, type Row } from './__fixtures__/memory-hotel-c
 import type { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService, type OrderRow } from './orders.service.js';
-import { TICKET_VOID_MESSAGES } from './ticket-void.plan.js';
+import { TICKET_VOID_MESSAGES, TICKET_VOID_REASONS } from './ticket-void.plan.js';
 
 /**
  * Anular (VOID) los tiquetes de una reserva emitida por la puerta pública de `OrdersService`
@@ -350,6 +350,9 @@ describe('voidTickets: lo que pasa después de la consulta', () => {
 
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as Error).message).toBe(TICKET_VOID_MESSAGES.rejected);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      reason: TICKET_VOID_REASONS.rejected,
+    });
     expect(b.mem.order(ORDEN)?.['status']).toBe('ticketed');
     expect(b.mem.result(b.ultima())).toMatchObject({
       voidOutcome: 'REJECTED',
@@ -437,6 +440,9 @@ describe('voidTickets: lo que pasa después de la consulta', () => {
 
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as Error).message).toBe(TICKET_VOID_MESSAGES.unverified);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      reason: TICKET_VOID_REASONS.unverified,
+    });
     expect(b.mem.result(b.ultima())).toMatchObject({
       voidOutcome: 'UNVERIFIED',
       reconciliationRequired: true,
@@ -457,6 +463,9 @@ describe('voidTickets: lo que pasa después de la consulta', () => {
 
     expect(error).toBeInstanceOf(ServiceUnavailableException);
     expect((error as Error).message).toBe(TICKET_VOID_MESSAGES.notSent);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      reason: TICKET_VOID_REASONS.notSent,
+    });
     expect(b.queue.cancels).toEqual([]);
     expect(b.mem.order(ORDEN)?.['status']).toBe('ticketed');
     // El historial no ofrece "Reintentar": una anulación se vuelve a pedir con consulta nueva.
