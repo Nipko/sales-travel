@@ -232,6 +232,12 @@ export function MemberSheet({
         });
       } else if (!quiet) {
         setActivity({ status: 'error', message: res.message });
+      } else {
+        // Releer falló: queda la lista que se veía. Un "Cargar más" en vuelo ya no va a pintar (su
+        // lectura quedó vieja), así que el botón vuelve a estar disponible en vez de quedar cargando.
+        setActivity((prev) =>
+          prev.status === 'ready' && prev.loadingMore ? { ...prev, loadingMore: false } : prev,
+        );
       }
     },
     [src],
@@ -862,7 +868,8 @@ function DetailSections({
                 platformOnly={canRevokeSessions && revokeTenantOf(source, s) === null}
                 now={now}
                 revoking={revokingId === s.id}
-                disabled={revokingId !== null}
+                // Tampoco mientras corre una acción del pie: "Cerrar sus sesiones" ya las cierra todas.
+                disabled={revokingId !== null || busy}
                 onRevoke={() => onRevokeSession(s)}
               />
             ))}
@@ -983,10 +990,12 @@ function SessionItem({
           type="button"
           variant="secondary"
           size="sm"
-          disabled={disabled}
-          onClick={onRevoke}
+          // `aria-disabled` y no `disabled`: tras confirmar, el foco vuelve a este botón, y uno
+          // deshabilitado lo soltaba fuera de la ficha justo cuando el rechazo se anuncia.
+          aria-disabled={disabled || undefined}
+          onClick={disabled ? undefined : onRevoke}
           aria-label={`Cerrar esta sesión: ${device}${session.ip ? `, ${session.ip}` : ''}`}
-          className="ml-6 self-start sm:ml-0 sm:self-center"
+          className="ml-6 self-start aria-disabled:cursor-not-allowed aria-disabled:opacity-60 sm:ml-0 sm:self-center"
         >
           {revoking ? (
             <RefreshCw aria-hidden="true" className="animate-spin" />

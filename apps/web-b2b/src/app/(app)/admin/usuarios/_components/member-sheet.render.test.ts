@@ -288,7 +288,16 @@ describe('MemberSheetView: las secciones', () => {
       'Sesiones abiertas (2)',
     );
     expect(html).toContain('Cerrando…');
-    expect(html.match(/<button[^>]* disabled=""/g)).toHaveLength(2);
+    // `aria-disabled` y no `disabled`: el foco no se va de la ficha mientras espera el API.
+    expect(html.match(/<button[^>]* aria-disabled="true"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<button[^>]* disabled=""/);
+  });
+
+  it('mientras corre una acción del pie, ninguna sesión se ofrece para cerrar', () => {
+    const html = section(view({ busy: true }), 'Sesiones abiertas (1)');
+    expect(html).toContain('Cerrar esta sesión</button>');
+    expect(html.match(/<button[^>]* aria-disabled="true"/g)).toHaveLength(1);
+    expect(section(view(), 'Sesiones abiertas (1)')).not.toContain('aria-disabled="true"');
   });
 
   it('la propia sesión no se cierra desde acá; en la propia ficha, se dice dónde', () => {
