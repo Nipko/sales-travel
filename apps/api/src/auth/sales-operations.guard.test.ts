@@ -152,6 +152,7 @@ const ENTRADAS: [string, Clase][] = [
     'PATCH /admin/tenants/:id/seats',
     'POST /admin/tenants/:id/move',
     'GET /admin/users',
+    'GET /admin/users/:userId/impact',
     'POST /admin/users',
     'PATCH /admin/users/status',
     'PATCH /admin/memberships/role',

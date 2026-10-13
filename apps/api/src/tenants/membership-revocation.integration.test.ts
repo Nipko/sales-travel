@@ -13,6 +13,7 @@ import type { MailerService } from '../mail/mailer.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { AdminController } from './admin.controller.js';
 import { InvitationsService } from './invitations.service.js';
+import { PlatformUsersService } from './platform-users.service.js';
 import type { SeatsService } from './seats.service.js';
 import type { TenantsService } from './tenants.service.js';
 
@@ -94,6 +95,7 @@ d('suspender o degradar una membership, contra Postgres', () => {
     {} as TenantsService,
     {} as SeatsService,
     invitations,
+    new PlatformUsersService(database),
   );
 
   let platform: string;
