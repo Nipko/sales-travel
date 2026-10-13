@@ -13,6 +13,7 @@ import {
   type SkippedProvider,
   type UnavailableProvider,
 } from '../providers/provider.types.js';
+import { stampProviderEnvironment } from '../providers/provider-environment.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService, type ProviderSearchSlice } from './search-telemetry.service.js';
@@ -184,10 +185,12 @@ export class SearchService {
     // Caché por criterio: reordenar o volver atrás en el navegador no debe volver a
     // golpear al proveedor, que cobra por consulta y tarda segundos. TTL corto porque
     // las tarifas cambian; es una ventana de conveniencia, no un almacén.
+    // El entorno de cada cuenta entra en la clave: si una cuenta pasa de pruebas a producción (o
+    // al revés) dentro del TTL, la caché no puede devolver tarifas con la marca de la otra.
     const cacheKey = flightsCacheKey(
       tenantId,
       criteria,
-      active.map((p) => p.code),
+      active.map((p) => (p.environment === 'test' ? `${p.code}@test` : p.code)),
     );
     const cached = await this.cache.get<FlightSearchResponse>(cacheKey);
     if (cached) return cached;
@@ -372,7 +375,9 @@ export class SearchService {
             provider.adapter.search(criteria, { tenantId }),
           );
           counts.set(provider.code, offers.length);
-          return offers;
+          // El entorno sale de la cuenta que resolvió el registry, no de lo que diga el ACL: una
+          // tarifa de una cuenta de pruebas tiene que llegar marcada a la pantalla del vendedor.
+          return offers.map((offer) => stampProviderEnvironment(offer, provider.environment));
         } catch (err) {
           // El motivo se humaniza en la rama del proveedor: así el agregador no necesita
           // conocer los tipos de error de ninguno.
@@ -469,12 +474,15 @@ export class SearchService {
     // Es venta: si la plataforma lo apagó para el tenant, se corta aquí.
     const provider = await this.registry.byCodeForOffer(tenantId, offer.provider.name);
     const result = await provider.adapter.priceOffer(offer, criteria, { tenantId });
+    // De nuevo desde la cuenta resuelta: la oferta de entrada viene del navegador y el ACL puede
+    // devolverla tal cual, con el entorno que le hayan puesto o quitado por el camino.
+    const revalidated = stampProviderEnvironment(result.offer, provider.environment);
 
     // La revalidación de precio devolvía la oferta del proveedor SIN pasar por el
     // waterfall, así que el último paso antes de reservar descartaba el markup y la
     // agencia terminaba vendiendo al costo. Es el mismo tratamiento que la búsqueda.
-    const [priced] = await this.withPricing([result.offer], tenantId, 'flights');
-    return { ...result, offer: priced ?? result.offer };
+    const [priced] = await this.withPricing([revalidated], tenantId, 'flights');
+    return { ...result, offer: priced ?? revalidated };
   }
 
   /**

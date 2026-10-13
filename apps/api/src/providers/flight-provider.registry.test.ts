@@ -231,6 +231,29 @@ describe('FlightProviderRegistry', () => {
     });
   });
 
+  describe('entorno de la cuenta', () => {
+    it('copia el que declara el factory: búsqueda, venta y post-venta ven lo mismo', async () => {
+      const r = registry([
+        new StubProviderFactory({ code: 'alfa-air', providerEnvironment: 'test' }),
+        new StubProviderFactory({ code: 'beta-air', providerEnvironment: 'live' }),
+      ]);
+
+      const { active } = await r.forTenant(TENANT);
+      expect(active.map((p) => [p.code, p.environment])).toEqual([
+        ['alfa-air', 'test'],
+        ['beta-air', 'live'],
+      ]);
+      expect((await r.byCode(TENANT, 'alfa-air')).environment).toBe('test');
+      expect((await r.byCodeForOffer(TENANT, 'alfa-air')).environment).toBe('test');
+    });
+
+    it('un factory que no lo dice sale `live`: es lo que eran todas las cuentas', async () => {
+      const r = registry([new StubProviderFactory({ code: 'alfa-air' })]);
+
+      expect((await r.byCode(TENANT, 'alfa-air')).environment).toBe('live');
+    });
+  });
+
   describe('habilitación de la plataforma', () => {
     it('un proveedor `always` apagado para el tenant sale `platform-disabled`, sin tocar la bóveda', async () => {
       const stub = new StubProviderFactory({ code: 'alfa-air' });

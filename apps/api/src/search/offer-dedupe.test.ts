@@ -52,6 +52,7 @@ interface OfferSpec {
   fareComponents?: readonly FareComponentSpec[];
   providerRaw?: NonNullable<Offer['provider']['raw']>;
   priced?: boolean;
+  environment?: Offer['provider']['environment'];
 }
 
 function offer(spec: OfferSpec = {}): Offer {
@@ -69,6 +70,7 @@ function offer(spec: OfferSpec = {}): Offer {
       offerRef: spec.offerRef ?? `${provider}-REF`,
       ...(spec.source === undefined ? {} : { source: spec.source }),
       ...(spec.providerRaw === undefined ? {} : { raw: spec.providerRaw }),
+      ...(spec.environment === undefined ? {} : { environment: spec.environment }),
     },
     total: { amountMinor, currency },
     baseFare: { amountMinor: Math.round(amountMinor * 0.8), currency },
@@ -558,6 +560,55 @@ describe('dedupeFlightOffers — desempate total y estable', () => {
       { preference: [{ provider: 'sabre', source: 'NDC' }] },
     );
     expect(out[0]?.provider.source).toBe('NDC');
+  });
+});
+
+describe('dedupeFlightOffers — una tarifa real nunca cede ante una de pruebas', () => {
+  it('lo real gana aunque la de pruebas sea del proveedor preferido y más barata', () => {
+    const out = dedupeFlightOffers([
+      offer({ provider: 'latam-ndc', amountMinor: 50_000, environment: 'test' }),
+      offer({ provider: 'sabre', amountMinor: 120_000 }),
+    ]);
+
+    expect(out).toHaveLength(1);
+    expect(codes(out)).toEqual(['sabre']);
+    expect(out[0]?.provider.environment).toBeUndefined();
+  });
+
+  it('`live` explícito cuenta igual que sin marca', () => {
+    const out = dedupeFlightOffers([
+      offer({ provider: 'alfa-air', amountMinor: 50_000, environment: 'test' }),
+      offer({ provider: 'beta-air', amountMinor: 90_000, environment: 'live' }),
+    ]);
+
+    expect(codes(out)).toEqual(['beta-air']);
+  });
+
+  it('las familias de una cuenta de pruebas no sobreviven junto a la real ganadora', () => {
+    const out = dedupeFlightOffers([
+      offer({ provider: 'alfa-air', fareFamilyName: 'LIGHT', environment: 'test' }),
+      offer({ provider: 'alfa-air', fareFamilyName: 'FULL', environment: 'test' }),
+      offer({ provider: 'latam-ndc', amountMinor: 200_000 }),
+    ]);
+
+    expect(codes(out)).toEqual(['latam-ndc']);
+  });
+
+  it('entre dos de pruebas mandan la preferencia y el precio de siempre', () => {
+    const out = dedupeFlightOffers([
+      offer({ provider: 'sabre', amountMinor: 50_000, environment: 'test' }),
+      offer({ provider: 'latam-ndc', amountMinor: 120_000, environment: 'test' }),
+    ]);
+
+    expect(codes(out)).toEqual(['latam-ndc']);
+  });
+
+  it('el desenlace no depende del orden de llegada', () => {
+    const real = offer({ provider: 'sabre', amountMinor: 120_000 });
+    const prueba = offer({ provider: 'latam-ndc', amountMinor: 50_000, environment: 'test' });
+
+    expect(codes(dedupeFlightOffers([real, prueba]))).toEqual(['sabre']);
+    expect(codes(dedupeFlightOffers([prueba, real]))).toEqual(['sabre']);
   });
 });
 

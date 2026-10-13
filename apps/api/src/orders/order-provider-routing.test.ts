@@ -4,11 +4,15 @@ import type { Passenger } from '@sales-travel/domain';
 import type { DatabaseService } from '../database/database.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { ProviderNotAvailableError } from '../providers/provider.types.js';
-import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
+import {
+  StubProviderFactory,
+  type StubFactoryOptions,
+} from '../providers/__fixtures__/stub-provider.factory.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
+import { ORDER_EVENTS } from './order-events.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
 
 /**
@@ -99,16 +103,24 @@ function dto(code: string): CreateOrderDto {
  * Doble de la base: encadena como Kysely lo justo para `createOrder` y guarda los valores del
  * INSERT, que es lo que este test necesita mirar.
  */
-function dbFalsa(): { db: DatabaseService; insertado: () => Record<string, unknown> | undefined } {
+function dbFalsa(): {
+  db: DatabaseService;
+  insertado: () => Record<string, unknown> | undefined;
+  insertadoInicial: () => Record<string, unknown> | undefined;
+} {
   // Los valores se guardan POR TABLA. Antes se guardaba el último INSERT a secas, y desde que la
   // creación registra su lectura de cierre en `order_operations` ese último INSERT ya no es el de
   // `orders`: el doble medía la tabla equivocada y los tests pasaban a hablar de otra cosa.
   const porTabla = new Map<string, Record<string, unknown>>();
+  // Lo que llevó el PRIMER insert de cada tabla, antes de que la consolidación lo pise: la fila
+  // `pending` que queda si el proceso muere entre el claim y el proveedor.
+  const iniciales = new Map<string, Record<string, unknown>>();
 
   const insertEn = (tabla: string) => {
     const insert = {
       values: (v: Record<string, unknown>) => {
         porTabla.set(tabla, v);
+        if (!iniciales.has(tabla)) iniciales.set(tabla, v);
         return insert;
       },
       returningAll: () => insert,
@@ -154,30 +166,49 @@ function dbFalsa(): { db: DatabaseService; insertado: () => Record<string, unkno
     withTenant: <T>(_tenantId: string, cb: (trx: unknown) => Promise<T>) => cb(trx),
   } as unknown as DatabaseService;
 
-  return { db, insertado: () => porTabla.get('orders') };
+  return {
+    db,
+    insertado: () => porTabla.get('orders'),
+    insertadoInicial: () => iniciales.get('orders'),
+  };
 }
 
-function banco(codes: string[]): {
+function banco(
+  codes: string[],
+  opciones: Readonly<Record<string, Omit<StubFactoryOptions, 'code'>>> = {},
+): {
   orders: OrdersService;
   factories: Map<string, StubProviderFactory>;
   insertado: () => Record<string, unknown> | undefined;
+  insertadoInicial: () => Record<string, unknown> | undefined;
+  audit: RecordingAuditService;
 } {
-  const factories = new Map(codes.map((code) => [code, new StubProviderFactory({ code })]));
+  const factories = new Map(
+    codes.map((code) => [code, new StubProviderFactory({ ...opciones[code], code })]),
+  );
   const registry = new FlightProviderRegistry([...factories.values()], {
     decisionFor: () => Promise.resolve(undefined),
   });
-  const { db, insertado } = dbFalsa();
+  const { db, insertado, insertadoInicial } = dbFalsa();
+  const audit = new RecordingAuditService();
 
   const orders = new OrdersService(
     db,
     registry,
     new RecordingQueueService().asService(),
     {} as unknown as AgentCarsProviderFactory,
-    new RecordingAuditService().asService(),
+    audit.asService(),
     PRICING_SIN_REGLAS,
   );
 
-  return { orders, factories, insertado };
+  return { orders, factories, insertado, insertadoInicial, audit };
+}
+
+/** El `selected_offer` tal como lo escribió el servicio (JSON, como en la columna JSONB). */
+function guardada(fila: Record<string, unknown> | undefined): Offer {
+  const raw = fila?.['selected_offer'];
+  if (typeof raw !== 'string') throw new Error('la fila no tiene selected_offer serializado');
+  return JSON.parse(raw) as Offer;
 }
 
 describe('OrdersService.createOrder — enrutado por proveedor', () => {
@@ -497,6 +528,67 @@ describe('OrdersService.createOrder — enrutado por proveedor', () => {
     expect(
       b.factories.get('alfa-air')!.adapterFor(TENANT).retrieveForDisplay,
     ).not.toHaveBeenCalled();
+  });
+
+  describe('reserva contra una cuenta de pruebas del proveedor', () => {
+    function conEntorno(offer: Offer, environment: 'test' | 'live'): Offer {
+      return { ...offer, provider: { ...offer.provider, environment } };
+    }
+
+    it('el navegador manda `live` y la cuenta es de pruebas: la orden se guarda `test`', async () => {
+      const b = banco(['beta-air'], { 'beta-air': { providerEnvironment: 'test' } });
+      const input = dto('beta-air');
+      input.offer = conEntorno(input.offer, 'live');
+
+      await b.orders.createOrder(TENANT, USER, input);
+
+      // La fila `pending` del claim ya nace marcada, y la consolidación no la desmarca.
+      expect(guardada(b.insertadoInicial()).provider.environment).toBe('test');
+      expect(guardada(b.insertado()).provider.environment).toBe('test');
+      // Lo que llega al adapter también: el ACL reserva sobre la oferta ya marcada.
+      const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+      expect(adapter.createOrder.mock.calls[0]?.[0].offer.provider.environment).toBe('test');
+      expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({
+        environment: 'test',
+      });
+    });
+
+    it('el navegador no puede desmarcarla quitando el campo', async () => {
+      const b = banco(['beta-air'], { 'beta-air': { providerEnvironment: 'test' } });
+
+      await b.orders.createOrder(TENANT, USER, dto('beta-air'));
+
+      expect(guardada(b.insertado()).provider.environment).toBe('test');
+    });
+
+    it('un ACL que construye su respuesta sin la marca no la borra de la orden', async () => {
+      const b = banco(['beta-air'], { 'beta-air': { providerEnvironment: 'test' } });
+      const input = dto('beta-air');
+      const adapter = b.factories.get('beta-air')!.adapterFor(TENANT);
+      adapter.priceOffer.mockResolvedValueOnce({
+        offer: { ...input.offer, provider: { name: 'beta-air', offerRef: 'beta-air-REF' } },
+        priceChanged: false,
+        warnings: [],
+      });
+
+      await b.orders.createOrder(TENANT, USER, input);
+
+      expect(guardada(b.insertado()).provider.environment).toBe('test');
+    });
+
+    it('con una cuenta real, un `test` del navegador no marca la orden', async () => {
+      const b = banco(['beta-air'], { 'beta-air': { providerEnvironment: 'live' } });
+      const input = dto('beta-air');
+      input.offer = conEntorno(input.offer, 'test');
+
+      await b.orders.createOrder(TENANT, USER, input);
+
+      expect(guardada(b.insertadoInicial()).provider).not.toHaveProperty('environment');
+      expect(guardada(b.insertado()).provider).not.toHaveProperty('environment');
+      expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({
+        environment: 'live',
+      });
+    });
   });
 
   it('una reserva sin proveedor asociado no se manda a ciegas a ningún adapter', async () => {

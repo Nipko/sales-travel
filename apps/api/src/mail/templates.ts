@@ -112,6 +112,12 @@ export function quotationEmailHtml(input: {
   };
 }
 
+/** Asunto de la confirmación de una reserva de prueba que el vendedor decidió reenviar. */
+export const TEST_CONTENT_SUBJECT_PREFIX = '[PRUEBA] ';
+
+/** El aviso del cuerpo, el mismo en HTML y en texto plano. */
+export const TEST_CONTENT_NOTICE = 'Reserva de prueba: no es un tiquete válido para viajar.';
+
 export function orderConfirmationEmailHtml(input: {
   orderNumber: number;
   pnr: string | null;
@@ -126,9 +132,16 @@ export function orderConfirmationEmailHtml(input: {
    * descubre rota en el mostrador.
    */
   ticketed?: boolean;
+  /**
+   * `true` = reserva de la cuenta de pruebas del proveedor. Sólo se manda si el vendedor la reenvía
+   * a mano, y va marcada en el asunto y en el cuerpo: un pasajero que la recibiera sin aviso
+   * llegaría al aeropuerto con un localizador que no le sirve para viajar.
+   */
+  testContent?: boolean;
 }): { subject: string; html: string; text: string } {
   const sc = obj(input.searchCriteria);
   const ticketed = input.ticketed === true;
+  const testContent = input.testContent === true;
   const intro = ticketed
     ? '¡Tu billete está emitido! Estos son los detalles:'
     : 'Tu reserva está hecha y el billete todavía no se emitió: la tarifa y los asientos se garantizan al emitir. Estos son los detalles:';
@@ -147,7 +160,15 @@ export function orderConfirmationEmailHtml(input: {
     .filter(Boolean)
     .join(', ');
 
+  // Ámbar con texto oscuro (#78350f sobre #fffbeb): contraste AA holgado en cualquier cliente.
+  const testBanner = testContent
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;margin-bottom:18px">
+      <tr><td style="padding:12px 18px;font-size:13px;line-height:1.5;color:#78350f;font-weight:700">${esc(TEST_CONTENT_NOTICE)}</td></tr>
+    </table>`
+    : '';
+
   const body = `
+    ${testBanner}
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${intro}</p>
     ${
       input.pnr
@@ -168,10 +189,11 @@ export function orderConfirmationEmailHtml(input: {
     </table>
     <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guarda este correo. Para cambios o consultas, responde a tu agencia.</p>`;
 
+  const prefix = testContent ? TEST_CONTENT_SUBJECT_PREFIX : '';
   return {
-    subject: `${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
+    subject: `${prefix}${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
     html: layout(titulo, body, input.brand),
-    text: `Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
+    text: `${testContent ? `${TEST_CONTENT_NOTICE}\n\n` : ''}Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
   };
 }
 

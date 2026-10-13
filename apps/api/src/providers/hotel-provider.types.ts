@@ -210,8 +210,13 @@ export interface HotelProviderFactory
   humanizeError(err: unknown, context?: ProviderErrorContext): string;
 }
 
+/**
+ * Sin `environment`: ese campo lo leen la búsqueda y las órdenes de VUELOS para marcar las tarifas
+ * de una cuenta de pruebas. Hoteles no lo hereda; si declara el entorno de su cuenta, lo hace con un
+ * campo propio de este tipo y con el mismo vocabulario (`test` | `live`).
+ */
 export interface ResolvedHotelProvider
-  extends Omit<ResolvedProvider<HotelProviderAdapter>, 'capabilities'> {
+  extends Omit<ResolvedProvider<HotelProviderAdapter>, 'capabilities' | 'environment'> {
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
   /** Lo que el factory declaró para el breaker; se pasa tal cual en cada llamada al adapter. */
