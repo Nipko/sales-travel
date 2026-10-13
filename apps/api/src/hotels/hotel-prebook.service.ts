@@ -28,6 +28,7 @@ import { effectiveNonRefundable, type HotelNonRefundableTerms } from './hotel-no
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { hotelHoldQuoteOf, priceRoompack } from './hotel-pricing.js';
 import { HotelProviderCapabilityError } from './hotel-provider-errors.js';
+import { roomAmenitiesOf } from './hotel-room-amenities.js';
 import {
   HotelSearchContextStore,
   HotelSearchNationalityMissingError,
@@ -100,6 +101,13 @@ export interface HotelPrebookResponse {
    * eso.
    */
   readonly bookingReadiness?: HotelPrebookBookingReadiness;
+  /**
+   * Los servicios de cada habitación que dio el PreBook, una lista por habitación en el orden de
+   * `roompack.rooms` (`hotel-room-amenities.ts`: hasta 60 por habitación, 80 caracteres cada uno,
+   * sin repetidos). Para distinguir habitaciones antes de reservar: no entran en `repricing` ni en el
+   * snapshot del Book. Ausente si el proveedor no los da.
+   */
+  readonly roomAmenities?: readonly (readonly string[])[];
 }
 
 const OPERATION = 'la revalidación de una tarifa de su búsqueda (se revalida con su flujo propio)';
@@ -146,6 +154,8 @@ function repricingOf(comparison: HotelRepriceComparison): HotelPrebookRepricing 
  * 9. **Contacto de soporte** de la agencia, con el mismo predicado del Book (`agencyBookingContact`):
  *    sin email y teléfono internacional, el Book rechaza con `AGENCY_CONTACT_MISSING`, así que se
  *    avisa acá, junto con la cartera. Tampoco rechaza el PreBook.
+ * 10. **Servicios de cada habitación** que dio el PreBook, con el tope del contrato con la web, para
+ *    distinguir habitaciones antes de reservar. Fuera de C1 y del snapshot: no deciden nada.
  *
  * **Tarifas no reembolsables** (pedido del founder del 2026-09-29). Si quien financia a la agencia
  * se las bloqueó (0055), el PreBook se rechaza con `NON_REFUNDABLE_BLOCKED`: antes de llamar al
@@ -292,6 +302,7 @@ export class HotelPrebookService {
       this.fundingOf(tenantId, code, offer.account.accountId, roompack),
       this.bookingReadinessOf(tenantId, code),
     ]);
+    const roomAmenities = this.roomAmenitiesOf(code, found.roomAmenities, roompack.rooms.length);
     return {
       prebookRef,
       providerCode: code,
@@ -308,7 +319,28 @@ export class HotelPrebookService {
         ? {}
         : { providerEnvironment: provider.accountEnvironment }),
       ...(bookingReadiness === undefined ? {} : { bookingReadiness }),
+      ...(roomAmenities === undefined ? {} : { roomAmenities }),
     };
+  }
+
+  /**
+   * Los servicios por habitación con el tope del contrato con la web. Si el adapter no da una lista
+   * por habitación, no hay forma de saber de cuál es cada una: salen sin servicios antes que con los
+   * de otra habitación, y queda el aviso para quien mantiene el adapter.
+   */
+  private roomAmenitiesOf(
+    providerCode: string,
+    lists: readonly (readonly string[])[] | undefined,
+    rooms: number,
+  ): string[][] | undefined {
+    if (lists === undefined) return undefined;
+    if (lists.length !== rooms) {
+      this.logger.warn(
+        `hotels.prebook.room_amenities_mismatch provider=${providerCode} lists=${lists.length} rooms=${rooms}`,
+      );
+      return undefined;
+    }
+    return roomAmenitiesOf(lists);
   }
 
   /**

@@ -444,6 +444,12 @@ export interface HotelPrebookWithContext {
   /** Huella del texto saneado de las condiciones, para la comparación C2. */
   readonly rateConditionsHash: string;
   readonly comparison: HotelRepriceComparison;
+  /**
+   * Los servicios de cada habitación que da el PreBook ("Free WiFi", "Minibar"): una lista por
+   * habitación, en el orden de `result.roompack.rooms`. Son para mostrar en el checkout y quedan
+   * FUERA de `comparison`: no mueven el repricing. Ausente si el proveedor no los da.
+   */
+  readonly roomAmenities?: readonly (readonly string[])[];
   /** El de la llamada, para ubicar el RQ/RS en la bóveda de payloads. */
   readonly requestId?: string;
 }

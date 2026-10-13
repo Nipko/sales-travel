@@ -443,7 +443,12 @@ export class TboHotelProviderAdapter
       signals: report.result.signals,
       rateConditionsHash: report.rateConditionsHash,
     };
+    // TBO da UNA lista de `Amenities` para la unidad reservable entera (docs/tbo/03 §2.7): vale
+    // para cada una de sus habitaciones. Va aparte del pack para que C1 y C2 no la comparen.
+    const roomAmenities =
+      report.amenities.length === 0 ? undefined : roompack.rooms.map(() => [...report.amenities]);
     return {
+      ...(roomAmenities === undefined ? {} : { roomAmenities }),
       result: { ...report.result, roompack },
       pack: {
         hotelId: report.pack.hotelCode,

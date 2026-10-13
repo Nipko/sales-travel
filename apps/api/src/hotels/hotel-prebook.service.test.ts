@@ -1139,6 +1139,98 @@ describe('entorno de la cuenta: el checkout avisa una reserva de prueba', () => 
   });
 });
 
+describe('TBO-12: los servicios de cada habitación del PreBook, para el checkout', () => {
+  /** El PreBook del stub con dos habitaciones y los servicios que diga el proveedor. */
+  function conServicios(
+    roomAmenities: readonly (readonly string[])[] | undefined,
+    habitaciones = 2,
+  ): HotelPrebookWithContext {
+    const base = revalidada();
+    const rooms = Array.from({ length: habitaciones }, (_, i) => ({
+      name: i === 0 ? 'Doble estándar' : 'Suite junior',
+      reference: i,
+      bedOptions: [],
+    }));
+    return {
+      ...base,
+      result: { ...base.result, roompack: { ...base.result.roompack, rooms } },
+      ...(roomAmenities === undefined ? {} : { roomAmenities }),
+    };
+  }
+
+  it('salen una lista por habitación, en su orden, con el tope del contrato', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(
+      conServicios([
+        ['Free WiFi', 'free  wifi', 'Minibar', 'z'.repeat(100)],
+        ['Balcony', 'Jacuzzi'],
+      ]),
+    );
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.roomAmenities).toEqual([
+      ['Free WiFi', 'Minibar', `${'z'.repeat(79)}…`],
+      ['Balcony', 'Jacuzzi'],
+    ]);
+  });
+
+  /*
+   * MUTACIÓN: con los servicios en el snapshot, el Book los cargaría como parte de la tarifa
+   * aceptada; con ellos en el evento, irían a `domain_events` textos del proveedor.
+   */
+  it('no tocan el repricing, el snapshot del Book ni el evento: sólo se muestran', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue({
+      ...conServicios([['Minibar'], ['Jacuzzi']]),
+      comparison: {
+        ...revalidada().comparison,
+        outcome: 'CONDITIONS_CHANGED',
+        changes: ['SIGNALS'],
+      },
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res.repricing).toMatchObject({ outcome: 'CONDITIONS_CHANGED', changes: ['SIGNALS'] });
+    const snapshot = await b.snapshots.get(AGENCIA, res.prebookRef);
+    expect(snapshot).toBeDefined();
+    expect(JSON.stringify(snapshot)).not.toMatch(/Minibar|Jacuzzi|roomAmenities/);
+    expect(b.emit).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(b.emit.mock.calls)).not.toMatch(/Minibar|Jacuzzi/);
+  });
+
+  it('un proveedor que no los da no los inventa', async () => {
+    const b = await bancoConBusqueda();
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+  });
+
+  it('listas sin nada que mostrar no viajan', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(conServicios([['  '], []]));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+  });
+
+  it('si no hay una lista por habitación no se adivina de cuál es cada una: salen sin servicios y queda el aviso', async () => {
+    const b = await bancoConBusqueda();
+    b.puerto.prebookWithContext.mockResolvedValue(conServicios([['Minibar']], 2));
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(res).not.toHaveProperty('roomAmenities');
+    expect(res.prebookRef).toMatch(/^[0-9a-f-]{36}$/);
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContain(
+      'hotels.prebook.room_amenities_mismatch provider=stub-hotels lists=1 rooms=2',
+    );
+  });
+});
+
 // ───────────────────────── TBO de punta a punta ─────────────────────────
 
 const TBO = 'tbo-hotels';
@@ -1487,6 +1579,41 @@ describe('TBO de punta a punta: búsqueda de p. 16 y PreBook de p. 28', () => {
     await expect(b.snapshots.get(AGENCIA, res.prebookRef)).resolves.toMatchObject({
       offerRef: otro,
     });
+  });
+
+  it('TBO-12: los 42 `Amenities` de p. 28 salen como servicios de cada una de las dos habitaciones', async () => {
+    const b = bancoTbo();
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(res.roompack.rooms).toHaveLength(2);
+    expect(res.roomAmenities).toHaveLength(2);
+    const [primera, segunda] = res.roomAmenities ?? [];
+    expect(primera).toHaveLength(42);
+    expect(primera?.slice(0, 3)).toEqual(['Non-Smoking', 'Premium bedding', 'Turndown service']);
+    expect(segunda).toEqual(primera);
+  });
+
+  it('TBO-12: otros `Amenities` en el PreBook no son un cambio de la tarifa: C1 sigue UNCHANGED y sin evento', async () => {
+    const b = bancoTbo(() => {
+      const base = fixture('pdf/prebook-limit-multi-room.p28.json') as {
+        HotelResult: { Rooms: Record<string, unknown>[] }[];
+      };
+      const [room] = base.HotelResult[0]?.Rooms ?? [];
+      if (room !== undefined) room['Amenities'] = ['Ocean view', 'ocean VIEW', 'Butler service'];
+      return base;
+    });
+    const oferta = await b.hotels.getHotelDetail(AGENCIA, DETALLE_TBO);
+
+    const res = await b.prebooks.prebook(AGENCIA, referenciaTbo(oferta, BC_4), USUARIO);
+
+    expect(res.repricing).toMatchObject({ outcome: 'UNCHANGED', changes: [] });
+    expect(b.emit).not.toHaveBeenCalled();
+    expect(res.roomAmenities).toEqual([
+      ['Ocean view', 'Butler service'],
+      ['Ocean view', 'Butler service'],
+    ]);
   });
 
   it('un PreBook con otro total que el buscado → INCREASED, con el evento', async () => {

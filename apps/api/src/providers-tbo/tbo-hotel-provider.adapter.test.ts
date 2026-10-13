@@ -633,6 +633,32 @@ describe('PR-4.5: PreBook con el contexto de la búsqueda', () => {
     });
     expect(found.rateConditionsHash).toBe(HASH);
     expect(found.requestId).toBe('req-prebook-1');
+    // Sin `Amenities` en el PreBook no hay servicios que mostrar.
+    expect(found).not.toHaveProperty('roomAmenities');
+  });
+
+  /*
+   * MUTACIÓN: con los servicios dentro del pack, `compareTboRates` los vería; con una sola lista
+   * para el pack, la segunda habitación quedaría sin los suyos.
+   */
+  it('los `Amenities` de la unidad son los servicios de CADA habitación, en su orden, y C1 no los mira', async () => {
+    const a = acl();
+    a.prebookReport.mockResolvedValue(
+      reportePrebook({ amenities: ['Non-Smoking', 'Free WiFi', 'Minibar'] }),
+    );
+
+    const found = await new TboHotelProviderAdapter(a, CUENTA, 'test').prebookWithContext(
+      pedidoC1(),
+      CTX,
+    );
+
+    expect(found.roomAmenities).toEqual([
+      ['Non-Smoking', 'Free WiFi', 'Minibar'],
+      ['Non-Smoking', 'Free WiFi', 'Minibar'],
+    ]);
+    expect(found.roomAmenities?.[0]).not.toBe(found.roomAmenities?.[1]);
+    expect(found.result).toEqual(RESULTADO_PREBOOK);
+    expect(found.comparison).toMatchObject({ outcome: 'UNCHANGED', changes: [] });
   });
 
   it('C1 igual en todo lo que mira: UNCHANGED, aunque las políticas y las señales sólo existan en el PreBook', async () => {
