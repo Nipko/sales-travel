@@ -127,6 +127,7 @@ const LABELS: Readonly<Record<string, string>> = {
   'auth.mfa.enabled': '2FA activado',
   'auth.mfa.disabled': '2FA desactivado',
   'auth.mfa.step_up': 'Reconfirmó su 2FA para una acción de alto impacto',
+  'auth.mfa.reauth_failed': 'Verificación fallida dentro de su sesión',
   'users.exported': 'Exportó la lista de usuarios',
   TenantCreated: 'Nodo creado',
   ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',
@@ -166,6 +167,18 @@ const LOGIN_FAILURES: Readonly<Record<string, string>> = {
   bad_password: 'Contraseña incorrecta',
   inactive: 'Con la cuenta suspendida',
   unknown_user: 'Correo no registrado',
+};
+
+/**
+ * Qué intentaba quien falló la contraseña o el código dentro de su sesión (`action` de
+ * MfaService.withLockout). Cada fallo suma al bloqueo de la cuenta, como en el login.
+ */
+const REAUTH_ACTIONS: Readonly<Record<string, string>> = {
+  enroll: 'Contraseña incorrecta al activar el 2FA',
+  rotation: 'Al cambiar de teléfono',
+  recovery_codes: 'Al regenerar los códigos de recuperación',
+  disable: 'Al desactivar el 2FA',
+  step_up: 'Al reconfirmar el 2FA',
 };
 
 const LOGIN_METHODS: Readonly<Record<string, string>> = {
@@ -284,6 +297,14 @@ export function eventDetail(
     case 'auth.login.success': {
       const method = text(p['method']);
       parts.push(method === null ? null : (LOGIN_METHODS[method] ?? null));
+      break;
+    }
+    case 'auth.mfa.reauth_failed': {
+      const action = text(p['action']);
+      parts.push(
+        action === null ? null : (REAUTH_ACTIONS[action] ?? null),
+        p['locked'] === true ? 'Cuenta bloqueada por intentos' : null,
+      );
       break;
     }
     case 'auth.login.password_reset_required':

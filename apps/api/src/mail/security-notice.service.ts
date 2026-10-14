@@ -19,6 +19,8 @@ export interface SecurityNoticeTarget {
   readonly nodeName?: string | null;
   /** El rol nuevo (`role_changed`). */
   readonly role?: Role;
+  /** Cuándo pasó, si el aviso lo dice (`mfa_enabled`). */
+  readonly at?: Date;
 }
 
 /**
@@ -68,6 +70,8 @@ export class SecurityNoticeService {
           personName: person.name,
           nodeName: target.tenantId === null ? null : (node?.name ?? null),
           role: target.role ?? null,
+          at: target.at ?? null,
+          countryCode: node?.countryCode ?? null,
         }),
       });
       if (!sent) this.logger.warn(`security notice ${kind} not sent (user=${target.userId})`);

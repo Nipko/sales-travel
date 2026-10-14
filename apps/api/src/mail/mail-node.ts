@@ -4,6 +4,8 @@ import type { DatabaseService } from '../database/database.service.js';
 export interface MailNode {
   readonly tenantId: string;
   readonly name: string;
+  /** Su país: la zona horaria de un aviso que dice la hora. Sólo lo trae mailNodeOf. */
+  readonly countryCode?: string | null;
 }
 
 /**
@@ -18,7 +20,11 @@ export function mailNodeOf(db: DatabaseService, userId: string): Promise<MailNod
     trx
       .selectFrom('memberships')
       .innerJoin('tenants', 'tenants.id', 'memberships.tenant_id')
-      .select(['memberships.tenant_id as tenantId', 'tenants.name as name'])
+      .select([
+        'memberships.tenant_id as tenantId',
+        'tenants.name as name',
+        'tenants.country_code as countryCode',
+      ])
       .where('memberships.user_id', '=', userId)
       .where('memberships.status', '=', 'active')
       .orderBy('memberships.created_at')

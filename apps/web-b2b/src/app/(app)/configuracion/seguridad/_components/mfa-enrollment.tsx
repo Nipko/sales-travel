@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, ChevronRight, Copy, Loader2, Smartphone } from 'lucide-react';
-import { useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useRef, useState, useTransition, type RefObject } from 'react';
 import { PasswordInput } from '../../../../../components/auth/password-input';
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -21,6 +21,9 @@ import { useSecurityForm } from './use-security-form';
 
 export const QR_LABEL = 'Código QR para agregar tu cuenta a la app de autenticación';
 export const SCAN_TITLE = 'Escanea este código con tu app de autenticación';
+export const ENROLL_PASSWORD_LABEL = 'Tu contraseña';
+export const ENROLL_PASSWORD_HINT =
+  'La misma con la que ingresas. Así confirmamos que eres tú quien activa la verificación.';
 
 function StepBadge({ n }: { n: number }) {
   return (
@@ -95,28 +98,88 @@ function ManualKey({ secret }: { secret: string }) {
 }
 
 /**
+ * La contraseña de la primera activación (USR-13b), con su ayuda y su error asociados al campo.
+ * Exportado aparte para poder probar el estado con error sin pasar por la acción.
+ */
+export function EnrollPasswordField({
+  id,
+  error,
+  pending,
+  inputRef,
+}: {
+  id: string;
+  error?: string;
+  pending: boolean;
+  inputRef?: RefObject<HTMLInputElement | null>;
+}) {
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+  return (
+    <div className="max-w-sm space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-semibold text-[var(--color-fg)]">
+        {ENROLL_PASSWORD_LABEL}
+      </label>
+      <PasswordInput
+        ref={inputRef}
+        id={id}
+        name="currentPassword"
+        autoComplete="current-password"
+        required
+        disabled={pending}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+      />
+      <p id={hintId} className="text-xs text-[var(--color-fg-muted)]">
+        {ENROLL_PASSWORD_HINT}
+      </p>
+      {error ? (
+        <p id={errorId} role="alert" className="text-sm font-medium text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Pasos 2 y 3 del enrolamiento: el QR con la clave manual y la confirmación con el primer código.
  * Exportado aparte para poder probar su primer pintado sin pasar por la acción que crea el secreto.
+ *
+ * `requirePassword`: la primera activación pide además la contraseña (USR-13b), antes del código
+ * para que el sexto dígito siga enviando solo. Al cambiar de teléfono ya se pidió antes del QR.
  */
 export function MfaSetupStep({
   enrollment,
   onConfirmed,
   onCancel,
+  requirePassword = false,
 }: {
   enrollment: MfaEnrollmentSecret;
   onConfirmed: (codes: string[]) => void;
   onCancel?: () => void;
+  requirePassword?: boolean;
 }) {
   const baseId = useId();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const form = useSecurityForm<CodesResult>(confirmMfaAction, (result) => {
     if (result.recoveryCodes) onConfirmed(result.recoveryCodes);
   });
+  const passwordError = form.errorField === 'currentPassword' ? form.error : undefined;
 
   // Al aparecer el QR, el foco va al título: un lector de pantalla anuncia el paso nuevo.
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
+
+  // Con la contraseña mala, el foco va a ella y queda seleccionada para reescribirla. El código no
+  // se borra: no se llegó a usar y sigue sirviendo mientras la app lo muestre.
+  useEffect(() => {
+    if (form.failureKey > 0 && !form.pending && passwordError) {
+      passwordRef.current?.focus();
+      passwordRef.current?.select();
+    }
+  }, [form.failureKey, form.pending, passwordError]);
 
   return (
     <div className="space-y-5">
@@ -169,12 +232,25 @@ export function MfaSetupStep({
         <li className="flex gap-3">
           <StepBadge n={3} />
           <form onSubmit={form.onSubmit} noValidate className="min-w-0 flex-1 space-y-3">
+            {requirePassword ? (
+              <EnrollPasswordField
+                id={`${baseId}-pass`}
+                error={passwordError}
+                pending={form.pending}
+                inputRef={passwordRef}
+              />
+            ) : null}
             <TotpField
               id={`${baseId}-code`}
               label="Ingresa el código de 6 dígitos que muestra la app"
-              hint="Se envía solo al completar el sexto dígito."
-              error={form.error}
-              failureKey={form.failureKey}
+              hint={
+                requirePassword
+                  ? 'Con tu contraseña escrita, se envía solo al completar el sexto dígito.'
+                  : 'Se envía solo al completar el sexto dígito.'
+              }
+              error={passwordError ? undefined : form.error}
+              // Un error de la contraseña no vacía el código (ver el efecto de arriba).
+              failureKey={passwordError ? 0 : form.failureKey}
               pending={form.pending}
             />
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -310,6 +386,8 @@ export function MfaEnrollment({
       <MfaSetupStep
         enrollment={enrollment}
         onConfirmed={onConfirmed}
+        // La primera activación pide la contraseña al confirmar; el cambio de teléfono ya la pidió.
+        requirePassword={mode === 'enroll'}
         // En el enrolamiento inicial "Cancelar" vuelve al botón de empezar; en el cambio de
         // teléfono cierra el panel (lo decide quien lo abrió).
         onCancel={mode === 'enroll' ? () => setEnrollment(null) : onCancel}

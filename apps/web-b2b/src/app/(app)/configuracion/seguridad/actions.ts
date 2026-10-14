@@ -8,6 +8,7 @@ import { callSecurityApi } from './security-api';
 import {
   attemptsLeftOf,
   failureMessage,
+  isPasswordFailure,
   sessionEndMotivo,
   type ApiFailure,
   type FailureContext,
@@ -18,6 +19,8 @@ const PATH = '/configuracion/seguridad';
 export interface ActionResult {
   ok?: boolean;
   error?: string;
+  /** El error es de la contraseña: el formulario marca ese campo y le lleva el foco. */
+  field?: 'currentPassword';
 }
 
 export interface EnrollResult extends ActionResult {
@@ -145,16 +148,30 @@ export async function startPhoneChangeAction(formData: FormData): Promise<Enroll
 /**
  * Confirma el secreto pendiente con el primer código y devuelve los códigos de recuperación.
  *
+ * La primera activación lleva además la contraseña (USR-13b): el formulario trae el campo sólo
+ * entonces (al cambiar de teléfono ya se pidió antes de mostrar el QR) y, si lo trae, no puede ir
+ * vacío. Una contraseña mala suma al bloqueo de la cuenta, igual que en el login.
+ *
  * NO revalida la página: la re-renderización llegaría en esta misma respuesta con el 2FA ya activo
  * y competiría con los códigos, que hay que mostrar sí o sí. Cuando el usuario dice "Listo", la
  * pantalla hace `router.refresh()`.
  */
 export async function confirmMfaAction(formData: FormData): Promise<CodesResult> {
+  const withPassword = formData.has('currentPassword');
+  const currentPassword = asString(formData.get('currentPassword'));
+  if (withPassword && !currentPassword) {
+    return { error: PASSWORD_MISSING, field: 'currentPassword' };
+  }
   const code = totpCode(formData);
   if (!code) return { error: CODE_MISSING };
 
-  const res = await callSecurityApi('/auth/mfa/confirm', { body: { code } });
-  if (!res.ok) return fail(res.failure, 'code');
+  const res = await callSecurityApi('/auth/mfa/confirm', {
+    body: withPassword ? { code, currentPassword } : { code },
+  });
+  if (!res.ok) {
+    const result = await fail(res.failure, withPassword ? 'password-and-code' : 'code');
+    return isPasswordFailure(res.failure) ? { ...result, field: 'currentPassword' } : result;
+  }
   return toCodes(res.body);
 }
 

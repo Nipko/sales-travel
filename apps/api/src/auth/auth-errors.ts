@@ -181,6 +181,32 @@ export class MfaReauthInvalidError extends BadRequestException {
   }
 }
 
+/**
+ * Activar el 2FA por primera vez (también después de que un admin lo restableció) sin la contraseña
+ * (USR-13b). No cuenta como intento: no se probó nada. 400.
+ */
+export class MfaPasswordRequiredError extends BadRequestException {
+  readonly reason = 'MFA_PASSWORD_REQUIRED';
+
+  constructor() {
+    super('Escribe tu contraseña para activar la verificación en dos pasos.');
+    this.name = 'MfaPasswordRequiredError';
+  }
+}
+
+/**
+ * Contraseña incorrecta al activar el 2FA por primera vez (USR-13b). Suma al bloqueo de la cuenta,
+ * como en el login; el que llega al umbral responde MfaReauthLockedError (429). 400.
+ */
+export class MfaPasswordInvalidError extends BadRequestException {
+  readonly reason = 'MFA_PASSWORD_INVALID';
+
+  constructor() {
+    super('La contraseña no es correcta.');
+    this.name = 'MfaPasswordInvalidError';
+  }
+}
+
 /** Enrolar con MFA activo sin contraseña y código: pisaría el factor vigente. 409. */
 export class MfaAlreadyEnabledError extends ConflictException {
   readonly reason = 'MFA_ALREADY_ENABLED';

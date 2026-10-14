@@ -3,6 +3,7 @@ import { voseoIn } from '../__fixtures__/voseo.js';
 import {
   SECURITY_NOTICE_CLOSING,
   SECURITY_NOTICE_KINDS,
+  noticeTime,
   securityNoticeEmail,
   type SecurityNoticeKind,
 } from './security-notices.js';
@@ -14,6 +15,10 @@ const ESPERADO: Record<SecurityNoticeKind, { subject: string; body: string }> = 
   mfa_reset: {
     subject: 'Restablecimos tu verificación en dos pasos · PlaneTour',
     body: 'Un administrador de Viajes Sur restableció tu verificación en dos pasos. Al próximo ingreso puedes configurarla de nuevo.',
+  },
+  mfa_enabled: {
+    subject: 'Activaste la verificación en dos pasos · PlaneTour',
+    body: 'Activaste la verificación en dos pasos en tu cuenta de PlaneTour.',
   },
   sessions_revoked: {
     subject: 'Cerramos tus sesiones abiertas · PlaneTour',
@@ -123,6 +128,45 @@ describe('avisos de seguridad: qué dice cada uno', () => {
     const { text } = aviso('password_changed');
     expect(text).toContain('Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»');
     expect(text).not.toContain(NODO);
+  });
+
+  it('activar el 2FA: cuándo, en la zona del país de su correo y con el desfase, y qué hacer si no fue', () => {
+    const at = new Date('2026-10-13T15:42:10Z');
+    const co = securityNoticeEmail('mfa_enabled', {
+      personName: 'Ana',
+      nodeName: NODO,
+      at,
+      countryCode: 'CO',
+    });
+    expect(co.text).toContain(
+      'Activaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a las 10:42 (GMT-5).',
+    );
+    expect(co.html).toContain('el 13 de octubre de 2026 a las 10:42 (GMT-5).');
+    expect(co.text).toContain(
+      'Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «Olvidé mi contraseña»',
+    );
+    expect(co.text).toContain('pídele a tu administrador que restablezca tu verificación');
+    expect(co.text).toContain('Si tenías sesiones abiertas en otros equipos, las cerramos.');
+    // Lo hizo la persona, no un admin: no nombra ningún nodo.
+    expect(co.text).not.toContain('Un administrador');
+    expect(co.text).not.toContain(NODO);
+
+    expect(securityNoticeEmail('mfa_enabled', { at, countryCode: 'br' }).text).toContain(
+      'a las 12:42 (GMT-3).',
+    );
+    // Sin país conocido, la hora de Bogotá, pero siempre con el desfase.
+    for (const countryCode of [null, 'ZZ']) {
+      expect(securityNoticeEmail('mfa_enabled', { at, countryCode }).text).toContain(
+        'a las 10:42 (GMT-5).',
+      );
+    }
+  });
+
+  it('noticeTime: el día que cambia con la zona', () => {
+    const at = new Date('2026-10-14T02:30:00Z');
+    expect(noticeTime(at, 'PE')).toBe('13 de octubre de 2026 a las 21:30 (GMT-5)');
+    expect(noticeTime(at, 'BR')).toBe('13 de octubre de 2026 a las 23:30 (GMT-3)');
+    expect(noticeTime(at, 'MX')).toBe('13 de octubre de 2026 a las 20:30 (GMT-6)');
   });
 
   it('suspender el acceso a un nodo aclara que los demás nodos siguen igual', () => {
