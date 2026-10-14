@@ -19,11 +19,13 @@ import {
   type SheetActionOutcome,
 } from '../../../../../lib/member-detail';
 import { readJson } from '../../../../../lib/read-json';
+import { isStepUpCancelled } from '../../../../../lib/step-up';
 import { queryWithTeamTenant } from '../../../../../lib/team-filters';
 import {
   loadInvitations,
   loadMembers,
   loadMembershipImpact,
+  removeMembership,
   resendInvitation,
   revokeInvitation,
   type MembershipChange,
@@ -34,6 +36,8 @@ import {
   grantableRoles,
   isSelf,
   memberName,
+  memberRemovedMessage,
+  removeMemberCopy,
   roleChangeCopy,
   statusChangeCopy,
   type MemberAction,
@@ -161,6 +165,8 @@ export function TeamPanel({
   // La persona cuya ficha está abierta (por id: la fila se refresca después de cada acción).
   const [sheetUserId, setSheetUserId] = useState<string | null>(null);
   const seats = useSeatsView(tenantId === '' ? null : tenantId);
+  // Adonde va el foco cuando la fila de quien se quitó del nodo desaparece.
+  const membersHeading = useRef<HTMLHeadingElement>(null);
   const reloadSeats = seats.reload;
 
   // Carga de la red, en orden del árbol. Arranca en la raíz de la red del usuario (la plataforma, si
@@ -317,6 +323,38 @@ export function TeamPanel({
         status: 'failed',
         message: 'No pudimos conectar con el servidor. Inténtalo de nuevo.',
       };
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  /**
+   * Quitarlo del nodo (USR-11): primero cuántas invitaciones se revocarían, después la confirmación
+   * destructiva. Si es admin, el API puede pedir el código del 2FA (lo abre `removeMembership`); si
+   * se cierra ese diálogo, no se hizo nada y no hay error que mostrar. Al salir bien deja de estar en
+   * la lista, y su ficha se cierra.
+   */
+  async function removeMember(member: NetworkMember): Promise<SheetActionOutcome> {
+    const nodeName = selectedName;
+    const revoking = await invitationsToRevoke(member, { status: 'removed' });
+    const ok = await confirm({
+      ...removeMemberCopy(member, nodeName, revoking),
+      destructive: true,
+    });
+    if (!ok) return ACTION_CANCELLED;
+    setActionError('');
+    setMemberError(null);
+    setBusyUserId(member.userId);
+    try {
+      const res = await removeMembership(tenantId, member.userId);
+      if (isStepUpCancelled(res)) return ACTION_CANCELLED;
+      if (!res.ok) return { status: 'failed', message: res.message };
+      toast.success(memberRemovedMessage(member, nodeName, res.data));
+      setSheetUserId((open) => (open === member.userId ? null : open));
+      await Promise.all([load(true), reloadSeats(true)]);
+      // Su fila (y el botón desde el que se quitó) ya no está: el foco no queda en el documento.
+      membersHeading.current?.focus();
+      return ACTION_DONE;
     } finally {
       setBusyUserId(null);
     }
@@ -577,7 +615,9 @@ export function TeamPanel({
           onOpen={(m) => setSheetUserId(m.userId)}
           onChangeRole={(m, role) => void changeRole(m, role)}
           onSetStatus={(m, status) => void fromRow(m, setStatus(m, status))}
+          onRemove={(m) => void fromRow(m, removeMember(m))}
           onAction={(m, action) => void fromRow(m, memberAction(m, action))}
+          headingRef={membersHeading}
         />
       ) : null}
 
@@ -598,6 +638,13 @@ export function TeamPanel({
                     now={now}
                     onPick={pick}
                     onSetStatus={(status) => run(() => setStatus(sheetMember, status))}
+                    // Al salir bien la ficha se cierra: no hay nada que recargar en ella.
+                    onRemove={() =>
+                      run(async () => {
+                        const out = await removeMember(sheetMember);
+                        return out.status === 'done' ? ACTION_CANCELLED : out;
+                      })
+                    }
                     onAction={(action) => run(() => memberAction(sheetMember, action))}
                   />
                 )

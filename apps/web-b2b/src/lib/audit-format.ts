@@ -178,6 +178,7 @@ const LOGIN_METHODS: Readonly<Record<string, string>> = {
 /** Por qué se revocó una invitación que nadie revocó a mano: algo le pasó a quien la envió. */
 const REVOCATION_CAUSES: Readonly<Record<string, string>> = {
   membership_suspended: 'al suspender el acceso de quien la envió',
+  membership_removed: 'al quitar del nodo a quien la envió',
   role_changed: 'al cambiar el rol de quien la envió',
   user_suspended: 'al suspender la cuenta de quien la envió',
 };

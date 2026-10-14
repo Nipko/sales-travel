@@ -15,10 +15,12 @@ import {
   parseMemberActionResult,
   parseMembers,
   parseMembershipImpact,
+  parseMembershipRemoval,
   teamLoadError,
   type MemberAction,
   type MemberActionResult,
   type MembershipImpact,
+  type MembershipRemoval,
   type NetworkMember,
   type PendingInvitation,
 } from './tenant-admin-team';
@@ -135,7 +137,9 @@ export function runMemberAction(
 }
 
 /** El cambio sobre una membership que la confirmación está por aplicar. */
-export type MembershipChange = { readonly status: 'suspended' } | { readonly role: string };
+export type MembershipChange =
+  | { readonly status: 'suspended' | 'removed' }
+  | { readonly role: string };
 
 /**
  * Qué arrastraría el cambio (las invitaciones que se revocarían). Se pregunta antes de abrir la
@@ -156,6 +160,29 @@ export function loadMembershipImpact(
     {},
     parseMembershipImpact,
     memberActionError,
+  );
+}
+
+/**
+ * Quitar a alguien del nodo (USR-11). Si es admin, el API puede pedir el código del 2FA (USR-13):
+ * `withStepUp` abre el diálogo y la repite una vez. Si se cierra el diálogo, vuelve
+ * `StepUpCancelled`.
+ */
+export function removeMembership(
+  tenantId: string,
+  userId: string,
+): Promise<StepUpAware<MembershipRemoval> | StepUpCancelled> {
+  return withStepUp(() =>
+    call(
+      '/api/admin/memberships/remove',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, tenantId }),
+      },
+      parseMembershipRemoval,
+      memberActionError,
+    ),
   );
 }
 

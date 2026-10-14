@@ -5,6 +5,7 @@ import {
   loadMembershipImpact,
   loadSeats,
   releaseSeat,
+  removeMembership,
   runMemberAction,
   saveSeatPolicy,
 } from './tenant-admin-seats-client';
@@ -252,6 +253,13 @@ describe('loadMembershipImpact', () => {
       expect.anything(),
     );
 
+    respond(200, { invitationsToRevoke: 1 });
+    await loadMembershipImpact(TENANT, USER, { status: 'removed' });
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      `/api/admin/memberships/impact?tenantId=${TENANT}&userId=${USER}&status=removed`,
+      expect.anything(),
+    );
+
     respond(200, { invitationsToRevoke: 0 });
     await loadMembershipImpact(TENANT, USER, { role: 'admin' });
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -269,5 +277,84 @@ describe('loadMembershipImpact', () => {
     expect(await loadMembershipImpact(TENANT, USER, { status: 'suspended' })).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe('removeMembership: quitar a alguien del nodo (USR-11)', () => {
+  const USER = '22222222-2222-4222-8222-222222222222';
+
+  it('POST con el miembro y el nodo; trae lo que arrastró', async () => {
+    const fetchMock = respond(200, {
+      id: 'm-1',
+      status: 'removed',
+      revokedSessions: 2,
+      revokedInvitations: 1,
+    });
+    expect(await removeMembership(TENANT, USER)).toEqual({
+      ok: true,
+      data: { revokedSessions: 2, revokedInvitations: 1 },
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/memberships/remove', {
+      cache: 'no-store',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: USER, tenantId: TENANT }),
+    });
+  });
+
+  it('el 409 de una ya quitada y el 403 del último admin traen el motivo del API', async () => {
+    respond(409, {
+      error: 'Esta persona ya no forma parte de este nodo: para que vuelva, invítala de nuevo.',
+      reason: 'MEMBERSHIP_REMOVED',
+    });
+    expect(await removeMembership(TENANT, USER)).toEqual({
+      ok: false,
+      message: 'Esta persona ya no forma parte de este nodo: para que vuelva, invítala de nuevo.',
+      reason: 'MEMBERSHIP_REMOVED',
+    });
+
+    respond(403, {
+      error: 'Es el último administrador activo del nodo: asigna otro antes de quitarlo.',
+    });
+    expect(await removeMembership(TENANT, USER)).toMatchObject({
+      ok: false,
+      message:
+        'No lo pudimos hacer: Es el último administrador activo del nodo: asigna otro antes de quitarlo.',
+    });
+  });
+
+  it('quitar a un admin puede pedir el código: se pide y se repite una vez; cerrar el diálogo no hace nada', async () => {
+    const STEP_UP = {
+      error: 'Confirma con tu código de verificación en dos pasos para seguir.',
+      reason: 'MFA_RECENT_REQUIRED',
+    };
+    const fetchMock = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify(STEP_UP), { status: 403 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'removed', revokedInvitations: 0 }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const unregister = registerStepUpPrompt(() => Promise.resolve(true));
+    try {
+      expect(await removeMembership(TENANT, USER)).toMatchObject({ ok: true });
+    } finally {
+      unregister();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const once = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify(STEP_UP), { status: 403 })),
+    );
+    vi.stubGlobal('fetch', once);
+    const closed = registerStepUpPrompt(() => Promise.resolve(false));
+    try {
+      expect(isStepUpCancelled(await removeMembership(TENANT, USER))).toBe(true);
+    } finally {
+      closed();
+    }
+    expect(once).toHaveBeenCalledTimes(1);
   });
 });

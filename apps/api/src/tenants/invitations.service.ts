@@ -14,6 +14,7 @@ import {
   type InvitationBacking,
   type InvitationDefect,
 } from './invitation-validity.js';
+import { AlreadyMemberError } from './membership.errors.js';
 import { InvitationAlreadyPendingError, InvitationNotPendingError } from './onboarding.errors.js';
 import { RoleNotGrantableError } from './tenant-admin.policy.js';
 
@@ -67,7 +68,11 @@ export interface OrphanedInvitation {
 }
 
 /** Qué cambio dejó huérfanas las invitaciones. Viaja en la auditoría de cada revocación. */
-export type InvitationRevocationCause = 'membership_suspended' | 'role_changed' | 'user_suspended';
+export type InvitationRevocationCause =
+  | 'membership_suspended'
+  | 'membership_removed'
+  | 'role_changed'
+  | 'user_suspended';
 
 interface BackingRow {
   invitation_id: string;
@@ -127,6 +132,9 @@ export class InvitationsService {
    * reenviarla, no sumar otro enlace vigente. El índice de 0066 respalda la regla cuando dos pedidos
    * llegan a la vez; su 23505 sale como el mismo 409.
    *
+   * Quien ya es miembro del nodo (activo o suspendido) no se invita: 409. Quien fue quitado del nodo
+   * (USR-11) sí: es la única forma de que vuelva, y al aceptar se reactiva su misma membership.
+   *
    * La invitación y su UserInvited van en una transacción; el correo sale después, con la invitación
    * ya escrita, y `emailSent` dice si salió.
    */
@@ -147,6 +155,7 @@ export class InvitationsService {
           .select('memberships.id')
           .where('users.email', '=', email)
           .where('memberships.tenant_id', '=', tenantId)
+          .where('memberships.status', '!=', 'removed')
           .executeTakeFirst();
         if (existingMember) throw new ConflictException('Ese correo ya es miembro de este nodo.');
 
@@ -508,8 +517,8 @@ export class InvitationsService {
           throw new InvitationNoLongerValidError();
         }
 
-        const userId = await this.createMember(trx, invitation, params.name, params.password);
-        return { userId, invitation };
+        const member = await this.createMember(trx, invitation, params.name, params.password);
+        return { ...member, invitation };
       })
       .catch(async (err: unknown) => {
         if (err instanceof InvitationNoLongerValidError && rejected !== undefined) {
@@ -525,14 +534,19 @@ export class InvitationsService {
         throw err;
       });
 
-    const { userId, invitation } = accepted;
+    const { userId, rejoined, invitation } = accepted;
     await this.audit.emit({
       eventType: 'UserInvitationAccepted',
       tenantId: invitation.tenant_id,
       actorUserId: userId,
       aggregateType: 'invitation',
       aggregateId: invitation.id,
-      payload: { email: invitation.email, role: invitation.role },
+      payload: {
+        email: invitation.email,
+        role: invitation.role,
+        // Volvió al nodo del que lo habían quitado: se reactivó su membership de antes.
+        ...(rejoined ? { rejoined: true } : {}),
+      },
     });
 
     return { userId, tenantId: invitation.tenant_id };
@@ -542,13 +556,18 @@ export class InvitationsService {
    * El usuario del invitado (nuevo, o el que ya existía en otra agencia) y su membership. La
    * contraseña se hashea sólo para un usuario nuevo: un token inválido no llega hasta acá y no le
    * cuesta un bcrypt a la API.
+   *
+   * Si lo habían quitado de este nodo (USR-11), su membership `removed` vuelve a estar activa con el
+   * rol de la invitación (`rejoined`): la UNIQUE (tenant_id, user_id) no deja crear otra, y la misma
+   * fila conserva su historial. Si ya tiene una vigente (activa o suspendida), el canje se deshace con
+   * un 409: una invitación no reactiva a alguien suspendido.
    */
   private async createMember(
     trx: Transaction<DB>,
     invitation: { tenant_id: string; email: string; role: Role },
     name: string,
     password: string,
-  ): Promise<string> {
+  ): Promise<{ userId: string; rejoined: boolean }> {
     const existing = await trx
       .selectFrom('users')
       .select(['id', 'password_hash'])
@@ -578,12 +597,26 @@ export class InvitationsService {
     await sql`SELECT set_config('app.current_tenant_id', ${invitation.tenant_id}, true)`.execute(
       trx,
     );
-    await trx
+    const written = await trx
       .insertInto('memberships')
       .values({ tenant_id: invitation.tenant_id, user_id: id, role: invitation.role })
-      .execute();
+      .onConflict((oc) =>
+        oc
+          .columns(['tenant_id', 'user_id'])
+          .doUpdateSet((eb) => ({
+            status: 'active',
+            role: eb.ref('excluded.role'),
+            removed_at: null,
+            removed_by: null,
+          }))
+          .where('memberships.status', '=', 'removed'),
+      )
+      // xmax = 0 sólo en una fila recién insertada: distingue el alta de la vuelta.
+      .returning(sql<boolean>`NOT (xmax = 0)`.as('rejoined'))
+      .executeTakeFirst();
+    if (written === undefined) throw new AlreadyMemberError();
 
-    return id;
+    return { userId: id, rejoined: written.rejoined };
   }
 }
 

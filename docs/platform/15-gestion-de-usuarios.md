@@ -12,6 +12,9 @@ Cada paquete actualiza su fila al cerrarse: **hecho** con el PR, o **pendiente**
 - **2FA obligatorio** para `tenant_admin` y superiores.
 - **Suspender una membership corta sólo ese nodo** (y cierra las sesiones de ese subárbol); suspender
   la cuenta es de toda la plataforma y sólo lo hace el superadmin.
+- **Quitar a alguien de un nodo es una baja blanda** (D2 = A): la membership queda como `removed`,
+  sale de Equipo y deja de dar acceso, pero su historial y sus reservas quedan. La única vuelta es
+  una invitación nueva.
 - **Soporte a un miembro** (restablecer 2FA, cerrar sesiones, enviar el enlace, forzar el cambio de
   contraseña, desbloquear): tocan la identidad global, así que el actor tiene que administrar
   **todos** los nodos donde la persona tiene membership activa y superarla en rango en cada uno, o
@@ -45,7 +48,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Invitar o promover a un admin de consolidador                                  | Equipo, en un nodo consolidador           | Superadmin                                                                                | **Hecho (USR-9)**: no se ofrece en la raíz ni en agencias                 |
 | Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
-| Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
+| Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones → Membresía / ficha     | Admin del nodo que supere su rol; superadmin. Nunca el propio ni el último admin activo   | **Hecho (USR-11; D2 = A)**: vuelve sólo con una invitación nueva          |
 | Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | **Hecho (USR-13; D1 = C)**: pide el código si pasaron 10 minutos          |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
@@ -743,17 +746,17 @@ Sin cambios en la base ni en el panel.
 
 ### Qué avisos hay
 
-| Aviso                                             | Cuándo                                                              | Asunto                                                     |
-| ------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `mfa_reset`                                       | Restablecer su 2FA                                                  | Restablecimos tu verificación en dos pasos · PlaneTour     |
-| `sessions_revoked`                                | Cerrar todas sus sesiones, si tenía alguna abierta                  | Cerramos tus sesiones abiertas · PlaneTour                 |
-| `session_revoked`                                 | Cerrar una sesión desde la ficha                                    | Cerramos una de tus sesiones · PlaneTour                   |
-| `unlocked`                                        | Desbloquear, si había un bloqueo vigente                            | Desbloqueamos tu cuenta · PlaneTour                        |
-| `role_changed`                                    | Cambiar su rol en un nodo, si cambió                                | Tu rol en {nodo} cambió · PlaneTour                        |
-| `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió                | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
-| `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió    | Tu cuenta de PlaneTour fue suspendida / reactivada         |
-| `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta   | Tu contraseña cambió · PlaneTour                           |
-| `membership_removed`                              | Quitarla de un nodo: la plantilla está, la llamada llega con USR-11 | Ya no formas parte de {nodo} · PlaneTour                   |
+| Aviso                                             | Cuándo                                                            | Asunto                                                     |
+| ------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `mfa_reset`                                       | Restablecer su 2FA                                                | Restablecimos tu verificación en dos pasos · PlaneTour     |
+| `sessions_revoked`                                | Cerrar todas sus sesiones, si tenía alguna abierta                | Cerramos tus sesiones abiertas · PlaneTour                 |
+| `session_revoked`                                 | Cerrar una sesión desde la ficha                                  | Cerramos una de tus sesiones · PlaneTour                   |
+| `unlocked`                                        | Desbloquear, si había un bloqueo vigente                          | Desbloqueamos tu cuenta · PlaneTour                        |
+| `role_changed`                                    | Cambiar su rol en un nodo, si cambió                              | Tu rol en {nodo} cambió · PlaneTour                        |
+| `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió              | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
+| `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió  | Tu cuenta de PlaneTour fue suspendida / reactivada         |
+| `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta | Tu contraseña cambió · PlaneTour                           |
+| `membership_removed`                              | Quitarla de un nodo (USR-11)                                      | Ya no formas parte de {nodo} · PlaneTour                   |
 
 - Enviarle el enlace y forzar el cambio de contraseña no suman un aviso: el correo del enlace ya lo
   es. Liberar un puesto (Equipo → Puestos) tampoco avisa: es operativo, de todos los días, y el panel
@@ -767,9 +770,9 @@ Sin cambios en la base ni en el panel.
 - `SecurityNoticeService` (`apps/api/src/mail/security-notice.service.ts`, exportado por
   `MailerModule`, global): `notify(kind, { userId, tenantId, nodeName?, role? })`. Lo llaman
   `MemberSupportService` (`resetMfa`, `revokeSessions`, `unlock`), `MemberDetailService.revokeSession`,
-  `AdminController` (`changeRole`, `setMembershipStatus`, `setUserStatus`) y `PasswordResetService`
-  (`reset`, `change`), siempre después del commit: un aviso de algo que se deshizo sería falso. Si la
-  transacción falla, no hay aviso.
+  `AdminController` (`changeRole`, `setMembershipStatus`, `removeMembership`, `setUserStatus`) y
+  `PasswordResetService` (`reset`, `change`), siempre después del commit: un aviso de algo que se
+  deshizo sería falso. Si la transacción falla, no hay aviso.
 - La respuesta al admin no lo espera: el envío queda en `InflightWorkRegistry` (`security-notice`)
   para que un apagado ordenado lo deje salir. `send()` es el envío en sí: devuelve si salió y nunca
   lanza. Si no sale, el log dice el tipo y el id de la persona, nunca su correo ni el error (el de la
@@ -836,6 +839,7 @@ Sin cambios en la base: la ventana se mide con `sessions.mfa_verified_at`, que y
 | Restablecer el 2FA de otra persona                        | Siempre                                |
 | Forzar el cambio de contraseña                            | Siempre                                |
 | Enviarle el enlace para restablecer la contraseña         | Si tiene un rol de admin en algún nodo |
+| Quitarla de un nodo (USR-11)                              | Si su rol en ese nodo es de admin      |
 | Exportar a CSV y forzar el cambio en bloque (USR-16, -14) | Siempre, cuando existan                |
 | Desbloquear, cerrar sus sesiones, cerrar una sesión       | No                                     |
 
@@ -848,10 +852,10 @@ de sus nodos, no sólo en el de la ruta.
   `@RequireRecentMfa()` (o `@RequireRecentMfa(minutos)`), siempre en el handler; `RecentMfaGuard` es
   el último guard global (después de `MfaEnforcementGuard` y `RolesGuard`) y sólo opina en las rutas
   marcadas. Cuando la exigencia depende de los datos, el servicio llama a `assertRecentMfa()`
-  después de autorizar (así lo hace `MemberSupportService.sendPasswordReset`): a quien no podía
-  hacerlo igual no se le pide el código. Hoy llevan la marca `PATCH /admin/users/status`,
-  `POST /tenants/:id/members/:userId/reset-mfa` y `.../require-password-reset`; un test fija esa
-  lista contra la metadata real de `AppModule`.
+  después de autorizar (así lo hacen `MemberSupportService.sendPasswordReset` y
+  `AdminController.removeMembership`): a quien no podía hacerlo igual no se le pide el código. Hoy
+  llevan la marca `PATCH /admin/users/status`, `POST /tenants/:id/members/:userId/reset-mfa` y
+  `.../require-password-reset`; un test fija esa lista contra la metadata real de `AppModule`.
 - Sin el 2FA reciente: **403 `MFA_RECENT_REQUIRED`** ("Confirma con tu código de verificación en
   dos pasos para seguir."). 403 y no 401: la sesión sigue viva. Quien no tiene el 2FA activo (los
   roles que no lo exigen: `agency_admin`, `admin`) recibe **403 `MFA_REQUIRED_FOR_ACTION`** ("Para
@@ -882,7 +886,8 @@ de sus nodos, no sólo en el de la ruta.
   Si se cierra el diálogo devuelve `StepUpCancelled` (`isStepUpCancelled`): la acción no se hizo y
   no hay error que mostrar. Dos acciones a la vez comparten un solo código. La llamada envuelta
   tiene que devolver el `reason` del API en el fallo (`StepUpAware<T>`): hoy `runMemberAction`
-  (todas las acciones de soporte de Equipo y de la ficha) y `setPlatformUserStatus`.
+  (todas las acciones de soporte de Equipo y de la ficha), `removeMembership` (quitar del nodo) y
+  `setPlatformUserStatus`.
 - `StepUpProvider` (`apps/web-b2b/src/components/step-up-dialog.tsx`), montado una vez en el layout
   del panel: **"Confirma que eres tú"**, "Escribe el código de 6 dígitos de tu app de
   autenticación.", seis casillas (`inputMode="numeric"`, `autocomplete="one-time-code"`); se envía
@@ -940,3 +945,128 @@ de sus nodos, no sólo en el de la ruta.
   impide, y hoy activarlo no manda aviso por correo. Cerrar ese hueco es pedir la contraseña en el
   primer enrolamiento o exigir el 2FA a los admins de agencia: queda para una decisión aparte.
   Tampoco lo piden, por D1, suspender en un solo nodo, cambiar un rol ni invitar.
+
+## Quitar a una persona de un nodo (USR-11)
+
+Founder D2 = A. Para que alguien dejara de trabajar en un nodo sólo había _Suspender_, y los
+suspendidos se apilaban en Equipo para siempre. Ahora _Quitar de este nodo_ termina la membership
+como baja blanda: la persona sale de Equipo y pierde el acceso a ese nodo en el acto, pero la fila
+queda, así que sus reservas, sus movimientos de cartera y su rastro en la auditoría siguen apuntando
+a ella. Para volver, sólo una invitación nueva.
+
+### Base
+
+- `db/migrations/0067_membership_removed.sql`: el CHECK de `memberships.status` suma `'removed'` (el de
+  0001 no tenía nombre: se busca en `pg_constraint` y se reemplaza por `memberships_status_check`);
+  columnas `removed_at` y `removed_by` (FK a `users`, `ON DELETE SET NULL`), atadas al estado por
+  `memberships_removed_consistent` (`status = 'removed'` si y sólo si hay `removed_at`).
+- Por qué alcanza con un estado más: todo lo que da acceso o potestad mira `status = 'active'` (las
+  RLS y sus funciones, `revoke_user_sessions_for_tenant`, `invitation_backing`, las funciones de
+  0063-0065, `SessionService.validate`, `NetworkService`). Se revisaron todos los predicados de la
+  base y de la API: ninguno usaba `<> 'suspended'`, que habría dejado pasar a un quitado.
+- Lo que miraba memberships sin filtrar el estado ahora descarta las quitadas:
+  `user_admin_overview` (el equipo del subárbol) y `admin_user_security` (sólo le responde a quien
+  administra un nodo donde la persona sigue estando).
+
+### API
+
+- **`POST /admin/memberships/remove` `{ userId, tenantId }`** (Zod estricto, ids en minúsculas):
+  responde `{ id, status: 'removed', revokedSessions, revokedInvitations }`. Las reglas de suspender:
+  nunca uno mismo (403); administrar el nodo (403 "No administras este nodo.") y superar su rol en él
+  (`ROLE_NOT_GRANTABLE`), o ser superadmin; nunca el último admin activo del nodo (403 "…asigna otro
+  antes de quitarlo."; un admin suspendido no cuenta entre los activos, así que quitarlo no pasa por
+  esta guarda). Ya quitada: **409 `MEMBERSHIP_REMOVED`** ("Esta persona ya no forma parte de este
+  nodo: para que vuelva, invítala de nuevo.").
+- **Un rol de plataforma no se quita**: **403 `PLATFORM_ROLE_NOT_REMOVABLE`** ("Un rol de plataforma
+  no se quita de un nodo: ninguna invitación lo devuelve. Si hace falta, suspende su acceso."). La
+  vuelta de una baja es una invitación, y ninguna concede `superadmin` (D7 B, 0025): quitarle la
+  membership de la plataforma a otro superadmin lo dejaba afuera para siempre, salvo una operación
+  manual en la base. Suspenderla sí se deshace. El panel no ofrece el ítem a esos roles.
+- **Las reglas valen con el nodo en fila**: las lecturas de arriba son sin tomar nada, así que dos
+  admins de arriba que quitaban a la vez a los dos últimos admins de un nodo pasaban los dos la
+  guarda y el nodo quedaba sin ninguno; y una membership ascendida a admin entre la lectura y el
+  cambio se quitaba sin el rango, la guarda ni el 2FA de su rol nuevo. Ahora la transacción toma
+  primero `pg_advisory_xact_lock(hashtextextended('node-admins:' || nodo, 0))` (la misma clave para
+  quitar, suspender y cambiar el rol en ese nodo), después la fila, y con la fila tomada vuelve a
+  mirar el rango, el rol de plataforma, el último admin activo (contado dentro de la transacción) y
+  el 2FA. La lectura de afuera sigue: responde antes, sin pedir el código a quien igual no podía.
+  Suspender y degradar a un admin pasan por el mismo candado y el mismo conteo (degradar dice
+  "…asigna otro antes de cambiarle el rol.").
+- **2FA reciente (D1)**: quitar a alguien es el trabajo de todos los días y no lo pide, **salvo que su
+  rol en ese nodo sea de admin** (`ADMIN_ROLES`): sacarle el gobierno del nodo a un admin pesa como
+  enviarle el enlace a uno, y con una sesión robada alcanzaría para ir sacando a los demás admins.
+  `assertRecentMfa()` va después de autorizar y de la guarda del último admin.
+- En una transacción, con la fila tomada (`FOR NO KEY UPDATE`): `status = 'removed'`, `removed_at`,
+  `removed_by`; `revokeForTenant(…, 'membership_removed')` (sus sesiones del subárbol del nodo que no
+  respalda otra membership activa suya, como al suspender: si también trabaja en otra agencia, ahí
+  sigue); `revokeOrphaned` con la causa `membership_removed` (lo que emitió y ya no podría emitir);
+  y el evento **`MembershipRemoved`** (`targetUserId`, `role`, `previousStatus`, `revokedSessions`,
+  `revokedInvitations`). Si algo falla, no queda nada. Después del commit, el aviso
+  `membership_removed` a su correo (USR-12).
+- `GET /admin/memberships/impact?status=removed`: cuántas invitaciones revocaría, simulado en una
+  transacción que se deshace, como para suspender.
+- Una membership quitada no se reactiva ni cambia de rol: `PATCH /admin/memberships/status` y
+  `PATCH /admin/memberships/role` responden 409 `MEMBERSHIP_REMOVED` (también si otro admin la quitó
+  entre la lectura y el cambio: se mira la fila tomada).
+- **Volver**: invitar ya no cuenta como miembro a quien fue quitado (sí a un activo o suspendido: 409
+  "Ese correo ya es miembro de este nodo."). Al aceptar, el alta de la membership es un
+  `ON CONFLICT (tenant_id, user_id) DO UPDATE` sólo sobre una fila `removed`: reactiva la MISMA fila
+  con el rol de la invitación y limpia `removed_at` y `removed_by`; `UserInvitationAccepted` suma
+  `rejoined: true`. Una invitación de alguien que ya tiene una membership vigente en el nodo (una de
+  antes de la regla de invitar) es 409 `ALREADY_MEMBER` y queda pendiente (antes era un 500 por la
+  UNIQUE).
+- Dónde ya no aparece una membership quitada: Equipo (`listTenantUsers`), el selector de agencia
+  (`GET /me/memberships`, ni deshabilitada), la ficha desde ese nodo (404 `MEMBER_NOT_FOUND` si no
+  le queda otra membership en su subárbol), el soporte sobre ese nodo (404), los nodos de cada
+  persona y los filtros por rol o nodo del directorio de la plataforma, y el conteo de usuarios de
+  Gestión de Agencias. Sí sigue en la historia: la Actividad de la red y el historial de la persona
+  la nombran, y sus reservas y movimientos siguen a su nombre.
+
+### Panel
+
+- Equipo → acciones → **Membresía**: después de _Suspender_ / _Reactivar_, en rojo y último,
+  **Quitar de este nodo** (ícono `UserX`), para miembros activos o suspendidos que no tengan un rol
+  de plataforma; también en el menú de su ficha. Primero pregunta el impacto; después la confirmación destructiva **"Quitar a {nombre}
+  de {nodo}"**: "Deja de pertenecer a este nodo y se cierran sus sesiones en él.{ Se revocarán N
+  invitaciones que envió.} Su historial y sus reservas quedan como están. Si después quieres que
+  vuelva, tienes que invitarlo de nuevo." con **Quitar del nodo**. Al salir bien: "Quitamos a
+  {nombre} de {nodo}." (con las invitaciones revocadas, si las hubo), la lista y los puestos se
+  recargan, la ficha (si estaba abierta) se cierra y el foco va al título _Miembros_: la fila desde
+  la que se actuó ya no está. Un error va en su fila (o en la ficha).
+- Si es admin y pasaron más de 10 minutos del 2FA, `removeMembership` (`withStepUp`) abre "Confirma
+  que eres tú" y repite una vez; cerrar el diálogo no hace nada.
+- BFF `POST /api/admin/memberships/remove`: mismo origen, cuerpo reconstruido
+  (`membershipRemovePlan`: sólo el miembro y el nodo), estado y motivo del API en el error.
+  `membershipImpactTarget` admite `status=removed`. La Actividad de la red ya traía la frase "Quitado
+  del nodo"; la revocación de una invitación dice "al quitar del nodo a quien la envió".
+
+### Tests
+
+- `apps/api/src/tenants/admin.controller.test.ts`: el orden (candado del nodo, fila, cambio, sesiones,
+  evento, commit, aviso), quién y cuándo, la causa de las invitaciones y el evento; uno mismo, fuera
+  de la red, sin rango, el último admin, ya quitada (también en una carrera), el 2FA sólo para un
+  admin y después de autorizar, sin aviso si la transacción falla; un rol de plataforma no se quita;
+  con la fila tomada, el último admin contado adentro y el rango y el 2FA de un rol ascendido en el
+  medio (también al suspender y degradar); reactivar, suspender, cambiar el rol o preguntar el
+  impacto de una quitada: 409; el borde Zod.
+- `apps/api/src/tenants/membership-removal.integration.test.ts` (Postgres, todo como `app_user`,
+  también el canje): sale de Equipo, de `user_admin_overview` y de su selector; sus sesiones del nodo
+  se cierran y las de otra agencia siguen; el evento en la transacción (si no entra, no queda nada);
+  las invitaciones que ya no respalda; 409 al reactivarla; la invitación nueva reactiva la misma fila
+  con el rol nuevo; `ALREADY_MEMBER` deja la invitación pendiente; el CHECK; las reglas; la ficha,
+  el soporte y su seguridad dejan de abrirse desde el nodo, y la ficha desde arriba y el conteo de
+  Gestión de Agencias ya no la cuentan en ese nodo; dos admins de arriba que quitan a la vez a los dos
+  últimos admins del nodo (gana uno); un ascenso entre la lectura y la fila; y un superadmin que
+  intenta quitar a otro.
+- `member-detail.service.test.ts` y `platform-users.service.test.ts`: las consultas descartan las
+  quitadas.
+- Panel: `tenant-admin-team.test.ts` (textos, en tú), `tenant-admin-proxy.test.ts`,
+  `tenant-admin-proxy-route.test.ts`, `tenant-admin-seats-client.test.ts` (el reintento con el 2FA),
+  `audit-format.test.ts` y `team.render.test.ts` (dónde va el ítem y a quién se le ofrece).
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero): la API vieja no conoce `'removed'`,
+  pero tampoco lo escribe, y `user_admin_overview` conserva sus columnas.
+- API y panel juntos: el panel viejo no ofrece quitar; si el panel sale antes, la ruta del BFF
+  responde el 404 del API viejo y la fila muestra el error.

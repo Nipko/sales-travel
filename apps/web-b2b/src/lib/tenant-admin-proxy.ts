@@ -266,10 +266,14 @@ export function networkAuditTarget(query: URLSearchParams): TenantAdminProxyTarg
 /** Forma de un rol (`tenant_admin`). Cuáles se pueden dar lo decide el API. */
 const ROLE_FORMAT = /^[a-z][a-z_]{0,31}$/;
 
+/** Los cambios de estado cuyo impacto se pregunta: reactivar, suspender o quitar del nodo. */
+const IMPACT_STATUSES: readonly string[] = ['active', 'suspended', 'removed'];
+
 /**
- * `GET /admin/memberships/impact`: qué arrastraría suspender una membership o cambiarle el rol (las
- * invitaciones que se revocarían), para decirlo en la confirmación. La consulta se reconstruye
- * parámetro por parámetro: el API rechaza los de más, y pide el estado o el rol, uno solo.
+ * `GET /admin/memberships/impact`: qué arrastraría suspender una membership, quitarla del nodo o
+ * cambiarle el rol (las invitaciones que se revocarían), para decirlo en la confirmación. La consulta
+ * se reconstruye parámetro por parámetro: el API rechaza los de más, y pide el estado o el rol, uno
+ * solo.
  */
 export function membershipImpactTarget(query: {
   get(name: string): string | null;
@@ -285,12 +289,12 @@ export function membershipImpactTarget(query: {
   });
   const status = query.get('status');
   const role = query.get('role');
-  if (status !== null && role === null && STATUSES.includes(status)) {
+  if (status !== null && role === null && IMPACT_STATUSES.includes(status)) {
     params.set('status', status);
   } else if (role !== null && status === null && ROLE_FORMAT.test(role)) {
     params.set('role', role);
   } else {
-    return { ok: false, error: 'Indica qué cambio simular: suspender o un rol.' };
+    return { ok: false, error: 'Indica qué cambio simular: suspender, quitar del nodo o un rol.' };
   }
   return { ok: true, path: `/admin/memberships/impact?${params.toString()}` };
 }
@@ -369,6 +373,18 @@ export function membershipRolePlan(raw: unknown): TenantAdminProxyPlan {
     return { ok: false, error: 'Elige el rol nuevo.' };
   }
   return { ok: true, path: '/admin/memberships/role', body: { ...target, role } };
+}
+
+/**
+ * `POST /admin/memberships/remove`: quitar a un miembro de un nodo (baja blanda, USR-11). Sólo el
+ * miembro y el nodo; quién puede y si pide el 2FA reciente lo decide el API.
+ */
+export function membershipRemovePlan(raw: unknown): TenantAdminProxyPlan {
+  const input = asRecord(raw);
+  if (input === undefined) return { ok: false, error: 'El cambio no se pudo leer.' };
+  const target = membershipTarget(input);
+  if ('error' in target) return { ok: false, error: target.error };
+  return { ok: true, path: '/admin/memberships/remove', body: target };
 }
 
 /** `PATCH /admin/memberships/status`: suspender o reactivar el acceso de un miembro a un nodo. */

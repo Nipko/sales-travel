@@ -120,6 +120,7 @@ export function directoryQuery(db: Kysely<DB>, query: ListPlatformUsersQuery) {
             .innerJoin('tenants as t', 't.id', 'm.tenant_id')
             .select(sql<number>`1`.as('one'))
             .whereRef('m.user_id', '=', 'u.id')
+            .where('m.status', '!=', 'removed')
             .$if(role !== undefined, (sub) => sub.where('m.role', '=', role as Role))
             .$if(tenantId !== undefined, (sub) =>
               sub.where(
@@ -199,6 +200,8 @@ export class PlatformUsersService {
           'm.status',
         ])
         .where('m.user_id', 'in', ids)
+        // Los nodos de los que la quitaron (USR-11) ya no son suyos; su historial lo cuenta.
+        .where('m.status', '!=', 'removed')
         // Primero los accesos activos y los nodos más altos: el primero es el que abre "Ver en
         // Equipo".
         .orderBy(sql`(m.status = 'active')`, 'desc')

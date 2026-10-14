@@ -5,7 +5,8 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export type TenantStatus = 'active' | 'suspended' | 'archived';
 export type TenantType = 'platform' | 'consolidator' | 'agency' | 'subagency';
 export type UserStatus = 'active' | 'suspended';
-export type MembershipStatus = 'active' | 'suspended' | 'invited';
+/** `removed` = la quitaron del nodo (0067): no da acceso ni aparece en Equipo, pero la fila queda. */
+export type MembershipStatus = 'active' | 'suspended' | 'invited' | 'removed';
 export type LanguageCode = 'es' | 'pt' | 'en';
 export type Role =
   | 'superadmin'
@@ -290,6 +291,10 @@ export interface MembershipsTable {
   role: Role;
   status: Generated<MembershipStatus>;
   invited_by: string | null;
+  /** Desde cuándo está quitada del nodo (0067); `null` si no lo está. */
+  removed_at: Timestamp | null;
+  /** Quién la quitó (0067). */
+  removed_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

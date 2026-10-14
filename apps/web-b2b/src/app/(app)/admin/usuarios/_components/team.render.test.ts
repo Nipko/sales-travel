@@ -301,8 +301,11 @@ describe('MemberList', () => {
   });
 });
 
-/** El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). */
-function actionsMenu(member: NetworkMember): string {
+/**
+ * El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). Con
+ * `withRemove`, como lo arma Equipo: con "Quitar de este nodo".
+ */
+function actionsMenu(member: NetworkMember, withRemove = false): string {
   return renderToStaticMarkup(
     createElement(
       DropdownMenu.Root,
@@ -316,6 +319,7 @@ function actionsMenu(member: NetworkMember): string {
           now: Date.now(),
           onPick: (run: () => void) => run,
           onSetStatus: () => {},
+          ...(withRemove ? { onRemove: () => {} } : {}),
           onAction: () => {},
         }),
       ),
@@ -375,6 +379,37 @@ describe('MemberActionItems: el menú de acciones de un miembro', () => {
     expect(sendItem(actionsMenu(parsedMember()))).not.toContain('aria-disabled');
     expect(actionsMenu(parsedMember())).not.toContain('(acceso suspendido)');
     expect(actionsMenu(parsedMember({ membershipStatus: 'suspended' }))).toContain('Reactivar');
+  });
+});
+
+describe('MemberActionItems: quitar de este nodo (USR-11)', () => {
+  /** El ítem del menú que dice `label`. */
+  function item(html: string, label: string): string {
+    return html.split('<div role="menuitem"').find((i) => i.includes(label)) ?? '';
+  }
+
+  it('va último en Membresía, en rojo y con su ícono, después de suspender', () => {
+    const html = actionsMenu(parsedMember(), true);
+    const remove = html.indexOf('Quitar de este nodo');
+    expect(remove).toBeGreaterThan(html.indexOf('Suspender'));
+    expect(remove).toBeGreaterThan(html.indexOf('Membresía'));
+    const quitar = item(html, 'Quitar de este nodo');
+    expect(quitar).toContain('text-[var(--color-danger)]');
+    expect(quitar).toContain('lucide-user-x');
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('también a un suspendido, junto a "Reactivar"', () => {
+    const html = actionsMenu(parsedMember({ membershipStatus: 'suspended' }), true);
+    expect(html).toContain('Reactivar');
+    expect(html.indexOf('Quitar de este nodo')).toBeGreaterThan(html.indexOf('Reactivar'));
+  });
+
+  it('sin la acción, o con una membresía que no está activa ni suspendida, no se ofrece', () => {
+    expect(actionsMenu(parsedMember())).not.toContain('Quitar de este nodo');
+    expect(actionsMenu(parsedMember({ membershipStatus: 'invited' }), true)).not.toContain(
+      'Quitar de este nodo',
+    );
   });
 });
 

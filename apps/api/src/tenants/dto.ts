@@ -40,6 +40,25 @@ export const SetMembershipStatusSchema = z.object({
 });
 export type SetMembershipStatusDto = z.infer<typeof SetMembershipStatusSchema>;
 
+/**
+ * Quitar a una persona de un nodo (POST /admin/memberships/remove, USR-11): baja blanda, la
+ * membership queda como `removed`. Ids en minúsculas, como los devuelve Postgres: si no, el chequeo
+ * de "uno mismo" no lo veía.
+ */
+export const RemoveMembershipSchema = z
+  .object({
+    userId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+    tenantId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+  })
+  .strict();
+export type RemoveMembershipDto = z.infer<typeof RemoveMembershipSchema>;
+
 export const SetUserStatusSchema = z.object({
   // En minúsculas, como lo devuelve Postgres: si no, el chequeo de "tu propio usuario" no lo veía.
   userId: z
@@ -217,14 +236,14 @@ export type ListPlatformInvitationsQuery = z.infer<typeof ListPlatformInvitation
 
 /**
  * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET
- * /admin/memberships/impact): suspenderla o darle otro rol. Uno de los dos: la pantalla pregunta por
- * el cambio que está por confirmar.
+ * /admin/memberships/impact): suspenderla, quitarla del nodo (`removed`) o darle otro rol. Uno de los
+ * dos: la pantalla pregunta por el cambio que está por confirmar.
  */
 export const MembershipImpactQuerySchema = z
   .object({
     userId: z.string().uuid(),
     tenantId: z.string().uuid(),
-    status: z.enum(['active', 'suspended']).optional(),
+    status: z.enum(['active', 'suspended', 'removed']).optional(),
     role: AssignableRoleSchema.optional(),
   })
   .strict()

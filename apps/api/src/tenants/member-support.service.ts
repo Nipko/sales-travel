@@ -362,6 +362,8 @@ export class MemberSupportService {
         .select(['tenant_id', 'role', 'status'])
         .where('user_id', '=', targetUserId)
         .where('tenant_id', '=', tenantId)
+        // Quitada del nodo (USR-11): ya no es de ahí, como si no tuviera membership.
+        .where('status', '!=', 'removed')
         .executeTakeFirst(),
     );
     if (!inRoute) throw new MemberNotFoundError();

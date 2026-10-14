@@ -301,6 +301,8 @@ export class NetworkService {
           'memberships.created_at as createdAt',
         ])
         .where('memberships.tenant_id', '=', tenantId)
+        // Quien se quitó del nodo (USR-11) ya no es del equipo: la fila queda sólo por su historial.
+        .where('memberships.status', '!=', 'removed')
         .orderBy('memberships.created_at')
         .execute();
 
