@@ -584,6 +584,53 @@ export function redactValue(value: unknown, depth = 0): unknown {
 }
 
 /**
+ * Tope de anidamiento de {@link redactDocument}. Ningún contrato de Sabre se acerca (la respuesta de
+ * BFM anida unos doce niveles); existe para que un documento hostil o circular no agote la pila.
+ */
+const DOCUMENT_MAX_DEPTH = 64;
+
+/**
+ * Redacta un documento ENTERO del proveedor (una request o una respuesta) para guardarlo como
+ * evidencia o fixture: la misma política que {@link redactValue} —la misma marca por clave, con la
+ * misma precedencia, rutas sin query y formas tapadas en cada cadena— pero sin los recortes de un
+ * log. `redactValue` corta a seis niveles y a veinte elementos por array, y una respuesta de BFM
+ * recortada no sirve de fixture.
+ *
+ * Además tapa un PAN escrito como NÚMERO (no como cadena) que pase Luhn: en un log no llega nunca un
+ * cuerpo entero, en una evidencia sí.
+ */
+export function redactDocument(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return redactText(value);
+  if (typeof value === 'number') {
+    const literal = String(value);
+    return redactPanShape(literal) === literal ? value : REDACTED;
+  }
+  if (typeof value === 'boolean') return value;
+  if (depth >= DOCUMENT_MAX_DEPTH) return '«PROFUNDIDAD-MAX»';
+
+  if (Array.isArray(value)) return value.map((item) => redactDocument(item, depth + 1));
+
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const mask = maskForKey(key);
+      if (mask !== null) {
+        out[key] = mask;
+        continue;
+      }
+      out[key] =
+        isPathKey(key) && typeof item === 'string'
+          ? redactPath(item)
+          : redactDocument(item, depth + 1);
+    }
+    return out;
+  }
+
+  return '«NO-SERIALIZABLE»';
+}
+
+/**
  * Par `"clave": valor` dentro de una cadena. Se captura **cualquier** clave y se decide en el
  * replacer con {@link isSensitiveKey}: así una clave nueva en los Sets queda cubierta también en
  * el carril textual, sin tener que mantener dos listas que se desincronizan.

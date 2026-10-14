@@ -5,6 +5,8 @@ import {
   hasUsableSabreCredentials,
   missingSabreCredentials,
   parseSabreConfig,
+  sabreEnvironmentOfHosts,
+  sabreHostEnvironment,
   sabreUrl,
   type SabreConfig,
 } from './config';
@@ -88,5 +90,85 @@ describe('sabreUrl', () => {
     expect(sabreUrl(fullConfig({ host: 'https://h.test' }), 'v5/offers/shop')).toBe(
       'https://h.test/v5/offers/shop',
     );
+  });
+});
+
+/**
+ * El entorno que dice el HOST, sin mirar lo que la cuenta declara. Es la regla con la que el arnés de
+ * certificación se niega a salir de CERT y con la que una cuenta que apunta a producción no puede
+ * pasar por cuenta de pruebas.
+ */
+describe('sabreHostEnvironment', () => {
+  it.each([[SABRE_HOSTS.cert.rest], [SABRE_HOSTS.cert.soap]])('%s es CERT', (url) => {
+    expect(sabreHostEnvironment(url)).toBe('cert');
+  });
+
+  it.each([[SABRE_HOSTS.prod.rest], [SABRE_HOSTS.prod.soap]])('%s es producción', (url) => {
+    expect(sabreHostEnvironment(url)).toBe('prod');
+  });
+
+  it('el host manda: ni la ruta, ni la barra final, ni las mayúsculas cambian el entorno', () => {
+    expect(sabreHostEnvironment('https://API.CERT.platform.sabre.com/v1/offers/')).toBe('cert');
+    expect(sabreHostEnvironment('https://api.cert.platform.sabre.com.')).toBe('cert');
+    expect(sabreHostEnvironment('https://api.platform.sabre.com:443/v5')).toBe('prod');
+  });
+
+  it('los dominios de certificación de Sabre son CERT, también los históricos', () => {
+    // Con el host viejo (`*.cert.havail.sabre.com`) una cuenta de CERT tiene que seguir vendiendo de
+    // pruebas: no emite tiquetes reales, y no reconocerla la dejaría fuera de la búsqueda al desplegar.
+    expect(sabreHostEnvironment('https://api-crt.cert.havail.sabre.com')).toBe('cert');
+    expect(sabreHostEnvironment('https://sws-crt.cert.havail.sabre.com/websvc')).toBe('cert');
+    expect(sabreHostEnvironment('https://otro.cert.platform.sabre.com')).toBe('cert');
+    // El sufijo tiene que ser un dominio entero: ni pegado ni como subdominio de otro.
+    expect(sabreHostEnvironment('https://apicert.havail.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://cert.havail.sabre.com.evil.test')).toBeUndefined();
+  });
+
+  it('cualquier otro host de sabre.com cuenta como producción, no como CERT', () => {
+    // Un host dedicado o uno histórico también factura: la duda se resuelve hacia producción.
+    expect(sabreHostEnvironment('https://agencia-x.platform.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://api.havail.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://sabre.com')).toBe('prod');
+  });
+
+  it('un host que sólo se parece a Sabre no es de Sabre', () => {
+    expect(sabreHostEnvironment('https://api.cert.platform.sabre.com.evil.test')).toBeUndefined();
+    expect(sabreHostEnvironment('https://evilsabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('https://sabre.com.evil.test')).toBeUndefined();
+  });
+
+  it('sin URL http(s) de Sabre no hay entorno que leer', () => {
+    expect(sabreHostEnvironment('http://127.0.0.1:4010')).toBeUndefined();
+    expect(sabreHostEnvironment('api.cert.platform.sabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('ftp://api.cert.platform.sabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('')).toBeUndefined();
+  });
+});
+
+/**
+ * El entorno de una cuenta sale de sus hosts (revisión de SAB-10): «de pruebas» apaga la retención
+ * de cartera, así que sólo se le concede a lo que se puede comprobar que es CERT.
+ */
+describe('sabreEnvironmentOfHosts', () => {
+  it('CERT sólo si todos los hosts son de CERT', () => {
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, SABRE_HOSTS.cert.soap])).toBe('cert');
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, undefined])).toBe('cert');
+  });
+
+  it('un solo host de producción hace de producción a la cuenta entera', () => {
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.prod.rest, SABRE_HOSTS.cert.soap])).toBe('prod');
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, SABRE_HOSTS.prod.soap])).toBe('prod');
+  });
+
+  it('un host que no es de Sabre no se puede comprobar: producción', () => {
+    expect(sabreEnvironmentOfHosts(['https://proxy.agencia.test', SABRE_HOSTS.cert.soap])).toBe(
+      'prod',
+    );
+    expect(sabreEnvironmentOfHosts(['http://127.0.0.1:4010'])).toBe('prod');
+  });
+
+  it('sin ningún host no hay nada que comprobar: producción', () => {
+    expect(sabreEnvironmentOfHosts([])).toBe('prod');
+    expect(sabreEnvironmentOfHosts([undefined])).toBe('prod');
   });
 });

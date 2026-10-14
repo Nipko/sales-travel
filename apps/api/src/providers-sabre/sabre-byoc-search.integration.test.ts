@@ -364,7 +364,9 @@ d('BYOC de Sabre: de la credencial cargada a la búsqueda del vendedor', () => {
         ...(opts.sinPassword === true ? {} : { password: `pw-${opts.epr}` }),
       },
       config: {
-        environment: 'cert',
+        // Un host que no es el de CERT no se puede declarar CERT: el factory no vende con una
+        // cuenta así (revisión de SAB-10). Con un host propio, la cuenta es de producción.
+        environment: 'prod',
         // La cuenta apunta al Sabre local. Es un campo de `config` que el ACL ya soporta,
         // no un gancho de test: `toConfig` lee `config.host` antes que el host del entorno.
         host: sabreLocal.baseUrl,

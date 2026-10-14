@@ -24,6 +24,8 @@ export {
 } from './http/sabre-http.client';
 export type { SabreHttpDeps, SabreRequestOptions, SabreResult } from './http/sabre-http.client';
 export { REDACTED, redactMeta, redactText, redactValue, safeBodySummary } from './redaction';
+// Aparte y en una línea: `redaction.single-path-rule.test.ts` sólo reconoce un re-export de una línea.
+export { redactDocument } from './redaction';
 export {
   SABRE_BAGGAGE_REQUEST,
   SABRE_BFM_VERSION,

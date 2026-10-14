@@ -21,6 +21,67 @@ export const SABRE_HOSTS = {
 
 export type SabreEnvironment = keyof typeof SABRE_HOSTS;
 
+/** Los nombres de host de CERT, sacados de {@link SABRE_HOSTS} para que no haya una segunda lista. */
+const SABRE_CERT_HOSTNAMES: ReadonlySet<string> = new Set(
+  Object.values(SABRE_HOSTS.cert).map((url) => new URL(url).hostname),
+);
+
+/**
+ * Los dominios de certificación de Sabre: `*.cert.platform.sabre.com` (el de {@link SABRE_HOSTS}) y
+ * `*.cert.havail.sabre.com` (el histórico, p. ej. `api-crt.cert.havail.sabre.com` y
+ * `sws-crt.cert.havail.sabre.com`). Un host bajo ellos no emite tiquetes reales, así que tratarlo
+ * de pruebas no apaga la retención de una venta real; y no reconocerlo dejaría sin vender a una
+ * cuenta de CERT que funciona con el host viejo.
+ */
+const SABRE_CERT_DOMAIN_SUFFIXES: readonly string[] = [
+  '.cert.platform.sabre.com',
+  '.cert.havail.sabre.com',
+];
+
+/**
+ * El entorno de Sabre al que apunta una URL, mirando SÓLO el host: lo que la cuenta declare en
+ * `environment` no entra.
+ *
+ * - `cert`: uno de los hosts de CERT de {@link SABRE_HOSTS}, o cualquiera bajo los dominios de
+ *   certificación de Sabre (`*.cert.platform.sabre.com`, `*.cert.havail.sabre.com`).
+ * - `prod`: cualquier otro host de `sabre.com`. No sólo los de {@link SABRE_HOSTS}: un host dedicado
+ *   que Sabre asigne a una agencia, o uno de los históricos, también factura, y equivocarse hacia
+ *   CERT es lo que apagaría las retenciones de una red entera.
+ * - `undefined`: no es una URL http(s) o no es de Sabre (un proxy, un doble local). Desde el host no
+ *   se puede saber a qué entorno llega, y quien pregunta decide qué hacer con la duda.
+ */
+export function sabreHostEnvironment(url: string): SabreEnvironment | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (SABRE_CERT_HOSTNAMES.has(hostname)) return 'cert';
+  if (SABRE_CERT_DOMAIN_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) return 'cert';
+  if (hostname === 'sabre.com' || hostname.endsWith('.sabre.com')) return 'prod';
+  return undefined;
+}
+
+/**
+ * El entorno EFECTIVO de una cuenta: el de los hosts con los que el ACL arma cada URL, no el que la
+ * cuenta declara. Es CERT sólo si TODOS son hosts de CERT; un host de producción de Sabre, o uno que
+ * no es de Sabre (un proxy que podría llegar a producción), la hacen de producción.
+ *
+ * Por qué así y no al revés: «de pruebas» apaga cosas —la retención de cartera de la red, por
+ * ejemplo— y se le concede sólo a lo que se puede comprobar que es CERT. `environment` sigue
+ * eligiendo los hosts por defecto, pero ya no puede convertir un host de producción en una cuenta de
+ * pruebas.
+ */
+export function sabreEnvironmentOfHosts(hosts: readonly (string | undefined)[]): SabreEnvironment {
+  const present = hosts.filter((host): host is string => host !== undefined);
+  return present.length > 0 && present.every((host) => sabreHostEnvironment(host) === 'cert')
+    ? 'cert'
+    : 'prod';
+}
+
 /** El literal `AA` del `clientId` REST (`V1:{epr}:{pcc}:AA`) — docs/sabre/01 §2.1. */
 export const SABRE_DEFAULT_DOMAIN = 'AA';
 

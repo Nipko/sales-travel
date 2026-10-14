@@ -122,6 +122,80 @@ describe('POST /provider-accounts — el borde exige la forma DECLARADA del prov
 });
 
 /**
+ * Revisión de SAB-10: el factory deriva el entorno de los hosts, así que una cuenta cuyo
+ * `environment` contradice sus hosts no se guarda. Es la misma regla del ACL
+ * (`sabreHostEnvironment`), un paso antes, con el motivo en el 400.
+ */
+describe('POST /provider-accounts — Sabre: el entorno tiene que coincidir con los hosts', () => {
+  const PROD_REST = 'https://api.platform.sabre.com';
+  const PROD_SOAP = 'https://webservices.platform.sabre.com';
+  const CERT_REST = 'https://api.cert.platform.sabre.com';
+  const CERT_SOAP = 'https://webservices.cert.platform.sabre.com';
+
+  it.each([
+    ['CERT con sus hosts', { environment: 'cert', host: CERT_REST, soapHost: CERT_SOAP }],
+    ['CERT sin hosts (los pone el factory)', { environment: 'cert' }],
+    ['sin entorno ni hosts (CERT)', {}],
+    ['producción con sus hosts', { environment: 'prod', host: PROD_REST, soapHost: PROD_SOAP }],
+    [
+      'producción con un host dedicado de Sabre',
+      { environment: 'prod', host: 'https://agencia.platform.sabre.com' },
+    ],
+    ['producción con un host propio', { environment: 'prod', host: 'https://proxy.agencia.test' }],
+    ['hosts vacíos', { environment: 'cert', host: '', soapHost: '' }],
+  ])('%s: se acepta', (_caso, config) => {
+    expect(() => pipe.transform(body({ config }))).not.toThrow();
+  });
+
+  it('CERT con el host de producción: 400 en `config.host`, con el motivo', () => {
+    const { fields } = rejection(body({ config: { environment: 'cert', host: PROD_REST } }));
+    expect(fields).toHaveLength(1);
+    expect(fields[0]?.field).toBe('config.host');
+    expect(fields[0]?.message).toMatch(/host de producción de Sabre/);
+    expect(fields[0]?.message).toMatch(/no retiene cartera/);
+  });
+
+  it('sin entorno declarado (CERT) y con el SOAP de producción: 400 en `config.soapHost`', () => {
+    const { fields } = rejection(body({ config: { soapHost: PROD_SOAP } }));
+    expect(fields.map((f) => f.field)).toEqual(['config.soapHost']);
+  });
+
+  it('CERT con un host que no es de Sabre: 400, nombra el host de CERT que sí vale', () => {
+    const { fields } = rejection(
+      body({ config: { environment: 'cert', host: 'https://proxy.agencia.test' } }),
+    );
+    expect(fields[0]?.field).toBe('config.host');
+    expect(fields[0]?.message).toContain(CERT_REST);
+    expect(fields[0]?.message).not.toContain('proxy.agencia.test');
+  });
+
+  it('producción apuntando a CERT: 400, las reservas se mostrarían como reales', () => {
+    const { fields } = rejection(
+      body({ config: { environment: 'prod', host: CERT_REST, soapHost: CERT_SOAP } }),
+    );
+    expect(fields.map((f) => f.field)).toEqual(['config.host', 'config.soapHost']);
+    expect(fields[0]?.message).toMatch(/se mostrarían como reales/);
+  });
+
+  it('un entorno que no es `cert` ni `prod` se rechaza en vez de leerse como CERT', () => {
+    const { fields } = rejection(body({ config: { environment: 'produccion', host: PROD_REST } }));
+    expect(fields.map((f) => f.field)).toEqual(['config.environment']);
+  });
+
+  it('el 400 llega al mensaje que lee el panel', () => {
+    try {
+      pipe.transform(body({ config: { environment: 'cert', host: PROD_REST } }));
+    } catch (err) {
+      const response = (err as BadRequestException).getResponse() as { message: string };
+      expect(response.message).toContain('config.host');
+      expect(response.message).not.toContain(PASSWORD);
+      return;
+    }
+    throw new Error('se esperaba un 400');
+  });
+});
+
+/**
  * TBO Holidays (docs/tbo/08 RF-37 y RF-01; 06 TP-23). Usuario y contraseña van cifrados; entorno
  * y URL en `config`, validados con el MISMO esquema con el que el factory arma el adapter.
  */

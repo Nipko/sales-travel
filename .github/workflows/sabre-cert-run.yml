@@ -1,0 +1,146 @@
+name: Sabre CERT run
+
+# Corre el arnés de certificación contra Sabre CERT (SAB-11) dentro del contenedor de la API del VPS,
+# con la cuenta de la bóveda, y sube la evidencia redactada como artifact por 7 días. Ver
+# docs/sabre/evidence/README.md. Dispararlo crea PNR de prueba en CERT y, con allow_money, emite y
+# anula: es una acción con efecto y se pide permiso en cada corrida.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Escenarios o atajos (sab-12, sab-13, sab-21, sab-22, sab-24), separados por comas.'
+        required: true
+        type: string
+        default: sab-12
+      owner_tenant:
+        description: 'Tenant desde el que se resuelve la cuenta CERT. Vacío = variable SABRE_CERT_TENANT_ID.'
+        required: false
+        type: string
+        default: ''
+      routes:
+        description: 'Rutas de búsqueda.'
+        required: false
+        type: string
+        default: BOG-LIM,LIM-GRU,BOG-MIA
+      book_route:
+        description: 'Ruta de las reservas. Vacío = la primera de routes.'
+        required: false
+        type: string
+        default: ''
+      pax:
+        description: 'Pasajeros (1ADT, 2ADT1CHD, 1ADT1INF…).'
+        required: false
+        type: string
+        default: 1ADT
+      days:
+        description: 'Salida dentro de N días.'
+        required: false
+        type: string
+        default: '30'
+      allow_money:
+        description: 'Permite emitir, anular, reembolsar y cobrar EMD en CERT.'
+        required: false
+        type: boolean
+        default: false
+
+# Una corrida a la vez: cada una crea PNR en la misma cuenta.
+concurrency:
+  group: sabre-cert-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Arnés contra CERT
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+      SSH_OPTS: -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10
+      STACK_DIR: /opt/sales-travel
+      RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Validar entradas
+        # Las entradas llegan por entorno, nunca interpoladas en el script, y cada una con su patrón:
+        # viajan hasta un shell remoto, así que no puede pasar un espacio ni un metacaracter.
+        env:
+          SCENARIOS: ${{ inputs.scenarios }}
+          OWNER_TENANT: ${{ inputs.owner_tenant || vars.SABRE_CERT_TENANT_ID }}
+          ROUTES: ${{ inputs.routes }}
+          BOOK_ROUTE: ${{ inputs.book_route }}
+          PAX: ${{ inputs.pax }}
+          DAYS: ${{ inputs.days }}
+          ALLOW_MONEY: ${{ inputs.allow_money }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$SCENARIOS" =~ ^[a-z0-9,-]{1,200}$ ]] || fail 'scenarios: letras, dígitos, comas y guiones'
+          [[ "$OWNER_TENANT" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] \
+            || fail 'owner_tenant: un UUID (o la variable SABRE_CERT_TENANT_ID)'
+          [[ "$ROUTES" =~ ^[A-Za-z,-]{7,100}$ ]] || fail 'routes: como BOG-LIM,LIM-GRU'
+          [[ -z "$BOOK_ROUTE" || "$BOOK_ROUTE" =~ ^[A-Za-z]{3}-[A-Za-z]{3}$ ]] || fail 'book_route: como BOG-LIM'
+          [[ "$PAX" =~ ^[0-9A-Za-z]{4,12}$ ]] || fail 'pax: como 1ADT o 2ADT1CHD'
+          [[ "$DAYS" =~ ^[0-9]{1,3}$ ]] || fail 'days: un entero'
+          args="--owner-tenant $OWNER_TENANT --scenarios $SCENARIOS --routes $ROUTES --pax $PAX --days $DAYS --run-id $RUN_ID"
+          if [[ -n "$BOOK_ROUTE" ]]; then args="$args --book-route $BOOK_ROUTE"; fi
+          if [[ "$ALLOW_MONEY" == "true" ]]; then args="$args --allow-money"; fi
+          echo "HARNESS_ARGS=$args" >> "$GITHUB_ENV"
+
+      - name: Setup SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 -p "$SSH_PORT" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts \
+            || echo "::warning::ssh-keyscan failed (se continúa con accept-new)"
+
+      - name: Correr el arnés
+        id: harness
+        run: |
+          set +e
+          ssh -p "$SSH_PORT" $SSH_OPTS "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}" \
+            "cd $STACK_DIR && docker compose --env-file .env exec -T api node dist/providers-sabre/cert-run/sabre-cert-run.js $HARNESS_ARGS"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Traer la evidencia
+        if: always()
+        run: |
+          set -euo pipefail
+          REMOTE="${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}"
+          # Nada queda en el VPS, ni la copia del host ni la del contenedor, aunque falle la copia.
+          limpiar() {
+            ssh -p "$SSH_PORT" $SSH_OPTS "$REMOTE" \
+              "rm -rf /tmp/sabre-cert-run-$RUN_ID && cd $STACK_DIR && docker compose --env-file .env exec -T api rm -rf /tmp/sabre-cert-run/$RUN_ID" \
+              || echo "::warning::no se pudo borrar la evidencia del VPS (/tmp/sabre-cert-run-$RUN_ID)"
+          }
+          trap limpiar EXIT
+          ssh -p "$SSH_PORT" $SSH_OPTS "$REMOTE" \
+            "rm -rf /tmp/sabre-cert-run-$RUN_ID && cd $STACK_DIR && docker compose --env-file .env cp api:/tmp/sabre-cert-run/$RUN_ID /tmp/sabre-cert-run-$RUN_ID" \
+            || { echo "::warning::la corrida no dejó carpeta de evidencia"; exit 0; }
+          mkdir -p evidence
+          rsync -az -e "ssh -p $SSH_PORT $SSH_OPTS" "$REMOTE:/tmp/sabre-cert-run-$RUN_ID/" evidence/
+          if [[ -f evidence/summary.md ]]; then cat evidence/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Subir la evidencia
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sabre-cert-run-${{ env.RUN_ID }}
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Desenlace
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.harness.outputs.exit_code }}
+        run: |
+          case "${EXIT_CODE:-1}" in
+            0) echo "Corrida limpia." ;;
+            2) echo "::error::Quedaron PNR sin limpiar: ver leftovers en summary.json y cerrarlos en Sabre Red."; exit 2 ;;
+            3) echo "::error::El arnés se negó a correr (no es CERT o entradas inválidas)."; exit 3 ;;
+            *) echo "::error::Un escenario falló: ver summary.md."; exit 1 ;;
+          esac
