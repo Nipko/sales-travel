@@ -213,6 +213,123 @@ export function orderConfirmationEmailHtml(input: {
   };
 }
 
+// ───────────────────────── Plazo de emisión por vencer ─────────────────────────
+
+/** Una hora del plazo, ya escrita: «jue 15 oct», «18:00», «GMT-5». */
+export interface DeadlineMailClockLine {
+  readonly day: string;
+  readonly time: string;
+  readonly offset: string;
+}
+
+/** El plazo como lo lee el aviso: la hora principal, de quién es, y la de la oficina si difiere. */
+export interface DeadlineMailClock extends DeadlineMailClockLine {
+  readonly source: 'agency' | 'office' | 'utc';
+  /** «hoy», «mañana» o «el jue 15 oct». */
+  readonly when: string;
+  readonly office?: DeadlineMailClockLine;
+}
+
+const CLOCK_SOURCE_LABEL: Readonly<Record<DeadlineMailClock['source'], string>> = {
+  agency: 'hora de tu agencia',
+  office: 'hora de la oficina emisora',
+  utc: 'UTC',
+};
+
+function clockText(line: DeadlineMailClockLine, label?: string): string {
+  return `${line.day}, ${line.time} (${label === undefined ? line.offset : `${line.offset}, ${label}`})`;
+}
+
+/**
+ * El aviso INTERNO al vendedor de que vence el plazo de emisión de una reserva de vuelo sin
+ * tiquete (SAB-14): a las 24 h y a las 2 h. No va al pasajero. Una reserva de prueba también avisa,
+ * marcada en el asunto y en el cuerpo. Si la reserva retiene saldo de la cartera, lo dice: vencida
+ * sin emitir, el saldo sigue retenido hasta que alguien la cancele.
+ *
+ * La hora principal es la de la agencia; la de la oficina emisora va aparte si es otra, porque es
+ * la que figura en la reserva.
+ */
+export function ticketingDeadlineAlertEmailHtml(input: {
+  orderNumber: number;
+  pnr: string | null;
+  threshold: '24h' | '2h';
+  route: string;
+  departureDate: string;
+  /** Sólo nombres de pila. */
+  firstNames: readonly string[];
+  clock: DeadlineMailClock;
+  /** `true` si la reserva tiene saldo retenido en la cartera (retenido o cobrado). */
+  walletHeld: boolean;
+  /** El enlace a la reserva en Reservas. */
+  link: string;
+  brand?: EmailBrand | null;
+  testContent?: boolean;
+}): { subject: string; html: string; text: string } {
+  const testContent = input.testContent === true;
+  const urgent = input.threshold === '2h';
+  const n = input.orderNumber;
+  const clock = input.clock;
+  const due = `${clock.when} a las ${clock.time}`;
+  const intro = `${urgent ? 'Quedan menos de 2 horas: la' : 'La'} reserva #${n} todavía no tiene tiquete y vence para emitir ${due}. Si no la emites antes, la aerolínea la cancela.`;
+  const holdText =
+    'Esta reserva tiene saldo retenido en la cartera. Si vence sin emitir, el saldo sigue retenido hasta que la canceles en Reservas.';
+  const footer =
+    'Te escribimos porque hiciste esta reserva. Aquí no se cancela sola: si vence, la aerolínea la cancela y la próxima consulta lo refleja.';
+  const names = input.firstNames.join(', ');
+  const deadline = clockText(clock, CLOCK_SOURCE_LABEL[clock.source]);
+  const office = clock.office === undefined ? '' : clockText(clock.office);
+  const reserva = `#${n}${input.pnr ? ` · PNR ${input.pnr}` : ''}`;
+
+  const body = `
+    ${testContent ? testContentBanner(TEST_CONTENT_NOTICE) : ''}
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${esc(intro)}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #f4f4f5;border-bottom:1px solid #f4f4f5;margin-bottom:18px">
+      ${row('Reserva', reserva)}
+      ${input.route ? row('Ruta', input.route) : ''}
+      ${input.departureDate ? row('Salida', input.departureDate) : ''}
+      ${names ? row('Pasajeros', names) : ''}
+      ${row('Vence', deadline)}
+      ${office ? row('En la oficina emisora', office) : ''}
+    </table>
+    ${
+      input.walletHeld
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;margin-bottom:18px">
+      <tr><td style="padding:14px 18px;font-size:13px;line-height:1.5;color:#78350f">${esc(holdText)}</td></tr>
+    </table>`
+        : ''
+    }
+    <p style="margin:0 0 18px"><a href="${esc(input.link)}" style="display:inline-block;background:#18181b;color:#fff;font-size:13px;font-weight:600;text-decoration:none;padding:10px 18px;border-radius:8px">Abrir en Reservas</a></p>
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#71717a">${esc(footer)}</p>`;
+
+  const lines = [
+    testContent ? TEST_CONTENT_NOTICE : '',
+    intro,
+    '',
+    `Reserva: ${reserva}`,
+    input.route ? `Ruta: ${input.route}` : '',
+    input.departureDate ? `Salida: ${input.departureDate}` : '',
+    names ? `Pasajeros: ${names}` : '',
+    `Vence: ${deadline}`,
+    office ? `En la oficina emisora: ${office}` : '',
+    input.walletHeld ? `\n${holdText}` : '',
+    '',
+    `Abrir en Reservas: ${input.link}`,
+    '',
+    footer,
+  ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== ''));
+
+  const prefix = testContent ? TEST_CONTENT_SUBJECT_PREFIX : '';
+  return {
+    subject: `${prefix}${urgent ? 'Urgente: la' : 'La'} reserva #${n} vence para emitir ${due}`,
+    html: layout(
+      urgent ? 'Plazo de emisión: menos de 2 horas' : 'Plazo de emisión por vencer',
+      body,
+      input.brand,
+    ),
+    text: lines.join('\n').trim(),
+  };
+}
+
 // ───────────────────────── Reserva de hotel ─────────────────────────
 
 /**

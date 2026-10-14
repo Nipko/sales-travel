@@ -1,8 +1,9 @@
 'use client';
 
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '../../../../lib/cn';
+import { DEADLINE_URGENCY_LABEL, deadlineUrgency } from '../../../../lib/ticketing-deadline';
 import { TicketingDeadlineBadge } from '../../cotizaciones/_components/ticketing-deadline-badge';
 import {
   DOCUMENT_STATUS_LABEL,
@@ -10,10 +11,12 @@ import {
   documentKindLabel,
   documentPassengerLabel,
   documentStatusTone,
+  expiredHoldNote,
   locatorChipLabel,
   orderTicketingDeadline,
   parseFlightTracking,
   type FlightTrackingLocator,
+  type OrderDeadline,
 } from '../flight-order-view';
 
 /*
@@ -29,6 +32,8 @@ export interface FlightTrackingOrder {
   readonly flightTracking?: unknown;
   readonly passengers?: readonly { readonly givenName?: unknown; readonly surname?: unknown }[];
   readonly selectedOffer?: { readonly provider?: { readonly raw?: Record<string, unknown> } };
+  /** La retención de cartera abierta (SAB-10): vencida sin emitir, sigue tomada. */
+  readonly walletHold?: unknown;
 }
 
 const HEADING =
@@ -86,6 +91,37 @@ function LocatorChip({ locator }: { locator: FlightTrackingLocator }) {
 }
 
 /**
+ * «Vence en menos de 2 h» o «Vence hoy» (SAB-14): lo primero que el vendedor tiene que ver en la
+ * fila. El texto lo dice; el color acompaña.
+ */
+function DeadlineUrgencyChip({ deadline, now }: { deadline: OrderDeadline; now: Date }) {
+  const urgency = deadlineUrgency(deadline.deadline, now);
+  if (urgency === null) return null;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
+        urgency === 'two-hours'
+          ? 'bg-[var(--color-danger)]/10 text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-danger)]/30'
+          : 'bg-[var(--color-warning)]/15 text-[var(--color-fg)]',
+      )}
+    >
+      {DEADLINE_URGENCY_LABEL[urgency]}
+    </span>
+  );
+}
+
+/** El saldo que una reserva vencida sin emitir sigue reteniendo. */
+function ExpiredHoldNote({ note }: { note: string }) {
+  return (
+    <p className="flex w-full items-start gap-1.5 text-[11px] text-[var(--color-fg)]">
+      <Wallet aria-hidden="true" className="mt-px size-3 shrink-0" />
+      {note}
+    </p>
+  );
+}
+
+/**
  * Las secciones del detalle: «Localizadores de la aerolínea», «Tiquetes» y el plazo de emisión.
  * Una reserva confirmada o emitida sin localizador lo dice: el hueco se ve, no se calla.
  */
@@ -95,6 +131,8 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
   const documents = tracking?.documents ?? [];
   const live = order.status === 'confirmed' || order.status === 'ticketed';
   const deadline = order.status === 'confirmed' ? orderTicketingDeadline(order) : null;
+  const now = new Date();
+  const holdNote = deadline === null ? undefined : expiredHoldNote(order, now);
 
   if (locators.length === 0 && documents.length === 0 && deadline === null && !live) return null;
 
@@ -181,11 +219,15 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
       {deadline !== null && (
         <section>
           <h3 className={HEADING}>Plazo de emisión</h3>
-          <TicketingDeadlineBadge
-            deadline={deadline.deadline}
-            clock={deadline.clock}
-            fromOrder={deadline.fromOrder}
-          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <DeadlineUrgencyChip deadline={deadline} now={now} />
+            <TicketingDeadlineBadge
+              deadline={deadline.deadline}
+              clock={deadline.clock}
+              fromOrder={deadline.fromOrder}
+            />
+            {holdNote === undefined ? null : <ExpiredHoldNote note={holdNote} />}
+          </div>
         </section>
       )}
     </>
@@ -194,7 +236,8 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
 
 /**
  * El plazo en la fila de la lista, para una reserva confirmada: el que la reserva tiene en el
- * proveedor o, si todavía no se leyó, el de la tarifa.
+ * proveedor o, si todavía no se leyó, el de la tarifa. Con «Vence en menos de 2 h» o «Vence hoy»
+ * delante, y el aviso de la cartera si venció sin emitir y sigue reteniendo saldo (SAB-14).
  */
 export function FlightDeadlineBadge({
   order,
@@ -205,12 +248,17 @@ export function FlightDeadlineBadge({
 }) {
   const deadline = orderTicketingDeadline(order);
   if (deadline === null) return null;
+  const now = new Date();
+  const holdNote = expiredHoldNote(order, now);
   return (
-    <TicketingDeadlineBadge
-      deadline={deadline.deadline}
-      clock={deadline.clock}
-      fromOrder={deadline.fromOrder}
-      {...(className === undefined ? {} : { className })}
-    />
+    <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
+      <DeadlineUrgencyChip deadline={deadline} now={now} />
+      <TicketingDeadlineBadge
+        deadline={deadline.deadline}
+        clock={deadline.clock}
+        fromOrder={deadline.fromOrder}
+      />
+      {holdNote === undefined ? null : <ExpiredHoldNote note={holdNote} />}
+    </div>
   );
 }

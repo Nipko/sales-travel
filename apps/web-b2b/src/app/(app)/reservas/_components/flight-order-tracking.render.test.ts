@@ -140,3 +140,51 @@ describe('FlightDeadlineBadge — el plazo en la fila de la lista', () => {
     ).toBe('');
   });
 });
+
+describe('FlightDeadlineBadge — el aviso de la fila (SAB-14)', () => {
+  const HORA = 60 * 60 * 1000;
+  /** Un plazo con instante a `faltaMs` de ahora, en la hora de la oficina de Bogotá. */
+  function plazo(faltaMs: number) {
+    const at = new Date(Date.now() + faltaMs);
+    const pared = new Date(at.getTime() - 5 * HORA).toISOString();
+    return {
+      ...TRACKING,
+      ticketingDeadline: {
+        date: pared.slice(0, 10),
+        time: pared.slice(11, 16),
+        zone: 'PROVIDER_LOCAL',
+        timeZone: 'America/Bogota',
+        at: at.toISOString(),
+      },
+    };
+  }
+  const pintarFila = (order: FlightTrackingOrder) =>
+    renderToStaticMarkup(createElement(FlightDeadlineBadge, { order }));
+
+  it('a menos de 2 h lo dice en texto, delante del plazo', () => {
+    const html = pintarFila(orden({ flightTracking: plazo(HORA) }));
+    expect(html).toContain('Vence en menos de 2 h');
+    expect(html).toContain('Urgente · Emitir antes del');
+  });
+
+  it('con tiempo de sobra, sin aviso', () => {
+    const html = pintarFila(orden({ flightTracking: plazo(5 * 24 * HORA) }));
+    expect(html).not.toContain('Vence en menos de 2 h');
+    expect(html).not.toContain('Vence hoy');
+  });
+
+  it('vencida sin emitir con saldo retenido: el aviso de la cartera', () => {
+    const html = pintarFila(orden({ flightTracking: plazo(-HORA), walletHold: 'captured' }));
+    expect(html).toContain('Plazo de emisión vencido');
+    expect(html).toContain('el saldo sigue retenido en la cartera hasta que canceles la reserva');
+    expect(pintarFila(orden({ flightTracking: plazo(-HORA), walletHold: null }))).not.toContain(
+      'saldo sigue retenido',
+    );
+  });
+
+  it('el detalle también lo muestra junto al plazo', () => {
+    const html = pintar(orden({ flightTracking: plazo(HORA), walletHold: null }));
+    expect(html).toContain('Plazo de emisión');
+    expect(html).toContain('Vence en menos de 2 h');
+  });
+});

@@ -219,6 +219,7 @@ d('Sistema › Procesos (rastro del barrido y lecturas de 0075 como app_user)', 
       [
         'adopted',
         'cancellations',
+        'deadlineAlerts',
         'durationMs',
         'examined',
         'hcn',

@@ -35,6 +35,7 @@ import {
   SabreTicketingSettingsSchema,
   SabreTokenService,
   cancellableItemsOf,
+  isSabrePccTimeZone,
   missingSabreCredentials,
   parseSabreConfig,
   type SabreCancelOptions,
@@ -314,6 +315,19 @@ interface SabreAdapterSet {
 }
 
 /**
+ * El plazo de emisión de una lectura con la zona de la oficina de la cuenta. Sólo un plazo en la
+ * hora de la oficina (`PROVIDER_LOCAL`) la recibe: uno en UTC ya tiene instante, y una lectura sin
+ * plazo no gana uno. Una zona que el motor no conoce no se pega: la cuenta la valida al leerse
+ * (`sabreTicketingSettingsFromAccountConfig`), y esto es la segunda puerta.
+ */
+export function withOfficeTimeZone(view: OrderView, pccTimeZone: string): OrderView {
+  const deadline = view.ticketingDeadline;
+  if (deadline === undefined || deadline.zone !== 'PROVIDER_LOCAL') return view;
+  if (!isSabrePccTimeZone(pccTimeZone)) return view;
+  return { ...view, ticketingDeadline: { ...deadline, timeZone: pccTimeZone } };
+}
+
+/**
  * El checkout de Sabre tiene dos entradas según el contenido.
  *
  * - NDC ya transporta `offerItemId` y conserva `/offers/price`.
@@ -445,8 +459,17 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     };
   }
 
-  retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
-    return this.inner.manage.retrieveForDisplay(orderId, ctx);
+  /**
+   * La lectura de la reserva, con la zona de la oficina en el plazo de emisión: Sabre da la fecha y
+   * la hora del PCC sin decir su zona (`futureTicketingPolicy`, docs/sabre/06 §5.3), y la cuenta sí
+   * la declara (`pccTimeZone`, la misma con que se pidió el plazo al reservar). Con ella la
+   * post-venta calcula el instante y avisa antes de que venza (SAB-14).
+   */
+  async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
+    return withOfficeTimeZone(
+      await this.inner.manage.retrieveForDisplay(orderId, ctx),
+      this.inner.ticketing.pccTimeZone,
+    );
   }
 
   cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {

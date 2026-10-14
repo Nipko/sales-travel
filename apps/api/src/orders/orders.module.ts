@@ -11,6 +11,8 @@ import { AdminOrderActionsService } from './admin-order-actions.service.js';
 import { AdminOrdersController } from './admin-orders.controller.js';
 import { AdminOrdersService } from './admin-orders.service.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
+import { FlightDeadlineAlertService } from './flight-deadline-alert.service.js';
+import { FlightDeadlineAlertStore } from './flight-deadline-alert.store.js';
 import { FlightOrderTrackingStore } from './flight-order-tracking.store.js';
 import { HotelOrderCancellationService } from './hotel-order-cancellation.service.js';
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
@@ -51,6 +53,9 @@ import { TicketIssueStore } from './ticket-issue.store.js';
  *
  * La emisión de tiquetes (SAB-08) la pide el controlador y la ejecuta `PostSaleModule` desde la
  * cola: `FlightTicketIssueService` se exporta para el worker y el barrido.
+ *
+ * El aviso de plazo de emisión por vencer (SAB-14) también lo corre el barrido de `PostSaleModule`:
+ * `FlightDeadlineAlertService` se exporta para él.
  */
 @Module({
   imports: [
@@ -82,6 +87,8 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     BookingHoldPolicyService,
     TicketIssueStore,
     FlightTicketIssueService,
+    FlightDeadlineAlertStore,
+    FlightDeadlineAlertService,
   ],
   exports: [
     OrdersService,
@@ -92,6 +99,7 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     StaleCancelClaimService,
     BookingHoldLedger,
     FlightTicketIssueService,
+    FlightDeadlineAlertService,
   ],
 })
 export class OrdersModule {}

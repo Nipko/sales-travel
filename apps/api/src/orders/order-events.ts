@@ -47,6 +47,15 @@ export const ORDER_EVENTS = {
    * Conteos, nunca los números.
    */
   ticketsVoided: 'OrderTicketsVoided',
+  /**
+   * El plazo de emisión de una reserva confirmada y sin tiquete vence pronto, y el barrido cerró el
+   * aviso al vendedor (SAB-14). `threshold` es `24h` o `2h`; uno por orden, umbral e instante del
+   * plazo: sale cuando el aviso tomado (`deadline_alerted_*`, 0084) se cierra, no en cada intento.
+   * `outcome`: `mailed`, `no-recipient` (el vendedor ya no está activo) o `mail-failed` (se agotaron
+   * los intentos, 0085), con `attempts`. Lleva el instante, la zona del plazo, si es de prueba y si
+   * retiene cartera; nunca a quién se escribió.
+   */
+  ticketingDeadlineApproaching: 'OrderTicketingDeadlineApproaching',
 
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
