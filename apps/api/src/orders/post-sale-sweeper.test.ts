@@ -113,7 +113,16 @@ function informeDeEmisiones(parcial: Partial<TicketIssueSweepReport> = {}): Tick
 function informeDeAvisos(
   parcial: Partial<DeadlineAlertSweepReport> = {},
 ): DeadlineAlertSweepReport {
-  return { examined: 0, alerted: 0, mailed: 0, unmailed: 0, skipped: 0, failed: 0, ...parcial };
+  return {
+    examined: 0,
+    claimed: 0,
+    mailed: 0,
+    unmailed: 0,
+    retrying: 0,
+    skipped: 0,
+    failed: 0,
+    ...parcial,
+  };
 }
 
 function banco(tenants: string[], redis = true) {
@@ -484,7 +493,7 @@ describe('PostSaleSweeper — la corrida', () => {
       return tenantId === A
         ? Promise.reject(new Error('base caída'))
         : Promise.resolve(
-            informeDeAvisos({ examined: 3, alerted: 2, mailed: 1, unmailed: 1, skipped: 1 }),
+            informeDeAvisos({ examined: 3, claimed: 2, mailed: 1, retrying: 1, skipped: 1 }),
           );
     });
 
@@ -497,7 +506,7 @@ describe('PostSaleSweeper — la corrida', () => {
     // Una emisión que la cola perdió se cierra antes: la orden recupera su aviso en la misma corrida.
     expect(orden).toEqual(['emisiones ' + A, 'avisos ' + A, 'emisiones ' + B, 'avisos ' + B]);
     expect(report.deadlineAlerts).toEqual(
-      informeDeAvisos({ examined: 3, alerted: 2, mailed: 1, unmailed: 1, skipped: 1 }),
+      informeDeAvisos({ examined: 3, claimed: 2, mailed: 1, retrying: 1, skipped: 1 }),
     );
     expect(report.tenantsFailed).toBe(1);
   });

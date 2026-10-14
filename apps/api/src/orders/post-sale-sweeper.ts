@@ -311,7 +311,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     const a = report.deadlineAlerts;
     if (a.examined > 0) {
       this.logger.log(
-        `post_sale.sweep.deadline_alerts examined=${a.examined} alerted=${a.alerted} mailed=${a.mailed} unmailed=${a.unmailed} skipped=${a.skipped} failed=${a.failed}`,
+        `post_sale.sweep.deadline_alerts examined=${a.examined} claimed=${a.claimed} mailed=${a.mailed} unmailed=${a.unmailed} retrying=${a.retrying} skipped=${a.skipped} failed=${a.failed}`,
       );
     }
     return report;

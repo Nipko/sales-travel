@@ -559,10 +559,16 @@ describe('FlightOrderTrackingStore.recordRead', () => {
         `"${columna}" = CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.${columna} END`,
       );
     }
+    // Y los intentos fallidos del aviso anterior vuelven a cero (0085).
+    for (const columna of ['deadline_alert_24h_failures', 'deadline_alert_2h_failures']) {
+      expect(sql).toContain(
+        `"${columna}" = CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.${columna} ELSE 0 END`,
+      );
+    }
     // Y sin plazo en la lectura, los avisos no se tocan.
     const sinPlazo = banco();
     await sinPlazo.store.recordRead(TENANT, ORDEN, flightReadOf(vista(), AHORA));
-    expect(sinPlazo.negocio()[0]?.sql).not.toContain('deadline_alerted');
+    expect(sinPlazo.negocio()[0]?.sql).not.toContain('deadline_alert');
   });
 
   it('con la hora de la oficina y la zona de la cuenta, el instante sale de esa zona (0084)', async () => {

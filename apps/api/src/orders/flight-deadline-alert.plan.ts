@@ -23,6 +23,13 @@ export const DEADLINE_ALERT_WINDOW_MS: Readonly<Record<DeadlineAlertThreshold, n
   '2h': 2 * HOUR_MS,
 };
 
+/**
+ * Cuántas veces se intenta el correo de un aviso (0085). Un fallo suelta la marca y la próxima
+ * corrida —15 min después— reintenta; el último fallo cierra el aviso sin correo. Tres intentos
+ * caben aun en el de 2 h, que se abre entre las 2 h y la 1 h 45 antes del plazo.
+ */
+export const DEADLINE_ALERT_MAX_ATTEMPTS = 3;
+
 /** Lo que el barrido sabe del plazo de una orden y de los avisos que ya salieron. */
 export interface DeadlineAlertState {
   readonly deadlineAt: Date;

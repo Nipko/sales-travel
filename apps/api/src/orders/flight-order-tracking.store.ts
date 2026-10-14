@@ -369,8 +369,9 @@ export class FlightOrderTrackingStore {
    * vendedor no puede perder el localizador del check-in porque una consulta no lo trajo. Una que
    * los trae, los reemplaza. Un documento que la lectura no trae no se toca.
    *
-   * Una lectura que cambia el INSTANTE del plazo vuelve a NULL los avisos de vencimiento (0084): el
-   * aviso que ya salió decía otra hora. Con el mismo instante, los avisos se conservan.
+   * Una lectura que cambia el INSTANTE del plazo vuelve a NULL los avisos de vencimiento (0084) y a
+   * cero sus intentos fallidos (0085): el aviso que ya salió decía otra hora. Con el mismo instante,
+   * los avisos se conservan.
    */
   async recordRead(
     tenantId: string,
@@ -411,12 +412,15 @@ export class FlightOrderTrackingStore {
           }),
     };
     // En un UPDATE todo el SET lee la fila vieja: el CASE compara el instante guardado con el nuevo.
+    // Con otro instante es otro aviso: marcas en NULL e intentos fallidos en cero (0085).
     const alertResets =
       deadline === undefined
         ? {}
         : {
             deadline_alerted_24h_at: sql<Date | null>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alerted_24h_at END`,
             deadline_alerted_2h_at: sql<Date | null>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alerted_2h_at END`,
+            deadline_alert_24h_failures: sql<number>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alert_24h_failures ELSE 0 END`,
+            deadline_alert_2h_failures: sql<number>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alert_2h_failures ELSE 0 END`,
           };
 
     await trx

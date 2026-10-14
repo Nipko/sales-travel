@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
+import { SELLING_ROLES } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, TicketingDeadlineZone } from '../database/database.types.js';
 import {
@@ -9,7 +10,8 @@ import {
 
 /**
  * Lo que el aviso de vencimiento del plazo de emisión (SAB-14) lee y escribe en Postgres: las
- * órdenes cuyo plazo vence pronto y el CAS que marca un aviso como enviado (0084).
+ * órdenes cuyo plazo vence pronto, el CAS que toma un aviso (0084) y lo que pasa después con él:
+ * cerrarlo o soltarlo para reintentar un correo fallido (0085).
  *
  * Todo con el tenant fijado (`withTenant`): `orders`, `flight_order_tracking`, sus documentos, las
  * operaciones y las retenciones tienen RLS forzada. El barrido recorre los tenants uno por uno.
@@ -42,6 +44,16 @@ export interface DeadlineAlertRecipient {
   readonly email: string | null;
   /** `tenants.country_code` de la agencia de la orden: la hora del aviso. */
   readonly countryCode: string | null;
+}
+
+/**
+ * Un aviso tomado por una corrida (`claim`): la marca que puso (`token`, que la fence de
+ * `release`/`settle` compara) y cuántos correos de ese aviso ya fallaron antes de éste (0085).
+ */
+export interface DeadlineAlertClaim {
+  readonly threshold: DeadlineAlertThreshold;
+  readonly token: Date;
+  readonly failures: number;
 }
 
 /** Cuántas órdenes mira el barrido por tenant y corrida: las de plazo más cercano primero. */
@@ -170,12 +182,14 @@ export class FlightDeadlineAlertStore {
   }
 
   /**
-   * Marca el aviso `threshold` de la orden como enviado, y corre `inTransaction` (el `domain_event`)
-   * en la misma transacción. Devuelve `false` si no lo tomó: otra corrida ya lo marcó, el plazo
+   * Toma el aviso `threshold` de la orden: la marca de 0084 pasa de NULL a `now`, que queda como
+   * candado del envío. Devuelve `null` si no lo tomó: otra corrida lo tiene o ya lo cerró, el plazo
    * cambió desde que se leyó (otro instante, otro aviso) o la orden dejó de estar confirmada.
    *
-   * Es un CAS sobre la columna en NULL, ANTES de mandar el correo: dos corridas a la vez no mandan
-   * dos avisos. Un correo que después falla no se reintenta; el aviso de la pantalla sigue ahí.
+   * Es un CAS sobre la columna en NULL, ANTES de mandar el correo: dos corridas o dos réplicas a la
+   * vez no mandan dos avisos. Lo que pasa con el correo lo dice después quien lo tomó: lo cierra
+   * ({@link settle}) o lo suelta para la próxima corrida ({@link release}, 0085).
+   *
    * El de 2 h marca también el de 24 h, que ya no tiene sentido mandar.
    */
   async claim(
@@ -184,8 +198,7 @@ export class FlightDeadlineAlertStore {
     threshold: DeadlineAlertThreshold,
     deadlineAt: Date,
     now: Date,
-    inTransaction: (trx: Transaction<DB>) => Promise<void>,
-  ): Promise<boolean> {
+  ): Promise<DeadlineAlertClaim | null> {
     return this.db.withTenant(tenantId, async (trx) => {
       const base = trx
         .updateTable('flight_order_tracking')
@@ -210,24 +223,92 @@ export class FlightDeadlineAlertStore {
                 deadline_alerted_2h_at: now,
                 deadline_alerted_24h_at: sql<Date>`coalesce(deadline_alerted_24h_at, ${now})`,
               })
-              .returning('order_id')
+              .returning('deadline_alert_2h_failures as failures')
               .executeTakeFirst()
           : await base
               .set({ deadline_alerted_24h_at: now })
               .where('deadline_alerted_24h_at', 'is', null)
+              .returning('deadline_alert_24h_failures as failures')
+              .executeTakeFirst();
+      if (claimed === undefined) return null;
+      return { threshold, token: now, failures: Number(claimed.failures) };
+    });
+  }
+
+  /**
+   * Suelta un aviso cuyo correo falló, para que la próxima corrida lo reintente, y cuenta el intento
+   * (0085). Sólo si la marca sigue siendo la que puso `claim`: si una lectura cambió el plazo o otra
+   * corrida la tiene, no toca nada. El de 24 h tampoco se suelta si ya se tomó el de 2 h, que lo
+   * reemplaza. Devuelve si la soltó.
+   */
+  async release(tenantId: string, orderId: string, claim: DeadlineAlertClaim): Promise<boolean> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const released =
+        claim.threshold === '2h'
+          ? await trx
+              .updateTable('flight_order_tracking')
+              .set({
+                deadline_alerted_2h_at: null,
+                deadline_alert_2h_failures: sql<number>`deadline_alert_2h_failures + 1`,
+              })
+              .where('order_id', '=', orderId)
+              .where('tenant_id', '=', tenantId)
+              .where('deadline_alerted_2h_at', '=', claim.token)
+              .returning('order_id')
+              .executeTakeFirst()
+          : await trx
+              .updateTable('flight_order_tracking')
+              .set({
+                deadline_alerted_24h_at: null,
+                deadline_alert_24h_failures: sql<number>`deadline_alert_24h_failures + 1`,
+              })
+              .where('order_id', '=', orderId)
+              .where('tenant_id', '=', tenantId)
+              .where('deadline_alerted_24h_at', '=', claim.token)
+              .where('deadline_alerted_2h_at', 'is', null)
               .returning('order_id')
               .executeTakeFirst();
-      if (claimed === undefined) return false;
+      return released !== undefined;
+    });
+  }
+
+  /**
+   * Cierra un aviso tomado —el correo salió, no hay a quién escribirle o se agotaron los intentos— y
+   * corre `inTransaction` (el `domain_event`) en la misma transacción. La marca queda puesta: el
+   * aviso no se vuelve a mandar para este instante. Con `failed`, cuenta el último intento.
+   */
+  async settle(
+    tenantId: string,
+    orderId: string,
+    claim: DeadlineAlertClaim,
+    failed: boolean,
+    inTransaction: (trx: Transaction<DB>) => Promise<void>,
+  ): Promise<void> {
+    await this.db.withTenant(tenantId, async (trx) => {
+      if (failed) {
+        const query = trx.updateTable('flight_order_tracking');
+        await (
+          claim.threshold === '2h'
+            ? query
+                .set({ deadline_alert_2h_failures: sql<number>`deadline_alert_2h_failures + 1` })
+                .where('deadline_alerted_2h_at', '=', claim.token)
+            : query
+                .set({ deadline_alert_24h_failures: sql<number>`deadline_alert_24h_failures + 1` })
+                .where('deadline_alerted_24h_at', '=', claim.token)
+        )
+          .where('order_id', '=', orderId)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+      }
       await inTransaction(trx);
-      return true;
     });
   }
 
   /**
    * A quién se escribe: el vendedor de la orden si sigue activo y conserva una membresía activa en
-   * la agencia de la orden o en un nodo de su red hacia arriba (quien vende por una sub-agencia).
-   * Uno suspendido o sin membresía no recibe datos de la reserva. Y el país de la agencia, para la
-   * hora.
+   * la agencia de la orden o en un nodo de su red hacia arriba (quien vende por una sub-agencia),
+   * con un rol que vende (`SELLING_ROLES`). Uno suspendido, quitado, sin membresía o que ya sólo es
+   * cliente final no recibe datos de la reserva. Y el país de la agencia, para la hora.
    *
    * Corre con el usuario fijado: `memberships` sólo deja leer las propias (`memberships_self`).
    * `users` y `tenants` no tienen RLS.
@@ -255,6 +336,7 @@ export class FlightDeadlineAlertStore {
              SELECT 1 FROM memberships m
               WHERE m.user_id = u.id
                 AND m.status = 'active'
+                AND m.role IN (${sql.join([...SELLING_ROLES])})
                 AND m.tenant_id IN (SELECT id FROM chain)
            )
       `.execute(trx);

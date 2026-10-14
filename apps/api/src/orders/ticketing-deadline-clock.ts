@@ -82,22 +82,37 @@ export function wallClockIn(at: Date, timeZone: string): WallClock | undefined {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * El instante de una fecha y hora de pared en una zona. `undefined` si algo no se entiende.
  *
- * Se corrige el desfase dos veces para el cambio de hora. Una hora que no existe (el salto de un
- * horario de verano) cae una hora ANTES: para un plazo, avisar antes es el error aceptable.
+ * Alrededor de un cambio de hora una hora de pared puede no existir (el salto del verano) o existir
+ * dos veces (el regreso). Los candidatos salen del desfase de la zona un día antes y un día después:
+ * de los que vuelven a esa hora de pared, el más temprano; si ninguno vuelve (no existe), también el
+ * más temprano, una hora ANTES. Al este y al oeste de Greenwich por igual: para un plazo, avisar
+ * antes es el error aceptable.
  */
 export function instantOfWallClock(date: string, time: string, timeZone: string): Date | undefined {
   const d = DATE.exec(date);
   const t = TIME.exec(time);
   if (d === null || t === null || !isIanaTimeZone(timeZone)) return undefined;
   const asUtc = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]));
-  const first = offsetAt(asUtc, timeZone);
-  let at = asUtc - first;
-  const second = offsetAt(at, timeZone);
-  if (second !== first) at = asUtc - second;
-  return Number.isNaN(at) ? undefined : new Date(at);
+  if (Number.isNaN(asUtc)) return undefined;
+  const candidates = [
+    ...new Set([
+      asUtc - offsetAt(asUtc - DAY_MS, timeZone),
+      asUtc - offsetAt(asUtc + DAY_MS, timeZone),
+    ]),
+  ]
+    .filter((at) => !Number.isNaN(at))
+    .sort((a, b) => a - b);
+  const exact = candidates.filter((at) => {
+    const wall = wallClockIn(new Date(at), timeZone);
+    return wall?.date === date && wall.time === time;
+  });
+  const at = exact[0] ?? candidates[0];
+  return at === undefined ? undefined : new Date(at);
 }
 
 /**

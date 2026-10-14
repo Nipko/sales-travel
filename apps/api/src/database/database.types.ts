@@ -594,10 +594,17 @@ export interface FlightOrderTrackingTable {
    * la hora de la oficina daría un instante inventado.
    */
   ticketing_deadline_at: Timestamp | null;
-  /** 0084: el aviso de «vence en menos de 24 h» del plazo vigente. NULL: no salió. */
+  /**
+   * 0084: el aviso de «vence en menos de 24 h» del plazo vigente, tomado (el candado del envío).
+   * NULL: no salió, o su correo falló y espera la próxima corrida (0085).
+   */
   deadline_alerted_24h_at: Timestamp | null;
-  /** 0084: el de «vence en menos de 2 h». Al salir marca también el de 24 h. */
+  /** 0084: el de «vence en menos de 2 h». Al tomarse marca también el de 24 h. */
   deadline_alerted_2h_at: Timestamp | null;
+  /** 0085: correos fallidos del aviso de 24 h del plazo vigente; al tope se cierra sin correo. */
+  deadline_alert_24h_failures: Generated<number>;
+  /** 0085: lo mismo para el aviso de 2 h. */
+  deadline_alert_2h_failures: Generated<number>;
   last_read_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;

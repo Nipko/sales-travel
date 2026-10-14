@@ -66,11 +66,39 @@ describe('instantOfWallClock — la hora de la oficina como instante', () => {
     );
   });
 
-  it('una hora que no existe (el salto del verano) cae antes, nunca después', () => {
-    // 2026-03-08 02:30 no existe en Nueva York: a las 02:00 EST se pasa a las 03:00 EDT.
-    const at = instantOfWallClock('2026-03-08', '02:30', 'America/New_York');
-    expect(at).toBeDefined();
-    expect(at!.getTime()).toBeLessThanOrEqual(new Date('2026-03-08T07:30:00.000Z').getTime());
+  it('una hora que no existe (el salto del verano) cae una hora antes, al oeste y al este', () => {
+    // 2026-03-08 02:30 no existe en Nueva York: a las 02:00 EST se pasa a las 03:00 EDT. Antes es
+    // las 01:30 EST (06:30Z); después serían las 03:30 EDT (07:30Z).
+    expect(instantOfWallClock('2026-03-08', '02:30', 'America/New_York')).toEqual(
+      new Date('2026-03-08T06:30:00.000Z'),
+    );
+    // Chile salta a medianoche: el 6 de septiembre de 2026 no tiene 00:30.
+    expect(instantOfWallClock('2026-09-06', '00:30', 'America/Santiago')).toEqual(
+      new Date('2026-09-06T03:30:00.000Z'),
+    );
+    // Brasil tuvo horario de verano hasta 2019, también a medianoche.
+    expect(instantOfWallClock('2018-11-04', '00:30', 'America/Sao_Paulo')).toEqual(
+      new Date('2018-11-04T02:30:00.000Z'),
+    );
+    // Una oficina al este de Greenwich: en Madrid 02:30 del 29-03 no existe; antes es 01:30 CET.
+    expect(instantOfWallClock('2026-03-29', '02:30', 'Europe/Madrid')).toEqual(
+      new Date('2026-03-29T00:30:00.000Z'),
+    );
+  });
+
+  it('una hora que existe dos veces (el regreso del verano) es la primera', () => {
+    // Nueva York, 2026-11-01 01:30: primero EDT (05:30Z), después EST (06:30Z).
+    expect(instantOfWallClock('2026-11-01', '01:30', 'America/New_York')).toEqual(
+      new Date('2026-11-01T05:30:00.000Z'),
+    );
+    // Chile, 2026-04-04 23:30: primero UTC-3 (02:30Z), después UTC-4 (03:30Z).
+    expect(instantOfWallClock('2026-04-04', '23:30', 'America/Santiago')).toEqual(
+      new Date('2026-04-05T02:30:00.000Z'),
+    );
+    // Madrid, 2026-10-25 02:30: primero CEST (00:30Z), después CET (01:30Z).
+    expect(instantOfWallClock('2026-10-25', '02:30', 'Europe/Madrid')).toEqual(
+      new Date('2026-10-25T00:30:00.000Z'),
+    );
   });
 
   it('ida y vuelta: el instante vuelve a la misma hora de pared', () => {

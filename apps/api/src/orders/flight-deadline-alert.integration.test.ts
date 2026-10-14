@@ -102,10 +102,10 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
     return rows[0]!.id;
   }
 
-  async function membresia(tenantId: string, userId: string, estado = 'active') {
+  async function membresia(tenantId: string, userId: string, estado = 'active', rol = 'vendedor') {
     await pool.query(
-      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'vendedor', $3)`,
-      [tenantId, userId, estado],
+      `INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, $4, $3)`,
+      [tenantId, userId, estado, rol],
     );
   }
 
@@ -196,9 +196,12 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
     const { rows } = await pool.query<{
       deadline_alerted_24h_at: Date | null;
       deadline_alerted_2h_at: Date | null;
+      deadline_alert_24h_failures: number;
+      deadline_alert_2h_failures: number;
       ticketing_deadline_at: Date | null;
     }>(
-      `SELECT deadline_alerted_24h_at, deadline_alerted_2h_at, ticketing_deadline_at
+      `SELECT deadline_alerted_24h_at, deadline_alerted_2h_at, deadline_alert_24h_failures,
+              deadline_alert_2h_failures, ticketing_deadline_at
          FROM flight_order_tracking WHERE order_id = $1`,
       [orderId],
     );
@@ -425,63 +428,118 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
     expect(deB).toEqual([deOtraAgencia]);
   });
 
-  it('el CAS: dos corridas a la vez marcan una sola vez, y el de 2 h cierra los dos', async () => {
+  it('el CAS: dos corridas a la vez toman una sola vez, y el de 2 h cierra los dos', async () => {
     const o = await orden(agenciaA);
     await leerPlazo(agenciaA, o, AHORA + 10 * HORA);
     const plazo = (await avisos(o))!.ticketing_deadline_at!;
-    const enTransaccion = vi.fn(() => Promise.resolve());
 
     const ganadas = await Promise.all(
-      [0, 1, 2].map(() => store.claim(agenciaA, o, '24h', plazo, new Date(AHORA), enTransaccion)),
+      [0, 1, 2].map(() => store.claim(agenciaA, o, '24h', plazo, new Date(AHORA))),
     );
-    expect(ganadas.filter(Boolean)).toHaveLength(1);
-    expect(enTransaccion).toHaveBeenCalledTimes(1);
+    expect(ganadas.filter((g) => g !== null)).toEqual([
+      { threshold: '24h', token: new Date(AHORA), failures: 0 },
+    ]);
     expect((await avisos(o))?.deadline_alerted_24h_at).toEqual(new Date(AHORA));
 
     // Con un instante que ya no es el guardado, no se toma: el aviso diría otra hora.
     expect(
-      await store.claim(
-        agenciaA,
-        o,
-        '2h',
-        new Date(plazo.getTime() + 60_000),
-        new Date(AHORA),
-        enTransaccion,
-      ),
-    ).toBe(false);
+      await store.claim(agenciaA, o, '2h', new Date(plazo.getTime() + 60_000), new Date(AHORA)),
+    ).toBeNull();
 
     const despues = new Date(AHORA + 9 * HORA);
-    expect(await store.claim(agenciaA, o, '2h', plazo, despues, enTransaccion)).toBe(true);
+    expect(await store.claim(agenciaA, o, '2h', plazo, despues)).toEqual({
+      threshold: '2h',
+      token: despues,
+      failures: 0,
+    });
     expect(await avisos(o)).toMatchObject({
       deadline_alerted_24h_at: new Date(AHORA),
       deadline_alerted_2h_at: despues,
     });
     // Nada más se toma después del de 2 h.
-    expect(await store.claim(agenciaA, o, '2h', plazo, despues, enTransaccion)).toBe(false);
-    expect(await store.claim(agenciaA, o, '24h', plazo, despues, enTransaccion)).toBe(false);
+    expect(await store.claim(agenciaA, o, '2h', plazo, despues)).toBeNull();
+    expect(await store.claim(agenciaA, o, '24h', plazo, despues)).toBeNull();
   });
 
   it('el CAS no toma una orden que dejó de estar confirmada, ni la de otro tenant', async () => {
     const o = await orden(agenciaA);
     await leerPlazo(agenciaA, o, AHORA + 10 * HORA);
     const plazo = (await avisos(o))!.ticketing_deadline_at!;
-    const nada = () => Promise.resolve();
-    expect(await store.claim(agenciaB, o, '24h', plazo, new Date(AHORA), nada)).toBe(false);
+    expect(await store.claim(agenciaB, o, '24h', plazo, new Date(AHORA))).toBeNull();
     await comoApp(agenciaA, `UPDATE orders SET status = 'ticketed' WHERE id = $1`, [o]);
-    expect(await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA), nada)).toBe(false);
+    expect(await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA))).toBeNull();
     expect((await avisos(o))?.deadline_alerted_24h_at).toBeNull();
   });
 
-  it('si el evento falla, el aviso no queda marcado: van en la misma transacción', async () => {
+  it('soltar (0085): sólo la marca propia, cuenta el intento y otra corrida la vuelve a tomar', async () => {
     const o = await orden(agenciaA);
     await leerPlazo(agenciaA, o, AHORA + 10 * HORA);
     const plazo = (await avisos(o))!.ticketing_deadline_at!;
+    const tomado = (await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA)))!;
+
+    // Una marca que no es la suya no la suelta nadie: ni un token viejo ni otro tenant.
+    expect(await store.release(agenciaA, o, { ...tomado, token: new Date(AHORA - 60_000) })).toBe(
+      false,
+    );
+    expect(await store.release(agenciaB, o, tomado)).toBe(false);
+    expect((await avisos(o))?.deadline_alerted_24h_at).toEqual(new Date(AHORA));
+
+    expect(await store.release(agenciaA, o, tomado)).toBe(true);
+    expect(await avisos(o)).toMatchObject({
+      deadline_alerted_24h_at: null,
+      deadline_alert_24h_failures: 1,
+    });
+    // Soltar dos veces no cuenta dos fallos.
+    expect(await store.release(agenciaA, o, tomado)).toBe(false);
+
+    const otra = new Date(AHORA + 15 * 60_000);
+    expect(await store.claim(agenciaA, o, '24h', plazo, otra)).toEqual({
+      threshold: '24h',
+      token: otra,
+      failures: 1,
+    });
+  });
+
+  it('el de 24 h no se suelta si ya se tomó el de 2 h; el de 2 h sí, y conserva el de 24 h', async () => {
+    const o = await orden(agenciaA);
+    await leerPlazo(agenciaA, o, AHORA + 10 * HORA);
+    const plazo = (await avisos(o))!.ticketing_deadline_at!;
+    const de24 = (await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA)))!;
+    const despues = new Date(AHORA + 9 * HORA);
+    const de2 = (await store.claim(agenciaA, o, '2h', plazo, despues))!;
+
+    expect(await store.release(agenciaA, o, de24)).toBe(false);
+    expect(await store.release(agenciaA, o, de2)).toBe(true);
+    expect(await avisos(o)).toMatchObject({
+      deadline_alerted_24h_at: new Date(AHORA),
+      deadline_alerted_2h_at: null,
+      deadline_alert_24h_failures: 0,
+      deadline_alert_2h_failures: 1,
+    });
+  });
+
+  it('cerrar: el evento va con el cierre; si falla, no cuenta el intento', async () => {
+    const o = await orden(agenciaA);
+    await leerPlazo(agenciaA, o, AHORA + 10 * HORA);
+    const plazo = (await avisos(o))!.ticketing_deadline_at!;
+    const tomado = (await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA)))!;
+
     await expect(
-      store.claim(agenciaA, o, '24h', plazo, new Date(AHORA), () =>
+      store.settle(agenciaA, o, tomado, true, () =>
         Promise.reject(new Error('domain_events caído')),
       ),
     ).rejects.toThrow('domain_events caído');
-    expect((await avisos(o))?.deadline_alerted_24h_at).toBeNull();
+    expect((await avisos(o))?.deadline_alert_24h_failures).toBe(0);
+
+    const enTransaccion = vi.fn(() => Promise.resolve());
+    await store.settle(agenciaA, o, tomado, true, enTransaccion);
+    expect(enTransaccion).toHaveBeenCalledTimes(1);
+    // Cerrado: la marca queda y no se vuelve a tomar.
+    expect(await avisos(o)).toMatchObject({
+      deadline_alerted_24h_at: new Date(AHORA),
+      deadline_alert_24h_failures: 1,
+    });
+    expect(await store.claim(agenciaA, o, '24h', plazo, new Date(AHORA + HORA))).toBeNull();
   });
 
   it('una lectura con el mismo instante conserva los avisos; con otro, los vuelve a abrir', async () => {
@@ -489,13 +547,15 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
     await leerPlazo(agenciaA, o, AHORA + HORA);
     await pool.query(
       `UPDATE flight_order_tracking
-          SET deadline_alerted_24h_at = now(), deadline_alerted_2h_at = now()
+          SET deadline_alerted_24h_at = now(), deadline_alerted_2h_at = now(),
+              deadline_alert_24h_failures = 1, deadline_alert_2h_failures = 2
         WHERE order_id = $1`,
       [o],
     );
     const marcados = await avisos(o);
     expect(marcados?.deadline_alerted_24h_at).toBeInstanceOf(Date);
     expect(marcados?.deadline_alerted_2h_at).toBeInstanceOf(Date);
+    expect(marcados?.deadline_alert_2h_failures).toBe(2);
     await leerPlazo(agenciaA, o, AHORA + HORA);
     expect(await avisos(o)).toEqual(marcados);
     // Una lectura sin plazo no toca nada.
@@ -505,11 +565,13 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
       flightReadOf({ found: true, airlineLocators: [], warnings: [] }, new Date(AHORA)),
     );
     expect(await avisos(o)).toEqual(marcados);
-    // La aerolínea extendió el plazo: los avisos del plazo anterior ya no valen.
+    // La aerolínea extendió el plazo: los avisos del plazo anterior ya no valen, ni sus intentos.
     await leerPlazo(agenciaA, o, AHORA + 20 * HORA);
     expect(await avisos(o)).toMatchObject({
       deadline_alerted_24h_at: null,
       deadline_alerted_2h_at: null,
+      deadline_alert_24h_failures: 0,
+      deadline_alert_2h_failures: 0,
     });
   });
 
@@ -536,6 +598,14 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
       expect((await store.recipientFor(agenciaA, soloB)).email).toBeNull();
       await pool.query(`UPDATE memberships SET status = 'suspended' WHERE user_id = $1`, [soloB]);
       expect((await store.recipientFor(agenciaB, soloB)).email).toBeNull();
+      // Una membresía activa que ya no vende (cliente final) tampoco: el aviso es interno.
+      await pool.query(
+        `UPDATE memberships SET status = 'active', role = 'cliente_final' WHERE user_id = $1`,
+        [soloB],
+      );
+      expect((await store.recipientFor(agenciaB, soloB)).email).toBeNull();
+      await pool.query(`UPDATE memberships SET role = 'tenant_admin' WHERE user_id = $1`, [soloB]);
+      expect((await store.recipientFor(agenciaB, soloB)).email).toBe(`solo-b-${sfx}@test.local`);
     } finally {
       await pool.query('DELETE FROM users WHERE id = $1', [soloB]);
     }
@@ -563,16 +633,16 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
 
       expect(await service.sweepTenant(agencia, AHORA)).toMatchObject({
         examined: 1,
-        alerted: 1,
+        claimed: 1,
         mailed: 1,
       });
       expect(await service.sweepTenant(agencia, AHORA + 15 * 60_000)).toMatchObject({
         examined: 0,
-        alerted: 0,
+        claimed: 0,
       });
       // Ya en las últimas 2 h, el de 2 h; y después nada más.
       expect(await service.sweepTenant(agencia, AHORA + 8.5 * HORA)).toMatchObject({
-        alerted: 1,
+        claimed: 1,
         mailed: 1,
       });
       expect(await service.sweepTenant(agencia, AHORA + 9 * HORA)).toMatchObject({ examined: 0 });
@@ -594,8 +664,123 @@ d('aviso del plazo de emisión (0084) contra Postgres', () => {
         [o],
       );
       expect(eventos.map((e) => e.payload['threshold'])).toEqual(['24h', '2h']);
-      expect(eventos[0]?.payload).toMatchObject({ testContent: true, walletHold: null });
+      expect(eventos[0]?.payload).toMatchObject({
+        testContent: true,
+        walletHold: null,
+        outcome: 'mailed',
+        attempts: 1,
+      });
       expect(JSON.stringify(eventos)).not.toContain('@test.local');
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id = $1', [agencia]);
+    }
+  });
+
+  /** El barrido con un SMTP que se puede apagar, y lo que llegó. */
+  function barridoConSmtp() {
+    const smtp = { arriba: true, intentos: 0 };
+    const mails: MailMessage[] = [];
+    const service = new FlightDeadlineAlertService(
+      store,
+      new AuditService(database),
+      {
+        sendToTenant: (_t: string | null, msg: MailMessage) => {
+          smtp.intentos += 1;
+          if (!smtp.arriba) return Promise.resolve(false);
+          mails.push(msg);
+          return Promise.resolve(true);
+        },
+      } as unknown as MailerService,
+      { resolve: () => Promise.resolve(null) } as unknown as BrandingService,
+    );
+    return { service, smtp, mails };
+  }
+
+  async function eventosDe(orderId: string) {
+    const { rows } = await pool.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM domain_events
+        WHERE aggregate_id = $1 AND event_type = 'OrderTicketingDeadlineApproaching'
+        ORDER BY occurred_at`,
+      [orderId],
+    );
+    return rows.map((r) => r.payload);
+  }
+
+  it('un corte del SMTP no pierde el aviso de 2 h: la próxima corrida lo manda, una vez (0085)', async () => {
+    const agencia = await crearTenant(`fd-r-${sfx}`, 'agency', consolidador);
+    try {
+      await membresia(agencia, vendedor);
+      const o = await orden(agencia);
+      await leerPlazo(agencia, o, AHORA + 100 * 60_000);
+      const { service, smtp, mails } = barridoConSmtp();
+
+      smtp.arriba = false;
+      expect(await service.sweepTenant(agencia, AHORA)).toMatchObject({
+        claimed: 1,
+        mailed: 0,
+        retrying: 1,
+      });
+      expect(await avisos(o)).toMatchObject({
+        deadline_alerted_2h_at: null,
+        deadline_alert_2h_failures: 1,
+      });
+      expect(await eventosDe(o)).toEqual([]);
+
+      // Volvió el SMTP y corren dos réplicas a la vez: sale un solo correo.
+      smtp.arriba = true;
+      const [a, b] = await Promise.all([
+        service.sweepTenant(agencia, AHORA + 15 * 60_000),
+        service.sweepTenant(agencia, AHORA + 15 * 60_000 + 1),
+      ]);
+      expect(a.mailed + b.mailed).toBe(1);
+      expect(a.claimed + b.claimed).toBe(1);
+      expect(mails).toHaveLength(1);
+      expect(mails[0]?.subject).toMatch(/^Urgente: la reserva #\d+ vence para emitir /);
+      expect(await service.sweepTenant(agencia, AHORA + 30 * 60_000)).toMatchObject({
+        examined: 0,
+      });
+      expect(mails).toHaveLength(1);
+      expect(await eventosDe(o)).toEqual([
+        expect.objectContaining({ threshold: '2h', outcome: 'mailed', attempts: 2 }),
+      ]);
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id = $1', [agencia]);
+    }
+  });
+
+  it('con el SMTP caído, el aviso se intenta tres veces y se cierra sin correo', async () => {
+    const agencia = await crearTenant(`fd-x-${sfx}`, 'agency', consolidador);
+    try {
+      await membresia(agencia, vendedor);
+      const o = await orden(agencia);
+      await leerPlazo(agencia, o, AHORA + 10 * HORA);
+      const { service, smtp, mails } = barridoConSmtp();
+      smtp.arriba = false;
+
+      for (const vuelta of [0, 1]) {
+        expect(await service.sweepTenant(agencia, AHORA + vuelta * 15 * 60_000)).toMatchObject({
+          retrying: 1,
+          unmailed: 0,
+        });
+      }
+      expect(await service.sweepTenant(agencia, AHORA + 30 * 60_000)).toMatchObject({
+        retrying: 0,
+        unmailed: 1,
+      });
+      expect(await service.sweepTenant(agencia, AHORA + 45 * 60_000)).toMatchObject({
+        examined: 0,
+      });
+      expect(smtp.intentos).toBe(3);
+      expect(mails).toEqual([]);
+      expect(await avisos(o)).toMatchObject({ deadline_alert_24h_failures: 3 });
+      expect(await eventosDe(o)).toEqual([
+        expect.objectContaining({ threshold: '24h', outcome: 'mail-failed', attempts: 3 }),
+      ]);
+
+      // El de 2 h tiene sus propios intentos: el SMTP volvió y sale.
+      smtp.arriba = true;
+      expect(await service.sweepTenant(agencia, AHORA + 8.5 * HORA)).toMatchObject({ mailed: 1 });
+      expect(mails).toHaveLength(1);
     } finally {
       await pool.query('DELETE FROM tenants WHERE id = $1', [agencia]);
     }
