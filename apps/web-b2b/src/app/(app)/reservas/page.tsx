@@ -88,10 +88,10 @@ interface Passenger {
   paxType: string;
   birthdate?: string;
   /**
-   * El número completo es el de la reserva tal como se creó. Si después se corrigió desde «Datos de
-   * pasajeros» (SAB-25), la orden guarda sólo los últimos caracteres (`numberLast4`).
+   * El API nunca manda el número entero del documento: sólo sus últimos caracteres (`numberLast4`),
+   * nunca más de la mitad. La pantalla lo muestra para reconocerlo, no para copiarlo.
    */
-  identityDoc?: { type?: string; number?: string; numberLast4?: string };
+  identityDoc?: { type?: string; numberLast4?: string };
 }
 
 interface Order {
@@ -1629,7 +1629,7 @@ function OrderDetailModal({
                   </span>
                   <span className="text-[var(--color-fg-muted)]">
                     {p.identityDoc?.type
-                      ? `${p.identityDoc.type} ${p.identityDoc.number ?? (p.identityDoc.numberLast4 !== undefined ? `••••${p.identityDoc.numberLast4}` : '')}`
+                      ? `${p.identityDoc.type} ${p.identityDoc.numberLast4 !== undefined ? `••••${p.identityDoc.numberLast4}` : ''}`
                       : ''}
                     {p.identityDoc?.type ? ' · ' : ''}
                     {PAX_LABEL[p.paxType] ?? p.paxType}

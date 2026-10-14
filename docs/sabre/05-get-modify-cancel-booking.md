@@ -610,7 +610,9 @@ verify`, con reintento del `retrieve` ante `UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNA
     para uno solo (se rechaza antes de salir). **Sólo ATPCO:** el contrato no lista SSR entre lo que `modifyBooking`
     cambia en NDC, y sin carril conocido tampoco se ofrece.
   - **Antes del cable** se rechaza (`OrderModifyRejectedError`): datos fuera de forma, pasajeros de la orden que no
-    casan con los de la reserva (cantidad, infante, apellido sin tildes), infante con viajero frecuente o SSR.
+    casan con los de la reserva (cantidad, infante, apellido sin tildes y nombre de pila por prefijo —el tratamiento
+    pegado o un nombre recortado no son otra persona, dos hermanos con el mismo apellido en otro orden sí—), infante
+    con viajero frecuente o SSR.
 - **Verificación.** El desenlace se lee en la reserva: la de la respuesta o, si no vino o no lo muestra todo, una
   lectura de display (`TRAVELERS`, `SPECIAL_SERVICES`). Un rechazo de validación (`BAD_REQUEST`, 4xx) es `FAILED`
   sin otra lectura; un error de negocio (`APPLICATION_ERROR`) con la reserva sin nada de lo pedido es `FAILED`, y
@@ -633,7 +635,10 @@ verify`, con reintento del `retrieve` ante `UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNA
   `OrderTravelersModified`, `OrderTravelersModifyFailed`— nombran campos y cuentan pasajeros. La orden guarda lo
   corregido **enmascarado** (`identityDoc.numberLast4`, `loyaltyProgramAccount.accountNumberLast4`) y el número
   viejo se va con el cambio; los SSR no se guardan. La redacción del ACL suma `programNumber` a las claves de PII:
-  la evidencia del arnés tampoco lleva el viajero frecuente.
+  la evidencia del arnés tampoco lleva el viajero frecuente. `GET /orders`, `GET /orders/:id` y `POST /orders`
+  publican los pasajeros con el documento y el viajero frecuente enmascarados (`publicOrderPassengers`), también
+  los de las órdenes nunca corregidas: lo que habla con el proveedor lee el número de la base en el servidor, nunca
+  del navegador. La lectura de pasajeros, la lista y el detalle salen con `Cache-Control: no-store` (API y BFF).
 - **Por certificar en CERT (`book-modify`).** Que la aerolínea acepte `WCHR` y las comidas sin asociación a un
   vuelo (o si pide `flights`: `UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_FLIGHT_ASSOCIATION_REQUIRED`); que la
   lectura de display con `TRAVELERS` traiga `identityDocuments` y `loyaltyPrograms` completos para verificar; que

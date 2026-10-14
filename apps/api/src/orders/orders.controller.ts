@@ -65,6 +65,7 @@ import {
   type TravelersReply,
 } from './order-travelers.plan.js';
 import { FlightTravelersService } from './order-travelers.service.js';
+import { publicOrderPassengers } from './public-order-passengers.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import {
   TICKET_VOID_MESSAGES,
@@ -261,7 +262,9 @@ export class OrdersController {
     return (await this.confirmation.send(tenantId, order)).sent;
   }
 
+  /** Lleva datos de los pasajeros (enmascarados, pero de personas): no se guarda en ningún caché. */
   @Get()
+  @Header('Cache-Control', 'no-store')
   async list(@CurrentUser() userId: string | undefined) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
@@ -280,6 +283,7 @@ export class OrdersController {
   }
 
   @Get(':id')
+  @Header('Cache-Control', 'no-store')
   async findOne(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
@@ -535,6 +539,7 @@ export class OrdersController {
    * lectura del proveedor (post-venta): no es venta.
    */
   @Get(':id/travelers')
+  @Header('Cache-Control', 'no-store')
   async travelersOf(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
@@ -659,7 +664,8 @@ export class OrdersController {
       status: row.status,
       searchCriteria: row.search_criteria,
       selectedOffer: row.selected_offer,
-      passengers: row.passengers,
+      // El documento y el viajero frecuente, enmascarados: el navegador no los necesita enteros.
+      passengers: publicOrderPassengers(row.passengers),
       contactInfo: row.contact_info,
       totalAmount: row.total_amount,
       currency: row.currency,

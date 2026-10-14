@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
   type ExecutionContext,
 } from '@nestjs/common';
-import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+import { HEADERS_METADATA, HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
@@ -214,4 +214,71 @@ describe('quién puede: corregir datos no es vender', () => {
   it('un cliente final, no', () => {
     expect(pasa('modifyTravelers', 'cliente_final')).not.toBe(true);
   });
+});
+
+describe('GET /orders y GET /orders/:id: el documento de los pasajeros sale enmascarado', () => {
+  const PASAPORTE = 'AB1234567';
+  const VIAJERO = '9988776655';
+  const conDocumento = fila({
+    passengers: [
+      {
+        paxType: 'ADT',
+        givenName: 'Ana',
+        surname: 'Pérez',
+        identityDoc: { type: 'P', number: PASAPORTE, issuingCountryCode: 'CO' },
+        loyaltyProgramAccount: { accountNumber: VIAJERO, airlineDesigCode: 'AV' },
+      },
+    ],
+  });
+
+  function controlador() {
+    return ordersController({
+      orders: {
+        findById: vi.fn(() => Promise.resolve(conDocumento)),
+        findAll: vi.fn(() => Promise.resolve([conDocumento])),
+      } as unknown as OrdersService,
+      mailer: {} as unknown as MailerService,
+      branding: {} as unknown as BrandingService,
+      activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+      registry: new FlightProviderRegistry([new StubProviderFactory({ code: AIR })], {
+        decisionFor: () => Promise.resolve(undefined),
+      }),
+      hotelReads: {
+        handles: () => false,
+        capabilitiesOf: () => undefined,
+        trackingOf: () => Promise.resolve(new Map()),
+      } as unknown as HotelOrderReadsService,
+    });
+  }
+
+  it('el detalle y la lista llevan los últimos caracteres, nunca el número entero', async () => {
+    const controller = controlador();
+    const uno = await controller.findOne(USER, ORDER);
+    const lista = await controller.list(USER);
+    for (const body of [uno, lista]) {
+      const json = JSON.stringify(body);
+      expect(json).not.toContain(PASAPORTE);
+      expect(json).not.toContain(VIAJERO);
+    }
+    expect(uno.order?.passengers).toEqual([
+      {
+        paxType: 'ADT',
+        givenName: 'Ana',
+        surname: 'Pérez',
+        identityDoc: { type: 'P', numberLast4: '4567', issuingCountryCode: 'CO' },
+        loyaltyProgramAccount: { accountNumberLast4: '6655', airlineDesigCode: 'AV' },
+      },
+    ]);
+  });
+
+  it.each(['list', 'findOne', 'travelersOf'] as const)(
+    '%s no se guarda en ningún caché',
+    (method) => {
+      const handler = Object.getOwnPropertyDescriptor(OrdersController.prototype, method)
+        ?.value as object;
+      expect(Reflect.getMetadata(HEADERS_METADATA, handler)).toEqual([
+        { name: 'Cache-Control', value: 'no-store' },
+      ]);
+    },
+  );
 });

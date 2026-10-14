@@ -13,6 +13,12 @@ import { isUuid } from '../../../../../lib/wallets';
  * quedó: sale como 5xx con un texto que pide revisar la reserva, nunca como 2xx o 4xx.
  */
 
+/**
+ * Las dos respuestas hablan de personas —la lectura, de su documento enmascarado y de sus servicios
+ * especiales (salud, religión)—: ningún caché del navegador ni intermedio las guarda.
+ */
+export const TRAVELERS_NO_STORE = { 'cache-control': 'no-store' } as const;
+
 export interface TravelersProxyReply {
   readonly status: number;
   readonly body: unknown;
