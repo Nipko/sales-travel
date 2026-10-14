@@ -57,7 +57,10 @@ pnpm --filter @sales-travel/api exec node dist/providers-sabre/cert-run/sabre-ce
 
 Sin SSH, el workflow `Sabre CERT run` (`.github/workflows/sabre-cert-run.yml`) hace lo mismo y sube la carpeta como
 artifact por 7 días. Sin `owner_tenant`, usa la variable del repositorio `SABRE_CERT_TENANT_ID`. Dispararlo es
-una acción con efecto: se pide permiso en cada corrida.
+una acción con efecto: se pide permiso en cada corrida. **El repositorio es público:** el log del job, su resumen
+(`summary.md`) y el artifact los puede ver cualquiera durante esos 7 días. Llevan sólo lo redactado —lo mismo que se
+versionaría como fixture—, pero se publican antes de que nadie lo revise: si `evidence.secretsScrubbed` no es cero,
+borrar el artifact de esa corrida (`gh run delete <id>` o desde la pestaña Actions) y revisar la redacción.
 
 ```bash
 gh workflow run sabre-cert-run.yml -f scenarios=sab-12
@@ -94,7 +97,8 @@ gh workflow run sabre-cert-run.yml -f scenarios=sab-13 -f allow_money=true
   `https://webservices.cert.platform.sabre.com`), y la plataforma tiene que tratar la cuenta como de pruebas. Si no,
   sale con `3` y `NO SE CORRE` sin una sola llamada.
 - **El transporte vuelve a mirar.** El `fetch` del proceso del arnés bloquea cualquier URL que no sea CERT antes de
-  salir, aunque algo se saltara la primera puerta.
+  salir, aunque algo se saltara la primera puerta, y no sigue redirecciones: un 3xx de CERT hacia otro host es un
+  fallo de transporte, no una petición que sale sin pasar por la puerta.
 - **Dinero sólo con `--allow-money`,** y cada paso que lo mueve se imprime con `[DINERO]` —PNR, pasajeros, forma de
   pago, importe del EMD o estimado del reembolso— **antes** de llamar.
 - **Como mucho 3 PNR por corrida,** con pasajeros `TEST/PASAJERO UNO…`, documentos `TEST…` y contacto

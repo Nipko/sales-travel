@@ -359,7 +359,16 @@ class CertRun {
     this.deps.announce(
       `   ${outcome === 'ok' ? 'ok ' : 'ERR'} ${record.step} (${String(record.durationMs)} ms)`,
     );
-    await this.deps.onStepEnd?.(record);
+    // Un archivo que no se pudo escribir no corta la corrida: lanzar desde aquí, en plena limpieza,
+    // se llevaba el reporte entero —los PNR y lo que quedó colgado— y la salida decía 1 en vez de 2.
+    // El paso queda sin `file` en el resumen, que es como se nota.
+    try {
+      await this.deps.onStepEnd?.(record);
+    } catch (err) {
+      this.deps.announce(
+        `   (no se pudo escribir la evidencia de ${record.step}: ${err instanceof Error ? err.name : 'error'})`,
+      );
+    }
   }
 
   private async runScenario(spec: CertScenarioSpec, report: CertScenarioReport): Promise<void> {

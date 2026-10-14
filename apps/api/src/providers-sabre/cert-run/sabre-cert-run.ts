@@ -124,7 +124,28 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function runHarness(args: CertRunArgs, plan: CertPlan): Promise<CertExitCode> {
+/**
+ * Lo que el arnés saca del contexto: la bóveda y el factory de Sabre, y cómo cerrarlo. En producción
+ * es el contexto de Nest de {@link CertRunModule}; un test lo arma a mano, porque Vitest compila sin
+ * los metadatos de decoradores con los que Nest inyecta por tipo.
+ */
+export type CertRunContext = Pick<INestApplicationContext, 'get' | 'close'>;
+
+export interface CertRunHooks {
+  readonly createContext?: (logger: LoggerService) => Promise<CertRunContext>;
+}
+
+function nestContext(logger: LoggerService): Promise<CertRunContext> {
+  // `abortOnError: false`: sin él, un fallo al armar el contexto termina el proceso ahí mismo y el
+  // resumen no se escribe.
+  return NestFactory.createApplicationContext(CertRunModule, { logger, abortOnError: false });
+}
+
+async function runHarness(
+  args: CertRunArgs,
+  plan: CertPlan,
+  hooks: CertRunHooks,
+): Promise<CertExitCode> {
   const ownerTenant = args.ownerTenant ?? '';
   const runId = args.runId ?? new Date().toISOString().replace(/[:.]/g, '-');
   const scrubber = new SecretScrubber();
@@ -148,19 +169,14 @@ async function runHarness(args: CertRunArgs, plan: CertPlan): Promise<CertExitCo
     process.once('SIGINT', () => process.exit(130));
   });
 
-  let app: INestApplicationContext | undefined;
+  let app: CertRunContext | undefined;
   let account: CertRunAccountView | undefined;
   let report: CertRunReport = { scenarios: [], pnrs: [], leftovers: [] };
   let fatal: { error: Record<string, unknown>; refused: boolean } | undefined;
 
   try {
     await writer.prepare();
-    // : sin él, un fallo al armar el contexto termina el proceso ahí mismo y el
-    // resumen no se escribe.
-    app = await NestFactory.createApplicationContext(CertRunModule, {
-      logger: new CertRunLogger(recorder, scrubber),
-      abortOnError: false,
-    });
+    app = await (hooks.createContext ?? nestContext)(new CertRunLogger(recorder, scrubber));
     const creds = app.get(ProviderCredentialsService);
     const factory = app.get(SabreProviderFactory);
 
@@ -224,10 +240,13 @@ async function runHarness(args: CertRunArgs, plan: CertPlan): Promise<CertExitCo
     });
   } catch (error) {
     fatal = { error: describeCertError(error), refused: error instanceof SabreCertGuardError };
+    // Por el scrubber, como los archivos: el stderr acaba en el log del workflow, que es público.
     err(
-      error instanceof SabreCertGuardError
-        ? `NO SE CORRE: ${error.reasons.join('; ')}`
-        : `Corte: ${JSON.stringify(fatal.error)}`,
+      scrubber.scrub(
+        error instanceof SabreCertGuardError
+          ? `NO SE CORRE: ${error.reasons.join('; ')}`
+          : `Corte: ${JSON.stringify(fatal.error)}`,
+      ).text,
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -268,7 +287,10 @@ async function runHarness(args: CertRunArgs, plan: CertPlan): Promise<CertExitCo
   return summary.exitCode;
 }
 
-export async function main(argv: readonly string[]): Promise<CertExitCode> {
+export async function main(
+  argv: readonly string[],
+  hooks: CertRunHooks = {},
+): Promise<CertExitCode> {
   let args: CertRunArgs;
   try {
     args = parseCertRunArgs(argv);
@@ -294,7 +316,7 @@ export async function main(argv: readonly string[]): Promise<CertExitCode> {
   }
   describeCertPlan(plan).forEach(out);
   if (args.planOnly) return CERT_EXIT.OK;
-  return runHarness(args, plan);
+  return runHarness(args, plan, hooks);
 }
 
 if (require.main === module) {

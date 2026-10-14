@@ -110,14 +110,18 @@ jobs:
         run: |
           set -euo pipefail
           REMOTE="${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}"
+          # Nada queda en el VPS, ni la copia del host ni la del contenedor, aunque falle la copia.
+          limpiar() {
+            ssh -p "$SSH_PORT" $SSH_OPTS "$REMOTE" \
+              "rm -rf /tmp/sabre-cert-run-$RUN_ID && cd $STACK_DIR && docker compose --env-file .env exec -T api rm -rf /tmp/sabre-cert-run/$RUN_ID" \
+              || echo "::warning::no se pudo borrar la evidencia del VPS (/tmp/sabre-cert-run-$RUN_ID)"
+          }
+          trap limpiar EXIT
           ssh -p "$SSH_PORT" $SSH_OPTS "$REMOTE" \
             "rm -rf /tmp/sabre-cert-run-$RUN_ID && cd $STACK_DIR && docker compose --env-file .env cp api:/tmp/sabre-cert-run/$RUN_ID /tmp/sabre-cert-run-$RUN_ID" \
             || { echo "::warning::la corrida no dejó carpeta de evidencia"; exit 0; }
           mkdir -p evidence
           rsync -az -e "ssh -p $SSH_PORT $SSH_OPTS" "$REMOTE:/tmp/sabre-cert-run-$RUN_ID/" evidence/
-          # Nada queda en el VPS: ni la copia del host ni la del contenedor.
-          ssh -p "$SSH_PORT" $SSH_OPTS "$REMOTE" \
-            "rm -rf /tmp/sabre-cert-run-$RUN_ID && cd $STACK_DIR && docker compose --env-file .env exec -T api rm -rf /tmp/sabre-cert-run/$RUN_ID"
           if [[ -f evidence/summary.md ]]; then cat evidence/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Subir la evidencia

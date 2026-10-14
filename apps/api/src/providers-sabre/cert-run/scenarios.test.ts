@@ -550,6 +550,25 @@ describe('runCertPlan — asientos, NDC y topes', () => {
   });
 });
 
+describe('runCertPlan — la evidencia que no se escribe no se lleva el reporte', () => {
+  it('con el disco fallando en plena limpieza, el PNR colgado sigue en leftovers', async () => {
+    const { deps, announced } = harness(
+      { failRetrieveAfterCreate: true, cancelThrows: new Error('cancel caído') },
+      {
+        onStepEnd: (record) =>
+          record.step.startsWith('limpieza')
+            ? Promise.reject(new Error('ENOSPC'))
+            : Promise.resolve(),
+      },
+    );
+    const report = await runCertPlan(plan({ scenarios: ['book-cancel'] }), deps);
+
+    expect(report.pnrs).toEqual([{ pnr: 'PNR001', scenario: 'book-cancel', state: 'booked' }]);
+    expect(report.leftovers.map((l) => l.pnr)).toEqual(['PNR001']);
+    expect(announced.join('\n')).toContain('no se pudo escribir la evidencia de limpieza');
+  });
+});
+
 describe('las elecciones del runner', () => {
   it('freeSeatFor no elige un asiento con cargo ni uno de otro pasajero', () => {
     expect(freeSeatFor(SEAT_MAP, 0)).toMatchObject({ row: 12, column: 'C', offerRef: 's-12c' });

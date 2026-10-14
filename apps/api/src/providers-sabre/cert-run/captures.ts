@@ -258,7 +258,11 @@ export function createCertTransport(deps: CertTransportDeps): typeof fetch {
 
     let response: Response;
     try {
-      response = await deps.inner(input, init);
+      // Sin seguir redirecciones: `fetch` las sigue solo, por dentro, y la URL de destino nunca
+      // volvería a pasar por `assertCertRequestUrl`. Un 3xx de CERT hacia otro host reenviaría la
+      // petición —un 307 o 308 con su cuerpo— a un sitio que nadie comprobó. Sabre no redirige: un
+      // 3xx es un fallo de transporte, no un desvío que se acepta.
+      response = await deps.inner(input, { ...init, redirect: 'error' });
     } catch (err) {
       deps.recorder.recordExchange({
         ...base,

@@ -1,3 +1,5 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
   REDACTED,
   SABRE_HOSTS,
@@ -162,6 +164,52 @@ describe('createCertTransport — la segunda puerta y la grabadora', () => {
     expect(lectura?.request.headers).not.toHaveProperty('authorization');
     // El eco del token bajo una clave inocua sólo lo tapó la tercera capa, y queda contado.
     expect(writer.secretsScrubbed).toBeGreaterThan(0);
+  });
+
+  it('una redirección de CERT a otro host no se sigue: el destino no recibe nada', async () => {
+    // Con un `fetch` real: es él quien sigue los 3xx por dentro, donde la URL de destino ya no
+    // pasa por la puerta. CERT es un servidor local que responde 307 hacia otro, que no puede
+    // recibir ni la petición ni su cuerpo.
+    const robado: string[] = [];
+    const listen = (server: Server) =>
+      new Promise<string>((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+          resolve(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}`);
+        });
+      });
+    const ladron = createServer((req, res) => {
+      robado.push(`${req.method ?? ''} ${req.url ?? ''}`);
+      res.end('{}');
+    });
+    const ladronUrl = await listen(ladron);
+    const cert = createServer((_req, res) => {
+      res.writeHead(307, { location: `${ladronUrl}/robar` });
+      res.end();
+    });
+    const certUrl = await listen(cert);
+    try {
+      // El arnés comprueba la URL de CERT; el cable va al servidor local que hace de CERT.
+      const inner: typeof fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : 'url' in input ? input.url : input.href;
+        return fetch(url.replace(SABRE_HOSTS.cert.rest, certUrl), init);
+      };
+      const recorder = new CertEvidenceRecorder();
+      const transport = createCertTransport({ inner, recorder, scrubber: new SecretScrubber() });
+      recorder.begin('book-cancel', 'createBooking');
+
+      await expect(
+        transport(`${SABRE_HOSTS.cert.rest}/v1/trip/orders/createBooking`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
+          body: JSON.stringify({ travelers: [{ surname: 'TEST' }] }),
+        }),
+      ).rejects.toThrow(TypeError);
+      expect(robado).toEqual([]);
+      expect(recorder.steps[0]?.exchanges[0]?.transportError).toBe('TypeError');
+    } finally {
+      await new Promise((resolve) => cert.close(resolve));
+      await new Promise((resolve) => ladron.close(resolve));
+    }
   });
 
   it('un fallo de red queda grabado por nombre y se propaga igual', async () => {
