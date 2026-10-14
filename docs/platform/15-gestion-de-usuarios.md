@@ -759,6 +759,8 @@ Sin cambios en la base ni en el panel.
 | `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta   | Tu contraseña cambió · PlaneTour                           |
 | `membership_removed`                              | Quitarla de un nodo (USR-11)                                        | Ya no formas parte de {nodo} · PlaneTour                   |
 | `mfa_enabled`                                     | Activar su 2FA por primera vez o tras un restablecimiento (USR-13b) | Activaste la verificación en dos pasos · PlaneTour         |
+| `mfa_changed`                                     | Cambiar de teléfono (otra app de autenticación) (USR-13b)           | Cambiaste tu app de autenticación · PlaneTour              |
+| `mfa_disabled`                                    | Desactivar su propio 2FA (USR-13b)                                  | Desactivaste la verificación en dos pasos · PlaneTour      |
 
 - Enviarle el enlace y forzar el cambio de contraseña no suman un aviso: el correo del enlace ya lo
   es. Liberar un puesto (Equipo → Puestos) tampoco avisa: es operativo, de todos los días, y el panel
@@ -772,9 +774,10 @@ Sin cambios en la base ni en el panel.
 - `SecurityNoticeService` (`apps/api/src/mail/security-notice.service.ts`, exportado por
   `MailerModule`, global): `notify(kind, { userId, tenantId, nodeName?, role? })`. Lo llaman
   `MemberSupportService` (`resetMfa`, `revokeSessions`, `unlock`), `MemberDetailService.revokeSession`,
-  `AdminController` (`changeRole`, `setMembershipStatus`, `removeMembership`, `setUserStatus`) y
-  `PasswordResetService` (`reset`, `change`), siempre después del commit: un aviso de algo que se
-  deshizo sería falso. Si la transacción falla, no hay aviso.
+  `AdminController` (`changeRole`, `setMembershipStatus`, `removeMembership`, `setUserStatus`),
+  `PasswordResetService` (`reset`, `change`) y `MfaService` (`confirmEnrollment`, `disable`;
+  USR-13b), siempre después del commit: un aviso de algo que se deshizo sería falso. Si la
+  transacción falla, no hay aviso.
 - La respuesta al admin no lo espera: el envío queda en `InflightWorkRegistry` (`security-notice`)
   para que un apagado ordenado lo deje salir. `send()` es el envío en sí: devuelve si salió y nunca
   lanza. Si no sale, el log dice el tipo y el id de la persona, nunca su correo ni el error (el de la
@@ -799,9 +802,10 @@ Sin cambios en la base ni en el panel.
 
 - `apps/api/src/mail/security-notices.ts`: en tú, "Hola, {nombre}:" (o "Hola:"), lo que pasó y, al
   final de todas, "Si no lo esperabas, avísale a tu administrador de inmediato.". La contraseña
-  cambiada suma "Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»…"; restablecer el 2FA
-  cuenta que los códigos de recuperación y los equipos de confianza ya no sirven (sin 2FA no queda
-  un segundo paso que saltar); suspender el acceso a un nodo aclara que los demás no cambian.
+  cambiada suma "Si no fuiste tú, elige una nueva desde «¿Olvidaste tu contraseña?»…" (el texto del
+  enlace de la pantalla de ingreso); restablecer el 2FA cuenta que los códigos de recuperación y los
+  equipos de confianza ya no sirven (sin 2FA no queda un segundo paso que saltar); suspender el
+  acceso a un nodo aclara que los demás no cambian.
 - El rol va con el nombre con que Equipo lo ofrece (_Admin de agencia_, _Manager_, _Vendedor_…) y,
   si exige 2FA, lo dice.
 - Nunca llevan enlaces ni tokens (el pie lo aclara: "no trae enlaces ni te pide datos"): un aviso de
@@ -969,20 +973,34 @@ por correo. Sin cambios en la base.
 - El `UPDATE` que activa el secreto exige además que la cuenta siga como se leyó
   (`(mfa_enabled_at IS NOT NULL) = rotación`): si entre la lectura y la escritura pasó a tener (o
   dejó de tener) el 2FA, 400 `MFA_CODE_INVALID` y no se activa nada.
+- El paso 1 (`beginEnrollment`) escribe el secreto pendiente con la misma condición: sin 2FA, sólo
+  si la cuenta sigue sin 2FA (si no, 409 `MFA_ALREADY_ENABLED`); al cambiar de teléfono, sólo si lo
+  sigue teniendo (si no, 409 `MFA_NOT_ENABLED`). Sin eso, una sesión robada pedía el paso 1 (que sin
+  2FA no pide nada) mientras la persona confirmaba el suyo: leía la cuenta sin 2FA, escribía después
+  del commit de la persona y dejaba su propio secreto pendiente sobre una cuenta CON 2FA, que el
+  paso 2 activaba como un cambio de teléfono, sin la contraseña ni un código de la app de la
+  persona. Lo reproduce `mfa.integration.test.ts` con la fila tomada por la confirmación.
 - **Aviso**: después del commit, `SecurityNoticeService.notify('mfa_enabled', { userId, tenantId:
 null, at })` con el `mfa_enabled_at` que devolvió el `UPDATE`. Sale por el correo de su membership
   activa más antigua (`mail-node.ts`, que ahora trae también el país del nodo), sin nombrar ningún
   nodo: "Activaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a
   las 10:42 (GMT-5).", que desde ahora le pediremos el código, que cerramos las sesiones de otros
-  equipos y "Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «Olvidé mi
-  contraseña»… y pídele a tu administrador que restablezca tu verificación en dos pasos.". La hora va
-  en la zona del país de ese nodo (`noticeTime`, `security-notices.ts`; Bogotá si no se conoce) y
+  equipos y "Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «¿Olvidaste tu
+  contraseña?»… y pídele a tu administrador que restablezca tu verificación en dos pasos.". La hora
+  va en la zona del país de ese nodo (`noticeTime`, `security-notices.ts`; Bogotá si no se conoce) y
   siempre con su desfase. Auditoría: el `auth.mfa.enabled` de siempre (`rotation: false`).
+- **También avisan** (agregado en la revisión): cambiar de teléfono (`mfa_changed`, "Cambiaste tu
+  app de autenticación", con la hora, que la app anterior, los códigos de recuperación anteriores y
+  los equipos de confianza ya no sirven, y qué hacer si no fue la persona) y desactivar el propio
+  2FA (`mfa_disabled`, "Desactivaste la verificación en dos pasos": que ahora basta la contraseña y
+  cómo volver a activarlo). Piden la contraseña y un código, pero quien tiene las dos cosas deja a
+  la persona afuera de su cuenta o se la deja con la contraseña sola: que se entere.
 - **Lo que no cambia**: cambiar de teléfono (ya tiene 2FA) sigue pidiendo la contraseña y un código
-  de la app actual en el paso 1, y no la vuelve a pedir al confirmar ni manda este aviso. El login,
-  el paso 1 (`POST /auth/mfa/enroll`, que sólo deja un secreto pendiente que no abre nada) y quien
-  ya tiene el 2FA activo, igual. El enrolamiento obligatorio de los roles que lo exigen no se
-  afloja: también pide la contraseña.
+  de la app actual en el paso 1, y no la vuelve a pedir al confirmar (sí avisa: `mfa_changed`). El
+  login y quien ya tiene el 2FA activo, igual. El paso 1 (`POST /auth/mfa/enroll`) sigue sin pedir
+  nada la primera vez (sólo deja un secreto pendiente que no abre nada), pero ya no escribe si la
+  cuenta cambió desde la lectura (ver arriba). El enrolamiento obligatorio de los roles que lo
+  exigen no se afloja: también pide la contraseña.
 - **Panel**: en el paso 3 de la activación (Seguridad y la pantalla de 2FA obligatoria), "Tu
   contraseña" va antes del código, con `autocomplete="current-password"` y la ayuda "La misma con la
   que ingresas. Así confirmamos que eres tú quien activa la verificación." asociada al campo. El
@@ -993,21 +1011,30 @@ null, at })` con el `mfa_enabled_at` que devolvió el `UPDATE`. Sale por el corr
 - El historial de la persona muestra `auth.mfa.reauth_failed` como "Verificación fallida dentro de
   su sesión", con qué intentaba ("Contraseña incorrecta al activar el 2FA", "Al reconfirmar el
   2FA"…) y si bloqueó la cuenta.
-- **Despliegue**: API y panel juntos. Con el API nuevo y el panel viejo, la primera activación
-  responde 400 `MFA_PASSWORD_REQUIRED` y el panel viejo lo muestra como código inválido hasta que
-  salga el nuevo; quien ya tiene el 2FA no nota nada. Un enrolamiento a medio hacer al desplegar
-  sólo tiene que escribir la contraseña al confirmar.
+- **Despliegue**: API y panel juntos (`docker compose up -d` los cambia a la vez). En los segundos
+  con el API nuevo y el panel viejo, la primera activación responde 400 `MFA_PASSWORD_REQUIRED` y el
+  panel viejo lo muestra como código inválido (todo 400 sin un motivo que conozca lo es en ese
+  formulario); quien ya tiene el 2FA no nota nada. El panel nuevo pide la contraseña antes de llamar
+  al API, así que `MFA_PASSWORD_REQUIRED` sólo le llega de un formulario sin el campo (una pestaña
+  de antes del despliegue, o una cuenta que perdió el 2FA a mitad de un cambio de teléfono): lo
+  muestra en el código y pide recargar la página ("Para activar la verificación en dos pasos ahora
+  también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo."). Antes marcaba el
+  campo de la contraseña aunque no estuviera, y el error no se veía.
 - **Tests**: `mfa.service.test.ts` (sin contraseña, 400 sin contar; mala, cuenta y la quinta
   bloquea sin probar el código; sin contraseña guardada igual corre un bcrypt; código con otra forma
   antes que la contraseña; buena, limpia el contador, audita y avisa con la hora; la cuenta cambió
-  en el medio, sin aviso; cambiar de teléfono no la pide ni avisa), `mfa.integration.test.ts`
-  (Postgres, como `app_user`: la sesión robada sin la contraseña no activa nada ni queda
-  reconfirmada y la de la persona sigue abierta; la mala suma al mismo bloqueo del login; la buena
-  activa y el aviso sale por el correo de su nodo con la hora; después de `admin_reset_user_mfa`
-  también la pide; cambiar de teléfono sin cambios), `security-notices.test.ts`,
-  `security-notice.service.test.ts`, `dto.test.ts`; en el panel `actions.test.ts`,
-  `security-errors.test.ts`, `security.render.test.ts` (campo, orden, ayuda, error asociado, en tú)
-  y `audit-format.test.ts`.
+  en el medio, sin aviso; cambiar de teléfono no la pide y avisa `mfa_changed`),
+  `mfa.integration.test.ts` (Postgres, como `app_user`: la sesión robada sin la contraseña no activa
+  nada ni queda reconfirmada y la de la persona sigue abierta; la mala suma al mismo bloqueo del
+  login; la buena activa y el aviso sale por el correo de su nodo con la hora; después de
+  `admin_reset_user_mfa` también la pide; cambiar de teléfono confirma sin ella y avisa; desactivar
+  avisa; el paso 1 que pierde la carrera con la confirmación de la persona no deja su secreto),
+  `security-notices.test.ts`, `security-notice.service.test.ts`, `dto.test.ts`; en el panel
+  `actions.test.ts` (también: sin el campo, pide recargar en el código), `security-errors.test.ts`,
+  `security.render.test.ts` (campo, orden, ayuda, error asociado, en tú) y `audit-format.test.ts`.
+  Los helpers que enrolan en los tests de integración reintentan si el paso TOTP cambia mientras se
+  prueba la contraseña: el bcrypt va antes que el código y, con el paso anterior, ~1 de cada 100
+  enrolamientos caía fuera de la ventana.
 
 ## Quitar a una persona de un nodo (USR-11)
 
