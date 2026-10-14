@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarSearch, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
+import { CalendarSearch, Download, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../../components/ui/button';
@@ -8,8 +8,10 @@ import { TextInput } from '../../../../../../components/ui/field';
 import { FiltersSheet } from '../../../../../../components/ui/filters-sheet';
 import { EmptyState, ToneNotice } from '../../../../../../components/wallets/wallet-ui';
 import { cn } from '../../../../../../lib/cn';
+import { saveFile } from '../../../../../../lib/platform-audit-client';
 import {
   DEFAULT_ORDERS_FILTERS,
+  ORDERS_EXPORT_NOTE,
   ORDERS_SEARCH_MAX_LENGTH,
   ORDERS_SEARCH_MIN_LENGTH,
   activeFilterCount,
@@ -17,13 +19,18 @@ import {
   clearedFilters,
   emptyCopy,
   nodeOptions,
+  ordersExportDoneMessage,
   ordersHref,
   searchTerm,
   type OrdersFilters as Filters,
   type PlatformOrderRow,
   type PlatformOrdersPage,
 } from '../../../../../../lib/platform-orders';
-import { loadPlatformOrders } from '../../../../../../lib/platform-orders-client';
+import {
+  exportPlatformOrders,
+  loadPlatformOrders,
+} from '../../../../../../lib/platform-orders-client';
+import { isStepUpCancelled } from '../../../../../../lib/step-up';
 import { loadAdminNetwork } from '../../../../../../lib/tenant-admin-client';
 import { OrderDetailSheet } from './order-detail-sheet';
 import { OrdersFilters, type NodeOptionsState } from './orders-filters';
@@ -59,6 +66,9 @@ const CLOCK_TICK_MS = 60_000;
  * Los filtros viven en la URL (`?atencion=1&estado=…&nodo=…`) y la ficha abierta también
  * (`?orden=`): un enlace abre lo mismo, y el Resumen enlaza aquí. La búsqueda no va en la URL: puede
  * ser el correo de un cliente.
+ *
+ * "Exportar CSV" se lleva la vista con los mismos filtros de la lista (hasta 5.000, sin pasajeros ni
+ * contacto); pide el 2FA reciente y queda en la auditoría.
  */
 export function OrdersConsole({
   initialFilters = DEFAULT_ORDERS_FILTERS,
@@ -75,6 +85,7 @@ export function OrdersConsole({
     initialOrderId === null ? null : { id: initialOrderId, preview: null },
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   /**
    * La ficha se pinta recién con la página hidratada. Con `?orden=` en una carga completa, el
@@ -180,6 +191,22 @@ export function OrdersConsole({
     });
   }
 
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    // Los filtros de la lista en pantalla. Alto impacto: puede pedir el código del 2FA en el medio
+    // y repetirse (USR-13).
+    const res = await exportPlatformOrders(filters);
+    setExporting(false);
+    if (isStepUpCancelled(res)) return;
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    saveFile(res.data);
+    toast.success(ordersExportDoneMessage(res.data.rows));
+  }
+
   const open = useCallback(
     (row: PlatformOrderRow) => setSelected({ id: row.id, preview: row }),
     [],
@@ -204,19 +231,42 @@ export function OrdersConsole({
             Busca y revisa cualquier reserva de todos los nodos.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="self-start"
-          disabled={list.status === 'loading' || (list.status === 'ready' && list.refreshing)}
-          onClick={() => void load(filters, list.status === 'ready' ? 'refresh' : 'initial')}
-        >
-          <RefreshCw
-            aria-hidden="true"
-            className={cn(list.status === 'ready' && list.refreshing && 'animate-spin')}
-          />
-          Actualizar
-        </Button>
+        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={list.status === 'loading' || (list.status === 'ready' && list.refreshing)}
+              onClick={() => void load(filters, list.status === 'ready' ? 'refresh' : 'initial')}
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={cn(list.status === 'ready' && list.refreshing && 'animate-spin')}
+              />
+              Actualizar
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={exporting}
+              aria-describedby="reservas-nota-exportar"
+              onClick={() => void exportCsv()}
+            >
+              {exporting ? (
+                <RefreshCw aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              {exporting ? 'Exportando…' : 'Exportar CSV'}
+            </Button>
+          </div>
+          <p
+            id="reservas-nota-exportar"
+            className="max-w-xs text-xs text-[var(--color-fg-muted)] sm:text-right"
+          >
+            {ORDERS_EXPORT_NOTE}
+          </p>
+        </div>
       </header>
 
       <div className="mb-5 space-y-4">

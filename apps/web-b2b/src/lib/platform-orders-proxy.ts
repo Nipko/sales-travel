@@ -12,9 +12,10 @@ import { isUuid } from './wallets';
 
 /**
  * A qué ruta del API va cada pedido de Plataforma → Reservas de la red (`/api/admin/orders` →
- * `/admin/orders`, `/api/admin/orders/:id` → `/admin/orders/:id`). Sin I/O.
+ * `/admin/orders`, `/api/admin/orders/export` → `/admin/orders/export`, `/api/admin/orders/:id` →
+ * `/admin/orders/:id`). Sin I/O.
  *
- * La lista y la ficha sólo leen. La query se rearma parámetro por parámetro desde una lista blanca y
+ * La lista, la exportación y la ficha sólo leen. La query se rearma parámetro por parámetro desde una lista blanca y
  * lo que no se conoce, o viene repetido, es un 400, como en el API (estricto): un parámetro raro no
  * viaja. Las acciones de post-venta de la ficha (reenviar, consultar, reintentar, cancelar) rearman
  * su cuerpo campo por campo: sólo el motivo, y en cancelar también el número de la orden. Quién
@@ -28,7 +29,7 @@ const BAD_METHOD: WalletProxyPlan = {
   error: 'Operación no admitida en esta ruta.',
 };
 
-const KNOWN = new Set([
+const FILTERS = [
   'tenantId',
   'subtree',
   'vertical',
@@ -38,19 +39,27 @@ const KNOWN = new Set([
   'to',
   'q',
   'attention',
-  'cursor',
-  'limit',
-]);
+] as const;
+const PAGE = ['cursor', 'limit'] as const;
 const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
 const MAX_LIMIT = 100;
 
-/** `GET /api/admin/orders?…` → `GET /admin/orders?…`. */
-export function adminOrdersPlan(method: string, search: URLSearchParams): WalletProxyPlan {
-  if (method !== 'GET') return BAD_METHOD;
+type Rebuilt =
+  | { readonly ok: true; readonly query: string }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * La query rearmada desde la lista blanca: los filtros, y en la lista también la página. La
+ * exportación lleva exactamente los mismos filtros que la lista (así el archivo es lo que se ve), sin
+ * `cursor` ni `limit`: con ellos es un 400, como en el API.
+ */
+function rebuildOrdersQuery(search: URLSearchParams, mode: 'list' | 'export'): Rebuilt {
+  const known = new Set<string>(mode === 'list' ? [...FILTERS, ...PAGE] : FILTERS);
+  const bad = (error: string): Rebuilt => ({ ok: false, error });
   const seen = new Set<string>();
   for (const key of search.keys()) {
-    if (!KNOWN.has(key)) return BAD_FILTER(`Filtro desconocido: ${key.slice(0, 40)}.`);
-    if (seen.has(key)) return BAD_FILTER(`Filtro repetido: ${key}.`);
+    if (!known.has(key)) return bad(`Filtro desconocido: ${key.slice(0, 40)}.`);
+    if (seen.has(key)) return bad(`Filtro repetido: ${key}.`);
     seen.add(key);
   }
   const value = (key: string): string | undefined => {
@@ -61,13 +70,13 @@ export function adminOrdersPlan(method: string, search: URLSearchParams): Wallet
 
   const tenantId = value('tenantId');
   if (tenantId !== undefined) {
-    if (!isUuid(tenantId)) return BAD_FILTER('Nodo inválido.');
+    if (!isUuid(tenantId)) return bad('Nodo inválido.');
     out.set('tenantId', tenantId.toLowerCase());
   }
 
   const subtree = value('subtree');
   if (subtree !== undefined) {
-    if (subtree !== 'true' && subtree !== 'false') return BAD_FILTER('Alcance del nodo inválido.');
+    if (subtree !== 'true' && subtree !== 'false') return bad('Alcance del nodo inválido.');
     // Sin nodo no cambia nada: no se manda.
     if (tenantId !== undefined) out.set('subtree', subtree);
   }
@@ -75,14 +84,14 @@ export function adminOrdersPlan(method: string, search: URLSearchParams): Wallet
   const vertical = value('vertical');
   if (vertical !== undefined) {
     if (!(ORDER_VERTICALS as readonly string[]).includes(vertical)) {
-      return BAD_FILTER('Vertical inválida.');
+      return bad('Vertical inválida.');
     }
     out.set('vertical', vertical);
   }
 
   const provider = value('provider');
   if (provider !== undefined) {
-    if (!isProviderCode(provider)) return BAD_FILTER('Proveedor inválido.');
+    if (!isProviderCode(provider)) return bad('Proveedor inválido.');
     out.set('provider', provider);
   }
 
@@ -90,54 +99,73 @@ export function adminOrdersPlan(method: string, search: URLSearchParams): Wallet
   if (status !== undefined) {
     const statuses = status.split(',').map((s) => s.trim());
     if (statuses.length > 5 || !statuses.every(isOrderStatus)) {
-      return BAD_FILTER('Estado inválido.');
+      return bad('Estado inválido.');
     }
     out.set('status', [...new Set(statuses)].join(','));
   }
 
   const from = value('from');
   const to = value('to');
-  if (from !== undefined && !isCalendarDay(from)) return BAD_FILTER('Fecha "desde" inválida.');
-  if (to !== undefined && !isCalendarDay(to)) return BAD_FILTER('Fecha "hasta" inválida.');
+  if (from !== undefined && !isCalendarDay(from)) return bad('Fecha "desde" inválida.');
+  if (to !== undefined && !isCalendarDay(to)) return bad('Fecha "hasta" inválida.');
   if (from !== undefined && to !== undefined && from > to) {
-    return BAD_FILTER('La fecha "hasta" no puede ser anterior a "desde".');
+    return bad('La fecha "hasta" no puede ser anterior a "desde".');
   }
   if (from !== undefined) out.set('from', from);
   if (to !== undefined) out.set('to', to);
 
   const q = value('q');
   if (q !== undefined) {
-    if (/\p{Cc}/u.test(q)) return BAD_FILTER('La búsqueda tiene caracteres no válidos.');
-    if (q.length > ORDERS_SEARCH_MAX_LENGTH) return BAD_FILTER('La búsqueda es demasiado larga.');
-    if (q.length < ORDERS_SEARCH_MIN_LENGTH) return BAD_FILTER('Escribe al menos 2 caracteres.');
+    if (/\p{Cc}/u.test(q)) return bad('La búsqueda tiene caracteres no válidos.');
+    if (q.length > ORDERS_SEARCH_MAX_LENGTH) return bad('La búsqueda es demasiado larga.');
+    if (q.length < ORDERS_SEARCH_MIN_LENGTH) return bad('Escribe al menos 2 caracteres.');
     out.set('q', q);
   }
 
   const attention = value('attention');
   if (attention !== undefined) {
-    if (attention !== 'true') return BAD_FILTER('Filtro de atención inválido.');
+    if (attention !== 'true') return bad('Filtro de atención inválido.');
     out.set('attention', 'true');
   }
 
-  const cursor = value('cursor');
-  if (cursor !== undefined) {
-    if (!CURSOR.test(cursor)) return BAD_FILTER('Página inválida.');
-    out.set('cursor', cursor);
+  if (mode === 'list') {
+    const cursor = value('cursor');
+    if (cursor !== undefined) {
+      if (!CURSOR.test(cursor)) return bad('Página inválida.');
+      out.set('cursor', cursor);
+    }
+
+    const limit = value('limit');
+    if (limit !== undefined) {
+      const n = Number(limit);
+      if (!/^\d{1,3}$/.test(limit) || n < 1 || n > MAX_LIMIT) return bad('Límite inválido.');
+      out.set('limit', String(n));
+    }
   }
 
-  const limit = value('limit');
-  if (limit !== undefined) {
-    const n = Number(limit);
-    if (!/^\d{1,3}$/.test(limit) || n < 1 || n > MAX_LIMIT) return BAD_FILTER('Límite inválido.');
-    out.set('limit', String(n));
-  }
+  return { ok: true, query: out.toString() };
+}
 
-  const query = out.toString();
-  return {
-    ok: true,
-    method: 'GET',
-    path: query === '' ? '/admin/orders' : `/admin/orders?${query}`,
-  };
+function withQuery(base: string, query: string): string {
+  return query === '' ? base : `${base}?${query}`;
+}
+
+/** `GET /api/admin/orders?…` → `GET /admin/orders?…`. */
+export function adminOrdersPlan(method: string, search: URLSearchParams): WalletProxyPlan {
+  if (method !== 'GET') return BAD_METHOD;
+  const rebuilt = rebuildOrdersQuery(search, 'list');
+  if (!rebuilt.ok) return BAD_FILTER(rebuilt.error);
+  return { ok: true, method: 'GET', path: withQuery('/admin/orders', rebuilt.query) };
+}
+
+/**
+ * `GET /api/admin/orders/export?…` → `GET /admin/orders/export?…`: los filtros de la lista, sin la
+ * página.
+ */
+export function adminOrdersExportTarget(search: URLSearchParams): TenantAdminProxyTarget {
+  const rebuilt = rebuildOrdersQuery(search, 'export');
+  if (!rebuilt.ok) return { ok: false, error: rebuilt.error };
+  return { ok: true, path: withQuery('/admin/orders/export', rebuilt.query) };
 }
 
 /** `GET /api/admin/orders/:id` → `GET /admin/orders/:id`. */

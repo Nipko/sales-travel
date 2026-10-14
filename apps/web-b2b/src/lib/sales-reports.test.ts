@@ -258,6 +258,27 @@ describe('salesReportCsv', () => {
     expect(csv).toContain("Vendedor,'@SUM(A1),COP,1,0.01");
   });
 
+  it('un ; o una tabulación en el nombre van entre comillas: Excel en es-CO separa por ;', () => {
+    const csv = salesReportCsv(
+      metrics({
+        topPerformers: [
+          { userId: 'a', name: 'Ana;=HYPERLINK("x")', currency: 'COP', salesMinor: 1, count: 1 },
+          { userId: 'b', name: 'Bruno\t=1+1', currency: 'COP', salesMinor: 1, count: 1 },
+          { userId: 'c', name: 'Ca\u0000rla', currency: 'COP', salesMinor: 1, count: 1 },
+        ],
+      }),
+    );
+    expect(csv).toContain('Vendedor,"Ana;=HYPERLINK(""x"")",COP,1,0.01');
+    expect(csv).toContain('Vendedor,"Bruno\t=1+1",COP,1,0.01');
+    expect(csv).toContain('Vendedor,Carla,COP,1,0.01');
+    // Abierto separando por `;`, ninguna celda empieza con `=` sin su apóstrofo: el `;` quedó
+    // dentro de las comillas.
+    for (const line of lines(csv)) {
+      const outside = line.replace(/"(?:[^"]|"")*"/g, '');
+      expect(outside).not.toMatch(/;/);
+    }
+  });
+
   it('el archivo se llama por su período', () => {
     expect(salesReportFilename({ from: '2025-11', to: '2026-10' })).toBe(
       'ventas-2025-11-a-2026-10.csv',

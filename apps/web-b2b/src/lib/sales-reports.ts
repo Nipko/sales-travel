@@ -1,3 +1,4 @@
+import { csvDecimal, toCsv, type CsvValue } from './csv';
 import { currencyDecimals, formatMoney } from './flight-format';
 import { isCurrencyCode } from './wallets';
 
@@ -359,17 +360,11 @@ export function bookingsText(count: number): string {
 // ─────────────────────────── CSV ───────────────────────────
 
 /**
- * Una celda de texto. Lo que empieza con `=`, `+`, `-` o `@` va con un apóstrofo delante: un nombre
- * de vendedor no puede ser una fórmula que Excel ejecute al abrir el archivo.
+ * En unidades de la moneda, con punto decimal: lo lee cualquier planilla. Los montos van en
+ * centésimas en toda moneda (`Money.fromMajor`).
  */
-function csvText(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
-
-/** En unidades de la moneda, con punto decimal: lo lee cualquier planilla. */
-function csvAmount(minor: number): string {
-  return (minor / 100).toFixed(2);
+function csvAmount(minor: number): CsvValue {
+  return csvDecimal(minor, 2);
 }
 
 export const SALES_CSV_HEADER = ['Corte', 'Detalle', 'Moneda', 'Reservas confirmadas', 'Monto'];
@@ -378,17 +373,21 @@ export const SALES_CSV_HEADER = ['Corte', 'Detalle', 'Moneda', 'Reservas confirm
  * El reporte en CSV: sólo filas reales (ninguna fila en cero ni totales entre monedas), todas las
  * monedas, cada fila con la suya. Una tabla "larga": se filtra por Corte (Vertical, Mes, Vendedor)
  * y por Moneda en cualquier planilla.
+ *
+ * Cada celda pasa por las reglas de lib/csv, las de la consola de la plataforma: un nombre de
+ * vendedor que empieza con `=` lleva su apóstrofo, y uno con `;` o tabulación va entre comillas
+ * porque Excel en es-CO, es-PE o pt-BR separa por `;`.
  */
 export function salesReportCsv(metrics: SalesMetrics): string {
   const currencies = reportCurrencies(metrics);
-  const rows: string[][] = [];
+  const rows: CsvValue[][] = [];
   for (const currency of currencies) {
     for (const v of verticalShares(metrics, currency)) {
       rows.push([
         'Vertical',
-        csvText(salesVerticalName(v.vertical)),
+        salesVerticalName(v.vertical),
         currency,
-        String(v.count),
+        v.count,
         csvAmount(v.totalAmountMinor),
       ]);
     }
@@ -397,14 +396,14 @@ export function salesReportCsv(metrics: SalesMetrics): string {
     (a, b) => byText(a.month, b.month) || byText(a.currency, b.currency),
   );
   for (const m of months) {
-    rows.push(['Mes', m.month, m.currency, String(m.count), csvAmount(m.amountMinor)]);
+    rows.push(['Mes', m.month, m.currency, m.count, csvAmount(m.amountMinor)]);
   }
   for (const currency of currencies) {
     for (const p of topPerformersIn(metrics, currency)) {
-      rows.push(['Vendedor', csvText(p.name), currency, String(p.count), csvAmount(p.salesMinor)]);
+      rows.push(['Vendedor', p.name, currency, p.count, csvAmount(p.salesMinor)]);
     }
   }
-  return `\uFEFF${[SALES_CSV_HEADER, ...rows].map((r) => r.join(',')).join('\r\n')}\r\n`;
+  return toCsv(SALES_CSV_HEADER, rows);
 }
 
 export function salesReportFilename(period: SalesPeriod): string {

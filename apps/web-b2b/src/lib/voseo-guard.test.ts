@@ -60,6 +60,8 @@ const SCANNED = [
   'app/(app)/page.tsx',
   'app/(app)/reportes',
   'lib/sales-reports.ts',
+  // Las reglas de los CSV del panel (el reporte de ventas), espejo de las de la consola.
+  'lib/csv.ts',
   // Plataforma → Proveedores: la habilitación, la salud y el apagado de emergencia.
   'app/(app)/admin/plataforma/proveedores',
   'app/(app)/admin/_components/provider-enablement-ui.tsx',

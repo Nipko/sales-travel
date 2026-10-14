@@ -1091,6 +1091,50 @@ export function ordersErrorMessage(
     : 'No pudimos cargar las reservas. Reintenta en unos segundos.';
 }
 
+// ───────────────────────────── Exportar CSV ─────────────────────────────
+
+/** Las reservas que caben en una exportación (ADMIN_ORDERS_EXPORT_MAX_ROWS del API). */
+export const ORDERS_EXPORT_MAX_ROWS = 5000;
+
+/** La nota debajo del botón: qué se lleva el archivo y qué no. */
+export const ORDERS_EXPORT_NOTE =
+  'Exporta las reservas con los filtros actuales (hasta 5.000), sin datos de pasajeros.';
+
+const EXPORT_TOO_LARGE = 'Hay más de 5.000 reservas con estos filtros: acota las fechas o el nodo.';
+
+/** "Exportamos 1.234 reservas." */
+export function ordersExportDoneMessage(rows: number): string {
+  if (rows === 0) return 'Exportamos el archivo: no hay reservas con estos filtros.';
+  return rows === 1
+    ? 'Exportamos 1 reserva.'
+    : `Exportamos ${rows.toLocaleString('es-CO')} reservas.`;
+}
+
+/**
+ * El mensaje de una exportación que falló. El 422 (más de 5.000) y el 403 del 2FA traen el suyo, que
+ * dice qué hacer: acotar los filtros, o activar o confirmar el código.
+ */
+export function ordersExportErrorMessage(status: number, apiMessage: string | undefined): string {
+  const fromApi = apiMessage?.trim() ?? '';
+  if ((status === 422 || status === 403) && fromApi !== '') return fromApi;
+  if (status === 422) return EXPORT_TOO_LARGE;
+  if (status === 401 || status === 403 || status === 400 || status === 404 || status === 0) {
+    return ordersErrorMessage(status, apiMessage, 'list');
+  }
+  return 'No pudimos exportar las reservas. Reintenta en unos segundos.';
+}
+
+/**
+ * El nombre del archivo que mandó el API (`attachment; filename="reservas-AAAA-MM-DD.csv"`), si es
+ * un nombre limpio; si no, el de hoy en Bogotá.
+ */
+export function ordersExportFilename(disposition: string | null, now: Date): string {
+  const name = /filename="([^"]+)"/.exec(disposition ?? '')?.[1];
+  return name !== undefined && /^[A-Za-z0-9._-]{1,100}\.csv$/.test(name)
+    ? name
+    : `reservas-${presetRange('today', now).to}.csv`;
+}
+
 export interface EmptyCopy {
   readonly title: string;
   readonly text: string;

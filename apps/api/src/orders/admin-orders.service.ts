@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { PlatformConsoleScopeNotFoundError } from '../admin-console/admin-console.errors.js';
 import { PLATFORM_TIME_ZONE } from '../admin-console/admin-overview.schemas.js';
+import { platformTenantId } from '../audit/admin-audit.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import { rethrowAdminDbError } from '../network/superadmin.errors.js';
+import {
+  ADMIN_ORDERS_EXPORTED_EVENT,
+  adminOrdersCsv,
+  exportedOrderFilters,
+  ordersExportFilename,
+} from './admin-orders-export.js';
 import {
   adminOrderEvent,
   adminOrdersPage,
@@ -22,8 +29,13 @@ import {
   type ReconciliationItemRow,
   type WalletHoldRow,
 } from './admin-order-view.js';
-import { AdminOrderNotFoundError } from './admin-orders.errors.js';
-import type { AdminOrdersQuery } from './admin-orders.schemas.js';
+import { AdminOrderNotFoundError, AdminOrdersExportTooLargeError } from './admin-orders.errors.js';
+import {
+  ADMIN_ORDERS_EXPORT_MAX_ROWS,
+  type AdminOrdersCursor,
+  type AdminOrdersFilters,
+  type AdminOrdersQuery,
+} from './admin-orders.schemas.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrdersService, type OrderRow } from './orders.service.js';
@@ -36,12 +48,21 @@ export const ADMIN_ORDER_EVENTS_LIMIT = 50;
 /** Las divergencias de conciliación que muestra la ficha (la conciliación es diaria). */
 export const ADMIN_ORDER_RECONCILIATION_LIMIT = 50;
 
+/** El CSV de la exportación, con lo que hace falta para las cabeceras. */
+export interface AdminOrdersExport {
+  csv: string;
+  filename: string;
+  /** Reservas exportadas (sin el encabezado). */
+  rows: number;
+}
+
 /**
- * Plataforma → Reservas de la red: buscar cualquier reserva de cualquier nodo y abrir su ficha.
+ * Plataforma → Reservas de la red: buscar cualquier reserva de cualquier nodo, exportar la vista
+ * filtrada y abrir su ficha.
  *
  * La búsqueda es `admin_search_orders` (0076), que vuelve a exigir en la base que quien pide sea el
  * superadmin (`app.current_user_id`, por eso `withRequestContext({ userId })`) y no devuelve
- * pasajeros ni contacto.
+ * pasajeros ni contacto. La exportación es esa misma lectura (searchRows), sin página.
  *
  * La ficha no lee por una puerta amplia: `admin_order_tenant` (misma guarda) dice de qué nodo es la
  * orden, y con ese tenant fijado se usan las lecturas de siempre (las de Reservas de la agencia y la
@@ -62,42 +83,91 @@ export class AdminOrdersService {
   ) {}
 
   async search(actorUserId: string, query: AdminOrdersQuery): Promise<AdminOrdersPage> {
-    const root = query.tenantId ?? null;
-    const before = query.cursor ?? null;
-    // Se pide una de más para saber si hay otra página.
-    const limit = query.limit + 1;
-
     try {
       return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
-        if (root !== null) await this.assertNode(trx, root);
-
-        // Los días son de Bogotá: desde el comienzo de `from` hasta el comienzo del día siguiente
-        // a `to`. Los instantes los calcula Postgres, que conoce los cambios de hora de cada zona.
-        const { rows } = await sql<AdminOrderSearchRow>`
-          SELECT s.*,
-                 to_char(s.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-            FROM admin_search_orders(
-                   ${root}::uuid,
-                   ${query.subtree}::boolean,
-                   ${query.vertical ?? null}::text,
-                   ${query.provider === undefined ? null : [query.provider]}::text[],
-                   ${query.status ?? null}::text[],
-                   (${query.from ?? null}::date::timestamp AT TIME ZONE ${PLATFORM_TIME_ZONE}),
-                   ((${query.to ?? null}::date + 1)::timestamp AT TIME ZONE ${PLATFORM_TIME_ZONE}),
-                   ${query.q ?? null}::text,
-                   ${query.attention ?? false}::boolean,
-                   ${before?.at ?? null}::timestamptz,
-                   ${before?.id ?? null}::uuid,
-                   ${limit}::int
-                 ) s
-           ORDER BY s.created_at DESC, s.id DESC
-        `.execute(trx);
-
+        // Se pide una de más para saber si hay otra página.
+        const rows = await this.searchRows(trx, query, query.cursor ?? null, query.limit + 1);
         return adminOrdersPage(rows, query.limit);
       });
     } catch (err) {
       rethrowAdminDbError(err);
     }
+  }
+
+  /**
+   * La vista filtrada de la lista, entera, en CSV (Exportar CSV): la MISMA lectura que
+   * {@link search} con los mismos filtros, sin la página, así que el archivo no puede traer una
+   * reserva que la pantalla no mostraría. Hasta {@link ADMIN_ORDERS_EXPORT_MAX_ROWS}; con más, 422
+   * EXPORT_TOO_LARGE y no sale nada (un archivo a medias pasaría por completo en contabilidad).
+   *
+   * Deja `platform.orders.exported` {filters, rows} en la raíz `platform`, en la MISMA transacción que
+   * la lectura y sin tragarse el fallo (`emitWithin`): si el rastro no se escribe, no hay archivo.
+   */
+  async exportCsv(
+    actorUserId: string,
+    filters: AdminOrdersFilters,
+    now: Date = new Date(),
+  ): Promise<AdminOrdersExport> {
+    try {
+      return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+        // Una de más para saber si se pasa del tope.
+        const rows = await this.searchRows(trx, filters, null, ADMIN_ORDERS_EXPORT_MAX_ROWS + 1);
+        if (rows.length > ADMIN_ORDERS_EXPORT_MAX_ROWS) throw new AdminOrdersExportTooLargeError();
+
+        await this.audit.emitWithin(trx, {
+          eventType: ADMIN_ORDERS_EXPORTED_EVENT,
+          tenantId: await platformTenantId(trx),
+          actorUserId,
+          payload: { filters: exportedOrderFilters(filters), rows: rows.length },
+        });
+
+        return {
+          csv: adminOrdersCsv(rows),
+          filename: ordersExportFilename(now),
+          rows: rows.length,
+        };
+      });
+    } catch (err) {
+      rethrowAdminDbError(err);
+    }
+  }
+
+  /**
+   * admin_search_orders con estos filtros, en la transacción de quien llama (que ya puso
+   * `app.current_user_id`): la lectura de la lista y de la exportación. 404 si el nodo no existe.
+   *
+   * Los días son de Bogotá: desde el comienzo de `from` hasta el comienzo del día siguiente a `to`.
+   * Los instantes los calcula Postgres, que conoce los cambios de hora de cada zona.
+   */
+  private async searchRows(
+    trx: Transaction<DB>,
+    filters: AdminOrdersFilters,
+    before: AdminOrdersCursor | null,
+    limit: number,
+  ): Promise<AdminOrderSearchRow[]> {
+    const root = filters.tenantId ?? null;
+    if (root !== null) await this.assertNode(trx, root);
+
+    const { rows } = await sql<AdminOrderSearchRow>`
+      SELECT s.*,
+             to_char(s.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+        FROM admin_search_orders(
+               ${root}::uuid,
+               ${filters.subtree}::boolean,
+               ${filters.vertical ?? null}::text,
+               ${filters.provider === undefined ? null : [filters.provider]}::text[],
+               ${filters.status ?? null}::text[],
+               (${filters.from ?? null}::date::timestamp AT TIME ZONE ${PLATFORM_TIME_ZONE}),
+               ((${filters.to ?? null}::date + 1)::timestamp AT TIME ZONE ${PLATFORM_TIME_ZONE}),
+               ${filters.q ?? null}::text,
+               ${filters.attention ?? false}::boolean,
+               ${before?.at ?? null}::timestamptz,
+               ${before?.id ?? null}::uuid,
+               ${limit}::int
+             ) s
+       ORDER BY s.created_at DESC, s.id DESC
+    `.execute(trx);
+    return rows;
   }
 
   /**

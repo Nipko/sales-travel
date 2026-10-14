@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvCell, csvLine, toCsv } from './csv.js';
+import { csvCell, csvDecimal, csvLine, minorToDecimal, toCsv } from './csv.js';
 
 describe('csvCell', () => {
   it('el texto común va tal cual', () => {
@@ -52,6 +52,41 @@ describe('csvCell', () => {
     expect(csvCell(-3)).toBe('-3');
     expect(csvCell(Number.NaN)).toBe('');
     expect(csvCell(true)).toBe('true');
+  });
+});
+
+describe('minorToDecimal y csvDecimal', () => {
+  it('unidades menores con su exponente, exacto y con punto', () => {
+    expect(minorToDecimal(150_000, 2)).toBe('1500.00');
+    expect(minorToDecimal('45990', 2)).toBe('459.90');
+    expect(minorToDecimal(5, 2)).toBe('0.05');
+    expect(minorToDecimal(0, 2)).toBe('0.00');
+    expect(minorToDecimal(-5, 2)).toBe('-0.05');
+    expect(minorToDecimal(150_000, 0)).toBe('150000');
+    expect(minorToDecimal(1_234_567, 3)).toBe('1234.567');
+    // Más allá de lo que un double guarda exacto: BIGINT llega de `pg` como texto.
+    expect(minorToDecimal('90071992547409931', 2)).toBe('900719925474099.31');
+    expect(minorToDecimal(12n, 2)).toBe('0.12');
+  });
+
+  it('lo que no es un entero o un exponente raro no se escribe', () => {
+    expect(minorToDecimal('12.5', 2)).toBeNull();
+    expect(minorToDecimal('=1+1', 2)).toBeNull();
+    expect(minorToDecimal(Number.NaN, 2)).toBeNull();
+    expect(minorToDecimal(10, -1)).toBeNull();
+    expect(minorToDecimal(10, 1.5)).toBeNull();
+    expect(minorToDecimal(10, 7)).toBeNull();
+    expect(csvDecimal('x', 2)).toBeNull();
+  });
+
+  it('la celda del importe va tal cual, sin apóstrofo aunque sea negativo', () => {
+    expect(csvCell(csvDecimal(150_000, 2))).toBe('1500.00');
+    expect(csvCell(csvDecimal(-5, 2))).toBe('-0.05');
+    // Un texto con forma de número negativo sí lleva apóstrofo: no lo armó csvDecimal.
+    expect(csvCell('-0.05')).toBe("'-0.05");
+    // Un objeto que no trae un decimal no pasa como texto sin guarda.
+    expect(csvCell({ decimal: '=1+1' })).toBe('');
+    expect(csvCell(csvDecimal('no', 2))).toBe('');
   });
 });
 
