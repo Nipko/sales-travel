@@ -11,6 +11,7 @@ import {
   SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
   SabreOrderCreateInputError,
+  SabreOrderManageAdapter,
   SabrePriceRequestError,
 } from '@sales-travel/sabre';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,6 +42,7 @@ import {
   parseSabreOperations,
   sabreShopOptionsFromAccountConfig,
   sabreTicketingSettingsFromAccountConfig,
+  withOfficeTimeZone,
 } from './sabre.factory.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 
@@ -710,6 +712,72 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
     const adapter = await adapterReal();
     expect(supportsAuditedCreate(adapter)).toBe(true);
     expect(supportsAuditedCancel(adapter)).toBe(true);
+  });
+});
+
+/**
+ * El plazo de emisión de una lectura lleva la zona de la oficina de la cuenta (SAB-14): Sabre da la
+ * fecha y la hora del PCC sin zona, y sin ella la post-venta no puede avisar antes de que venza.
+ */
+describe('SabreFlightProviderAdapter — la zona de la oficina en el plazo de la lectura', () => {
+  const ctx = { tenantId: 't1' };
+  const lectura = (ticketingDeadline?: {
+    date: string;
+    time?: string;
+    zone: 'UTC' | 'PROVIDER_LOCAL';
+  }) => ({
+    found: true,
+    airlineLocators: [],
+    warnings: [],
+    ...(ticketingDeadline === undefined ? {} : { ticketingDeadline }),
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('withOfficeTimeZone pega la zona sólo a un plazo en la hora de la oficina', () => {
+    expect(
+      withOfficeTimeZone(
+        lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+        'America/Lima',
+      ).ticketingDeadline,
+    ).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+    // Un plazo UTC ya tiene instante; una lectura sin plazo no gana uno.
+    const utc = lectura({ date: '2026-10-20', time: '18:00', zone: 'UTC' });
+    expect(withOfficeTimeZone(utc, 'America/Lima')).toBe(utc);
+    const sinPlazo = lectura();
+    expect(withOfficeTimeZone(sinPlazo, 'America/Lima')).toBe(sinPlazo);
+    // Una zona que el motor no conoce no se pega.
+    const local = lectura({ date: '2026-10-20', zone: 'PROVIDER_LOCAL' });
+    expect(withOfficeTimeZone(local, 'Marte/Olympus')).toBe(local);
+  });
+
+  it('la lectura sale con la zona que declara la cuenta, o con la de por defecto', async () => {
+    vi.spyOn(SabreOrderManageAdapter.prototype, 'retrieveForDisplay').mockResolvedValue(
+      lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+    );
+
+    const lima = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { pccTimeZone: 'America/Lima' } })),
+    ).forTenant('t1');
+    expect((await lima.retrieveForDisplay('ABC123', ctx)).ticketingDeadline).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+
+    // Sin zona declarada, la de la cuenta por defecto: la misma con que se pidió el plazo.
+    const porDefecto = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    expect((await porDefecto.retrieveForDisplay('ABC123', ctx)).ticketingDeadline?.timeZone).toBe(
+      'America/Bogota',
+    );
   });
 });
 

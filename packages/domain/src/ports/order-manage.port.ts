@@ -61,7 +61,8 @@ export interface TicketDocument {
  *
  * - `UTC`: la fecha y la hora son UTC y se pueden convertir a la hora de quien mira.
  * - `PROVIDER_LOCAL`: la fecha y la hora son las de la oficina del proveedor, que no dice en qué
- *   zona está. Se muestran tal cual y nunca se convierten: inventar la zona es imprimir otra hora.
+ *   zona está. Se muestran tal cual y no se convierten con una zona inventada: sólo con la que
+ *   declara la cuenta de la reserva (`TicketingDeadline.timeZone`).
  */
 export const TICKETING_DEADLINE_ZONES = ['UTC', 'PROVIDER_LOCAL'] as const;
 export type TicketingDeadlineZone = (typeof TICKETING_DEADLINE_ZONES)[number];
@@ -73,6 +74,13 @@ export interface TicketingDeadline {
   /** `HH:MM`, 24 h. Ausente si el proveedor sólo dio el día. */
   time?: string;
   zone: TicketingDeadlineZone;
+  /**
+   * Sólo con `PROVIDER_LOCAL`: la zona IANA de la oficina (`America/Bogota`), cuando la CUENTA con
+   * que se hizo la reserva la declara. El proveedor no la dice; la cuenta sí sabe dónde está su
+   * oficina. Con ella y con `time`, el plazo tiene instante y se puede avisar antes de que venza.
+   * Sin ella, la hora se muestra tal cual y nunca se convierte.
+   */
+  timeZone?: string;
 }
 
 /**

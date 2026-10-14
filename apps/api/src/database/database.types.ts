@@ -584,8 +584,20 @@ export interface FlightOrderTrackingTable {
   /** `HH:MM`; sólo con fecha. */
   ticketing_deadline_time: string | null;
   ticketing_deadline_zone: TicketingDeadlineZone | null;
-  /** Sólo con zona `UTC`: con la hora de la oficina del proveedor sería un instante inventado. */
+  /**
+   * 0084: zona IANA de la oficina del proveedor, la que declara la cuenta de la reserva. Sólo con
+   * zona `PROVIDER_LOCAL`.
+   */
+  ticketing_deadline_time_zone: string | null;
+  /**
+   * Con zona `UTC`, o (0084) con `PROVIDER_LOCAL` más hora y la zona de la oficina. Sin esa zona,
+   * la hora de la oficina daría un instante inventado.
+   */
   ticketing_deadline_at: Timestamp | null;
+  /** 0084: el aviso de «vence en menos de 24 h» del plazo vigente. NULL: no salió. */
+  deadline_alerted_24h_at: Timestamp | null;
+  /** 0084: el de «vence en menos de 2 h». Al salir marca también el de 24 h. */
+  deadline_alerted_2h_at: Timestamp | null;
   last_read_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;

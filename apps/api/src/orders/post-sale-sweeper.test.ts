@@ -25,6 +25,10 @@ import type {
   StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
 import type { FlightTicketIssueService, TicketIssueSweepReport } from './ticket-issue.service.js';
+import type {
+  DeadlineAlertSweepReport,
+  FlightDeadlineAlertService,
+} from './flight-deadline-alert.service.js';
 
 /**
  * El barrido de post-venta (docs/tbo/09 PR-4.7; 08 RNF-10): recorre los tenants uno por uno —la API
@@ -106,6 +110,12 @@ function informeDeEmisiones(parcial: Partial<TicketIssueSweepReport> = {}): Tick
   return { examined: 0, abandoned: 0, reconciling: 0, skipped: 0, ...parcial };
 }
 
+function informeDeAvisos(
+  parcial: Partial<DeadlineAlertSweepReport> = {},
+): DeadlineAlertSweepReport {
+  return { examined: 0, alerted: 0, mailed: 0, unmailed: 0, skipped: 0, failed: 0, ...parcial };
+}
+
 function banco(tenants: string[], redis = true) {
   const consulta = { tabla: '', columna: '', orden: '' };
   const db = {
@@ -142,6 +152,9 @@ function banco(tenants: string[], redis = true) {
   const sweepTicketIssues = vi.fn<FlightTicketIssueService['sweepTenant']>(() =>
     Promise.resolve(informeDeEmisiones()),
   );
+  const sweepDeadlineAlerts = vi.fn<FlightDeadlineAlertService['sweepTenant']>(() =>
+    Promise.resolve(informeDeAvisos()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -154,6 +167,7 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant: sweepReconciliation } as unknown as ReconciliationService,
     { sweepTenant: sweepStaleClaims } as unknown as StaleCancelClaimService,
     { sweepTenant: sweepTicketIssues } as unknown as FlightTicketIssueService,
+    { sweepTenant: sweepDeadlineAlerts } as unknown as FlightDeadlineAlertService,
   );
   return {
     sweeper,
@@ -163,6 +177,7 @@ function banco(tenants: string[], redis = true) {
     sweepReconciliation,
     sweepStaleClaims,
     sweepTicketIssues,
+    sweepDeadlineAlerts,
     queue,
     consulta,
     work,
@@ -312,6 +327,7 @@ describe('PostSaleSweeper — la corrida', () => {
     ]);
     expect(report).toEqual({
       ticketIssues: informeDeEmisiones(),
+      deadlineAlerts: informeDeAvisos(),
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
@@ -456,6 +472,36 @@ describe('PostSaleSweeper — la corrida', () => {
     expect(report.tenantsFailed).toBe(1);
   });
 
+  it('avisa del plazo de emisión por vencer, tenant por tenant y después de las emisiones (SAB-14)', async () => {
+    const b = banco([A, B]);
+    const orden: string[] = [];
+    b.sweepTicketIssues.mockImplementation((tenantId) => {
+      orden.push(`emisiones ${tenantId}`);
+      return Promise.resolve(informeDeEmisiones());
+    });
+    b.sweepDeadlineAlerts.mockImplementation((tenantId) => {
+      orden.push(`avisos ${tenantId}`);
+      return tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(
+            informeDeAvisos({ examined: 3, alerted: 2, mailed: 1, unmailed: 1, skipped: 1 }),
+          );
+    });
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepDeadlineAlerts.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    // Una emisión que la cola perdió se cierra antes: la orden recupera su aviso en la misma corrida.
+    expect(orden).toEqual(['emisiones ' + A, 'avisos ' + A, 'emisiones ' + B, 'avisos ' + B]);
+    expect(report.deadlineAlerts).toEqual(
+      informeDeAvisos({ examined: 3, alerted: 2, mailed: 1, unmailed: 1, skipped: 1 }),
+    );
+    expect(report.tenantsFailed).toBe(1);
+  });
+
   it('una conciliación que falla en un tenant no frena al resto del barrido', async () => {
     const b = banco([A, B]);
     b.sweepReconciliation.mockImplementation((tenantId) =>
@@ -527,6 +573,7 @@ describe('PostSaleSweeper — la corrida', () => {
     const b = banco([A]);
     expect(await b.sweeper.run()).toEqual({
       ticketIssues: informeDeEmisiones(),
+      deadlineAlerts: informeDeAvisos(),
       tenants: 1,
       tenantsFailed: 0,
       ...informe(),
