@@ -174,6 +174,8 @@ const ENTRADAS: [string, Clase][] = [
     'POST /admin/memberships/remove',
     'GET /admin/memberships/impact',
     'GET /admin/invitations',
+    'GET /admin/legacy-passwords',
+    'POST /admin/legacy-passwords/require-reset',
     'POST /invitations',
     'GET /invitations',
     'POST /invitations/:id/revoke',

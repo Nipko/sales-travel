@@ -262,6 +262,33 @@ export const ListPlatformInvitationsQuerySchema = z
 export type ListPlatformInvitationsQuery = z.infer<typeof ListPlatformInvitationsQuerySchema>;
 
 /**
+ * Cuántas cuentas heredadas se fuerzan por pedido (USR-14). El panel parte una selección más grande
+ * en lotes de este tamaño: cada correo se espera para decir si salió, y un pedido largo lo corta el
+ * borde (Cloudflare, 100 s).
+ */
+export const LEGACY_RESET_BATCH_MAX = 50;
+
+/**
+ * Forzar el cambio de contraseña a cuentas heredadas (POST /admin/legacy-passwords/require-reset):
+ * de 1 a {@link LEGACY_RESET_BATCH_MAX} ids, en minúsculas como los devuelve Postgres (si no, "uno
+ * mismo" no se veía). Un id repetido cuenta una vez: lo resuelve el servicio.
+ */
+export const RequireLegacyResetSchema = z
+  .object({
+    userIds: z
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((v) => v.toLowerCase()),
+      )
+      .min(1, 'elige al menos una cuenta')
+      .max(LEGACY_RESET_BATCH_MAX, `como mucho ${LEGACY_RESET_BATCH_MAX} cuentas por pedido`),
+  })
+  .strict();
+export type RequireLegacyResetDto = z.infer<typeof RequireLegacyResetSchema>;
+
+/**
  * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET
  * /admin/memberships/impact): suspenderla, quitarla del nodo (`removed`) o darle otro rol. Uno de los
  * dos: la pantalla pregunta por el cambio que está por confirmar.

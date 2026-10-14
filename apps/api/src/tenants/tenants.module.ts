@@ -8,6 +8,8 @@ import { InvitationPreviewController } from './invitation-preview.controller.js'
 import { InvitationPreviewService } from './invitation-preview.service.js';
 import { InvitationsController } from './invitations.controller.js';
 import { InvitationsService } from './invitations.service.js';
+import { LegacyPasswordsController } from './legacy-passwords.controller.js';
+import { LegacyPasswordsService } from './legacy-passwords.service.js';
 import { MemberDetailController } from './member-detail.controller.js';
 import { MemberDetailService } from './member-detail.service.js';
 import { MemberSupportController } from './member-support.controller.js';
@@ -32,6 +34,7 @@ import { UserExportService } from './user-export.service.js';
     MemberDetailController,
     AdminInvitationsController,
     UserExportController,
+    LegacyPasswordsController,
   ],
   providers: [
     InvitationsService,
@@ -43,6 +46,7 @@ import { UserExportService } from './user-export.service.js';
     MemberDetailService,
     AdminInvitationsService,
     UserExportService,
+    LegacyPasswordsService,
   ],
 })
 export class TenantsModule {}

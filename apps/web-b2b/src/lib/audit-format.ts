@@ -121,6 +121,8 @@ const LABELS: Readonly<Record<string, string>> = {
   'auth.session.released_by_admin': 'Puesto liberado',
   'auth.password_reset.sent_by_admin': 'Enlace para restablecer contraseña enviado',
   'auth.password_reset.required_by_admin': 'Cambio de contraseña forzado',
+  // USR-14: el lote del superadmin sobre las cuentas heredadas (cada cuenta deja además el de arriba).
+  'auth.password_reset.required_bulk': 'Forzó el cambio de contraseña a cuentas heredadas',
   'auth.lockout.cleared_by_admin': 'Cuenta desbloqueada',
   'auth.login.success': 'Ingresó',
   'auth.login.failed': 'Ingreso fallido',
@@ -595,8 +597,29 @@ export function eventDetail(
       parts.push(target, sessionsClosed(p['revoked']));
       break;
     case 'auth.password_reset.required_by_admin':
-      parts.push(target, sessionsClosed(p['revokedSessions']));
+      parts.push(
+        target,
+        sessionsClosed(p['revokedSessions']),
+        p['bulk'] === true ? 'En bloque: cuenta heredada' : null,
+      );
       break;
+    case 'auth.password_reset.required_bulk': {
+      // USR-14: cuántas quedaron obligadas y cuántas no, del lote.
+      const sent = count(p['sent']);
+      const mailFailed = count(p['emailFailed']);
+      const skipped = count(p['skipped']);
+      const failed = count(p['failed']);
+      const forced = sent === null && mailFailed === null ? null : (sent ?? 0) + (mailFailed ?? 0);
+      parts.push(
+        forced === null ? null : plural(forced, 'cuenta obligada', 'cuentas obligadas'),
+        skipped === null || skipped === 0 ? null : plural(skipped, 'omitida', 'omitidas'),
+        mailFailed === null || mailFailed === 0
+          ? null
+          : plural(mailFailed, 'correo sin enviar', 'correos sin enviar'),
+        failed === null || failed === 0 ? null : plural(failed, 'con error', 'con error'),
+      );
+      break;
+    }
     case 'auth.login.failed': {
       const reason = text(p['reason']);
       parts.push(reason === null ? null : (LOGIN_FAILURES[reason] ?? null));

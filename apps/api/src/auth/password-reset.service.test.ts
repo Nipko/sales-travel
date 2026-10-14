@@ -298,6 +298,29 @@ describe('requireReset: obligar a elegir una contraseña nueva', () => {
     });
     expect(JSON.stringify(audit.emitWithin.mock.calls)).not.toContain(res.token);
   });
+
+  it('en bloque (USR-14), el evento dice que fue en bloque y con qué lote', async () => {
+    const { service, k, audit } = banco();
+    const LOTE = '77777777-7777-4777-8777-777777777777';
+
+    await k.db.transaction().execute((trx) =>
+      service.requireReset(trx, {
+        actorUserId: ACTOR,
+        targetUserId: USER,
+        tenantId: null,
+        batchId: LOTE,
+      }),
+    );
+
+    expect(audit.emitWithin).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'auth.password_reset.required_by_admin',
+        tenantId: null,
+        payload: { targetUserId: USER, revokedSessions: 2, bulk: true, batchId: LOTE },
+      }),
+    );
+  });
 });
 
 describe('remindRequiredReset: al intentar ingresar con el cambio pendiente', () => {
@@ -629,8 +652,29 @@ describe('correo para restablecer la contraseña', () => {
     expect(hostil.html.match(/<a /g)).toHaveLength(1);
   });
 
-  it('los tres van en tú', () => {
-    for (const variant of ['self', 'admin', 'required'] as const) {
+  it('cuenta heredada (USR-14): por qué se lo pedimos, que no puede ingresar y que el enlace se renueva', () => {
+    const { html, text, subject } = passwordResetEmail('legacy', LINK, 60, 'Viajes Sur');
+    expect(subject).toBe('Elige una contraseña nueva · PlaneTour');
+    for (const body of [html, text]) {
+      expect(body).toContain('Elige una contraseña nueva');
+      expect(body).toContain(
+        'Tu cuenta en Viajes Sur se creó con una contraseña que eligió un administrador. Para que sólo tú la conozcas, elige una nueva. Hasta que lo hagas no vas a poder ingresar. El enlace vence en 60 minutos; si vence, al intentar ingresar te llega otro.',
+      );
+      expect(body).toContain('Si crees que es un error, avísale a tu administrador.');
+      expect(body).not.toContain('sigue funcionando');
+    }
+    const hostil = passwordResetEmail('legacy', LINK, 60, HOSTIL);
+    expect(hostil.html).not.toContain('<a href="https://evil.example');
+    expect(hostil.html.match(/<a /g)).toHaveLength(1);
+    expect(hostil.subject).toBe('Elige una contraseña nueva · PlaneTour');
+    expect(hostil.text).not.toContain('\r');
+    expect(passwordResetEmail('legacy', LINK, 60).text).toContain(
+      'Tu cuenta en la plataforma se creó',
+    );
+  });
+
+  it('los cuatro van en tú', () => {
+    for (const variant of ['self', 'admin', 'required', 'legacy'] as const) {
       const { html, text, subject } = passwordResetEmail(variant, LINK, 60, 'Viajes Sur');
       expect(voseoIn(`${subject}\n${html}\n${text}`)).toEqual([]);
     }
