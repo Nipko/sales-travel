@@ -10,6 +10,12 @@ export interface CreateOrderProviderResult {
   readonly outcome?: ProviderBookingOutcome;
   readonly pnr?: string;
   readonly orderId?: string;
+  /** Un ítem por cosa reservada; los asientos traen su número (SAB-16). */
+  readonly items?: readonly {
+    readonly kind?: string;
+    readonly status?: string;
+    readonly seatNumber?: string;
+  }[];
   readonly issues?: readonly {
     readonly severity: 'ERROR' | 'WARNING';
     readonly category: string;
@@ -25,6 +31,8 @@ export interface BookingOutcomeView {
   readonly error?: string;
   /** La cartera no cubrió la reserva (SAB-10): nada salió hacia la aerolínea. */
   readonly funding?: CreateOrderFundingView;
+  /** «El vuelo quedó reservado, pero la aerolínea no confirmó el asiento 12C.» (SAB-16) */
+  readonly seatNotices?: readonly string[];
 }
 
 export interface CreateOrderResponseBody {
