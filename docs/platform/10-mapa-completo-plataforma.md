@@ -726,7 +726,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /admin/incidents                 -- monitoreo + status page
 /admin/plataforma/usuarios       -- directorio de personas de toda la red, filtros y suspensión global (doc 15; el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
-/admin/audit                     -- log global
+/admin/plataforma/actividad      -- quién hizo qué, dónde y cuándo en toda la plataforma: filtros, detalle y CSV auditado (0078)
 /admin/reports                   -- métricas de plataforma
 ```
 
@@ -1112,7 +1112,56 @@ GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status
 GET    /admin/incidents
-GET    /admin/audit
+GET    /admin/audit?from&to&category&eventType&actorEmail&tenantId&includePlatform&aggregateType&aggregateId&cursor&limit
+                                         -- Plataforma → Actividad (implementado, 0078): quién hizo
+                                         -- qué, dónde y cuándo, en toda la plataforma.
+                                         -- admin_audit_events (SECURITY DEFINER, exige
+                                         -- is_platform_superadmin(): 42501 → 403
+                                         -- SUPERADMIN_REQUIRED). Días de Bogotá, 7 por defecto,
+                                         -- hasta 92 (400 AUDIT_PERIOD_INVALID; la base corta a los
+                                         -- 93). category = access (auth.) | team (User, Membership,
+                                         -- users.) | network (tenant., Tenant, booking., Markup,
+                                         -- mail.; sin tenant.provider_disclosure) | wallets
+                                         -- (portfolio., portfolios., wallet_hold.) | providers
+                                         -- (platform.provider, Provider,
+                                         -- tenant.provider_disclosure) | orders (Order, Hotel,
+                                         -- CarReservation, platform.order.) | system (system.,
+                                         -- platform.announcement, platform.audit, platform.orders):
+                                         -- prefijos de event_type, sin solaparse
+                                         -- (apps/api/src/audit/audit-categories.ts; la web los
+                                         -- espeja en lib/platform-audit). Sin category ("Todo")
+                                         -- quedan fuera los system.* (los latidos del barrido),
+                                         -- salvo eventType = uno de ellos. eventType exacto;
+                                         -- actorEmail exacto (users, CITEXT; uno que no es de nadie
+                                         -- da [] sin leer); tenantId = el nodo y su subárbol (404
+                                         -- PLATFORM_CONSOLE_SCOPE_NOT_FOUND); includePlatform = los
+                                         -- eventos sin nodo (por defecto sí sin tenantId, no con
+                                         -- él); aggregateType/aggregateId exactos. Del más nuevo al
+                                         -- más viejo, cursor (occurred_at con microsegundos + id),
+                                         -- 50 por página, hasta 200 (idx_domain_events_time).
+                                         -- { events: [{id, occurredAt, eventType, tenantId,
+                                         -- tenantName, actorEmail, targetEmail, aggregateType,
+                                         -- aggregateId, payload (redactPayload), meta {ip,
+                                         -- userAgent, requestId}}], nextCursor }: el id de la
+                                         -- sesión no sale de la base.
+GET    /admin/audit/export?<los mismos filtros>
+                                         -- La vista en CSV (text/csv, UTF-8 con BOM, CRLF): fecha
+                                         -- (Bogotá con desfase), evento, nodo, actor, entidad,
+                                         -- id_entidad, ip; ni payload ni navegador. Hasta 5.000 (los
+                                         -- más nuevos; X-Export-Rows, X-Export-Truncated). Celdas
+                                         -- con = + - @ llevan apóstrofo (admin-console/csv.ts, que
+                                         -- reusa ADM-14). @RequireRecentMfa (2FA de los últimos 10
+                                         -- min, USR-13). Escribe platform.audit.exported {filters
+                                         -- (el actor por su id; actorNotFound si el correo no era de
+                                         -- nadie), rows, truncated} en la raíz platform, en la misma
+                                         -- transacción que la lectura: sin rastro no hay archivo. En
+                                         -- el panel: /admin/plataforma/actividad (BFF
+                                         -- /api/admin/audit y /api/admin/audit/export, éste sólo
+                                         -- desde el mismo origen y con withStepUp). Los filtros van
+                                         -- en la URL (?categoria&desde&hasta&nodo&tipo&entidad&id)
+                                         -- salvo el correo; la ficha de una reserva enlaza con
+                                         -- ?entidad=order&id= y usa los mismos nombres de evento
+                                         -- (lib/audit-format).
 GET    /admin/feature-flags
 PATCH  /admin/feature-flags/:key
 ```

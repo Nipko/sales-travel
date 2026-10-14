@@ -23,6 +23,9 @@ const SCANNED = [
   'auth',
   'tenants',
   'zod',
+  // Plataforma → Actividad y el historial de una persona (sus mensajes llegan al panel).
+  'audit',
+  'admin-console/csv.ts',
   'all-exceptions.filter.ts',
   'mail/security-notices.ts',
   'mail/security-notice.service.ts',

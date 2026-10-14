@@ -1101,6 +1101,11 @@ export interface SystemAnnouncementsTable {
   archived_at: Timestamp | null;
 }
 
+/**
+ * El audit log, append-only (0015), con RLS por subárbol (0029). Toda la plataforma, eventos sin
+ * nodo incluidos, sólo se lee por funciones del superadmin: platform_user_audit_trail (0065) y
+ * admin_audit_events (0078, Plataforma → Actividad; índice idx_domain_events_time).
+ */
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;

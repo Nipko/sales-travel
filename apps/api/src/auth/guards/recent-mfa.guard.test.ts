@@ -215,8 +215,10 @@ describe('dónde corre y qué rutas la llevan', () => {
       }))
       .filter((r) => r.minutes !== undefined);
     // Enviar el enlace la pide sólo si la persona es admin: lo decide MemberSupportService. Cerrar
-    // sesiones y desbloquear son el soporte de todos los días: no la llevan.
+    // sesiones y desbloquear son el soporte de todos los días: no la llevan. Exportar a CSV sí
+    // (la Actividad de la plataforma, ADM-8).
     expect(marked.sort((a, b) => a.route.localeCompare(b.route))).toEqual([
+      { route: 'GET /admin/audit/export', minutes: 10 },
       { route: 'PATCH /admin/users/status', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/require-password-reset', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/reset-mfa', minutes: 10 },

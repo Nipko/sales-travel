@@ -1,5 +1,10 @@
 import type { Route } from 'next';
 import {
+  ADMIN_ORDER_ACTION_LABELS,
+  eventLabel as auditEventLabel,
+  type AdminOrderActionKind,
+} from './audit-format';
+import {
   ATTENTION_REASON_LABEL,
   isOrderAttentionReason,
   type OrderAttentionReason,
@@ -543,7 +548,7 @@ export interface OrderEventView {
 }
 
 /** Las acciones de post-venta del superadmin (`action` de `platform.order.action`). */
-export type AdminOrderActionKind = 'send-confirmation' | 'retrieve' | 'retry-cancel' | 'cancel';
+export type { AdminOrderActionKind };
 
 export interface AdminActionEventView {
   readonly action: AdminOrderActionKind;
@@ -1004,49 +1009,19 @@ export const RECONCILIATION_SEVERITY_VIEW: Readonly<
 };
 
 /**
- * Los eventos más comunes de una reserva, con un nombre corto. Uno que no está sale por su código:
- * al menos es diagnosticable.
+ * El nombre de un evento de la reserva: el mismo que en Plataforma → Actividad (lib/audit-format).
+ * Uno que no tiene nombre sale por su código: al menos es diagnosticable.
  */
-const EVENT_LABEL: Readonly<Record<string, string>> = {
-  OrderCreateRequested: 'Se pidió la reserva al proveedor',
-  OrderCreated: 'Respondió el proveedor',
-  OrderCreateFailed: 'Falló el pedido al proveedor',
-  OrderCreationVerified: 'Reserva verificada con el proveedor',
-  OrderCompensationScheduled: 'Se programó una compensación',
-  OrderEscalated: 'Pasó a revisión de una persona',
-  OrderCancellationAttempted: 'Se intentó cancelar',
-  OrderProviderStatusChanged: 'Cambió el estado en el proveedor',
-  OrderReconciliationDiscrepancy: 'Diferencia en la conciliación',
-  HotelConfirmationNumberReceived: 'Llegó la confirmación del hotel (HCN)',
-  HotelConfirmationNumberMissing: 'Sin confirmación del hotel (HCN)',
-  HotelOfferRepriced: 'El proveedor cambió el precio',
-  HotelNonRefundableAcknowledged: 'Se aceptó la tarifa no reembolsable',
-  CarReservationCreated: 'Reserva de auto creada',
-};
-
 export function eventLabel(eventType: string): string {
-  return EVENT_LABEL[eventType] ?? eventType;
+  return auditEventLabel(eventType, {}).text;
 }
-
-const ADMIN_ACTION_LABEL: Readonly<Record<AdminOrderActionKind, string>> = {
-  'send-confirmation': 'El superadmin reenvió la confirmación',
-  retrieve: 'El superadmin consultó el estado al proveedor',
-  'retry-cancel': 'El superadmin reintentó la cancelación',
-  cancel: 'El superadmin canceló la reserva',
-};
-
-const ADMIN_ACTION_FAILED_LABEL: Readonly<Record<AdminOrderActionKind, string>> = {
-  'send-confirmation': 'El superadmin intentó reenviar la confirmación',
-  retrieve: 'El superadmin intentó consultar el estado al proveedor',
-  'retry-cancel': 'El superadmin intentó reintentar la cancelación',
-  cancel: 'El superadmin intentó cancelar la reserva',
-};
 
 /** El nombre de un evento de la Actividad; una acción del superadmin dice cuál y si salió. */
 export function eventText(event: Pick<OrderEventView, 'eventType' | 'adminAction'>): string {
   const action = event.adminAction;
   if (action === null) return eventLabel(event.eventType);
-  return action.ok ? ADMIN_ACTION_LABEL[action.action] : ADMIN_ACTION_FAILED_LABEL[action.action];
+  const labels = ADMIN_ORDER_ACTION_LABELS[action.action];
+  return action.ok ? labels.ok : labels.failed;
 }
 
 /** Estados del proveedor (de hoteles) que dicen que la reserva sigue en pie o ya no. */

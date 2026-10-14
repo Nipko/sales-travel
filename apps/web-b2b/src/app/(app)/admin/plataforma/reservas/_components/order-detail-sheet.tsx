@@ -1,6 +1,7 @@
 'use client';
 
-import { RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { History, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { NodeKindBadge } from '../../../../../../components/network/node-kind';
@@ -16,6 +17,7 @@ import {
   type PlatformOrderAction,
   type ProviderReadingView,
 } from '../../../../../../lib/platform-order-actions';
+import { orderActivityHref } from '../../../../../../lib/platform-audit';
 import { PLATFORM_TIME_ZONE } from '../../../../../../lib/platform-overview';
 import {
   ORDER_STATUS_VIEW,
@@ -572,6 +574,14 @@ export function OrderDetailContent({
             ))}
           </ol>
         )}
+        {/* La de toda la plataforma: también quién abrió la ficha, con su IP y su navegador. */}
+        <Link
+          href={orderActivityHref(order.id, order.createdAt, new Date(now))}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+        >
+          <History aria-hidden="true" className="size-3.5" />
+          Ver toda la actividad de la reserva
+        </Link>
       </Section>
 
       <p className="flex items-start gap-2 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-fg-muted)]">
