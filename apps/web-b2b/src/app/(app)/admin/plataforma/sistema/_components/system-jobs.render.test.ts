@@ -29,17 +29,21 @@ function textOf(html: string): string {
 }
 
 describe('Sistema en su primer pintado', () => {
-  const html = renderToStaticMarkup(createElement(SystemConsole));
+  const html = renderToStaticMarkup(
+    createElement(SystemConsole, { current: 'procesos', children: createElement(SystemJobsPanel) }),
+  );
 
-  it('título, subtítulo y la pestaña Procesos, con los procesos anunciando que cargan', () => {
+  it('título, subtítulo y la sección Procesos, con los procesos anunciando que cargan', () => {
     expect(html).toContain('<h1');
     expect(textOf(html)).toContain('Sistema');
     expect(textOf(html)).toContain(
       'Lo que corre solo: barridos, conciliaciones y sincronizaciones.',
     );
-    expect(html).toContain('role="tablist"');
-    expect(html).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>Procesos</);
-    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain('aria-label="Secciones de Sistema"');
+    expect(html).toMatch(
+      /<a aria-current="page"[^>]*href="\/admin\/plataforma\/sistema">.*?Procesos</s,
+    );
+    expect(html).toContain('href="/admin/plataforma/sistema/anuncios"');
     expect(html).toContain('aria-busy="true"');
     expect(textOf(html)).toContain('Cargando los procesos…');
     expect(textOf(html)).toContain('Actualizar');

@@ -24,6 +24,7 @@ import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { BookingPermissionsModule } from './booking-permissions/booking-permissions.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { AdminConsoleModule } from './admin-console/admin-console.module.js';
+import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
 import { ProviderEnablementAdminModule } from './provider-enablement/provider-enablement-admin.module.js';
@@ -65,6 +66,7 @@ import { PackagesModule } from './packages/packages.module.js';
     BookingPermissionsModule,
     ReportsModule,
     AdminConsoleModule,
+    AnnouncementsModule,
     ProviderCredentialsModule,
     ProviderDisclosureModule,
     ProviderEnablementAdminModule,

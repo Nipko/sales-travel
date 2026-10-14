@@ -73,6 +73,12 @@ const SCANNED = [
   'app/api/admin/system',
   'lib/platform-system.ts',
   'lib/platform-system-client.ts',
+  // Plataforma → Sistema › Anuncios y la franja de avisos del panel (la carpeta de Sistema ya está).
+  'app/api/admin/announcements',
+  'app/api/announcements',
+  'components/layout/announcement-banner.tsx',
+  'lib/announcements.ts',
+  'lib/announcements-client.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

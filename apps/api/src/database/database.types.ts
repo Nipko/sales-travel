@@ -1084,6 +1084,23 @@ export interface ProviderKillSwitchesTable {
   expires_at: Timestamp | null;
 }
 
+/** Anuncios de la plataforma (0079). Sólo los lee y escribe el superadmin; el resto, por active_announcements(). */
+export interface SystemAnnouncementsTable {
+  id: Generated<string>;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  body: Generated<string>;
+  /** NULL = toda la red. */
+  audience_root_tenant_id: string | null;
+  audience_admins_only: Generated<boolean>;
+  starts_at: Timestamp;
+  ends_at: RequiredTimestamp;
+  created_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  archived_at: Timestamp | null;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -1173,6 +1190,7 @@ export interface DB {
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;
   provider_kill_switches: ProviderKillSwitchesTable;
+  system_announcements: SystemAnnouncementsTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

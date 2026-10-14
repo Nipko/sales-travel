@@ -13,6 +13,9 @@ import type { Tone } from './wallets';
 
 export const PLATFORM_SISTEMA: Route = '/admin/plataforma/sistema';
 
+/** Sistema › Anuncios: los avisos que la plataforma publica para la red (0079). */
+export const PLATFORM_SISTEMA_ANUNCIOS: Route = '/admin/plataforma/sistema/anuncios';
+
 export interface PostSaleSweep {
   /** ISO 8601: la última corrida, correcta o no. */
   readonly lastRunAt: string | null;
