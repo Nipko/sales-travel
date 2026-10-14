@@ -21,6 +21,36 @@ export const SABRE_HOSTS = {
 
 export type SabreEnvironment = keyof typeof SABRE_HOSTS;
 
+/** Los nombres de host de CERT, sacados de {@link SABRE_HOSTS} para que no haya una segunda lista. */
+const SABRE_CERT_HOSTNAMES: ReadonlySet<string> = new Set(
+  Object.values(SABRE_HOSTS.cert).map((url) => new URL(url).hostname),
+);
+
+/**
+ * El entorno de Sabre al que apunta una URL, mirando SÓLO el host: lo que la cuenta declare en
+ * `environment` no entra.
+ *
+ * - `cert`: uno de los hosts de CERT de {@link SABRE_HOSTS}.
+ * - `prod`: cualquier otro host de `sabre.com`. No sólo los de {@link SABRE_HOSTS}: un host dedicado
+ *   que Sabre asigne a una agencia, o uno de los históricos, también factura, y equivocarse hacia
+ *   CERT es lo que apagaría las retenciones de una red entera.
+ * - `undefined`: no es una URL http(s) o no es de Sabre (un proxy, un doble local). Desde el host no
+ *   se puede saber a qué entorno llega, y quien pregunta decide qué hacer con la duda.
+ */
+export function sabreHostEnvironment(url: string): SabreEnvironment | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (SABRE_CERT_HOSTNAMES.has(hostname)) return 'cert';
+  if (hostname === 'sabre.com' || hostname.endsWith('.sabre.com')) return 'prod';
+  return undefined;
+}
+
 /** El literal `AA` del `clientId` REST (`V1:{epr}:{pcc}:AA`) — docs/sabre/01 §2.1. */
 export const SABRE_DEFAULT_DOMAIN = 'AA';
 

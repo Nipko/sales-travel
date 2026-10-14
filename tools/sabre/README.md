@@ -3,6 +3,9 @@
 Utilidades de la integración de Sabre. Ninguna forma parte del runtime: son herramientas de análisis y de
 validación contra el sandbox de certificación.
 
+Para reservar, emitir, anular o reembolsar en CERT con la cuenta de la bóveda y por el mismo código que producción,
+está el arnés de certificación de la API (SAB-11): ver [`docs/sabre/evidence/README.md`](../../docs/sabre/evidence/README.md#arnés-de-certificación-contra-cert-sab-11).
+
 | Script              | Qué hace                                                                                                                                             |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `audit-postman.mjs` | Recalcula los conteos que citan los documentos de `docs/sabre/` sobre la colección Postman. Sirve para verificar que un documento no inventa cifras. |

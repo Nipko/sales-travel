@@ -930,6 +930,16 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     return { adapter, ...account };
   }
 
+  /**
+   * La config del ACL con la que este factory construye el adapter de esa cuenta: los mismos hosts,
+   * el mismo entorno y la misma credencial. La usa el arnés de certificación (SAB-11) para comprobar
+   * contra CERT exactamente lo que va a salir. Lleva la contraseña descifrada: no sale del proceso
+   * ni entra en un log.
+   */
+  configFor(resolved: ResolvedProviderAccount): SabreConfig {
+    return this.toConfig(resolved.credentials, resolved.config, resolved.ownerTenantId);
+  }
+
   /** Los errores del ACL ya tienen traducción propia, y NO hace eco del texto de Sabre. */
   humanizeError(err: unknown): string {
     return humanizeSabreError(err);

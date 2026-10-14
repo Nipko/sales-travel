@@ -5,6 +5,7 @@ import {
   hasUsableSabreCredentials,
   missingSabreCredentials,
   parseSabreConfig,
+  sabreHostEnvironment,
   sabreUrl,
   type SabreConfig,
 } from './config';
@@ -88,5 +89,46 @@ describe('sabreUrl', () => {
     expect(sabreUrl(fullConfig({ host: 'https://h.test' }), 'v5/offers/shop')).toBe(
       'https://h.test/v5/offers/shop',
     );
+  });
+});
+
+/**
+ * El entorno que dice el HOST, sin mirar lo que la cuenta declara. Es la regla con la que el arnés de
+ * certificación se niega a salir de CERT y con la que una cuenta que apunta a producción no puede
+ * pasar por cuenta de pruebas.
+ */
+describe('sabreHostEnvironment', () => {
+  it.each([[SABRE_HOSTS.cert.rest], [SABRE_HOSTS.cert.soap]])('%s es CERT', (url) => {
+    expect(sabreHostEnvironment(url)).toBe('cert');
+  });
+
+  it.each([[SABRE_HOSTS.prod.rest], [SABRE_HOSTS.prod.soap]])('%s es producción', (url) => {
+    expect(sabreHostEnvironment(url)).toBe('prod');
+  });
+
+  it('el host manda: ni la ruta, ni la barra final, ni las mayúsculas cambian el entorno', () => {
+    expect(sabreHostEnvironment('https://API.CERT.platform.sabre.com/v1/offers/')).toBe('cert');
+    expect(sabreHostEnvironment('https://api.cert.platform.sabre.com.')).toBe('cert');
+    expect(sabreHostEnvironment('https://api.platform.sabre.com:443/v5')).toBe('prod');
+  });
+
+  it('cualquier otro host de sabre.com cuenta como producción, no como CERT', () => {
+    // Un host dedicado o uno histórico también factura: la duda se resuelve hacia producción.
+    expect(sabreHostEnvironment('https://agencia-x.platform.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://api.havail.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://sabre.com')).toBe('prod');
+  });
+
+  it('un host que sólo se parece a Sabre no es de Sabre', () => {
+    expect(sabreHostEnvironment('https://api.cert.platform.sabre.com.evil.test')).toBeUndefined();
+    expect(sabreHostEnvironment('https://evilsabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('https://sabre.com.evil.test')).toBeUndefined();
+  });
+
+  it('sin URL http(s) de Sabre no hay entorno que leer', () => {
+    expect(sabreHostEnvironment('http://127.0.0.1:4010')).toBeUndefined();
+    expect(sabreHostEnvironment('api.cert.platform.sabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('ftp://api.cert.platform.sabre.com')).toBeUndefined();
+    expect(sabreHostEnvironment('')).toBeUndefined();
   });
 });

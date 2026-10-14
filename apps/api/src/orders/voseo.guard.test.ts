@@ -58,6 +58,8 @@ const NO_VOSEO: ReadonlySet<string> = new Set([
   'allá',
   'allí',
   'aquí',
+  // Sustantivo: el arnés de certificación de Sabre (`providers-sabre/cert-run`).
+  'arnés',
   'así',
   'atrás',
   'bogotá',
