@@ -1,3 +1,5 @@
+import type { CreateOrderFundingView } from './create-order-funding';
+
 /** Desenlaces que el proveedor puede afirmar de forma explícita. */
 export type ProviderBookingOutcome = 'CONFIRMED' | 'PARTIAL' | 'PENDING' | 'FAILED';
 
@@ -21,6 +23,8 @@ export interface BookingOutcomeView {
   /** UUID de la fila local que debe conciliarse. */
   readonly orderId?: string;
   readonly error?: string;
+  /** La cartera no cubrió la reserva (SAB-10): nada salió hacia la aerolínea. */
+  readonly funding?: CreateOrderFundingView;
 }
 
 export interface CreateOrderResponseBody {

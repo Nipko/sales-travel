@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Hourglass,
   Search,
+  Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
@@ -35,6 +36,7 @@ import {
   type TicketConditionsOrder,
   type VoidResult,
 } from '../ticket-conditions-view';
+import { walletReleaseNote } from '../wallet-hold-view';
 
 /*
  * «Condiciones de los tiquetes» en el detalle de una reserva emitida (SAB-09): consultar en vivo si
@@ -49,6 +51,8 @@ import {
 export interface TicketConditionsOrderInput extends TicketConditionsOrder {
   readonly id: string;
   readonly testContent?: boolean;
+  /** Saldo retenido en la cartera que anular libera (SAB-10), como lo manda `/orders`. */
+  readonly walletHold?: unknown;
 }
 
 type CheckPhase =
@@ -177,6 +181,7 @@ export function VoidConfirmDialog({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const walletNote = walletReleaseNote(order);
   return (
     <Dialog
       open
@@ -207,6 +212,12 @@ export function VoidConfirmDialog({
           <p className="flex items-start gap-2 rounded-lg border border-[var(--color-warning)]/60 bg-[var(--color-warning)]/10 px-3 py-2.5 text-[var(--color-fg)]">
             <FlaskConical aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{M.testNote}</span>
+          </p>
+        ) : null}
+        {walletNote ? (
+          <p className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-[var(--color-fg)]">
+            <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{walletNote}</span>
           </p>
         ) : null}
         {voiding ? (
