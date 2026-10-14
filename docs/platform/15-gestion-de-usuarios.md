@@ -54,7 +54,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | **Hecho (USR-13; D1 = C)**: pide el código si pasaron 10 minutos          |
 | Activar el 2FA por primera vez (o tras un restablecimiento) pide la contraseña | Seguridad / pantalla de 2FA obligatoria   | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-13b)**: suma al bloqueo y avisa por correo                   |
-| Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
+| Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma → Usuarios → aviso             | Superadmin. Nunca la propia                                                               | **Hecho (USR-14; D3 = B)**: lista para revisar, resultado por cuenta      |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
 | Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | **Hecho (USR-16)**: lo mismo que la pantalla; pide el 2FA y queda rastro  |
 | Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-18)**: con historial; sólo la propia cuenta (0069)           |
@@ -849,7 +849,7 @@ Sin cambios en la base: la ventana se mide con `sessions.mfa_verified_at`, que y
 | Enviarle el enlace para restablecer la contraseña          | Si tiene un rol de admin en algún nodo |
 | Quitarla de un nodo (USR-11)                               | Si su rol en ese nodo es de admin      |
 | Exportar a CSV (la Actividad, ADM-8; los usuarios, USR-16) | Siempre                                |
-| Forzar el cambio de contraseña en bloque (USR-14)          | Siempre, cuando exista                 |
+| Forzar el cambio de contraseña en bloque (USR-14)          | Siempre                                |
 | Desbloquear, cerrar sus sesiones, cerrar una sesión        | No                                     |
 
 "Rol de admin" = `ADMIN_ROLES` (de `admin` para arriba, incluidos los de plataforma), en cualquiera
@@ -864,9 +864,9 @@ de sus nodos, no sólo en el de la ruta.
   después de autorizar (así lo hacen `MemberSupportService.sendPasswordReset` y
   `AdminController.removeMembership`): a quien no podía hacerlo igual no se le pide el código. Hoy
   llevan la marca `PATCH /admin/users/status`, `POST /tenants/:id/members/:userId/reset-mfa`,
-  `.../require-password-reset`, `GET /admin/audit/export` (ADM-8), `GET /admin/exports/users` y
-  `GET /tenants/:id/members-export` (USR-16); un test fija esa lista contra la metadata real de
-  `AppModule`.
+  `.../require-password-reset`, `GET /admin/audit/export` (ADM-8), `GET /admin/exports/users`,
+  `GET /tenants/:id/members-export` (USR-16) y `POST /admin/legacy-passwords/require-reset` (USR-14);
+  un test fija esa lista contra la metadata real de `AppModule`.
 - Sin el 2FA reciente: **403 `MFA_RECENT_REQUIRED`** ("Confirma con tu código de verificación en
   dos pasos para seguir."). 403 y no 401: la sesión sigue viva. Quien no tiene el 2FA activo (los
   roles que no lo exigen: `agency_admin`, `admin`) recibe **403 `MFA_REQUIRED_FOR_ACTION`** ("Para
@@ -898,7 +898,8 @@ de sus nodos, no sólo en el de la ruta.
   no hay error que mostrar. Dos acciones a la vez comparten un solo código. La llamada envuelta
   tiene que devolver el `reason` del API en el fallo (`StepUpAware<T>`): hoy `runMemberAction`
   (todas las acciones de soporte de Equipo y de la ficha), `removeMembership` (quitar del nodo),
-  `setPlatformUserStatus` y las exportaciones `exportPlatformUsers` y `exportTeam` (USR-16).
+  `setPlatformUserStatus`, las exportaciones `exportPlatformUsers` y `exportTeam` (USR-16) y cada
+  lote de `requireLegacyResets` (USR-14).
 - `StepUpProvider` (`apps/web-b2b/src/components/step-up-dialog.tsx`), montado una vez en el layout
   del panel: **"Confirma que eres tú"**, "Escribe el código de 6 dígitos de tu app de
   autenticación.", seis casillas (`inputMode="numeric"`, `autocomplete="one-time-code"`); se envía
@@ -1514,3 +1515,152 @@ pantalla muestra, nada más, y cada exportación queda en la auditoría.
 - Como en la Actividad (ADM-8), el 2FA se pide antes de saber si quien pide puede: un admin que
   intenta exportar un nodo ajeno escribe el código y después recibe el 403. El panel sólo le ofrece
   los nodos de su red.
+
+## Forzar el cambio de contraseña a las cuentas heredadas (USR-14)
+
+Founder D3 = B. Hasta el alta sólo por invitación (2026-09-30, doc 14), `POST /admin/users` con un
+correo nuevo y `POST /admin/tenants` con `adminPassword` creaban la cuenta con la contraseña que
+escribía el admin, y esas cuentas la conservan hasta que la persona la cambie. Ahora el superadmin
+las ve en una lista, elige cuáles y les fuerza el cambio en una sola acción: a cada una le pasa lo
+mismo que con _Forzar cambio de contraseña_ de Equipo (USR-3), y nadie elige la contraseña por ella.
+
+### Base
+
+- Sin migración. El criterio sale de columnas que ya existían.
+
+### El criterio: qué es una cuenta heredada
+
+Sale de los datos, no de los eventos. Una cuenta aparece si:
+
+1. **Nació con una membership que le dio otra cuenta, en la misma transacción**: una membership con
+   `invited_by` no nulo y distinto de ella y `memberships.created_at = users.created_at` (`now()` es
+   el inicio de la transacción, así que son el mismo instante). Sólo los dos caminos retirados
+   hacían eso. Aceptar una invitación (desde 1e09bd6), el alta pública y los seeds
+   (`seed-superadmin`, `seed-tbo-cert-tenant`) nunca ponen `invited_by` en la membership, y vincular
+   una cuenta que ya existía (`existingUserLinked`) crea la membership en otra transacción.
+2. **Conserva la contraseña con que nació**: `password_hash` no nulo y `password_changed_at` nulo. El
+   canje de un enlace y Mi cuenta → Seguridad lo fijan; antes de 0026 no había ninguna forma de
+   cambiarla (0026 agregó la columna sin rellenarla).
+3. **Está activa y sin un cambio forzado pendiente** (`status = 'active'`,
+   `password_reset_required_at` nulo), y no es quien mira.
+
+Los eventos dicen lo mismo, pero no alcanzan: `UserCreated` existe desde 2026-08-06 y `TenantCreated`
+con `admin: 'created'` desde 2026-09-28, y los dos caminos existen desde 2026-05-05. El test de
+integración siembra cuentas con y sin evento.
+
+**Lo que no se reconoce** (falsos negativos): una cuenta cuyo admin creador ya no existe
+(`invited_by` pasa a `NULL` al borrarlo) o cuya membership original se borró con su nodo. Esas se
+fuerzan de a una desde Equipo (USR-3). No hay falsos positivos conocidos. Igual la lista dice dónde
+nació cada cuenta y quién eligió la contraseña, para que el superadmin la revise antes de forzar.
+
+### API
+
+- **`GET /admin/legacy-passwords`** → `{ users, truncated }`: cada cuenta con `id`, `email`, `name`,
+  `createdAt`, `lastLoginAt`, `activeNodes` (sus accesos activos hoy; con cero igual aparece, porque
+  puede volver con una invitación y su contraseña de siempre) y `origin`
+  (`{ tenantId, tenantName, createdByEmail }`; `createdByEmail` es `null` si esa cuenta ya no
+  existe). Las más recientes primero, hasta 500 (`truncated` si había más). No pide el 2FA: sólo lee.
+- **`POST /admin/legacy-passwords/require-reset`** `{ userIds }` (Zod estricto: de 1 a 50 UUID, en
+  minúsculas; uno repetido cuenta una vez) → `200 { results, counts }`. Pide el **2FA de los últimos
+  10 minutos** (`@RequireRecentMfa`, en la lista del test del guard) y como mucho **10 lotes por
+  minuto** (`@Throttle`, 429).
+  - Primero los cambios, uno por cuenta y cada uno en su transacción: toma la fila del usuario
+    (`FOR NO KEY UPDATE`, el mismo orden usuario → enlaces de USR-3), vuelve a mirar el criterio
+    (la lista pudo quedar vieja) y `PasswordResetService.requireReset` la marca, cierra todas sus
+    sesiones, deja sin efecto sus enlaces y emite uno nuevo. Una cuenta que falla queda `failed` y
+    no frena a las demás.
+  - Después los correos, hasta 5 a la vez, por el correo de su nodo activo más antiguo (el mismo que
+    usan los avisos de USR-12, `mail/mail-node.ts`), con la variante nueva `legacy`: "Tu cuenta en
+    {nodo} se creó con una contraseña que eligió un administrador. Para que sólo tú la conozcas,
+    elige una nueva…". Sale después del commit. Si no sale, `email_failed`: el cambio igual quedó y
+    al intentar ingresar le llega otro enlace (USR-3).
+  - Cada resultado: `sent` o `email_failed` (con `revokedSessions`), `skipped` con `reason`
+    (`self`, `suspended`, `already_required`, `password_changed`, `not_candidate`) o `failed`.
+    `counts = { sent, emailFailed, skipped, failed }`.
+  - Lotes de 50 porque cada correo se espera para decir si salió, y un pedido largo lo corta el
+    borde (Cloudflare, 100 s). El panel parte una selección más grande.
+- **Idempotente**: quien ya tiene el cambio pendiente deja de ser candidato. Volver a correr el lote
+  lo omite (`already_required`) sin escribirle otra vez ni tocar su enlace.
+- **Sólo el superadmin**, en el servicio (`LegacyPasswordsService`) antes de leer nada: 403
+  `SUPERADMIN_REQUIRED` a cualquier otro. Como en las exportaciones, el 2FA se pide antes: un admin
+  de nodo con 2FA viejo escribe el código y después recibe el 403. El panel no le ofrece la acción.
+- **El rastro**: cada cuenta deja `auth.password_reset.required_by_admin` en su transacción, en su
+  nodo (lo ve la Actividad de ese nodo y el historial de la persona), con
+  `{ targetUserId, revokedSessions, bulk: true, batchId }`. Un correo que no sale deja
+  `auth.password_reset.email_failed` (`{ targetUserId, via: 'legacy', batchId }`). Al final, el
+  lote deja `auth.password_reset.required_bulk` en la raíz `platform`, con
+  `{ batchId, requested, sent, emailFailed, skipped, failed }`: nunca correos. Si ese último no se
+  escribe, se avisa en el log y la respuesta sale igual (los cambios ya están hechos y auditados).
+- El log nunca lleva el correo ni el mensaje de la base: el id de la cuenta, el lote y la clase del
+  error.
+
+### Panel
+
+- **Plataforma → Usuarios**, pestaña _Usuarios_: si hay cuentas, el aviso "Hay {n} cuentas con una
+  contraseña que eligió un admin antes del alta por invitación." ("Hay más de 500…" si la lista se
+  cortó) con **Revisarlas**. Si la lista no carga, no hay aviso: el directorio sigue igual.
+- **El diálogo** "Contraseñas elegidas por un admin": por qué están ahí, y una casilla por cuenta,
+  todas elegidas al abrir, con **Seleccionar todas** (mixta si hay algunas) y "{k} de {n} elegidas".
+  Cada fila: nombre y correo, "Creada por {admin} en {nodo} · {fecha}" (o "Creada en {nodo}" si el
+  admin ya no existe), "Último ingreso: …" o "Nunca ingresó" y sus nodos activos. La fila entera es
+  la etiqueta de su casilla.
+- **Forzar el cambio a {k} cuentas** (destructivo) confirma "Forzar el cambio de contraseña a {k}
+  cuentas" / "Se cierran sus sesiones y cada persona recibe un enlace para elegir una contraseña
+  nueva. No pueden ingresar hasta hacerlo.". Si el 2FA no es de los últimos 10 minutos, el diálogo
+  del código (`withStepUp`); cerrarlo no hace nada.
+- **En lotes de 50**, uno después del otro (`requireLegacyResets`, `lib/legacy-passwords.ts`); el
+  botón dice "Forzando el cambio… {x} de {k}" y el diálogo no se cierra mientras corre. Si el primer
+  lote falla, no se hizo nada y el error queda arriba de la lista. Si falla uno posterior, la corrida
+  se detiene y lo dice: las cuentas de ese lote quedan **Sin confirmar** si el servidor no respondió
+  (pudo aplicarse: hay que volver a abrir la lista) o **Sin procesar** si el API lo rechazó (429,
+  403), y las de los lotes siguientes **Sin procesar**.
+- **El resultado por cuenta**, con el resumen arriba (también como aviso): "Listo: {a} cuentas tienen
+  que elegir una contraseña nueva. {s} se omitieron. A {f} no les llegó el correo: al intentar
+  ingresar les llega otro.". Cada fila: _Enlace enviado_, _Cambio forzado, pero el correo no salió_
+  (con qué hacer), _Omitida: ya tenía el cambio pendiente_ / _ya eligió su propia contraseña_ / _la
+  cuenta está suspendida_ / _es tu cuenta_ / _ya no es una cuenta heredada_, _No pudimos forzar el
+  cambio_, _Sin confirmar_ o _Sin procesar_. Al terminar, el aviso de arriba se vuelve a contar.
+- La Actividad: **"Forzó el cambio de contraseña a cuentas heredadas · 6 cuentas obligadas · 2
+  omitidas · 1 correo sin enviar"** para el lote, y **"Cambio de contraseña forzado · a {correo} ·
+  En bloque: cuenta heredada"** para cada cuenta. `platform-audit.test.ts` lee
+  `LEGACY_RESET_BATCH_EVENT` del API.
+- BFF: `GET /api/admin/legacy-passwords` (sin parámetros: uno de más es 400) y
+  `POST /api/admin/legacy-passwords/require-reset` (mismo origen; el cuerpo se reconstruye: sólo
+  `userIds`, de 1 a 50 UUID sin repetir y en minúsculas), con el estado y el `reason` del API.
+
+### Tests
+
+- `apps/api/src/tenants/legacy-passwords.service.test.ts`: el criterio en SQL (cada condición, sin
+  quien mira, una fila de más), cómo sale cada cuenta y el tope; por qué se omite cada una y en qué
+  orden; un resultado por cuenta en el orden pedido; el lote y el nodo en el cambio; el correo
+  `legacy` después del commit y por el nodo de la persona; un correo que falla (auditado sin la
+  dirección) o una transacción que falla no frenan a las demás; ids repetidos; el rastro del lote y
+  su fallo; como mucho 5 correos a la vez; 403 sin leer ni escribir nada.
+- `legacy-passwords.controller.test.ts`: rutas, roles, 401, el 2FA de 10 minutos sólo al forzar (y
+  sin 2FA activo, `MFA_REQUIRED_FOR_ACTION`), el 429 al undécimo lote en el minuto con el guard de la
+  app y el esquema del cuerpo.
+- `legacy-passwords.integration.test.ts` (Postgres, como `app_user`): aparecen las cuentas creadas
+  como lo hacían los caminos retirados, con y sin `UserCreated`, y el admin inicial con
+  `TenantCreated`; no aparecen la que aceptó una invitación, la que se registró sola, la vinculada ya
+  existiendo, la del seed, la que cambió su contraseña, la que ya tiene el cambio pendiente, la
+  suspendida, la de un creador que ya no existe ni quien mira (otro superadmin sí la ve); 403 a un
+  admin de red sin cambiar nada; forzar con resultados por cuenta, sesiones cerradas, un solo enlace
+  (el del correo), el rastro de cada cuenta con el lote y el del lote; un correo que no sale dicho y
+  auditado; volver a correrlo no escribe a nadie; con el enlace la persona elige la suya y deja de
+  ser heredada; el 2FA con el reloj de la base.
+- `password-reset.service.test.ts`: la variante `legacy` del correo (en tú, escapada) y el evento
+  con `bulk` y el lote. `recent-mfa.guard.test.ts` y `sales-operations.guard.test.ts` suman las rutas.
+- Web: `lib/legacy-passwords.test.ts` (lo que trae el API, los textos en tú, los lotes de 50, el
+  reintento con el código, cancelar, un lote posterior que no responde o que el API rechaza, una
+  cuenta que no volvió), `app/api/admin/legacy-passwords/legacy-passwords.route.test.ts`,
+  `legacy-passwords.render.test.ts` (el aviso, la lista elegida, el resultado y la alerta),
+  `audit-format.test.ts` y `platform-audit.test.ts`.
+
+### Despliegue
+
+- Sin migración. API y panel van juntos: con el panel nuevo y la API vieja, la lista responde 404 y
+  no hay aviso.
+- **Cuándo correrlo**: cada persona queda afuera hasta que elige su contraseña con el enlace. Conviene
+  avisarles antes a los nodos y no correrlo en medio de la jornada de ventas; la lista dice el último
+  ingreso de cada una para elegir. A quien no le llegue el correo le llega otro al intentar ingresar,
+  y "¿Olvidaste tu contraseña?" también le sirve.

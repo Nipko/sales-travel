@@ -76,4 +76,7 @@ Usuarios ya creados con una contraseña elegida por un admin siguen con ella has
 cambie. Desde USR-3 (doc 15) existe el **restablecimiento forzado por persona**: _Equipo → acciones
 → Acceso → Forzar cambio de contraseña_ cierra sus sesiones, le envía el enlace a su correo y el login
 la rechaza (403 `PASSWORD_RESET_REQUIRED`) hasta que elija una contraseña nueva; nadie la elige por
-ella. Forzarlo en bloque a esas cuentas heredadas es USR-14 (founder D3 = B, pendiente).
+ella. Forzarlo en bloque a esas cuentas heredadas es USR-14 (founder D3 = B, hecho, doc 15):
+_Plataforma → Usuarios_ las lista (nacieron con una membership que les dio otra cuenta en la misma
+transacción y nunca cambiaron la contraseña), el superadmin elige cuáles y cada una recibe su propio
+enlace.
