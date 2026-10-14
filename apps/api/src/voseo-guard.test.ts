@@ -15,8 +15,18 @@ import { VOSEO_WORDS, voseoIn } from './__fixtures__/voseo.js';
  */
 
 const SRC_DIR = __dirname;
-/** Carpetas y archivos sueltos que se recorren, relativos a `src/`. */
-const SCANNED = ['auth', 'tenants', 'zod', 'all-exceptions.filter.ts'];
+/**
+ * Carpetas y archivos sueltos que se recorren, relativos a `src/`. Los avisos de seguridad van por
+ * archivo: el resto de `mail/` son correos al cliente final, fuera de esta decisión.
+ */
+const SCANNED = [
+  'auth',
+  'tenants',
+  'zod',
+  'all-exceptions.filter.ts',
+  'mail/security-notices.ts',
+  'mail/security-notice.service.ts',
+];
 
 /**
  * Líneas que pueden llevar una de las palabras sin ser voseo (`archivo` relativo a `src/` con `/`,
@@ -47,6 +57,7 @@ describe('los textos del acceso, las invitaciones y Equipo van en tú', () => {
     expect(files.some((f) => f.endsWith(`${sep}invitations.service.ts`))).toBe(true);
     expect(files.some((f) => f.endsWith(`${sep}zod-validation.pipe.ts`))).toBe(true);
     expect(files.some((f) => f.endsWith(`${sep}all-exceptions.filter.ts`))).toBe(true);
+    expect(files.some((f) => f.endsWith(`${sep}security-notices.ts`))).toBe(true);
   });
 
   it('ningún archivo recorrido usa voseo', () => {

@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-05-27T05:10:39",
+  "tickets": [
+    {
+      "isCommitted": true,
+      "number": "1251934576908",
+      "date": "2026-05-27",
+      "travelerGivenName": "JOHN",
+      "travelerSurname": "SMITH",
+      "payment": {
+        "total": "10268.32",
+        "currencyCode": "PLN"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "ME",
+      "ticketingPcc": "U9PK"
+    },
+    {
+      "isCommitted": true,
+      "number": "1255840965934",
+      "date": "2026-05-27",
+      "travelerGivenName": "JOHN",
+      "travelerSurname": "SMITH",
+      "payment": {
+        "total": "0.00",
+        "currencyCode": "PLN"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "U9PK"
+    }
+  ],
+  "request": {
+    "confirmationId": "ABCDEF",
+    "retainAccounting": false,
+    "fulfillments": [
+      {
+        "ticketingQualifiers": {
+          "priceWithTaxes": true,
+          "returnFareFlexibilityDetails": false,
+          "priceQuoteReissueRecordId": "4",
+          "isNetFareCommission": false
+        }
+      }
+    ],
+    "receivedFrom": "Fulfill Flight Tickets",
+    "designatePrinters": [
+      {
+        "hardcopy": {
+          "address": "498BF1"
+        }
+      },
+      {
+        "ticket": {
+          "countryCode": "AT"
+        }
+      }
+    ],
+    "formsOfPayment": [
+      {
+        "type": "CASH"
+      }
+    ],
+    "generateSingleInvoice": false,
+    "commitTicketToBookingWaitTime": 0,
+    "acceptNegotiatedFare": true,
+    "acceptPriceChanges": true,
+    "backDatePriceQuoteMethod": "Reprice",
+    "priceQuoteExpirationMethod": "Reprice"
+  },
+  "warnings": [
+    {
+      "category": "PROCESSING_WARNING",
+      "type": "DOWNLINE_SERVICE_WARNING",
+      "description": "The AirTicketRQ service returned a warning message: (EndTransactionLLSRQ: *PAC TO VERIFY CORRECT NBR OF ACCTG LINES - THEN ET TO CONTINUE)."
+    }
+  ]
+}

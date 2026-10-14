@@ -3,6 +3,7 @@ import { FlightProviderRegistry } from '../providers/flight-provider.registry.js
 import type { ProviderCapabilities, ProviderCapability } from '../providers/provider.types.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import type { OrderRow } from './orders.service.js';
+import { TICKET_VOID_MESSAGES } from './ticket-void.plan.js';
 
 const NO_FLIGHT_CAPABILITIES: ProviderCapabilities = {
   retrieve: false,
@@ -42,15 +43,23 @@ export class OrderCapabilitiesService {
    */
   assertSupports(row: Pick<OrderRow, 'provider' | 'status'>, capability: ProviderCapability): void {
     if (capability === 'cancel' && row.status === 'ticketed') {
-      throw new BadRequestException(
-        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
-      );
+      // La única forma de cancelar una reserva emitida es anular (o reembolsar) sus tiquetes.
+      throw new BadRequestException(TICKET_VOID_MESSAGES.ticketedCancel);
     }
     if (!this.capabilitiesForOrder(row)[capability]) {
       throw new BadRequestException(
         `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
       );
     }
+  }
+
+  /**
+   * ¿Es una orden de vuelo? Ni hotel ni auto: una orden de un proveedor de vuelos ya retirado
+   * también cuenta. Vive aquí, junto a las capacidades de autos, para que el controlador no nombre
+   * proveedores (guard de neutralidad).
+   */
+  isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
+    return !this.hotelReads.handles(row.provider) && row.provider !== 'agent-cars';
   }
 
   /** Lo declara el registry de la vertical del proveedor; ninguna vertical se fija aquí. */

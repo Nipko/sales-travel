@@ -175,3 +175,36 @@ export * from './ancillaries/add.response.mapper';
 export * from './ancillaries/remove.request.builder';
 export * from './ancillaries/remove.response.mapper';
 export * from './sabre-ancillary.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Estado de tiquetes y EMD (SAB-05)
+//
+// Bloque propio y al final, como los de arriba: sus nombres llevan `SABRE_TICKET_STATUS_`,
+// `SabreDocument` o `sabreDocument`/`classifySabreTicket`, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './ticketing/document-status';
+
+// ---------------------------------------------------------------------------------------------
+// Política de emisión al reservar (SAB-06)
+//
+// Bloque propio y al final: sus nombres llevan `SABRE_BOOKING_TICKETING_`, `SABRE_TICKETING_`,
+// `SabreTicketing*`, `planSabreTicketingPolicy` o `isSabrePccTimeZone`, distintos de los
+// `SABRE_TICKETING_POLICIES`/`SabreTicketingPolicy` del builder, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './booking/ticketing-policy';
+
+// ---------------------------------------------------------------------------------------------
+// Emisión de tiquetes — fulfillFlightTickets sin tarjeta (SAB-07)
+//
+// Bloque propio y al final: los nombres llevan `SabreFulfill`, `SABRE_FULFILL_`, `sabreFulfill`,
+// `SabreTicketing*` distintos de los de la política de emisión (`SabreTicketingAdapter*`,
+// `SabreTicketingNotSentError`, `SabreTicketingRefusal`, `SabreTicketingDeps`), `sabreTicketCoverage`
+// o `sabreCanonicalJson`/`sabreBodyDigest`, así que no vuelven ambiguo nada de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './canonical-json';
+export * from './ticketing/fulfill.request.builder';
+export * from './ticketing/fulfill.response.mapper';
+export * from './sabre-ticketing.adapter';

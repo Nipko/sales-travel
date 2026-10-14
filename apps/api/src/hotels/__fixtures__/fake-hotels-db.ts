@@ -113,6 +113,18 @@ export interface CatalogoBajoDemanda {
   alGuardar?: (providerCode: string, filas: readonly Record<string, unknown>[]) => void;
   /** Filas que la función rechaza (las primeras de cada llamada); por defecto, ninguna. */
   rechazadas?: number;
+  /** El contenido por habitación (0070): lo que devuelve cada consulta, tal cual. */
+  habitaciones?: HabitacionesBajoDemanda;
+}
+
+/** Las consultas del contenido por habitación de `HotelCatalogStore` (0070), por su marca. */
+export interface HabitacionesBajoDemanda {
+  /** `hotel-catalog:room-content-state`: una fila por idioma, con los nombres de la consulta. */
+  estado?: readonly Record<string, unknown>[];
+  /** `hotel-catalog:room-contents`: las filas de `hotel_room_content`. */
+  filas?: readonly Record<string, unknown>[];
+  /** `hotel-catalog:store-room-contents`; por defecto, todas las habitaciones guardadas. */
+  guardar?: readonly Record<string, unknown>[];
 }
 
 type Tabla =
@@ -318,6 +330,16 @@ function marcadaDe(opts: FakeHotelsDbOptions, marca: string, q: CompiledQuery): 
           rejected: rechazadas,
         },
       ];
+    }
+    case 'room-content-state':
+      return [...(bajo.habitaciones?.estado ?? [])];
+    case 'room-contents':
+      return [...(bajo.habitaciones?.filas ?? [])];
+    case 'store-room-contents': {
+      const guardar = bajo.habitaciones?.guardar;
+      if (guardar !== undefined) return [...guardar];
+      const habitaciones = JSON.parse(String(q.parameters[4])) as unknown[];
+      return [{ stored: habitaciones.length, rejected: 0 }];
     }
     default:
       throw new Error(`consulta marcada no prevista por el doble de hoteles: ${marca}`);

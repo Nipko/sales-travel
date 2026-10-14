@@ -89,4 +89,20 @@ describe('describeTicketingDeadline', () => {
       }),
     ).toMatch(/^Plazo de la tarifa: emitir antes del/);
   });
+
+  it('el plazo de la reserva en el proveedor dice que la hora es la de la oficina emisora', () => {
+    const conHora = describeTicketingDeadline(
+      { kind: 'provider-clock', date: '2026-10-20', time: '23:59' },
+      ahora,
+      { clock: 'office' },
+    );
+    expect(conHora).toMatch(/^Emitir antes del /);
+    expect(conHora).toContain('23:59 (hora local de la oficina emisora)');
+    expect(conHora).not.toContain('Sabre');
+    expect(
+      describeTicketingDeadline({ kind: 'provider-clock', date: '2026-10-20' }, ahora, {
+        clock: 'office',
+      }),
+    ).toContain('(fecha local de la oficina emisora)');
+  });
 });

@@ -42,15 +42,18 @@ export interface NetworkUser {
   lockedUntil: Date | null;
   /** Sesiones vivas (no revocadas, no vencidas, dentro de su inactividad) en el subárbol del nodo. */
   activeSessions: number;
+  /** Un admin le pidió elegir una contraseña nueva y todavía no lo hizo: no puede ingresar. */
+  passwordResetRequired: boolean;
 }
 
-/** Una fila de `user_admin_overview` (0055). */
+/** Una fila de `user_admin_overview` (0055, con la columna de 0062). */
 interface UserOverviewRow {
   user_id: string;
   last_login_at: Date | null;
   mfa_enabled: boolean;
   locked_until: Date | null;
   active_sessions: number | string;
+  password_reset_required: boolean;
 }
 
 interface NetworkRow {
@@ -302,7 +305,8 @@ export class NetworkService {
         .execute();
 
       const overview = await sql<UserOverviewRow>`
-        SELECT user_id, last_login_at, mfa_enabled, locked_until, active_sessions
+        SELECT user_id, last_login_at, mfa_enabled, locked_until, active_sessions,
+               password_reset_required
         FROM user_admin_overview(${tenantId}::uuid)
       `.execute(trx);
       const byUser = new Map(overview.rows.map((o) => [o.user_id, o]));
@@ -322,6 +326,7 @@ export class NetworkService {
           mfaEnabled: o?.mfa_enabled === true,
           lockedUntil: o?.locked_until ?? null,
           activeSessions: Number(o?.active_sessions ?? 0),
+          passwordResetRequired: o?.password_reset_required === true,
         };
       });
     });

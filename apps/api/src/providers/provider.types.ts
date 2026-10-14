@@ -13,6 +13,7 @@ import type {
   OrderCreateResult,
   OrderManagePort,
   SearchContext,
+  TicketingPort,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
@@ -81,7 +82,20 @@ export interface OrderCancelAudit {
    * releer la reserva y comparar. Reintentar a ciegas puede cancelar lo que sobrevivió.
    */
   readonly verified: boolean;
+  /**
+   * `true` ⇒ el proveedor aplicó una PARTE: anuló unos tiquetes y otros no. No es éxito ni un
+   * rechazo limpio —la reserva quedó a medias—, así que tampoco se reintenta: se concilia y lo mira
+   * una persona. Ausente = no hubo nada parcial que declarar.
+   */
+  readonly partial?: boolean;
 }
+
+/**
+ * Qué se hace con los tiquetes de una reserva emitida al cancelarla. `VOID` es la anulación IATA:
+ * dentro de la ventana de la aerolínea, sin penalidad. El reembolso entra cuando exista su flujo.
+ */
+export const TICKET_OPERATIONS = ['VOID'] as const;
+export type TicketOperation = (typeof TICKET_OPERATIONS)[number];
 
 /** Ámbito de una compensación selectiva. Ausente = se cancela la reserva entera. */
 export interface OrderCancelScope {
@@ -91,6 +105,13 @@ export interface OrderCancelScope {
    * también lo que estaba bien.
    */
   readonly itemIds?: readonly string[];
+  /**
+   * Una reserva emitida sólo se cancela diciendo qué pasa con sus tiquetes. Con `VOID` se cancela
+   * la reserva entera y se anulan sus tiquetes en la misma operación; el adapter vuelve a comprobar
+   * en el proveedor que se puede y, si no, lanza {@link TicketVoidNotAvailableError} sin mandar
+   * nada. No se combina con `itemIds`.
+   */
+  readonly ticketOperation?: TicketOperation;
 }
 
 export interface AuditedOrderCancelPort {
@@ -121,6 +142,16 @@ export function supportsAuditedCancel<T extends object>(
 }
 
 /**
+ * ¿Este adapter sabe emitir los tiquetes de una reserva (`TicketingPort`)? Por presencia de los dos
+ * métodos, como {@link supportsAuditedCreate}. Que el adapter sepa emitir no quiere decir que la
+ * emisión esté encendida: eso lo dice la capacidad `issue` del factory.
+ */
+export function supportsTicketing<T extends object>(adapter: T): adapter is T & TicketingPort {
+  const port = adapter as { issueTickets?: unknown; checkTickets?: unknown };
+  return typeof port.issueTickets === 'function' && typeof port.checkTickets === 'function';
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -133,6 +164,23 @@ export interface ProviderCapabilities {
   /** Ancillaries: equipaje, asientos y demás servicios sueltos. */
   readonly services: boolean;
   readonly reshop: boolean;
+  /**
+   * Emitir los tiquetes de una reserva confirmada, sin tarjeta (`TicketingPort`). Opcional y
+   * ausente = `false`: es la primera operación que mueve dinero irreversible, y un proveedor nuevo
+   * no la hereda por olvido. Distinta de `pay`, que es el pago diferido de LATAM.
+   */
+  readonly issue?: boolean;
+  /**
+   * Consultar en el proveedor las condiciones de los tiquetes emitidos: si todavía se pueden anular
+   * sin costo o reembolsar (`TicketingPort.checkTickets`). Es una lectura. Ausente = `false`.
+   */
+  readonly ticketCheck?: boolean;
+  /**
+   * Anular (VOID) los tiquetes de una reserva emitida, que la deja cancelada (`OrderCancelScope`
+   * con `ticketOperation: 'VOID'`). Ausente = `false`: es la compuerta que deja cancelar una reserva
+   * emitida, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly void?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;
@@ -200,6 +248,33 @@ export interface TenantAdapter<TAdapter> {
    * vendedor nunca le venda a un cliente un tiquete que no sirve para viajar.
    */
   readonly providerEnvironment?: ProviderEnvironment | undefined;
+  /**
+   * Id de la cuenta de la bóveda (`provider_accounts.id`) con que sale el adapter. `undefined` = no
+   * hay una cuenta de la bóveda detrás (credenciales de la plataforma) o el factory no lo dice.
+   *
+   * Existe para que la orden guarde con qué cuenta se reservó (`orders.provider_account_id`): el
+   * proveedor sólo reconoce una reserva con la cuenta que la creó, y la post-venta de una agencia
+   * que después cambió de cuenta tiene que seguir saliendo con la anterior (RF-29). Sólo se graba si
+   * el factory sabe operar con ella después ({@link TenantProviderFactory.resolveForOrder}).
+   */
+  readonly accountId?: string | undefined;
+  /**
+   * `provider_accounts.updated_at` de esa cuenta: la versión con la que se resolvió. El intent de la
+   * orden sólo se compromete si la cuenta sigue en esa versión (`ProviderAccountChangedError`).
+   */
+  readonly accountUpdatedAt?: Date | undefined;
+}
+
+/**
+ * Lo que el registry necesita de una orden YA hecha para resolver su post-venta: el proveedor y la
+ * cuenta con que se reservó.
+ */
+export interface OrderProviderRef {
+  readonly orderId: string;
+  /** `orders.provider`. */
+  readonly provider: string;
+  /** `orders.provider_account_id`; `null` en órdenes que no la guardaron. */
+  readonly providerAccountId: string | null;
 }
 
 /**
@@ -230,6 +305,17 @@ export interface TenantProviderFactory<TAdapter> {
   forTenant(tenantId: string): Promise<TAdapter>;
   resolveForTenant(tenantId: string): Promise<TenantAdapter<TAdapter>>;
   /**
+   * El adapter con la cuenta con la que se hizo UNA orden (`orders.provider_account_id`), para su
+   * post-venta: no la vigente del tenant, que puede ser otra si la agencia cambió de cuenta (RF-29).
+   * La orden se lee con el tenant fijado y la cuenta tiene que seguir en su red.
+   *
+   * Opcional: un proveedor que no lo implementa no guarda la cuenta en sus órdenes, y su post-venta
+   * sale con la cuenta vigente, como siempre. El registry no inventa un reemplazo.
+   *
+   * Lanza `NotFoundException` si la cuenta de la orden ya no está disponible para el tenant.
+   */
+  resolveForOrder?(tenantId: string, orderId: string): Promise<TenantAdapter<TAdapter>>;
+  /**
    * Traduce un error del proveedor a un mensaje para el vendedor. Vive en el factory —y no
    * en el servicio de búsqueda— para que el fan-out no tenga que conocer los tipos de error
    * de ningún proveedor concreto.
@@ -249,6 +335,10 @@ export interface ResolvedProvider<TAdapter> {
    * ofertas u órdenes no puede olvidarse de mirarlo.
    */
   readonly environment: ProviderEnvironment;
+  /** La cuenta de la bóveda con que sale el adapter, si el factory la declara (ver `TenantAdapter`). */
+  readonly accountId?: string;
+  /** Su versión (`provider_accounts.updated_at`) al resolverla. */
+  readonly accountUpdatedAt?: Date;
 }
 
 /**
@@ -567,5 +657,28 @@ export class ProviderOrderAccountUnavailableError extends ConflictException {
       'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pídele al administrador de tu red que la revise en Mi Red → Credenciales.',
     );
     this.name = 'ProviderOrderAccountUnavailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando los tiquetes ya no se pueden anular sin costo. */
+export const TICKET_VOID_NOT_AVAILABLE_MESSAGE =
+  'La aerolínea ya no permite anular estos tiquetes. Revisa las condiciones de reembolso.';
+
+/**
+ * El proveedor no permite anular (VOID) los tiquetes de esta reserva: la ventana de la aerolínea se
+ * cerró, o la comprobación no lo garantiza. Se decide ANTES de mandar nada, con la comprobación en
+ * vivo del proveedor; la ventana se lee, nunca se calcula.
+ *
+ * 409 y no reintentable (`retryable: false`, falla de negocio): repetir la anulación no la vuelve
+ * posible, y el siguiente paso es el reembolso, que es otra operación con penalidad.
+ */
+export class TicketVoidNotAvailableError extends ConflictException {
+  readonly reason = 'TICKET_VOID_NOT_AVAILABLE';
+  readonly retryable = false;
+  readonly failure = { kind: 'BUSINESS', retry: 'NO_RETRY' } as const;
+
+  constructor() {
+    super(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    this.name = 'TicketVoidNotAvailableError';
   }
 }

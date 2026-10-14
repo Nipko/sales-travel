@@ -160,7 +160,7 @@ describe('mapTboHotelDetailsResponse: RNF-16 y tolerancia', () => {
     expect(mapping.diagnostics.rejected).toEqual({ NOT_REQUESTED: 1, DUPLICATE: 1 });
   });
 
-  it('el detalle por habitación sigue APAGADO: el contenedor sólo se registra como clave (Q-65)', () => {
+  it('sin pedir el detalle por habitación, el contenedor sólo se registra como clave (Q-65)', () => {
     const mapping = mapDetails([
       {
         ...hotelP59(),
@@ -175,6 +175,7 @@ describe('mapTboHotelDetailsResponse: RNF-16 y tolerancia', () => {
       },
     ]);
     expect(mapping.diagnostics.unknownKeys).toEqual(['HotelDetails[].Rooms']);
+    expect(mapping.roomContents).toEqual([]);
     expect(JSON.stringify(mapping)).not.toContain('Deluxe Room');
     expect(JSON.stringify(mapping)).not.toContain('example1');
   });
@@ -247,6 +248,7 @@ describe('el lote sin contenido ("No Hotels Found", 05 CE-23)', () => {
         contents: [],
         hotels: [],
         missingHotelCodes: ['1000000', '1000001'],
+        roomContents: [],
         diagnostics: { received: 0, mapped: 0, rejected: {}, notes: {}, unknownKeys: [] },
       },
     );
@@ -259,5 +261,146 @@ describe('el lote sin contenido ("No Hotels Found", 05 CE-23)', () => {
     expect(() => emptyTboHotelDetailsMapping({ lang: 'es', hotelCodes: ['<script>'] })).toThrow(
       TboResponseMappingError,
     );
+  });
+});
+
+describe('mapTboHotelDetailsResponse: detalle por habitación (`roomDetail`; Q-65)', () => {
+  type Envelope = { Status: unknown; HotelDetails: Record<string, unknown>[] } & Record<
+    string,
+    unknown
+  >;
+
+  function inferred(name: string): Envelope {
+    return JSON.parse(
+      readFileSync(join(__dirname, '..', '__fixtures__', 'inferred', name), 'utf8'),
+    ) as Envelope;
+  }
+
+  /** El mismo sobre sin ningún bloque de habitaciones: lo que mandaría TBO sin la clave. */
+  function withoutRooms(source: Envelope): Envelope {
+    const strip = (record: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(record).filter(
+          ([key]) => !['Rooms', 'RoomDetails', 'RoomInfo', 'AccommodationUnits'].includes(key),
+        ),
+      );
+    return { ...strip(source), HotelDetails: source.HotelDetails.map(strip) } as Envelope;
+  }
+
+  const FIXTURES = [
+    ['hotel-details-room-array.json', 'array', 3, 'HotelDetails[].Rooms'],
+    ['hotel-details-room-map.json', 'map', 2, 'HotelDetails[].RoomDetails'],
+    ['hotel-details-room-root.json', 'root', 2, 'RoomDetails'],
+    ['hotel-details-room-single.json', 'single', 1, 'HotelDetails[].RoomInfo'],
+    ['hotel-details-room-unknown.json', 'heuristic', 1, 'HotelDetails[].AccommodationUnits'],
+  ] as const;
+
+  it.each(FIXTURES)(
+    '%s sin la opción: la salida de siempre, con el contenedor sólo como clave desconocida',
+    (name, _shape, _rooms, containerKey) => {
+      const source = inferred(name);
+      const context = { lang: 'en' as const, hotelCodes: ['1000000'] };
+      const mapping = mapTboHotelDetailsResponse(envelope(source), context);
+      const plain = mapTboHotelDetailsResponse(envelope(withoutRooms(source)), context);
+      expect(mapping.roomContents).toEqual([]);
+      expect(mapping.diagnostics.unknownKeys).toEqual([containerKey]);
+      expect({ ...mapping, diagnostics: { ...mapping.diagnostics, unknownKeys: [] } }).toEqual(
+        plain,
+      );
+      expect(JSON.stringify(mapping)).not.toContain('example1');
+    },
+  );
+
+  it.each(FIXTURES)(
+    '%s con la opción: forma `%s`, %i habitaciones y el MISMO contenido de hotel',
+    (name, shape, rooms, containerKey) => {
+      const source = inferred(name);
+      const context = { lang: 'en' as const, hotelCodes: ['1000000'] };
+      const mapping = mapTboHotelDetailsResponse(envelope(source), {
+        ...context,
+        roomDetail: true,
+      });
+      const plain = mapTboHotelDetailsResponse(envelope(source), context);
+      expect(mapping.roomContents).toHaveLength(1);
+      expect(mapping.roomContents[0]?.hotelId).toBe('1000000');
+      expect(mapping.roomContents[0]?.shape).toBe(shape);
+      expect(mapping.roomContents[0]?.rooms).toHaveLength(rooms);
+      expect(mapping.contents).toEqual(plain.contents);
+      expect(mapping.hotels).toEqual(plain.hotels);
+      expect(mapping.missingHotelCodes).toEqual(plain.missingHotelCodes);
+      // La clave que el lector consumió deja de ser desconocida; la que adivinó (heuristic), no.
+      expect(mapping.diagnostics.unknownKeys.includes(containerKey)).toBe(shape === 'heuristic');
+    },
+  );
+
+  it('con la opción y sin bloque de habitaciones: `none` por hotel y el contenido intacto', () => {
+    const mapping = mapTboHotelDetailsResponse(
+      envelope({
+        Status: { Code: 200 },
+        HotelDetails: [hotelP59(), { ...hotelP59(), HotelCode: '1000001' }],
+      }),
+      { lang: 'en', hotelCodes: ['1000000', '1000001'], roomDetail: true },
+    );
+    expect(mapping.roomContents).toEqual([
+      { hotelId: '1000000', rooms: [], shape: 'none' },
+      { hotelId: '1000001', rooms: [], shape: 'none' },
+    ]);
+    expect(mapping.contents).toHaveLength(2);
+    expect(mapping.diagnostics.unknownKeys).toEqual([]);
+  });
+
+  it('sólo los hoteles mapeados llevan habitaciones: rechazados, repetidos y no pedidos no', () => {
+    const rooms = [{ RoomName: 'Doble', RoomId: 1 }];
+    const mapping = mapTboHotelDetailsResponse(
+      envelope({
+        Status: { Code: 200 },
+        HotelDetails: [
+          { ...hotelP59(), Rooms: rooms },
+          { ...hotelP59(), Rooms: rooms },
+          { ...hotelP59(), HotelCode: '9999999', Rooms: rooms },
+          { HotelName: 'sin código', Rooms: rooms },
+        ],
+      }),
+      { lang: 'en', hotelCodes: ['1000000', '1000001'], roomDetail: true },
+    );
+    expect(mapping.roomContents.map((r) => [r.hotelId, r.shape, r.rooms.length])).toEqual([
+      ['1000000', 'array', 1],
+    ]);
+    expect(mapping.diagnostics.rejected).toEqual({
+      DUPLICATE: 1,
+      NOT_REQUESTED: 1,
+      ITEM_SCHEMA: 1,
+    });
+    // En los descartados el contenedor no se leyó: sigue siendo una clave desconocida.
+    expect(mapping.diagnostics.unknownKeys).toEqual(['HotelDetails[].Rooms']);
+  });
+
+  it('la raíz: una clave desconocida sigue registrándose; la que el lector consumió, no', () => {
+    const source = inferred('hotel-details-room-root.json');
+    const mapping = mapTboHotelDetailsResponse(envelope({ ...source, Nueva: 1 }), {
+      lang: 'en',
+      hotelCodes: ['1000000'],
+      roomDetail: true,
+    });
+    expect(mapping.diagnostics.unknownKeys).toEqual(['Nueva']);
+  });
+
+  it('el log del mapeo con habitaciones no lleva nombres, URLs ni descripciones', () => {
+    const lines: string[] = [];
+    const logger: LoggerPort = {
+      debug: (message, meta) => lines.push(JSON.stringify({ message, meta })),
+      info: (message, meta) => lines.push(JSON.stringify({ message, meta })),
+      warn: (message, meta) => lines.push(JSON.stringify({ message, meta })),
+      error: (message, meta) => lines.push(JSON.stringify({ message, meta })),
+      child: () => logger,
+    };
+    for (const [name] of FIXTURES) {
+      mapTboHotelDetailsResponse(
+        envelope(inferred(name)),
+        { lang: 'en', hotelCodes: ['1000000'], roomDetail: true },
+        { logger },
+      );
+    }
+    expect(lines.join('\n')).not.toMatch(/Deluxe|Nile|example\d|Garden|Sofitel|1830/);
   });
 });

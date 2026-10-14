@@ -10,6 +10,7 @@ import type { PasswordService } from '../auth/password.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import type { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { CreateTenantSchema } from './dto.js';
@@ -79,7 +80,13 @@ d('puestos, Equipo y soporte a miembros, contra Postgres', () => {
   const seats = new SeatsService(database, network, audit);
   // Estos casos no envían enlaces para restablecer la contraseña: los cubre
   // member-support.integration.test.ts.
-  const support = new MemberSupportService(database, network, audit, {} as PasswordResetService);
+  const support = new MemberSupportService(
+    database,
+    network,
+    audit,
+    {} as PasswordResetService,
+    { notify: vi.fn() } as unknown as SecurityNoticeService,
+  );
   const password = {
     hash: (p: string) => Promise.resolve(`hash-de-prueba-${p.length}`),
   } as unknown as PasswordService;

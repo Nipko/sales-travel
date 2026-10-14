@@ -30,6 +30,26 @@ describe('SalesBlockedNotice: la pantalla de venta del superadmin', () => {
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
     expect(hrefs).toEqual(['/admin/tenants', '/admin/usuarios', '/reservas']);
   });
+
+  it('en Hoteles, al superadmin le suma la guía para probar una reserva, debajo de los botones', () => {
+    const html = renderToStaticMarkup(
+      createElement(SalesBlockedNotice, { area: 'hotels', superadmin: true }),
+    );
+    expect(html).toMatch(/<h2[^>]*>Probar una reserva de hotel<\/h2>/);
+    expect(html.indexOf('Probar una reserva de hotel')).toBeGreaterThan(
+      html.indexOf('Ver reservas hechas'),
+    );
+  });
+
+  it.each([
+    ['en Hoteles, sin ser superadmin', { area: 'hotels' as const, superadmin: false }],
+    ['en otra área de venta', { area: 'flights' as const, superadmin: true }],
+    ['sin área', {}],
+  ])('%s no hay guía', (_q, props) => {
+    const html = renderToStaticMarkup(createElement(SalesBlockedNotice, props));
+    expect(html).toContain('El superadministrador no vende');
+    expect(html).not.toContain('Probar una reserva de hotel');
+  });
 });
 
 describe('SalesBlockedBanner: dentro de Mis Reservas', () => {

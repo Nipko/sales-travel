@@ -37,6 +37,7 @@ import {
   RegisterSchema,
   ResetPasswordSchema,
   SeatReleaseSchema,
+  StepUpSchema,
   SwitchTenantSchema,
   VerifyEmailSchema,
   type ChangePasswordDto,
@@ -50,6 +51,7 @@ import {
   type RegisterDto,
   type ResetPasswordDto,
   type SeatReleaseDto,
+  type StepUpDto,
   type SwitchTenantDto,
   type VerifyEmailDto,
 } from './dto.js';
@@ -303,6 +305,27 @@ export class AuthController {
   ): Promise<{ recoveryCodes: string[] }> {
     if (!userId) throw new UnauthorizedException();
     return this.mfa.regenerateRecoveryCodes(userId, dto.code);
+  }
+
+  /**
+   * Reconfirma el 2FA de ESTA sesión antes de una acción de alto impacto (USR-13): la que respondió
+   * 403 MFA_RECENT_REQUIRED se repite después de esto. Código incorrecto o ya usado: 400
+   * MFA_CODE_INVALID; cuenta bloqueada por intentos: 429 MFA_ACCOUNT_LOCKED.
+   *
+   * Sin @AllowWithoutMfa: una sesión que no cumple el MFA de su rol tiene que volver a ingresar,
+   * no reconfirmar.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post('step-up')
+  @HttpCode(200)
+  async stepUp(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(StepUpSchema)) dto: StepUpDto,
+  ): Promise<{ ok: true; verifiedAt: string }> {
+    const sessionId = currentContext()?.sessionId;
+    if (!userId || !sessionId) throw new UnauthorizedException();
+    const { verifiedAt } = await this.mfa.stepUp(userId, sessionId, dto.code);
+    return { ok: true, verifiedAt: verifiedAt.toISOString() };
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

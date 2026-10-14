@@ -323,12 +323,16 @@ export class PortfoliosService {
    * Retiene el total de una reserva ya confirmada y no emitida (vuelos y autos, `POST
    * /portfolios/hold-booking`), con las mismas reglas que la retención previa al Book de un hotel:
    * la cartera de la moneda de la orden, activa, y su saldo más el cupo que fija quien financia; y,
-   * desde 0060, la cartera de cada nivel de su red hasta el dueño de la credencial (vuelos y autos no
-   * guardan la cuenta en la orden: la base toma la que la bóveda le resuelve al nodo para el
-   * proveedor, o la raíz con credenciales de entorno). La retención nace cobrada: la reserva ya
-   * existe. Como la orden no guarda con qué cuenta se reservó, la del propio nodo que hoy le resuelve
-   * la bóveda no la exime: retiene en su cartera, como antes de 0060. Sólo la plataforma, dueña de
-   * todo lo que se le resuelve, queda sin retener (`own-account`).
+   * desde 0060, la cartera de cada nivel de su red hasta el dueño de la credencial. La retención
+   * nace cobrada: la reserva ya existe.
+   *
+   * El dueño sale de la cuenta con que se reservó si la orden la guarda: los vuelos de un proveedor
+   * que opera su post-venta por cuenta la guardan (0081), y si es la propia del nodo, no se retiene
+   * nada (`own-account`), como en hoteles. Si no la guarda (autos, los demás vuelos y las órdenes
+   * anteriores), la base toma la que la bóveda le resuelve hoy al nodo para el proveedor, o la raíz
+   * con credenciales de entorno; esa cuenta no prueba con cuál se reservó, así que la del propio
+   * nodo no la exime: retiene en su cartera, como antes de 0060. La plataforma, dueña de todo lo que
+   * se le resuelve, queda sin retener (`own-account`).
    *
    * @throws BookingHoldRejectedError si la cartera propia o la de un nivel de la red no alcanza.
    * @throws BadRequestException si la orden no es una reserva confirmada de este tenant, o no dice

@@ -102,6 +102,10 @@ export function useModalBehavior(
     first?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
+      // Un menú abierto dentro del panel (el de acciones de la ficha de un usuario) ya atendió su
+      // Escape o su Tab: Radix los marca con preventDefault. Sin esto, un Escape cerraba el menú y
+      // el panel juntos.
+      if (e.defaultPrevented) return;
       const current = panelRef.current;
       if (current && !isTopmost(current)) return;
       // Un diálogo abierto DENTRO de éste sin pasar por este hook maneja su Escape y su Tab: si no,

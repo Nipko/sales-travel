@@ -29,6 +29,7 @@ import type {
 } from '@sales-travel/domain';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
 import type {
+  CredentialSource,
   ProviderErrorContext,
   ResolvedProvider,
   SkippedProvider,
@@ -214,9 +215,15 @@ export interface HotelProviderFactory
  * Sin `environment`: ese campo lo leen la búsqueda y las órdenes de VUELOS para marcar las tarifas
  * de una cuenta de pruebas. Hoteles no lo hereda; si declara el entorno de su cuenta, lo hace con un
  * campo propio de este tipo y con el mismo vocabulario (`test` | `live`).
+ *
+ * Sin `accountId` ni `accountUpdatedAt` por lo mismo: la reserva de hoteles toma la cuenta de la
+ * huella que dejó la búsqueda (`HotelProviderAccountFingerprint`), no del proveedor resuelto.
  */
 export interface ResolvedHotelProvider
-  extends Omit<ResolvedProvider<HotelProviderAdapter>, 'capabilities' | 'environment'> {
+  extends Omit<
+    ResolvedProvider<HotelProviderAdapter>,
+    'capabilities' | 'environment' | 'accountId' | 'accountUpdatedAt'
+  > {
   readonly capabilities: HotelProviderCapabilities;
   readonly searchProfile: HotelSearchProfile;
   /** Lo que el factory declaró para el breaker; se pasa tal cual en cada llamada al adapter. */
@@ -448,6 +455,12 @@ export interface HotelPrebookWithContext {
   /** Huella del texto saneado de las condiciones, para la comparación C2. */
   readonly rateConditionsHash: string;
   readonly comparison: HotelRepriceComparison;
+  /**
+   * Los servicios de cada habitación que da el PreBook ("Free WiFi", "Minibar"): una lista por
+   * habitación, en el orden de `result.roompack.rooms`. Son para mostrar en el checkout y quedan
+   * FUERA de `comparison`: no mueven el repricing. Ausente si el proveedor no los da.
+   */
+  readonly roomAmenities?: readonly (readonly string[])[];
   /** El de la llamada, para ubicar el RQ/RS en la bóveda de payloads. */
   readonly requestId?: string;
 }
@@ -602,6 +615,22 @@ export interface HotelAccountEnvironmentPort {
   readonly accountEnvironment: HotelAccountEnvironment;
 }
 
+/**
+ * Por qué un tenant no tiene una cuenta utilizable de un proveedor. Las tres se arreglan distinto:
+ * cargar o heredar una cuenta, completar la que hay, o quitar la que el proveedor no admite.
+ */
+export type HotelProviderAccountProblem = 'no-credentials' | 'incomplete' | 'not-allowed';
+
+/** La cuenta con que saldría un proveedor para un tenant, sin haberlo llamado. */
+export type HotelProviderAccountStatus =
+  | {
+      readonly status: 'ok';
+      readonly source: CredentialSource;
+      /** Ausente si el adapter no declara entorno ({@link hasAccountEnvironment}). */
+      readonly environment?: HotelAccountEnvironment;
+    }
+  | { readonly status: HotelProviderAccountProblem };
+
 // ───────────────────────── Contenido de un hotel bajo demanda (PR-3.6) ─────────────────────────
 
 /** Idiomas de contenido: los de `hotel_content.lang` (0041) y `LanguageCodeSchema`. */
@@ -668,6 +697,67 @@ export interface HotelContentPort {
     ctx: SearchContext,
     options: HotelContentFetchOptions,
   ): Promise<HotelProviderContent | null>;
+}
+
+// ───────────────────────── Contenido por habitación bajo demanda ─────────────────────────
+
+/**
+ * UNA habitación del detalle por habitación del proveedor (TBO `HotelDetails` con
+ * `IsRoomDetailRequired`, docs/tbo/05 §2.6.3), ya normalizada por su ACL. Es lo que se guarda en
+ * `hotel_room_content` (0070).
+ */
+export interface HotelProviderRoomContent {
+  /**
+   * Identidad estable de la habitación en su hotel: el id del proveedor o, si no lo mandó, `n-` y
+   * 16 hex del SHA-256 de `nameKey`. Cumple `^[A-Za-z0-9_-]{1,64}$` y nunca es `0`.
+   */
+  readonly roomKey: string;
+  /** El id de la habitación en el proveedor (el `RoomID` de Search en TBO); `null` si no vino. */
+  readonly roomRef: string | null;
+  /** El nombre normalizado como `normalizeRoomName` de la web: enlaza por nombre sin id. */
+  readonly nameKey: string;
+  /** Hasta 300 caracteres. Vacío sólo si el proveedor mandó el id sin nombre. */
+  readonly name: string;
+  /** Tal como lo manda el proveedor (`"1830 ft"`). */
+  readonly sizeText: string | null;
+  /** Texto plano, sin `<` ni `>`. */
+  readonly description: string | null;
+  /** URLs `https` de los dominios de fotos del proveedor. */
+  readonly images: readonly string[];
+}
+
+/**
+ * Qué respondió el proveedor al detalle por habitación de UN hotel en UN idioma:
+ *
+ * - `rooms`: vinieron habitaciones (`rooms` no vacía).
+ * - `none`: el proveedor no tiene el hotel en ese idioma (TBO "No Hotels Found" o el hotel no volvió).
+ * - `unreadable`: volvió el hotel, pero sin un bloque de habitaciones legible, o el proveedor no
+ *   aceptó el pedido para ese hotel y el contenido llegó sin habitaciones.
+ * - `unavailable`: el proveedor no puede pedir el detalle hoy (TBO: `TBO_ROOM_DETAILS=off` o la clave
+ *   suspendida en el proceso) y no salió ninguna llamada. No dice nada del hotel: no se guarda.
+ */
+export type HotelRoomContentFetchOutcome = 'rooms' | 'none' | 'unreadable' | 'unavailable';
+
+export interface HotelRoomContentFetch {
+  /** El idioma que se pidió: el de las habitaciones que vuelven. */
+  readonly lang: HotelContentLanguage;
+  readonly outcome: HotelRoomContentFetchOutcome;
+  /** Vacía salvo con `rooms`. */
+  readonly rooms: readonly HotelProviderRoomContent[];
+}
+
+/**
+ * Un proveedor cuyas habitaciones tienen contenido propio (fotos, tamaño, descripción) que se pide
+ * para UN hotel en UN idioma (TBO `HotelDetails` con `IsRoomDetailRequired`). Es una lectura: lo que
+ * se guarda pasa por `hotel_catalog_store_room_contents` (0070), desde el servicio.
+ */
+export interface HotelRoomContentPort {
+  fetchHotelRoomContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelRoomContentFetch>;
 }
 
 // ───────────────────────── Catálogo bajo demanda: fotos y ciudades ─────────────────────────
@@ -877,6 +967,12 @@ export function supportsHotelContent<T extends object>(
   adapter: T,
 ): adapter is T & HotelContentPort {
   return hasMethod<HotelContentPort>(adapter, 'fetchHotelContent');
+}
+
+export function supportsHotelRoomContent<T extends object>(
+  adapter: T,
+): adapter is T & HotelRoomContentPort {
+  return hasMethod<HotelRoomContentPort>(adapter, 'fetchHotelRoomContent');
 }
 
 export function supportsHotelContentBatch<T extends object>(

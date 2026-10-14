@@ -1,9 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BrandingService } from '../branding/branding.service.js';
 import { MailerService } from '../mail/mailer.service.js';
-import { hotelOrderConfirmationEmailHtml, orderConfirmationEmailHtml } from '../mail/templates.js';
-import { isTestSelectedOffer } from '../providers/provider-environment.js';
+import { hotelOrderConfirmationEmailHtml } from '../mail/templates.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
+import {
+  flightOrderConfirmationMail,
+  isTestContentOrder,
+  orderContactEmail,
+} from './order-confirmation-mail.js';
 import type { OrderRow } from './orders.service.js';
 
 /** Qué salió del reenvío: si el correo se mandó y a quién. */
@@ -14,25 +18,14 @@ export interface OrderConfirmationSent {
 }
 
 /**
- * ¿La orden es una reserva de la cuenta de pruebas del proveedor?
- *
- * Lo lee de `selected_offer.provider.environment`, que escribe el servidor al crear la orden desde
- * la cuenta resuelta (nunca el navegador). Una reserva de prueba no genera un tiquete válido: no se
- * le confirma al pasajero por correo sin que alguien lo pida, y si lo pide va marcada.
+ * ¿La orden es una reserva de la cuenta de pruebas del proveedor? La regla vive en
+ * `order-confirmation-mail.ts`, junto a la plantilla que la usa, para que la emisión de tiquetes y
+ * este servicio no se desincronicen.
  */
-export function isTestContent(row: Pick<OrderRow, 'selected_offer'>): boolean {
-  return isTestSelectedOffer(row.selected_offer);
-}
+export const isTestContent = isTestContentOrder;
 
 /** El correo de contacto de la reserva, o `''` si no tiene uno. */
-export function contactEmail(order: Pick<OrderRow, 'contact_info'>): string {
-  const ci = order.contact_info;
-  if (ci && typeof ci === 'object' && 'email' in ci) {
-    const email = (ci as { email?: unknown }).email;
-    return typeof email === 'string' ? email : '';
-  }
-  return '';
-}
+export const contactEmail = orderContactEmail;
 
 /**
  * La confirmación de una reserva por correo al contacto, con la marca y el correo del nodo de la
@@ -71,7 +64,9 @@ export class OrderConfirmationService {
           currency: order.currency,
           brand,
         })
-      : flightConfirmationEmail(order, brand);
+      : // Sólo llega aquí una de prueba si alguien la reenvió a mano: asunto «[PRUEBA] » y el aviso
+        // de que no es un tiquete válido para viajar.
+        flightOrderConfirmationMail(order, brand);
     const sent = await this.mailer.sendToTenant(tenantId, {
       to,
       subject: mail.subject,
@@ -98,23 +93,4 @@ export class OrderConfirmationService {
     }
     return this.send(tenantId, order);
   }
-}
-
-function flightConfirmationEmail(
-  order: OrderRow,
-  brand: Awaited<ReturnType<BrandingService['resolve']>>,
-): { subject: string; html: string; text: string } {
-  return orderConfirmationEmailHtml({
-    orderNumber: order.order_number,
-    pnr: order.provider_order_id,
-    searchCriteria: order.search_criteria,
-    passengers: order.passengers,
-    totalAmount: order.total_amount,
-    currency: order.currency,
-    brand,
-    ticketed: order.status === 'ticketed',
-    // Sólo llega aquí una de prueba si alguien la reenvió a mano: asunto «[PRUEBA] » y el aviso de
-    // que no es un tiquete válido para viajar.
-    testContent: isTestContent(order),
-  });
 }

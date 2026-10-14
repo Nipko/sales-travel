@@ -367,6 +367,7 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
           id: ordenA,
           provider: PROVEEDOR,
           provider_order_id: 'X',
+          provider_account_id: cuentaRed,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
       await expect(s.orders.cancelOrder(agenciaB, ordenA, 'X')).rejects.toBeInstanceOf(

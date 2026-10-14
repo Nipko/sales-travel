@@ -25,6 +25,7 @@ import type {
   StaleCancelClaimService,
   StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
+import type { FlightTicketIssueService, TicketIssueSweepReport } from './ticket-issue.service.js';
 
 /**
  * El barrido de post-venta (docs/tbo/09 PR-4.7; 08 RNF-10): recorre los tenants uno por uno —la API
@@ -102,6 +103,10 @@ function informeConciliacion(
   return { accounts: 0, queued: 0, ran: 0, failed: 0, ...parcial };
 }
 
+function informeDeEmisiones(parcial: Partial<TicketIssueSweepReport> = {}): TicketIssueSweepReport {
+  return { examined: 0, abandoned: 0, reconciling: 0, skipped: 0, ...parcial };
+}
+
 /** La raíz `platform` de la base de mentira. */
 const PLATAFORMA = '00000000-0000-4000-8000-0000000000aa';
 
@@ -161,6 +166,9 @@ function banco(tenants: string[], redis = true) {
   const sweepStaleClaims = vi.fn<StaleCancelClaimService['sweepTenant']>(() =>
     Promise.resolve(informeDeClaims()),
   );
+  const sweepTicketIssues = vi.fn<FlightTicketIssueService['sweepTenant']>(() =>
+    Promise.resolve(informeDeEmisiones()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -173,6 +181,7 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant: sweepReconciliation } as unknown as ReconciliationService,
     { sweepTenant: sweepStaleClaims } as unknown as StaleCancelClaimService,
     { emit } as unknown as AuditService,
+    { sweepTenant: sweepTicketIssues } as unknown as FlightTicketIssueService,
   );
   return {
     sweeper,
@@ -181,6 +190,7 @@ function banco(tenants: string[], redis = true) {
     sweepHcn,
     sweepReconciliation,
     sweepStaleClaims,
+    sweepTicketIssues,
     queue,
     consulta,
     work,
@@ -332,6 +342,7 @@ describe('PostSaleSweeper — la corrida', () => {
       [B, 1_000],
     ]);
     expect(report).toEqual({
+      ticketIssues: informeDeEmisiones(),
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
@@ -455,6 +466,27 @@ describe('PostSaleSweeper — la corrida', () => {
     expect(report.examined).toBe(0);
   });
 
+  it('recoge las emisiones de tiquetes que la cola perdió, tenant por tenant (SAB-08)', async () => {
+    const b = banco([A, B]);
+    b.sweepTicketIssues.mockImplementation((tenantId) =>
+      tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(informeDeEmisiones({ examined: 2, abandoned: 1, reconciling: 1 })),
+    );
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepTicketIssues.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    expect(report.ticketIssues).toEqual(
+      informeDeEmisiones({ examined: 2, abandoned: 1, reconciling: 1 }),
+    );
+    // Un tenant que falla no frena al otro, y cuenta como fallido.
+    expect(report.tenantsFailed).toBe(1);
+  });
+
   it('una conciliación que falla en un tenant no frena al resto del barrido', async () => {
     const b = banco([A, B]);
     b.sweepReconciliation.mockImplementation((tenantId) =>
@@ -525,6 +557,7 @@ describe('PostSaleSweeper — la corrida', () => {
   it('sin nada que hacer no hace ruido', async () => {
     const b = banco([A]);
     expect(await b.sweeper.run()).toEqual({
+      ticketIssues: informeDeEmisiones(),
       tenants: 1,
       tenantsFailed: 0,
       ...informe(),
@@ -556,6 +589,7 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
     );
     b.sweepStaleClaims.mockResolvedValue(informeDeClaims({ examined: 1, expired: 1 }));
     b.sweepCancellations.mockResolvedValue(informeDeCancelaciones({ examined: 1, closed: 1 }));
+    b.sweepTicketIssues.mockResolvedValue(informeDeEmisiones({ examined: 1, abandoned: 1 }));
 
     const report = await b.sweeper.run(1_000);
 
@@ -576,6 +610,7 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
         cancellations: informeDeCancelaciones({ examined: 2, closed: 2 }),
         hcn: informeHcn({ examined: 2, received: 2 }),
         reconciliation: informeConciliacion({ accounts: 1, queued: 1 }),
+        ticketIssues: informeDeEmisiones({ examined: 2, abandoned: 2 }),
       },
     });
     // El informe que devuelve no cambia por dejar el rastro.

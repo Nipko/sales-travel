@@ -73,6 +73,36 @@ export class MfaStepUpRequiredError extends UnauthorizedException {
   }
 }
 
+/**
+ * La acción es de alto impacto (USR-13, founder D1 = C) y la sesión no pasó el segundo factor en los
+ * últimos minutos (RECENT_MFA_WINDOW_MINUTES). 403 y no 401: la sesión sigue viva; el panel pide el
+ * código, llama a POST /auth/step-up y repite la acción una vez.
+ */
+export class MfaRecentRequiredError extends ForbiddenException {
+  readonly reason = 'MFA_RECENT_REQUIRED';
+
+  constructor() {
+    super('Confirma con tu código de verificación en dos pasos para seguir.');
+    this.name = 'MfaRecentRequiredError';
+  }
+}
+
+/**
+ * La acción es de alto impacto, pero quien la pide no tiene el 2FA activo: no hay código que
+ * reconfirmar. 403 con su propio motivo para que el panel no le pida un código que no tiene y le
+ * diga dónde activarlo. Pasa con los roles que no lo exigen (`agency_admin`, `admin`).
+ */
+export class MfaRequiredForActionError extends ForbiddenException {
+  readonly reason = 'MFA_REQUIRED_FOR_ACTION';
+
+  constructor() {
+    super(
+      'Para hacer esto necesitas la verificación en dos pasos. Actívala en Seguridad y vuelve a intentarlo.',
+    );
+    this.name = 'MfaRequiredForActionError';
+  }
+}
+
 /** Código incorrecto en el paso MFA del login. Quedan `attemptsLeft` en este desafío. 401. */
 export class MfaCodeInvalidError extends UnauthorizedException {
   readonly reason = 'MFA_CODE_INVALID';
@@ -224,6 +254,35 @@ export class SeatsFullError extends ConflictException {
     );
     this.name = 'SeatsFullError';
     this.publicDetails = details;
+  }
+}
+
+/**
+ * La contraseña era correcta, pero un admin le pidió elegir una nueva y todavía no lo hizo. 403 y no
+ * 401: el panel muestra qué hacer (abrir el enlace del correo) en vez de "credenciales incorrectas".
+ * Decirlo no enumera nada: sólo llega quien acertó la contraseña, y el enlace va al buzón de la
+ * persona.
+ */
+export class PasswordResetRequiredError extends ForbiddenException {
+  readonly reason = 'PASSWORD_RESET_REQUIRED';
+
+  constructor() {
+    super('Tienes que elegir una contraseña nueva: te enviamos un enlace a tu correo.');
+    this.name = 'PasswordResetRequiredError';
+  }
+}
+
+/**
+ * Al canjear el enlace con el cambio forzado pendiente, la contraseña nueva es la misma de antes. Un
+ * admin la forzó porque la actual pudo quedar expuesta: aceptarla levantaría la marca y la dejaría
+ * servir otra vez. 400 con su motivo: el enlace sigue vigente para elegir otra.
+ */
+export class PasswordReuseError extends BadRequestException {
+  readonly reason = 'PASSWORD_REUSED';
+
+  constructor() {
+    super('Elige una contraseña distinta de la anterior.');
+    this.name = 'PasswordReuseError';
   }
 }
 

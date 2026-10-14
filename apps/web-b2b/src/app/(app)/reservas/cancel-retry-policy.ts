@@ -10,6 +10,8 @@ export interface OrderOperationView {
   retryable: boolean;
   outcome: CancelOperationOutcome;
   reconciliationRequired: boolean;
+  /** Sólo en una cancelación que anuló (o intentó anular) los tiquetes: `VOID` (SAB-09). */
+  ticketOperation?: string;
 }
 
 /** El botón de retry sólo aparece ante evidencia explícita de fallo anterior al write. */
@@ -35,6 +37,11 @@ export function directCancellationBlock(operations: readonly OrderOperationView[
   }
   if (latest.status !== 'failed') {
     return 'Ya hay una cancelación en curso. Espera a que termine antes de intentar otra acción.';
+  }
+  if (latest.ticketOperation !== undefined) {
+    // Una anulación que no salió o que la aerolínea rechazó no se continúa desde el historial: se
+    // vuelve a pedir desde «Condiciones de los tiquetes», con una consulta nueva (SAB-09).
+    return 'La anulación anterior no se completó. Para volver a pedirla, consulta antes las condiciones de los tiquetes.';
   }
   if (canRetryCancelOperation(latest)) {
     return 'El intento falló antes de enviar la cancelación. Continúa desde “Reintentar” en el historial; no inicies una cancelación nueva.';

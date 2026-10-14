@@ -148,7 +148,22 @@ export type TboStaticNote =
   | 'CHECK_TIME_INVALID'
   /** El saneador quitó al menos una etiqueta, un atributo o un bloque del HTML de TBO. */
   | 'HTML_SANITIZED'
-  | 'FACILITY_NEGATED';
+  | 'FACILITY_NEGATED'
+  /**
+   * Habitación de HotelDetails sin `RoomId`, o con `0` ("mapping isn't available", p. 57): su
+   * `roomKey` sale del nombre y no enlaza con el `RoomID` de Search.
+   */
+  | 'ROOM_ID_MISSING'
+  /** `RoomId` con otra forma (decimal, lista de varios, caracteres raros, más de 64): `null`. */
+  | 'ROOM_ID_INVALID'
+  /** Habitación sin nombre ni id: no hay con qué identificarla y se descarta. */
+  | 'ROOM_EMPTY'
+  /** El mismo `roomKey` dos veces en un hotel: gana la primera. */
+  | 'ROOM_DUPLICATE'
+  /** Habitaciones por encima del tope por hotel: se descartan. */
+  | 'ROOM_LIMIT'
+  /** Foto de habitación en un dominio de TBO sin esquema o con `http`: se pide por `https`. */
+  | 'IMAGE_HTTPS_UPGRADED';
 
 export interface TboStaticDiagnostics {
   readonly received: number;
@@ -194,6 +209,65 @@ export interface TboCityHotelsMapping {
  */
 export type TboHotelDetailsOutcome = 'DETAILS' | 'NO_HOTELS_FOUND';
 
+/**
+ * Una habitación del detalle por habitación de HotelDetails (`IsRoomDetailRequired`, p. 56-57;
+ * 05 §2.6.3). El PDF nombra los campos pero no dice dónde viene el contenedor (Q-65): se lee con un
+ * lector tolerante y todo campo que no llegó o no se entendió es `null`.
+ */
+export interface TboRoomContent {
+  /**
+   * Identidad estable de la habitación en su hotel: el `roomId` si lo hay y, si no, `n-` y 16 hex
+   * del SHA-256 de `nameKey`. Cumple `^[A-Za-z0-9_-]{1,64}$`.
+   */
+  readonly roomKey: string;
+  /**
+   * `RoomId` de TBO normalizado a texto, el que corresponde al `RoomID` de Search (p. 57). `null`
+   * si no vino, si es `0` ("mapping isn't available") o si tiene otra forma.
+   */
+  readonly roomId: string | null;
+  /**
+   * El nombre normalizado con el MISMO algoritmo que `normalizeRoomName` de la web
+   * (`room-type-groups.ts`): con él se enlaza una habitación sin `roomId` a la tarifa de igual nombre.
+   */
+  readonly nameKey: string;
+  /** Hasta 300 caracteres, espacios colapsados. Vacío sólo si TBO mandó el id sin nombre. */
+  readonly name: string;
+  /** Tal como lo manda TBO (`"1830 ft"`, p. 57): la unidad no está documentada. */
+  readonly sizeText: string | null;
+  /** Texto plano, sin HTML ni `<`/`>`, hasta 4.000 caracteres. */
+  readonly description: string | null;
+  /** URLs `https` de dominios de TBO, sin repetir, hasta 30. */
+  readonly images: readonly string[];
+}
+
+/**
+ * Dónde y cómo llegó el bloque de habitaciones de un hotel. Es la señal con que se cierra Q-65 sin
+ * mirar valores: el log y la métrica llevan sólo esta forma.
+ *
+ * - `array`: una lista de habitaciones bajo una clave conocida del hotel (`Rooms`, `RoomDetails`…).
+ * - `map`: un objeto de habitaciones indexado por id.
+ * - `single`: un objeto que ya es una habitación.
+ * - `root`: el contenedor fuera del hotel, en la raíz, con el `HotelCode` de cada una.
+ * - `heuristic`: ninguna clave conocida; una lista de objetos con forma de habitación.
+ * - `none`: no hay nada que se parezca a un bloque de habitaciones.
+ * - `unreadable`: hay un contenedor y no se pudo leer ninguna habitación.
+ */
+export type TboRoomDetailShape =
+  | 'array'
+  | 'map'
+  | 'single'
+  | 'root'
+  | 'heuristic'
+  | 'none'
+  | 'unreadable';
+
+/** El detalle por habitación de UN hotel de la respuesta. */
+export interface TboHotelRoomContents {
+  readonly hotelId: string;
+  readonly rooms: readonly TboRoomContent[];
+  readonly shape: TboRoomDetailShape;
+}
+
 export interface TboHotelDetailsMapping {
   readonly lang: TboContentLanguage;
   readonly outcome: TboHotelDetailsOutcome;
@@ -205,6 +279,11 @@ export interface TboHotelDetailsMapping {
    * `NO_HOTELS_FOUND`, son todos los pedidos y no dicen nada de cada uno (Q-62).
    */
   readonly missingHotelCodes: readonly string[];
+  /**
+   * Las habitaciones de cada hotel de `contents`, en su orden, sólo si se pidió el detalle por
+   * habitación; sin pedirlo, vacío.
+   */
+  readonly roomContents: readonly TboHotelRoomContents[];
   readonly diagnostics: TboStaticDiagnostics;
 }
 

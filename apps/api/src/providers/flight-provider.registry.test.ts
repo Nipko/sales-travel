@@ -7,6 +7,7 @@ import {
   ProviderAccountIncompleteError,
   ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
+  ProviderOrderAccountUnavailableError,
   type FlightProviderAdapter,
   type ProviderEnablementDecision,
   type ProviderFlagsPort,
@@ -232,6 +233,170 @@ describe('FlightProviderRegistry', () => {
     });
   });
 
+  describe('forOrder — la post-venta sale con la cuenta con la que se reservó (RF-29)', () => {
+    const VERSION_DE_LA_ORDEN = new Date('2026-03-01T10:00:00.000Z');
+    const VERSION_VIGENTE = new Date('2026-05-01T10:00:00.000Z');
+
+    /**
+     * Un proveedor que guarda la cuenta en sus órdenes: su vigente es `acc-vigente` y la de cada
+     * orden la resuelve `resolveForOrder` con OTRO adapter, para poder ver cuál se usó.
+     */
+    function porCuenta(opts: { resolveForOrder?: (t: string, o: string) => Promise<never> } = {}) {
+      const base = new StubProviderFactory({
+        code: 'alfa-air',
+        callPolicy: 'opt-in',
+        providerEnvironment: 'live',
+        accountId: 'acc-vigente',
+        accountUpdatedAt: VERSION_VIGENTE,
+      });
+      const deLaOrden = new StubProviderFactory({ code: 'alfa-air' }).adapterFor('cuenta-orden');
+      const resolveForOrder = vi.fn(
+        opts.resolveForOrder ??
+          ((_tenantId: string, _orderId: string) =>
+            Promise.resolve({
+              adapter: deLaOrden,
+              credentialSource: 'inherited' as const,
+              providerEnvironment: 'test' as const,
+              accountId: 'acc-orden',
+              accountUpdatedAt: VERSION_DE_LA_ORDEN,
+            })),
+      );
+      return { factory: Object.assign(base, { resolveForOrder }), deLaOrden, resolveForOrder };
+    }
+
+    it('una orden con cuenta sale con la cuenta de la ORDEN, no con la vigente del tenant', async () => {
+      const { factory, deLaOrden, resolveForOrder } = porCuenta();
+      const r = registry([factory]);
+
+      const p = await r.forOrder(TENANT, {
+        orderId: 'o-1',
+        provider: 'alfa-air',
+        providerAccountId: 'acc-orden',
+      });
+
+      expect(resolveForOrder).toHaveBeenCalledWith(TENANT, 'o-1');
+      expect(factory.resolveCalls).toEqual([]);
+      expect(p.adapter).toBe(deLaOrden);
+      expect(p).toMatchObject({
+        code: 'alfa-air',
+        credentialSource: 'inherited',
+        environment: 'test',
+        accountId: 'acc-orden',
+        accountUpdatedAt: VERSION_DE_LA_ORDEN,
+        callPolicy: 'opt-in',
+        capabilities: { retrieve: true, cancel: true },
+      });
+    });
+
+    it('una orden SIN cuenta guardada sale con la vigente, como `byCode`', async () => {
+      const { factory, resolveForOrder } = porCuenta();
+      const r = registry([factory]);
+
+      const p = await r.forOrder(TENANT, {
+        orderId: 'o-1',
+        provider: 'alfa-air',
+        providerAccountId: null,
+      });
+
+      expect(resolveForOrder).not.toHaveBeenCalled();
+      expect(factory.resolveCalls).toEqual([TENANT]);
+      expect(p.adapter).toBe(factory.adapterFor(TENANT));
+      expect(p).toMatchObject({ accountId: 'acc-vigente', accountUpdatedAt: VERSION_VIGENTE });
+    });
+
+    it.each([
+      ['salió de la red o se desactivó', new NotFoundException('fuera de la red')],
+      ['quedó incompleta', new ProviderAccountIncompleteError('alfa-air', ['password'])],
+    ])('si la cuenta de la orden %s, 409 y NUNCA cae a la vigente', async (_caso, motivo) => {
+      const { factory } = porCuenta({ resolveForOrder: () => Promise.reject(motivo) });
+      const r = registry([factory]);
+
+      const err = await r
+        .forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: 'acc-orden' })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      expect((err as ProviderOrderAccountUnavailableError).getStatus()).toBe(409);
+      expect(err).toMatchObject({ reason: 'ORDER_PROVIDER_ACCOUNT_UNAVAILABLE' });
+      // La vigente ni se resolvió: con ella el proveedor diría "no existe" de la reserva.
+      expect(factory.resolveCalls).toEqual([]);
+    });
+
+    it('un proveedor que no opera por cuenta y una orden que sí la guarda: 409, sin resolver nada', async () => {
+      const stub = new StubProviderFactory({ code: 'alfa-air' });
+      const r = registry([stub]);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: 'acc-1' }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      expect(stub.resolveCalls).toEqual([]);
+    });
+
+    it('un fallo REAL de la bóveda se propaga tal cual: no es "cuenta no disponible"', async () => {
+      const { factory } = porCuenta({
+        resolveForOrder: () => Promise.reject(new Error('bóveda caída')),
+      });
+      const r = registry([factory]);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: 'acc-1' }),
+      ).rejects.toThrow('bóveda caída');
+    });
+
+    it('un proveedor desconocido es 400, como en `byCode`', async () => {
+      const r = registry([porCuenta().factory]);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'no-existe', providerAccountId: 'acc-1' }),
+      ).rejects.toBeInstanceOf(ProviderNotAvailableError);
+    });
+
+    it('NO consulta la habilitación: con el proveedor apagado, lo vendido se sigue operando', async () => {
+      const { factory } = porCuenta();
+      const { port, decisionFor } = flags(() => APAGADO_GLOBAL);
+      const r = registry([factory], port);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: 'acc-1' }),
+      ).resolves.toMatchObject({ code: 'alfa-air', accountId: 'acc-orden' });
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: null }),
+      ).resolves.toMatchObject({ code: 'alfa-air', accountId: 'acc-vigente' });
+      expect(decisionFor).not.toHaveBeenCalled();
+    });
+
+    it('el override de entorno de la política gana también aquí', async () => {
+      vi.stubEnv('FLIGHT_PROVIDER_CALL_POLICIES', 'alfa-air:fallback');
+      const r = registry([porCuenta().factory]);
+
+      await expect(
+        r.forOrder(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: 'acc-1' }),
+      ).resolves.toMatchObject({ callPolicy: 'fallback' });
+    });
+
+    it('`recordsOrderAccount`: sólo quien sabe volver a operar con la cuenta la guarda', () => {
+      const r = registry([porCuenta().factory, new StubProviderFactory({ code: 'beta-air' })]);
+
+      expect(r.recordsOrderAccount('alfa-air')).toBe(true);
+      expect(r.recordsOrderAccount('beta-air')).toBe(false);
+      expect(r.recordsOrderAccount('no-existe')).toBe(false);
+    });
+
+    it('`byCode` y la búsqueda entregan la cuenta que declaró el factory; sin ella, nada', async () => {
+      const r = registry([porCuenta().factory, new StubProviderFactory({ code: 'beta-air' })]);
+
+      expect(await r.byCode(TENANT, 'alfa-air')).toMatchObject({
+        accountId: 'acc-vigente',
+        accountUpdatedAt: VERSION_VIGENTE,
+      });
+      const beta = await r.byCode(TENANT, 'beta-air');
+      expect(beta).not.toHaveProperty('accountId');
+      expect(beta).not.toHaveProperty('accountUpdatedAt');
+      const { active } = await registry([porCuenta().factory], flags(true).port).forTenant(TENANT);
+      expect(active[0]).toMatchObject({ accountId: 'acc-vigente' });
+    });
+  });
+
   describe('entorno de la cuenta', () => {
     it('copia el que declara el factory: búsqueda, venta y post-venta ven lo mismo', async () => {
       const r = registry([
@@ -413,6 +578,44 @@ describe('FlightProviderRegistry', () => {
       await expect(r.byCodeForOffer(TENANT, 'no-existe')).rejects.toBeInstanceOf(
         ProviderNotAvailableError,
       );
+    });
+
+    it('`forOrderSale`: emitir una orden con el proveedor apagado es 400, sin bóveda', async () => {
+      const stub = new StubProviderFactory({ code: 'alfa-air' });
+      const r = registry(
+        [stub],
+        flags((tenantId) => (tenantId === TENANT ? apagadoPara(TENANT) : undefined)).port,
+      );
+
+      const err = await r
+        .forOrderSale(TENANT, { orderId: 'o-1', provider: 'alfa-air', providerAccountId: null })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ProviderDisabledByPlatformError);
+      expect(stub.resolveCalls).toEqual([]);
+      // Otro tenant, con el proveedor encendido, sí emite.
+      await expect(
+        r.forOrderSale(OTRO_TENANT, {
+          orderId: 'o-2',
+          provider: 'alfa-air',
+          providerAccountId: null,
+        }),
+      ).resolves.toMatchObject({ code: 'alfa-air' });
+    });
+
+    it('`forOrderSale`: encendido, sale con la cuenta de la ORDEN como `forOrder`', async () => {
+      const r = registry([new StubProviderFactory({ code: 'alfa-air' })]);
+
+      await expect(
+        r.forOrderSale(TENANT, {
+          orderId: 'o-1',
+          provider: 'alfa-air',
+          providerAccountId: 'acc-1',
+        }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      await expect(
+        r.forOrderSale(TENANT, { orderId: 'o-1', provider: 'no-existe', providerAccountId: null }),
+      ).rejects.toBeInstanceOf(ProviderNotAvailableError);
     });
 
     it('`byCode` (post-venta) NO mira la habilitación: lo ya vendido se sigue operando', async () => {

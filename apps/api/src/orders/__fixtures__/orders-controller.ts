@@ -2,6 +2,8 @@ import type { BrandingService } from '../../branding/branding.service.js';
 import type { MailerService } from '../../mail/mailer.service.js';
 import type { FlightProviderRegistry } from '../../providers/flight-provider.registry.js';
 import type { ActiveTenantService } from '../../request-context/active-tenant.service.js';
+import type { FlightOrderTrackingStore } from '../flight-order-tracking.store.js';
+import type { FlightTicketIssueService } from '../ticket-issue.service.js';
 import type { HotelOrderReadsService } from '../hotel-order-reads.service.js';
 import { OrderCapabilitiesService } from '../order-capabilities.service.js';
 import { OrderConfirmationService } from '../order-confirmation.service.js';
@@ -20,6 +22,8 @@ export function ordersController(deps: {
   readonly activeTenant: ActiveTenantService;
   readonly registry: FlightProviderRegistry;
   readonly hotelReads: HotelOrderReadsService;
+  readonly flightTracking?: FlightOrderTrackingStore;
+  readonly ticketIssues?: FlightTicketIssueService;
 }): OrdersController {
   return new OrdersController(
     deps.orders,
@@ -27,5 +31,7 @@ export function ordersController(deps: {
     deps.hotelReads,
     new OrderConfirmationService(deps.mailer, deps.branding, deps.hotelReads),
     new OrderCapabilitiesService(deps.registry, deps.hotelReads),
+    deps.flightTracking,
+    deps.ticketIssues,
   );
 }

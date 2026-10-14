@@ -45,6 +45,7 @@ import {
 } from '../../../../../lib/tenant-network';
 import { CreateNodeDialog } from './create-node-dialog';
 import { MoveNodeDialog } from './move-node-dialog';
+import { NodeUsersLink } from './node-users-link';
 import { NodeStatsColumns, NodeStatsLine, PendingDepositsBadge, type RowStats } from './node-stats';
 import { SuspendNodeDialog, type NodeStatusMode } from './suspend-node-dialog';
 
@@ -483,7 +484,6 @@ function NodeRow({
         : node.parentTenantId === null
           ? 'Raíz suelta, fuera de la red'
           : `Cuelga de ${node.parentName ?? 'otro nodo'}`;
-  const users = `${node.userCount} ${node.userCount === 1 ? 'usuario' : 'usuarios'}`;
 
   return (
     <li
@@ -512,7 +512,7 @@ function NodeRow({
             <span aria-hidden="true">·</span>
             <span>{where}</span>
             <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{users}</span>
+            <NodeUsersLink node={node} />
             {node.countryCode ? (
               <>
                 <span aria-hidden="true">·</span>

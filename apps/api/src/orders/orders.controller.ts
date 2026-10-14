@@ -1,13 +1,18 @@
 import {
   Body,
   Controller,
+  ConflictException,
   ForbiddenException,
   Get,
+  Header,
   Headers,
   HttpCode,
+  Logger,
   NotFoundException,
+  Optional,
   Param,
   Post,
+  ServiceUnavailableException,
   UseFilters,
 } from '@nestjs/common';
 import type { ProviderIssue } from '@sales-travel/domain';
@@ -19,7 +24,19 @@ import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { CreateOrderSchema, PayOrderSchema, ReshopOrderSchema } from './dto.js';
+import {
+  CreateOrderSchema,
+  IssueOrderSchema,
+  PayOrderSchema,
+  ReshopOrderSchema,
+  isSameMinorAmount,
+  type IssueOrderInput,
+} from './dto.js';
+import {
+  FlightOrderTrackingStore,
+  publicFlightOrderTracking,
+  type PublicFlightOrderTracking,
+} from './flight-order-tracking.store.js';
 import {
   HotelOrderReadsService,
   type PublicHotelOrderTracking,
@@ -27,6 +44,13 @@ import {
 import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrderConfirmationService, isTestContent } from './order-confirmation.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
+import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
+import {
+  TICKET_VOID_MESSAGES,
+  publicTicketCheck,
+  type PublicTicketCheck,
+  type TicketVoidReply,
+} from './ticket-void.plan.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -60,13 +84,49 @@ function publicIssue(issue: ProviderIssue): PublicProviderIssue {
   TboHotelsExceptionFilter,
 )
 export class OrdersController {
+  private readonly logger = new Logger(OrdersController.name);
+
   constructor(
     private readonly orders: OrdersService,
     private readonly activeTenant: ActiveTenantService,
     private readonly hotelReads: HotelOrderReadsService,
     private readonly confirmation: OrderConfirmationService,
     private readonly capabilities: OrderCapabilitiesService,
+    /**
+     * Localizadores, documentos y plazo de emisión guardados de las órdenes de vuelo (0082).
+     * Opcional sólo para los dobles de las suites que no los miran: en la app siempre está.
+     */
+    @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
+    /** La emisión de tiquetes (SAB-08). Opcional por lo mismo: en la app siempre está. */
+    @Optional() private readonly ticketIssues?: FlightTicketIssueService,
   ) {}
+
+  /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
+  private isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
+    return this.capabilities.isFlightOrder(row);
+  }
+
+  /**
+   * El seguimiento guardado de las órdenes de vuelo pedidas, en una sola lectura. Si la base falla,
+   * la lista sale igual sin él (`flightTracking: null`): no se tumba Reservas por un dato que se
+   * puede volver a consultar.
+   */
+  private async flightTrackingOf(
+    tenantId: string,
+    rows: readonly Pick<OrderRow, 'id' | 'provider'>[],
+  ): Promise<Map<string, PublicFlightOrderTracking>> {
+    const ids = rows.filter((row) => this.isFlightOrder(row)).map((row) => row.id);
+    if (this.flightTracking === undefined || ids.length === 0) return new Map();
+    try {
+      const records = await this.flightTracking.listTracking(tenantId, ids);
+      return new Map([...records].map(([id, record]) => [id, publicFlightOrderTracking(record)]));
+    } catch (error) {
+      this.logger.warn(
+        `flights.tracking.read_failed orders=${ids.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+      return new Map();
+    }
+  }
 
   @SalesOperation()
   @Post()
@@ -158,7 +218,10 @@ export class OrdersController {
       tenantId,
       rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
     );
-    return { orders: rows.map((r) => this.serialize(r, tracking.get(r.id))) };
+    const flights = await this.flightTrackingOf(tenantId, rows);
+    return {
+      orders: rows.map((r) => this.serialize(r, tracking.get(r.id), flights.get(r.id))),
+    };
   }
 
   @Get(':id')
@@ -170,9 +233,14 @@ export class OrdersController {
     const tracking = this.hotelReads.handles(row.provider)
       ? await this.hotelReads.trackingOf(tenantId, [row.id])
       : undefined;
-    return { order: this.serialize(row, tracking?.get(row.id)) };
+    const flights = await this.flightTrackingOf(tenantId, [row]);
+    return { order: this.serialize(row, tracking?.get(row.id), flights.get(row.id)) };
   }
 
+  /**
+   * Consulta la reserva en el proveedor. En un vuelo, la respuesta suma `flightTracking`: lo que
+   * quedó guardado tras esta lectura, para que la pantalla refresque la fila sin releer la lista.
+   */
   @Post(':id/retrieve')
   async retrieve(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     if (!userId) throw new ForbiddenException();
@@ -181,7 +249,10 @@ export class OrdersController {
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupports(row, 'retrieve');
     // La fila ya se leyó con el tenant fijado: una orden de otra agencia no llega hasta aquí.
-    return this.orders.retrieveOrder(tenantId, row, userId);
+    const result = await this.orders.retrieveOrder(tenantId, row, userId);
+    if (!this.isFlightOrder(row)) return result;
+    const flights = await this.flightTrackingOf(tenantId, [row]);
+    return { ...result, flightTracking: flights.get(row.id) ?? null };
   }
 
   /** Rechaza la operación si el proveedor de la reserva no la sabe hacer. */
@@ -244,6 +315,96 @@ export class OrdersController {
     return result;
   }
 
+  /**
+   * Pide la emisión de los tiquetes de una reserva confirmada. Responde 202 con la operación: la
+   * emisión corre en la cola de post-venta y la pantalla la sigue por `GET :id/operations`.
+   *
+   * Es VENTA (`@SalesOperation`): compromete el dinero de la reserva, y el superadmin no vende.
+   * Emite cualquiera que vende (SAB-FD-3 A). Sin tarjeta: la forma de pago es la de la cuenta.
+   */
+  @SalesOperation()
+  @Roles(...SELLING_ROLES)
+  @Post(':id/issue')
+  @HttpCode(202)
+  async issue(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(IssueOrderSchema)) body: IssueOrderInput,
+  ): Promise<{ operationId: string; status: 'pending' }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    // En español: el diálogo de emisión muestra este texto tal cual.
+    if (!row?.provider_order_id) throw new NotFoundException(ISSUE_CLAIM_MESSAGES['not-found']);
+    if (row.status !== 'confirmed') {
+      throw new ConflictException(ISSUE_CLAIM_MESSAGES['not-confirmed']);
+    }
+    this.assertSupports(row, 'issue');
+    // Lo que el vendedor vio al confirmar es lo que se emite: si la orden cambió, se vuelve a mirar.
+    if (
+      !isSameMinorAmount(row.total_amount, body.expectedTotalMinor) ||
+      row.currency !== body.currency
+    ) {
+      throw new ConflictException(
+        'El total cambió desde que abriste la reserva. Vuelve a consultarla antes de emitir.',
+      );
+    }
+    if (this.ticketIssues === undefined) {
+      throw new ServiceUnavailableException('La emisión de tiquetes no está disponible.');
+    }
+    return this.ticketIssues.requestIssue(tenantId, row, userId);
+  }
+
+  /**
+   * Las condiciones de los tiquetes de una reserva emitida, leídas en vivo del proveedor (SAB-09):
+   * si se pueden anular sin costo y hasta cuándo, si son reembolsables. Nunca se calcula ni se
+   * guarda: la ventana de anulación cambia con el reloj, y por eso tampoco se cachea.
+   *
+   * Post-venta de lectura: no es `@SalesOperation`, y la plataforma la ve como la ve la agencia.
+   */
+  @Get(':id/ticket-check')
+  @Header('Cache-Control', 'no-store')
+  async ticketCheck(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<PublicTicketCheck> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    if (row.status !== 'ticketed') {
+      throw new ConflictException(TICKET_VOID_MESSAGES.notTicketedCheck);
+    }
+    this.assertSupports(row, 'ticketCheck');
+    const check = await this.orders.checkTickets(tenantId, row);
+    return publicTicketCheck(check, new Date());
+  }
+
+  /**
+   * Anula (VOID) los tiquetes de una reserva emitida, que queda cancelada (SAB-09). Antes consulta
+   * en vivo las condiciones: si el proveedor no dice que se puede anular sin costo, 409 sin tocar
+   * nada. Corre en el request, con el mismo claim durable que cualquier cancelación, y no se
+   * reintenta sola.
+   *
+   * No es `@SalesOperation`: deshace lo vendido, como cancelar. Anulan los roles que venden
+   * (SAB-FD-3 A).
+   */
+  @Roles(...SELLING_ROLES)
+  @Post(':id/void')
+  @HttpCode(200)
+  async voidTickets(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<TicketVoidReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TICKET_VOID_MESSAGES.notFound);
+    if (row.status !== 'ticketed') throw new ConflictException(TICKET_VOID_MESSAGES.notTicketed);
+    this.assertSupports(row, 'void');
+    return this.orders.voidTickets(tenantId, row, userId);
+  }
+
   @SalesOperation()
   @Post(':id/services')
   async listServices(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
@@ -290,6 +451,10 @@ export class OrdersController {
    * `providerTracking`: el seguimiento de una orden de hotel (subestado, estado del proveedor y
    * HCN), sólo códigos y localizadores. `null` en las demás verticales y en una orden de hotel que
    * todavía no tiene lecturas.
+   *
+   * `flightTracking`: lo guardado de una orden de vuelo (0082): localizadores de la aerolínea,
+   * tiquetes con su estado y plazo de emisión. `null` en las demás verticales y en un vuelo que
+   * todavía no tiene lecturas guardadas.
    */
   private serialize(
     row: {
@@ -312,6 +477,7 @@ export class OrdersController {
       updated_at: Date;
     },
     tracking?: PublicHotelOrderTracking,
+    flightTracking?: PublicFlightOrderTracking,
   ) {
     return {
       id: row.id,
@@ -334,6 +500,7 @@ export class OrdersController {
       // gestione como una venta real.
       testContent: isTestContent(row),
       providerTracking: tracking ?? null,
+      flightTracking: flightTracking ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

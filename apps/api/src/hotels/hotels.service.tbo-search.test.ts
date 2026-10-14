@@ -36,6 +36,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
@@ -252,6 +253,7 @@ function banco(
     {} as HotelBookingService,
     {} as HotelContentService,
     {} as BookingPermissionsService,
+    {} as HotelRoomContentService,
   );
   return {
     service,

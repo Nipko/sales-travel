@@ -50,6 +50,18 @@ import {
   type ProviderAccountStatus,
   type ProviderForm,
 } from '../../../lib/provider-forms';
+import {
+  AUDIT_FILTERS,
+  auditLoadError,
+  auditTime,
+  eventDetail,
+  eventLabel,
+  networkAuditUrl,
+  parseAuditPage,
+  type AuditEntryView,
+  type AuditFilter,
+  type AuditPageView,
+} from '../../../lib/audit-format';
 import { providerMetaFor } from '../../../lib/provider-display';
 import { providerAccountSaveError } from '../../../lib/provider-account-errors';
 import { canManageWalletsFromNetwork } from '../../../lib/wallet-access';
@@ -1566,48 +1578,130 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
   );
 }
 
-interface AuditEntry {
-  id: string;
-  occurredAt: string;
-  eventType: string;
-  tenantName: string | null;
-  actorEmail: string | null;
-  payload: Record<string, unknown>;
+interface AuditReady {
+  readonly status: 'ready';
+  /**
+   * Qué carga de la lista es (una por filtro y reintento). "Cargar más" sólo toca la lista que lo
+   * pidió: si mientras tanto cambió el filtro, su página, su error y su "cargando" se descartan.
+   */
+  readonly list: number;
+  readonly events: readonly AuditEntryView[];
+  readonly nextBefore: string | null;
+  readonly loadingMore: boolean;
+  readonly moreError: string;
 }
 
-const EVENT_LABELS: Record<string, string> = {
-  TenantCreated: 'Agencia creada',
-  ProviderCredentialsUpdated: 'Credenciales actualizadas',
-  MembershipRoleChanged: 'Rol cambiado',
-  MarkupRuleCreated: 'Regla de markup creada',
-  MarkupRuleDeleted: 'Regla de markup eliminada',
-};
+type AuditLoad =
+  | { readonly status: 'loading' }
+  | { readonly status: 'error'; readonly message: string }
+  | AuditReady;
+
+let auditListSeq = 0;
+
+type AuditFetch =
+  | { readonly ok: true; readonly page: AuditPageView }
+  | { readonly ok: false; readonly error: string };
+
+async function fetchAuditPage(url: string): Promise<AuditFetch> {
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    const body: unknown = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: auditLoadError(res.status, body) };
+    return { ok: true, page: parseAuditPage(body) };
+  } catch {
+    return {
+      ok: false,
+      error: 'No pudimos cargar la actividad. Revisa tu conexión e inténtalo de nuevo.',
+    };
+  }
+}
+
+function AuditRow({ entry }: { entry: AuditEntryView }) {
+  const label = eventLabel(entry.eventType, entry.payload);
+  const detail = eventDetail(entry);
+  const where = [entry.tenantName, entry.actorEmail].filter(Boolean).join(' · ');
+  return (
+    <li className="flex items-start justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+      <div className="min-w-0">
+        <div
+          className={cn(
+            'text-[var(--color-fg)]',
+            label.raw ? 'break-all font-mono text-xs' : 'text-sm font-medium',
+          )}
+        >
+          {label.text}
+        </div>
+        {detail ? (
+          <div className="break-words text-xs text-[var(--color-fg-muted)]">{detail}</div>
+        ) : null}
+        {where ? (
+          <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">{where}</div>
+        ) : null}
+      </div>
+      <time
+        dateTime={entry.occurredAt}
+        className="shrink-0 text-[11px] tabular-nums text-[var(--color-fg-subtle)]"
+      >
+        {auditTime(entry.occurredAt)}
+      </time>
+    </li>
+  );
+}
 
 function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }) {
-  const [events, setEvents] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<AuditFilter>('all');
+  const [state, setState] = useState<AuditLoad>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/tenants/network/audit?tenantId=${encodeURIComponent(rootId)}`,
-        );
-        const data = (await res.json()) as { events?: AuditEntry[] };
-        setEvents(data.events ?? []);
-      } catch {
-        setEvents([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [rootId]);
+    let cancelled = false;
+    setState({ status: 'loading' });
+    void fetchAuditPage(networkAuditUrl(rootId, filter)).then((result) => {
+      if (cancelled) return;
+      setState(
+        result.ok
+          ? {
+              status: 'ready',
+              list: ++auditListSeq,
+              events: result.page.events,
+              nextBefore: result.page.nextBefore,
+              loadingMore: false,
+              moreError: '',
+            }
+          : { status: 'error', message: result.error },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rootId, filter, attempt]);
+
+  async function loadMore() {
+    if (state.status !== 'ready' || state.nextBefore === null || state.loadingMore) return;
+    const { list, nextBefore: before } = state;
+    const sameList = (prev: AuditLoad): prev is AuditReady =>
+      prev.status === 'ready' && prev.list === list;
+    setState((prev) => (sameList(prev) ? { ...prev, loadingMore: true, moreError: '' } : prev));
+    const result = await fetchAuditPage(networkAuditUrl(rootId, filter, before));
+    setState((prev) => {
+      if (!sameList(prev)) return prev;
+      if (!result.ok) return { ...prev, loadingMore: false, moreError: result.error };
+      return {
+        ...prev,
+        events: [...prev.events, ...result.page.events],
+        nextBefore: result.page.nextBefore,
+        loadingMore: false,
+        moreError: '',
+      };
+    });
+  }
 
   return (
     <Dialog
       open
       onClose={onClose}
       title="Actividad de la red"
+      description="Registro inmutable de las acciones sensibles de tu red: accesos y usuarios, credenciales, precios y nodos."
       className="max-w-2xl"
       footer={
         <ModalFooter>
@@ -1617,43 +1711,84 @@ function AuditModal({ rootId, onClose }: { rootId: string; onClose: () => void }
         </ModalFooter>
       }
     >
-      <p className="mb-3 text-xs text-[var(--color-fg-muted)]">
-        Registro inmutable de acciones sensibles en tu red (credenciales, roles, reglas de pricing,
-        altas de agencias).
-      </p>
-      {loading ? (
-        <div className="h-16 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
-      ) : events.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-10 text-center text-xs text-[var(--color-fg-muted)]">
-          Sin actividad registrada todavía.
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {events.map((e) => (
-            <div
-              key={e.id}
-              className="flex items-start justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+      <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filtrar la actividad">
+        {AUDIT_FILTERS.map((f) => {
+          const pressed = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={pressed}
+              onClick={() => setFilter(f.id)}
+              className={cn(
+                'inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
+                pressed
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-fg)]'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+              )}
             >
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-[var(--color-fg)]">
-                  {EVENT_LABELS[e.eventType] ?? e.eventType}
-                </div>
-                <div className="truncate text-[11px] text-[var(--color-fg-subtle)]">
-                  {e.tenantName ?? '—'}
-                  {e.actorEmail ? ` · ${e.actorEmail}` : ''}
-                </div>
-              </div>
-              <time className="shrink-0 text-[10px] text-[var(--color-fg-subtle)]">
-                {new Date(e.occurredAt).toLocaleString('es-CO', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </time>
-            </div>
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {state.status === 'loading' ? (
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Cargando la actividad"
+          className="space-y-1.5"
+        >
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-14 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]"
+            />
           ))}
         </div>
+      ) : state.status === 'error' ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center">
+          <p role="alert" className="text-xs text-[var(--color-danger)]">
+            {state.message}
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+            Reintentar
+          </Button>
+        </div>
+      ) : state.events.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] px-4 py-10 text-center text-xs text-[var(--color-fg-muted)]">
+          {filter === 'all'
+            ? 'Sin actividad registrada todavía.'
+            : 'Sin actividad para este filtro.'}
+        </div>
+      ) : (
+        <>
+          <ul className="space-y-1.5" aria-label="Eventos de la red">
+            {state.events.map((e) => (
+              <AuditRow key={e.id} entry={e} />
+            ))}
+          </ul>
+          {state.nextBefore !== null || state.moreError ? (
+            <div className="mt-3 flex flex-col items-center gap-2">
+              {state.moreError ? (
+                <p role="alert" className="text-xs text-[var(--color-danger)]">
+                  {state.moreError}
+                </p>
+              ) : null}
+              {state.nextBefore !== null ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={state.loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  {state.loadingMore ? 'Cargando…' : 'Cargar más'}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </>
       )}
     </Dialog>
   );

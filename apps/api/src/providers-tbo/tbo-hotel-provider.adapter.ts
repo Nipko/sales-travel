@@ -42,7 +42,9 @@ import {
   type TboCatalogHotel,
   type TboEnvironment,
   type TboHotelContent,
+  type TboHotelDetailsResult,
   type TboHotelsAdapter,
+  type TboRoomContent,
   type TboRateSnapshot,
   type TboSearchPackContext,
   type TboSearchReport,
@@ -77,6 +79,9 @@ import type {
   HotelRateBaseline,
   HotelRatesContextPort,
   HotelRatesWithContext,
+  HotelRoomContentFetch,
+  HotelRoomContentPort,
+  HotelProviderRoomContent,
   HotelSearchContextData,
   HotelSearchContextPort,
   HotelSearchPackContext,
@@ -102,11 +107,15 @@ export type TboHotelsAcl = Pick<
 >;
 
 /**
- * Del cliente de contenido estático, `HotelDetails` (la ficha y las fotos de los resultados) y
- * `TBOHotelCodeList` (los hoteles de una ciudad que el catálogo todavía no tiene). El resto del
- * catálogo lo recorre el sync, en otro proceso.
+ * Del cliente de contenido estático, `HotelDetails` (la ficha, las fotos de los resultados y las
+ * habitaciones) y `TBOHotelCodeList` (los hoteles de una ciudad que el catálogo todavía no tiene).
+ * El resto del catálogo lo recorre el sync, en otro proceso.
+ *
+ * `roomDetailAvailable` es opcional: sin él, se supone que el detalle por habitación se puede pedir
+ * y lo que pasó lo dice `roomDetail` del resultado.
  */
-export type TboContentAcl = Pick<TboStaticContentClient, 'getHotelDetails' | 'listCityHotels'>;
+export type TboContentAcl = Pick<TboStaticContentClient, 'getHotelDetails' | 'listCityHotels'> &
+  Partial<Pick<TboStaticContentClient, 'roomDetailAvailable'>>;
 
 /**
  * Intentos de las lecturas de catálogo bajo demanda: uno más que la ficha, porque nadie las espera
@@ -133,6 +142,46 @@ function contentRecordOf(content: TboHotelContent): HotelContentRecord {
     checkOutTime: content.checkOutTime,
     contentHash: tboHotelContentHash(content),
   };
+}
+
+function roomContentOf(room: TboRoomContent): HotelProviderRoomContent {
+  return {
+    roomKey: room.roomKey,
+    roomRef: room.roomId,
+    nameKey: room.nameKey,
+    name: room.name,
+    sizeText: room.sizeText,
+    description: room.description,
+    images: [...room.images],
+  };
+}
+
+/**
+ * Lo que dice UN HotelDetails con `IsRoomDetailRequired` de las habitaciones de UN hotel. Sólo
+ * `served` y `fallback` salieron con la clave: con los demás estados no se pidió y no se sabe nada.
+ *
+ * - Sin el hotel en la respuesta ("No Hotels Found" o no volvió): `none`.
+ * - `served` con habitaciones legibles: `rooms`; sin ninguna (bloque ausente o ilegible): `unreadable`.
+ * - `fallback` con el hotel: TBO no aceptó la clave para él y el contenido llegó sin ella. Las
+ *   habitaciones que vinieron con la clave de los hoteles que siguen se usan; si no hay, `unreadable`.
+ */
+function roomFetchOf(
+  hotelId: string,
+  lang: HotelContentLanguage,
+  found: TboHotelDetailsResult,
+): HotelRoomContentFetch {
+  if (found.roomDetail !== 'served' && found.roomDetail !== 'fallback') {
+    return { lang, outcome: 'unavailable', rooms: [] };
+  }
+  const returned =
+    found.contents.some((c) => c.hotelId === hotelId) ||
+    found.hotels.some((h) => h.hotelId === hotelId);
+  if (found.outcome === 'NO_HOTELS_FOUND' || !returned) {
+    return { lang, outcome: 'none', rooms: [] };
+  }
+  const rooms = found.roomContents.find((r) => r.hotelId === hotelId)?.rooms ?? [];
+  if (rooms.length === 0) return { lang, outcome: 'unreadable', rooms: [] };
+  return { lang, outcome: 'rooms', rooms: rooms.map(roomContentOf) };
 }
 
 function catalogRecordOf(hotel: TboCatalogHotel): HotelCatalogRecord {
@@ -270,6 +319,7 @@ export class TboHotelProviderAdapter
     HotelAccountEnvironmentPort,
     HotelContentPort,
     HotelContentBatchPort,
+    HotelRoomContentPort,
     HotelCityCatalogPort
 {
   // Campos `#`: un adapter volcado a un log no arrastra el ACL ni nada de la cuenta.
@@ -393,7 +443,12 @@ export class TboHotelProviderAdapter
       signals: report.result.signals,
       rateConditionsHash: report.rateConditionsHash,
     };
+    // TBO da UNA lista de `Amenities` para la unidad reservable entera (docs/tbo/03 §2.7): vale
+    // para cada una de sus habitaciones. Va aparte del pack para que C1 y C2 no la comparen.
+    const roomAmenities =
+      report.amenities.length === 0 ? undefined : roompack.rooms.map(() => [...report.amenities]);
     return {
+      ...(roomAmenities === undefined ? {} : { roomAmenities }),
       result: { ...report.result, roompack },
       pack: {
         hotelId: report.pack.hotelCode,
@@ -578,6 +633,37 @@ export class TboHotelProviderAdapter
       checkInTime: text?.checkInTime ?? null,
       checkOutTime: text?.checkOutTime ?? null,
     };
+  }
+
+  /**
+   * El detalle por habitación de UN hotel en UN idioma (`HotelDetails` con `IsRoomDetailRequired`,
+   * docs/tbo/05 §2.6.3). Un solo intento: lo que no llegó se vuelve a pedir en otra ficha.
+   *
+   * Con el interruptor `TBO_ROOM_DETAILS` en `off` o la clave suspendida en el proceso no sale
+   * NINGUNA llamada (`unavailable`): sin la clave, HotelDetails sólo traería el contenido del hotel,
+   * que no es lo que se pidió. El contenido del hotel que llega de paso no se guarda aquí: lo
+   * escriben la ficha y las fotos de los resultados, con su huella.
+   */
+  async fetchHotelRoomContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    _ctx: SearchContext,
+    options: HotelContentFetchOptions,
+  ): Promise<HotelRoomContentFetch> {
+    const content = this.#content;
+    if (content === undefined) throw new TboContentClientMissingError();
+    if (content.roomDetailAvailable === false) return { lang, outcome: 'unavailable', rooms: [] };
+    const found = await content.getHotelDetails(
+      [hotelId],
+      lang,
+      {
+        timeoutMs: options.timeoutMs,
+        maxAttempts: 1,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
+      { roomDetail: true },
+    );
+    return roomFetchOf(hotelId, lang, found);
   }
 
   /** Lote de HotelDetails: 10 por defecto, nunca más de 13 (05 §10; Q-62). */

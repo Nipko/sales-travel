@@ -216,8 +216,10 @@ export class TenantNotManagedError extends ForbiddenException {
 export class MemberSelfActionError extends ForbiddenException {
   readonly reason = 'MEMBER_SELF_ACTION';
 
-  constructor() {
-    super('No puedes hacer esto sobre tu propio usuario: pídeselo a otro administrador.');
+  constructor(
+    message = 'No puedes hacer esto sobre tu propio usuario: pídeselo a otro administrador.',
+  ) {
+    super(message);
     this.name = 'MemberSelfActionError';
   }
 }

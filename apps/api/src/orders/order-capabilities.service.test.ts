@@ -26,6 +26,7 @@ function service(flight: Partial<ProviderCapabilities> = {}) {
   );
   const hotelReads = {
     capabilitiesOf: (provider: string) => (provider === 'tbo-hotels' ? HOTEL : undefined),
+    handles: (provider: string) => provider === 'tbo-hotels',
   } as unknown as HotelOrderReadsService;
   return new OrderCapabilitiesService(registry, hotelReads);
 }
@@ -91,7 +92,7 @@ describe('OrderCapabilitiesService.assertSupports', () => {
       service().assertSupports({ provider: 'stub-air', status: 'ticketed' }, 'cancel'),
     ).toThrow(
       new BadRequestException(
-        'La reserva está emitida. Esta cancelación no ejecuta VOID ni REFUND de tiquetes.',
+        'La reserva está emitida. Para cancelarla, anula o reembolsa los tiquetes.',
       ),
     );
   });
@@ -104,5 +105,15 @@ describe('OrderCapabilitiesService.assertSupports', () => {
     expect(() => s.assertSupports({ provider: 'tbo-hotels', status: 'confirmed' }, 'pay')).toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('OrderCapabilitiesService.isFlightOrder', () => {
+  it('es vuelo lo que no es hotel ni auto, aunque el proveedor ya no esté registrado', () => {
+    const s = service();
+    expect(s.isFlightOrder({ provider: 'stub-air' })).toBe(true);
+    expect(s.isFlightOrder({ provider: 'aerolinea-retirada' })).toBe(true);
+    expect(s.isFlightOrder({ provider: 'tbo-hotels' })).toBe(false);
+    expect(s.isFlightOrder({ provider: 'agent-cars' })).toBe(false);
   });
 });

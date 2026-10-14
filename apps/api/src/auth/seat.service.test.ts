@@ -229,6 +229,21 @@ describe('SeatService', () => {
     });
   });
 
+  it('el segundo factor heredado (switch-tenant, equipo de confianza) conserva su instante', async () => {
+    const { repo, service } = setup();
+    const at = new Date('2026-10-01T12:00:00.000Z');
+    const inherited = await issue(service, { userId: 'ana', mfaVerified: true, mfaVerifiedAt: at });
+    const fresh = await issue(service, { userId: 'beto', mfaVerified: true });
+
+    expect(repo.sessions.find((s) => s.id === inherited.sessionId)).toMatchObject({
+      mfaVerifiedAt: at,
+    });
+    // Sin instante, la sesión lo estrena: el repositorio escribe now() de la base.
+    expect(repo.sessions.find((s) => s.id === fresh.sessionId)).toMatchObject({
+      mfaVerifiedAt: null,
+    });
+  });
+
   it('el lock del usuario va antes que todo: antes de mirar su rol, del cupo y de cerrar sus sesiones', async () => {
     const { repo, service } = setup();
     repo.seed('ana', AGENCY, POOL);
@@ -402,6 +417,22 @@ describe('SeatService', () => {
       mfa: true,
       remember: true,
     });
+    // Recién probado: completar el ingreso no lo estrena más tarde (resolución de segundos).
+    expect(Math.abs(Date.now() - (claims.mfaVerifiedAt?.getTime() ?? 0))).toBeLessThan(2000);
+  });
+
+  it('el permiso conserva el instante de un segundo factor heredado', async () => {
+    const { repo, service } = setup({ limit: 2, canManage: true });
+    repo.seed('bruno', AGENCY, POOL);
+    repo.seed('carla', AGENCY, POOL);
+    const at = new Date('2026-10-01T12:00:00.000Z');
+
+    const err = (await rejection(
+      issue(service, { userId: 'admin', mfaVerified: true, mfaVerifiedAt: at }),
+    )) as SeatsFullError;
+
+    const claims = await jwt.verifySeatRelease(err.publicDetails.release?.token ?? '');
+    expect(claims.mfaVerifiedAt).toEqual(at);
   });
 
   it('la lista para liberar no incluye las sesiones del propio usuario', async () => {

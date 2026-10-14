@@ -1,0 +1,34 @@
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelDetails": [
+    {
+      "HotelCode": "1000000",
+      "HotelName": "Sofitel Legend Old Cataract Aswan",
+      "HotelRating": 5,
+      "Address": "Abtal El Tahrir Street,Aswan 81511, Assuan, Aswan, 81511, Egypt",
+      "CountryCode": "EG",
+      "Map": "24.08166|32.88985",
+      "CheckInTime": "3:00 PM",
+      "CheckOutTime": "12:00 PM",
+      "Images": [
+        "https://api.tbotechnology.in/imageresource.aspx?img=9eMP+0FIICgCIk6ZClzZH9Cs+1gwAq6BFWcc22yNLMF/UJIXMdxPdTX9IMA+gOFHIZ0e6X2r2Pe98Nnf1JsUZ4vSpJuSO2+iow8K6weUG+E="
+      ],
+      "RoomDetails": {
+        "197354": {
+          "RoomName": "Deluxe Room, 1 King Bed, Garden View",
+          "RoomSize": "1830 ft",
+          "RoomDescription": "1 King Bed Overlooking the garden, Free WiFi, Cable channels...",
+          "ImageURL": "https://www.tboholidays.com/imageresource.aspx?img=example1,https://www.tboholidays.com/imageresource.aspx?img=example2"
+        },
+        "197355": {
+          "RoomName": "Nile View Suite, 1 King Bed",
+          "RoomSize": "60 sq m",
+          "ImageURL": "https://www.tboholidays.com/imageresource.aspx?img=example3"
+        }
+      }
+    }
+  ]
+}

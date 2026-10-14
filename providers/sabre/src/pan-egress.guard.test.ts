@@ -24,6 +24,11 @@ import {
   buildSabrePriceRequest,
   type SabrePriceInput,
 } from './price/request.builder';
+import {
+  SABRE_FULFILL_PATH,
+  buildSabreFulfillRequest,
+  type SabreFulfillInput,
+} from './ticketing/fulfill.request.builder';
 
 /**
  * El guard anti-PAN de salida (D1, decidida el 2026-08-26 — docs/sabre/10 §9).
@@ -52,9 +57,10 @@ import {
  *
  * ## Las dos mitades del guard
  *
- * 1. **El barrido de salida.** Los cuerpos de `offers/price`, `createBooking`, `cancelBooking` y
- *    los dos de `getBooking`, construidos desde entradas MÁXIMAS —cada campo opcional relleno—,
- *    no contienen ninguna clave de dato de tarjeta ni ninguna tirada con forma de PAN.
+ * 1. **El barrido de salida.** Los cuerpos de `offers/price`, `createBooking`, `cancelBooking`,
+ *    los dos de `getBooking` y el de la emisión (`fulfillFlightTickets`), construidos desde
+ *    entradas MÁXIMAS —cada campo opcional relleno—, no contienen ninguna clave de dato de tarjeta
+ *    ni ninguna tirada con forma de PAN.
  * 2. **El barrido de mutación.** Se inyecta un PAN de prueba en CADA hoja de texto de cada
  *    entrada, se reconstruye y se clasifica el resultado en `rejected` (el builder lo rechazó) o
  *    `carried` (el PAN llegó al cable). La partición está **congelada**: si alguien afloja un
@@ -485,6 +491,21 @@ const MAXIMAL_GET_DISPLAY = {
   sections: ['FLIGHTS', 'TICKETS', 'FORMS_OF_PAYMENT'] as const,
 };
 
+/**
+ * La emisión con todo relleno. `INVOICE` es la forma de pago con más texto (la descripción de la
+ * factura), y las impresoras manuales son las tres casillas de texto del bloque de impresión.
+ */
+const MAXIMAL_FULFILL_INPUT: SabreFulfillInput = {
+  confirmationId: 'ABCDEF',
+  formOfPayment: 'INVOICE',
+  invoiceDescription: 'AGT INVOICE',
+  ancillaryItemIds: ['17', '19'],
+  validatingAirlineCode: 'AV',
+  commissionPercentage: 7.5,
+  targetPcc: 'A1B2',
+  printers: { hardcopyAddress: 'B18BG1', ticketAddress: 'EF34GH', ticketCountryCode: 'CO' },
+};
+
 const MAXIMAL_GET_MODIFICATION = {
   confirmationId: 'ABCDEF',
   bookingSource: 'SABRE_ORDER' as const,
@@ -587,6 +608,11 @@ function egressBodies(): readonly Egress[] {
       path: SABRE_GET_BOOKING_PATH,
       body: buildSabreGetBookingForModification(MAXIMAL_GET_MODIFICATION),
     },
+    {
+      name: 'fulfillFlightTickets',
+      path: SABRE_FULFILL_PATH,
+      body: buildSabreFulfillRequest(MAXIMAL_FULFILL_INPUT),
+    },
   ];
 }
 
@@ -598,6 +624,7 @@ describe('ningún cuerpo de salida lleva dato de tarjeta', () => {
       'cancelBooking',
       'getBooking (display)',
       'getBooking (modificación)',
+      'fulfillFlightTickets',
     ]);
   });
 
@@ -636,6 +663,14 @@ describe('ningún cuerpo de salida lleva dato de tarjeta', () => {
     const wire = await wireBytes(SABRE_CREATE_BOOKING_PATH, poisoned);
     expect(forbiddenKeysIn(wire)).toEqual(['cardNumber', 'cardSecurityCode', 'cardHolder']);
     expect(findPanLike(wire)).toHaveLength(1);
+  });
+
+  it('el cuerpo de emisión lleva su forma de pago de verdad: el barrido no pasa por vacío', () => {
+    // Lo mismo que el caso de creación de abajo, para la emisión: sin forma de pago no habría nada
+    // que medir en la parte del cuerpo que más se parece a un pago.
+    const body = buildSabreFulfillRequest(MAXIMAL_FULFILL_INPUT);
+    expect(body.formsOfPayment).toEqual([{ type: 'INVOICE', invoiceDescription: 'AGT INVOICE' }]);
+    expect(body.designatePrinters).toHaveLength(2);
   });
 
   it('el cuerpo de creación lleva un bloque de pago de verdad: el barrido no pasa por vacío', () => {
@@ -836,6 +871,18 @@ const CARRIED_CANCEL: readonly string[] = Object.freeze([
   'retention.label',
 ]);
 
+/**
+ * `fulfillFlightTickets`. **Vacía, y es una decisión**: cada casilla de texto de la emisión tiene un
+ * patrón que no admite un PAN de 16 dígitos —`confirmationId` con el techo de 14 de un id de orden,
+ * PCC, LNIATA y país con su ancho fijo, la validadora con dos caracteres— o el rail de 9 dígitos
+ * (`invoiceDescription`, `ancillaryIds`). La forma de pago es un enum sin tarjeta. Un campo nuevo
+ * aquí es una vía de salida nueva en la operación que mueve el dinero, y hay que decidirlo a la vista.
+ *
+ * ⚠️ El techo de 14 de `confirmationId` NO para un PAN de 13 o 14 dígitos; ése lo para que el valor
+ * sea el PNR guardado de la reserva y no un texto de nadie. Lo que este barrido fija es el de 16.
+ */
+const CARRIED_FULFILL: readonly string[] = Object.freeze([]);
+
 /** Lo que hay que hacer cuando este barrido se pone rojo. No es "actualizar el snapshot". */
 const CARRIED_HELP =
   'La superficie de salida ha cambiado. Un campo NUEVO en la lista significa que un PAN inyectado ' +
@@ -897,5 +944,32 @@ describe('barrido de mutación: dónde llega un PAN inyectado y dónde no', () =
     expect(Object.keys(verdicts).length).toBeGreaterThan(10);
     expect(verdicts['confirmationId']).toBe('rejected');
     expect(carriedPaths(verdicts), CARRIED_HELP).toEqual([...CARRIED_CANCEL]);
+  });
+
+  it('fulfillFlightTickets', () => {
+    const verdicts = mutationVerdicts(MAXIMAL_FULFILL_INPUT as unknown as Json, (mutated) =>
+      buildSabreFulfillRequest(mutated as unknown as SabreFulfillInput),
+    );
+    expect(Object.keys(verdicts).length).toBeGreaterThan(8);
+    // Las ramas que RECHAZAN, una por defensa: sin esto, un builder que aceptase todo pasaría igual
+    // con sólo alargar la lista congelada.
+    expect(verdicts['confirmationId']).toBe('rejected');
+    expect(verdicts['invoiceDescription']).toBe('rejected');
+    expect(verdicts['ancillaryItemIds.0']).toBe('rejected');
+    expect(verdicts['formOfPayment']).toBe('rejected');
+    expect(carriedPaths(verdicts), CARRIED_HELP).toEqual([...CARRIED_FULFILL]);
+  });
+
+  it('fulfillFlightTickets: un PAN en una clave que la entrada no declara tampoco sale', () => {
+    // La sonda del `strict`: el barrido de arriba sólo muta casillas que existen. Una clave de
+    // tarjeta colada por un `as` es la otra vía, y la cierra el esquema, no el tipo.
+    for (const key of ['cardNumber', 'payer', 'cardHolder', 'virtualCardCode']) {
+      expect(() =>
+        buildSabreFulfillRequest({
+          ...MAXIMAL_FULFILL_INPUT,
+          ...({ [key]: TEST_PAN } as object),
+        }),
+      ).toThrow();
+    }
   });
 });

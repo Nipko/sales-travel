@@ -164,6 +164,12 @@ export interface UsersTable {
   mfa_pending_secret: string | null;
   /** 0061: última agencia con la que operó. Preferencia del login, no autoriza nada. */
   last_tenant_id: string | null;
+  /**
+   * 0062: un admin le pidió elegir una contraseña nueva. Mientras no es null, el login responde 403
+   * PASSWORD_RESET_REQUIRED y ninguna sesión suya vale; la limpian el canje del enlace y el cambio de
+   * contraseña.
+   */
+  password_reset_required_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -407,16 +413,40 @@ export interface HotelContentTable {
   fetched_at: Generated<Timestamp>;
 }
 
-/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+/**
+ * 0041 + 0070: contenido por habitación. `room_id` es el `roomKey` del ACL (el id del proveedor o
+ * `n-` + 16 hex del nombre normalizado) y nunca `'0'` (centinela de "sin mapeo"). La app la escribe
+ * sólo por `hotel_catalog_store_room_contents`.
+ */
 export interface HotelRoomContentTable {
   provider_code: string;
   hotel_id: string;
   room_id: string;
   lang: LanguageCode;
+  /** Id de la habitación en el proveedor (TBO `RoomId`); `null` si no vino. */
+  room_ref: string | null;
+  /** Nombre normalizado como `normalizeRoomName` de la web. */
+  name_key: string | null;
   name: string | null;
   size_text: string | null;
+  /** Texto plano, sin `<` ni `>`. */
   description: string | null;
+  /** `string[]` de URLs `https`. */
   images: unknown;
+  position: Generated<number>;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** Qué respondió el proveedor al detalle por habitación de un hotel en un idioma (0070). */
+export type HotelRoomContentOutcome = 'rooms' | 'none' | 'unreadable';
+
+/** 0070: la última vez que se pidió el detalle por habitación de un hotel en un idioma. */
+export interface HotelRoomContentFetchTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  outcome: HotelRoomContentOutcome;
+  room_count: Generated<number>;
   fetched_at: Generated<Timestamp>;
 }
 
@@ -543,6 +573,70 @@ export interface HotelOrderTrackingTable {
   cancel_verify_anchor_at: Timestamp | null;
   cancel_verify_step: number | null;
   cancel_verify_next_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/*
+ * 0082: vocabularios cerrados de `flight_order_tracking` y `order_flight_documents`. Valores y no
+ * sólo tipos por lo mismo que los de 0042: los CHECK de la migración dicen lo mismo, y un test los
+ * compara con el SQL y con el vocabulario del dominio.
+ */
+export const FLIGHT_DOCUMENT_KINDS = ['TICKET', 'EMD'] as const;
+export type FlightDocumentKind = (typeof FLIGHT_DOCUMENT_KINDS)[number];
+
+export const FLIGHT_DOCUMENT_STATUSES = [
+  'ISSUED',
+  'VOIDED',
+  'REFUNDED',
+  'EXCHANGED',
+  'UNKNOWN',
+] as const;
+export type FlightDocumentStatus = (typeof FLIGHT_DOCUMENT_STATUSES)[number];
+
+export const TICKETING_DEADLINE_ZONES = ['UTC', 'PROVIDER_LOCAL'] as const;
+export type TicketingDeadlineZone = (typeof TICKETING_DEADLINE_ZONES)[number];
+
+/** `DATE` de Postgres: `pg` lo entrega como `Date` a medianoche LOCAL; se lee con `to_char`. */
+type PgDate = ColumnType<Date | null, string | null | undefined, string | null>;
+
+/**
+ * 0082: lo que la última lectura del proveedor dijo de una orden de vuelo. Una fila por orden, con
+ * tenant_id y RLS forzada; `(order_id, tenant_id)` apunta a `(id, tenant_id)` de `orders`. Sin PII.
+ */
+export interface FlightOrderTrackingTable {
+  order_id: string;
+  tenant_id: string;
+  /** `[{ carrierCode, locator }]`. La forma la valida el store; la base, que es una lista. */
+  airline_locators: ColumnType<unknown, string | undefined, string>;
+  /** Va con su zona: los dos o ninguno. */
+  ticketing_deadline_date: PgDate;
+  /** `HH:MM`; sólo con fecha. */
+  ticketing_deadline_time: string | null;
+  ticketing_deadline_zone: TicketingDeadlineZone | null;
+  /** Sólo con zona `UTC`: con la hora de la oficina del proveedor sería un instante inventado. */
+  ticketing_deadline_at: Timestamp | null;
+  last_read_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/** 0082: tiquetes y EMD de una orden de vuelo, uno por `(order_id, number)`. */
+export interface OrderFlightDocumentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  /** Número principal, `^[0-9]{10,16}$`. */
+  number: string;
+  kind: FlightDocumentKind;
+  /** Posición del pasajero en `orders.passengers`, desde 0. */
+  traveler_index: number | null;
+  status: FlightDocumentStatus;
+  /** Código del proveedor, `^[A-Z0-9]{1,4}$`. */
+  provider_status_code: string | null;
+  issued_at: Timestamp | null;
+  voided_at: Timestamp | null;
+  refunded_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -854,6 +948,9 @@ export interface PackageItemsTable {
 /**
  * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
  * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
+ *
+ * `issue`, `modify` y `add-services` son escrituras en el proveedor de una orden de vuelo: como
+ * máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083).
  */
 export type OrderOperationType =
   | 'cancel'
@@ -862,7 +959,17 @@ export type OrderOperationType =
   | 'retrieve'
   | 'hcn-check'
   | 'hcn-ticket'
-  | 'reconcile';
+  | 'reconcile'
+  | 'issue'
+  | 'modify'
+  | 'add-services';
+
+/** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
+export const PROVIDER_WRITE_OPERATION_TYPES = [
+  'issue',
+  'modify',
+  'add-services',
+] as const satisfies readonly OrderOperationType[];
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
 export interface OrderOperationsTable {
@@ -1055,10 +1162,13 @@ export interface DB {
   hotel_match: HotelMatchTable;
   hotel_content: HotelContentTable;
   hotel_room_content: HotelRoomContentTable;
+  hotel_room_content_fetch: HotelRoomContentFetchTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
   hotel_order_tracking: HotelOrderTrackingTable;
+  flight_order_tracking: FlightOrderTrackingTable;
+  order_flight_documents: OrderFlightDocumentsTable;
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;

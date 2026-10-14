@@ -1,10 +1,17 @@
 'use client';
 
-import { BedDouble, ChevronDown, Gift, Receipt, Wallet } from 'lucide-react';
+import { ChevronDown, Gift, Receipt, Wallet } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import { perNightOf, stayShortLabel } from './hotel-card-summary';
 import { formatMoney } from './hotel-format';
+import {
+  roomsWithDescription,
+  roomsWithPhotos,
+  slotSizeLabel,
+  type GroupRoomContent,
+} from './room-content-match';
+import { RoomDescription, RoomPhotos } from './room-photo';
 import {
   AtHotelCharges,
   ExpiredTag,
@@ -61,8 +68,11 @@ export interface RoomTypeListProps<T extends RoomPlan> {
   readonly planNotice?: (plan: T) => ReactNode;
   /** Lo que la ficha suma dentro de «Ver condiciones»; `null` si no tiene nada. */
   readonly planDetails?: (plan: T) => ReactNode;
-  /** La foto del tipo de habitación; por defecto, el icono de una cama. */
-  readonly photo?: (group: RoomTypeGroup<T>) => ReactNode;
+  /**
+   * Fotos, tamaño y descripción del tipo según el catálogo del proveedor (TBO-07); sin nada, el
+   * icono de una cama.
+   */
+  readonly roomContent?: (group: RoomTypeGroup<T>) => GroupRoomContent | undefined;
   /** Proveedores con cuenta de prueba: sus planes llevan la etiqueta «Prueba». */
   readonly testAccountCodes?: ReadonlySet<string>;
 }
@@ -82,38 +92,53 @@ export function RoomTypeList<T extends RoomPlan>({
   );
 }
 
-function RoomPhotoPlaceholder() {
-  return (
-    <div
-      aria-hidden="true"
-      className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)]"
-    >
-      <BedDouble className="size-5 text-[var(--color-fg-subtle)]" />
-    </div>
-  );
-}
-
-/** «Habitación 1: Doble estándar · 1 cama king · 2 adultos». */
-function slotLine(slot: RoomSlot): string {
+/** «Habitación 1: Doble estándar · 1 cama king · 2 adultos · ≈ 25 m²». */
+function slotLine(slot: RoomSlot, size: string | undefined): string {
   const label = `Habitación ${slot.index + 1}`;
-  const parts = [slot.name, slot.beds, slot.occupancyText].filter((p): p is string => !!p);
+  const parts = [slot.name, slot.beds, slot.occupancyText, size].filter((p): p is string => !!p);
   return parts.length === 0 ? label : `${label}: ${parts.join(' · ')}`;
 }
 
-function SlotLines({ slots }: { slots: readonly RoomSlot[] }) {
+function SlotLines({
+  slots,
+  content,
+}: {
+  slots: readonly RoomSlot[];
+  content: GroupRoomContent | undefined;
+}) {
   const [only] = slots;
   if (only === undefined) return null;
   if (slots.length === 1) {
-    const parts = [only.beds, only.occupancyText].filter((p): p is string => !!p);
+    const parts = [only.beds, only.occupancyText, slotSizeLabel(content, only.index)].filter(
+      (p): p is string => !!p,
+    );
     if (parts.length === 0) return null;
     return <p className="text-xs text-[var(--color-fg-muted)]">{parts.join(' · ')}</p>;
   }
   return (
     <ul className="space-y-0.5 text-xs text-[var(--color-fg-muted)]">
       {slots.map((slot) => (
-        <li key={slot.index}>{slotLine(slot)}</li>
+        <li key={slot.index}>{slotLine(slot, slotSizeLabel(content, slot.index))}</li>
       ))}
     </ul>
+  );
+}
+
+/** La descripción de cada habitación distinta del tipo; con varias, cada una con su nombre. */
+function RoomDescriptions({ content }: { content: GroupRoomContent | undefined }) {
+  const rooms = roomsWithDescription(content);
+  if (rooms.length === 0) return null;
+  return (
+    <div className="space-y-1 pt-0.5">
+      {rooms.map((matched) => (
+        <RoomDescription
+          key={matched.key}
+          text={matched.room.description ?? ''}
+          name={matched.name}
+          showName={rooms.length > 1}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -131,7 +156,7 @@ function RoomTypeSection<T extends RoomPlan>({
   planAction,
   planNotice,
   planDetails,
-  photo,
+  roomContent,
   testAccountCodes,
 }: SectionProps<T>) {
   const [expanded, setExpanded] = useState(false);
@@ -143,12 +168,20 @@ function RoomTypeSection<T extends RoomPlan>({
   const total = group.from.row.sale;
   const perNight = perNightOf(total, nights);
   const stay = stayShortLabel(nights, roomsCount);
+  const content = roomContent?.(group);
+  // Con varias miniaturas en fila, el texto baja debajo de ellas cuando no hay ancho para los dos.
+  const manyPhotos = roomsWithPhotos(content).length > 1;
 
   return (
     <section aria-labelledby={titleId} className="space-y-3 px-4 py-4">
-      <div className="flex gap-3">
-        {photo ? photo(group) : <RoomPhotoPlaceholder />}
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-4">
+      <div className={cn('flex gap-3', manyPhotos && 'flex-wrap')}>
+        <RoomPhotos content={content} />
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 flex-col gap-1.5 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-4',
+            manyPhotos && 'min-w-48',
+          )}
+        >
           <div className="min-w-0 space-y-0.5">
             <Heading
               id={titleId}
@@ -156,7 +189,8 @@ function RoomTypeSection<T extends RoomPlan>({
             >
               {group.title}
             </Heading>
-            <SlotLines slots={group.slots} />
+            <SlotLines slots={group.slots} content={content} />
+            <RoomDescriptions content={content} />
           </div>
           <div className="shrink-0 @lg:text-right">
             <p className="text-xs text-[var(--color-fg-muted)]">

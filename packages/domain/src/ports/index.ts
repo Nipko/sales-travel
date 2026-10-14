@@ -4,6 +4,7 @@ export * from './seat-map.port';
 export * from './ancillary.port';
 export * from './order-create.port';
 export * from './order-manage.port';
+export * from './ticketing.port';
 export * from './hotel-search.port';
 export * from './hotel-prebook.port';
 export * from './hotel-book.port';

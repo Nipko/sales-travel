@@ -13,22 +13,26 @@ import {
   type InvitationNotice,
   type IssuedInvitation,
 } from '../../../../../lib/invitation-notice';
+import {
+  ACTION_CANCELLED,
+  ACTION_DONE,
+  type SheetActionOutcome,
+} from '../../../../../lib/member-detail';
 import { readJson } from '../../../../../lib/read-json';
+import { queryWithTeamTenant } from '../../../../../lib/team-filters';
 import {
   loadInvitations,
   loadMembers,
   loadMembershipImpact,
   resendInvitation,
   revokeInvitation,
-  runMemberAction,
   type MembershipChange,
 } from '../../../../../lib/tenant-admin-seats-client';
 import {
+  canActOn,
   demotes,
   grantableRoles,
-  memberActionCopy,
-  memberActionDoneMessage,
-  memberActionNoticeTone,
+  isSelf,
   memberName,
   roleChangeCopy,
   statusChangeCopy,
@@ -41,9 +45,12 @@ import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/ten
 import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
 import { InviteDialog } from './invite-dialog';
-import { MemberList, type MemberRowError } from './member-list';
-import { INVITABLE_ROLES, roleLabel } from './roles';
+import { useTeamFilters } from './member-filters';
+import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
+import { MemberSheet } from './member-sheet';
+import { invitableRolesIn, offeredRoleLabel } from './roles';
 import { SeatsCard, useSeatsView } from './seats-ui';
+import { supportMember } from './support-action';
 
 /**
  * Equipo de la red.
@@ -142,6 +149,7 @@ export function TeamPanel({
     status: 'loading',
   });
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useTeamFilters();
   // Errores que no son de un miembro (revocar una invitación). Los de una acción sobre un miembro
   // van en su fila (`memberError`): acá arriba quedaban fuera de vista con la lista larga.
   const [actionError, setActionError] = useState('');
@@ -150,6 +158,8 @@ export function TeamPanel({
   const [showInvite, setShowInvite] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState('');
+  // La persona cuya ficha está abierta (por id: la fila se refresca después de cada acción).
+  const [sheetUserId, setSheetUserId] = useState<string | null>(null);
   const seats = useSeatsView(tenantId === '' ? null : tenantId);
   const reloadSeats = seats.reload;
 
@@ -178,7 +188,11 @@ export function TeamPanel({
     const list = read.data.tenants as NetworkNode[];
     setNetwork({ status: 'ready', tenants: treeOrder(list) });
     const root = networkRoot(list);
-    const initial = list.some((t) => t.id === initialTenantId) ? initialTenantId : undefined;
+    // Manda el `?tenant=` del navegador: al volver con "atrás", el router de Next pinta la página que
+    // tiene en caché, con el nodo de antes de que `chooseTenant` escribiera el elegido, y la pantalla
+    // abría en ése con los filtros (leídos de la URL) del otro.
+    const wanted = new URLSearchParams(window.location.search).get('tenant') ?? initialTenantId;
+    const initial = list.some((t) => t.id === wanted) ? wanted : undefined;
     setTenantId((current) => current || initial || root?.id || '');
   }, [initialTenantId]);
 
@@ -215,8 +229,33 @@ export function TeamPanel({
     void load();
   }, [load]);
 
+  /**
+   * El nodo elegido queda en la URL junto a los filtros: una recarga o un enlace abren el mismo nodo
+   * con los mismos filtros, no la raíz con filtros de otro.
+   */
+  function chooseTenant(id: string) {
+    setTenantId(id);
+    setSheetUserId(null);
+    const { pathname, search: query, hash } = window.location;
+    try {
+      // `null`: el router de Next conserva su propio estado.
+      window.history.replaceState(null, '', `${pathname}${queryWithTeamTenant(query, id)}${hash}`);
+    } catch {
+      // El navegador limitó los cambios de URL: el nodo cambia igual, sólo no se recuerda.
+    }
+  }
+
   function failOn(member: NetworkMember, message: string) {
     setMemberError({ userId: member.userId, message });
+  }
+
+  /**
+   * Una acción pedida desde la fila: si falla, el motivo va en su fila. Pedida desde la ficha, lo
+   * muestra la ficha (que tapa la fila).
+   */
+  async function fromRow(member: NetworkMember, outcome: Promise<SheetActionOutcome>) {
+    const out = await outcome;
+    if (out.status === 'failed') failOn(member, out.message);
   }
 
   /**
@@ -236,14 +275,17 @@ export function TeamPanel({
     }
   }
 
-  async function setStatus(member: NetworkMember, status: 'active' | 'suspended') {
+  async function setStatus(
+    member: NetworkMember,
+    status: 'active' | 'suspended',
+  ): Promise<SheetActionOutcome> {
     const suspending = status === 'suspended';
     const revoking = suspending ? await invitationsToRevoke(member, { status }) : 0;
     const ok = await confirm({
       ...statusChangeCopy(member, status, revoking),
       destructive: suspending,
     });
-    if (!ok) return;
+    if (!ok) return ACTION_CANCELLED;
     setActionError('');
     setMemberError(null);
     setBusyUserId(member.userId);
@@ -255,12 +297,12 @@ export function TeamPanel({
       });
       if (!res.ok) {
         const read = await readJson<{ error?: string }>(res);
-        failOn(
-          member,
-          (read.ok ? read.data.error : undefined) ??
+        return {
+          status: 'failed',
+          message:
+            (read.ok ? read.data.error : undefined) ??
             `No pudimos ${suspending ? 'suspender' : 'reactivar'} a ${memberName(member)}.`,
-        );
-        return;
+        };
       }
       const done = await readJson<unknown>(res);
       toast.success(
@@ -269,8 +311,12 @@ export function TeamPanel({
           : `${memberName(member)} volvió a tener acceso.`,
       );
       await Promise.all([load(true), reloadSeats(true)]);
+      return ACTION_DONE;
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
+      return {
+        status: 'failed',
+        message: 'No pudimos conectar con el servidor. Inténtalo de nuevo.',
+      };
     } finally {
       setBusyUserId(null);
     }
@@ -280,7 +326,7 @@ export function TeamPanel({
     if (role === member.role) return;
     const revoking = demotes(member.role, role) ? await invitationsToRevoke(member, { role }) : 0;
     const ok = await confirm({
-      ...roleChangeCopy(member, role, roleLabel, revoking),
+      ...roleChangeCopy(member, role, offeredRoleLabel, revoking),
       destructive: false,
     });
     if (!ok) return;
@@ -300,7 +346,7 @@ export function TeamPanel({
       }
       const done = await readJson<unknown>(res);
       toast.success(
-        `${memberName(member)} ahora es ${roleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
+        `${memberName(member)} ahora es ${offeredRoleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
       );
       await load(true);
     } catch {
@@ -310,30 +356,19 @@ export function TeamPanel({
     }
   }
 
-  async function memberAction(member: NetworkMember, action: MemberAction) {
-    const copy = memberActionCopy(action, member);
-    const ok = await confirm({
-      title: copy.title,
-      description: copy.description,
-      confirmLabel: copy.confirmLabel,
-      // Enviar el enlace y desbloquear le devuelven el acceso, no se lo cortan: confirmación neutra.
-      destructive: action !== 'send-password-reset' && action !== 'unlock',
+  async function memberAction(
+    member: NetworkMember,
+    action: MemberAction,
+  ): Promise<SheetActionOutcome> {
+    const out = await supportMember(confirm, tenantId, member, action, (busy) => {
+      if (busy) {
+        setActionError('');
+        setMemberError(null);
+      }
+      setBusyUserId(busy ? member.userId : null);
     });
-    if (!ok) return;
-    setActionError('');
-    setMemberError(null);
-    setBusyUserId(member.userId);
-    const res = await runMemberAction(tenantId, member.userId, action);
-    setBusyUserId(null);
-    if (!res.ok) {
-      // Un aviso que queda (no un toast que se va): el 403 dice a quién hay que pedírselo.
-      failOn(member, res.message);
-      return;
-    }
-    const notify =
-      memberActionNoticeTone(action, res.data) === 'warning' ? toast.warning : toast.success;
-    notify(memberActionDoneMessage(action, member, res.data));
-    await Promise.all([load(true), reloadSeats(true)]);
+    if (out.status === 'done') await Promise.all([load(true), reloadSeats(true)]);
+    return out;
   }
 
   async function revoke(invitation: PendingInvitation) {
@@ -390,7 +425,12 @@ export function TeamPanel({
   }
 
   const tenants = network.status === 'ready' ? network.tenants : [];
-  const selectedName = tenants.find((t) => t.id === tenantId)?.name;
+  const selected = tenants.find((t) => t.id === tenantId);
+  const selectedName = selected?.name;
+  const roles = grantableRoles(invitableRolesIn(selected?.tenantType), actor);
+  const sheetMember =
+    members.status === 'ready' ? members.items.find((m) => m.userId === sheetUserId) : undefined;
+  const sheetActionable = sheetMember !== undefined && canActOn(actor, sheetMember);
 
   return (
     <div className="space-y-6">
@@ -445,7 +485,7 @@ export function TeamPanel({
           <select
             id="tenant"
             value={tenantId}
-            onChange={(e) => setTenantId(e.target.value)}
+            onChange={(e) => chooseTenant(e.target.value)}
             disabled={network.status !== 'ready' || tenants.length === 0}
             className={selectClass}
           >
@@ -521,7 +561,10 @@ export function TeamPanel({
         <MemberList
           state={members}
           search={search}
+          filters={filters}
+          onFiltersChange={setFilters}
           actor={actor}
+          roles={roles}
           tenantName={selectedName}
           busyUserId={busyUserId}
           memberError={memberError}
@@ -531,9 +574,42 @@ export function TeamPanel({
             setShowInvite(true);
             setInviteSent('');
           }}
+          onOpen={(m) => setSheetUserId(m.userId)}
           onChangeRole={(m, role) => void changeRole(m, role)}
-          onSetStatus={(m, status) => void setStatus(m, status)}
-          onAction={(m, action) => void memberAction(m, action)}
+          onSetStatus={(m, status) => void fromRow(m, setStatus(m, status))}
+          onAction={(m, action) => void fromRow(m, memberAction(m, action))}
+        />
+      ) : null}
+
+      {sheetUserId !== null && tenantId !== '' ? (
+        <MemberSheet
+          key={`${tenantId}:${sheetUserId}`}
+          source={{ kind: 'team', tenantId, userId: sheetUserId }}
+          fallbackName={sheetMember ? memberName(sheetMember) : ''}
+          fallbackEmail={sheetMember?.email}
+          self={sheetMember ? isSelf(actor, sheetMember) : actor.userId === sheetUserId}
+          busy={busyUserId === sheetUserId}
+          canRevokeSessions={sheetActionable}
+          renderMenu={
+            sheetMember !== undefined && sheetActionable
+              ? (_detail, { pick, run, now }) => (
+                  <MemberActionItems
+                    member={sheetMember}
+                    now={now}
+                    onPick={pick}
+                    onSetStatus={(status) => run(() => setStatus(sheetMember, status))}
+                    onAction={(action) => run(() => memberAction(sheetMember, action))}
+                  />
+                )
+              : undefined
+          }
+          unlockAction={
+            sheetMember !== undefined && sheetActionable
+              ? () => () => memberAction(sheetMember, 'unlock')
+              : undefined
+          }
+          onChanged={() => void Promise.all([load(true), reloadSeats(true)])}
+          onClose={() => setSheetUserId(null)}
         />
       ) : null}
 
@@ -541,7 +617,7 @@ export function TeamPanel({
         <InviteDialog
           tenantId={tenantId}
           tenantName={selectedName}
-          roles={grantableRoles(INVITABLE_ROLES, actor)}
+          roles={roles}
           pendingRoleOf={(id) =>
             invitations.status === 'ready'
               ? invitations.items.find((i) => i.id === id)?.role

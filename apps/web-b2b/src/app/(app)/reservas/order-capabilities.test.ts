@@ -79,6 +79,7 @@ describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () 
     pay: true,
     services: true,
     reshop: true,
+    issue: true,
   };
 
   it('quien vende conserva todo, tal cual lo mandó el API', () => {
@@ -93,16 +94,65 @@ describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () 
       pay: false,
       services: false,
       reshop: false,
+      // Emitir tiquetes también es venta (SAB-08): el superadmin no ve el botón.
+      issue: false,
     });
     expect(latam.pay).toBe(true);
   });
 
   it('las de venta son exactamente las que la API marca @SalesOperation en órdenes', () => {
-    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['pay', 'reshop', 'services']);
+    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['issue', 'pay', 'reshop', 'services']);
   });
 
   it('sin capabilities sigue fallando cerrada', () => {
     expect(capabilitiesForViewer(undefined, false)).toBeUndefined();
     expect(supportsOrderCapability(capabilitiesForViewer(undefined, false), 'pay')).toBe(false);
+  });
+});
+
+describe('la capacidad de emitir tiquetes (SAB-08)', () => {
+  it('sólo con `issue: true` explícito; ausente o apagada, no se ofrece', () => {
+    const base: OrderCapabilities = {
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+    };
+    expect(supportsOrderCapability(base, 'issue')).toBe(false);
+    expect(supportsOrderCapability({ ...base, issue: false }, 'issue')).toBe(false);
+    expect(supportsOrderCapability({ ...base, issue: true }, 'issue')).toBe(true);
+  });
+});
+
+describe('consultar condiciones y anular tiquetes (SAB-09)', () => {
+  const sabre: OrderCapabilities = {
+    retrieve: true,
+    cancel: false,
+    pay: false,
+    services: false,
+    reshop: false,
+    issue: true,
+    ticketCheck: true,
+    void: true,
+  };
+
+  it('sólo con `true` explícito; ausentes (un API viejo), no se ofrecen', () => {
+    const { ticketCheck: _check, void: _void, ...viejo } = sabre;
+    expect(supportsOrderCapability(viejo, 'ticketCheck')).toBe(false);
+    expect(supportsOrderCapability(viejo, 'void')).toBe(false);
+    expect(supportsOrderCapability(sabre, 'ticketCheck')).toBe(true);
+    expect(supportsOrderCapability(sabre, 'void')).toBe(true);
+  });
+
+  it('no son venta: el superadmin las conserva, como cancelar lo vendido', () => {
+    const view = capabilitiesForViewer(sabre, false);
+    expect(view).toMatchObject({ ticketCheck: true, void: true, issue: false });
+    expect(SALE_ORDER_CAPABILITIES).not.toContain('void');
+    expect(SALE_ORDER_CAPABILITIES).not.toContain('ticketCheck');
+  });
+
+  it('la cancelación genérica de una emitida sigue sin ofrecerse: se anula', () => {
+    expect(supportsOrderCancellation({ ...sabre, cancel: true }, 'ticketed')).toBe(false);
   });
 });

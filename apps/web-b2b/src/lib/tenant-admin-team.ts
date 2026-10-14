@@ -50,6 +50,11 @@ export interface NetworkMember {
   readonly mfaEnabled: boolean | undefined;
   readonly lockedUntil: string | null | undefined;
   readonly activeSessions: number | undefined;
+  /**
+   * Un admin le pidió elegir una contraseña nueva y todavía no lo hizo: no puede ingresar hasta usar
+   * el enlace del correo. `undefined` si el API no lo dice.
+   */
+  readonly passwordResetRequired: boolean | undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -78,6 +83,7 @@ function parseMember(value: unknown): NetworkMember | undefined {
   if (userId === undefined || email === undefined || role === undefined) return undefined;
   const sessions = r['activeSessions'];
   const mfa = r['mfaEnabled'];
+  const resetRequired = r['passwordResetRequired'];
   return {
     userId,
     email,
@@ -93,6 +99,7 @@ function parseMember(value: unknown): NetworkMember | undefined {
       typeof sessions === 'number' && Number.isInteger(sessions) && sessions >= 0
         ? sessions
         : undefined,
+    passwordResetRequired: typeof resetRequired === 'boolean' ? resetRequired : undefined,
   };
 }
 
@@ -253,6 +260,12 @@ export function memberAccess(member: NetworkMember, now: number): MemberAccess {
   };
 }
 
+/** La marca de la fila de quien tiene que elegir una contraseña nueva antes de volver a ingresar. */
+export const PASSWORD_RESET_PENDING_LABEL = 'Cambio de contraseña pendiente';
+
+export const PASSWORD_RESET_PENDING_HINT =
+  'No puede ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo.';
+
 /** Tiene un bloqueo por intentos fallidos vigente: sólo entonces se ofrece "Desbloquear cuenta". */
 export function isLocked(member: Pick<NetworkMember, 'lockedUntil'>, now: number): boolean {
   return lockedUntilLabel(member.lockedUntil, now) !== undefined;
@@ -295,6 +308,11 @@ export function teamActorOf(
     superadmin: active.some((m) => m.role === 'superadmin'),
     rank: active.reduce((max, m) => Math.max(max, roleRank(m.role)), 0),
   };
+}
+
+/** Equipo abierto en ese nodo. Un id fuera de la red de quien mira, Equipo lo ignora. */
+export function teamHrefFor(tenantId: string): string {
+  return `/admin/usuarios?${new URLSearchParams({ tenant: tenantId }).toString()}`;
 }
 
 export function isSelf(actor: TeamActor, member: Pick<NetworkMember, 'userId'>): boolean {
@@ -385,7 +403,12 @@ export function statusChangeCopy(
   };
 }
 
-export type MemberAction = 'reset-mfa' | 'revoke-sessions' | 'send-password-reset' | 'unlock';
+export type MemberAction =
+  | 'reset-mfa'
+  | 'revoke-sessions'
+  | 'send-password-reset'
+  | 'require-password-reset'
+  | 'unlock';
 
 export interface MemberActionCopy {
   readonly label: string;
@@ -395,12 +418,36 @@ export interface MemberActionCopy {
   readonly done: string;
 }
 
+/** Lo que los textos de una acción miran del miembro. */
+export type MemberCopySubject = Pick<NetworkMember, 'name' | 'email' | 'role'> &
+  Partial<Pick<NetworkMember, 'passwordResetRequired'>>;
+
 /** Los textos de la confirmación y del aviso de cada acción de soporte. */
 export function memberActionCopy(
   action: MemberAction,
-  member: Pick<NetworkMember, 'name' | 'email' | 'role'>,
+  member: MemberCopySubject,
 ): MemberActionCopy {
   const name = who(member);
+  if (action === 'send-password-reset' && member.passwordResetRequired === true) {
+    // Con el cambio forzado pendiente la actual ya no sirve: no se puede decir que sigue funcionando.
+    return {
+      label: 'Enviar enlace para restablecer contraseña',
+      title: `Enviar a ${name} un enlace para restablecer su contraseña`,
+      description: `Le enviamos a ${member.email} un enlace nuevo para que elija su contraseña. Vence en 60 minutos y deja sin efecto los enlaces anteriores. Tú no ves el enlace ni la contraseña, y hasta que la elija no puede ingresar.`,
+      confirmLabel: 'Enviar enlace',
+      done: `Le enviamos a ${name} un enlace nuevo para elegir su contraseña. Vence en 1 hora.`,
+    };
+  }
+  if (action === 'require-password-reset') {
+    return {
+      label: 'Forzar cambio de contraseña',
+      title: `Forzar a ${name} a cambiar su contraseña`,
+      description:
+        'Se cierran todas sus sesiones y no puede volver a ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo. Úsalo si crees que su contraseña está comprometida.',
+      confirmLabel: 'Forzar cambio',
+      done: `${name} tiene que elegir una contraseña nueva. Le enviamos el enlace y cerramos sus sesiones.`,
+    };
+  }
   if (action === 'send-password-reset') {
     return {
       label: 'Enviar enlace para restablecer contraseña',
@@ -447,8 +494,10 @@ export function memberActionCopy(
 export interface MemberActionResult {
   /** Cuántas sesiones cerró "Cerrar sus sesiones"; `undefined` si la respuesta no lo dice. */
   readonly revoked: number | undefined;
-  /** Si salió el correo con el enlace para restablecer la contraseña. */
+  /** Si salió el correo con el enlace para restablecer (o elegir, si se forzó) la contraseña. */
   readonly sent?: boolean | undefined;
+  /** Cuántas sesiones cerró "Forzar cambio de contraseña". */
+  readonly revokedSessions?: number | undefined;
   /** Si "Desbloquear cuenta" levantó un bloqueo; `false` = ya no estaba bloqueado. */
   readonly unlocked?: boolean | undefined;
 }
@@ -463,15 +512,16 @@ function bool(value: unknown): boolean | undefined {
  */
 export function parseMemberActionResult(value: unknown): MemberActionResult {
   const r = asRecord(value);
-  const revoked = r?.['revoked'];
   return {
-    revoked:
-      typeof revoked === 'number' && Number.isInteger(revoked) && revoked >= 0
-        ? revoked
-        : undefined,
+    revoked: count(r?.['revoked']),
     sent: bool(r?.['sent']),
+    revokedSessions: count(r?.['revokedSessions']),
     unlocked: bool(r?.['unlocked']),
   };
+}
+
+function count(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 /**
@@ -482,7 +532,7 @@ export function parseMemberActionResult(value: unknown): MemberActionResult {
  */
 export function memberActionDoneMessage(
   action: MemberAction,
-  member: Pick<NetworkMember, 'name' | 'email' | 'role'>,
+  member: MemberCopySubject,
   result: MemberActionResult,
 ): string {
   if (action === 'revoke-sessions' && result.revoked === 0) {
@@ -490,6 +540,9 @@ export function memberActionDoneMessage(
   }
   if (action === 'send-password-reset' && result.sent === false) {
     return 'Generamos el enlace, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo e inténtalo de nuevo.';
+  }
+  if (action === 'require-password-reset' && result.sent === false) {
+    return `${who(member)} tiene que elegir una contraseña nueva y cerramos sus sesiones, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo y envíale el enlace de nuevo.`;
   }
   if (action === 'unlock' && result.unlocked === false) {
     return `${who(member)} ya no estaba bloqueado.`;
@@ -505,7 +558,8 @@ export function memberActionNoticeTone(
   action: MemberAction,
   result: MemberActionResult,
 ): 'success' | 'warning' {
-  return action === 'send-password-reset' && result.sent === false ? 'warning' : 'success';
+  const sendsLink = action === 'send-password-reset' || action === 'require-password-reset';
+  return sendsLink && result.sent === false ? 'warning' : 'success';
 }
 
 /** Una acción del menú de un miembro, con su texto y si se puede elegir. */
@@ -525,21 +579,21 @@ export interface MemberMenuGroup {
  * Las acciones de soporte del menú de un miembro, agrupadas: lo que le devuelve el acceso y lo que
  * se lo corta. Suspender o reactivar va aparte, al final.
  *
- * "Desbloquear cuenta" sólo aparece con un bloqueo vigente. "Enviar enlace…" se ve deshabilitado si
- * su acceso está suspendido, con el motivo en el texto, en vez de esconderse: así el admin sabe que
- * existe y qué le falta.
+ * "Desbloquear cuenta" sólo aparece con un bloqueo vigente. "Enviar enlace…" y "Forzar cambio de
+ * contraseña" se ven deshabilitados si su acceso está suspendido, con el motivo en el texto, en vez
+ * de esconderse: así el admin sabe que existen y qué le falta.
  */
 export function memberMenuGroups(member: NetworkMember, now: number): MemberMenuGroup[] {
   const label = (action: MemberAction) => memberActionCopy(action, member).label;
   const suspended = accessSuspended(member);
+  const linkItem = (action: 'send-password-reset' | 'require-password-reset'): MemberMenuItem => ({
+    action,
+    label: suspended ? `${label(action)} (acceso suspendido)` : label(action),
+    disabled: suspended,
+  });
   const access: MemberMenuItem[] = [
-    {
-      action: 'send-password-reset',
-      label: suspended
-        ? `${label('send-password-reset')} (acceso suspendido)`
-        : label('send-password-reset'),
-      disabled: suspended,
-    },
+    linkItem('send-password-reset'),
+    linkItem('require-password-reset'),
   ];
   if (isLocked(member, now)) {
     access.push({ action: 'unlock', label: label('unlock'), disabled: false });

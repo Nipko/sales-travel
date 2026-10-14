@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
 import { BookingPermissionsModule } from '../booking-permissions/booking-permissions.module.js';
+import { NetworkModule } from '../network/network.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PortfoliosModule } from '../portfolios/portfolios.module.js';
+import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
 import { DespegarHotelsProviderModule } from '../providers-despegar/despegar-hotels.module.js';
 import { HotelProvidersModule } from '../providers/hotel-providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
@@ -23,6 +25,13 @@ import {
 } from './hotel-content.service.js';
 import { HotelPrebookSnapshotStore } from './hotel-prebook-snapshot.store.js';
 import { HotelPrebookService } from './hotel-prebook.service.js';
+import { HotelReadinessController } from './hotel-readiness.controller.js';
+import { HotelReadinessService } from './hotel-readiness.service.js';
+import {
+  HOTEL_ROOM_CONTENT_SWITCH,
+  readHotelRoomContentSwitch,
+} from './hotel-room-content.config.js';
+import { HotelRoomContentService } from './hotel-room-content.service.js';
 import {
   HOTEL_SEARCH_CONTEXT_CACHE,
   HotelSearchContextStore,
@@ -61,10 +70,17 @@ import { HotelsService } from './hotels.service.js';
  * La ficha de un hotel (PR-3.6) guarda lo que trae del proveedor en SU instancia del `CachePort`:
  * horas de contenido de catálogo no pueden desalojar los contextos de minutos que el PreBook
  * necesita, ni al revés. Las fotos de los resultados y las ciudades que se cargan al buscarlas
- * escriben el catálogo por `HotelCatalogStore`, sólo por las funciones de 0054.
+ * escriben el catálogo por `HotelCatalogStore`, sólo por las funciones de 0054. El contenido por
+ * habitación (0070) también: recuerda sus fallos en la misma instancia que la ficha, y su
+ * interruptor (`HOTEL_ROOM_CONTENT`) se lee una vez, al arrancar.
  *
  * Si la agencia puede reservar tarifas no reembolsables lo fija quien la financia (0055): el PreBook
- * y el Book lo leen de `BookingPermissionsModule`.
+ * y el Book lo leen de `BookingPermissionsModule`. El contacto de soporte que el Book exige lo leen
+ * los dos de `BrandingService` (global), con el mismo predicado: el PreBook sólo lo avisa.
+ *
+ * La guía del superadmin para probar una reserva (`GET /admin/hotels/readiness`) lee la red y sus
+ * vendedores de `NetworkModule` y las excepciones de TBO de `ProviderEnablementModule`, la misma
+ * instancia que leen los registries.
  */
 @Module({
   imports: [
@@ -77,10 +93,13 @@ import { HotelsService } from './hotels.service.js';
     PortfoliosModule,
     BookingPermissionsModule,
     AuditModule,
+    NetworkModule,
+    ProviderEnablementModule,
   ],
-  controllers: [HotelsController],
+  controllers: [HotelsController, HotelReadinessController],
   providers: [
     HotelsService,
+    HotelReadinessService,
     DespegarHotelReservationsService,
     HotelSearchContextStore,
     HotelSearchPagingStore,
@@ -92,7 +111,9 @@ import { HotelsService } from './hotels.service.js';
     HcnTrackingStore,
     HcnTrackingService,
     HotelContentService,
+    HotelRoomContentService,
     HotelCatalogStore,
+    { provide: HOTEL_ROOM_CONTENT_SWITCH, useFactory: () => readHotelRoomContentSwitch() },
     { provide: HOTEL_SEARCH_CONTEXT_CACHE, useClass: MemoryCacheAdapter },
     { provide: HOTEL_SEARCH_PAGING_CACHE, useClass: HotelSearchPagingMemoryCache },
     { provide: HOTEL_CONTENT_CACHE, useClass: MemoryCacheAdapter },

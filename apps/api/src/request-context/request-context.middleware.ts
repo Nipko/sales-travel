@@ -99,7 +99,9 @@ export class RequestContextMiddleware implements NestMiddleware {
     // cambiar la cookie st_tenant operaba en un nodo con el cupo lleno sin ocupar puesto en él.
     let role: Role | undefined;
     let platformUser = false;
-    let mfa: { mfaRequired: boolean; mfaEnabled: boolean; mfaVerified: boolean } | undefined;
+    let mfa:
+      | { mfaRequired: boolean; mfaEnabled: boolean; mfaVerified: boolean; mfaVerifiedAt?: Date }
+      | undefined;
     let session: SessionTiming | undefined;
     if (userId) {
       if (!sessionId) {
@@ -126,6 +128,7 @@ export class RequestContextMiddleware implements NestMiddleware {
               mfaRequired: validated.mfaRequired,
               mfaEnabled: validated.mfaEnabled,
               mfaVerified: validated.mfaVerified,
+              ...(validated.mfaVerifiedAt ? { mfaVerifiedAt: validated.mfaVerifiedAt } : {}),
             };
             session = {
               idleTimeoutSeconds: validated.idleTimeoutSeconds,

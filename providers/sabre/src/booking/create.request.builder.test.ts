@@ -969,3 +969,88 @@ describe('PII', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Política de emisión: el ejemplo verificado de punta a punta (SAB-06)
+// ---------------------------------------------------------------------------------------------
+
+describe('política de emisión en agency', () => {
+  it('reproduce el carril verificado sin tarjeta: CASH más TICKETING_TIME_LIMIT con su plazo', () => {
+    // docs/sabre/04 §7.6: `payment.formsOfPayment: [{ type: "CASH" }]` + `agency.ticketingPolicy:
+    // "TICKETING_TIME_LIMIT"` con `ticketingTimeLimitPolicy { airlineCode, ticketingDate,
+    // ticketingTime }`. Es lo único verificado de punta a punta que reserva y emite sin PAN.
+    const plan = buildSabreCreateBookingRequest(
+      atpcoInput({
+        receivedFrom: 'PLANETOUR',
+        agency: {
+          ticketingPolicy: 'TICKETING_TIME_LIMIT',
+          ticketingTimeLimitPolicy: {
+            airlineCode: 'AV',
+            ticketingDate: '2026-10-14',
+            ticketingTime: '20:00',
+          },
+        },
+      }),
+      config(),
+    );
+
+    expect(plan.body.agency).toEqual({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingTimeLimitPolicy: {
+        airlineCode: 'AV',
+        ticketingDate: '2026-10-14',
+        ticketingTime: '20:00',
+      },
+    });
+    expect(plan.body.payment).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+    expect(plan.body.receivedFrom).toBe('PLANETOUR');
+  });
+
+  it('emisión futura lleva el PCC de emisión y nada más', () => {
+    const plan = buildSabreCreateBookingRequest(
+      atpcoInput({
+        agency: {
+          ticketingPolicy: 'FUTURE_TICKETING',
+          futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+        },
+      }),
+      config(),
+    );
+    expect(plan.body.agency).toEqual({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+    });
+  });
+
+  it.each([
+    ['una hora 24:00', { ticketingDate: '2026-10-14', ticketingTime: '24:00' }],
+    ['una hora con segundos', { ticketingDate: '2026-10-14', ticketingTime: '20:00:00' }],
+    ['una fecha en otro formato', { ticketingDate: '14/10/2026', ticketingTime: '20:00' }],
+  ])('un plazo con %s no se manda', (_caso, plazo) => {
+    expect(() =>
+      buildSabreCreateBookingRequest(
+        atpcoInput({
+          agency: {
+            ticketingPolicy: 'TICKETING_TIME_LIMIT',
+            ticketingTimeLimitPolicy: { airlineCode: 'AV', ...plazo },
+          },
+        }),
+        config(),
+      ),
+    ).toThrow(SabreCreateBookingError);
+  });
+
+  it('un PCC de emisión fuera del patrón del contrato no se manda', () => {
+    expect(() =>
+      buildSabreCreateBookingRequest(
+        atpcoInput({
+          agency: {
+            ticketingPolicy: 'FUTURE_TICKETING',
+            futureTicketingPolicy: { ticketingPcc: 't1ck' },
+          },
+        }),
+        config(),
+      ),
+    ).toThrow(SabreCreateBookingError);
+  });
+});

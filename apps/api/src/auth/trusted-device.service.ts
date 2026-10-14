@@ -85,9 +85,12 @@ export class TrustedDeviceService {
     return { token, expiresAt };
   }
 
-  /** Valida el token del usuario y marca el uso. false si no es suyo o ya no vale. */
-  async use(userId: string, token: string): Promise<boolean> {
-    if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return false;
+  /**
+   * Valida el token del usuario y marca el uso. Devuelve cuándo se confió en el equipo (la última
+   * vez que se probó el segundo factor en él), o null si no es suyo o ya no vale.
+   */
+  async use(userId: string, token: string): Promise<Date | null> {
+    if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return null;
     return this.db.withRequestContext({ userId }, async (trx) => {
       const row = await trx
         .selectFrom('trusted_devices as td')
@@ -111,14 +114,14 @@ export class TrustedDeviceService {
           new Date(),
         )
       ) {
-        return false;
+        return null;
       }
       await trx
         .updateTable('trusted_devices')
         .set({ last_used_at: new Date() })
         .where('id', '=', row.id)
         .execute();
-      return true;
+      return row.created_at;
     });
   }
 

@@ -122,11 +122,17 @@ export function seatReleaseTarget(tenantId: string, sessionId: string): TenantAd
   };
 }
 
-export type MemberActionPath = 'reset-mfa' | 'revoke-sessions' | 'send-password-reset' | 'unlock';
+export type MemberActionPath =
+  | 'reset-mfa'
+  | 'revoke-sessions'
+  | 'send-password-reset'
+  | 'require-password-reset'
+  | 'unlock';
 
 /**
  * `POST /tenants/:id/members/:userId/<acción>`: restablecer su 2FA, cerrar sus sesiones, enviarle el
- * enlace para restablecer su contraseña o desbloquearle la cuenta. Ninguna lleva cuerpo.
+ * enlace para restablecer su contraseña, obligarlo a elegir una nueva o desbloquearle la cuenta.
+ * Ninguna lleva cuerpo.
  */
 export function memberActionTarget(
   tenantId: string,
@@ -139,6 +145,122 @@ export function memberActionTarget(
     ok: true,
     path: `/tenants/${tenantId.toLowerCase()}/members/${userId.toLowerCase()}/${action}`,
   };
+}
+
+/** El `nextBefore` que emite el API: base64url, opaco. Si es uno suyo lo decide él. */
+const AUDIT_CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
+const AUDIT_LIMIT = /^\d{1,3}$/;
+
+/** `GET /tenants/:id/members/:userId`: la ficha de una persona del equipo del nodo. */
+export function memberDetailTarget(tenantId: string, userId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  if (!isUuid(userId)) return { ok: false, error: 'Miembro inválido.' };
+  return { ok: true, path: `/tenants/${tenantId.toLowerCase()}/members/${userId.toLowerCase()}` };
+}
+
+/**
+ * `POST /tenants/:id/members/:userId/sessions/:sessionId/revoke`: cerrar UNA sesión de la persona.
+ * Desde el directorio de la plataforma también va por acá, con el nodo de esa sesión.
+ */
+export function memberSessionRevokeTarget(
+  tenantId: string,
+  userId: string,
+  sessionId: string,
+): TenantAdminProxyTarget {
+  const member = memberDetailTarget(tenantId, userId);
+  if (!member.ok) return member;
+  if (!isUuid(sessionId)) return { ok: false, error: 'Sesión inválida.' };
+  return { ok: true, path: `${member.path}/sessions/${sessionId.toLowerCase()}/revoke` };
+}
+
+const USER_AUDIT_PARAMS: readonly string[] = ['before', 'limit'];
+const USER_AUDIT_INVALID = 'La consulta del historial no es válida. Recarga la página.';
+
+/**
+ * La consulta del historial de una persona (`?before=&limit=`), reconstruida: el cursor con la forma
+ * de los que emite el API y el tamaño entre 1 y 100. Lo que no sea eso, `undefined`. La comparten la
+ * ficha de Equipo y la del directorio de la plataforma.
+ */
+export function userAuditQuery(query: URLSearchParams): string | undefined {
+  for (const name of query.keys()) {
+    if (!USER_AUDIT_PARAMS.includes(name)) return undefined;
+  }
+  const out = new URLSearchParams();
+  const before = query.getAll('before');
+  const limit = query.getAll('limit');
+  if (before.length > 1 || limit.length > 1) return undefined;
+  if (before[0] !== undefined) {
+    if (!AUDIT_CURSOR.test(before[0])) return undefined;
+    out.set('before', before[0]);
+  }
+  if (limit[0] !== undefined) {
+    const n = AUDIT_LIMIT.test(limit[0]) ? Number(limit[0]) : NaN;
+    if (!(n >= 1 && n <= 100)) return undefined;
+    out.set('limit', String(n));
+  }
+  return out.toString();
+}
+
+/** `GET /tenants/:id/members/:userId/audit?…`: el historial de una persona del equipo del nodo. */
+export function memberAuditTarget(
+  tenantId: string,
+  userId: string,
+  query: URLSearchParams,
+): TenantAdminProxyTarget {
+  const member = memberDetailTarget(tenantId, userId);
+  if (!member.ok) return member;
+  const qs = userAuditQuery(query);
+  if (qs === undefined) return { ok: false, error: USER_AUDIT_INVALID };
+  return { ok: true, path: qs === '' ? `${member.path}/audit` : `${member.path}/audit?${qs}` };
+}
+
+/** Los filtros de la Actividad de la red. Espejo de AUDIT_CATEGORIES del API. */
+const AUDIT_CATEGORIES: readonly string[] = ['users', 'credentials', 'pricing', 'network'];
+const AUDIT_PARAMS: readonly string[] = ['tenantId', 'limit', 'before', 'category', 'actorUserId'];
+const AUDIT_INVALID = 'Los filtros de la actividad no son válidos. Recarga la página.';
+
+/**
+ * `GET /tenants/network/audit?…`: la Actividad de la red bajo un nodo, de a páginas y con filtros.
+ * La consulta se reconstruye parámetro por parámetro: el API rechaza los de más, y uno repetido o
+ * desconocido no lo armó el panel. Quién puede verla (administrar el nodo) lo decide el API.
+ */
+export function networkAuditTarget(query: URLSearchParams): TenantAdminProxyTarget {
+  for (const name of query.keys()) {
+    if (!AUDIT_PARAMS.includes(name)) return { ok: false, error: AUDIT_INVALID };
+  }
+  const values = new Map<string, string | null>();
+  for (const name of AUDIT_PARAMS) {
+    const all = query.getAll(name);
+    if (all.length > 1) return { ok: false, error: AUDIT_INVALID };
+    values.set(name, all[0] ?? null);
+  }
+
+  const tenantId = values.get('tenantId') ?? '';
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  const out = new URLSearchParams({ tenantId: tenantId.toLowerCase() });
+
+  const limit = values.get('limit');
+  if (limit != null) {
+    const n = AUDIT_LIMIT.test(limit) ? Number(limit) : NaN;
+    if (!(n >= 1 && n <= 200)) return { ok: false, error: AUDIT_INVALID };
+    out.set('limit', String(n));
+  }
+  const before = values.get('before');
+  if (before != null) {
+    if (!AUDIT_CURSOR.test(before)) return { ok: false, error: AUDIT_INVALID };
+    out.set('before', before);
+  }
+  const category = values.get('category');
+  if (category != null) {
+    if (!AUDIT_CATEGORIES.includes(category)) return { ok: false, error: AUDIT_INVALID };
+    out.set('category', category);
+  }
+  const actorUserId = values.get('actorUserId');
+  if (actorUserId != null) {
+    if (!isUuid(actorUserId)) return { ok: false, error: 'Persona inválida.' };
+    out.set('actorUserId', actorUserId.toLowerCase());
+  }
+  return { ok: true, path: `/tenants/network/audit?${out.toString()}` };
 }
 
 /** Forma de un rol (`tenant_admin`). Cuáles se pueden dar lo decide el API. */

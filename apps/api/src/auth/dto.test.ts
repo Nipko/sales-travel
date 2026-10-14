@@ -6,6 +6,7 @@ import {
   MfaEnrollSchema,
   MfaVerifySchema,
   SeatReleaseSchema,
+  StepUpSchema,
 } from './dto.js';
 
 describe('DTOs de auth', () => {
@@ -31,6 +32,21 @@ describe('DTOs de auth', () => {
       MfaVerifySchema.parse({ mfaToken: 'x'.repeat(20), code: 'ABCDE-12345', rememberDevice: true })
         .rememberDevice,
     ).toBe(true);
+  });
+
+  it('step-up: sólo los 6 dígitos de la app, sin campos de más', () => {
+    expect(StepUpSchema.parse({ code: ' 123456 ' })).toEqual({ code: '123456' });
+    for (const bad of [
+      {},
+      { code: '12345' },
+      { code: '1234567' },
+      { code: 'ABCDE-12345' },
+      { code: '123 456' },
+      { code: 123456 },
+      { code: '123456', sessionId: 'otra' },
+    ]) {
+      expect(StepUpSchema.safeParse(bad).success).toBe(false);
+    }
   });
 
   it('mfa/enroll: sin cuerpo es un enrolamiento; con contraseña y código, una rotación', () => {

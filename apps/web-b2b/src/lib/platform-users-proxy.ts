@@ -1,5 +1,9 @@
 import { isTenantId } from './provider-enablement';
-import type { TenantAdminProxyPlan, TenantAdminProxyTarget } from './tenant-admin-proxy';
+import {
+  userAuditQuery,
+  type TenantAdminProxyPlan,
+  type TenantAdminProxyTarget,
+} from './tenant-admin-proxy';
 import { isUuid } from './wallets';
 
 /**
@@ -118,6 +122,26 @@ export function platformUsersListTarget(query: URLSearchParams): TenantAdminProx
 export function platformUserImpactTarget(userId: string): TenantAdminProxyTarget {
   if (!isUuid(userId)) return { ok: false, error: 'Usuario inválido.' };
   return { ok: true, path: `/admin/users/${userId.toLowerCase()}/impact` };
+}
+
+/** `GET /admin/users/:userId`: la ficha de cualquier persona de la plataforma. */
+export function platformUserDetailTarget(userId: string): TenantAdminProxyTarget {
+  if (!isUuid(userId)) return { ok: false, error: 'Usuario inválido.' };
+  return { ok: true, path: `/admin/users/${userId.toLowerCase()}` };
+}
+
+/** `GET /admin/users/:userId/audit?…`: su historial en toda la plataforma, de a páginas. */
+export function platformUserAuditTarget(
+  userId: string,
+  query: URLSearchParams,
+): TenantAdminProxyTarget {
+  const user = platformUserDetailTarget(userId);
+  if (!user.ok) return user;
+  const qs = userAuditQuery(query);
+  if (qs === undefined) {
+    return { ok: false, error: 'La consulta del historial no es válida. Recarga la página.' };
+  }
+  return { ok: true, path: qs === '' ? `${user.path}/audit` : `${user.path}/audit?${qs}` };
 }
 
 /** `PATCH /admin/users/status`: suspender o reactivar la cuenta en toda la plataforma. */

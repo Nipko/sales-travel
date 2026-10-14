@@ -4,8 +4,10 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   CircleAlert,
   CirclePlay,
+  FilterX,
   KeyRound,
   Lock,
+  LockKeyhole,
   LockOpen,
   LogOut,
   MoreHorizontal,
@@ -21,12 +23,23 @@ import {
 import { Fragment, useId, useRef } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { cn } from '../../../../../lib/cn';
-import { exactTime } from '../../../../../lib/tenant-admin-format';
+import {
+  applyTeamFilters,
+  chipCounts,
+  clearTeamFilters,
+  matchesSearch,
+  roleOptions,
+  shownMembersText,
+  suspendedCount,
+  type TeamFilters,
+} from '../../../../../lib/team-filters';
+import { exactTime, relativeTime } from '../../../../../lib/tenant-admin-format';
 import {
   MFA_STATE_HINT,
   MFA_STATE_LABEL,
+  PASSWORD_RESET_PENDING_HINT,
+  PASSWORD_RESET_PENDING_LABEL,
   canActOn,
-  grantableRoles,
   isSelf,
   memberAccess,
   memberMenuGroups,
@@ -39,7 +52,9 @@ import {
   type NetworkMember,
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
-import { INVITABLE_ROLES, ROLE_CONFIG, roleLabel } from './roles';
+import { LastAccessSortButton, MemberFilters } from './member-filters';
+import { MemberNameButton } from './member-sheet';
+import { ROLE_CONFIG, roleLabel, type InvitableRole } from './roles';
 import { useNow } from './seats-ui';
 
 type MembersState =
@@ -50,9 +65,17 @@ type MembersState =
 /**
  * Las columnas en pantalla ancha. En el teléfono cada miembro es una tarjeta: nombre y menú arriba
  * y los datos debajo con su etiqueta, sin scroll horizontal (antes la tabla pedía 640 px).
+ *
+ * "Alta" se suma desde `xl`: en la tarjeta no ayuda a decidir nada, y entre `md` y `lg` (con la
+ * barra lateral, ~730 px de lista) una séptima columna dejaba "Nunca ingresó" sin lugar. Su celda y
+ * su título se esconden hasta `xl` junto con la columna: una celda oculta no ocupa pista en la grilla
+ * y las que siguen se correrían de columna.
  */
 const COLUMNS =
-  'md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_2.5rem]';
+  'md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_2.5rem] xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_2.5rem]';
+
+/** La celda y el título de "Alta": sólo con su columna (ver COLUMNS). */
+const JOINED_CELL = 'hidden xl:block';
 
 const STATUS_TONE: Readonly<Record<MemberStatusTone, string>> = {
   ok: 'bg-emerald-50 text-emerald-700',
@@ -97,16 +120,6 @@ const MFA_ICON: Readonly<Record<MfaState, typeof ShieldCheck | null>> = {
 const selectClass =
   'h-8 w-full max-w-[180px] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20 disabled:opacity-60';
 
-function fold(text: string): string {
-  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-function matches(member: NetworkMember, query: string): boolean {
-  const q = fold(query.trim());
-  if (q === '') return true;
-  return fold(member.email).includes(q) || fold(member.name ?? '').includes(q);
-}
-
 /** La etiqueta de un dato: visible en la tarjeta del teléfono, sólo para lectores en escritorio. */
 function CellLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -119,20 +132,29 @@ function CellLabel({ children }: { children: React.ReactNode }) {
 export function MemberList({
   state,
   search,
+  filters,
+  onFiltersChange,
   actor,
+  roles,
   tenantName,
   busyUserId,
   memberError,
   onDismissError,
   onRetry,
   onInvite,
+  onOpen,
   onChangeRole,
   onSetStatus,
   onAction,
 }: {
   state: MembersState;
   search: string;
+  /** Los filtros de la barra (`useTeamFilters`): viven en Equipo y en la URL, no en la lista. */
+  filters: TeamFilters;
+  onFiltersChange: (next: TeamFilters) => void;
   actor: TeamActor;
+  /** Los roles que puede dar en este nodo: los del actor y los que admite el tipo de nodo. */
+  roles: readonly InvitableRole[];
   tenantName: string | undefined;
   busyUserId: string | null;
   /**
@@ -144,12 +166,25 @@ export function MemberList({
   onDismissError: () => void;
   onRetry: () => void;
   onInvite: () => void;
+  /** Abre la ficha del miembro. Sin él, el nombre es sólo texto. */
+  onOpen?: (member: NetworkMember) => void;
   onChangeRole: (member: NetworkMember, role: string) => void;
   onSetStatus: (member: NetworkMember, status: 'active' | 'suspended') => void;
   onAction: (member: NetworkMember, action: MemberAction) => void;
 }) {
   const now = useNow();
-  const filtered = state.status === 'ready' ? state.items.filter((m) => matches(m, search)) : [];
+  const allRef = useRef<HTMLButtonElement>(null);
+  const items = state.status === 'ready' ? state.items : [];
+  const shown = applyTeamFilters(items, filters, search, now);
+  const narrowed = shown.length !== items.length;
+  // Si la búsqueda sola ya no deja a nadie, quitar los filtros no ayudaría: se dice lo de la búsqueda.
+  const searchEmpty = !items.some((m) => matchesSearch(m, search));
+
+  function clearFilters() {
+    onFiltersChange(clearTeamFilters(filters));
+    // El botón que se tocó desaparece con la lista vacía: el foco va a "Todos" y no al documento.
+    allRef.current?.focus();
+  }
 
   return (
     <section
@@ -159,12 +194,33 @@ export function MemberList({
       <div className="border-b border-[var(--color-border)] px-4 py-2.5">
         <h2 id="members-title" className="text-sm font-semibold text-[var(--color-fg)]">
           Miembros
-          {state.status === 'ready' ? ` (${state.items.length})` : ''}
+          {state.status === 'ready'
+            ? narrowed
+              ? ` (${shown.length} de ${items.length})`
+              : ` (${items.length})`
+            : ''}
           {tenantName ? (
             <span className="font-normal text-[var(--color-fg-muted)]"> · {tenantName}</span>
           ) : null}
         </h2>
       </div>
+
+      {state.status === 'ready' && items.length > 0 ? (
+        <>
+          <MemberFilters
+            filters={filters}
+            counts={chipCounts(items, filters, search, now)}
+            roles={roleOptions(items, filters.role)}
+            suspendedCount={suspendedCount(items, filters, search, now)}
+            allRef={allRef}
+            onChange={onFiltersChange}
+            onClear={clearFilters}
+          />
+          <p role="status" className="sr-only">
+            {shownMembersText(shown.length, items.length)}
+          </p>
+        </>
+      ) : null}
 
       {state.status === 'loading' ? (
         <div className="divide-y divide-[var(--color-border)]" aria-busy="true" aria-live="polite">
@@ -195,36 +251,60 @@ export function MemberList({
             Invita a tu primer vendedor
           </Button>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : searchEmpty ? (
         <p className="px-4 py-8 text-center text-xs text-[var(--color-fg-muted)]">
           Ningún usuario coincide con la búsqueda.
         </p>
+      ) : shown.length === 0 ? (
+        // Con alguien que coincide con la búsqueda, una lista vacía es obra de los filtros.
+        <div className="px-6 py-10 text-center">
+          <p className="text-sm font-medium text-[var(--color-fg)]">
+            Nadie coincide con estos filtros.
+          </p>
+          <Button variant="secondary" size="sm" className="mt-4" onClick={clearFilters}>
+            <FilterX aria-hidden="true" />
+            Quitar filtros
+          </Button>
+        </div>
       ) : (
         <>
+          {/*
+           * Los títulos son sólo visuales (cada dato lleva su etiqueta para el lector de pantalla);
+           * el de "Último acceso" es además el botón que ordena, y ése sí se anuncia.
+           */}
           <div
-            aria-hidden="true"
             className={cn(
               'hidden gap-x-4 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-2 text-xs font-semibold text-[var(--color-fg-muted)] md:grid',
               COLUMNS,
             )}
           >
-            <span>Usuario</span>
-            <span>Rol</span>
-            <span>Último acceso</span>
-            <span>2FA</span>
-            <span>Estado</span>
+            <span aria-hidden="true">Usuario</span>
+            <span aria-hidden="true">Rol</span>
+            <span>
+              <LastAccessSortButton
+                sort={filters.sort}
+                onChange={(sort) => onFiltersChange({ ...filters, sort })}
+              />
+            </span>
+            <span aria-hidden="true" className={JOINED_CELL}>
+              Alta
+            </span>
+            <span aria-hidden="true">2FA</span>
+            <span aria-hidden="true">Estado</span>
             <span />
           </div>
           <ul className="divide-y divide-[var(--color-border)]">
-            {filtered.map((m) => (
+            {shown.map((m) => (
               <MemberRow
                 key={m.userId}
                 member={m}
                 actor={actor}
+                roles={roles}
                 now={now}
                 busy={busyUserId === m.userId}
                 error={memberError?.userId === m.userId ? memberError.message : undefined}
                 onDismissError={onDismissError}
+                onOpen={onOpen === undefined ? undefined : () => onOpen(m)}
                 onChangeRole={(role) => onChangeRole(m, role)}
                 onSetStatus={(status) => onSetStatus(m, status)}
                 onAction={(action) => onAction(m, action)}
@@ -240,30 +320,35 @@ export function MemberList({
 function MemberRow({
   member,
   actor,
+  roles,
   now,
   busy,
   error,
   onDismissError,
+  onOpen,
   onChangeRole,
   onSetStatus,
   onAction,
 }: {
   member: NetworkMember;
   actor: TeamActor;
+  roles: readonly InvitableRole[];
   now: number;
   busy: boolean;
   error: string | undefined;
   onDismissError: () => void;
+  onOpen: (() => void) | undefined;
   onChangeRole: (role: string) => void;
   onSetStatus: (status: 'active' | 'suspended') => void;
   onAction: (action: MemberAction) => void;
 }) {
   const self = isSelf(actor, member);
   const actionable = canActOn(actor, member);
-  const roles = grantableRoles(INVITABLE_ROLES, actor);
   const roleEditable = actionable && roles.length > 0;
   const status = memberStatus(member);
   const access = memberAccess(member, now);
+  // Cuándo se sumó a este nodo (la membership, no la cuenta).
+  const joined = relativeTime(member.createdAt, now);
   const mfa = mfaState(member);
   const MfaIcon = MFA_ICON[mfa];
   const name = memberName(member);
@@ -277,7 +362,11 @@ function MemberRow({
     >
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-fg)]">
-          <span className="truncate">{name}</span>
+          {onOpen !== undefined ? (
+            <MemberNameButton name={name} onOpen={onOpen} />
+          ) : (
+            <span className="truncate">{name}</span>
+          )}
           {self ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
               Tú
@@ -359,6 +448,17 @@ function MemberRow({
           ) : null}
         </div>
 
+        <div className={cn('min-w-0 text-xs text-[var(--color-fg)]', JOINED_CELL)}>
+          <CellLabel>Alta</CellLabel>
+          {joined === undefined ? (
+            <span className="text-[var(--color-fg-subtle)]">—</span>
+          ) : (
+            <time dateTime={member.createdAt} title={exactTime(member.createdAt)}>
+              {joined}
+            </time>
+          )}
+        </div>
+
         <div className="min-w-0 text-xs">
           <CellLabel>2FA</CellLabel>
           <span
@@ -392,6 +492,16 @@ function MemberRow({
             >
               <Lock aria-hidden="true" className="size-3" />
               {access.locked}
+            </span>
+          ) : null}
+          {member.passwordResetRequired === true ? (
+            <span
+              className={cn('flex items-center gap-1 text-[11px] font-medium', TONE_TEXT.warning)}
+              title={PASSWORD_RESET_PENDING_HINT}
+            >
+              <LockKeyhole aria-hidden="true" className="size-3 shrink-0" />
+              {PASSWORD_RESET_PENDING_LABEL}
+              <span className="sr-only">. {PASSWORD_RESET_PENDING_HINT}</span>
             </span>
           ) : null}
         </div>
@@ -432,31 +542,29 @@ const SEPARATOR = 'my-1 h-px bg-[var(--color-border)]';
 
 const ACTION_ICON: Readonly<Record<MemberAction, typeof KeyRound>> = {
   'send-password-reset': KeyRound,
+  'require-password-reset': LockKeyhole,
   unlock: LockOpen,
   'revoke-sessions': LogOut,
   'reset-mfa': ShieldOff,
 };
 
 /**
- * Lo de adentro del menú de un miembro: las acciones de soporte por grupo (Acceso, Seguridad) y, al
- * final, suspender o reactivar. Aparte del menú para poder pintarlo abierto en un test.
+ * Las acciones de soporte de un miembro por grupo (Acceso, Seguridad). Las comparten el menú de la
+ * fila, el de su ficha y el de la ficha del directorio de la plataforma.
  *
  * `onPick` recibe lo que hay que hacer: el menú lo corre recién al cerrarse (ver MemberActions).
  */
-export function MemberActionItems({
+export function SupportActionGroups({
   member,
   now,
   onPick,
-  onSetStatus,
   onAction,
 }: {
   member: NetworkMember;
   now: number;
   onPick: (run: () => void) => () => void;
-  onSetStatus: (status: 'active' | 'suspended') => void;
   onAction: (action: MemberAction) => void;
 }) {
-  const suspended = member.membershipStatus === 'suspended';
   const groupId = useId();
 
   return (
@@ -488,18 +596,51 @@ export function MemberActionItems({
           </Fragment>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * Lo de adentro del menú de un miembro: las acciones de soporte (Acceso, Seguridad) y, al final, su
+ * membresía en este nodo (suspender o reactivar). Aparte del menú para poder pintarlo abierto en un
+ * test; la ficha del miembro lo usa tal cual en su pie.
+ */
+export function MemberActionItems({
+  member,
+  now,
+  onPick,
+  onSetStatus,
+  onAction,
+}: {
+  member: NetworkMember;
+  now: number;
+  onPick: (run: () => void) => () => void;
+  onSetStatus: (status: 'active' | 'suspended') => void;
+  onAction: (action: MemberAction) => void;
+}) {
+  const suspended = member.membershipStatus === 'suspended';
+  const headingId = useId();
+
+  return (
+    <>
+      <SupportActionGroups member={member} now={now} onPick={onPick} onAction={onAction} />
       <DropdownMenu.Separator className={SEPARATOR} />
-      <DropdownMenu.Item
-        className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
-        onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
-      >
-        {suspended ? (
-          <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
-        ) : (
-          <UserMinus aria-hidden="true" className="size-4" />
-        )}
-        {suspended ? 'Reactivar' : 'Suspender'}
-      </DropdownMenu.Item>
+      <DropdownMenu.Group aria-labelledby={headingId}>
+        <DropdownMenu.Label id={headingId} className={MENU_LABEL}>
+          Membresía
+        </DropdownMenu.Label>
+        <DropdownMenu.Item
+          className={cn(ITEM, !suspended && 'text-[var(--color-danger)]')}
+          onSelect={onPick(() => onSetStatus(suspended ? 'active' : 'suspended'))}
+        >
+          {suspended ? (
+            <CirclePlay aria-hidden="true" className="size-4 text-[var(--color-fg-muted)]" />
+          ) : (
+            <UserMinus aria-hidden="true" className="size-4" />
+          )}
+          {suspended ? 'Reactivar' : 'Suspender'}
+        </DropdownMenu.Item>
+      </DropdownMenu.Group>
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { parseIssuedInvitation, type IssuedInvitation } from './invitation-notice';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
+import { reasonOf, withStepUp, type StepUpAware, type StepUpCancelled } from './step-up';
 import { tenantAdminErrorMessage } from './tenant-admin-client';
 import {
   parseSeatsView,
@@ -42,12 +43,13 @@ function errorOf(body: unknown): string | undefined {
   return typeof e === 'string' ? e : undefined;
 }
 
+/** El fallo lleva el `reason` del API cuando vino: con él `withStepUp` sabe si pedir el código. */
 async function call<T>(
   url: string,
   init: RequestInit,
   parse: (value: unknown) => T | undefined,
   errorMessage: (status: number, message: string | undefined) => string,
-): Promise<Loaded<T>> {
+): Promise<StepUpAware<T>> {
   let res: Response;
   try {
     res = await fetch(url, { cache: 'no-store', ...init });
@@ -56,9 +58,11 @@ async function call<T>(
   }
   const read = await readJson<unknown>(res);
   if (!res.ok) {
+    const reason = read.ok ? reasonOf(read.data) : undefined;
     return {
       ok: false,
       message: errorMessage(res.status, read.ok ? errorOf(read.data) : undefined),
+      ...(reason ? { reason } : {}),
     };
   }
   if (!read.ok) return { ok: false, message: read.message };
@@ -110,16 +114,23 @@ export function saveSeatPolicy(
   );
 }
 
+/**
+ * Una acción de soporte sobre un miembro. Restablecer su 2FA, forzar el cambio de contraseña y
+ * enviarle el enlace a un admin pueden pedir el código del 2FA (USR-13): `withStepUp` abre el
+ * diálogo y la repite una vez. Si se cierra el diálogo, vuelve `StepUpCancelled`.
+ */
 export function runMemberAction(
   tenantId: string,
   userId: string,
   action: MemberAction,
-): Promise<Loaded<MemberActionResult>> {
-  return call(
-    `/api/tenants/${seg(tenantId)}/members/${seg(userId)}/${action}`,
-    { method: 'POST' },
-    parseMemberActionResult,
-    memberActionError,
+): Promise<StepUpAware<MemberActionResult> | StepUpCancelled> {
+  return withStepUp(() =>
+    call(
+      `/api/tenants/${seg(tenantId)}/members/${seg(userId)}/${action}`,
+      { method: 'POST' },
+      parseMemberActionResult,
+      memberActionError,
+    ),
   );
 }
 

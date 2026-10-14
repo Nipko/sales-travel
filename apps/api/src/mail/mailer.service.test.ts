@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { specFromAccount, specFromEnv } from './mailer.service.js';
+import { redactAddresses, specFromAccount, specFromEnv } from './mailer.service.js';
 
 describe('mailer spec resolution (BYO-email)', () => {
   it('builds a transport spec from a complete email account', () => {
@@ -42,5 +42,21 @@ describe('mailer spec resolution (BYO-email)', () => {
       MAIL_PORT: '465',
     });
     expect(spec).toMatchObject({ host: 'h', port: 465, secure: true, from: 'sys@x.com' });
+  });
+});
+
+describe('redactAddresses: el error de SMTP va al log sin direcciones', () => {
+  it('reemplaza cada dirección, con o sin <>, y deja el resto del mensaje', () => {
+    expect(
+      redactAddresses(
+        '550 5.1.1 <ana@agencia.co>: Recipient address rejected; cc beto.p+x@sub.ag.com.co',
+      ),
+    ).toBe('550 5.1.1 <<correo>>: Recipient address rejected; cc <correo>');
+  });
+
+  it('un mensaje sin direcciones queda igual', () => {
+    expect(redactAddresses('connect ECONNREFUSED 10.0.0.1:587')).toBe(
+      'connect ECONNREFUSED 10.0.0.1:587',
+    );
   });
 });

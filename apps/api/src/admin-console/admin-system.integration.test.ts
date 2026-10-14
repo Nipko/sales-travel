@@ -16,7 +16,6 @@ import { PostSaleSweeper } from '../orders/post-sale-sweeper.js';
 import type { StaleCancelClaimService } from '../orders/stale-cancel-claim.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import type { ReconciliationService } from '../reconciliation/reconciliation.service.js';
-import { requestContextStorage } from '../request-context/request-context.js';
 import { AdminSystemService, readPostSaleSweep } from './admin-system.service.js';
 
 /**
@@ -177,7 +176,7 @@ d('Sistema › Procesos (rastro del barrido y lecturas de 0075 como app_user)', 
   afterAll(async () => {
     await admin.query(
       `DELETE FROM domain_events WHERE event_type = ANY($1::text[]) AND occurred_at >= $2`,
-      [Object.values(POST_SALE_SWEEP_EVENTS), startedAt],
+      [[...Object.values(POST_SALE_SWEEP_EVENTS), 'tenant.sys_activity_probe'], startedAt],
     );
     await admin.query('DELETE FROM hotel_provider_city WHERE provider_code = $1', [
       `cat-sys-${sfx}`,
@@ -227,6 +226,7 @@ d('Sistema › Procesos (rastro del barrido y lecturas de 0075 como app_user)', 
         'staleCancelClaims',
         'tenants',
         'tenantsFailed',
+        'ticketIssues',
       ].sort(),
     );
   });
@@ -281,11 +281,34 @@ d('Sistema › Procesos (rastro del barrido y lecturas de 0075 como app_user)', 
     await expect(service.jobs(consolidatorAdmin)).rejects.toBeInstanceOf(SuperadminRequiredError);
   });
 
-  it('la actividad de la red no se llena de latidos del barrido', async () => {
-    const events = await requestContextStorage.run({ userId: superadmin }, () =>
-      audit.networkAudit(platform, 200),
+  it('la actividad de la red no se llena de latidos del barrido, con o sin filtro', async () => {
+    // Una acción de una persona en la misma raíz, para que la página no salga vacía por otra razón.
+    await audit.emit({
+      eventType: 'tenant.sys_activity_probe',
+      tenantId: platform,
+      actorUserId: superadmin,
+      payload: { probe: sfx },
+    });
+    const { rows } = await admin.query<{ n: string }>(
+      `SELECT count(*) AS n FROM domain_events WHERE tenant_id = $1 AND event_type LIKE 'system.%'
+          AND occurred_at >= $2`,
+      [platform, startedAt],
     );
-    expect(events.filter((e) => e.eventType.startsWith('system.'))).toEqual([]);
+    expect(Number(rows[0]!.n)).toBeGreaterThan(0);
+
+    for (const opts of [
+      { limit: 200 },
+      { limit: 200, category: 'network' as const },
+      { limit: 200, actorUserId: superadmin },
+    ]) {
+      const page = await audit.networkAudit(superadmin, platform, opts);
+      const types = page.events.map((e) => e.eventType);
+      expect(types, JSON.stringify(opts)).toContain('tenant.sys_activity_probe');
+      expect(
+        types.filter((t) => t.startsWith('system.')),
+        JSON.stringify(opts),
+      ).toEqual([]);
+    }
   });
 
   it('la conciliación por proveedor, los catálogos y los aeropuertos', async () => {

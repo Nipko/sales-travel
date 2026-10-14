@@ -29,6 +29,7 @@ import { fakeHotelsDb, type FakeHotelsDb, type FilaTenant } from './__fixtures__
 import type { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import { AllHotelProvidersFailedError } from './hotel-provider-errors.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
@@ -244,6 +245,7 @@ function banco(
     {
       nonRefundableRates: () => Promise.resolve({ effective: 'allowed' }),
     } as unknown as BookingPermissionsService,
+    {} as HotelRoomContentService,
   );
   return {
     service,

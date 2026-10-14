@@ -106,6 +106,51 @@ describe('catálogo de proveedores', () => {
     );
     expect(ndc?.secret).not.toBe(true);
   });
+
+  it('ofrece la política de emisión con los valores que lee el factory y nunca tarjeta', () => {
+    const byKey = new Map(sabre().config.map((field) => [field.key, field]));
+
+    const policy = byKey.get('ticketingPolicy');
+    expect(policy?.defaultValue).toBe('TICKETING_TIME_LIMIT');
+    expect(policy?.options?.map((o) => o.value)).toEqual([
+      'TICKETING_TIME_LIMIT',
+      'FUTURE_TICKETING',
+    ]);
+    expect(policy?.help).toContain('Con plazo: emite la misma oficina antes de la fecha límite.');
+    expect(policy?.help).toContain('Emisión futura: la reserva queda para que emita el PCC');
+
+    const payment = byKey.get('ticketingFormOfPayment');
+    expect(payment?.defaultValue).toBe('CASH');
+    // D1: la lista es cerrada y sin tarjeta, aunque el contrato de Sabre sí la admita.
+    expect(payment?.options?.map((o) => o.value)).toEqual(['CASH', 'ON_ACCOUNT', 'INVOICE']);
+  });
+
+  it('el margen ofrece sólo horas enteras de 0 a 72, con 2 por defecto', () => {
+    const lead = new Map(sabre().config.map((field) => [field.key, field])).get(
+      'ticketingLeadHours',
+    );
+    expect(lead?.defaultValue).toBe('2');
+    const values = lead?.options?.map((o) => o.value) ?? [];
+    expect(values).toContain('2');
+    for (const value of values) {
+      expect(value).toMatch(/^(0|[1-9]\d*)$/);
+      expect(Number(value)).toBeLessThanOrEqual(72);
+    }
+    expect(lead?.options?.find((o) => o.value === '2')?.label).toBe('2 horas (recomendado)');
+  });
+
+  it('las zonas horarias ofrecidas son IANA válidas, con Bogotá por defecto', () => {
+    const zone = new Map(sabre().config.map((field) => [field.key, field])).get('pccTimeZone');
+    expect(zone?.defaultValue).toBe('America/Bogota');
+    for (const option of zone?.options ?? []) {
+      expect(() => new Intl.DateTimeFormat('en-US', { timeZone: option.value })).not.toThrow();
+    }
+  });
+
+  it('el PCC de emisión explica cuándo emite', () => {
+    const ticketing = sabre().credentials.find((field) => field.key === 'ticketingPcc');
+    expect(ticketing?.help).toContain('PCC que emite cuando la política es emisión futura');
+  });
 });
 
 describe('validateProviderDraft — Sabre', () => {
@@ -300,6 +345,38 @@ describe('buildProviderAccountPayload', () => {
       multipleFares: 'off',
       ndcContent: 'false',
     });
+  });
+
+  it('persiste la política de emisión por defecto en config, fuera del blob cifrado', () => {
+    const payload = buildProviderAccountPayload(sabre(), validSabreDraft());
+    expect(payload.config).toMatchObject({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingLeadHours: '2',
+      ticketingFormOfPayment: 'CASH',
+      pccTimeZone: 'America/Bogota',
+    });
+    expect(payload.credentials).not.toHaveProperty('ticketingPolicy');
+  });
+
+  it('una política de emisión guardada se precarga al editar, sin anunciarla como pérdida', () => {
+    const prefill = prefillFromAccount(sabre(), {
+      label: 'default',
+      status: 'active',
+      isInheritable: true,
+      config: {
+        ticketingPolicy: 'FUTURE_TICKETING',
+        ticketingLeadHours: '6',
+        ticketingFormOfPayment: 'ON_ACCOUNT',
+        pccTimeZone: 'America/Lima',
+      },
+    });
+    expect(prefill.config).toMatchObject({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '6',
+      ticketingFormOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    });
+    expect(prefill.droppedConfigKeys).toEqual([]);
   });
 
   it('encender NDC se guarda en config como texto, nunca en las credenciales cifradas', () => {
