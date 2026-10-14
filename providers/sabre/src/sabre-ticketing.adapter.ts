@@ -22,6 +22,10 @@ import type {
   SabreTicketCheckEvidence,
 } from './booking/cancel.request.builder';
 import { parseSabreDecimalToMinor } from './booking/cancel.response.mapper';
+import {
+  SABRE_DISPLAY_SECTIONS_POST_SALE,
+  type SabreReturnOnly,
+} from './booking/get.request.builder';
 import type { SabreBookingSnapshot } from './booking/get.response.mapper';
 import type { SabreTicketingFormOfPayment } from './booking/ticketing-policy';
 import { SABRE_AUTH_PATH, sabreConversationIdPrefix, type SabreConfig } from './config';
@@ -29,6 +33,7 @@ import { SabreApiError, type SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
+import { pendingSabreAncillaryEmds } from './ticketing/ancillary-emd';
 import { mergeSabreTicketDocuments, sabrePrimaryDocumentNumber } from './ticketing/document-status';
 import {
   SABRE_FULFILL_PATH,
@@ -92,7 +97,19 @@ export interface SabreTicketingAdapterSettings {
   readonly invoiceDescription?: string;
   readonly validatingAirlineCode?: string;
   readonly printers?: SabreFulfillPrinters;
+  /**
+   * Emitir como EMD, junto con el tiquete, los servicios adicionales confirmados y sin cobrar de la
+   * reserva (SAB-20). Default `false`: sin él, la lectura previa no pide los servicios y la emisión
+   * es sólo de tiquetes, como antes. Lo enciende el factory con `services` en `SABRE_OPERATIONS`.
+   */
+  readonly issueAncillaryEmds?: boolean;
 }
+
+/** La lectura previa a emitir, con los servicios adicionales para saber qué EMD van. */
+const SECTIONS_WITH_ANCILLARIES: readonly SabreReturnOnly[] = Object.freeze([
+  ...SABRE_DISPLAY_SECTIONS_POST_SALE,
+  'ANCILLARIES',
+] as const satisfies readonly SabreReturnOnly[]);
 
 export interface SabreTicketingDeps {
   readonly logger?: LoggerPort;
@@ -159,12 +176,26 @@ export class SabreTicketingAdapter implements TicketingPort {
     options: TicketIssueOptions,
   ): Promise<TicketIssueResult> {
     const travelerCount = assertTravelerCount(options.travelerCount);
-    const request = this.buildRequest(orderId, options);
-    const idempotencyKey = sabreFulfillIdempotencyKey(request);
-    const shape = describeSabreFulfillRequest(request);
+    // El cuerpo se arma ANTES de leer: un dato inválido no llega a tocar la red.
+    let request = this.buildRequest(orderId, options, []);
     const formOfPaymentType = this.formOfPayment();
+    const withEmds = this.settings.issueAncillaryEmds === true;
 
-    const before = await this.manage.snapshotForDisplay(orderId, ctx);
+    const before = withEmds
+      ? await this.manage.snapshotForDisplay(orderId, ctx, { sections: SECTIONS_WITH_ANCILLARIES })
+      : await this.manage.snapshotForDisplay(orderId, ctx);
+    // Los servicios confirmados y sin cobrar salen como EMD en la misma emisión, con la misma
+    // forma de pago. Se deciden con la lectura, nunca con lo que diga quien llama.
+    const emds = withEmds ? pendingSabreAncillaryEmds(before) : undefined;
+    if (emds !== undefined && emds.itemIds.length > 0) {
+      request = this.buildRequest(orderId, options, emds.itemIds);
+    }
+    const idempotencyKey = sabreFulfillIdempotencyKey(request);
+    const shape = {
+      ...describeSabreFulfillRequest(request),
+      ...(emds === undefined ? {} : { ancillariesSkipped: emds.skipped }),
+    };
+
     if (before.status === 'CANCELLED') {
       throw new SabreTicketingNotSentError(
         'BOOKING_CANCELLED',
@@ -242,7 +273,11 @@ export class SabreTicketingAdapter implements TicketingPort {
     return this.settings.formOfPayment ?? 'CASH';
   }
 
-  private buildRequest(orderId: string, options: TicketIssueOptions): SabreFulfillTicketsRequest {
+  private buildRequest(
+    orderId: string,
+    options: TicketIssueOptions,
+    ancillaryItemIds: readonly string[],
+  ): SabreFulfillTicketsRequest {
     const targetPcc = this.settings.ticketingPcc;
     if (
       targetPcc !== undefined &&
@@ -270,6 +305,7 @@ export class SabreTicketingAdapter implements TicketingPort {
         : { commissionPercentage: options.commissionPercentage }),
       ...(targetPcc === undefined ? {} : { targetPcc }),
       ...(this.settings.printers === undefined ? {} : { printers: this.settings.printers }),
+      ...(ancillaryItemIds.length === 0 ? {} : { ancillaryItemIds }),
     });
   }
 
@@ -382,6 +418,9 @@ export class SabreTicketingAdapter implements TicketingPort {
       documents: settlement.documents.length,
       issuedTickets: settlement.documents.filter(
         (document) => document.kind === 'TICKET' && document.status === 'ISSUED',
+      ).length,
+      issuedEmds: settlement.documents.filter(
+        (document) => document.kind === 'EMD' && document.status === 'ISSUED',
       ).length,
       warnings,
       // Sólo el vocabulario cerrado del proveedor; `description` es texto libre y no sale nunca.

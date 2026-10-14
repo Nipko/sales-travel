@@ -97,6 +97,7 @@ export type SabreBookingWarningCode =
   | 'ticket-status-unknown'
   | 'ticketing-deadline-malformed'
   | 'traveler-index-out-of-range'
+  | 'ancillary-malformed'
   | 'booking-signature-absent'
   | 'booking-signature-in-display-response'
   | 'provider-reported-issue';
@@ -109,6 +110,37 @@ export interface SabreBookingItem {
   readonly statusCode?: string;
   /** Sólo en vuelos. Es lo que decide el carril de cancelación. */
   readonly lane?: SabreContentLane;
+}
+
+/** `AncillaryStatusNameEnum` — `booking-management-v1.yml:9284-9297`. */
+export const SABRE_ANCILLARY_STATUS_NAMES = [
+  'Confirmed',
+  'Confirmed with EMD issued',
+  'On Request',
+  'Pending',
+  'Cancelled',
+  'Unconfirmed',
+  'Confirmed with pending payment',
+  'Schedule change',
+] as const;
+export type SabreAncillaryStatusName = (typeof SABRE_ANCILLARY_STATUS_NAMES)[number];
+
+/**
+ * Un servicio adicional de la reserva (`travelers[].ancillaries[]`, `Ancillary` en `:7287-7392`),
+ * con lo único que la emisión necesita para decidir si va como EMD: su `itemId`, su estado, si ya
+ * tiene EMD y su total. Del viajero sólo se guarda la posición: el bloque `travelers[]` es PII.
+ */
+export interface SabreBookingAncillary {
+  /** `Ancillary.itemId` (`^[A-Z0-9]+$`): lo que `fulfillments[].ancillaryIds` emite. */
+  readonly itemId: string;
+  /** Posición base cero del viajero en `travelers[]`. */
+  readonly travelerIndex: number;
+  readonly statusName?: SabreAncillaryStatusName;
+  readonly statusCode?: string;
+  /** `electronicMiscellaneousDocumentNumber` presente: el EMD ya se emitió. Nunca el número. */
+  readonly hasEmd: boolean;
+  /** `totals` tal como vino (`GenericTotalValues`, `:8299-8326`), si vino con su forma. */
+  readonly totals?: { readonly total: string; readonly currencyCode: string };
 }
 
 /**
@@ -127,6 +159,11 @@ export interface SabreBookingSnapshot {
   readonly contentLanes: readonly SabreContentLane[];
   readonly retentionEndDate?: string;
   readonly warnings: readonly SabreBookingWarningCode[];
+  /**
+   * Los servicios adicionales de la reserva, si la lectura los pidió (`ANCILLARIES`) y vinieron.
+   * Ausente = la lectura no trae `travelers[]`: no se sabe, que no es lo mismo que «ninguno».
+   */
+  readonly ancillaries?: readonly SabreBookingAncillary[];
 }
 
 /**
@@ -204,6 +241,30 @@ const FlightTicketSchema = z.object({
   number: z.unknown().optional(),
   travelerIndex: z.unknown().optional(),
   ticketStatusCode: z.unknown().optional(),
+});
+
+/**
+ * `travelers[].ancillaries[]` y nada más del viajero. Cada servicio se lee suelto: uno que no casa
+ * con el contrato se descarta (y se avisa), nunca tumba la lectura.
+ */
+const TravelerAncillariesSchema = z.object({
+  ancillaries: z.array(z.unknown()).optional(),
+});
+
+const AncillarySchema = z.object({
+  itemId: ItemIdSchema,
+  statusCode: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .optional(),
+  statusName: z.enum(SABRE_ANCILLARY_STATUS_NAMES).optional(),
+  electronicMiscellaneousDocumentNumber: z.string().min(1).optional(),
+  totals: z
+    .object({
+      total: z.string().regex(/^[0-9]+(\.[0-9]{1,3})?$/),
+      currencyCode: z.string().regex(/^[A-Z]{3}$/),
+    })
+    .optional(),
 });
 
 const ProviderIssueSchema = z.object({
@@ -415,6 +476,46 @@ function documentTravelerPosition(
 }
 
 /**
+ * Los servicios de cada viajero, sin nada del viajero salvo su posición. `undefined` si la respuesta
+ * no trae ningún viajero con la clave `ancillaries` (la lectura no la pidió).
+ */
+function collectAncillaries(
+  response: SabreGetBookingResponse,
+  warnings: SabreBookingWarningCode[],
+): SabreBookingAncillary[] | undefined {
+  let seen = false;
+  const out: SabreBookingAncillary[] = [];
+  (response.travelers ?? []).forEach((traveler, travelerIndex) => {
+    const parsed = TravelerAncillariesSchema.safeParse(traveler);
+    if (!parsed.success) {
+      addWarning(warnings, 'ancillary-malformed');
+      return;
+    }
+    if (parsed.data.ancillaries === undefined) return;
+    seen = true;
+    for (const raw of parsed.data.ancillaries) {
+      const ancillary = AncillarySchema.safeParse(raw);
+      if (!ancillary.success) {
+        addWarning(warnings, 'ancillary-malformed');
+        continue;
+      }
+      const data = ancillary.data;
+      out.push({
+        itemId: data.itemId,
+        travelerIndex,
+        hasEmd: data.electronicMiscellaneousDocumentNumber !== undefined,
+        ...(data.statusName === undefined ? {} : { statusName: data.statusName }),
+        ...(data.statusCode === undefined ? {} : { statusCode: data.statusCode }),
+        ...(data.totals === undefined
+          ? {}
+          : { totals: { total: data.totals.total, currencyCode: data.totals.currencyCode } }),
+      });
+    }
+  });
+  return seen ? out : undefined;
+}
+
+/**
  * RF-15: los documentos de la reserva con su estado, uno por número principal.
  *
  * `undefined` si la respuesta no trae `flightTickets` (una lectura que no pidió `TICKETS`, o una
@@ -554,6 +655,7 @@ function buildSnapshot(
   const ticketNumbers = collectTicketNumbers(response, warnings);
   const documents = collectDocuments(response, warnings);
   const ticketingDeadline = resolveTicketingDeadline(response, warnings);
+  const ancillaries = collectAncillaries(response, warnings);
   const status = resolveStatus(items);
   const hasTicketingDocuments =
     (response.flightTickets?.length ?? 0) > 0 ||
@@ -599,6 +701,7 @@ function buildSnapshot(
     ...(response.retentionEndDate === undefined
       ? {}
       : { retentionEndDate: response.retentionEndDate }),
+    ...(ancillaries === undefined ? {} : { ancillaries }),
   };
 }
 
