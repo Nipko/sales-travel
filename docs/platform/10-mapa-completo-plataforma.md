@@ -1010,6 +1010,54 @@ GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos 
                                          -- fuera los eventos system.*, con cualquier filtro de
                                          -- categoría o de persona. En el panel:
                                          -- /admin/plataforma/sistema (BFF /api/admin/system/jobs).
+-- Anuncios de la plataforma (implementado, 0079): avisos de texto plano para toda la red o para un
+-- nodo y su subárbol, opcionalmente sólo para administradores (ADMIN_ROLES en el nodo activo o en
+-- un ancestro), de severity info|warning|critical, vigentes de starts_at a ends_at (31 días como
+-- mucho; CHECK system_announcements_window). Tabla system_announcements con RLS FORCE: la leen y
+-- escriben sólo is_platform_superadmin() (INSERT a su nombre, sin DELETE: archivar es un UPDATE);
+-- un trigger conserva created_by/created_at. Nada de esto vende.
+GET    /announcements/active             -- La franja de avisos del panel, para cualquier usuario con
+                                         -- sesión (sin @Roles). { announcements: [{id, severity,
+                                         -- title, body, startsAt, endsAt}] }: una sola llamada a
+                                         -- active_announcements() (SECURITY DEFINER, sin parámetros:
+                                         -- toma app.current_user_id y app.current_tenant_id, exige
+                                         -- una membership activa en el nodo o un ancestro), hasta 3,
+                                         -- los más graves y después los más nuevos. Sin nodo activo,
+                                         -- []. Nunca dice a quién iba ni quién lo escribió. En el
+                                         -- panel: components/layout/announcement-banner.tsx, en el
+                                         -- AppShell bajo la barra superior (no en la pantalla de
+                                         -- enrolamiento del 2FA); pregunta al abrir y cada 5 min
+                                         -- (no con la pestaña oculta) con x-session-ping: passive,
+                                         -- así que no cuenta como actividad ni impide que la sesión
+                                         -- venza por inactividad. Pinta texto (sin HTML ni enlaces,
+                                         -- saltos de línea respetados) y deja ocultar info y
+                                         -- warning (localStorage st.announcements.dismissed, por id
+                                         -- y una huella de gravedad, título y mensaje: si se corrige
+                                         -- el texto, vuelve a verse); critical no se oculta. Si
+                                         -- falla, no pinta nada.
+GET    /admin/announcements              -- Plataforma → Sistema › Anuncios (sólo superadmin): los
+                                         -- últimos 50 con status scheduled|active|expired|archived
+                                         -- (con la hora de la base) y el público {rootTenantId,
+                                         -- rootTenantName, adminsOnly}.
+POST   /admin/announcements              -- Publicar. Zod estricto: severity, title 3..120, body
+                                         -- 0..600 (texto plano: sin controles ni invisibles, saltos
+                                         -- de línea en el mensaje), audience {rootTenantId|null,
+                                         -- adminsOnly}, startsAt opcional (ahora), endsAt hasta 31
+                                         -- días después y en el futuro (400
+                                         -- ANNOUNCEMENT_WINDOW_INVALID); nodo inexistente → 404
+                                         -- ANNOUNCEMENT_AUDIENCE_NOT_FOUND.
+PATCH  /admin/announcements/:id          -- Corregir: los mismos campos, cualquiera; la vigencia se
+                                         -- revisa con lo que ya tiene. Archivado → 409
+                                         -- ANNOUNCEMENT_ARCHIVED. Sin cambios, no escribe.
+POST   /admin/announcements/:id/archive  -- Deja de mostrarse en el acto (409 si ya lo estaba).
+                                         -- Cada escritura deja, en la misma transacción y en la raíz
+                                         -- platform, platform.announcement.published | .updated
+                                         -- (con `changed`: los nombres de los campos) | .archived
+                                         -- con {announcementId, severity, audience}: nunca el título
+                                         -- ni el mensaje. En el panel:
+                                         -- /admin/plataforma/sistema/anuncios (BFF
+                                         -- /api/admin/announcements, escrituras sólo del mismo
+                                         -- origen; /api/announcements/active para la franja).
 GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
                                          -- Plataforma → Reservas de la red (implementado, 0076):
                                          -- admin_search_orders. tenantId con su red (subtree=false,
