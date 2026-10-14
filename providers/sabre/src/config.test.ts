@@ -113,6 +113,17 @@ describe('sabreHostEnvironment', () => {
     expect(sabreHostEnvironment('https://api.platform.sabre.com:443/v5')).toBe('prod');
   });
 
+  it('los dominios de certificación de Sabre son CERT, también los históricos', () => {
+    // Con el host viejo (`*.cert.havail.sabre.com`) una cuenta de CERT tiene que seguir vendiendo de
+    // pruebas: no emite tiquetes reales, y no reconocerla la dejaría fuera de la búsqueda al desplegar.
+    expect(sabreHostEnvironment('https://api-crt.cert.havail.sabre.com')).toBe('cert');
+    expect(sabreHostEnvironment('https://sws-crt.cert.havail.sabre.com/websvc')).toBe('cert');
+    expect(sabreHostEnvironment('https://otro.cert.platform.sabre.com')).toBe('cert');
+    // El sufijo tiene que ser un dominio entero: ni pegado ni como subdominio de otro.
+    expect(sabreHostEnvironment('https://apicert.havail.sabre.com')).toBe('prod');
+    expect(sabreHostEnvironment('https://cert.havail.sabre.com.evil.test')).toBeUndefined();
+  });
+
   it('cualquier otro host de sabre.com cuenta como producción, no como CERT', () => {
     // Un host dedicado o uno histórico también factura: la duda se resuelve hacia producción.
     expect(sabreHostEnvironment('https://agencia-x.platform.sabre.com')).toBe('prod');

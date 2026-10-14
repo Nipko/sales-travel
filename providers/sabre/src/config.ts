@@ -27,10 +27,23 @@ const SABRE_CERT_HOSTNAMES: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Los dominios de certificación de Sabre: `*.cert.platform.sabre.com` (el de {@link SABRE_HOSTS}) y
+ * `*.cert.havail.sabre.com` (el histórico, p. ej. `api-crt.cert.havail.sabre.com` y
+ * `sws-crt.cert.havail.sabre.com`). Un host bajo ellos no emite tiquetes reales, así que tratarlo
+ * de pruebas no apaga la retención de una venta real; y no reconocerlo dejaría sin vender a una
+ * cuenta de CERT que funciona con el host viejo.
+ */
+const SABRE_CERT_DOMAIN_SUFFIXES: readonly string[] = [
+  '.cert.platform.sabre.com',
+  '.cert.havail.sabre.com',
+];
+
+/**
  * El entorno de Sabre al que apunta una URL, mirando SÓLO el host: lo que la cuenta declare en
  * `environment` no entra.
  *
- * - `cert`: uno de los hosts de CERT de {@link SABRE_HOSTS}.
+ * - `cert`: uno de los hosts de CERT de {@link SABRE_HOSTS}, o cualquiera bajo los dominios de
+ *   certificación de Sabre (`*.cert.platform.sabre.com`, `*.cert.havail.sabre.com`).
  * - `prod`: cualquier otro host de `sabre.com`. No sólo los de {@link SABRE_HOSTS}: un host dedicado
  *   que Sabre asigne a una agencia, o uno de los históricos, también factura, y equivocarse hacia
  *   CERT es lo que apagaría las retenciones de una red entera.
@@ -47,6 +60,7 @@ export function sabreHostEnvironment(url: string): SabreEnvironment | undefined 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
   if (SABRE_CERT_HOSTNAMES.has(hostname)) return 'cert';
+  if (SABRE_CERT_DOMAIN_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) return 'cert';
   if (hostname === 'sabre.com' || hostname.endsWith('.sabre.com')) return 'prod';
   return undefined;
 }

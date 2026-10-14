@@ -459,10 +459,6 @@ describe('SabreProviderFactory — el entorno sale de los hosts, no de lo que de
       { environment: 'cert', host: 'https://proxy.agencia.test' },
     ],
     [
-      'marcada CERT con un host de CERT que no reconocemos',
-      { environment: 'cert', host: 'https://api-crt.cert.havail.sabre.com' },
-    ],
-    [
       'con un entorno ilegible y el host de producción',
       { environment: 'PROD', host: SABRE_HOSTS.prod.rest },
     ],
@@ -473,6 +469,16 @@ describe('SabreProviderFactory — el entorno sale de los hosts, no de lo que de
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ProviderAccountNotAllowedError);
     expect((err as ProviderAccountNotAllowedError).detail).toBe(SABRE_ENVIRONMENT_MISMATCH_DETAIL);
+  });
+
+  it('marcada CERT con el host histórico de CERT (*.cert.havail.sabre.com): vende de pruebas', async () => {
+    expect(
+      await entornoDe({
+        environment: 'cert',
+        host: 'https://api-crt.cert.havail.sabre.com',
+        soapHost: 'https://sws-crt.cert.havail.sabre.com',
+      }),
+    ).toBe('test');
   });
 
   it('lo dice en `error`, con la cuenta y el dueño, sin hosts ni credenciales', async () => {
