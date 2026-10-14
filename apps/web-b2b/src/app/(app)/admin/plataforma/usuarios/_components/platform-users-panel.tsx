@@ -27,6 +27,11 @@ import {
 } from '../../../../../../components/wallets/section-tabs';
 import { cn } from '../../../../../../lib/cn';
 import {
+  legacyCalloutText,
+  loadLegacyAccounts,
+  type LegacyAccountsList,
+} from '../../../../../../lib/legacy-passwords';
+import {
   ACTION_CANCELLED,
   ACTION_DONE,
   memberFromDetail,
@@ -81,6 +86,7 @@ import { MemberNameButton, MemberSheet } from '../../../usuarios/_components/mem
 import { roleLabel } from '../../../usuarios/_components/roles';
 import { useNow } from '../../../usuarios/_components/seats-ui';
 import { supportMember } from '../../../usuarios/_components/support-action';
+import { LegacyPasswordsCallout, LegacyPasswordsDialog } from './legacy-passwords-dialog';
 import { PlatformInvitations, SEARCH_DEBOUNCE_MS, useDebounced } from './platform-invitations';
 
 /** Las pestañas de la pantalla: las personas, o las invitaciones que nadie aceptó todavía. */
@@ -152,6 +158,9 @@ function CellLabel({ children }: { children: React.ReactNode }) {
  * Las dos pestañas quedan montadas al cambiar: cada una conserva sus filtros y lo que cargó. La de
  * invitaciones se monta recién la primera vez que se abre; hasta entonces su contador sale de un
  * pedido aparte, que se repite cada vez que una invitación cambia.
+ *
+ * Arriba del directorio, si quedan cuentas que nacieron con una contraseña que eligió un admin, el
+ * aviso para revisarlas y forzarles el cambio (USR-14, legacy-passwords-dialog.tsx).
  */
 export function PlatformUsersPanel({
   viewerId,
@@ -180,6 +189,9 @@ export function PlatformUsersPanel({
   // La persona cuya ficha está abierta.
   const [sheetId, setSheetId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Cuentas heredadas con una contraseña de un admin (USR-14): el aviso y la lista que se revisa.
+  const [legacy, setLegacy] = useState<LegacyAccountsList | null>(null);
+  const [reviewing, setReviewing] = useState<LegacyAccountsList | null>(null);
 
   const query = useMemo<DirectoryFilters>(() => ({ ...filters, q }), [filters, q]);
   // Una respuesta de filtros viejos (la persona siguió escribiendo) no pinta encima de la nueva.
@@ -226,6 +238,18 @@ export function PlatformUsersPanel({
   useEffect(() => {
     void loadPendingCount();
   }, [loadPendingCount]);
+
+  // Si no carga, no hay aviso: es un atajo, el directorio sigue igual.
+  const loadLegacy = useCallback(async () => {
+    const res = await loadLegacyAccounts();
+    if (res.ok) setLegacy(res.data);
+  }, []);
+
+  useEffect(() => {
+    void loadLegacy();
+  }, [loadLegacy]);
+
+  const legacyText = legacy === null ? null : legacyCalloutText(legacy);
 
   function selectTab(next: PanelTab) {
     setTab(next);
@@ -391,6 +415,9 @@ export function PlatformUsersPanel({
 
         <SectionTabPanel id="users" idPrefix={tabsId} hidden={tab !== 'users'} keepMounted>
           <div className="space-y-5">
+            {legacy !== null && legacyText !== null ? (
+              <LegacyPasswordsCallout text={legacyText} onReview={() => setReviewing(legacy)} />
+            ) : null}
             <DirectoryFiltersBar
               search={search}
               filters={filters}
@@ -443,6 +470,14 @@ export function PlatformUsersPanel({
           ) : null}
         </SectionTabPanel>
       </div>
+
+      {reviewing !== null ? (
+        <LegacyPasswordsDialog
+          list={reviewing}
+          onClose={() => setReviewing(null)}
+          onFinished={() => void loadLegacy()}
+        />
+      ) : null}
 
       {sheetId !== null ? (
         <MemberSheet

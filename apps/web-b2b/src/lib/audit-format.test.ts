@@ -40,6 +40,7 @@ describe('eventLabel', () => {
       'auth.session.released_by_admin': 'Puesto liberado',
       'auth.password_reset.sent_by_admin': 'Enlace para restablecer contraseña enviado',
       'auth.password_reset.required_by_admin': 'Cambio de contraseña forzado',
+      'auth.password_reset.required_bulk': 'Forzó el cambio de contraseña a cuentas heredadas',
       'auth.lockout.cleared_by_admin': 'Cuenta desbloqueada',
       'auth.login.success': 'Ingresó',
       'auth.login.failed': 'Ingreso fallido',
@@ -114,6 +115,16 @@ describe('eventDetail', () => {
     expect(
       eventDetail(entry('auth.password_reset.required_by_admin', { revokedSessions: 1 }, ANA)),
     ).toBe(`a ${ANA} · 1 sesión cerrada`);
+    // USR-14: forzado en bloque a una cuenta heredada.
+    expect(
+      eventDetail(
+        entry(
+          'auth.password_reset.required_by_admin',
+          { revokedSessions: 0, bulk: true, batchId: NODO },
+          ANA,
+        ),
+      ),
+    ).toBe(`a ${ANA} · En bloque: cuenta heredada`);
     expect(eventDetail(entry('UserStatusChanged', { revokedSessions: 0 }, ANA))).toBe(`a ${ANA}`);
     expect(eventDetail(entry('MembershipStatusChanged', { role: 'vendedor' }, ANA))).toBe(
       `a ${ANA} · Vendedor`,
@@ -210,6 +221,36 @@ describe('eventDetail', () => {
       text: 'Exportó la lista de usuarios',
       raw: false,
     });
+  });
+
+  it('el lote sobre las cuentas heredadas: cuántas quedaron obligadas y cuántas no (USR-14)', () => {
+    expect(
+      eventDetail(
+        entry('auth.password_reset.required_bulk', {
+          batchId: NODO,
+          requested: 9,
+          sent: 5,
+          emailFailed: 1,
+          skipped: 2,
+          failed: 1,
+        }),
+      ),
+    ).toBe('6 cuentas obligadas · 2 omitidas · 1 correo sin enviar · 1 con error');
+    expect(
+      eventDetail(
+        entry('auth.password_reset.required_bulk', {
+          sent: 1,
+          emailFailed: 0,
+          skipped: 0,
+          failed: 0,
+        }),
+      ),
+    ).toBe('1 cuenta obligada');
+    expect(eventDetail(entry('auth.password_reset.required_bulk', { sent: 0, skipped: 3 }))).toBe(
+      '0 cuentas obligadas · 3 omitidas',
+    );
+    expect(eventDetail(entry('auth.password_reset.required_bulk', { sent: -1 }))).toBe('');
+    expect(categoryOf('auth.password_reset.required_bulk')).toBe('users');
   });
 
   it('credenciales, precios y nodos', () => {
