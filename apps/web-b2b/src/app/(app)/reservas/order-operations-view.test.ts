@@ -110,3 +110,21 @@ describe('la anulación de tiquetes en el historial (SAB-09)', () => {
     ).toEqual({ label: 'Sin confirmar', tone: 'pending' });
   });
 });
+
+describe('datos de pasajeros (SAB-25)', () => {
+  it('tiene nombre, y un cambio en duda no «falló»: se revisa la reserva', () => {
+    expect(operationTypeLabel('modify')).toBe('Datos de pasajeros');
+    expect(operationStatusView({ type: 'modify', status: 'success' })).toEqual({
+      label: 'Guardado',
+      tone: 'ok',
+    });
+    expect(operationStatusView({ type: 'modify', status: 'failed' })).toEqual({
+      label: 'No se guardó',
+      tone: 'failed',
+    });
+    expect(
+      operationStatusView({ type: 'modify', status: 'failed', reconciliationRequired: true }),
+    ).toEqual({ label: 'Sin confirmar', tone: 'pending' });
+    expect(operationStatusView({ type: 'modify', status: 'pending' }).label).toBe('En curso');
+  });
+});

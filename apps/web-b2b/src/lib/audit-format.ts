@@ -138,6 +138,10 @@ const LABELS: Readonly<Record<string, string>> = {
   OrderServicesRemoved: 'Servicios adicionales quitados de una reserva',
   OrderServicesChangeFailed: 'Cambio de servicios adicionales sin completar',
   'portfolio.hold.adjusted': 'Retención de cartera ajustada por servicios adicionales',
+  // Datos de los pasajeros de una reserva hecha (SAB-25).
+  OrderTravelersModifyRequested: 'Pidió corregir datos de pasajeros',
+  OrderTravelersModified: 'Datos de pasajeros corregidos en una reserva',
+  OrderTravelersModifyFailed: 'Corrección de datos de pasajeros sin completar',
 };
 
 export interface EventLabel {

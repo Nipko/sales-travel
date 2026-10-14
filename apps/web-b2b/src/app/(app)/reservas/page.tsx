@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   Hotel,
+  IdCard,
   Luggage,
   Mail,
   Package,
@@ -60,7 +61,9 @@ import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
 import { AddServicesSheet } from './_components/add-services-sheet';
+import { EditTravelersSheet } from './_components/edit-travelers-sheet';
 import { canManageServices } from './services-view';
+import { TRAVELERS_UI, canEditTravelers } from './travelers-view';
 import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
 import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
@@ -84,7 +87,11 @@ interface Passenger {
   surname: string;
   paxType: string;
   birthdate?: string;
-  identityDoc?: { type?: string; number?: string };
+  /**
+   * El número completo es el de la reserva tal como se creó. Si después se corrigió desde «Datos de
+   * pasajeros» (SAB-25), la orden guarda sólo los últimos caracteres (`numberLast4`).
+   */
+  identityDoc?: { type?: string; number?: string; numberLast4?: string };
 }
 
 interface Order {
@@ -228,6 +235,8 @@ export default function ReservasPage() {
   const [issuing, setIssuing] = useState<Order | null>(null);
   /** La reserva cuyas maletas y servicios se están viendo (SAB-20). */
   const [servicesSheet, setServicesSheet] = useState<Order | null>(null);
+  /** La reserva cuyos datos de pasajeros se están corrigiendo (SAB-25). */
+  const [travelersSheet, setTravelersSheet] = useState<Order | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
@@ -1188,6 +1197,7 @@ export default function ReservasPage() {
             issueInFlight={detailOrder.id in issuesInFlight}
             onIssueRequest={() => setIssuing(detailOrder)}
             onServicesRequest={() => setServicesSheet(detailOrder)}
+            onTravelersRequest={() => setTravelersSheet(detailOrder)}
             onOrderChanged={() => void loadOrders(false)}
           />
         ))}
@@ -1237,6 +1247,16 @@ export default function ReservasPage() {
         />
       )}
 
+      {/* Datos de los pasajeros (SAB-25): el API los cambia en la reserva y los verifica. */}
+      {travelersSheet && (
+        <EditTravelersSheet
+          key={travelersSheet.id}
+          order={travelersSheet}
+          onClose={() => setTravelersSheet(null)}
+          onChanged={() => void loadOrders(false)}
+        />
+      )}
+
       {/* Confirmación de cancelación (evita cancelaciones por error) */}
       {confirmCancel && (
         <ConfirmDialog
@@ -1268,6 +1288,7 @@ function OrderDetailModal({
   issueInFlight,
   onIssueRequest,
   onServicesRequest,
+  onTravelersRequest,
   onOrderChanged,
 }: {
   order: Order;
@@ -1279,6 +1300,8 @@ function OrderDetailModal({
   onIssueRequest: () => void;
   /** Abrir las maletas y servicios de la reserva (SAB-20). */
   onServicesRequest: () => void;
+  /** Abrir los datos de los pasajeros de la reserva (SAB-25). */
+  onTravelersRequest: () => void;
   /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
   onOrderChanged: () => void;
 }) {
@@ -1300,6 +1323,8 @@ function OrderDetailModal({
     supportsOrderCapability(order.capabilities, 'pay');
   const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
   const canServices = !isCar && canManageServices(order) && !issueInFlight;
+  // Corregir los datos de los pasajeros no mueve dinero: también con la reserva emitida.
+  const canTravelers = !isCar && canEditTravelers(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -1604,7 +1629,7 @@ function OrderDetailModal({
                   </span>
                   <span className="text-[var(--color-fg-muted)]">
                     {p.identityDoc?.type
-                      ? `${p.identityDoc.type} ${p.identityDoc.number ?? ''}`
+                      ? `${p.identityDoc.type} ${p.identityDoc.number ?? (p.identityDoc.numberLast4 !== undefined ? `••••${p.identityDoc.numberLast4}` : '')}`
                       : ''}
                     {p.identityDoc?.type ? ' · ' : ''}
                     {PAX_LABEL[p.paxType] ?? p.paxType}
@@ -1774,6 +1799,16 @@ function OrderDetailModal({
               className="gap-1.5 text-xs"
             >
               <Luggage aria-hidden="true" className="size-3.5" /> Servicios adicionales
+            </Button>
+          )}
+          {canTravelers && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onTravelersRequest}
+              className="gap-1.5 text-xs"
+            >
+              <IdCard aria-hidden="true" className="size-3.5" /> {TRAVELERS_UI.open}
             </Button>
           )}
           {canPay && (

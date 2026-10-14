@@ -17,6 +17,7 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
   issue: 'Emisión',
   'add-services': 'Servicios adicionales',
   'remove-services': 'Quitar servicios adicionales',
+  modify: 'Datos de pasajeros',
 };
 
 /**
@@ -73,6 +74,16 @@ export function operationStatusView(op: {
       return { tone: 'pending', label: 'Sin confirmar' };
     }
     return { tone, label: tone === 'ok' ? 'Hecho' : tone === 'failed' ? 'No se hizo' : 'En curso' };
+  }
+  if (op.type === 'modify') {
+    // Un cambio de datos en duda no «falló»: la aerolínea pudo guardarlo. Se revisa la reserva.
+    if (tone === 'failed' && op.reconciliationRequired === true) {
+      return { tone: 'pending', label: 'Sin confirmar' };
+    }
+    return {
+      tone,
+      label: tone === 'ok' ? 'Guardado' : tone === 'failed' ? 'No se guardó' : 'En curso',
+    };
   }
   if (op.type === 'hcn-ticket') {
     return { tone, label: tone === 'ok' ? 'Resuelta' : tone === 'failed' ? 'Falló' : 'Abierta' };
