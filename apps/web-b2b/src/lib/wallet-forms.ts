@@ -54,9 +54,9 @@ export function parseAmountInput(
 ): Parsed<number> {
   // `\s` incluye el espacio duro que dejan algunos teclados y el copiar y pegar de un extracto.
   const clean = text.replace(/\s/g, '').replace(/^\$/, '');
-  if (clean === '') return { ok: false, error: 'Indicá el monto.' };
+  if (clean === '') return { ok: false, error: 'Indica el monto.' };
   if (clean.startsWith('-')) {
-    return { ok: false, error: 'Escribí el monto sin signo.' };
+    return { ok: false, error: 'Escribe el monto sin signo.' };
   }
   const m = AMOUNT_RE.exec(clean);
   if (m === null) {
@@ -64,8 +64,8 @@ export function parseAmountInput(
       ok: false,
       error:
         exponent > 0
-          ? 'Escribí sólo números, sin separadores de miles (ej.: 1500000 o 1500000,50).'
-          : 'Escribí sólo números, sin separadores de miles (ej.: 1500000).',
+          ? 'Escribe sólo números, sin separadores de miles (ej.: 1500000 o 1500000,50).'
+          : 'Escribe sólo números, sin separadores de miles (ej.: 1500000).',
     };
   }
   const whole = m[1] ?? '';
@@ -75,8 +75,8 @@ export function parseAmountInput(
       ok: false,
       error:
         exponent === 0
-          ? 'Esta moneda no tiene centavos: escribí el monto sin decimales ni separadores de miles.'
-          : `Usá la coma sólo para los centavos (hasta ${exponent} decimales), sin separadores de miles.`,
+          ? 'Esta moneda no tiene centavos: escribe el monto sin decimales ni separadores de miles.'
+          : `Usa la coma sólo para los centavos (hasta ${exponent} decimales), sin separadores de miles.`,
     };
   }
   const digits = `${whole}${fraction.padEnd(exponent, '0')}`.replace(/^0+(?=\d)/, '');
@@ -110,7 +110,7 @@ export function minorToInput(minor: number, exponent: number): string {
 export function reasonError(text: string): string | undefined {
   const t = text.trim();
   if (t.length < REASON_MIN_LENGTH) {
-    return `Escribí el motivo (al menos ${REASON_MIN_LENGTH} caracteres): queda en la auditoría.`;
+    return `Escribe el motivo (al menos ${REASON_MIN_LENGTH} caracteres): queda en la auditoría.`;
   }
   if (t.length > REASON_MAX_LENGTH) {
     return `El motivo admite hasta ${REASON_MAX_LENGTH} caracteres.`;
@@ -125,7 +125,7 @@ export function optionalTextError(text: string, max: number): string | undefined
 
 export function referenceError(text: string): string | undefined {
   const t = text.trim();
-  if (t === '') return 'Indicá la referencia del depósito (el número de la transferencia).';
+  if (t === '') return 'Indica la referencia del depósito (el número de la transferencia).';
   if (t.length > REFERENCE_MAX_LENGTH) {
     return `La referencia admite hasta ${REFERENCE_MAX_LENGTH} caracteres.`;
   }
@@ -205,7 +205,7 @@ export function validateEnableWallet(
   available: readonly string[],
 ): Validated<EnableWalletBody, keyof EnableWalletDraft> {
   const errors: FieldErrors<keyof EnableWalletDraft> = {};
-  if (!available.includes(draft.currency)) errors.currency = 'Elegí la moneda que vas a habilitar.';
+  if (!available.includes(draft.currency)) errors.currency = 'Elige la moneda que vas a habilitar.';
   const limit =
     draft.creditLimit.trim() === ''
       ? ({ ok: true, value: 0 } as const)
@@ -240,7 +240,7 @@ export function validateCreditLimit(
   });
   if (!limit.ok) errors.creditLimit = limit.error;
   else if (limit.value === wallet.creditLimitMinor) {
-    errors.creditLimit = 'Es el cupo que ya tiene: escribí el nuevo.';
+    errors.creditLimit = 'Es el cupo que ya tiene: escribe el nuevo.';
   }
   const reason = reasonError(draft.reason);
   if (reason !== undefined) errors.reason = reason;
@@ -324,7 +324,7 @@ export function validateDepositReport(
 ): Validated<DepositReportBody, keyof DepositReportDraft> {
   const errors: FieldErrors<keyof DepositReportDraft> = {};
   const wallet = wallets.find((w) => w.currency === draft.currency);
-  if (wallet === undefined) errors.currency = 'Elegí la cartera en la que depositaste.';
+  if (wallet === undefined) errors.currency = 'Elige la cartera en la que depositaste.';
   const amount = parseAmountInput(draft.amount, wallet?.exponent ?? NEW_WALLET_EXPONENT);
   if (!amount.ok) errors.amount = amount.error;
   const reference = referenceError(draft.reference);
@@ -432,7 +432,7 @@ export function entrySummary(
     { label: 'Disponible para reservar', value: money(wallet, availableAfter) },
   ];
   return {
-    title: kind === 'deposit' ? 'Confirmá el depósito' : 'Confirmá el ajuste',
+    title: kind === 'deposit' ? 'Confirma el depósito' : 'Confirma el ajuste',
     description: `Vas a ${verb} ${amount} en la cartera ${wallet.currency} de ${nodeName}. El movimiento no se borra: si hay un error, se corrige con otro ajuste.`,
     lines,
     ...(availableAfter < 0
@@ -459,7 +459,7 @@ export function creditLimitSummary(
   const availableAfter = wallet.balanceMinor + creditLimitMinor;
   const lowers = creditLimitMinor < wallet.creditLimitMinor;
   return {
-    title: 'Confirmá el cupo',
+    title: 'Confirma el cupo',
     description: `El cupo es el crédito que le das a ${nodeName} en ${wallet.currency}: puede reservar con su saldo más este cupo.`,
     lines: [
       {

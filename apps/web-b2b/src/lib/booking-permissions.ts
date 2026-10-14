@@ -69,7 +69,7 @@ export function parseBookingPermissions(value: unknown): BookingPermissionsView 
 export function reasonProblem(reason: string): string | undefined {
   const text = reason.trim();
   if (text.length < REASON_MIN)
-    return 'Contá por qué (al menos 3 caracteres): queda en la auditoría.';
+    return 'Cuenta por qué (al menos 3 caracteres): queda en la auditoría.';
   if (text.length > REASON_MAX) return `El motivo admite hasta ${REASON_MAX} caracteres.`;
   return undefined;
 }
@@ -101,7 +101,7 @@ export function bookingPermissionsPlan(
   const setting = isRecord(body) ? settingOf(body['nonRefundableRates']) : undefined;
   const reason = isRecord(body) && typeof body['reason'] === 'string' ? body['reason'].trim() : '';
   if (setting === undefined || reasonProblem(reason) !== undefined) {
-    return { ok: false, status: 400, error: 'Elegí si puede reservarlas y contá por qué.' };
+    return { ok: false, status: 400, error: 'Elige si puede reservarlas y cuenta por qué.' };
   }
   return { ok: true, path, method: 'PUT', body: { nonRefundableRates: setting, reason } };
 }
@@ -122,7 +122,7 @@ export type BookingPermissionsResult =
       readonly reason?: string;
     };
 
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 const FORBIDDEN =
   'Sólo quien financia a este nodo decide qué tarifas puede reservar: su consolidador, su agencia o el superadmin de Planetour.';
 
@@ -144,7 +144,7 @@ async function call(url: string, init: RequestInit): Promise<BookingPermissionsR
         ? error
         : res.status === 403
           ? FORBIDDEN
-          : 'No se pudo completar. Probá de nuevo.';
+          : 'No se pudo completar. Prueba de nuevo.';
     return { ok: false, status: res.status, message, ...(reason === undefined ? {} : { reason }) };
   }
   const data = parseBookingPermissions(read.data);
@@ -152,7 +152,7 @@ async function call(url: string, init: RequestInit): Promise<BookingPermissionsR
     ? {
         ok: false,
         status: res.status,
-        message: 'La respuesta llegó incompleta. Recargá la página.',
+        message: 'La respuesta llegó incompleta. Recarga la página.',
       }
     : { ok: true, data };
 }

@@ -258,7 +258,7 @@ const TBO_URL_REASONS: Readonly<Record<string, string>> = {
   http_only_on_test_host:
     '`http` sólo se admite con `environment: test` y el host de pruebas de TBO (api.tbotechnology.in), que es el único que TBO publica sin TLS. Cualquier otro host tiene que ser `https`.',
   live_on_test_endpoint:
-    'Una cuenta `live` no puede apuntar al endpoint de pruebas de TBO: la contraseña de producción terminaría en el entorno de test. Cargá la URL de producción que te dio TBO.',
+    'Una cuenta `live` no puede apuntar al endpoint de pruebas de TBO: la contraseña de producción terminaría en el entorno de test. Carga la URL de producción que te dio TBO.',
   credentials_in_url:
     'La `baseUrl` no puede llevar usuario ni contraseña: quedarían en cualquier log de la URL. Van en `credentials`, que se cifra.',
   query_or_fragment:

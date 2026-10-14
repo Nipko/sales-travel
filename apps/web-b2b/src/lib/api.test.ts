@@ -210,7 +210,7 @@ describe('api() y apiWithStatus(): cabeceras de cada llamado', () => {
       new Response(
         JSON.stringify({
           statusCode: 403,
-          message: 'Activá el 2FA.',
+          message: 'Activa el 2FA.',
           reason: 'MFA_ENROLLMENT_REQUIRED',
         }),
         { status: 403, statusText: 'Forbidden' },
@@ -219,7 +219,7 @@ describe('api() y apiWithStatus(): cabeceras de cada llamado', () => {
     const res = await api('/orders');
     expect(res).toEqual({
       ok: false,
-      error: { status: 403, message: 'Activá el 2FA.', reason: 'MFA_ENROLLMENT_REQUIRED' },
+      error: { status: 403, message: 'Activa el 2FA.', reason: 'MFA_ENROLLMENT_REQUIRED' },
     });
   });
 

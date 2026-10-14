@@ -252,7 +252,7 @@ export function CarterasClient({
       await reload();
     } catch {
       toast.error(
-        'No pudimos confirmar la cancelación. Revisá la reserva en Mis Reservas antes de reintentar.',
+        'No pudimos confirmar la cancelación. Revisa la reserva en Mis Reservas antes de reintentar.',
       );
     } finally {
       setReleasingId(null);
@@ -271,7 +271,7 @@ export function CarterasClient({
           <p className="mt-1 max-w-prose text-sm leading-relaxed text-[var(--color-fg-muted)]">
             Tus carteras, una por moneda. Cada reserva se retiene en la cartera de la moneda de su
             tarifa, con tu saldo más el cupo que te da {financier}. El cupo, los depósitos y los
-            ajustes los registra {financier}; vos le informás tus depósitos desde acá.
+            ajustes los registra {financier}; tú le informas tus depósitos desde aquí.
             {financesNetwork
               ? ' Las reservas de tu red también pueden retener en tus carteras, al costo de tu nivel.'
               : null}
@@ -311,8 +311,8 @@ export function CarterasClient({
           title="Tu agencia todavía no tiene carteras."
         >
           {hasOwnAccounts
-            ? `Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pedile a ${financier} que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.`
-            : `Sin una cartera no se puede reservar. Pedile a ${financier} que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.`}
+            ? `Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pídele a ${financier} que te habilite la moneda en la que vendes (por ejemplo COP o USD) y el cupo que te corresponda.`
+            : `Sin una cartera no se puede reservar. Pídele a ${financier} que te habilite la moneda en la que vendes (por ejemplo COP o USD) y el cupo que te corresponda.`}
         </EmptyState>
       ) : (
         <section aria-labelledby="agency-wallets-title" className="space-y-3">
@@ -326,7 +326,7 @@ export function CarterasClient({
           </div>
           <p className="flex items-start gap-1.5 text-xs text-[var(--color-fg-muted)]">
             <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
-            ¿Necesitás otra moneda o más cupo? Pedíselo a {financier}: sólo quien financia a tu
+            ¿Necesitas otra moneda o más cupo? Pídeselo a {financier}: sólo quien financia a tu
             agencia puede cambiarlos.
           </p>
         </section>
@@ -381,7 +381,7 @@ export function CarterasClient({
             />
             {movements === null ? (
               <ToneNotice tone="danger" role="alert">
-                No pudimos cargar los movimientos. Recargá la página.
+                No pudimos cargar los movimientos. Recarga la página.
               </ToneNotice>
             ) : (
               <MovementList
@@ -397,7 +397,7 @@ export function CarterasClient({
         <SectionTabPanel id="reports" idPrefix={tabsId} hidden={tab !== 'reports'}>
           {reports === null ? (
             <ToneNotice tone="danger" role="alert">
-              No pudimos cargar los depósitos informados. Recargá la página.
+              No pudimos cargar los depósitos informados. Recarga la página.
             </ToneNotice>
           ) : (
             <DepositReportList
@@ -405,7 +405,7 @@ export function CarterasClient({
               emptyTitle="No informaste depósitos."
               emptyText={
                 canReport
-                  ? `Cuando transfieras, informalo con "Informar depósito". ${depositReportHelp(financierName)}`
+                  ? `Cuando transfieras, infórmalo con "Informar depósito". ${depositReportHelp(financierName)}`
                   : depositReportHelp(financierName)
               }
             />
@@ -513,7 +513,7 @@ export function CarterasClient({
               </div>
               {networkHolds === null ? (
                 <ToneNotice tone="danger" role="alert">
-                  No pudimos cargar las reservas de tu red. Recargá la página.
+                  No pudimos cargar las reservas de tu red. Recarga la página.
                 </ToneNotice>
               ) : (
                 <>

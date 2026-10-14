@@ -6,9 +6,9 @@ import { VOSEO_WORDS, voseoIn } from './voseo';
 
 /*
  * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y Reservas
- * de la red y la seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
- * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite. Los tests
- * quedan afuera.
+ * de la red, la seguridad de la cuenta, Carteras y Mi Red, las cuentas de proveedor, clientes y autos
+ * van en "tú" neutro (decisión del founder). Este guarda falla con archivo:línea si vuelve a entrar un
+ * voseo, en un texto o en un comentario que lo cite. Los tests quedan afuera.
  */
 
 const SRC_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -88,6 +88,33 @@ const SCANNED = [
   'lib/platform-audit-client.ts',
   'lib/platform-audit-proxy.ts',
   'lib/audit-format.ts',
+  // Carteras: la Cartera B2B de la agencia, la financiación de su red y la aprobación de depósitos,
+  // con los diálogos y paneles que comparten Mi Red y Carteras (`components/wallets`).
+  'app/(app)/carteras',
+  'app/(app)/red',
+  'app/(app)/admin/plataforma/carteras',
+  'app/api/portfolios',
+  'app/api/admin/deposit-reports',
+  'components/wallets',
+  'lib/wallets.ts',
+  'lib/wallet-access.ts',
+  'lib/wallet-client.ts',
+  'lib/wallet-forms.ts',
+  'lib/wallet-proxy.ts',
+  'lib/wallet-proxy-route.ts',
+  'lib/portfolio-workflow.ts',
+  'lib/booking-permissions.ts',
+  'lib/deposit-approvals.ts',
+  'lib/deposit-approvals-client.ts',
+  'lib/deposit-approvals-proxy.ts',
+  // Las cuentas de proveedor de cada nodo y su formulario.
+  'app/(app)/admin/proveedores',
+  'app/api/provider-accounts',
+  'lib/provider-forms.ts',
+  // Clientes, autos y el buscador de aeropuertos.
+  'app/(app)/clientes',
+  'app/(app)/autos',
+  'components/ui/airport-combobox.tsx',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */
@@ -116,7 +143,7 @@ function allowed(file: string, line: string): boolean {
   return ALLOWED.some((entry) => entry.file === file && line.includes(entry.line));
 }
 
-describe('los textos del acceso, Equipo, Plataforma → Usuarios y la seguridad de la cuenta van en tú', () => {
+describe('los textos de las pantallas recorridas van en tú', () => {
   const libDir = join(SRC_DIR, 'lib');
   const files = [
     ...SCANNED.flatMap((p) => sources(join(SRC_DIR, p))),
@@ -138,6 +165,9 @@ describe('los textos del acceso, Equipo, Plataforma → Usuarios y la seguridad 
     expect(rels).toContain(
       'app/(app)/admin/tenants/[tenantId]/_components/tenant-providers-panel.tsx',
     );
+    expect(rels).toContain('components/wallets/wallet-dialogs.tsx');
+    expect(rels).toContain('components/wallets/wallet-financing-panel.tsx');
+    expect(rels).toContain('app/(app)/carteras/CarterasClient.tsx');
     expect(rels.some((f) => f.endsWith('.test.ts'))).toBe(false);
   });
 
@@ -179,6 +209,24 @@ describe('voseoIn', () => {
       voseoIn('No puedes hacerlo: inténtalo de nuevo. Podrá elegir, estás a tiempo. Votos y usos.'),
     ).toEqual([]);
     expect(voseoIn('Tú')).toEqual([]);
+  });
+
+  it('ve las que quedaban en Carteras y en las cuentas de proveedor, y deja pasar su tú', () => {
+    expect(
+      voseoIn('Pedile a Planetour la moneda en la que vendés; informalo y habilitale el cupo.'),
+    ).toEqual(['Pedile', 'vendés', 'informalo', 'habilitale']);
+    expect(voseoIn('Cargá la URL, dejalo vacío o guardala; si la borrás, contá por qué.')).toEqual([
+      'Cargá',
+      'dejalo',
+      'guardala',
+      'borrás',
+      'contá',
+    ]);
+    expect(
+      voseoIn(
+        'Pídele a Planetour la moneda en la que vendes; infórmalo y habilítale el cupo. Carga la URL, déjalo vacío o guárdala; si la borras, cuenta por qué. Reintenta, quítale la marca.',
+      ),
+    ).toEqual([]);
   });
 
   it('la lista no tiene repetidas', () => {

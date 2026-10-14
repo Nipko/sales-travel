@@ -115,14 +115,23 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 
 #### Variables (opcionales)
 
-| Variable                  | Default | Uso                                                                |
-| ------------------------- | ------- | ------------------------------------------------------------------ |
-| `HOSTINGER_SSH_PORT`      | `22`    | Si cambiaste el puerto SSH en `provision.sh`                       |
-| `PROVIDERS_DISABLED`      | vacío   | Respaldo del apagado de emergencia del panel (§6.1)                |
-| `TBO_ROOM_DETAILS`        | `on`    | `off` (u otro valor) deja de pedir a TBO el detalle por habitación |
-| `HOTEL_ROOM_CONTENT`      | `on`    | `off` (u otro valor): la ficha sólo muestra habitaciones guardadas |
-| `FLIGHT_PROVIDERS_OPT_IN` | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
-| `HOTEL_PROVIDERS_OPT_IN`  | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
+| Variable                     | Default | Uso                                                                |
+| ---------------------------- | ------- | ------------------------------------------------------------------ |
+| `HOSTINGER_SSH_PORT`         | `22`    | Si cambiaste el puerto SSH en `provision.sh`                       |
+| `PROVIDERS_DISABLED`         | vacío   | Respaldo del apagado de emergencia del panel (§6.1)                |
+| `TBO_ROOM_DETAILS`           | `on`    | `off` (u otro valor) deja de pedir a TBO el detalle por habitación |
+| `HOTEL_ROOM_CONTENT`         | `on`    | `off` (u otro valor): la ficha sólo muestra habitaciones guardadas |
+| `FLIGHT_PROVIDERS_OPT_IN`    | `sabre` | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
+| `HOTEL_PROVIDERS_OPT_IN`     | vacío   | **Legado.** Los proveedores los enciende el superadmin (§6.1)      |
+| `MAIL_CONNECTION_TIMEOUT_MS` | `5000`  | ms para abrir la conexión SMTP, DNS incluido                       |
+| `MAIL_GREETING_TIMEOUT_MS`   | `5000`  | ms hasta el saludo del servidor SMTP                               |
+| `MAIL_SOCKET_TIMEOUT_MS`     | `10000` | ms que el servidor SMTP puede callar en un paso                    |
+| `MAIL_SEND_TIMEOUT_MS`       | `15000` | Tope de cada envío de correo, de punta a punta                     |
+
+> Los cuatro `MAIL_*_TIMEOUT_MS` aceptan de 100 a 60000; un valor fuera de rango o mal escrito usa el de por defecto
+> y deja un aviso en el log al arrancar. Cubren el SMTP del sistema y el propio de cada agencia (BYO-email). Vencido
+> un plazo, el correo cuenta como no enviado y el log dice `mail.send.timed_out` con el tenant, nunca el destinatario:
+> el alta, la invitación o el aviso de seguridad siguen sin esperar más, muy por debajo de los 100 s de Cloudflare.
 
 > El PAT de GHCR se usa **una sola vez** durante el provisioning del VPS para `docker login`. **No** va en GitHub Actions: el push a GHCR usa `GITHUB_TOKEN` automáticamente.
 

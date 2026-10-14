@@ -44,7 +44,7 @@ describe('proxyTicketVoid', () => {
 
   it('sin respuesta legible sale como 5xx y pide no repetirla: pudo salir', async () => {
     const caido = await proxyTicketVoid(ORDEN, () =>
-      Promise.resolve({ kind: 'unreachable', status: 503, message: 'Revisá tu conexión' }),
+      Promise.resolve({ kind: 'unreachable', status: 503, message: 'Revisa tu conexión' }),
     );
     const html = await proxyTicketVoid(ORDEN, () =>
       Promise.resolve({ kind: 'not-json', status: 404, message: 'página' }),

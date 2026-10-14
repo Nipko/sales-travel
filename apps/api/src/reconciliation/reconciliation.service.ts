@@ -112,7 +112,7 @@ export const RECONCILIATION_REQUESTED_EVENT = 'ProviderReconciliationRequested';
 
 /** Lo que ve el vendedor en la orden que la conciliación cerró como no hecha (D-TBO-24 A). */
 const INTENT_ABSENT_MESSAGE =
-  'El proveedor no tiene esta reserva: la conciliación no la encontró en su listado del día en que se pidió. Podés volver a reservar.';
+  'El proveedor no tiene esta reserva: la conciliación no la encontró en su listado del día en que se pidió. Puedes volver a reservar.';
 
 const JobSchema = z
   .object({
@@ -162,7 +162,7 @@ export class ReconciliationRunningError extends ConflictException {
 
   constructor() {
     super(
-      'Ya hay una conciliación en curso para esta cuenta. Esperá a que termine para pedir otra.',
+      'Ya hay una conciliación en curso para esta cuenta. Espera a que termine para pedir otra.',
     );
     this.name = 'ReconciliationRunningError';
   }

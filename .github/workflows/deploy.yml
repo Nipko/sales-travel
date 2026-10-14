@@ -240,6 +240,10 @@ jobs:
           MAIL_PASS=${{ secrets.MAIL_PASS }}
           MAIL_FROM=${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
           MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME || 'PlaneTour' }}
+          MAIL_CONNECTION_TIMEOUT_MS=${{ vars.MAIL_CONNECTION_TIMEOUT_MS }}
+          MAIL_GREETING_TIMEOUT_MS=${{ vars.MAIL_GREETING_TIMEOUT_MS }}
+          MAIL_SOCKET_TIMEOUT_MS=${{ vars.MAIL_SOCKET_TIMEOUT_MS }}
+          MAIL_SEND_TIMEOUT_MS=${{ vars.MAIL_SEND_TIMEOUT_MS }}
           EOF
 
       - name: Sync stack files

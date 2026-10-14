@@ -61,6 +61,6 @@ describe('cuando "Cancelar y liberar" no termina', () => {
   it('cualquier otra cosa: no se sabe, que revise la reserva antes de reintentar', () => {
     const f = rejectionFailure(500, undefined, '');
     expect(f.kind).toBe('unknown');
-    expect(f.description).toBe('Revisá la reserva en Mis Reservas antes de reintentar.');
+    expect(f.description).toBe('Revisa la reserva en Mis Reservas antes de reintentar.');
   });
 });

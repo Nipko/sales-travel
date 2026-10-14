@@ -91,7 +91,7 @@ export class BrandAssetsController {
     const match = SIGNATURES.find((s) => s.test(body));
     if (!match) {
       throw new BadRequestException(
-        'formato no admitido. Usá PNG, JPG, WebP o SVG (sin scripts embebidos).',
+        'formato no admitido. Usa PNG, JPG, WebP o SVG (sin scripts embebidos).',
       );
     }
 

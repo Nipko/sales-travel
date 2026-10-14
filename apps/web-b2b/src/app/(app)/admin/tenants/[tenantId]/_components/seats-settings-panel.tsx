@@ -120,7 +120,7 @@ export function SeatsSettingsPanel({ tenantId }: { tenantId: string }) {
             />
           ) : seats.state.status === 'error' ? (
             <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-xs text-[var(--color-fg-muted)]">
-              Para editar hace falta leer primero los puestos del nodo. Reintentá desde “Uso
+              Para editar hace falta leer primero los puestos del nodo. Reintenta desde “Uso
               actual”.
             </p>
           ) : (

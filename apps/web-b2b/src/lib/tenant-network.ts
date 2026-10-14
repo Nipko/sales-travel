@@ -360,7 +360,7 @@ export function moveBlockedReason(
   if (node.tenantType === 'platform') return 'La plataforma es la raíz de la red: no se mueve.';
   if (moveTargets(nodes, node.id).length > 0) return undefined;
   if (node.isBranch === true) {
-    return 'Una sucursal cuelga siempre de la plataforma. Para moverla, quitale antes la marca de sucursal.';
+    return 'Una sucursal cuelga siempre de la plataforma. Para moverla, quítale antes la marca de sucursal.';
   }
   return 'Ningún otro nodo puede recibirlo sin romper las reglas de la red: el tipo de su padre o el máximo de 4 niveles.';
 }

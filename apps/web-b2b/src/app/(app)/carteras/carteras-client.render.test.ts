@@ -60,7 +60,7 @@ const NETWORK: NetworkHolds = {
 };
 
 const NO_WALLET_TEXT =
-  'Sin una cartera no se puede reservar. Pedile a Planetour que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.';
+  'Sin una cartera no se puede reservar. Pídele a Planetour que te habilite la moneda en la que vendes (por ejemplo COP o USD) y el cupo que te corresponda.';
 
 function html(props: Partial<Parameters<typeof CarterasClient>[0]> = {}): string {
   return renderToStaticMarkup(
@@ -81,7 +81,7 @@ describe('CarterasClient', () => {
     const out = html();
     expect(out).toContain('Informar depósito');
     expect(out).not.toMatch(/Recargar|Acreditar|Retirar|Configurar Crédito|Actualizar Cupo/);
-    expect(out).toContain('Pedíselo a Consolidador Andino');
+    expect(out).toContain('Pídeselo a Consolidador Andino');
   });
 
   it('el vendedor sólo mira', () => {
@@ -107,7 +107,7 @@ describe('CarterasClient', () => {
     });
     expect(out).toContain('Tu agencia todavía no tiene carteras.');
     expect(out).toContain(
-      'Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pedile a Consolidador Andino que te habilite la moneda en la que vendés (por ejemplo COP o USD) y el cupo que te corresponda.',
+      'Las reservas con la cuenta propia de tu agencia en el proveedor no retienen saldo de ninguna cartera. Para reservar con las cuentas de tu red, pídele a Consolidador Andino que te habilite la moneda en la que vendes (por ejemplo COP o USD) y el cupo que te corresponda.',
     );
     expect(out).not.toContain('Sin una cartera no se puede reservar.');
   });
@@ -196,7 +196,7 @@ describe('CarterasClient — reservas de tu red (0060)', () => {
 
   it('si no se pudieron leer, lo dice en vez de mostrar una red vacía', () => {
     const out = html({ financesNetwork: true, initialNetworkHolds: null, initialTab: 'network' });
-    expect(out).toContain('No pudimos cargar las reservas de tu red. Recargá la página.');
+    expect(out).toContain('No pudimos cargar las reservas de tu red. Recarga la página.');
     expect(out).not.toContain('Todavía no hay reservas de tu red');
   });
 

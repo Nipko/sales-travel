@@ -148,7 +148,7 @@ export function WalletFinancingPanel({
       ]);
       if (mode === 'saved' && !(o.ok && m.ok && r.ok)) {
         toast.error(
-          'El cambio se guardó, pero no pudimos recargar las carteras. Recargá la página.',
+          'El cambio se guardó, pero no pudimos recargar las carteras. Recarga la página.',
         );
       }
       if (!quiet || o.ok) setOverview(loaded(o));
@@ -290,7 +290,7 @@ export function WalletFinancingPanel({
                 icon={<WalletIcon className="size-6" />}
                 title="Todavía no tiene carteras."
               >
-                Sin una cartera, {overview.data.tenant.name} no puede reservar: habilitale la moneda
+                Sin una cartera, {overview.data.tenant.name} no puede reservar: habilítale la moneda
                 en la que vende (por ejemplo {overview.data.tenant.defaultCurrency || 'COP'} o USD).
               </EmptyState>
             ) : (

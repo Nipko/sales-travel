@@ -324,7 +324,7 @@ export function EnableWalletDialog({
           >
             {draft.currency === '' ? (
               <option value="" disabled>
-                Elegí la moneda
+                Elige la moneda
               </option>
             ) : null}
             {options.featured.length > 0 ? (

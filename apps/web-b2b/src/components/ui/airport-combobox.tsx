@@ -485,7 +485,7 @@ export function AirportCombobox({
         <div className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] sm:min-w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-center shadow-lg">
           <Plane className="mx-auto mb-2 size-5 text-[var(--color-fg-subtle)]" />
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Escribí una ciudad o código IATA para buscar.
+            Escribe una ciudad o código IATA para buscar.
           </p>
         </div>
       ) : null}
@@ -494,7 +494,7 @@ export function AirportCombobox({
         <div className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] sm:min-w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-center shadow-lg">
           <p className="text-xs font-medium text-[var(--color-fg)]">Sin resultados para «{term}»</p>
           <p className="mt-1 text-[11px] text-[var(--color-fg-muted)]">
-            Probá con un código IATA (BOG, MIA) o nombre de ciudad.
+            Prueba con un código IATA (BOG, MIA) o nombre de ciudad.
           </p>
         </div>
       ) : null}

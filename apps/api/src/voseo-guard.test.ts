@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { VOSEO_WORDS, voseoIn } from './__fixtures__/voseo.js';
 
 /*
- * Los mensajes del acceso, las invitaciones y Equipo salen de estas carpetas y llegan tal cual al
- * panel y a los correos. Van en "tú" neutro (decisión del founder): este guarda falla con
+ * Los mensajes del acceso, las invitaciones, Equipo, la consola del superadmin, Carteras y las
+ * cuentas de proveedor salen de estas carpetas y llegan tal cual al panel y a los correos. Van en "tú" neutro (decisión del founder): este guarda falla con
  * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite.
  *
  * Además del filtro global y del pipe de Zod: traducen el 401/403/429 y envuelven cada 400 de
@@ -25,10 +25,22 @@ const SCANNED = [
   'zod',
   // Plataforma → Actividad y el historial de una persona (sus mensajes llegan al panel).
   'audit',
-  'admin-console/csv.ts',
+  // La consola del superadmin entera: Resumen, Agencias, Carteras, Reservas de la red y sus CSV.
+  'admin-console',
   'all-exceptions.filter.ts',
   'mail/security-notices.ts',
   'mail/security-notice.service.ts',
+  // La prueba de correo de Mi Red devuelve su motivo al panel.
+  'mail/mailer.service.ts',
+  // Carteras, permisos de reserva, conciliación, marca, bóveda de payloads y cuentas de proveedor:
+  // sus 400/403/409 llegan tal cual a Carteras, Mi Red y la ficha de la agencia.
+  'portfolios',
+  'booking-permissions',
+  'reconciliation',
+  'storage',
+  'provider-payloads',
+  'provider-disclosure',
+  'provider-credentials',
 ];
 
 /**
@@ -50,7 +62,7 @@ function allowed(file: string, line: string): boolean {
   return ALLOWED.some((entry) => entry.file === file && line.includes(entry.line));
 }
 
-describe('los textos del acceso, las invitaciones y Equipo van en tú', () => {
+describe('los textos de las carpetas recorridas van en tú', () => {
   const files = SCANNED.flatMap((p) => sources(join(SRC_DIR, p)));
 
   it('recorre las carpetas de verdad', () => {
@@ -61,6 +73,8 @@ describe('los textos del acceso, las invitaciones y Equipo van en tú', () => {
     expect(files.some((f) => f.endsWith(`${sep}zod-validation.pipe.ts`))).toBe(true);
     expect(files.some((f) => f.endsWith(`${sep}all-exceptions.filter.ts`))).toBe(true);
     expect(files.some((f) => f.endsWith(`${sep}security-notices.ts`))).toBe(true);
+    expect(files.some((f) => f.endsWith(`${sep}portfolios.controller.ts`))).toBe(true);
+    expect(files.some((f) => f.endsWith(`${sep}provider-specs.ts`))).toBe(true);
   });
 
   it('ningún archivo recorrido usa voseo', () => {
