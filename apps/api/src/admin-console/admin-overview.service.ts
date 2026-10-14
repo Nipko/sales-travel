@@ -9,7 +9,6 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { PlatformConsoleScopeNotFoundError } from './admin-console.errors.js';
 import {
   foldAttention,
-  foldCatalogs,
   foldNetwork,
   foldOrderAttention,
   foldReconciliationRuns,
@@ -22,7 +21,6 @@ import {
   type CatalogView,
   type NetworkView,
   type OverviewAttentionRow,
-  type OverviewCatalogRow,
   type OverviewNetworkRow,
   type OverviewOrderAttentionRow,
   type OverviewOrdersRow,
@@ -50,6 +48,7 @@ import {
   type AdminOverviewQuery,
   type OverviewPeriod,
 } from './admin-overview.schemas.js';
+import { readCatalogFreshness, readPostSaleSweep } from './admin-system.service.js';
 
 /** El nodo por el que se acotó el Resumen. */
 export interface OverviewScopeView {
@@ -91,7 +90,8 @@ const DAY_MS = 86_400_000;
 /**
  * Cómo va la plataforma, para el superadmin: ventas del período por moneda, vertical y proveedor, la
  * tendencia de 12 meses, los nodos que más venden, la red (nodos, personas, sesiones), la exposición
- * de las carteras, lo que espera a una persona y las señales de los proveedores.
+ * de las carteras, lo que espera a una persona (también si el barrido de post-venta dejó de correr) y
+ * las señales de los proveedores.
  *
  * Toda lectura de la red pasa por las funciones de 0075, que vuelven a exigir que quien pide sea el
  * superadmin (`app.current_user_id`, por eso `withRequestContext({ userId })`) y devuelven sólo
@@ -115,7 +115,6 @@ export class AdminOverviewService {
     const stuckBefore = new Date(now.getTime() - STALE_CANCEL_CLAIM_MS);
     const since = new Date(now.getTime() - OVERVIEW_RECENT_DAYS * DAY_MS);
     const runsSince = new Date(now.getTime() - OVERVIEW_RECONCILIATION_RUN_DAYS * DAY_MS);
-    const synced48h = new Date(now.getTime() - 2 * DAY_MS);
 
     try {
       return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
@@ -168,15 +167,9 @@ export class AdminOverviewService {
           SELECT * FROM admin_reconciliation_health(${runsSince}::timestamptz)
         `.execute(trx);
         // Catálogo de plataforma: hotel_provider_city no tiene tenant ni RLS (0041).
-        const catalogs = await sql<OverviewCatalogRow>`
-          SELECT c.provider_code,
-                 count(*) AS cities,
-                 count(*) FILTER (WHERE c.synced_at > ${synced48h}::timestamptz) AS synced_last_48h,
-                 count(*) FILTER (WHERE c.last_status_code >= 400) AS failed_cities,
-                 max(c.synced_at) AS last_synced_at
-            FROM hotel_provider_city c
-           GROUP BY c.provider_code
-        `.execute(trx);
+        const catalogs = await readCatalogFreshness(trx, now);
+        // El barrido de post-venta, de su rastro en la raíz platform (Sistema › Procesos).
+        const sweep = await readPostSaleSweep(trx, now);
 
         return {
           generatedAt: now.toISOString(),
@@ -192,9 +185,10 @@ export class AdminOverviewService {
             orders: foldOrderAttention(orderAttention.rows),
             seats: { saturated: foldSaturatedSeats(seats.rows) },
             reconciliationRuns: foldReconciliationRuns(runs.rows, OVERVIEW_RECONCILIATION_RUN_DAYS),
+            jobs: { postSaleSweepStale: sweep.stale, lastOkAt: sweep.lastOkAt },
           }),
           providers: await this.providerSignals(trx),
-          catalogs: foldCatalogs(catalogs.rows, now),
+          catalogs,
         };
       });
     } catch (err) {

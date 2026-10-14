@@ -5,6 +5,8 @@ import { ProviderEnablementAdminModule } from '../provider-enablement/provider-e
 import { SearchModule } from '../search/search.module.js';
 import { AdminOverviewController } from './admin-overview.controller.js';
 import { AdminOverviewService } from './admin-overview.service.js';
+import { AdminSystemController } from './admin-system.controller.js';
+import { AdminSystemService } from './admin-system.service.js';
 import { AdminTenantsController } from './admin-tenants.controller.js';
 import { AdminTenantsService } from './admin-tenants.service.js';
 
@@ -16,10 +18,13 @@ import { AdminTenantsService } from './admin-tenants.service.js';
  *
  * Agencias en números (AdminTenantsController): puestos, ventas y pendientes de cada nodo, y qué
  * arrastraría suspender uno con su red.
+ *
+ * Sistema › Procesos (AdminSystemController): si el barrido de post-venta, la conciliación y los
+ * catálogos están corriendo.
  */
 @Module({
   imports: [DatabaseModule, NetworkModule, SearchModule, ProviderEnablementAdminModule],
-  controllers: [AdminOverviewController, AdminTenantsController],
-  providers: [AdminOverviewService, AdminTenantsService],
+  controllers: [AdminOverviewController, AdminTenantsController, AdminSystemController],
+  providers: [AdminOverviewService, AdminTenantsService, AdminSystemService],
 })
 export class AdminConsoleModule {}

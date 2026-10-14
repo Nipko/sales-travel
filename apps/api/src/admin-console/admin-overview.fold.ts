@@ -343,6 +343,14 @@ export interface ReconciliationRunsView {
   }[];
 }
 
+/** Las tareas automáticas que dejaron de correr (Plataforma → Sistema › Procesos). */
+export interface JobsAttentionView {
+  /** El barrido de post-venta no tiene una corrida correcta en 45 minutos (o ninguna). */
+  postSaleSweepStale: boolean;
+  /** ISO 8601: su última corrida correcta, o `null` si no hay rastro de ninguna. */
+  lastOkAt: string | null;
+}
+
 /** Lo que espera a una persona. Cada contador lleva a su cola. */
 export interface AttentionView {
   depositReports: { total: number; platform: number; network: number };
@@ -356,6 +364,8 @@ export interface AttentionView {
   invitations: { pending: number; expired: number; expiredSinceDays: number };
   /** Los nodos con cupo al {@link SEAT_SATURATION_RATIO} o más. */
   seats: { saturated: SaturatedSeatsView[] };
+  /** De la plataforma aunque se acote a un nodo: el barrido recorre toda la red. */
+  jobs: JobsAttentionView;
 }
 
 /** El catálogo de hoteles de un proveedor: cuán fresco está. */
@@ -651,6 +661,7 @@ export interface AttentionExtras {
   orders: OrderAttentionView;
   seats: { saturated: SaturatedSeatsView[] };
   reconciliationRuns: ReconciliationRunsView;
+  jobs: JobsAttentionView;
 }
 
 export function foldAttention(
@@ -670,6 +681,7 @@ export function foldAttention(
     orders: extras.orders,
     seats: extras.seats,
     reconciliationRuns: extras.reconciliationRuns,
+    jobs: extras.jobs,
     postSale: {
       failed: byType.reduce((sum, r) => sum + r.failed, 0),
       stuck: byType.reduce((sum, r) => sum + r.stuck, 0),

@@ -8,6 +8,7 @@ import {
   type OrderAttentionReason,
 } from './attention-labels';
 import { PLATFORM_CARTERAS, STALE_AFTER_MS, sinceLabel } from './deposit-approvals';
+import { PLATFORM_SISTEMA, elapsedText } from './platform-system';
 import { providerMetaFor } from './provider-display';
 import type { Viewer } from './viewer';
 import { isCurrencyCode, isUuid } from './wallets';
@@ -297,6 +298,14 @@ export interface CatalogFreshness {
   readonly stale: boolean;
 }
 
+/** Las tareas automáticas que dejaron de correr (Sistema › Procesos). */
+export interface JobsAttention {
+  /** El barrido de post-venta no tiene una corrida correcta en 45 minutos (o ninguna). */
+  readonly postSaleSweepStale: boolean;
+  /** ISO 8601: su última corrida correcta, o `null` si no hay rastro de ninguna. */
+  readonly lastOkAt: string | null;
+}
+
 export interface OverviewAttention {
   readonly depositReports: {
     readonly total: number;
@@ -327,6 +336,7 @@ export interface OverviewAttention {
     readonly expired: number;
     readonly expiredSinceDays: number;
   };
+  readonly jobs: JobsAttention;
 }
 
 export type KillLevel = 'all' | 'sales';
@@ -659,6 +669,15 @@ function parseCatalog(value: unknown): CatalogFreshness | undefined {
   return { providerCode, ...n, lastSyncedAt: lastSyncedAt as string | null, stale };
 }
 
+function parseJobs(value: unknown): JobsAttention | undefined {
+  const r = asRecord(value);
+  const stale = r?.['postSaleSweepStale'];
+  const lastOkAt = r?.['lastOkAt'];
+  if (typeof stale !== 'boolean') return undefined;
+  if (lastOkAt !== null && isoInstant(lastOkAt) === undefined) return undefined;
+  return { postSaleSweepStale: stale, lastOkAt: lastOkAt as string | null };
+}
+
 function parseAttention(value: unknown): OverviewAttention | undefined {
   const r = asRecord(value);
   const orders = parseOrderAttention(r?.['orders']);
@@ -686,6 +705,7 @@ function parseAttention(value: unknown): OverviewAttention | undefined {
     'expired',
     'expiredSinceDays',
   ]);
+  const jobs = parseJobs(r?.['jobs']);
   if (
     depositReports === undefined ||
     orders === undefined ||
@@ -696,7 +716,8 @@ function parseAttention(value: unknown): OverviewAttention | undefined {
     byType === undefined ||
     single === undefined ||
     reconciliation === undefined ||
-    invitations === undefined
+    invitations === undefined ||
+    jobs === undefined
   ) {
     return undefined;
   }
@@ -709,6 +730,7 @@ function parseAttention(value: unknown): OverviewAttention | undefined {
     ...single,
     reconciliation,
     invitations,
+    jobs,
   };
 }
 
@@ -827,6 +849,7 @@ export type AttentionId =
   | 'providers'
   | 'orders'
   | 'post-sale'
+  | 'jobs'
   | 'deposits'
   | 'reconciliation'
   | 'wallets'
@@ -840,6 +863,7 @@ const ATTENTION_ORDER: readonly AttentionId[] = [
   'providers',
   'orders',
   'post-sale',
+  'jobs',
   'deposits',
   'reconciliation',
   'wallets',
@@ -1008,6 +1032,31 @@ function catalogsItem(
         ? `${providerName(c.providerCode)}: nunca se sincronizó`
         : `${providerName(c.providerCode)}: última sincronización ${since}`;
     }),
+    action: { label: 'Ver procesos', href: PLATFORM_SISTEMA },
+  };
+}
+
+/**
+ * El barrido de post-venta dejó de correr (Sistema › Procesos). Sin él no se lee lo que la cola
+ * perdió: reservas y cancelaciones de hotel sin respuesta, el número de confirmación y la conciliación
+ * del día. Sin ningún rastro (recién desplegado, o el rastro nunca llegó a la base) es un aviso a
+ * revisar, no una caída comprobada.
+ */
+function jobsItem(jobs: JobsAttention, now: number): AttentionItem | undefined {
+  if (!jobs.postSaleSweepStale) return undefined;
+  const since = jobs.lastOkAt === null ? '' : elapsedText(jobs.lastOkAt, now);
+  return {
+    id: 'jobs',
+    severity: since === '' ? 'warning' : 'critical',
+    title: 'Procesos',
+    summary:
+      since === ''
+        ? 'No hay registro de que el barrido de post-venta haya corrido.'
+        : `El barrido de post-venta no corre hace ${since}.`,
+    details: [
+      'Sin él no se verifican las reservas y cancelaciones de hotel sin respuesta ni se recupera la conciliación del día.',
+    ],
+    action: { label: 'Ver procesos', href: PLATFORM_SISTEMA },
   };
 }
 
@@ -1219,6 +1268,7 @@ export function attentionItems(
     providersItem(overview.providers),
     ordersItem(overview.attention.orders, now, overview.scope?.tenantId ?? null),
     postSaleItem(overview.attention),
+    jobsItem(overview.attention.jobs, now),
     depositsItem(overview.attention, oldestPlatformDeposit, now),
     reconciliationItem(overview.attention),
     walletsItem(overview.wallets),

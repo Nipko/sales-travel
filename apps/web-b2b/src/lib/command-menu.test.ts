@@ -122,7 +122,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(sections.map((s) => s.label)).not.toContain('Plataforma');
   });
 
-  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores y Usuarios', () => {
+  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Usuarios y Sistema', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
     expect(platform.map((i) => [i.label, i.href])).toEqual([
@@ -132,6 +132,18 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
       ['Carteras', '/admin/plataforma/carteras'],
       ['Proveedores', '/admin/plataforma/proveedores'],
       ['Usuarios', '/admin/plataforma/usuarios'],
+      ['Sistema', '/admin/plataforma/sistema'],
+    ]);
+  });
+
+  it('en la paleta del superadmin, "sistema" lleva a Sistema', () => {
+    const items = commandItems({
+      canSwitch: false,
+      currentAgencyName: null,
+      sections: navSections('superadmin', { platformUser: true, superadmin: true }),
+    });
+    expect(filterCommands(items, 'sistema')).toEqual([
+      expect.objectContaining({ label: 'Sistema', href: '/admin/plataforma/sistema' }),
     ]);
   });
 

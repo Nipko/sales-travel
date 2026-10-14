@@ -361,6 +361,7 @@ const NO_EXTRAS: AttentionExtras = {
   orders: foldOrderAttention([]),
   seats: { saturated: [] },
   reconciliationRuns: foldReconciliationRuns([], 7),
+  jobs: { postSaleSweepStale: false, lastOkAt: '2026-10-13T12:00:00.000Z' },
 };
 
 describe('foldAttention', () => {
@@ -389,6 +390,7 @@ describe('foldAttention', () => {
       orders: NO_EXTRAS.orders,
       seats: { saturated: [] },
       reconciliationRuns: { sinceDays: 7, failedRuns: 0, byProvider: [] },
+      jobs: { postSaleSweepStale: false, lastOkAt: '2026-10-13T12:00:00.000Z' },
       postSale: {
         failed: 3,
         stuck: 1,
