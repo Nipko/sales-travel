@@ -1,130 +1,35 @@
-'use client';
+import type { Metadata } from 'next';
+import { api } from '../../lib/api';
+import { getSession } from '../../lib/session';
+import { InvitationScreen } from './_components/invitation-screen';
+import { invitationTokenFrom, invitationViewFor } from './invitation-view';
 
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { AuthShell, FormError, FormSuccess } from '../../components/layout/auth-shell';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { acceptInvitationAction, type InvitationState } from './actions';
+export const metadata: Metadata = {
+  title: 'Invitación · Sales-Travel',
+};
 
-const initialState: InvitationState = {};
+export const dynamic = 'force-dynamic';
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      disabled={pending}
-      size="lg"
-      className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] font-medium"
-    >
-      {pending ? 'Creando cuenta…' : 'Aceptar invitación'}
-    </Button>
-  );
-}
+/**
+ * /invitacion?token=… (USR-17): primero lee la invitación (`POST /invitations/preview`, que no la
+ * gasta) y después muestra lo que corresponde: crear la cuenta, ingresar con la que ya existe,
+ * aceptar con la sesión abierta, salir de la sesión de otra cuenta, o que pida una nueva. Si hay
+ * sesión, `api()` la manda y el API dice si es la de la cuenta invitada.
+ */
+export default async function InvitationPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const token = invitationTokenFrom((await searchParams)['token']);
+  if (token === null) return <InvitationScreen view={{ kind: 'missing-token' }} token="" />;
 
-function InvitationForm() {
-  const token = useSearchParams().get('token') ?? '';
-  const [state, formAction] = useActionState(acceptInvitationAction, initialState);
-
-  if (!token) {
-    return (
-      <AuthShell title="Invitación inválida" description="Este enlace no tiene un token válido.">
-        <p className="text-xs text-[var(--color-fg-muted)]">
-          Puede que lo hayas copiado incompleto. Pídele a tu administrador que te reenvíe la
-          invitación.
-        </p>
-      </AuthShell>
-    );
-  }
-
-  if (state.done) {
-    return (
-      <AuthShell title="Cuenta creada" description="Ya puedes entrar con tu contraseña.">
-        <div className="space-y-4">
-          <FormSuccess message="Listo. Tu correo quedó verificado al aceptar la invitación." />
-          <Link href="/login">
-            <Button
-              size="lg"
-              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-fg)] font-medium"
-            >
-              Iniciar sesión
-            </Button>
-          </Link>
-        </div>
-      </AuthShell>
-    );
-  }
-
-  return (
-    <AuthShell
-      title="Aceptar invitación"
-      description="Elige tu contraseña. Sólo tú la vas a conocer."
-    >
-      <form action={formAction} className="space-y-5">
-        <input type="hidden" name="token" value={token} />
-
-        <div className="space-y-2">
-          <Label htmlFor="name" className="text-xs font-semibold text-[var(--color-fg)]">
-            Tu nombre
-          </Label>
-          <Input
-            id="name"
-            name="name"
-            required
-            autoFocus
-            autoComplete="name"
-            placeholder="Nombre y apellido"
-            className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] rounded-lg"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-xs font-semibold text-[var(--color-fg)]">
-            Contraseña
-          </Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={12}
-            autoComplete="new-password"
-            className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] rounded-lg"
-          />
-          <p className="text-xs text-[var(--color-fg-subtle)]">Mínimo 12 caracteres.</p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="confirm" className="text-xs font-semibold text-[var(--color-fg)]">
-            Repetir contraseña
-          </Label>
-          <Input
-            id="confirm"
-            name="confirm"
-            type="password"
-            required
-            minLength={12}
-            autoComplete="new-password"
-            className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] rounded-lg"
-          />
-        </div>
-
-        {state.error ? <FormError message={state.error} /> : null}
-
-        <SubmitButton />
-      </form>
-    </AuthShell>
-  );
-}
-
-export default function InvitationPage() {
-  return (
-    <Suspense fallback={null}>
-      <InvitationForm />
-    </Suspense>
-  );
+  const res = await api<unknown>('/invitations/preview', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+  const view = invitationViewFor(res, token, new Date(), {
+    sessionCookie: (await getSession()) !== null,
+  });
+  return <InvitationScreen view={view} token={token} />;
 }

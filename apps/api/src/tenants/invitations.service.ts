@@ -15,7 +15,12 @@ import {
   type InvitationDefect,
 } from './invitation-validity.js';
 import { AlreadyMemberError } from './membership.errors.js';
-import { InvitationAlreadyPendingError, InvitationNotPendingError } from './onboarding.errors.js';
+import {
+  InvitationAccountMismatchError,
+  InvitationAlreadyPendingError,
+  InvitationNotPendingError,
+  InvitationSignInRequiredError,
+} from './onboarding.errors.js';
 import { RoleNotGrantableError } from './tenant-admin.policy.js';
 
 // Antes vivían aquí; se reexportan para quien todavía los importe desde este módulo.
@@ -96,7 +101,7 @@ function backingOf(row: BackingRow): InvitationBacking {
   };
 }
 
-async function backingFor(
+export async function backingFor(
   trx: Transaction<DB>,
   invitationIds: readonly string[],
 ): Promise<InvitationBacking[]> {
@@ -476,63 +481,131 @@ export class InvitationsService {
   }
 
   /**
-   * Canje de la invitación. Es PRE-AUTENTICACIÓN, así que la RLS por subárbol no puede aplicar: se
-   * resuelve con claim_pending_invitation() (SECURITY DEFINER acotado, 0056), que como máximo
-   * devuelve una fila por hash de token y no permite enumerar.
+   * Canje con cuenta nueva (`POST /invitations/accept`): el invitado elige su nombre y su contraseña.
+   * Es PRE-AUTENTICACIÓN, así que la RLS por subárbol no puede aplicar: se resuelve con
+   * claim_pending_invitation() (SECURITY DEFINER acotado, 0056), que como máximo devuelve una fila
+   * por hash de token y no permite enumerar.
    *
-   * Todo va en una transacción: marcar la invitación aceptada, revalidar a quien la emitió y el nodo,
-   * y crear usuario y membership. Si la revalidación falla, el rollback la deja pendiente (por
-   * ejemplo, su nodo está suspendido y lo reactivan dentro de los 7 días); si una revocación llega en
-   * paralelo, una de las dos espera a la otra en la fila de la invitación.
+   * Si el correo invitado ya tiene una cuenta, 409 `INVITATION_SIGN_IN_REQUIRED` y la invitación queda
+   * pendiente (USR-17): quien ya tiene cuenta ingresa con la suya y acepta con {@link acceptSignedIn}.
+   * Antes se le sumaba la membership ignorando la contraseña que había escrito, sin que la cuenta se
+   * autenticara. El 409 sale sólo con un token vigente: no dice nada que la vista previa no le diga ya
+   * a quien controla ese buzón.
+   *
+   * La contraseña se hashea sólo para crear la cuenta: un token inválido no llega hasta acá y no le
+   * cuesta un bcrypt a la API.
    */
   async accept(params: {
     token: string;
     name: string;
     password: string;
   }): Promise<{ userId: string; tenantId: string }> {
-    let rejected: { id: string; tenantId: string; defect: InvitationDefect } | undefined;
-
-    const accepted = await this.db.db
-      .transaction()
-      .execute(async (trx) => {
-        const found = await sql<{
-          id: string;
-          tenant_id: string;
-          email: string;
-          role: Role;
-        }>`SELECT * FROM claim_pending_invitation(${sha256(params.token)})`.execute(trx);
-
-        const invitation = found.rows[0];
-        if (!invitation) throw new BadRequestException('la invitación es inválida o venció');
-        // Las invitaciones sólo se crean con roles asignables, pero el rol se relee de la base: una
-        // fila con `platform_admin` (retirado, D7 B) o `superadmin` no concede nada.
-        if (!isAssignableRole(invitation.role)) {
-          throw new BadRequestException('la invitación es inválida o venció');
+    return this.redeem(params.token, {
+      join: async (trx, invitation) => {
+        if ((await accountFor(trx, invitation.email)) !== undefined) {
+          throw new InvitationSignInRequiredError();
         }
+        const userId = await this.createUser(trx, invitation.email, params.name, params.password);
+        return { userId, rejoined: await addMembership(trx, invitation, userId) };
+      },
+    });
+  }
 
-        const [backing] = await backingFor(trx, [invitation.id]);
-        const defect = backing === undefined ? 'inviter_missing' : invitationDefect(backing);
-        if (defect !== undefined) {
-          rejected = { id: invitation.id, tenantId: invitation.tenant_id, defect };
-          throw new InvitationNoLongerValidError();
-        }
+  /**
+   * Canje con la sesión abierta (`POST /invitations/join`, USR-17): quien ya tiene cuenta ingresó con
+   * la suya (contraseña, y 2FA si lo tiene) y acepta sin elegir otra contraseña.
+   *
+   * La cuenta de la sesión tiene que ser la dueña del correo invitado (`users.email` y la invitación
+   * son CITEXT: sin distinguir mayúsculas). Si no, 403 `INVITATION_ACCOUNT_MISMATCH`, la invitación
+   * queda pendiente y el intento queda en la auditoría: un token no se canjea en otra cuenta. Se mira
+   * antes que cualquier otra cosa de la invitación.
+   *
+   * Si lo habían quitado del nodo (USR-11), vuelve con su misma membership; si ya está (activa o
+   * suspendida), 409 `ALREADY_MEMBER`.
+   */
+  async acceptSignedIn(params: {
+    token: string;
+    userId: string;
+  }): Promise<{ userId: string; tenantId: string }> {
+    const { token, userId } = params;
+    return this.redeem(token, {
+      signedInAs: userId,
+      join: async (trx, invitation) => ({
+        userId,
+        rejoined: await addMembership(trx, invitation, userId),
+      }),
+    });
+  }
 
-        const member = await this.createMember(trx, invitation, params.name, params.password);
-        return { ...member, invitation };
-      })
-      .catch(async (err: unknown) => {
-        if (err instanceof InvitationNoLongerValidError && rejected !== undefined) {
-          // Fuera de la transacción deshecha: el rastro del intento tiene que quedar.
-          await this.audit.emit({
-            eventType: 'UserInvitationRejected',
-            tenantId: rejected.tenantId,
-            aggregateType: 'invitation',
-            aggregateId: rejected.id,
-            payload: { defect: rejected.defect },
-          });
-        }
-        throw err;
-      });
+  /**
+   * Lo común a los dos canjes, en una transacción: marcar la invitación aceptada, (con sesión) mirar
+   * que la cuenta sea la del correo invitado, revalidar a quien la emitió y el nodo, y `join`. Si algo
+   * falla, el rollback la deja pendiente (por ejemplo, su nodo está suspendido y lo reactivan dentro
+   * de los 7 días); si una revocación llega en paralelo, una de las dos espera a la otra en la fila de
+   * la invitación. Un rechazo por el invitador o por la cuenta deja su rastro fuera de la transacción.
+   */
+  private async redeem(
+    token: string,
+    steps: {
+      /** La cuenta de la sesión que acepta, si se acepta con sesión. */
+      signedInAs?: string;
+      join: (
+        trx: Transaction<DB>,
+        invitation: ClaimedInvitation,
+      ) => Promise<{ userId: string; rejoined: boolean }>;
+    },
+  ): Promise<{ userId: string; tenantId: string }> {
+    const { signedInAs } = steps;
+    let trail:
+      | { eventType: string; invitation: ClaimedInvitation; payload: Record<string, unknown> }
+      | undefined;
+
+    const run = async (trx: Transaction<DB>) => {
+      const found = await sql<ClaimedInvitation>`
+        SELECT * FROM claim_pending_invitation(${invitationTokenHash(token)})
+      `.execute(trx);
+
+      const invitation = found.rows[0];
+      if (!invitation) throw new BadRequestException('la invitación es inválida o venció');
+      // Las invitaciones sólo se crean con roles asignables, pero el rol se relee de la base: una
+      // fila con `platform_admin` (retirado, D7 B) o `superadmin` no concede nada.
+      if (!isAssignableRole(invitation.role)) {
+        throw new BadRequestException('la invitación es inválida o venció');
+      }
+
+      if (signedInAs !== undefined && (await accountFor(trx, invitation.email)) !== signedInAs) {
+        trail = { eventType: 'UserInvitationAccountMismatch', invitation, payload: {} };
+        throw new InvitationAccountMismatchError();
+      }
+
+      const [backing] = await backingFor(trx, [invitation.id]);
+      const defect = backing === undefined ? 'inviter_missing' : invitationDefect(backing);
+      if (defect !== undefined) {
+        trail = { eventType: 'UserInvitationRejected', invitation, payload: { defect } };
+        throw new InvitationNoLongerValidError();
+      }
+
+      return { ...(await steps.join(trx, invitation)), invitation };
+    };
+
+    const accepted = await (
+      signedInAs === undefined
+        ? this.db.db.transaction().execute(run)
+        : this.db.withRequestContext({ userId: signedInAs }, run)
+    ).catch(async (err: unknown) => {
+      if (trail !== undefined) {
+        // Fuera de la transacción deshecha: el rastro del intento tiene que quedar.
+        await this.audit.emit({
+          eventType: trail.eventType,
+          tenantId: trail.invitation.tenant_id,
+          ...(signedInAs !== undefined ? { actorUserId: signedInAs } : {}),
+          aggregateType: 'invitation',
+          aggregateId: trail.invitation.id,
+          payload: trail.payload,
+        });
+      }
+      throw err;
+    });
 
     const { userId, rejoined, invitation } = accepted;
     await this.audit.emit({
@@ -544,6 +617,8 @@ export class InvitationsService {
       payload: {
         email: invitation.email,
         role: invitation.role,
+        // Aceptó con la sesión de la cuenta que ya tenía (USR-17), no creando una.
+        ...(signedInAs !== undefined ? { existingAccount: true } : {}),
         // Volvió al nodo del que lo habían quitado: se reactivó su membership de antes.
         ...(rejoined ? { rejoined: true } : {}),
       },
@@ -553,71 +628,102 @@ export class InvitationsService {
   }
 
   /**
-   * El usuario del invitado (nuevo, o el que ya existía en otra agencia) y su membership. La
-   * contraseña se hashea sólo para un usuario nuevo: un token inválido no llega hasta acá y no le
-   * cuesta un bcrypt a la API.
-   *
-   * Si lo habían quitado de este nodo (USR-11), su membership `removed` vuelve a estar activa con el
-   * rol de la invitación (`rejoined`): la UNIQUE (tenant_id, user_id) no deja crear otra, y la misma
-   * fila conserva su historial. Si ya tiene una vigente (activa o suspendida), el canje se deshace con
-   * un 409: una invitación no reactiva a alguien suspendido.
+   * La cuenta nueva del invitado. Si otro canje creó la misma cuenta en el medio (dos invitaciones al
+   * mismo correo aceptadas a la vez), la UNIQUE del correo responde como si ya existiera: 409
+   * `INVITATION_SIGN_IN_REQUIRED`, en vez de un 500.
    */
-  private async createMember(
+  private async createUser(
     trx: Transaction<DB>,
-    invitation: { tenant_id: string; email: string; role: Role },
+    email: string,
     name: string,
     password: string,
-  ): Promise<{ userId: string; rejoined: boolean }> {
-    const existing = await trx
-      .selectFrom('users')
-      .select(['id', 'password_hash'])
-      .where('email', '=', invitation.email)
-      .executeTakeFirst();
-
-    let id: string;
-    if (existing) {
-      // El usuario ya existe en otra agencia de la red: se le suma la membership sin
-      // tocarle la contraseña, que es suya y no de quien lo invita.
-      id = existing.id;
-    } else {
+  ): Promise<string> {
+    const passwordHash = await this.password.hash(password);
+    try {
       const created = await trx
         .insertInto('users')
         .values({
-          email: invitation.email,
+          email,
           name,
-          password_hash: await this.password.hash(password),
+          password_hash: passwordHash,
           // Aceptar la invitación demuestra control del buzón: vale como verificación.
           email_verified_at: new Date(),
         })
         .returning('id')
         .executeTakeFirstOrThrow();
-      id = created.id;
+      return created.id;
+    } catch (err) {
+      if (isUniqueViolation(err, USERS_EMAIL_UNIQUE)) throw new InvitationSignInRequiredError();
+      throw err;
     }
-
-    await sql`SELECT set_config('app.current_tenant_id', ${invitation.tenant_id}, true)`.execute(
-      trx,
-    );
-    const written = await trx
-      .insertInto('memberships')
-      .values({ tenant_id: invitation.tenant_id, user_id: id, role: invitation.role })
-      .onConflict((oc) =>
-        oc
-          .columns(['tenant_id', 'user_id'])
-          .doUpdateSet((eb) => ({
-            status: 'active',
-            role: eb.ref('excluded.role'),
-            removed_at: null,
-            removed_by: null,
-          }))
-          .where('memberships.status', '=', 'removed'),
-      )
-      // xmax = 0 sólo en una fila recién insertada: distingue el alta de la vuelta.
-      .returning(sql<boolean>`NOT (xmax = 0)`.as('rejoined'))
-      .executeTakeFirst();
-    if (written === undefined) throw new AlreadyMemberError();
-
-    return { userId: id, rejoined: written.rejoined };
   }
+}
+
+/** Lo que devuelve claim_pending_invitation() (0056). */
+interface ClaimedInvitation {
+  id: string;
+  tenant_id: string;
+  email: string;
+  role: Role;
+}
+
+/** La UNIQUE de `users.email` (0001). */
+const USERS_EMAIL_UNIQUE = 'users_email_key';
+
+function isUniqueViolation(err: unknown, constraint: string): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: unknown; constraint?: unknown };
+  return e.code === '23505' && e.constraint === constraint;
+}
+
+/** La cuenta dueña del correo, si la hay. `users.email` es CITEXT: sin distinguir mayúsculas. */
+async function accountFor(trx: Transaction<DB>, email: string): Promise<string | undefined> {
+  const row = await trx
+    .selectFrom('users')
+    .select('id')
+    .where('email', '=', email)
+    .executeTakeFirst();
+  return row?.id;
+}
+
+/**
+ * La membership del invitado en el nodo de la invitación. Devuelve si fue una vuelta (`rejoined`).
+ *
+ * Si lo habían quitado de este nodo (USR-11), su membership `removed` vuelve a estar activa con el
+ * rol de la invitación: la UNIQUE (tenant_id, user_id) no deja crear otra, y la misma fila conserva su
+ * historial. Si ya tiene una vigente (activa o suspendida), el canje se deshace con un 409: una
+ * invitación no reactiva a alguien suspendido.
+ */
+async function addMembership(
+  trx: Transaction<DB>,
+  invitation: { tenant_id: string; role: Role },
+  userId: string,
+): Promise<boolean> {
+  await sql`SELECT set_config('app.current_tenant_id', ${invitation.tenant_id}, true)`.execute(trx);
+  const written = await trx
+    .insertInto('memberships')
+    .values({ tenant_id: invitation.tenant_id, user_id: userId, role: invitation.role })
+    .onConflict((oc) =>
+      oc
+        .columns(['tenant_id', 'user_id'])
+        .doUpdateSet((eb) => ({
+          status: 'active',
+          role: eb.ref('excluded.role'),
+          removed_at: null,
+          removed_by: null,
+        }))
+        .where('memberships.status', '=', 'removed'),
+    )
+    // xmax = 0 sólo en una fila recién insertada: distingue el alta de la vuelta.
+    .returning(sql<boolean>`NOT (xmax = 0)`.as('rejoined'))
+    .executeTakeFirst();
+  if (written === undefined) throw new AlreadyMemberError();
+  return written.rejoined;
+}
+
+/** El hash con que se guarda y se busca el token de una invitación. Del token sólo se guarda esto. */
+export function invitationTokenHash(token: string): string {
+  return sha256(token);
 }
 
 function sha256(value: string): string {
@@ -668,7 +774,7 @@ export function invitationEmailHtml(link: string, tenantName: string, ttlDays: n
         <tr><td>
           <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#18181b">Te invitaron a ${name}</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#52525b">
-            Acepta la invitación y elige tu contraseña. El enlace vence en ${ttlDays} días.
+            Acepta la invitación: si ya tienes cuenta, ingresas con tu contraseña de siempre; si no, eliges una. El enlace vence en ${ttlDays} días.
           </p>
           <a href="${href}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:8px">
             Aceptar invitación

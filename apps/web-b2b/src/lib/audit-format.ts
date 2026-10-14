@@ -108,6 +108,8 @@ const LABELS: Readonly<Record<string, string>> = {
   UserInvitationRevoked: 'Invitación revocada',
   UserInvitationAccepted: 'Invitación aceptada',
   UserInvitationRejected: 'Invitación rechazada (ya no era válida)',
+  // USR-17: una sesión de otra cuenta intentó aceptarla; quedó pendiente para su dueño.
+  UserInvitationAccountMismatch: 'Invitación rechazada (otra cuenta intentó aceptarla)',
   MembershipRoleChanged: 'Cambio de rol',
   MembershipRemoved: 'Quitado del nodo',
   'auth.mfa.reset_by_admin': '2FA restablecido por un administrador',

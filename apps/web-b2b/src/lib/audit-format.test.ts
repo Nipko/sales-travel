@@ -29,6 +29,7 @@ describe('eventLabel', () => {
       UserInvitationRevoked: 'Invitación revocada',
       UserInvitationAccepted: 'Invitación aceptada',
       UserInvitationRejected: 'Invitación rechazada (ya no era válida)',
+      UserInvitationAccountMismatch: 'Invitación rechazada (otra cuenta intentó aceptarla)',
       MembershipRoleChanged: 'Cambio de rol',
       MembershipRemoved: 'Quitado del nodo',
       'auth.mfa.reset_by_admin': '2FA restablecido por un administrador',

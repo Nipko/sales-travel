@@ -18,6 +18,18 @@ describe('acceptInvitationError: por qué no se pudo aceptar', () => {
     ).toMatch(/se usó, venció o fue revocada/);
   });
 
+  it('el correo ya tiene cuenta (USR-17): ingresar con ella, no elegir otra contraseña', () => {
+    expect(
+      acceptInvitationError({
+        status: 409,
+        message: 'texto del API',
+        reason: 'INVITATION_SIGN_IN_REQUIRED',
+      }),
+    ).toBe(
+      'Ya tienes una cuenta con este correo. Ingresa con tu contraseña de siempre para aceptar la invitación.',
+    );
+  });
+
   it('lo demás, con el mensaje del API', () => {
     expect(acceptInvitationError({ status: 429, message: 'Demasiados intentos.' })).toBe(
       'Demasiados intentos.',

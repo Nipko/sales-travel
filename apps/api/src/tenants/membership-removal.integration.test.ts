@@ -453,13 +453,10 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     ).toBe('409/MEMBERSHIP_REMOVED');
     expect(await membership(agencyA, back)).toMatchObject({ status: 'removed', role: 'vendedor' });
 
-    // Se la invita de nuevo, con otro rol: invitar ya no la cuenta como miembro.
+    // Se la invita de nuevo, con otro rol: invitar ya no la cuenta como miembro. Ya tiene cuenta, así
+    // que acepta con su sesión (USR-17).
     const again = await invite(adminA, agencyA, 'vuelve', 'admin');
-    const accepted = await invitations.accept({
-      token: again.token,
-      name: 'Vuelve',
-      password: 'una-clave-larga-123',
-    });
+    const accepted = await invitations.acceptSignedIn({ token: again.token, userId: back });
 
     expect(accepted).toEqual({ userId: back, tenantId: agencyA });
     expect(await membership(agencyA, back)).toEqual({
@@ -474,7 +471,7 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
       {
         actor_user_id: back,
         tenant_id: agencyA,
-        payload: { email: email('vuelve'), role: 'admin', rejoined: true },
+        payload: { email: email('vuelve'), role: 'admin', existingAccount: true, rejoined: true },
       },
     ]);
     expect(await team(adminA, agencyA)).toContain(back);
@@ -522,7 +519,10 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
       await rejection(
         invitations.accept({ token, name: 'Ya está', password: 'una-clave-larga-123' }),
       ),
-    ).toBe('409/ALREADY_MEMBER');
+    ).toBe('409/INVITATION_SIGN_IN_REQUIRED');
+    expect(await rejection(invitations.acceptSignedIn({ token, userId: here }))).toBe(
+      '409/ALREADY_MEMBER',
+    );
     expect(await invitationState(legacy)).toEqual({ accepted: false, revoked: false });
     expect(await membership(agencyA, here)).toMatchObject({ role: 'vendedor', status: 'active' });
   });
