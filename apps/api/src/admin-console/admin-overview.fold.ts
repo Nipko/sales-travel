@@ -1,5 +1,5 @@
 import type { QuotationStatus, TenantType } from '../database/database.types.js';
-import { currencyExponent } from '../portfolios/wallet-currency.js';
+import { MONEY_EXPONENT, currencyExponent } from '../portfolios/wallet-currency.js';
 import { salesVertical, type SalesVertical } from '../reports/reports.service.js';
 import type { KillLevel } from '../search/circuit-breaker.service.js';
 import {
@@ -12,8 +12,12 @@ import {
 /**
  * Plataforma → Resumen: de las filas de las funciones de 0075 a la vista que muestra la web. Sin I/O.
  *
- * Nunca se suman monedas distintas: todo monto va con su moneda y su exponente (las unidades menores
- * de COP son centavos; las de CLP, pesos).
+ * Nunca se suman monedas distintas: todo monto va con su moneda y el exponente de SUS unidades
+ * menores. No es el mismo en todos los montos:
+ *
+ *   - lo de reservas (ventas, tendencia, top de nodos) sale de `orders.total_amount`, que va SIEMPRE
+ *     en centésimos ({@link ORDER_AMOUNT_EXPONENT});
+ *   - lo de carteras, en las unidades menores ISO 4217 de su moneda (wallet-currency.ts).
  */
 
 /** `pg` devuelve BIGINT y NUMERIC como texto. */
@@ -25,9 +29,18 @@ function toNumber(value: DbNumber): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** El exponente ISO 4217 de una cartera: sus montos van en las unidades menores de su moneda. */
 function exponentOf(currency: string): number | null {
   return currencyExponent(currency) ?? null;
 }
+
+/**
+ * El exponente de un monto de reservas, en toda moneda: `orders.total_amount` va SIEMPRE en centésimos
+ * (`Money.fromMajor` de @sales-travel/canonical multiplica por 100, también en CLP o JPY), como lo
+ * leen la consola de Reservas (formatMoney del panel) y su CSV. Con el exponente ISO, una venta de
+ * 150.000 pesos chilenos (15.000.000 centésimos) se vería 100 veces más grande.
+ */
+export const ORDER_AMOUNT_EXPONENT = MONEY_EXPONENT;
 
 // ─────────────────────────── Filas de 0075 ───────────────────────────
 
@@ -158,6 +171,7 @@ export interface OverviewAttentionRow {
 /** Lo creado en el período en una moneda. "Confirmadas" son `confirmed` y `ticketed`: la venta. */
 export interface SalesByCurrencyView {
   currency: string;
+  /** De reservas: siempre {@link ORDER_AMOUNT_EXPONENT} (centésimos), no el ISO de la moneda. */
   exponent: number | null;
   confirmedCount: number;
   confirmedAmountMinor: number;
@@ -175,6 +189,7 @@ export interface SalesByCurrencyView {
 export interface SalesByVerticalView {
   vertical: SalesVertical;
   currency: string;
+  /** De reservas: siempre {@link ORDER_AMOUNT_EXPONENT} (centésimos), no el ISO de la moneda. */
   exponent: number | null;
   count: number;
   amountMinor: number;
@@ -183,6 +198,7 @@ export interface SalesByVerticalView {
 export interface SalesByProviderView {
   provider: string;
   currency: string;
+  /** De reservas: siempre {@link ORDER_AMOUNT_EXPONENT} (centésimos), no el ISO de la moneda. */
   exponent: number | null;
   confirmedCount: number;
   confirmedAmountMinor: number;
@@ -213,6 +229,7 @@ export interface TrendPointView {
 /** Una serie por moneda, con un punto por cada mes de `months` (cero si no hubo ventas). */
 export interface TrendSeriesView {
   currency: string;
+  /** De reservas: siempre {@link ORDER_AMOUNT_EXPONENT} (centésimos), no el ISO de la moneda. */
   exponent: number | null;
   points: TrendPointView[];
 }
@@ -224,6 +241,7 @@ export interface TrendView {
 
 export interface MoneyView {
   currency: string;
+  /** De reservas: siempre {@link ORDER_AMOUNT_EXPONENT} (centésimos), no el ISO de la moneda. */
   exponent: number | null;
   amountMinor: number;
 }
@@ -274,6 +292,7 @@ export interface NetworkView {
 
 export interface WalletExposureView {
   currency: string;
+  /** El ISO 4217 de la moneda: los montos de una cartera van en sus unidades menores. */
   exponent: number | null;
   wallets: number;
   creditLimitMinor: number;
@@ -459,7 +478,7 @@ export function foldSales(
     const count = toNumber(row.orders);
     const amount = toNumber(row.amount_minor);
     const bucket = orderStatusBucket(row.status);
-    const exponent = exponentOf(row.currency);
+    const exponent = ORDER_AMOUNT_EXPONENT;
 
     const c = getOrSet(currencies, row.currency, () => ({
       currency: row.currency,
@@ -582,7 +601,7 @@ export function foldTrend(rows: readonly OverviewTrendRow[], months: readonly st
       .sort(([a], [b]) => byText(a, b))
       .map(([currency, points]) => ({
         currency,
-        exponent: exponentOf(currency),
+        exponent: ORDER_AMOUNT_EXPONENT,
         points: months.map((month) => points.get(month) ?? { month, count: 0, amountMinor: 0 }),
       })),
   };
@@ -604,7 +623,7 @@ export function foldTopNodes(rows: readonly OverviewTopNodeRow[]): TopNodeView[]
     }));
     node.amounts.push({
       currency: row.currency,
-      exponent: exponentOf(row.currency),
+      exponent: ORDER_AMOUNT_EXPONENT,
       amountMinor: toNumber(row.amount_minor),
     });
   }

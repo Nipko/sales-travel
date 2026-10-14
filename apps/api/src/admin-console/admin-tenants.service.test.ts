@@ -299,6 +299,27 @@ const NODO_FICHA: NodeSummaryTenantView = {
 };
 
 describe('foldNodeSales: lo del nodo y lo del nodo con su red, por moneda', () => {
+  it('las ventas van en centésimos en toda moneda: en CLP el exponente es 2, no el ISO 0', () => {
+    // orders.total_amount va SIEMPRE en centésimos (Money.fromMajor): 15.000.000 son 150.000 pesos.
+    // Con el exponente ISO de CLP (0) la ficha mostraría 100 veces más; lo retenido de una cartera
+    // sí va con el ISO (foldHeld).
+    const view = foldNodeSales([
+      venta({
+        currency: 'CLP',
+        orders_count: '1',
+        confirmed_count: '1',
+        confirmed_amount_minor: '15000000',
+      }),
+    ]);
+    expect(view.own).toMatchObject([
+      { currency: 'CLP', exponent: 2, confirmedAmountMinor: 15_000_000 },
+    ]);
+    expect(view.subtree[0]?.exponent).toBe(2);
+    expect(foldHeld([{ CLP: 150_000 }])).toEqual([
+      { currency: 'CLP', exponent: 0, amountMinor: 150_000 },
+    ]);
+  });
+
   it('nunca suma monedas distintas; con su red suma dentro de cada moneda y vertical', () => {
     const view = foldNodeSales([
       venta({

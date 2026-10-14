@@ -37,6 +37,7 @@ describe('csvCell', () => {
     // celda, que empieza con `=` sin apóstrofo.
     expect(csvCell('Ana;=HYPERLINK("http://x")')).toBe('"Ana;=HYPERLINK(""http://x"")"');
     expect(csvCell('a\t=1+1')).toBe('"a\t=1+1"');
+    expect(csvCell('Ana;=1+1')).toBe('"Ana;=1+1"');
   });
 
   it('los demás caracteres de control se quitan, sin dejar una fórmula sin su apóstrofo', () => {

@@ -967,7 +967,11 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
                                          -- 30 días por defecto, hasta 366. tenantId = el subárbol de
                                          -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
-                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- monedas; cada monto con su moneda y el exponente de sus
+                                         -- unidades menores: el de reservas es SIEMPRE 2, porque
+                                         -- orders.total_amount va en centésimos en toda moneda
+                                         -- (Money.fromMajor), y el de carteras es el ISO 4217),
+                                         -- tendencia de 12 meses, top 10 nodos por reservas
                                          -- confirmadas, red (nodos, personas, sesiones vivas),
                                          -- carteras (cupo, deuda, exposición de Planetour), lo que
                                          -- espera a una persona (depósitos, post-venta fallida o
@@ -1166,7 +1170,8 @@ GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (im
                                          -- 30, own, subtree} (admin_sales_summary del subárbol por
                                          -- moneda con cuántas, confirmadas y su monto, canceladas,
                                          -- fallidas y lo confirmado por vertical; nunca suma
-                                         -- monedas), attention {total, byReason}
+                                         -- monedas; exponent 2 en toda moneda, como el Resumen),
+                                         -- attention {total, byReason}
                                          -- (admin_order_attention del subárbol, sin muestra) }. El
                                          -- nodo se lee primero (404 TENANT_NOT_FOUND); después las
                                          -- tres secciones (network, sales, attention) a la vez, cada
