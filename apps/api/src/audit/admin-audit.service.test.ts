@@ -159,13 +159,22 @@ describe('exportedFilters', () => {
 /**
  * El servicio sobre un Kysely que compila de verdad. `actor`: si el correo es de alguien; `nodo`: si
  * el nodo existe; `filas`: lo que devuelve admin_audit_events; `deniega`: la base dice que quien pide
- * no es el superadmin.
+ * no es el superadmin; `rastroFalla`: la base no deja escribir el evento de auditoría.
  */
 function banco(
-  opts: { actor?: boolean; nodo?: boolean; filas?: AdminAuditRow[]; deniega?: boolean } = {},
+  opts: {
+    actor?: boolean;
+    nodo?: boolean;
+    filas?: AdminAuditRow[];
+    deniega?: boolean;
+    rastroFalla?: boolean;
+  } = {},
 ) {
   const scripted = scriptedKysely((q: CompiledQuery) => {
     const s = q.sql;
+    if (opts.rastroFalla === true && s.startsWith('insert into "domain_events"')) {
+      throw Object.assign(new Error('could not extend file'), { code: '53100' });
+    }
     if (s.includes('admin_audit_events(')) {
       if (opts.deniega === true) {
         throw Object.assign(new Error('admin_superadmin_required'), { code: '42501' });
@@ -341,5 +350,14 @@ describe('AdminAuditService.exportCsv', () => {
       service.exportCsv(SUPERADMIN, AdminAuditExportQuerySchema.parse({}), NOW),
     ).rejects.toBeInstanceOf(SuperadminRequiredError);
     expect(eventos()).toEqual([]);
+  });
+
+  it('si el rastro no se escribe, no sale el archivo: el error sube', async () => {
+    const { service, lecturas } = banco({ filas: [row()], rastroFalla: true });
+    await expect(
+      service.exportCsv(SUPERADMIN, AdminAuditExportQuerySchema.parse({}), NOW),
+    ).rejects.toMatchObject({ code: '53100' });
+    // Se leyó, pero el CSV nunca llega a quien lo pidió.
+    expect(lecturas()).toHaveLength(1);
   });
 });

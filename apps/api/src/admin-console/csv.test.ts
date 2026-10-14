@@ -25,6 +25,13 @@ describe('csvCell', () => {
     },
   );
 
+  it('punto y coma o tabulación: entre comillas, así ninguna planilla parte la celda', () => {
+    // Excel en es-CO, es-PE o pt-BR separa por `;`: sin comillas, lo que sigue al `;` sería otra
+    // celda, que empieza con `=` sin apóstrofo.
+    expect(csvCell('Agencia;=HYPERLINK("http://x")')).toBe('"Agencia;=HYPERLINK(""http://x"")"');
+    expect(csvCell('a\t=1+1')).toBe('"a\t=1+1"');
+  });
+
   it('el apóstrofo va antes de mirar si hacen falta comillas', () => {
     expect(csvCell('=1,2')).toBe(`"'=1,2"`);
     expect(csvCell('=A1')).toBe("'=A1");

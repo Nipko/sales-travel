@@ -5,7 +5,10 @@
  * Lo abre una persona en Excel o en Google Sheets, así que:
  *
  *   - va en UTF-8 con BOM (sin él, Excel lee "Bogotá" como "BogotÃ¡") y líneas CRLF (RFC 4180);
- *   - una celda con coma, comillas o salto de línea va entre comillas, con las comillas duplicadas;
+ *   - una celda con coma, punto y coma, tabulación, comillas o salto de línea va entre comillas, con
+ *     las comillas duplicadas. El `;` y la tabulación también: Excel con la configuración regional
+ *     de Colombia, Perú o Brasil separa por `;`, y sin comillas lo que sigue sería otra celda que
+ *     empieza con `=` sin su apóstrofo;
  *   - una celda que empieza con `=`, `+`, `-` o `@` (o con tabulación o retorno de carro, que algunas
  *     planillas saltan antes de mirar) lleva un apóstrofo delante: el nombre de un nodo o un correo
  *     no pueden ser una fórmula que la planilla ejecute al abrir el archivo (CSV injection). Es la
@@ -18,7 +21,7 @@
 export type CsvValue = string | number | boolean | null | undefined;
 
 const FORMULA_START = /^[=+\-@\t\r]/;
-const NEEDS_QUOTES = /[",\r\n]/;
+const NEEDS_QUOTES = /[",;\t\r\n]/;
 // Los de control salvo tabulación, salto de línea y retorno de carro.
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;

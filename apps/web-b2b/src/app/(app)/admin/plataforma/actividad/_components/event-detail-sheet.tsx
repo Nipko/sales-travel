@@ -159,7 +159,7 @@ export function EventDetailContent({
           </pre>
         )}
         <p className="text-[11px] text-[var(--color-fg-muted)]">
-          Las claves que nombran algo sensible (claves, tokens, tarjetas) nunca se muestran.
+          Los datos sensibles (claves, tokens, tarjetas, ids de sesión) nunca se muestran.
         </p>
       </Section>
 

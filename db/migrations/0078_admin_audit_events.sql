@@ -39,6 +39,15 @@
 -- domain_events es una tabla plana (0015): el índice es común. search_path = pg_catalog, public,
 -- pg_temp (posterior a 0060: nada lo endurece después; ver
 -- apps/api/src/database/migrations-search-path.test.ts).
+--
+-- Despliegue: el runner corre cada migración en una transacción, así que el índice no puede ir
+-- CONCURRENTLY. CREATE INDEX toma un lock SHARE sobre domain_events mientras se arma: las lecturas
+-- siguen, pero cada escritura de auditoría (ingresos, reservas, cada emit) espera a que termine.
+-- Medido en PG16 local: ~0,3 s por millón de filas (con un audit log de pocos millones son segundos,
+-- como los índices de 0065). Antes de desplegar, mirar `SELECT count(*) FROM domain_events`: si pasa
+-- de unos 10 millones, crear el índice a mano (`CREATE INDEX CONCURRENTLY IF NOT EXISTS
+-- idx_domain_events_time ON domain_events (occurred_at DESC, id DESC);`, fuera de una transacción) y
+-- esta línea queda en nada por el IF NOT EXISTS.
 
 -- ============================================================================
 -- 1. El orden de la Actividad: del más nuevo al más viejo, con el id para desempatar

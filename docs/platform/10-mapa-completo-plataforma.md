@@ -1149,8 +1149,13 @@ GET    /admin/audit/export?<los mismos filtros>
                                          -- (Bogotá con desfase), evento, nodo, actor, entidad,
                                          -- id_entidad, ip; ni payload ni navegador. Hasta 5.000 (los
                                          -- más nuevos; X-Export-Rows, X-Export-Truncated). Celdas
-                                         -- con = + - @ llevan apóstrofo (admin-console/csv.ts, que
-                                         -- reusa ADM-14). @RequireRecentMfa (2FA de los últimos 10
+                                         -- con = + - @ llevan apóstrofo y las que tienen , ; tab o
+                                         -- salto de línea van entre comillas (Excel en es-CO/pt-BR
+                                         -- separa por ;) (admin-console/csv.ts, que reusa ADM-14).
+                                         -- El índice de 0078 bloquea las escrituras de
+                                         -- domain_events mientras se arma (~0,3 s por millón de
+                                         -- filas): ver su encabezado antes de desplegar.
+                                         -- @RequireRecentMfa (2FA de los últimos 10
                                          -- min, USR-13). Escribe platform.audit.exported {filters
                                          -- (el actor por su id; actorNotFound si el correo no era de
                                          -- nadie), rows, truncated} en la raíz platform, en la misma
