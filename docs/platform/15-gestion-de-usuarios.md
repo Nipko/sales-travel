@@ -1322,8 +1322,8 @@ suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el 
   por minuto por IP) → `200 { name }`, el nombre como quedó guardado. La cuenta es siempre la de la
   sesión (`CurrentUser`): la ruta no lleva id y el cuerpo es estricto, así que un `email` o un
   `userId` es **400** "Desde tu perfil sólo puedes cambiar tu nombre.", no algo que se ignora.
-- El nombre pasa por **`PersonNameSchema`** (`packages/validation/src/person-name.ts`, el primero de su
-  tipo: el canje de la invitación sólo acota el largo): NFC; cualquier espacio de Unicode, tabulador o
+- El nombre pasa por **`PersonNameSchema`** (`packages/validation/src/person-name.ts`; desde la revisión
+  de USR-18 también lo usa el canje de la invitación, `AcceptInvitationSchema`): NFC; cualquier espacio de Unicode, tabulador o
   salto de línea seguidos pasan a un solo espacio; sin espacios en los bordes; de 1 a 120 (el tope del
   canje de la invitación, en unidades UTF-16, contado después de normalizar); **sin caracteres de
   control ni de formato** (los de dirección como U+202E, los de ancho cero, el guion blando), ni
@@ -1332,7 +1332,8 @@ suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el 
   que no pasa se rechaza, no se limpia en silencio. Los mensajes van en tú ("Escribe tu nombre.", "Tu
   nombre tiene caracteres invisibles o de control. Escríbelo de nuevo a mano.").
 - `ProfileService.updateName` corre con la cuenta en el contexto (`withRequestContext`, lo exige el
-  trigger), toma la fila `FOR UPDATE` y, si el nombre cambia, lo escribe y deja **`UserProfileUpdated`**
+  trigger), toma la fila `FOR NO KEY UPDATE` (como el resto de las escrituras sobre `users`: `FOR
+UPDATE` frenaba las inserciones que apuntan a la cuenta) y, si el nombre cambia, lo escribe y deja **`UserProfileUpdated`**
   en la misma transacción (si el evento no entra, el cambio tampoco): actor y agregado = la cuenta,
   payload `{ changed: ['name'], before: { name }, after: { name } }`, la forma de `tenant.updated`. Es
   el nombre de la propia persona, el mismo que su equipo ya ve, y deja ver en el historial que alguien
@@ -1346,7 +1347,7 @@ suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el 
   con "Para cambiar tu correo, pídeselo al equipo de soporte." (sin la marca de la plataforma: el
   panel es white-label). Botón **Guardar**; al terminar, el toast "Guardamos tu nombre.".
 - El panel valida con las mismas reglas antes de llamar (`lib/person-name.ts`, espejo del esquema:
-  los tests de los dos lados usan los mismos casos); el error sale bajo el campo (`role="alert"`,
+  su test lee las declaraciones de `packages/validation` como texto y falla si se apartan); el error sale bajo el campo (`role="alert"`,
   `aria-invalid`, `aria-describedby`) y el foco vuelve al campo. Se envía desde `onSubmit` y no con
   `<form action>`, para que un error no borre lo escrito (como Seguridad). Un 400 del API muestra el
   mensaje del campo si es uno conocido; 429, "Hiciste muchos cambios seguidos…"; sin sesión, al login
@@ -1370,14 +1371,18 @@ suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el 
 - `me.controller.test.ts`: `PATCH /me` sin id, con sesión, sin exención del 2FA ni roles, con su
   tope; la cuenta de la sesión; 401 sin ella; el borde Zod (normaliza, 400 con `email` o `userId`,
   400 en `name` con un control de dirección).
-- `profile.service.test.ts`: contexto de la sesión, `FOR UPDATE`, el UPDATE por id, el evento con el
+- `profile.service.test.ts`: contexto de la sesión, `FOR NO KEY UPDATE`, el UPDATE por id, el evento con el
   antes y el después (también desde `null`), nada con el mismo nombre, 401 sin cuenta, y que un evento
   que no entra hace fallar el cambio.
 - `profile.integration.test.ts` (Postgres, todo como `app_user`): cambia sólo la propia cuenta y deja
   el evento; el mismo nombre no escribe; el trigger rechaza el nombre de otra cuenta, sin contexto,
   con uno que no es un UUID y en un UPDATE de varias filas; el propio sí; las demás columnas de otra
   cuenta sí; `app_user` no puede apagar el trigger; el superusuario cambia cualquiera.
-- Web: `lib/person-name.test.ts` (los mismos casos que el API), `perfil/actions.test.ts` (qué viaja,
+- `apps/api/src/tenants/dto.test.ts`: el canje de la invitación normaliza y rechaza el nombre como el
+  perfil, y el 400 de `ZodValidationPipe` nombra `name: <mensaje>` (lo que lee el panel).
+- Web: `lib/person-name.test.ts` (los mismos casos que el API y la paridad, declaración por
+  declaración, con `packages/validation`), `invitacion/actions.test.ts` y `invitacion/errors.test.ts`
+  (el nombre del canje con las mismas reglas y su 400 con el mensaje del campo), `perfil/actions.test.ts` (qué viaja,
   la revalidación del layout, que un nombre inválido no llega al API, cada error, el 401 al login),
   `perfil/profile.render.test.ts` (etiqueta, ayuda y campo enlazados, el correo para leer, un botón,
   el nombre como texto, sin `GET /me`, en tú), `components/layout/account-display.test.ts`,
@@ -1388,5 +1393,10 @@ suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el 
 - La migración va antes que la API (deploy.yml migra primero). La API vieja no cambia nombres, así
   que el trigger no la afecta.
 - Con el panel nuevo y la API vieja, `PATCH /me` responde 404 y el formulario dice "No pudimos guardar
-  tu nombre. Inténtalo de nuevo.". El canje de la invitación sigue aceptando el nombre como antes
-  (sólo el largo); llevarle `PersonNameSchema` queda pendiente.
+  tu nombre. Inténtalo de nuevo.".
+- El canje de la invitación (`POST /invitations/accept`) valida el nombre con `PersonNameSchema` y lo
+  guarda normalizado. El panel nuevo lo valida antes y, si el API lo rechaza, muestra el mensaje del
+  nombre (lo lee del resumen del 400, `app/invitacion/errors.ts`). Con el panel viejo y la API nueva,
+  un nombre que la API rechaza (controles, invisibles, sin letras) sale como "enlace usado o vencido":
+  raro y sólo mientras dura el despliegue. Las cuentas creadas antes pueden tener nombres que hoy no
+  pasarían; se ven como antes y su dueño los corrige desde Perfil.
