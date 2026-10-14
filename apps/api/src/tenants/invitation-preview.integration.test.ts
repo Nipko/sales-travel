@@ -454,4 +454,103 @@ d('la página de la invitación, contra Postgres', () => {
       ]);
     });
   });
+
+  /**
+   * Las carreras que el doble guionado no puede probar: lo que decide es Postgres (la UNIQUE del
+   * correo y el bloqueo de la fila de la invitación), no el orden en que corre el código.
+   */
+  describe('a la vez', () => {
+    it('dos invitaciones al mismo correo aceptadas a la vez: una cuenta; la otra, 409 y pendiente', async () => {
+      const first = await invite(agency, 'carrera');
+      const second = await invite(otherAgency, 'carrera');
+
+      // Los dos canjes ya miraron que el correo no tiene cuenta cuando llegan a hashear: recién ahí
+      // siguen, juntos, a crearla. El tope de tiempo evita colgar el test si uno no llega.
+      let arrived = 0;
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+        setTimeout(resolve, 5_000);
+      });
+      const racingPassword = {
+        hash: async (p: string) => {
+          arrived += 1;
+          if (arrived === 2) release();
+          await gate;
+          return `hash-de-prueba-${p.length}`;
+        },
+      } as unknown as PasswordService;
+      const racing = new InvitationsService(
+        database,
+        racingPassword,
+        mailer as unknown as MailerService,
+        audit,
+      );
+
+      const results = await Promise.allSettled([
+        racing.accept({ token: first.token, name: 'Primera', password: 'x'.repeat(12) }),
+        racing.accept({ token: second.token, name: 'Segunda', password: 'x'.repeat(13) }),
+      ]);
+
+      expect(arrived).toBe(2);
+      const won = results.findIndex((r) => r.status === 'fulfilled');
+      const lost = results.findIndex((r) => r.status === 'rejected');
+      expect([won, lost].sort()).toEqual([0, 1]);
+      expect(
+        await rejection(Promise.reject((results[lost] as PromiseRejectedResult).reason as Error)),
+      ).toBe('409/INVITATION_SIGN_IN_REQUIRED');
+
+      // Una sola cuenta, con la contraseña de quien ganó; la otra invitación sigue pendiente y se
+      // acepta con la sesión de esa cuenta.
+      const { rows } = await pool.query<{ id: string; password_hash: string }>(
+        'SELECT id, password_hash FROM users WHERE email = $1',
+        [email('carrera')],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.password_hash).toBe(`hash-de-prueba-${12 + won}`);
+      const [winner, loser] = won === 0 ? [first, second] : [second, first];
+      expect(await invitationState(winner.id)).toEqual({ accepted: true, revoked: false });
+      expect(await invitationState(loser.id)).toEqual({ accepted: false, revoked: false });
+      expect(await events('UserInvitationAccepted', loser.id)).toEqual([]);
+
+      await expect(
+        invitations.acceptSignedIn({ token: loser.token, userId: rows[0]!.id }),
+      ).resolves.toMatchObject({ userId: rows[0]!.id });
+    });
+
+    it('el mismo enlace aceptado dos veces a la vez con la sesión: una sola vez', async () => {
+      const owner = await user('doble-clic');
+      const sent = await invite(agency, 'doble-clic');
+
+      // Se toma la fila de la invitación para que los dos canjes lleguen a la vez y esperen en ella.
+      const locker = await pool.connect();
+      await locker.query('BEGIN');
+      await locker.query('SELECT id FROM user_invitations WHERE id = $1 FOR UPDATE', [sent.id]);
+      const both = Promise.allSettled([
+        invitations.acceptSignedIn({ token: sent.token, userId: owner }),
+        invitations.acceptSignedIn({ token: sent.token, userId: owner }),
+      ]);
+      try {
+        for (let i = 0; i < 100; i += 1) {
+          const { rows } = await pool.query<{ waiting: number }>(
+            `SELECT count(*)::int AS waiting FROM pg_stat_activity
+              WHERE usename = 'app_user' AND wait_event_type = 'Lock'
+                AND query LIKE '%claim_pending_invitation%'`,
+          );
+          if (rows[0]!.waiting >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      } finally {
+        await locker.query('COMMIT');
+        locker.release();
+      }
+
+      const results = await both;
+      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')!;
+      expect(await rejection(Promise.reject(failed.reason as Error))).toBe('400/?');
+      expect(await membership(agency, owner)).toMatchObject({ role: 'vendedor', status: 'active' });
+      expect(await events('UserInvitationAccepted', sent.id)).toHaveLength(1);
+    });
+  });
 });
