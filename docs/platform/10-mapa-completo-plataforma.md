@@ -989,7 +989,8 @@ GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos 
                                          -- barrido: cada corrida de PostSaleSweeper deja
                                          -- system.post_sale_sweep.completed {durationMs, tenants,
                                          -- tenantsFailed, examined, adopted, staleCancelClaims,
-                                         -- cancellations, hcn, reconciliation} o .failed {errorClass}
+                                         -- cancellations, hcn, reconciliation, ticketIssues} o
+                                         -- .failed {errorClass}
                                          -- (también AllTenantsFailed {durationMs, tenants,
                                          -- tenantsFailed} si no pudo revisar ningún nodo: no cuenta
                                          -- como correcta) en domain_events, en la raíz platform y
@@ -1006,7 +1007,8 @@ GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos 
                                          -- crones de sync-airports.yml, sync-hotel-inventory.yml y
                                          -- sync-tbo-hotel-inventory.yml (un test los compara con los
                                          -- workflows). La actividad de la red (networkAudit) deja
-                                         -- fuera los eventos system.*. En el panel:
+                                         -- fuera los eventos system.*, con cualquier filtro de
+                                         -- categoría o de persona. En el panel:
                                          -- /admin/plataforma/sistema (BFF /api/admin/system/jobs).
 GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
                                          -- Plataforma → Reservas de la red (implementado, 0076):
