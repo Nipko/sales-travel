@@ -60,6 +60,10 @@ export const ISSUE_CLAIM_MESSAGES: Readonly<Record<IssueClaimRefusal, string>> =
   'already-issued': 'La reserva ya registra una emisión. Consulta su estado antes de seguir.',
   'previous-unverified':
     'La emisión anterior quedó sin confirmar. No vuelvas a emitir: revisamos la reserva con la aerolínea.',
+  'services-pending':
+    'Hay un cambio de servicios adicionales en curso en esta reserva. Espera a que termine antes de emitir.',
+  'services-unverified':
+    'Un cambio de servicios adicionales quedó sin confirmar. Antes de emitir lo revisamos con la aerolínea.',
 };
 
 export const ISSUE_QUEUE_UNAVAILABLE_MESSAGE =
@@ -610,6 +614,8 @@ export class FlightTicketIssueService {
     actorUserId: string | undefined,
   ): Promise<void> {
     const documents = close.read.documents.length;
+    // Los EMD de los servicios adicionales (SAB-20) salen en la misma emisión: se cuentan aparte.
+    const emds = close.read.documents.filter((document) => document.kind === 'EMD').length;
     const outcome = await this.store.finalizeTicketed(
       tenantId,
       order.id,
@@ -631,6 +637,7 @@ export class FlightTicketIssueService {
             operationId: op.id,
             outcome: close.outcome,
             documents,
+            emds,
             ...(result.formOfPaymentType === undefined
               ? {}
               : { formOfPaymentType: result.formOfPaymentType }),

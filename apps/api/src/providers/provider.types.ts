@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  AncillaryPort,
   FlightSearchPort,
   OfferPricePort,
   OrderCancelResult,
@@ -162,6 +163,24 @@ export function supportsSeatMap<T extends object>(adapter: T): adapter is T & Se
 }
 
 /**
+ * ¿Este adapter sabe vender servicios adicionales sobre una reserva hecha (`AncillaryPort`)? Por
+ * presencia de los tres métodos, como {@link supportsTicketing}. Que sepa no quiere decir que esté
+ * encendido: eso lo dice la capacidad `addServices` del factory.
+ */
+export function supportsAncillaries<T extends object>(adapter: T): adapter is T & AncillaryPort {
+  const port = adapter as {
+    listAncillaries?: unknown;
+    addAncillaries?: unknown;
+    removeAncillaries?: unknown;
+  };
+  return (
+    typeof port.listAncillaries === 'function' &&
+    typeof port.addAncillaries === 'function' &&
+    typeof port.removeAncillaries === 'function'
+  );
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -197,6 +216,12 @@ export interface ProviderCapabilities {
    * certifica por proveedor antes de ofrecerla, y un proveedor nuevo no la hereda por olvido.
    */
   readonly seatMap?: boolean;
+  /**
+   * Agregar y quitar maletas y servicios a una reserva confirmada, antes de emitir (SAB-20), por el
+   * `AncillaryPort` del adapter. Se cobran con el tiquete, como EMD, con la forma de pago de la
+   * cuenta. Ausente = `false`: mueve dinero, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly addServices?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;

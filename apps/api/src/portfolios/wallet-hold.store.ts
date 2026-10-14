@@ -116,6 +116,33 @@ const RetainedRowSchema = z.discriminatedUnion('hold_status', [
 
 const SettleRowSchema = z.object({ outcome: z.enum(WALLET_HOLD_SETTLE_OUTCOMES) });
 
+export const WALLET_HOLD_ADJUST_OUTCOMES = ['adjusted', 'unchanged', 'no-hold', 'exempt'] as const;
+
+/**
+ * Qué hizo `wallet_hold_adjust` (0086) con la retención abierta de una orden confirmada:
+ *
+ * - `adjusted`: retuvo (`deltaMinor` > 0) o liberó (< 0) la diferencia en `levels` niveles;
+ * - `unchanged`: el total de la orden ya era lo retenido;
+ * - `no-hold`: la orden no retiene (cuenta de pruebas, proveedor que cobra por su cuenta, reserva
+ *   anterior a la retención): no hay nada que ajustar;
+ * - `exempt`: se reservó con la cuenta propia del nodo, que no retiene.
+ */
+export type WalletHoldAdjustOutcome = (typeof WALLET_HOLD_ADJUST_OUTCOMES)[number];
+
+export interface WalletHoldAdjusted {
+  readonly outcome: WalletHoldAdjustOutcome;
+  /** Lo retenido (+) o liberado (−) en cada nivel, en unidades menores de la orden. */
+  readonly deltaMinor: number;
+  readonly levels: number;
+}
+
+const AdjustRowSchema = z.object({
+  outcome: z.enum(WALLET_HOLD_ADJUST_OUTCOMES),
+  // BIGINT: `pg` lo entrega como texto.
+  delta_minor: z.coerce.number().int().min(-MAX_SAFE_MINOR).max(MAX_SAFE_MINOR),
+  levels: z.number().int().min(0).max(4),
+});
+
 const PreviewRowSchema = z.object({
   status: z.enum(['ok', 'blocked', 'exempt', 'unknown']),
   reason: z.string().nullable(),
@@ -310,6 +337,35 @@ export class WalletHoldStore {
     const parsed = SettleRowSchema.safeParse(rows[0]);
     if (!parsed.success) throw new WalletHoldContractError('wallet_hold_settle');
     return parsed.data.outcome;
+  }
+
+  /**
+   * Ajusta la retención abierta de la orden a su total de ahora (`wallet_hold_adjust`, 0086), en
+   * todos sus niveles y con lo registrado, por la operación de servicios `operationId` (pendiente,
+   * de esa orden). La diferencia la decide la base desde la orden: quien llama sólo cambia el total.
+   * Todo o nada: un nivel que no cubre lo que se retiene lanza STW02 y no deja nada.
+   */
+  async adjust(
+    trx: Transaction<DB>,
+    orderId: string,
+    actorId: string,
+    operationId: string,
+  ): Promise<WalletHoldAdjusted> {
+    const { rows } = await trx.executeQuery<unknown>(
+      CompiledQuery.raw(
+        'SELECT outcome, delta_minor, levels FROM public.wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid)',
+        [orderId, actorId, operationId],
+      ),
+    );
+    const parsed = AdjustRowSchema.safeParse(rows[0]);
+    if (!parsed.success || rows.length !== 1) {
+      throw new WalletHoldContractError('wallet_hold_adjust');
+    }
+    return {
+      outcome: parsed.data.outcome,
+      deltaMinor: parsed.data.delta_minor,
+      levels: parsed.data.levels,
+    };
   }
 
   /**

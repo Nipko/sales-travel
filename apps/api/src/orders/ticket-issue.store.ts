@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { DB, OrderOperationStatus, OrderStatus } from '../database/database.types.js';
+import {
+  PROVIDER_WRITE_OPERATION_TYPES,
+  type DB,
+  type OrderOperationStatus,
+  type OrderStatus,
+} from '../database/database.types.js';
 import { uniqueViolationConstraint } from './order-create-intent.store.js';
+import { servicesOperationBlocks } from './order-services.plan.js';
 import type { OrderRow } from './orders.service.js';
 import {
   issueOperationPolicy,
@@ -40,13 +46,19 @@ export interface IssueOperationRecord {
  * - `already-pending`: hay una escritura pendiente en el proveedor (0083).
  * - `already-issued`: la última emisión salió bien.
  * - `previous-unverified`: la última quedó en duda; mientras no se concilie, no se reemite.
+ * - `services-pending`: hay un cambio de servicios adicionales en curso (SAB-20): se emitiría sin
+ *   saber qué EMD van.
+ * - `services-unverified`: el último cambio de servicios quedó en duda: el total y los EMD no se
+ *   saben hasta conciliarlo.
  */
 export type IssueClaimRefusal =
   | 'not-found'
   | 'not-confirmed'
   | 'already-pending'
   | 'already-issued'
-  | 'previous-unverified';
+  | 'previous-unverified'
+  | 'services-pending'
+  | 'services-unverified';
 
 export type IssueClaimOutcome =
   | { readonly claimed: true; readonly operationId: string }
@@ -148,6 +160,29 @@ export class TicketIssueStore {
           .executeTakeFirst();
         if (!order) return { claimed: false, refusal: 'not-found' };
         if (order.status !== 'confirmed') return { claimed: false, refusal: 'not-confirmed' };
+
+        // Otra escritura en el proveedor (servicios adicionales) en curso o en duda: el índice de
+        // 0083 la frenaría igual, pero con un mensaje que habla de emisiones.
+        const otherWrite = await trx
+          .selectFrom('order_operations')
+          .select('id')
+          .where('order_id', '=', orderId)
+          .where('status', '=', 'pending')
+          .where('type', 'in', [...PROVIDER_WRITE_OPERATION_TYPES])
+          .where('type', '<>', 'issue')
+          .executeTakeFirst();
+        if (otherWrite) return { claimed: false, refusal: 'services-pending' };
+        const services = await trx
+          .selectFrom('order_operations')
+          .select(['status', 'result'])
+          .where('order_id', '=', orderId)
+          .where('type', 'in', ['add-services', 'remove-services'])
+          .orderBy('created_at', 'desc')
+          .limit(1)
+          .executeTakeFirst();
+        if (services && servicesOperationBlocks(services.status, services.result)) {
+          return { claimed: false, refusal: 'services-unverified' };
+        }
 
         const latest = await trx
           .selectFrom('order_operations')

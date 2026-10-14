@@ -20,6 +20,8 @@ import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
 import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrderConfirmationService } from './order-confirmation.service.js';
+import { FlightServicesService } from './order-services.service.js';
+import { OrderServicesStore } from './order-services.store.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
@@ -89,6 +91,8 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     FlightTicketIssueService,
     FlightDeadlineAlertStore,
     FlightDeadlineAlertService,
+    OrderServicesStore,
+    FlightServicesService,
   ],
   exports: [
     OrdersService,
@@ -100,6 +104,7 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     BookingHoldLedger,
     FlightTicketIssueService,
     FlightDeadlineAlertService,
+    FlightServicesService,
   ],
 })
 export class OrdersModule {}

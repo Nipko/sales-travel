@@ -26,12 +26,16 @@ import { BookingHoldLedger, type OpenWalletHold } from '../portfolios/booking-ho
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
+  AddServicesSchema,
   CreateOrderSchema,
   IssueOrderSchema,
   PayOrderSchema,
+  RemoveServicesSchema,
   ReshopOrderSchema,
   isSameMinorAmount,
+  type AddServicesInput,
   type IssueOrderInput,
+  type RemoveServicesInput,
 } from './dto.js';
 import {
   FlightOrderTrackingStore,
@@ -45,6 +49,12 @@ import {
 import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrderConfirmationService, isTestContent } from './order-confirmation.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
+import { SERVICES_MESSAGES } from './order-services.plan.js';
+import {
+  FlightServicesService,
+  type ServicesAddReply,
+  type ServicesRemoveReply,
+} from './order-services.service.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import {
   TICKET_VOID_MESSAGES,
@@ -105,6 +115,8 @@ export class OrdersController {
      * cancelar o anular lo libera. Opcional por lo mismo: en la app siempre está.
      */
     @Optional() private readonly walletHolds?: BookingHoldLedger,
+    /** Maletas y servicios antes de emitir (SAB-20). Opcional por lo mismo: en la app siempre está. */
+    @Optional() private readonly services?: FlightServicesService,
   ) {}
 
   /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
@@ -448,6 +460,60 @@ export class OrdersController {
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupports(row, 'services');
     return this.orders.listServices(tenantId, row);
+  }
+
+  /**
+   * Agrega maletas y servicios a una reserva confirmada y sin emitir (SAB-20). Corre en el request:
+   * claim durable (0083), total y retención de cartera ajustados ANTES de llamar al proveedor, UNA
+   * llamada y el desenlace por línea. Lo agregado se emite como EMD junto con el tiquete, con la
+   * forma de pago de la cuenta (sin tarjeta).
+   *
+   * Es VENTA (`@SalesOperation`): compromete dinero, y el superadmin no vende. Lo pueden pedir los
+   * roles que venden, como emitir (SAB-FD-3 A).
+   */
+  @SalesOperation()
+  @Roles(...SELLING_ROLES)
+  @Post(':id/services/add')
+  @HttpCode(200)
+  async addServices(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddServicesSchema)) body: AddServicesInput,
+  ): Promise<ServicesAddReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(SERVICES_MESSAGES.notFound);
+    if (row.status !== 'confirmed') throw new ConflictException(SERVICES_MESSAGES.notConfirmed);
+    this.assertSupports(row, 'addServices');
+    if (this.services === undefined) {
+      throw new ServiceUnavailableException(SERVICES_MESSAGES.unavailable);
+    }
+    return this.services.requestAdd(tenantId, row, userId, body);
+  }
+
+  /**
+   * Quita servicios agregados mientras la reserva no se emita (SAB-20), y libera su parte de la
+   * retención de cartera. No es `@SalesOperation`: deshace lo vendido, como cancelar o anular.
+   */
+  @Roles(...SELLING_ROLES)
+  @Post(':id/services/remove')
+  @HttpCode(200)
+  async removeServices(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RemoveServicesSchema)) body: RemoveServicesInput,
+  ): Promise<ServicesRemoveReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(SERVICES_MESSAGES.notFound);
+    if (row.status !== 'confirmed') throw new ConflictException(SERVICES_MESSAGES.notConfirmed);
+    this.assertSupports(row, 'addServices');
+    if (this.services === undefined) {
+      throw new ServiceUnavailableException(SERVICES_MESSAGES.unavailable);
+    }
+    return this.services.requestRemove(tenantId, row, userId, body);
   }
 
   @SalesOperation()

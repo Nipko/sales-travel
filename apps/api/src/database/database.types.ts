@@ -873,6 +873,62 @@ export interface WalletHoldLevelsTable {
   updated_at: Generated<Timestamp>;
 }
 
+/**
+ * Un ajuste de una retención abierta (0086): lo que un nivel retuvo (`hold`) o liberó (`release`) por
+ * una operación de servicios adicionales de la orden, con su asiento. Lo escribe sólo
+ * `wallet_hold_adjust`; lo ve el dueño de la cartera.
+ */
+export interface WalletHoldAdjustmentsTable {
+  id: Generated<string>;
+  group_id: string;
+  order_id: string;
+  level_id: string;
+  depth: number;
+  tenant_id: string;
+  portfolio_id: string;
+  origin_tenant_id: string;
+  order_number: number | null;
+  currency: string;
+  operation_id: string;
+  direction: 'hold' | 'release';
+  /** Positivo; `direction` dice el sentido. */
+  amount_minor: number;
+  transaction_id: string;
+  created_by: string;
+  created_at: Generated<Timestamp>;
+}
+
+/**
+ * Estado de un servicio agregado a una orden (0086). `unverified` y `remove-unverified` se mandaron
+ * sin confirmación: siguen contando en el total y en la retención hasta que se concilien.
+ */
+export type OrderAncillaryLineStatus = 'active' | 'unverified' | 'removed' | 'remove-unverified';
+
+/** Un servicio adicional agregado a una orden de vuelo, para un pasajero (0086). Sin PII. */
+export interface OrderAncillaryLinesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  added_operation_id: string;
+  removed_operation_id: string | null;
+  service_offer_item_id: string;
+  passenger_index: number;
+  category: 'BAGGAGE' | 'MEAL' | 'LOUNGE' | 'PET' | 'FEE' | 'OTHER';
+  service_code: string;
+  airline_code: string;
+  name: string;
+  /** Los tramos que cubre, como los dio el catálogo. */
+  segments: ColumnType<unknown, string, string>;
+  /** Unidades menores de `currency`, sin markup (P-16). */
+  amount_minor: number;
+  currency: string;
+  provider_item_ids: string[];
+  provider_item_ids_shared: boolean;
+  status: OrderAncillaryLineStatus;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export type DepositReportStatus = 'pending' | 'approved' | 'rejected';
 
 /**
@@ -973,8 +1029,9 @@ export interface PackageItemsTable {
  * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
  * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
  *
- * `issue`, `modify` y `add-services` son escrituras en el proveedor de una orden de vuelo: como
- * máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083).
+ * `issue`, `modify`, `add-services` y `remove-services` son escrituras en el proveedor de una orden de
+ * vuelo: como máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083;
+ * `remove-services` desde 0086).
  */
 export type OrderOperationType =
   | 'cancel'
@@ -986,13 +1043,15 @@ export type OrderOperationType =
   | 'reconcile'
   | 'issue'
   | 'modify'
-  | 'add-services';
+  | 'add-services'
+  | 'remove-services';
 
 /** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
 export const PROVIDER_WRITE_OPERATION_TYPES = [
   'issue',
   'modify',
   'add-services',
+  'remove-services',
 ] as const satisfies readonly OrderOperationType[];
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
@@ -1207,6 +1266,8 @@ export interface DB {
   portfolio_deposit_reports: PortfolioDepositReportsTable;
   wallet_hold_groups: WalletHoldGroupsTable;
   wallet_hold_levels: WalletHoldLevelsTable;
+  wallet_hold_adjustments: WalletHoldAdjustmentsTable;
+  order_ancillary_lines: OrderAncillaryLinesTable;
   tenant_booking_permissions: TenantBookingPermissionsTable;
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;

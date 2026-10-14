@@ -41,6 +41,7 @@ import {
   type DeadlineAlertSweepReport,
 } from './flight-deadline-alert.service.js';
 import { FlightTicketIssueService, type TicketIssueSweepReport } from './ticket-issue.service.js';
+import { FlightServicesService, type ServicesSweepReport } from './order-services.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -102,6 +103,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   ticketIssues: TicketIssueSweepReport;
   /** Los avisos de plazo de emisión por vencer. */
   deadlineAlerts: DeadlineAlertSweepReport;
+  /** Los cambios de servicios adicionales que quedaron pendientes: a conciliación (SAB-20). */
+  serviceChanges: ServicesSweepReport;
 };
 
 @Injectable()
@@ -128,6 +131,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     @Optional() private readonly ticketIssues?: FlightTicketIssueService,
     /** El aviso de plazo de emisión por vencer (SAB-14). Opcional por lo mismo. */
     @Optional() private readonly deadlineAlerts?: FlightDeadlineAlertService,
+    /** Los cambios de servicios pendientes (SAB-20). Opcional para los dobles de las suites. */
+    @Optional() private readonly serviceChanges?: FlightServicesService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -202,6 +207,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       reconciliation: { ...report.reconciliation },
       ticketIssues: { ...report.ticketIssues },
       deadlineAlerts: { ...report.deadlineAlerts },
+      serviceChanges: { ...report.serviceChanges },
     });
     return report;
   }
@@ -289,6 +295,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       reconciliation: { accounts: 0, queued: 0, ran: 0, failed: 0 },
       ticketIssues: { examined: 0, abandoned: 0, reconciling: 0, skipped: 0 },
       deadlineAlerts: emptyDeadlineAlertReport(),
+      serviceChanges: { examined: 0, reconciling: 0, skipped: 0 },
     };
 
     for (const { id } of tenants) {
@@ -356,6 +363,20 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
           failed = true;
           this.logger.warn(
             `post_sale.sweep.ticket_issues.tenant_failed tenant=${id} error=${errorName(err)}`,
+          );
+        }
+      }
+      // Los cambios de servicios que quedaron pendientes (SAB-20): a conciliación, sin reenviar nada.
+      if (this.serviceChanges !== undefined) {
+        try {
+          const changes = await this.serviceChanges.sweepTenant(id, now);
+          for (const key of Object.keys(changes) as (keyof ServicesSweepReport)[]) {
+            report.serviceChanges[key] += changes[key];
+          }
+        } catch (err) {
+          failed = true;
+          this.logger.warn(
+            `post_sale.sweep.service_changes.tenant_failed tenant=${id} error=${errorName(err)}`,
           );
         }
       }

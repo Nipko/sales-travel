@@ -345,6 +345,8 @@ describe('runIssueById — write-ahead y una sola emisión', () => {
       operationId,
       outcome: 'ISSUED',
       documents: 2,
+      // Los EMD de los servicios adicionales (SAB-20) se cuentan aparte; aquí no hay.
+      emds: 0,
       formOfPaymentType: 'CASH',
       reconciled: false,
       testContent: false,
