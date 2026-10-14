@@ -111,6 +111,8 @@ const LABELS: Readonly<Record<string, string>> = {
   UserInvitationRejected: 'Invitación rechazada (ya no era válida)',
   // USR-17: una sesión de otra cuenta intentó aceptarla; quedó pendiente para su dueño.
   UserInvitationAccountMismatch: 'Invitación rechazada (otra cuenta intentó aceptarla)',
+  // USR-18: la persona cambió su propio nombre (Mi cuenta → Perfil).
+  UserProfileUpdated: 'Cambió su nombre',
   MembershipRoleChanged: 'Cambio de rol',
   MembershipRemoved: 'Quitado del nodo',
   'auth.mfa.reset_by_admin': '2FA restablecido por un administrador',
@@ -395,6 +397,14 @@ function asRole(value: unknown): string | null {
   return r === null ? null : `como ${r}`;
 }
 
+/** "de «Ana Ruiz» a «Ana María Ruiz»", o sólo el nuevo si antes no tenía. */
+function nameChange(p: Readonly<Record<string, unknown>>): string | null {
+  const before = text(record(p['before'])?.['name']);
+  const after = text(record(p['after'])?.['name']);
+  if (after === null) return null;
+  return before === null ? `«${after}»` : `de «${before}» a «${after}»`;
+}
+
 const ANNOUNCEMENT_SEVERITIES: Readonly<Record<string, string>> = {
   info: 'Informativo',
   warning: 'Advertencia',
@@ -555,6 +565,9 @@ export function eventDetail(
     }
     case 'UserStatusChanged':
       parts.push(target, sessionsClosed(p['revokedSessions']));
+      break;
+    case 'UserProfileUpdated':
+      parts.push(nameChange(p));
       break;
     case 'auth.sessions.revoked_by_admin':
       parts.push(target, sessionsClosed(p['revoked']));

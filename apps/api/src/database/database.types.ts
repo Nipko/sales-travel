@@ -145,6 +145,10 @@ export interface UsersTable {
   id: Generated<string>;
   email: string;
   password_hash: string | null;
+  /**
+   * 0069: con `app_user`, sólo lo cambia la cuenta de `app.current_user_id` (trigger
+   * `users_name_self_only`). La forma la valida PersonNameSchema en el borde (PATCH /me).
+   */
   name: string | null;
   status: Generated<UserStatus>;
   email_verified_at: Timestamp | null;

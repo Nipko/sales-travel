@@ -8,6 +8,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { MeController } from '../me/me.controller.js';
+import { ProfileService } from '../me/profile.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { SeatsFullError, TenantNotOperableError } from './auth-errors.js';
 import { AuthService, type AuthResult, type LoginResult } from './auth.service.js';
@@ -77,7 +78,7 @@ d('cambiar de agencia y agencia por defecto, contra Postgres como app_user', () 
     new LoginAttemptsService(database),
     {} as PasswordResetService,
   );
-  const me = new MeController(database);
+  const me = new MeController(database, new ProfileService(database, audit));
 
   const created: string[] = [];
   let passwordHash: string;

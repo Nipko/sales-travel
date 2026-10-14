@@ -793,6 +793,7 @@ POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
 POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
 POST   /auth/switch-tenant               -- { tenantId } reemplaza la sesión · 409 SEATS_FULL · 403 TENANT_SUSPENDED
 GET    /me/memberships                   -- agencias del usuario: logo, operable y motivo, isDefault (la del próximo login)
+PATCH  /me                              -- { name } tu nombre visible (USR-18): la cuenta de la sesión, nada más; 400 si trae otra clave
 GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
 POST   /auth/logout                      -- { reason?: 'idle' }
 GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all

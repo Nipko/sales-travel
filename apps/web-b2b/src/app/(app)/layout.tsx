@@ -15,6 +15,8 @@ import { MfaEnrollmentGate } from './configuracion/seguridad/_components/mfa-enr
 
 interface MeResponse {
   email?: string;
+  /** El nombre visible (Mi cuenta → Perfil). Se lee en cada render: un cambio se ve al instante. */
+  name?: string | null;
   emailVerified?: boolean;
 }
 
@@ -66,6 +68,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const userEmail = meRes.ok ? meRes.data.email : undefined;
+  const userName =
+    meRes.ok && typeof meRes.data.name === 'string' && meRes.data.name.trim() !== ''
+      ? meRes.data.name
+      : undefined;
 
   if (gate.kind === 'mfa-enrollment') {
     // Pantalla completa, sin sidebar ni topbar: el rol exige 2FA y el API rechaza todo lo demás
@@ -91,6 +97,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppShell
       userEmail={userEmail}
+      userName={userName}
       tenantName={activeTenant?.tenantName}
       tenantSlug={activeTenant?.tenantSlug}
       role={activeTenant?.role}

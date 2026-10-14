@@ -1,9 +1,13 @@
-import { Controller, Get, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Patch, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { sql } from 'kysely';
 import { AllowWithoutMfa } from '../auth/decorators/allow-without-mfa.decorator.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
+import { UpdateProfileSchema, type UpdateProfileDto } from './me.dto.js';
 import { toMembershipViews, type MembershipRow, type MembershipView } from './membership-view.js';
+import { ProfileService, type ProfileView } from './profile.service.js';
 
 interface MeView {
   id: string;
@@ -29,7 +33,10 @@ interface MembershipSqlRow {
 
 @Controller('me')
 export class MeController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly profile: ProfileService,
+  ) {}
 
   // Sin MFA todavía: el panel necesita saber quién es para mostrarle el enrolamiento obligatorio.
   @AllowWithoutMfa()
@@ -48,6 +55,22 @@ export class MeController {
       name: row.name,
       emailVerified: row.email_verified_at != null,
     };
+  }
+
+  /**
+   * Cambia el nombre de la propia cuenta (Mi cuenta → Perfil, USR-18). La cuenta es siempre la de
+   * la sesión: la ruta no lleva id y el cuerpo estricto sólo admite `name` (un `email` es 400). Con
+   * el 2FA obligatorio de siempre (no está entre las exentas) y un tope por IP: cada cambio deja un
+   * evento en el historial.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Patch()
+  async updateProfile(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(UpdateProfileSchema)) body: UpdateProfileDto,
+  ): Promise<ProfileView> {
+    if (!userId) throw new UnauthorizedException();
+    return this.profile.updateName(userId, body.name);
   }
 
   /**

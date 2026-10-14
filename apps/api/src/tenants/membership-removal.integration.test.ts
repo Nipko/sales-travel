@@ -13,6 +13,7 @@ import type { DB, Role, TenantType } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { MeController } from '../me/me.controller.js';
+import { ProfileService } from '../me/profile.service.js';
 import { NetworkService } from '../network/network.service.js';
 import type { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { requestContextStorage, type RequestContext } from '../request-context/request-context.js';
@@ -136,7 +137,7 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     audit,
     {} as ProviderEnablementStore,
   );
-  const me = new MeController(database);
+  const me = new MeController(database, new ProfileService(database, audit));
   const detail = new MemberDetailService(database, network, audit, asNotices);
   const support = new MemberSupportService(
     database,

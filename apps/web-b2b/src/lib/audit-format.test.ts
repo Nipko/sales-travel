@@ -30,6 +30,7 @@ describe('eventLabel', () => {
       UserInvitationAccepted: 'Invitación aceptada',
       UserInvitationRejected: 'Invitación rechazada (ya no era válida)',
       UserInvitationAccountMismatch: 'Invitación rechazada (otra cuenta intentó aceptarla)',
+      UserProfileUpdated: 'Cambió su nombre',
       MembershipRoleChanged: 'Cambio de rol',
       MembershipRemoved: 'Quitado del nodo',
       'auth.mfa.reset_by_admin': '2FA restablecido por un administrador',
@@ -161,6 +162,21 @@ describe('eventDetail', () => {
       'Al reconfirmar el 2FA · Cuenta bloqueada por intentos',
     );
     expect(eventDetail(entry('auth.mfa.reauth_failed', { action: 'otra' }))).toBe('');
+  });
+
+  it('cambio de nombre: de cuál a cuál, o sólo el nuevo si no tenía', () => {
+    const payload = (before: unknown, after: unknown) => ({
+      changed: ['name'],
+      before: { name: before },
+      after: { name: after },
+    });
+    expect(eventDetail(entry('UserProfileUpdated', payload('Ana Ruiz', 'Ana María Ruiz')))).toBe(
+      'de «Ana Ruiz» a «Ana María Ruiz»',
+    );
+    expect(eventDetail(entry('UserProfileUpdated', payload(null, 'Ana')))).toBe('«Ana»');
+    expect(eventDetail(entry('UserProfileUpdated', payload('Ana', null)))).toBe('');
+    expect(eventDetail(entry('UserProfileUpdated', { changed: ['name'] }))).toBe('');
+    expect(categoryOf('UserProfileUpdated')).toBe('users');
   });
 
   it('credenciales, precios y nodos', () => {

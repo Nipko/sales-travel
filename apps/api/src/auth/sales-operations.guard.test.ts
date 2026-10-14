@@ -131,7 +131,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /invitations/accept',
   ),
   ...noVenta(
-    'la cuenta propia: sesión, dispositivos, contraseña, MFA y aceptar una invitación con ella',
+    'la cuenta propia: sesión, dispositivos, contraseña, MFA, su nombre y aceptar una invitación con ella',
     'POST /auth/switch-tenant',
     'GET /auth/session',
     'POST /auth/logout',
@@ -150,6 +150,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/step-up',
     'POST /auth/resend-verification',
     'GET /me',
+    'PATCH /me',
     'GET /me/memberships',
     'POST /invitations/join',
   ),
