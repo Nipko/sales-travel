@@ -816,7 +816,9 @@ GET    /admin/users                      -- directorio (sólo superadmin): ?q&st
 GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
 GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
-POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
+POST   /invitations/accept               -- sólo cuenta nueva · 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera · 409 INVITATION_SIGN_IN_REQUIRED si el correo ya tiene cuenta (0068, doc 15)
+POST   /invitations/preview              -- público: { token } → { valid: true, tenantName, role, inviterName, expiresAt, existingAccount, viewer } o { valid: false } (0068, doc 15)
+POST   /invitations/join                 -- con sesión: { token } → acepta con la cuenta de la sesión · 403 INVITATION_ACCOUNT_MISMATCH · 409 ALREADY_MEMBER (0068, doc 15)
 POST   /invitations                      -- { id, expiresAt, emailSent } · 409 INVITATION_ALREADY_PENDING con details.invitationId (0066, doc 15)
 POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace nuevo y 7 días más
 POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING

@@ -1210,7 +1210,10 @@ correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre
   membership: nueva, o la quitada (USR-11) reactivada en la misma fila; vigente, 409
   `ALREADY_MEMBER`. Token vencido, revocado o usado: 400. `UserInvitationAccepted` suma
   `existingAccount: true`. El 2FA obligatorio del rol de la cuenta vale como en el resto de la API
-  (`MfaEnforcementGuard`): sin 2FA activo, 403 `MFA_ENROLLMENT_REQUIRED`.
+  (`MfaEnforcementGuard`): sin 2FA activo, 403 `MFA_ENROLLMENT_REQUIRED`. Un rol invitado que exige
+  2FA (p. ej. `tenant_admin`) no se le niega a quien todavía no lo tiene: como con una cuenta nueva,
+  se suma y desde el pedido siguiente el API le exige enrolarse (la sesión mira el rol de todas sus
+  memberships activas), y el panel le muestra el enrolamiento antes que cualquier pantalla.
 - El correo de la invitación dice "Acepta la invitación: si ya tienes cuenta, ingresas con tu
   contraseña de siempre; si no, eliges una."
 - `InvitationsService.accept` y `acceptSignedIn` comparten `redeem` (canje, revalidación, rastro de
@@ -1222,8 +1225,9 @@ correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre
 - `/invitacion` es un Server Component: valida la forma del token (`invitationTokenFrom`), pide la
   vista previa con la sesión si la hay y elige la pantalla (`invitation-view.ts`, sin I/O):
   - **inválida** (o enlace sin token): "Esta invitación ya no es válida. Pídele a quien te invitó que
-    te la reenvíe.", sin formulario. Sin servidor o con 429, un aviso con **Reintentar** (no dice que
-    la invitación no vale);
+    te la reenvíe.", sin formulario. Sin servidor, con 429 o con cualquier error que no sea un 400
+    (un 404 del API de antes, mientras se despliega), un aviso con **Reintentar** (no dice que la
+    invitación no vale);
   - **sin cuenta**: título "Te invitaron a {nodo} como {rol}", "Te invitó {nombre}. La invitación
     vence en N días." y el formulario de siempre (nombre, contraseña, repetirla) con **Crear cuenta y
     aceptar**. Si el navegador tiene abierta la sesión de otra cuenta, lo avisa, y al terminar ofrece
@@ -1269,7 +1273,10 @@ correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre
   existente (409, pendiente, contraseña intacta); aceptar con la sesión (membership, evento, token
   gastado); correo con otras mayúsculas; otra cuenta (403, pendiente, auditado, y la dueña acepta
   después); vencida, revocada o usada (400, sin membership); invitador sin respaldo (400 con rastro
-  y actor); y una membership quitada que vuelve en la misma fila.
+  y actor); una membership quitada que vuelve en la misma fila; y las carreras de verdad: dos
+  invitaciones al mismo correo aceptadas a la vez (una cuenta con la contraseña de quien ganó, la otra
+  409 y pendiente, que después se acepta con la sesión) y el mismo enlace aceptado dos veces a la vez
+  con la sesión (los dos esperan en la fila de la invitación: uno acepta, el otro 400).
 - `onboarding-invitation.integration.test.ts` y `membership-removal.integration.test.ts`: quien ya
   tenía cuenta acepta con `acceptSignedIn`; por el formulario de cuenta nueva, 409.
 - Web: `invitation-view.test.ts` (token, vista previa, qué pantalla, vuelta por el login que pasa
@@ -1282,6 +1289,8 @@ correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre
 - La migración va antes que la API (deploy.yml migra primero). La API vieja no usa la función.
 - API y panel juntos: con el panel viejo y la API nueva, quien ya tiene cuenta y llena el formulario
   ve el mensaje del 409 ("Ya tienes una cuenta…"); con el panel nuevo y la API vieja, la vista previa
-  responde 404 y la página dice que la invitación no es válida.
+  responde 404 y la página muestra "No pudimos conectar con el servidor" con **Reintentar**: sólo un
+  400 dice que la invitación no vale, para no hacer pedir un reenvío (que deja sin efecto el enlace)
+  por un despliegue a medias.
 - Si alguien con cuenta olvidó su contraseña, el login ofrece restablecerla; después tiene que volver
   a abrir el enlace de la invitación (el restablecimiento no conserva la vuelta).
