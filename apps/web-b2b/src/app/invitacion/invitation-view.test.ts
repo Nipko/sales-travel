@@ -170,6 +170,11 @@ describe('invitationViewFor: qué pantalla corresponde', () => {
       kind: 'unavailable',
       message: INVITATION_MESSAGES.unavailable,
     });
+    // El API de antes no tiene la vista previa (404) mientras se despliega: no es un enlace vencido.
+    expect(invitationViewFor(fail(404), TOKEN, NOW)).toEqual({
+      kind: 'unavailable',
+      message: INVITATION_MESSAGES.unavailable,
+    });
     expect(invitationViewFor(fail(429), TOKEN, NOW)).toEqual({
       kind: 'unavailable',
       message: INVITATION_MESSAGES.rateLimited,

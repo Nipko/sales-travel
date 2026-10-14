@@ -174,11 +174,11 @@ export function invitationViewFor(
     if (res.error.status === 429) {
       return { kind: 'unavailable', message: INVITATION_MESSAGES.rateLimited };
     }
-    if (res.error.status >= 500) {
-      return { kind: 'unavailable', message: INVITATION_MESSAGES.unavailable };
-    }
     // Un 400 es un token con una forma que el API no acepta: tampoco es una invitación válida.
-    return { kind: 'invalid' };
+    if (res.error.status === 400) return { kind: 'invalid' };
+    // Lo demás no dice nada de la invitación: un 5xx, o el 404 de un API anterior a la vista previa
+    // mientras se despliega. Decir que no vale haría pedir un reenvío, que deja sin efecto el enlace.
+    return { kind: 'unavailable', message: INVITATION_MESSAGES.unavailable };
   }
 
   const preview = parseInvitationPreview(res.data);
