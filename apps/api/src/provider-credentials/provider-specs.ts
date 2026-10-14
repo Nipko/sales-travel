@@ -104,10 +104,11 @@ const SABRE_CERT_HOST_FOR: Readonly<Record<'host' | 'soapHost', string>> = {
  * `environment` contra los hosts de una cuenta de Sabre (revisión de SAB-10).
  *
  * El factory ya no se fía de lo declarado: deriva el entorno de los hosts con `sabreHostEnvironment`
- * del ACL (`sabreEnvironmentOfHosts`), así que una cuenta marcada CERT con un host de producción se
- * trata como de producción y retiene cartera igual. Esto es la misma regla un paso antes: lo que el
- * factory leería distinto de lo declarado no se guarda, y el motivo lo dice. Un host vacío no se
- * mira: el factory pone el del entorno declarado, que siempre coincide.
+ * del ACL (`sabreEnvironmentOfHosts`), y una cuenta marcada CERT con un host que no es el de CERT no
+ * vende (ni como de pruebas, que no retendría cartera, ni como real, que le quitaría la marca de
+ * prueba). Esto es la misma regla un paso antes: lo que el factory leería distinto de lo declarado
+ * no se guarda, y el motivo lo dice. Un host vacío no se mira: el factory pone el del entorno
+ * declarado, que siempre coincide.
  *
  * - CERT (o sin entorno, que es CERT) sólo con los hosts de CERT: con uno de producción, o con uno que
  *   no es de Sabre, no se puede comprobar que la cuenta sea de pruebas.
@@ -136,12 +137,12 @@ function sabreAccountIssues(account: {
     if (declared === 'cert' && hostEnvironment === 'prod') {
       issues.push({
         path: ['config', key],
-        message: `\`${key}\` es un host de producción de Sabre y la cuenta declara \`environment: cert\`. Una cuenta de pruebas no retiene cartera, así que con ese host la plataforma la trataría como de producción igual: elige \`environment: prod\` o deja el host vacío para usar el de CERT.`,
+        message: `\`${key}\` es un host de producción de Sabre y la cuenta declara \`environment: cert\`. Una cuenta de pruebas no retiene cartera, así que con ese host la plataforma no vendería con ella: elige \`environment: prod\` o deja el host vacío para usar el de CERT.`,
       });
     } else if (declared === 'cert' && hostEnvironment !== 'cert') {
       issues.push({
         path: ['config', key],
-        message: `Con \`environment: cert\` el \`${key}\` sólo puede ser el de CERT de Sabre (${SABRE_CERT_HOST_FOR[key]}) o quedar vacío: con otro host no se puede comprobar que la cuenta sea de pruebas, y la plataforma la trataría como de producción.`,
+        message: `Con \`environment: cert\` el \`${key}\` sólo puede ser el de CERT de Sabre (${SABRE_CERT_HOST_FOR[key]}) o quedar vacío: con otro host no se puede comprobar que la cuenta sea de pruebas, y la plataforma no vendería con ella.`,
       });
     } else if (declared === 'prod' && hostEnvironment === 'cert') {
       issues.push({

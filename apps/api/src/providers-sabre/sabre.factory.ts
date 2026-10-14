@@ -69,6 +69,7 @@ import {
 import {
   CallPolicySchema,
   ProviderAccountIncompleteError,
+  ProviderAccountNotAllowedError,
   TicketVoidNotAvailableError,
   type CallPolicy,
   type CredentialSource,
@@ -95,6 +96,18 @@ export const SABRE_PROVIDER_CODE = 'sabre';
  * de una oficina con una configuración que nadie revisó.
  */
 const SABRE_DEFAULT_ENVIRONMENT: SabreEnvironment = 'cert';
+
+/** El entorno que la cuenta DECLARA: sólo `prod` explícito es producción; lo demás, CERT. */
+function declaredSabreEnvironment(config: Record<string, unknown>): SabreEnvironment {
+  return config['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
+}
+
+/**
+ * Lo que ve el vendedor cuando la cuenta se declara de pruebas y sus hosts no lo son. Sin hosts ni
+ * valores: el detalle de qué corregir está en el formulario de la cuenta.
+ */
+export const SABRE_ENVIRONMENT_MISMATCH_DETAIL =
+  'La cuenta de este proveedor está marcada de pruebas (CERT), pero sus hosts no son los de CERT. No se vende con ella hasta corregirla en Mi Red → Credenciales.';
 
 /**
  * Las palancas comerciales de BFM que una cuenta puede declarar en su `config`.
@@ -849,7 +862,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // heredable, o cuenta todavía en `status: 'sandbox'`— se propaga tal cual y el registry la
     // traduce a "proveedor no habilitado". Atraparla aquí para caer a env es exactamente lo
     // que este factory NO hace.
-    return this.adapterFor(await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE));
+    return this.adapterFor(await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE), 'sale');
   }
 
   /**
@@ -872,15 +885,22 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       // La bóveda ya exige el proveedor de la orden; esto cubre un cableado equivocado del registry.
       throw new NotFoundException('la cuenta de la orden no es de Sabre');
     }
-    return this.adapterFor(resolved);
+    return this.adapterFor(resolved, 'order');
   }
 
   /**
    * El adapter de UNA cuenta ya resuelta (la vigente del tenant o la de una orden), con lo que el
    * registry necesita saber de ella: origen, política, entorno y cuál es.
+   *
+   * `purpose` separa la venta (`resolveForTenant`) de la post-venta de una orden hecha
+   * (`resolveForOrder`): una cuenta que se contradice corta la venta, no lo ya vendido.
    */
-  private adapterFor(resolved: ResolvedProviderAccount): TenantAdapter<FlightProviderAdapter> {
+  private adapterFor(
+    resolved: ResolvedProviderAccount,
+    purpose: 'sale' | 'order',
+  ): TenantAdapter<FlightProviderAdapter> {
     const cfg = this.toConfig(resolved.credentials, resolved.config, resolved.ownerTenantId);
+    this.assertEnvironmentCoherent(resolved, cfg, purpose);
 
     // Puerta de credenciales, ANTES de construir nada. Hasta esta tanda esta comprobación
     // vivía después de instanciar el ACL y dejaba pasar un caso: la cuenta que declaraba
@@ -907,8 +927,8 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
     // De pruebas sólo lo que sale a CERT: `toConfig` deriva el entorno de los hosts, no de lo que la
     // cuenta declara. CERT cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la
-    // búsqueda las marca, la orden lo guarda y la reserva no retiene cartera. Un host de producción
-    // —o uno que no es de Sabre— es real, declare lo que declare la cuenta.
+    // búsqueda las marca, la orden lo guarda y la reserva no retiene cartera. Una cuenta que se
+    // declara CERT con hosts que no lo son no llega aquí para vender (`assertEnvironmentCoherent`).
     const providerEnvironment: ProviderEnvironment = cfg.environment === 'prod' ? 'live' : 'test';
     const account: Omit<TenantAdapter<FlightProviderAdapter>, 'adapter'> = {
       credentialSource,
@@ -930,6 +950,52 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     this.cache.set(key, adapter);
     this.evictStale(key);
     return { adapter, ...account };
+  }
+
+  /**
+   * Lo que la cuenta declara contra lo que dicen sus hosts (revisión de SAB-10).
+   *
+   * - Declara CERT y algún host no es de CERT (uno de producción de Sabre, uno que no es de Sabre o
+   *   un host de CERT que no reconocemos): para VENDER, la cuenta no se admite. Ni de pruebas —un
+   *   host de producción vendería sin retener cartera— ni de producción —una cuenta CERT legítima
+   *   con un host que no reconocemos perdería la marca de prueba, retendría cartera por reservas
+   *   que no se facturan y avisaría a pasajeros de un PNR falso—. El registry la deja fuera con
+   *   {@link SABRE_ENVIRONMENT_MISMATCH_DETAIL} y el log lo dice en `error`. La post-venta de lo
+   *   ya reservado sigue: cancelar o leer no depende del entorno, y la marca de prueba de cada
+   *   orden se guardó al crearla.
+   * - Declara producción y sus hosts son los de CERT: es de pruebas, que es lo que es (CERT no
+   *   emite ni factura). Se avisa y sigue.
+   *
+   * El borde de credenciales ya rechaza las dos combinaciones al guardar; esto cubre las cuentas
+   * guardadas antes. Sin hosts ni valores en el log: la cuenta, el dueño y los entornos bastan.
+   */
+  private assertEnvironmentCoherent(
+    resolved: ResolvedProviderAccount,
+    cfg: SabreConfig,
+    purpose: 'sale' | 'order',
+  ): void {
+    const declared = declaredSabreEnvironment(resolved.config);
+    if (cfg.environment === declared) return;
+    const where = `la cuenta de Sabre ${resolved.id} de ${resolved.ownerTenantId}`;
+    if (declared === 'prod') {
+      this.logger.warn(
+        `${where} declara 'prod' pero sus hosts son los de CERT: se trata como de pruebas`,
+      );
+      return;
+    }
+    if (purpose === 'order') {
+      this.logger.warn(
+        `${where} declara 'cert' pero sus hosts no son los de CERT: sólo post-venta de lo ya reservado; no vende hasta corregirla`,
+      );
+      return;
+    }
+    this.logger.error(
+      `${where} declara 'cert' pero sus hosts no son los de CERT: NO se vende con ella hasta corregir environment o los hosts`,
+    );
+    throw new ProviderAccountNotAllowedError(
+      SABRE_PROVIDER_CODE,
+      SABRE_ENVIRONMENT_MISMATCH_DETAIL,
+    );
   }
 
   /**
@@ -1143,21 +1209,14 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const maxConcurrentRequests = this.maxConcurrentRequests(config, ownerTenantId);
     const c = credentials;
     const g = config;
-    // Lo declarado sólo elige los hosts por defecto. El entorno es el de los hosts que quedan: una
-    // cuenta marcada CERT con el host de producción sobrescrito es de producción, y retiene cartera
-    // como cualquier venta real (revisión de SAB-10). `sabreEnvironmentOfHosts` es la misma regla con
-    // la que el borde de credenciales rechaza la combinación al guardar.
-    const declared = g['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
-    const hosts = SABRE_HOSTS[declared];
+    // Lo declarado sólo elige los hosts por defecto. El entorno de la config es el de los hosts que
+    // quedan (revisión de SAB-10): es lo que mira el arnés de certificación, y lo que se contradice
+    // con lo declarado lo decide `assertEnvironmentCoherent` antes de vender. `sabreEnvironmentOfHosts`
+    // es la misma regla con la que el borde de credenciales rechaza la combinación al guardar.
+    const hosts = SABRE_HOSTS[declaredSabreEnvironment(g)];
     const host = str(g['host']) ?? hosts.rest;
     const soapHost = str(g['soapHost']) ?? hosts.soap;
     const environment = sabreEnvironmentOfHosts([host, soapHost]);
-    if (environment !== declared) {
-      // Sin hosts ni valores en el mensaje: el dueño y los dos entornos bastan para encontrarla.
-      this.logger.warn(
-        `la cuenta de Sabre de ${ownerTenantId} declara '${declared}' pero sus hosts son de '${environment}': se trata como '${environment}'`,
-      );
-    }
 
     // `password` sólo se lee del blob CIFRADO. Aceptarlo también desde `config` —como sí se
     // hace con `epr` y `homePcc`, que no son secretos— abriría una puerta para guardar la

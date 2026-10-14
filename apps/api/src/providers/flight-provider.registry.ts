@@ -9,6 +9,7 @@ import {
   FLIGHT_PROVIDER_FLAGS,
   PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
+  ProviderAccountNotAllowedError,
   ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
   ProviderOrderAccountUnavailableError,
@@ -360,6 +361,14 @@ export class FlightProviderRegistry {
             reason: 'incomplete-account',
             detail: `Faltan datos en la cuenta de este proveedor (${err.missingFields.join(', ')}). Complétala en Mi Red → Credenciales.`,
           },
+        };
+      }
+      // Hay cuenta, pero el factory no vende con ella: la acción la dice el propio factory. Sin
+      // esto caía en "no tiene credenciales", que manda a cargar una cuenta que ya está cargada.
+      if (err instanceof ProviderAccountNotAllowedError) {
+        return {
+          ok: false,
+          absence: { code: factory.code, reason: 'no-credentials', detail: err.detail },
         };
       }
       // Sin cuenta resoluble y sin fallback: el proveedor no está habilitado para el tenant.

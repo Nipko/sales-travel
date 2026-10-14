@@ -1084,10 +1084,34 @@ cada `fetchToken()`.
 
 **El entorno lo dicen los hosts, no `environment` (revisión de SAB-10).** Los hosts se pueden sobrescribir aparte
 (`host`, `soapHost`), así que lo declarado ya no decide si la cuenta es de pruebas: el factory la trata como CERT
-sólo si sus dos hosts son los de CERT, y como producción en cualquier otro caso (un host de producción de Sabre o uno
-que no es de Sabre), con la retención de cartera de una venta real. `POST /provider-accounts` rechaza con 400 lo que
-se contradice: CERT con un host que no es el de CERT, producción apuntando a CERT, o un `environment` que no es
-`cert` ni `prod`.
+sólo si sus dos hosts son los de CERT, y como producción si declara `prod` (con sus hosts o con uno propio), con la
+retención de cartera de una venta real. Una cuenta que **declara CERT** (o no declara nada) **con un host que no es
+el de CERT** —uno de producción de Sabre, uno que no es de Sabre o un host de CERT que no está en `SABRE_HOSTS`, como
+`api-crt.cert.havail.sabre.com`— **no vende**: tratarla de pruebas dejaría vender sin retener cartera, y tratarla de
+producción le quitaría la marca de prueba a reservas de CERT, les retendría cartera y avisaría a sus pasajeros. El
+registry la deja fuera de la búsqueda con el motivo («marcada de pruebas… corrígela») y el log lo dice en `error`; la
+post-venta de lo que ya reservó sigue, porque la marca de prueba de cada orden se guardó al crearla
+(`selected_offer.provider.environment`). Declarar `prod` con los hosts de CERT se trata como de pruebas y se avisa.
+`POST /provider-accounts` rechaza con 400 lo que se contradice: CERT con un host que no es el de CERT, producción
+apuntando a CERT, o un `environment` que no es `cert` ni `prod`.
+
+**Antes de desplegar este cambio en producción**, comprobar que ninguna cuenta de Sabre se contradice (sólo lee
+`config`, que no es secreto):
+
+```bash
+cd /opt/sales-travel && docker compose --env-file .env exec -T postgres psql -U postgres -d sales_travel -c "
+  SELECT id, tenant_id, status, config->>'environment' AS environment,
+         config->>'host' AS host, config->>'soapHost' AS soap_host
+  FROM provider_accounts WHERE provider_code = 'sabre'
+    AND coalesce(config->>'environment', '') <> 'prod'
+    AND (coalesce(config->>'host', '') NOT IN ('', 'https://api.cert.platform.sabre.com')
+      OR coalesce(config->>'soapHost', '') NOT IN ('', 'https://webservices.cert.platform.sabre.com'));"
+```
+
+Cero filas: la cuenta CERT sigue vendiendo como hoy, de pruebas. Cada fila hay que mirarla (la consulta es más
+estricta que el factory: una barra final o `http://` al host de CERT también salen): si su host no es el de CERT, la
+cuenta deja de vender al desplegar. Se corrige vaciando `host`/`soapHost` (con reservas activas el formulario no deja
+cambiarlos: cancelarlas antes) o, si es de producción de verdad, declarando `environment: prod`.
 
 **Con reservas activas, la oficina y el entorno de la cuenta no se cambian.** Cada orden de Sabre guarda la cuenta
 de la bóveda con que se reservó y su post-venta sale con ella (RF-29). Un PNR vive en su PCC y en su sistema: con

@@ -5,6 +5,7 @@ import { FlightProviderRegistry } from './flight-provider.registry.js';
 import {
   PLATFORM_DISABLED_TEXT,
   ProviderAccountIncompleteError,
+  ProviderAccountNotAllowedError,
   ProviderDisabledByPlatformError,
   ProviderNotAvailableError,
   ProviderOrderAccountUnavailableError,
@@ -696,6 +697,28 @@ describe('FlightProviderRegistry', () => {
       expect(unavailable[0]?.reason).toBe('incomplete-account');
       expect(unavailable[0]?.detail).toBe(
         'Faltan datos en la cuenta de este proveedor (apiKey). Complétala en Mi Red → Credenciales.',
+      );
+    });
+
+    it('una cuenta que el factory NO ADMITE sale con el motivo del factory, y no se vende', async () => {
+      // "Carga tus credenciales" mandaría al vendedor a cargar una cuenta que ya está cargada: la
+      // acción la dice el factory (p. ej., la cuenta se contradice y hay que corregirla).
+      const detalle = 'Esta cuenta no se admite: corrígela en Mi Red → Credenciales.';
+      const r = registry([
+        new StubProviderFactory({
+          code: 'alfa-air',
+          failResolveWith: new ProviderAccountNotAllowedError('alfa-air', detalle),
+        }),
+      ]);
+
+      const { active, unavailable } = await r.forTenant(TENANT);
+
+      expect(active).toEqual([]);
+      expect(unavailable).toEqual([
+        { code: 'alfa-air', reason: 'no-credentials', detail: detalle },
+      ]);
+      await expect(r.byCodeForOffer(TENANT, 'alfa-air')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
       );
     });
 
