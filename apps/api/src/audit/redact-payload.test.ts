@@ -61,6 +61,43 @@ describe('redactPayload', () => {
     }
   });
 
+  it('ni el id de una sesión, ni claves privadas, cookies, códigos de recuperación u OTP', () => {
+    for (const key of [
+      'sessionId',
+      'session_id',
+      'replacedSessionIds',
+      'privateKey',
+      'private_key',
+      'cookie',
+      'setCookie',
+      'recoveryCodes',
+      'recovery_code',
+      'otp',
+      'totp',
+      'otpauthUrl',
+      'mfa_otp',
+    ]) {
+      expect(isSensitiveKey(key), key).toBe(true);
+    }
+    // Conteos y marcas que sí sirven para investigar.
+    for (const key of ['revokedSessions', 'sessionsRefreshed', 'footprint', 'credentialSource']) {
+      expect(isSensitiveKey(key), key).toBe(false);
+    }
+    // auth.sessions.revoked_by_tenant_move: quién perdió la sesión queda, el id de la sesión no.
+    expect(
+      redactPayload({
+        toParentId: 'p',
+        sessions: [{ sessionId: 's-1', userId: 'u-1', tenantId: 't-1' }],
+        replacedSessionIds: ['s-2'],
+        revokedSessions: 2,
+      }),
+    ).toEqual({
+      toParentId: 'p',
+      sessions: [{ userId: 'u-1', tenantId: 't-1' }],
+      revokedSessions: 2,
+    });
+  });
+
   it('no toca el original', () => {
     const payload = { token: 't', keep: { secret: 's' } };
     redactPayload(payload);

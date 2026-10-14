@@ -79,6 +79,13 @@ const SCANNED = [
   'components/layout/announcement-banner.tsx',
   'lib/announcements.ts',
   'lib/announcements-client.ts',
+  // Plataforma → Actividad: los eventos de toda la plataforma, su detalle y la exportación.
+  'app/(app)/admin/plataforma/actividad',
+  'app/api/admin/audit',
+  'lib/platform-audit.ts',
+  'lib/platform-audit-client.ts',
+  'lib/platform-audit-proxy.ts',
+  'lib/audit-format.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */

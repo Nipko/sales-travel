@@ -282,3 +282,64 @@ export async function apiWithStatus(path: string, init: RequestInit = {}): Promi
   }
   return read;
 }
+
+/** Un archivo que devolvió el API (un CSV), con las cabeceras que el panel reenvía. */
+export interface ApiFile {
+  readonly kind: 'file';
+  readonly status: number;
+  /** Los bytes tal cual: leerlo como texto le quitaría el BOM a un CSV. */
+  readonly body: ArrayBuffer;
+  readonly contentType: string;
+  /** Las cabeceras pedidas en `expose`, si vinieron. */
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+/**
+ * Como {@link apiWithStatus}, para una descarga: si el API responde bien con un `Content-Type` de
+ * `accept`, devuelve los bytes y las cabeceras de `expose` (siempre `content-disposition`); si no,
+ * lo de siempre (el error en JSON, con su `reason`). Nunca registra el cuerpo.
+ */
+export async function apiDownload(
+  path: string,
+  accept: readonly string[],
+  expose: readonly string[] = [],
+): Promise<ApiFile | ApiResponse> {
+  const headers = await buildHeaders(path, {});
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, { headers, cache: 'no-store' });
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'UnknownError';
+    console.error(`[API FETCH CONNECTION ERROR] PATH: ${loggablePath(path)}, ERROR: ${name}`);
+    return {
+      kind: 'unreachable',
+      status: SERVICIO_NO_DISPONIBLE,
+      message: 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
+    };
+  }
+
+  const contentType = res.headers.get('content-type') ?? '';
+  if (res.ok && accept.some((type) => contentType.toLowerCase().startsWith(type))) {
+    const out: Record<string, string> = {};
+    for (const name of ['content-disposition', ...expose]) {
+      const value = res.headers.get(name);
+      if (value !== null) out[name] = value;
+    }
+    return {
+      kind: 'file',
+      status: estadoHttpValido(res.status),
+      body: await res.arrayBuffer(),
+      contentType,
+      headers: out,
+    };
+  }
+
+  const read = await readApiResponse(res);
+  if (read.kind === 'not-json') {
+    console.error(
+      `[API FETCH ERROR] PATH: ${loggablePath(path)}, STATUS: ${res.status}, BODY: no JSON`,
+    );
+  }
+  return read;
+}

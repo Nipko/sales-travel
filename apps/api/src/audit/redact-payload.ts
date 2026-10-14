@@ -8,24 +8,36 @@
  * plataforma. Sin I/O.
  */
 
-/** Por subcadena: `refreshToken`, `client_secret`, `x-api-key`, `cardBrand`, `passwordHash`. */
-const SENSITIVE_KEY = /(secret|password|passwd|token|api[_-]?key|authori[sz]ation|cvv|cvc|card)/i;
+/**
+ * Por subcadena: `refreshToken`, `client_secret`, `x-api-key`, `cardBrand`, `passwordHash`,
+ * `privateKey`, `setCookie`, `recoveryCodes`, `otpauthUrl`.
+ */
+const SENSITIVE_KEY =
+  /(secret|password|passwd|token|api[_-]?key|private[_-]?key|authori[sz]ation|cvv|cvc|card|cookie|recovery[_-]?codes?|otpauth)/i;
 
 /**
- * `pan` sólo como palabra (`pan`, `pan_number`, `cardPan`): como subcadena se llevaría `company` o
- * `expand`.
+ * El id de una sesión (`sessionId`, `replacedSessionIds`): como en `meta`, no sale de la base. Los
+ * conteos (`revokedSessions`) sí.
  */
-function hasPanWord(key: string): boolean {
+const SESSION_ID_KEY = /session[_-]?ids?$/i;
+
+/**
+ * Las que sólo cuentan como palabra (`pan`, `pan_number`, `cardPan`, `otp`, `mfa_otp`, `totp`): como
+ * subcadena se llevarían `company`, `expand` o `footprint`.
+ */
+const SENSITIVE_WORDS: ReadonlySet<string> = new Set(['pan', 'otp', 'totp']);
+
+function hasSensitiveWord(key: string): boolean {
   return key
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .includes('pan');
+    .some((word) => SENSITIVE_WORDS.has(word));
 }
 
 /** ¿La clave nombra algo que no se muestra? */
 export function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEY.test(key) || hasPanWord(key);
+  return SENSITIVE_KEY.test(key) || SESSION_ID_KEY.test(key) || hasSensitiveWord(key);
 }
 
 /** Más hondo que esto un payload de auditoría no tiene nada legítimo: se corta. */

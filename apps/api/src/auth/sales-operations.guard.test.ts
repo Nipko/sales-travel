@@ -340,6 +340,11 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/system/jobs',
   ),
   ...noVenta(
+    'Actividad de la plataforma: quién hizo qué en toda la red, y su exportación auditada (sólo lectura)',
+    'GET /admin/audit',
+    'GET /admin/audit/export',
+  ),
+  ...noVenta(
     'Sistema › Anuncios: los avisos de texto que el superadmin publica para la red, y la franja que los muestra',
     'GET /announcements/active',
     'GET /admin/announcements',

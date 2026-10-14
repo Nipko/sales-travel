@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   Car,
   FileText,
+  History,
   Home,
   Hotel,
   KeyRound,
@@ -69,7 +70,7 @@ export const accountNav: NavItem[] = [
 
 /**
  * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
- * se sumen (Actividad) se agregan a este mismo arreglo.
+ * se sumen se agregan a este mismo arreglo.
  */
 export const superAdminNav: NavItem[] = [
   { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
@@ -86,6 +87,8 @@ export const superAdminNav: NavItem[] = [
   // la de las credenciales de la agencia (adminNav).
   { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
   { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
+  // Quién hizo qué, dónde y cuándo, en toda la plataforma.
+  { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },
   // Lo que corre solo: el barrido de post-venta, la conciliación y los catálogos.
   { label: 'Sistema', href: '/admin/plataforma/sistema', icon: Settings2 },
 ];

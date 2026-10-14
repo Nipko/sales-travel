@@ -1,4 +1,5 @@
 import { roleLabel } from '../app/(app)/admin/usuarios/_components/roles';
+import { providerMetaFor } from './provider-display';
 
 /**
  * Cómo se lee el audit log en el panel: la Actividad de la red (Mi Red) y el historial de una persona
@@ -137,6 +138,151 @@ const LABELS: Readonly<Record<string, string>> = {
   MarkupRuleDeleted: 'Regla de markup eliminada',
 };
 
+/**
+ * Accesos y sesiones que la plataforma también registra (Plataforma → Actividad, chip Accesos).
+ * Van aparte de LABELS para que cada frente sume las suyas sin pisarse; si un tipo está en las dos,
+ * manda LABELS.
+ */
+const ACCESS_LABELS: Readonly<Record<string, string>> = {
+  'auth.register': 'Se registró',
+  'auth.email_verified': 'Verificó su correo',
+  'auth.logout': 'Cerró sesión',
+  'auth.logout_all': 'Cerró todas sus sesiones',
+  'auth.switch_tenant': 'Cambió de agencia',
+  'auth.session.revoked': 'Cerró una de sus sesiones',
+  'auth.session.replaced': 'Sesión reemplazada por un ingreso nuevo',
+  'auth.session.idle_timeout': 'Sesión cerrada por inactividad',
+  'auth.seat.denied': 'Ingreso frenado: sin puestos libres',
+  'auth.seat.released_at_login': 'Liberó un puesto al ingresar',
+  'auth.sessions.revoked_by_tenant_move': 'Sesiones cerradas al mover su nodo',
+  'auth.mfa.challenged': 'Se le pidió el código del 2FA',
+  'auth.mfa.failed': 'Código del 2FA incorrecto',
+  'auth.mfa.enrollment_started': 'Empezó a activar el 2FA',
+  'auth.mfa.recovery_regenerated': 'Generó códigos de recuperación nuevos',
+  'auth.mfa.recovery_code_used': 'Usó un código de recuperación',
+  'auth.mfa.reauth_failed': 'Falló al reconfirmar su 2FA',
+  'auth.password_reset.email_failed': 'No se pudo enviar el correo para restablecer la contraseña',
+  UserInvitationEmailFailed: 'No se pudo enviar la invitación por correo',
+};
+
+/**
+ * Lo que pasa en la operación (Plataforma → Actividad): reservas, carteras, nodos, proveedores, la
+ * consola de la plataforma y lo que corre solo. Los de una reserva son también los de la Actividad de
+ * su ficha (Reservas de la red).
+ */
+const OPERATION_LABELS: Readonly<Record<string, string>> = {
+  // Una reserva (ORDER_EVENTS y HOTEL_EVENTS del API).
+  OrderCreateRequested: 'Se pidió la reserva al proveedor',
+  OrderCreated: 'Respondió el proveedor',
+  OrderCreateFailed: 'Falló el pedido al proveedor',
+  OrderCreationVerified: 'Reserva verificada con el proveedor',
+  OrderCompensationScheduled: 'Se programó una compensación',
+  OrderEscalated: 'Pasó a revisión de una persona',
+  OrderCancellationAttempted: 'Se intentó cancelar',
+  OrderTicketIssueRequested: 'Se pidió emitir los tiquetes',
+  OrderTicketed: 'Tiquetes emitidos',
+  OrderTicketIssueFailed: 'La emisión de tiquetes no terminó',
+  OrderTicketsVoided: 'Tiquetes anulados',
+  OrderProviderStatusChanged: 'Cambió el estado en el proveedor',
+  OrderFlightDocumentsChanged: 'Cambiaron los documentos del vuelo',
+  OrderReconciliationDiscrepancy: 'Diferencia en la conciliación',
+  HotelConfirmationNumberReceived: 'Llegó la confirmación del hotel (HCN)',
+  HotelConfirmationNumberMissing: 'Sin confirmación del hotel (HCN)',
+  HotelOfferRepriced: 'El proveedor cambió el precio',
+  HotelNonRefundableAcknowledged: 'Se aceptó la tarifa no reembolsable',
+  CarReservationCreated: 'Reserva de auto creada',
+  'platform.order.viewed': 'El superadmin abrió la reserva',
+  // Los proveedores.
+  ProviderBookingUnmatched: 'Reserva del proveedor sin orden',
+  ProviderAccountIssueDetected: 'Problema con la cuenta del proveedor',
+  ProviderReconciliationRequested: 'Se pidió conciliar con el proveedor',
+  ProviderPayloadsExported: 'Se leyeron los mensajes con el proveedor',
+  ProviderPayloadsPurged: 'Se borraron los mensajes vencidos con el proveedor',
+  'platform.provider_enablement.updated': 'Cambió la habilitación de un proveedor',
+  'platform.provider_kill_switch.set': 'Apagado de emergencia de un proveedor',
+  'platform.provider_kill_switch.cleared': 'Se levantó el apagado de un proveedor',
+  'platform.provider_circuit.reset': 'Se reabrió el circuito de un proveedor',
+  'tenant.provider_disclosure.updated': 'Cambió qué proveedores se muestran',
+  // Las carteras.
+  'portfolio.created': 'Cartera habilitada',
+  'portfolio.credit_limit.changed': 'Cupo de crédito cambiado',
+  'portfolio.status.changed': 'Estado de la cartera cambiado',
+  'portfolio.deposit.recorded': 'Depósito registrado',
+  'portfolio.adjustment.recorded': 'Ajuste registrado',
+  'portfolio.deposit_report.submitted': 'La agencia informó un depósito',
+  'portfolio.deposit_report.approved': 'Depósito informado aprobado',
+  'portfolio.deposit_report.rejected': 'Depósito informado rechazado',
+  'portfolio.hold.retained': 'Se retuvo cupo por una reserva',
+  'portfolio.hold.captured': 'Retención cobrada',
+  'portfolio.hold.released': 'Retención liberada',
+  'portfolio.hold.uncaptured': 'Se deshizo el cobro de una retención',
+  'portfolio.hold.conflict': 'Retención en conflicto',
+  'portfolio.hold.exempted': 'Reserva sin retención (credenciales propias)',
+  'portfolio.network_hold.blocked': 'Venta frenada por falta de cupo en la red',
+  'portfolio.network_hold.would_block': 'La venta se habría frenado por cupo (modo observar)',
+  'portfolios.network_hold.report_failed': 'No se pudo revisar el cupo de la red',
+  'wallet_hold.policy_changed': 'Cambió el modo de la retención en cascada',
+  // Los nodos.
+  'tenant.updated': 'Nodo actualizado',
+  'tenant.moved': 'Nodo movido en la red',
+  'tenant.type.changed': 'Cambió el tipo del nodo',
+  'tenant.seats.updated': 'Puestos del nodo cambiados',
+  'tenant.config.updated': 'Configuración del nodo cambiada',
+  'tenant.branding.updated': 'Marca del nodo cambiada',
+  'tenant.brand_asset.uploaded': 'Imagen de marca subida',
+  'booking.permissions.non_refundable_rates.changed':
+    'Cambió el permiso de tarifas no reembolsables',
+  'mail.test': 'Correo de prueba enviado',
+  // La consola de la plataforma y lo que corre solo.
+  'platform.announcement.published': 'Anuncio publicado',
+  'platform.announcement.updated': 'Anuncio corregido',
+  'platform.announcement.archived': 'Anuncio archivado',
+  'platform.audit.exported': 'Exportó la actividad de la plataforma',
+  'platform.orders.exported': 'Exportó las reservas de la red',
+  'system.post_sale_sweep.completed': 'Barrido de post-venta',
+  'system.post_sale_sweep.failed': 'El barrido de post-venta falló',
+};
+
+export type AdminOrderActionKind = 'send-confirmation' | 'retrieve' | 'retry-cancel' | 'cancel';
+
+/** Las acciones de post-venta del superadmin sobre una reserva (`platform.order.action`). */
+export const ADMIN_ORDER_ACTION_LABELS: Readonly<
+  Record<AdminOrderActionKind, { readonly ok: string; readonly failed: string }>
+> = {
+  'send-confirmation': {
+    ok: 'El superadmin reenvió la confirmación',
+    failed: 'El superadmin intentó reenviar la confirmación',
+  },
+  retrieve: {
+    ok: 'El superadmin consultó el estado al proveedor',
+    failed: 'El superadmin intentó consultar el estado al proveedor',
+  },
+  'retry-cancel': {
+    ok: 'El superadmin reintentó la cancelación',
+    failed: 'El superadmin intentó reintentar la cancelación',
+  },
+  cancel: {
+    ok: 'El superadmin canceló la reserva',
+    failed: 'El superadmin intentó cancelar la reserva',
+  },
+};
+
+function isAdminOrderAction(value: unknown): value is AdminOrderActionKind {
+  return typeof value === 'string' && Object.hasOwn(ADMIN_ORDER_ACTION_LABELS, value);
+}
+
+function adminOrderActionLabel(payload: Readonly<Record<string, unknown>>): string {
+  const action = payload['action'];
+  if (!isAdminOrderAction(action)) return 'Acción del superadmin sobre la reserva';
+  const labels = ADMIN_ORDER_ACTION_LABELS[action];
+  return payload['outcome'] === 'ok' ? labels.ok : labels.failed;
+}
+
+/** El estado al que quedó un nodo en `tenant.updated` (`payload.after.status`), si cambió. */
+function tenantStatusAfter(payload: Readonly<Record<string, unknown>>): string | null {
+  return text(record(payload['after'])?.['status']);
+}
+
 export interface EventLabel {
   readonly text: string;
   /** No hay etiqueta para ese tipo: `text` es el código crudo y se muestra en monoespaciada. */
@@ -161,7 +307,15 @@ export function eventLabel(
       raw: false,
     };
   }
-  const label = LABELS[eventType];
+  if (eventType === 'tenant.updated') {
+    const status = tenantStatusAfter(payload);
+    if (status === 'suspended') return { text: 'Nodo suspendido', raw: false };
+    if (status === 'active') return { text: 'Nodo reactivado', raw: false };
+  }
+  if (eventType === 'platform.order.action') {
+    return { text: adminOrderActionLabel(payload), raw: false };
+  }
+  const label = LABELS[eventType] ?? ACCESS_LABELS[eventType] ?? OPERATION_LABELS[eventType];
   return label === undefined ? { text: eventType, raw: true } : { text: label, raw: false };
 }
 
@@ -237,6 +391,112 @@ function role(value: unknown): string | null {
 function asRole(value: unknown): string | null {
   const r = role(value);
   return r === null ? null : `como ${r}`;
+}
+
+const ANNOUNCEMENT_SEVERITIES: Readonly<Record<string, string>> = {
+  info: 'Informativo',
+  warning: 'Advertencia',
+  critical: 'Crítico',
+};
+
+const HOLD_MODES: Readonly<Record<string, string>> = {
+  off: 'apagada',
+  observe: 'observar',
+  enforce: 'aplicar',
+};
+
+function reasonText(value: unknown): string | null {
+  const reason = text(value);
+  return reason === null ? null : `Motivo: ${reason}`;
+}
+
+function provider(value: unknown): string | null {
+  const code = text(value);
+  return code === null ? null : providerMetaFor(code).name;
+}
+
+function currencyCode(value: unknown): string | null {
+  const code = text(value);
+  return code !== null && /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? `1 ${one}` : `${n.toLocaleString('es-CO')} ${many}`;
+}
+
+/**
+ * El detalle de los eventos de la operación (OPERATION_LABELS) que dicen algo más que a quién.
+ * `null` si no: el detalle de siempre (a quién). Nunca ids: códigos legibles, monedas, conteos y el
+ * motivo escrito.
+ */
+function operationDetail(
+  eventType: string,
+  p: Readonly<Record<string, unknown>>,
+): (string | null)[] | null {
+  if (eventType.startsWith('portfolio.')) return [currencyCode(p['currency'])];
+  if (eventType.startsWith('platform.announcement.')) {
+    const severity = text(p['severity']);
+    const audience = record(p['audience']);
+    return [
+      severity === null ? null : (ANNOUNCEMENT_SEVERITIES[severity] ?? null),
+      audience?.['adminsOnly'] === true ? 'sólo administradores' : null,
+    ];
+  }
+  switch (eventType) {
+    case 'platform.order.action':
+      return [reasonText(p['reason'])];
+    case 'tenant.updated':
+      return [reasonText(p['reason'])];
+    case 'wallet_hold.policy_changed': {
+      const from = text(p['previousMode']);
+      const to = text(p['mode']);
+      return [
+        from !== null && to !== null
+          ? `de ${HOLD_MODES[from] ?? from} a ${HOLD_MODES[to] ?? to}`
+          : null,
+      ];
+    }
+    case 'platform.provider_enablement.updated':
+      return [
+        provider(p['providerCode']),
+        p['scope'] === 'global'
+          ? 'para toda la red'
+          : p['scope'] === 'tenant'
+            ? 'para un nodo'
+            : null,
+      ];
+    case 'platform.provider_kill_switch.set':
+      return [provider(p['providerCode']), reasonText(p['reason'])];
+    case 'platform.provider_kill_switch.cleared':
+    case 'platform.provider_circuit.reset':
+    case 'tenant.provider_disclosure.updated':
+      return [provider(p['providerCode'] ?? p['provider'])];
+    case 'ProviderAccountIssueDetected':
+      return [provider(p['providerCode'] ?? p['provider'])];
+    case 'platform.audit.exported':
+    case 'platform.orders.exported': {
+      const rows = count(p['rows']);
+      return [
+        rows === null
+          ? null
+          : plural(rows, 'fila', 'filas') + (p['truncated'] === true ? ' (hasta el tope)' : ''),
+      ];
+    }
+    case 'system.post_sale_sweep.completed': {
+      const tenants = count(p['tenants']);
+      const failed = count(p['tenantsFailed']);
+      return [
+        tenants === null ? null : plural(tenants, 'nodo revisado', 'nodos revisados'),
+        failed === null || failed === 0
+          ? null
+          : plural(failed, 'nodo con error', 'nodos con error'),
+      ];
+    }
+    case 'system.post_sale_sweep.failed':
+      return [text(p['errorClass'])];
+    default:
+      return null;
+  }
 }
 
 /**
@@ -328,7 +588,7 @@ export function eventDetail(
       parts.push(text(p['slug']));
       break;
     default:
-      parts.push(target);
+      parts.push(...(operationDetail(entry.eventType, p) ?? [target]));
   }
   return parts.filter((part): part is string => part !== null).join(' · ');
 }

@@ -252,6 +252,13 @@ describe('OrderDetailContent', () => {
     ]);
   });
 
+  it('la Actividad enlaza a la de toda la plataforma, filtrada por la reserva', () => {
+    expect(t).toContain('Ver toda la actividad de la reserva');
+    expect(html).toContain(
+      `href="/admin/plataforma/actividad?desde=2026-10-10&amp;hasta=2026-10-13&amp;entidad=order&amp;id=${ORDER_1}"`,
+    );
+  });
+
   it('estado: plataforma y proveedor por separado, y el desacuerdo a la vista', () => {
     expect(t).toContain('En la plataforma Confirmada');
     expect(t).toContain('En el proveedor Cancelada Cancelled');
