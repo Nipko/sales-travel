@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PERSON_NAME_MESSAGES } from '../../lib/person-name';
 import { acceptInvitationError } from './errors';
 
 describe('acceptInvitationError: por qué no se pudo aceptar', () => {
@@ -16,6 +17,27 @@ describe('acceptInvitationError: por qué no se pudo aceptar', () => {
     expect(
       acceptInvitationError({ status: 400, message: 'la invitación es inválida o venció' }),
     ).toMatch(/se usó, venció o fue revocada/);
+  });
+
+  it('un 400 por el nombre (PersonNameSchema): qué tiene el nombre, no "enlace vencido"', () => {
+    const summary = (field: string, message: string) =>
+      `Revisa los datos ingresados — ${field}: ${message}`;
+    expect(
+      acceptInvitationError({
+        status: 400,
+        message: summary('name', PERSON_NAME_MESSAGES.invisible),
+      }),
+    ).toBe(PERSON_NAME_MESSAGES.invisible);
+    // Un mensaje que el panel no conoce (otro idioma, otra versión del API) o de otro campo: el de
+    // siempre.
+    for (const message of [
+      summary('name', 'String must contain at most 120 character(s)'),
+      summary('token', PERSON_NAME_MESSAGES.required),
+    ]) {
+      expect(acceptInvitationError({ status: 400, message })).toMatch(
+        /se usó, venció o fue revocada/,
+      );
+    }
   });
 
   it('el correo ya tiene cuenta (USR-17): ingresar con ella, no elegir otra contraseña', () => {

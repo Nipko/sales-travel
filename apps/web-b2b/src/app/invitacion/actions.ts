@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { api } from '../../lib/api';
+import { checkPersonName } from '../../lib/person-name';
 import { clearSession } from '../../lib/session';
 import { acceptInvitationError } from './errors';
 import {
@@ -31,13 +32,16 @@ export async function acceptInvitationAction(
   formData: FormData,
 ): Promise<InvitationState> {
   const token = asString(formData.get('token'));
-  const name = asString(formData.get('name')).trim();
+  // Las mismas reglas que el API (PersonNameSchema) y que Mi cuenta → Perfil: el error del nombre
+  // sale acá, y no como el 400 genérico de "enlace usado o vencido".
+  const nameCheck = checkPersonName(formData.get('name'));
   const password = asString(formData.get('password'));
   const confirm = asString(formData.get('confirm'));
 
   if (!token)
     return { error: 'La invitación no es válida. Pídele a tu administrador que la reenvíe.' };
-  if (!name) return { error: 'Ingresa tu nombre.' };
+  if (!nameCheck.ok) return { error: nameCheck.error };
+  const name = nameCheck.name;
   if (password.length < MIN_PASSWORD) {
     return { error: `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.` };
   }

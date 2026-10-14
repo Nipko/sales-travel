@@ -1,4 +1,4 @@
-import { z } from '@sales-travel/validation';
+import { PersonNameSchema, z } from '@sales-travel/validation';
 import { ASSIGNABLE_ROLES } from '../auth/roles.js';
 import { ADMIN_PASSWORD_RETIRED_MESSAGE } from './onboarding.errors.js';
 import { CREATABLE_TENANT_TYPES } from './tenant-admin.policy.js';
@@ -29,10 +29,15 @@ export type InviteUserDto = z.infer<typeof InviteUserSchema>;
 /** El token de la invitación, tal como llega en el enlace del correo. */
 const InvitationTokenSchema = z.string().min(10).max(512);
 
-/** Canje con cuenta nueva: quien no tiene cuenta elige su nombre y su contraseña. */
+/**
+ * Canje con cuenta nueva: quien no tiene cuenta elige su nombre y su contraseña. El nombre pasa por
+ * las mismas reglas que al editarlo en Mi cuenta → Perfil (PersonNameSchema, USR-18): si no, un
+ * control de dirección o un nombre de puros invisibles entraba al sumarse aunque el perfil lo
+ * rechace después.
+ */
 export const AcceptInvitationSchema = z.object({
   token: InvitationTokenSchema,
-  name: z.string().min(1).max(120),
+  name: PersonNameSchema,
   password: z.string().min(12).max(128),
 });
 export type AcceptInvitationDto = z.infer<typeof AcceptInvitationSchema>;

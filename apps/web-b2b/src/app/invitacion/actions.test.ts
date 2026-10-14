@@ -12,6 +12,7 @@ vi.mock('../../lib/api', () => ({ api: mocks.api }));
 vi.mock('../../lib/session', () => ({ clearSession: mocks.clearSession }));
 vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
 
+import { PERSON_NAME_MESSAGES } from '../../lib/person-name';
 import { acceptInvitationAction, joinInvitationAction, switchAccountAction } from './actions';
 import { INVITATION_MESSAGES, invitationLoginHref } from './invitation-view';
 
@@ -49,6 +50,31 @@ describe('acceptInvitationAction (cuenta nueva)', () => {
       method: 'POST',
       body: JSON.stringify({ token: TOKEN, name: 'Ana', password: CLAVE }),
     });
+  });
+
+  it('el nombre pasa por las reglas del perfil: viaja normalizado', async () => {
+    mocks.api.mockResolvedValue({ ok: true, data: { userId: 'u', tenantId: 't' } });
+
+    const data = nueva();
+    data.set('name', '  Ana   Ruiz ');
+    expect(await acceptInvitationAction({}, data)).toEqual({ done: true });
+    expect(mocks.api).toHaveBeenCalledWith('/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token: TOKEN, name: 'Ana Ruiz', password: CLAVE }),
+    });
+  });
+
+  it('un nombre que no sirve no llega al API: dice qué tiene', async () => {
+    for (const [raw, message] of [
+      ['   ', PERSON_NAME_MESSAGES.required],
+      [`Ana${String.fromCodePoint(0x202e)}zeR`, PERSON_NAME_MESSAGES.invisible],
+      ['...', PERSON_NAME_MESSAGES.noLetter],
+    ] as const) {
+      const data = nueva();
+      data.set('name', raw);
+      expect(await acceptInvitationAction({}, data)).toEqual({ error: message });
+    }
+    expect(mocks.api).not.toHaveBeenCalled();
   });
 
   it('el correo ya tenía cuenta: el motivo y el login que vuelve a la invitación', async () => {
