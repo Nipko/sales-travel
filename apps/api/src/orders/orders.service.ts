@@ -905,10 +905,14 @@ export class OrdersService {
    * el tiquete lo paga por BSP el dueño de la cuenta) y la cuenta no es de pruebas: una reserva de
    * certificación no se factura (SAB-FD-2 A). Si la cuenta es la propia del nodo, lo decide la base
    * y no retiene a nadie (decisión del founder del 2026-09-30).
+   *
+   * Hacen falta las dos mitades: sin el ledger, una reserva que no sale dejaría tomada una retención
+   * que nadie libera.
    */
   private retainsWallet(provider: ResolvedProvider<FlightProviderAdapter>): boolean {
     return (
       this.walletHolds !== undefined &&
+      this.holds !== undefined &&
       provider.environment !== 'test' &&
       this.registry.settlementOf(provider.code) === 'network-wallet'
     );

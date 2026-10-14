@@ -1074,7 +1074,7 @@ export default function QuotationDetailPage() {
               >
                 <p className="font-medium">{bookingResult.funding.title}</p>
                 <p>{bookingResult.funding.detail}</p>
-                <p>No se envió nada a la aerolínea ni se retuvo saldo.</p>
+                <p>No se hizo ninguna reserva con la aerolínea ni se retuvo saldo.</p>
                 {bookingResult.funding.action === 'portfolios' && (
                   <Link
                     href={PORTFOLIOS_HREF}

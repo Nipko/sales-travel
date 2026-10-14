@@ -113,6 +113,8 @@ interface BancoOpts {
   readonly preview?: (quote: BookingHoldQuote) => Promise<void>;
   /** Sin la cuenta de la bóveda: el factory no sabe volver a operar con ella. */
   readonly sinCuenta?: boolean;
+  /** Sin el ledger que libera: nadie podría devolver lo retenido. */
+  readonly sinLedger?: boolean;
 }
 
 /** El factory anónimo, que además sabe volver a operar con la cuenta de la orden, como Sabre. */
@@ -190,7 +192,7 @@ function banco(opts: BancoOpts = {}) {
     { getApplicableRules: () => Promise.resolve(REGLAS) } as unknown as PricingService,
     undefined,
     undefined,
-    ledger,
+    opts.sinLedger === true ? undefined : ledger,
     undefined,
     walletHolds,
   );
@@ -282,6 +284,14 @@ describe('quién retiene la cartera al reservar un vuelo (SAB-FD-2 A)', () => {
 
   it('una cuenta de pruebas (CERT) no retiene', async () => {
     const b = banco({ settlement: 'network-wallet', environment: 'test' });
+    const { order } = await b.orders.createOrder(TENANT, USER, pedido());
+    expect(order.status).toBe('confirmed');
+    expect(b.preview).not.toHaveBeenCalled();
+    expect(b.hold).not.toHaveBeenCalled();
+  });
+
+  it('sin el ledger que libera no se retiene: una retención que nadie libera no se toma', async () => {
+    const b = banco({ settlement: 'network-wallet', sinLedger: true });
     const { order } = await b.orders.createOrder(TENANT, USER, pedido());
     expect(order.status).toBe('confirmed');
     expect(b.preview).not.toHaveBeenCalled();
@@ -391,6 +401,46 @@ describe('lo que el proveedor no hizo libera la retención', () => {
       /no se envió a la aerolínea/,
     );
     expect(orden(b)).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.settle).toHaveBeenCalledWith(TENANT, orden(b)['id'], USER);
+  });
+
+  it('la relectura dice que el proveedor ya la canceló: la orden queda cancelada y se libera', async () => {
+    const b = banco({ settlement: 'network-wallet' });
+    b.adapter.retrieveForDisplay.mockImplementationOnce((orderId: string) =>
+      Promise.resolve({
+        found: true,
+        orderId,
+        status: 'CANCELLED',
+        airlineLocators: [],
+        warnings: [],
+      }),
+    );
+
+    const { order, saga } = await b.orders.createOrder(TENANT, USER, pedido());
+
+    expect(saga).toEqual({ kind: 'settled', status: 'cancelled' });
+    expect(order.status).toBe('cancelled');
+    expect(b.settle).toHaveBeenCalledOnce();
+    expect(b.settle).toHaveBeenCalledWith(TENANT, order.id, USER);
+  });
+
+  it('el evento previo al write no se guarda: no sale nada y la retención se libera', async () => {
+    const b = banco({ settlement: 'network-wallet' });
+    const emit = b.audit.emit.bind(b.audit);
+    vi.spyOn(b.audit, 'emit').mockImplementation((event) =>
+      event.eventType === 'OrderCreateRequested'
+        ? Promise.reject(new Error('domain_events no disponible'))
+        : emit(event),
+    );
+
+    await expect(b.orders.createOrder(TENANT, USER, pedido())).rejects.toThrow(
+      'domain_events no disponible',
+    );
+
+    expect(b.hold).toHaveBeenCalledOnce();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+    expect(orden(b)).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.settle).toHaveBeenCalledOnce();
     expect(b.settle).toHaveBeenCalledWith(TENANT, orden(b)['id'], USER);
   });
 

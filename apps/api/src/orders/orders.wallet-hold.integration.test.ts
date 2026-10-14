@@ -21,6 +21,7 @@ import { BookingHoldRejectedError } from '../portfolios/booking-hold.js';
 import {
   cascadeProvider,
   cascadeVertical,
+  levelOf,
   type AccountOwner,
   type NodeKey,
 } from '../portfolios/__fixtures__/network-hold-cases.js';
@@ -30,7 +31,7 @@ import {
   teardownNetwork,
   type SeededNetwork,
 } from '../portfolios/__fixtures__/wallet-hold-seed.js';
-import type { PricingService } from '../pricing/pricing.service.js';
+import { PricingService, applyCascade } from '../pricing/pricing.service.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { OrderCancelAudit, ProviderSettlement } from '../providers/provider.types.js';
@@ -180,6 +181,8 @@ d('retención de cartera de un vuelo que liquida la red (SAB-10) contra Postgres
       owner?: AccountOwner;
       settlement?: ProviderSettlement;
       environment?: ProviderEnvironment;
+      /** Las reglas de markup de la base; sin él, ninguna (la venta es el neto). */
+      pricing?: PricingService;
     } = {},
   ) {
     const owner = opts.owner ?? 'P';
@@ -233,13 +236,15 @@ d('retención de cartera de un vuelo que liquida la red (SAB-10) contra Postgres
     Object.assign(adapter, { issueTickets, checkTickets, cancelOrderAudited });
 
     const queue = new RecordingQueueService();
+    const audit = new RecordingAuditService();
     const orders = new OrdersService(
       database,
       registry,
       queue.asService(),
       {} as unknown as AgentCarsProviderFactory,
-      new RecordingAuditService().asService(),
-      { getApplicableRules: () => Promise.resolve([]) } as unknown as PricingService,
+      audit.asService(),
+      opts.pricing ??
+        ({ getApplicableRules: () => Promise.resolve([]) } as unknown as PricingService),
       undefined,
       undefined,
       new BookingHoldLedger(database),
@@ -255,7 +260,7 @@ d('retención de cartera de un vuelo que liquida la red (SAB-10) contra Postgres
       { resolve: () => Promise.resolve(null) } as unknown as BrandingService,
       new FlightOrderTrackingStore(database),
     );
-    return { orders, issues, adapter, alReservar };
+    return { orders, issues, adapter, alReservar, audit };
   }
 
   async function grupo(orderId: string): Promise<Grupo | undefined> {
@@ -434,7 +439,104 @@ d('retención de cartera de un vuelo que liquida la red (SAB-10) contra Postgres
     expect(await saldos(['S1', 'A', 'C'])).toEqual(antes);
   });
 
-  it('una cuenta de pruebas (CERT) no retiene', async () => {
+  it('la relectura dice que el proveedor ya la canceló: queda cancelada y la cascada se libera', async () => {
+    const s = await servicio('S1');
+    const antes = await saldos(['S1', 'A', 'C']);
+    s.adapter.retrieveForDisplay.mockImplementationOnce(
+      (pnr: string): Promise<OrderView> =>
+        Promise.resolve({
+          found: true,
+          orderId: pnr,
+          pnr,
+          status: 'CANCELLED',
+          airlineLocators: [],
+          warnings: [],
+        }),
+    );
+
+    const { order, saga } = await s.orders.createOrder(
+      id('S1'),
+      net.sellers.S1,
+      pedido('S1'),
+      nuevaClave(),
+    );
+
+    expect(saga).toEqual({ kind: 'settled', status: 'cancelled' });
+    expect(s.alReservar).toEqual(['held']);
+    const liberada = await grupo(order.id);
+    expect(liberada?.status).toBe('released');
+    expect(liberada?.levels.every((l) => l.status === 'released')).toBe(true);
+    expect(await saldos(['S1', 'A', 'C'])).toEqual(antes);
+  });
+
+  it('con markups de vuelos: el que vende retiene la venta revalidada y cada nivel su costo, no la venta', async () => {
+    // Reglas de vuelos sólo para los nodos de esta corrida (P es la raíz compartida) y sólo durante
+    // este test: los demás venden al neto.
+    const reglas: readonly (readonly [NodeKey, number])[] = [
+      ['C', 800],
+      ['A', 1000],
+      ['S1', 1200],
+    ];
+    for (const [k, bps] of reglas) {
+      await admin.query(
+        `INSERT INTO markup_rules (tenant_id, vertical, rule_type, value_minor, priority, status)
+         VALUES ($1, 'flights', 'percentage', $2, 1, 'active')`,
+        [id(k), bps],
+      );
+    }
+    try {
+      const pricing = new PricingService(database);
+      const s = await servicio('S1', { pricing });
+      const antes = await saldos(['S1', 'A', 'C']);
+      const dto = pedido('S1');
+      // El navegador manda un precio de venta trucado: no cuenta ni para la orden ni para retener.
+      const trucado: CreateOrderDto = {
+        ...dto,
+        offer: {
+          ...dto.offer,
+          pricing: { costMinor: 1, finalMinor: 1, ownMarkupMinor: 0, currency: 'USD' },
+        },
+      };
+
+      const { order } = await s.orders.createOrder(id('S1'), net.sellers.S1, trucado, nuevaClave());
+
+      // Lo esperado, con las reglas que la base le aplica a S1: la venta es la cascada entera; el
+      // costo de cada nivel, el neto más los markups de los niveles de arriba suyo.
+      const rules = await pricing.getApplicableRules(id('S1'), 'flights');
+      const venta = applyCascade(NET, rules).finalMinor;
+      const costoDe = (k: NodeKey): number =>
+        applyCascade(
+          NET,
+          rules.filter((r) => r.level < levelOf(k)),
+        ).finalMinor;
+      expect(venta).toBeGreaterThan(costoDe('A'));
+      expect(costoDe('A')).toBeGreaterThan(costoDe('C'));
+      expect(costoDe('C')).toBeGreaterThanOrEqual(NET);
+
+      expect(Number(order.total_amount)).toBe(venta);
+      const retenida = await grupo(order.id);
+      expect(retenida?.levels.map((l) => [l.tenant_id, l.depth, l.amount_minor])).toEqual([
+        [id('S1'), 0, venta],
+        [id('A'), 1, costoDe('A')],
+        [id('C'), 2, costoDe('C')],
+      ]);
+      expect(await saldos(['S1', 'A', 'C'])).toEqual({
+        S1: antes['S1']! - venta,
+        A: antes['A']! - costoDe('A'),
+        C: antes['C']! - costoDe('C'),
+      });
+
+      await s.orders.cancelOrder(id('S1'), order.id, order.provider_order_id!, net.sellers.S1);
+      expect(await saldos(['S1', 'A', 'C'])).toEqual(antes);
+    } finally {
+      await admin.query(
+        `DELETE FROM markup_rules WHERE vertical = 'flights' AND tenant_id = ANY($1::uuid[])`,
+        [reglas.map(([k]) => id(k))],
+      );
+    }
+  });
+
+  it('una cuenta de pruebas (CERT) no retiene, y cancelarla no busca una retención que no existe', async () => {
     const s = await servicio('S1', { environment: 'test' });
     const antes = await saldos(['S1', 'A', 'C']);
     const { order } = await s.orders.createOrder(
@@ -445,6 +547,19 @@ d('retención de cartera de un vuelo que liquida la red (SAB-10) contra Postgres
     );
     expect(order.status).toBe('confirmed');
     expect(await grupo(order.id)).toBeUndefined();
+    expect(await saldos(['S1', 'A', 'C'])).toEqual(antes);
+
+    // Como las reservas de Sabre anteriores a SAB-10: sin retención, cancelar no falla ni escala.
+    const run = await s.orders.cancelOrder(
+      id('S1'),
+      order.id,
+      order.provider_order_id!,
+      net.sellers.S1,
+    );
+    expect(run.result.success).toBe(true);
+    expect(await estado(order.id)).toBe('cancelled');
+    expect(await grupo(order.id)).toBeUndefined();
+    expect(s.audit.ofType('OrderEscalated')).toHaveLength(0);
     expect(await saldos(['S1', 'A', 'C'])).toEqual(antes);
   });
 
