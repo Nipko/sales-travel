@@ -18,10 +18,14 @@ import {
   type OrderCancelResult,
   type OrderCreateRequest,
   type OrderCreateResult,
+  type OrderModifyPort,
+  type OrderModifyRef,
+  type OrderModifyResult,
   type OrderPayRequest,
   type OrderPayResult,
   type OrderReshopRequest,
   type OrderReshopResult,
+  type OrderTravelersView,
   type OrderView,
   type SearchContext,
   type SeatMapPort,
@@ -31,6 +35,8 @@ import {
   type TicketIssueOptions,
   type TicketIssueResult,
   type TicketingPort,
+  type TravelerChange,
+  type TravelerModification,
 } from '@sales-travel/domain';
 import {
   SABRE_HOSTS,
@@ -415,13 +421,15 @@ export class SabreOfferRevalidationRouter {
  *    están escritos y probados contra el contrato, y se encienden al certificarlos (SAB-21).
  *  - `listAncillaries`, `addAncillaries` y `removeAncillaries` mientras `services` no esté en
  *    `SABRE_OPERATIONS` (SAB-20): lo mismo, hasta certificar Stateless Ancillaries en CERT.
+ *  - `readTravelers` y `modifyTravelers` mientras `modify` no esté en `SABRE_OPERATIONS` (SAB-25):
+ *    `modifyBooking` cambia la reserva en la aerolínea y se certifica en CERT antes de encenderlo.
  *
  * Lo que ya no hace falta gatear: el bloque de reserva contra una cuenta en modo simulado. Ese
  * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
  * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
 export class SabreFlightProviderAdapter
-  implements FlightProviderAdapter, TicketingPort, SeatMapPort, AncillaryPort
+  implements FlightProviderAdapter, TicketingPort, SeatMapPort, AncillaryPort, OrderModifyPort
 {
   constructor(private readonly inner: SabreAdapterSet) {}
 
@@ -741,6 +749,45 @@ export class SabreFlightProviderAdapter
     return this.inner.ancillaries.removeAncillaries(order, providerItemIds, ctx);
   }
 
+  /** Lo que `modifyBooking` cambia de un pasajero (SAB-25). Es una declaración: no llama a nadie. */
+  supportedModifications(): readonly TravelerModification[] {
+    return this.inner.manage.supportedModifications();
+  }
+
+  /**
+   * Los datos de los pasajeros de la reserva, enmascarados, para corregirlos (SAB-25). Segunda línea
+   * de defensa detrás de la capacidad `modify`: con `modify` apagado en este despliegue, rechaza
+   * sin leer la reserva (la lectura trae documentos enteros, y sin poder cambiarlos no hace falta).
+   */
+  readTravelers(order: OrderModifyRef, ctx: SearchContext): Promise<OrderTravelersView> {
+    if (!this.inner.operations.has('modify')) {
+      return Promise.reject(
+        new SabreOperationNotSupportedError('modificar los datos de los pasajeros'),
+      );
+    }
+    return this.inner.manage.readTravelers(order, ctx);
+  }
+
+  /**
+   * Corrige el documento, el viajero frecuente y los servicios especiales de una reserva
+   * (`modifyBooking`, SAB-25). La misma compuerta que la lectura. El cambio va firmado en el historial
+   * del PNR con la plataforma (`receivedFrom`), como la reserva.
+   */
+  modifyTravelers(
+    order: OrderModifyRef,
+    changes: readonly TravelerChange[],
+    ctx: SearchContext,
+  ): Promise<OrderModifyResult> {
+    if (!this.inner.operations.has('modify')) {
+      return Promise.reject(
+        new SabreOperationNotSupportedError('modificar los datos de los pasajeros'),
+      );
+    }
+    return this.inner.manage.modifyTravelers(order, changes, ctx, {
+      receivedFrom: SABRE_RECEIVED_FROM,
+    });
+  }
+
   cancelBnplOrder(_orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
     return Promise.reject(new SabreOperationNotSupportedError('cancelar la reserva diferida'));
   }
@@ -818,6 +865,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * `services` en `SABRE_OPERATIONS`: los servicios se cobran como EMD al emitir, así que mueven
    * dinero y nacen apagados hasta certificarlos en CERT (SAB-21).
    *
+   * `modify` (corregir los datos de los pasajeros, SAB-25) sale de `modify`: no mueve dinero, pero
+   * cambia la reserva en la aerolínea, y nace apagado hasta certificarlo en CERT.
+   *
    * `issue` sale de `SABRE_OPERATIONS`: la emisión está cableada, pero nace apagada y se enciende
    * por despliegue, después de certificarla. `ticketCheck` y `void` van juntas detrás de `void`: las
    * condiciones de los tiquetes sólo se ofrecen donde se puede actuar sobre ellas.
@@ -844,6 +894,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       seatMap: this.operations.has('seats'),
       // Maletas y servicios antes de emitir (SAB-20), apagados hasta certificarlos en CERT.
       addServices: this.operations.has('services'),
+      // Corregir documento, viajero frecuente y servicios especiales (SAB-25), apagado hasta
+      // certificar modifyBooking en CERT.
+      modify: this.operations.has('modify'),
     };
     if (this.operations.size > 0) {
       // Encender una operación que mueve dinero tiene que verse en el log de arranque.

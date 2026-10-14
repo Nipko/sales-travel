@@ -13,6 +13,7 @@ import type {
   OrderCreateRequest,
   OrderCreateResult,
   OrderManagePort,
+  OrderModifyPort,
   SearchContext,
   SeatMapPort,
   TicketingPort,
@@ -181,6 +182,25 @@ export function supportsAncillaries<T extends object>(adapter: T): adapter is T 
 }
 
 /**
+ * ¿Este adapter sabe corregir los datos de los pasajeros de una reserva hecha (`OrderModifyPort`):
+ * documento, viajero frecuente y servicios especiales? Por presencia de los tres métodos, como
+ * {@link supportsAncillaries}. Que sepa no quiere decir que esté encendido: eso lo dice la capacidad
+ * `modify` del factory.
+ */
+export function supportsOrderModify<T extends object>(adapter: T): adapter is T & OrderModifyPort {
+  const port = adapter as {
+    supportedModifications?: unknown;
+    readTravelers?: unknown;
+    modifyTravelers?: unknown;
+  };
+  return (
+    typeof port.supportedModifications === 'function' &&
+    typeof port.readTravelers === 'function' &&
+    typeof port.modifyTravelers === 'function'
+  );
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -222,6 +242,13 @@ export interface ProviderCapabilities {
    * cuenta. Ausente = `false`: mueve dinero, y un proveedor nuevo no la hereda por olvido.
    */
   readonly addServices?: boolean;
+  /**
+   * Corregir o completar los datos de los pasajeros de una reserva confirmada o emitida (SAB-25):
+   * el documento de viaje, el viajero frecuente y los servicios especiales, por el `OrderModifyPort`
+   * del adapter. No mueve dinero, pero cambia la reserva en la aerolínea: ausente = `false`, y se
+   * certifica por proveedor antes de encenderla.
+   */
+  readonly modify?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;

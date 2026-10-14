@@ -1,5 +1,9 @@
-import { z } from '@sales-travel/validation';
-import { FlightSearchCriteriaSchema } from '@sales-travel/domain';
+import { isIsoCountryAlpha2, z } from '@sales-travel/validation';
+import {
+  FlightSearchCriteriaSchema,
+  TRAVELER_DOCUMENT_TYPES,
+  TRAVELER_SPECIAL_SERVICE_CODES,
+} from '@sales-travel/domain';
 import { OfferSchema } from '@sales-travel/canonical';
 
 /** Objetos JSON de pasajeros que se persisten verbatim después de validar el sobre. */
@@ -122,6 +126,124 @@ export const RemoveServicesSchema = z
   })
   .strict();
 export type RemoveServicesInput = z.infer<typeof RemoveServicesSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Datos de los pasajeros de una reserva hecha (SAB-25)
+// ---------------------------------------------------------------------------------------------
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `YYYY-MM-DD` que existe en el calendario (`2034-02-30` no). */
+function isCalendarDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+/** Hoy en UTC, `YYYY-MM-DD`. Las fechas de documento no tienen hora. */
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function yearsFromToday(years: number): string {
+  const date = new Date(`${todayUtc()}T00:00:00Z`);
+  date.setUTCFullYear(date.getUTCFullYear() + years);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Letras y dígitos en mayúsculas: «ab-123.456» y «AB 123456» son el mismo documento. */
+function normalizedCode(min: number, max: number) {
+  const shape = new RegExp(`^[A-Z0-9]{${String(min)},${String(max)}}$`);
+  return z
+    .string()
+    .max(40)
+    .transform((value) => value.toUpperCase().replace(/[\s.\-/]/g, ''))
+    .pipe(z.string().regex(shape));
+}
+
+/** País ISO 3166-1 alfa-2 de la lista oficial (no basta con dos letras). */
+const IsoCountrySchema = z
+  .string()
+  .trim()
+  .transform((value) => value.toUpperCase())
+  .refine(isIsoCountryAlpha2, 'país ISO 3166-1 alfa-2');
+
+/**
+ * El documento corregido. Vencido no sirve para viajar (y la aerolínea lo rechaza: `INVALID_VALUE`
+ * «The expiry date of the identity document cannot be in the past»); a más de 20 años es un error de
+ * tipeo. El titular no se teclea: es el pasajero de la reserva.
+ */
+const IdentityDocumentChangeSchema = z
+  .object({
+    type: z.enum(TRAVELER_DOCUMENT_TYPES),
+    number: normalizedCode(4, 20),
+    issuingCountry: IsoCountrySchema,
+    nationality: IsoCountrySchema,
+    expiryDate: z
+      .string()
+      .refine(isCalendarDate, 'fecha YYYY-MM-DD')
+      .refine((value) => value > todayUtc(), 'documento vencido')
+      .refine((value) => value <= yearsFromToday(20), 'vencimiento a más de 20 años'),
+    birthDate: z
+      .string()
+      .refine(isCalendarDate, 'fecha YYYY-MM-DD')
+      .refine((value) => value < todayUtc(), 'nacimiento en el futuro')
+      .refine((value) => value >= yearsFromToday(-120), 'nacimiento hace más de 120 años')
+      .optional(),
+  })
+  .strict();
+
+/** El viajero frecuente: la aerolínea del programa (IATA) y el número. */
+const LoyaltyChangeSchema = z
+  .object({
+    carrierCode: z
+      .string()
+      .trim()
+      .transform((value) => value.toUpperCase())
+      .pipe(z.string().regex(/^[A-Z0-9]{2}$/)),
+    number: normalizedCode(4, 25),
+  })
+  .strict();
+
+/**
+ * Corregir los datos de los pasajeros de una reserva confirmada o emitida (SAB-25). Por pasajero
+ * (`index`, base cero) y sólo lo que cambia: el documento, el viajero frecuente y el conjunto de
+ * servicios especiales de una lista CERRADA de códigos —nunca texto libre, que sería un mensaje
+ * libre a la aerolínea—. Un campo de más corta el pedido.
+ */
+export const ModifyTravelersSchema = z
+  .object({
+    travelers: z
+      .array(
+        z
+          .object({
+            index: z.number().int().min(0).max(8),
+            identityDocument: IdentityDocumentChangeSchema.optional(),
+            loyalty: LoyaltyChangeSchema.optional(),
+            specialServices: z
+              .array(z.enum(TRAVELER_SPECIAL_SERVICE_CODES))
+              .max(TRAVELER_SPECIAL_SERVICE_CODES.length)
+              .refine((codes) => new Set(codes).size === codes.length, 'servicios repetidos')
+              .optional(),
+          })
+          .strict()
+          .refine(
+            (change) =>
+              change.identityDocument !== undefined ||
+              change.loyalty !== undefined ||
+              change.specialServices !== undefined,
+            'un pasajero sin cambios',
+          ),
+      )
+      .min(1)
+      .max(9)
+      .refine(
+        (list) => new Set(list.map((change) => change.index)).size === list.length,
+        'un pasajero repetido',
+      ),
+  })
+  .strict();
+export type ModifyTravelersInput = z.infer<typeof ModifyTravelersSchema>;
 
 /**
  * ¿El total guardado de la orden es el que el vendedor vio? `orders.total_amount` es BIGINT (0023)

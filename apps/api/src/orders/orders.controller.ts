@@ -11,6 +11,7 @@ import {
   NotFoundException,
   Optional,
   Param,
+  Patch,
   Post,
   ServiceUnavailableException,
   UseFilters,
@@ -29,12 +30,14 @@ import {
   AddServicesSchema,
   CreateOrderSchema,
   IssueOrderSchema,
+  ModifyTravelersSchema,
   PayOrderSchema,
   RemoveServicesSchema,
   ReshopOrderSchema,
   isSameMinorAmount,
   type AddServicesInput,
   type IssueOrderInput,
+  type ModifyTravelersInput,
   type RemoveServicesInput,
 } from './dto.js';
 import {
@@ -55,6 +58,13 @@ import {
   type ServicesAddReply,
   type ServicesRemoveReply,
 } from './order-services.service.js';
+import {
+  TRAVELERS_MESSAGES,
+  TRAVELERS_MODIFIABLE_STATUSES,
+  type PublicTravelersView,
+  type TravelersReply,
+} from './order-travelers.plan.js';
+import { FlightTravelersService } from './order-travelers.service.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import {
   TICKET_VOID_MESSAGES,
@@ -117,6 +127,8 @@ export class OrdersController {
     @Optional() private readonly walletHolds?: BookingHoldLedger,
     /** Maletas y servicios antes de emitir (SAB-20). Opcional por lo mismo: en la app siempre está. */
     @Optional() private readonly services?: FlightServicesService,
+    /** Datos de los pasajeros de una reserva hecha (SAB-25). Opcional por lo mismo. */
+    @Optional() private readonly travelers?: FlightTravelersService,
   ) {}
 
   /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
@@ -514,6 +526,59 @@ export class OrdersController {
       throw new ServiceUnavailableException(SERVICES_MESSAGES.unavailable);
     }
     return this.services.requestRemove(tenantId, row, userId, body);
+  }
+
+  /**
+   * Los datos de los pasajeros como los tiene la aerolínea ahora, ENMASCARADOS (SAB-25): por pasajero,
+   * el documento y el viajero frecuente por sus últimos caracteres y los servicios especiales de la
+   * lista cerrada; además, qué se puede cambiar en esta reserva y si se puede guardar ahora. Es una
+   * lectura del proveedor (post-venta): no es venta.
+   */
+  @Get(':id/travelers')
+  async travelersOf(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<PublicTravelersView> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TRAVELERS_MESSAGES.notFound);
+    this.assertSupports(row, 'modify');
+    if (this.travelers === undefined) {
+      throw new ServiceUnavailableException(TRAVELERS_MESSAGES.unavailable);
+    }
+    return this.travelers.view(tenantId, row);
+  }
+
+  /**
+   * Corrige o completa en bloque el documento, el viajero frecuente y los servicios especiales de los
+   * pasajeros de una reserva confirmada o emitida (SAB-25), sin cancelarla. Corre en el request:
+   * claim `modify` (0083, el lock de la reserva), UNA llamada al puerto —que lee la reserva, escribe
+   * sobre esa lectura y verifica— y el desenlace. No mueve dinero ni es venta: es una corrección de
+   * la post-venta, como quitar servicios.
+   *
+   * Los valores (número de documento, viajero frecuente, servicios especiales) no se loguean, no se
+   * guardan en la operación ni en el rastro y no vuelven en la respuesta: sólo campos.
+   */
+  @Patch(':id/travelers')
+  @HttpCode(200)
+  async modifyTravelers(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ModifyTravelersSchema)) body: ModifyTravelersInput,
+  ): Promise<TravelersReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(TRAVELERS_MESSAGES.notFound);
+    if (!TRAVELERS_MODIFIABLE_STATUSES.includes(row.status)) {
+      throw new ConflictException(TRAVELERS_MESSAGES.notModifiable);
+    }
+    this.assertSupports(row, 'modify');
+    if (this.travelers === undefined) {
+      throw new ServiceUnavailableException(TRAVELERS_MESSAGES.unavailable);
+    }
+    return this.travelers.requestModify(tenantId, row, userId, body);
   }
 
   @SalesOperation()

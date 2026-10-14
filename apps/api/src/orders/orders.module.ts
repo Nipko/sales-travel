@@ -22,6 +22,8 @@ import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrderConfirmationService } from './order-confirmation.service.js';
 import { FlightServicesService } from './order-services.service.js';
 import { OrderServicesStore } from './order-services.store.js';
+import { FlightTravelersService } from './order-travelers.service.js';
+import { OrderTravelersStore } from './order-travelers.store.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
@@ -58,6 +60,9 @@ import { TicketIssueStore } from './ticket-issue.store.js';
  *
  * El aviso de plazo de emisión por vencer (SAB-14) también lo corre el barrido de `PostSaleModule`:
  * `FlightDeadlineAlertService` se exporta para él.
+ *
+ * Los datos de los pasajeros de una reserva hecha (SAB-25) corren en el request, y sus `modify` que
+ * quedaron pendientes los pasa a revisión el mismo barrido: `FlightTravelersService` se exporta.
  */
 @Module({
   imports: [
@@ -93,6 +98,8 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     FlightDeadlineAlertService,
     OrderServicesStore,
     FlightServicesService,
+    OrderTravelersStore,
+    FlightTravelersService,
   ],
   exports: [
     OrdersService,
@@ -105,6 +112,7 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     FlightTicketIssueService,
     FlightDeadlineAlertService,
     FlightServicesService,
+    FlightTravelersService,
   ],
 })
 export class OrdersModule {}

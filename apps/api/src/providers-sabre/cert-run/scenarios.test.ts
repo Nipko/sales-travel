@@ -72,6 +72,8 @@ interface FakeOptions {
   readonly cancelThrows?: Error;
   readonly cancelUnverified?: boolean;
   readonly offers?: Offer[];
+  /** Desenlace del `modifyTravelers` del viajero frecuente. */
+  readonly loyaltyOutcome?: 'MODIFIED' | 'FAILED';
 }
 
 function fakeFlights(events: string[], options: FakeOptions = {}): CertFlightPort {
@@ -183,6 +185,46 @@ function fakeFlights(events: string[], options: FakeOptions = {}): CertFlightPor
       });
     },
     removeAncillaries: () => Promise.reject(new Error('no se usa')),
+    readTravelers: (order) => {
+      events.push(`travelers ${order.orderId}`);
+      return Promise.resolve({
+        travelers: [
+          {
+            index: 0,
+            documents: [{ type: 'PASSPORT', numberLast4: '0999', issuingCountry: 'CO' }],
+            loyalty: [],
+            specialServices: ['WCHR'],
+          },
+        ],
+        supported: ['identityDocuments', 'loyalty', 'specialServices'],
+        warnings: [],
+      });
+    },
+    modifyTravelers: (order, changes) => {
+      const change = changes[0];
+      const field = change?.loyalty !== undefined ? 'loyalty' : 'identityDocuments';
+      events.push(
+        `modify ${order.orderId} ${order.contentSource ?? '-'} ${order.passengers[0]?.surname ?? '-'} ${field}${change?.loyalty === undefined ? '' : ` ${change.loyalty.carrierCode}`}`,
+      );
+      const failed = field === 'loyalty' && options.loyaltyOutcome === 'FAILED';
+      return Promise.resolve({
+        outcome: failed ? 'FAILED' : 'MODIFIED',
+        unchanged: false,
+        applied: failed ? [] : [{ index: 0, field }],
+        pending: failed ? [{ index: 0, field }] : [],
+        attempts: 1,
+        ...(failed ? { failureReason: 'REJECTED' as const } : {}),
+        issues: failed
+          ? [
+              {
+                severity: 'ERROR' as const,
+                category: 'APPLICATION_ERROR',
+                type: 'UNABLE_TO_UPDATE_RESERVATION_LOYALTY_NOT_ACCEPTED',
+              },
+            ]
+          : [],
+      });
+    },
   };
 }
 
@@ -486,6 +528,44 @@ describe('runCertPlan — lo que mueve dinero (SAB-13, SAB-21, SAB-24)', () => {
       'estimado: USD 70.00 (penalidad USD 10.00)',
     );
     expect(report.pnrs[0]?.state).toBe('refunded');
+  });
+});
+
+describe('runCertPlan — datos de los pasajeros (SAB-25)', () => {
+  it('reserva, lee, corrige pasaporte con WCHR y viajero frecuente en dos pedidos, relee y cancela', async () => {
+    const { events, announced, deps, recorder } = harness();
+    const report = await runCertPlan(plan({ scenarios: ['book-modify'] }), deps);
+
+    expect(events).toEqual([
+      'search',
+      'price ref-7000',
+      'create 1pax',
+      'read PNR001',
+      'travelers PNR001',
+      'modify PNR001 ATPCO TEST identityDocuments',
+      'modify PNR001 ATPCO TEST loyalty LA',
+      'travelers PNR001',
+      'cancel PNR001 ALL',
+      'read PNR001',
+    ]);
+    // Cambia la reserva sin cobrar: no hay anuncio de dinero ni hace falta --allow-money.
+    expect(announced.some((l) => l.includes('[DINERO]'))).toBe(false);
+    expect(report.scenarios[0]).toMatchObject({ outcome: 'ok', notes: [] });
+    expect(report.pnrs[0]?.state).toBe('cancelled');
+    // La evidencia lleva campos y desenlaces, nunca el número de prueba entero.
+    const evidencia = JSON.stringify(recorder.steps);
+    expect(evidencia).not.toContain('TEST000999');
+    expect(evidencia).not.toContain('TEST0099887');
+    expect(evidencia).toContain('identityDocuments');
+  });
+
+  it('un viajero frecuente rechazado queda en las notas con su tipo, y la reserva igual se cancela', async () => {
+    const { deps } = harness({ loyaltyOutcome: 'FAILED' });
+    const report = await runCertPlan(plan({ scenarios: ['book-modify'] }), deps);
+    expect(report.scenarios[0]?.notes).toEqual([
+      'el viajero frecuente de LA terminó en FAILED (UNABLE_TO_UPDATE_RESERVATION_LOYALTY_NOT_ACCEPTED)',
+    ]);
+    expect(report.pnrs[0]?.state).toBe('cancelled');
   });
 });
 
