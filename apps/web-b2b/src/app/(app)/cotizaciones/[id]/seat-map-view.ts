@@ -619,11 +619,25 @@ export interface CreatedItem {
   readonly seatNumber?: string;
 }
 
+/** El cierre de la reserva tal como lo devuelve `POST /orders` (`saga`). */
+export interface CreatedSaga {
+  readonly kind?: string;
+  readonly status?: string;
+}
+
 /**
  * «El vuelo quedó reservado, pero la aerolínea no confirmó el asiento 12C.» Una línea por asiento
  * que no quedó, sólo si el vuelo sí quedó: un vuelo caído tiene su propio mensaje.
+ *
+ * «Quedó» lo dice el cierre de la reserva (`saga` confirmado), no sólo los ítems: si la reserva
+ * escaló o se está deshaciendo —el proveedor la da por cancelada, o dijo algo más que el asiento—,
+ * esta frase sería falsa y taparía el error que el vendedor tiene que leer.
  */
-export function seatOutcomeMessages(items: readonly CreatedItem[] | undefined): string[] {
+export function seatOutcomeMessages(
+  items: readonly CreatedItem[] | undefined,
+  saga: CreatedSaga | undefined,
+): string[] {
+  if (saga?.kind !== 'settled' || saga.status !== 'confirmed') return [];
   const list = items ?? [];
   const flightBooked =
     list.some((item) => item.kind === 'flight') &&

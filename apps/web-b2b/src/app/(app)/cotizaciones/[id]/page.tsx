@@ -413,7 +413,7 @@ export default function QuotationDetailPage() {
       return;
     }
     // El vuelo quedó y algún asiento no: se dice cuál, en vez de los códigos del proveedor.
-    const seatNotices = seatOutcomeMessages(data.providerResult?.items);
+    const seatNotices = seatOutcomeMessages(data.providerResult?.items, data.saga);
     setBookingResult({
       outcome,
       pnr: data.providerResult?.pnr,

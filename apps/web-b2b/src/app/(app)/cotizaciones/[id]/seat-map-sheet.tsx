@@ -314,7 +314,9 @@ function SeatMapBody({
           <legend className="mb-2 text-xs font-medium text-[var(--color-fg-muted)]">
             ¿Para quién eliges?
           </legend>
-          <div role="radiogroup" aria-label="Pasajero" className="flex flex-wrap gap-2">
+          {/* Botones con `aria-pressed` y no un `radiogroup`: un grupo de radios promete flechas y
+              un solo tope de Tab, y aquí cada chip es su propio botón. */}
+          <div role="group" aria-label="Pasajero" className="flex flex-wrap gap-2">
             {passengers.map((p) => {
               const checked = p.index === passenger.index;
               const chosen = seatOf(p.index);
@@ -322,8 +324,7 @@ function SeatMapBody({
                 <button
                   key={p.index}
                   type="button"
-                  role="radio"
-                  aria-checked={checked}
+                  aria-pressed={checked}
                   onClick={() => onPassenger(p.index)}
                   className={cn(
                     'inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40',
@@ -486,17 +487,12 @@ export function SeatGridView({
 
   const current = focus ?? initialPosition(grid);
 
+  // Enter y Espacio no se atienden aquí: la celda enfocada es un `<button>` y el navegador ya lo
+  // activa con los dos (`onClick`). Elegir también desde la grilla lo hacía dos veces en los
+  // navegadores que disparan el clic del Espacio aunque la tecla se haya cancelado: elegir y soltar.
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (current === undefined) return;
-      if (event.key === 'Enter' || event.key === ' ') {
-        const cell = grid.rows[current.row]?.cells[current.col];
-        if (cell?.kind === 'seat') {
-          event.preventDefault();
-          onSelect(cell);
-        }
-        return;
-      }
       const next = moveInGrid(grid, current, event.key);
       if (next === current) {
         if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
@@ -508,7 +504,7 @@ export function SeatGridView({
       setFocus(next);
       refs.current.get(key(next))?.focus();
     },
-    [current, grid, onSelect],
+    [current, grid],
   );
 
   return (

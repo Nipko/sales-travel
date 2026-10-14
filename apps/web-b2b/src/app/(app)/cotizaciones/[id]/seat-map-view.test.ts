@@ -345,15 +345,16 @@ describe('readSeatMapResponse', () => {
 });
 
 describe('seatOutcomeMessages — después de reservar', () => {
+  const confirmada = { kind: 'settled', status: 'confirmed' };
+  const vueloSiAsientoNo = [
+    { kind: 'flight', status: 'CONFIRMED' },
+    { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
+    { kind: 'seat', status: 'CONFIRMED', seatNumber: '12D' },
+    { kind: 'seat', status: 'UNCONFIRMED', seatNumber: '4A' },
+  ];
+
   it('«El vuelo quedó reservado, pero la aerolínea no confirmó el asiento 12C.»', () => {
-    expect(
-      seatOutcomeMessages([
-        { kind: 'flight', status: 'CONFIRMED' },
-        { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
-        { kind: 'seat', status: 'CONFIRMED', seatNumber: '12D' },
-        { kind: 'seat', status: 'UNCONFIRMED', seatNumber: '4A' },
-      ]),
-    ).toEqual([
+    expect(seatOutcomeMessages(vueloSiAsientoNo, confirmada)).toEqual([
       'El vuelo quedó reservado, pero la aerolínea no confirmó el asiento 12C.',
       'El vuelo quedó reservado; la aerolínea todavía no confirmó el asiento 4A.',
     ]);
@@ -361,11 +362,27 @@ describe('seatOutcomeMessages — después de reservar', () => {
 
   it('con el vuelo caído no se habla del asiento: el vuelo tiene su propio mensaje', () => {
     expect(
-      seatOutcomeMessages([
-        { kind: 'flight', status: 'FAILED' },
-        { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
-      ]),
+      seatOutcomeMessages(
+        [
+          { kind: 'flight', status: 'FAILED' },
+          { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
+        ],
+        confirmada,
+      ),
     ).toEqual([]);
-    expect(seatOutcomeMessages(undefined)).toEqual([]);
+    expect(seatOutcomeMessages(undefined, confirmada)).toEqual([]);
+  });
+
+  it('si la reserva no cerró confirmada, «el vuelo quedó reservado» sería falso: no se dice', () => {
+    // El proveedor la dio por cancelada al releerla (se deshace), o dijo algo más que el asiento
+    // (escala): el error del proveedor es lo que el vendedor tiene que leer.
+    for (const saga of [
+      { kind: 'compensate', status: 'pending' },
+      { kind: 'escalate', status: 'pending' },
+      { kind: 'settled', status: 'cancelled' },
+      undefined,
+    ]) {
+      expect(seatOutcomeMessages(vueloSiAsientoNo, saga)).toEqual([]);
+    }
   });
 });
