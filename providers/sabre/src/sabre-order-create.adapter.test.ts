@@ -1181,3 +1181,322 @@ describe('política y plazo de emisión', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// SAB-16 — asientos al reservar
+// ---------------------------------------------------------------------------------------------
+
+/** Dos tramos ATPCO sin Flight Check: el bloque `flightDetails`, un vuelo por tramo. */
+function atpcoTwoSegments(): Offer {
+  const base = atpcoOffer();
+  return {
+    ...base,
+    itineraries: [
+      {
+        segments: [
+          segment(),
+          segment({
+            flightNumber: '0081',
+            origin: 'LIM',
+            destination: 'CUZ',
+            departureAt: '2026-09-14T14:00:00-05:00',
+            arrivalAt: '2026-09-14T15:20:00-05:00',
+            durationMinutes: 80,
+          }),
+        ],
+        totalDurationMinutes: 365,
+        stops: 1,
+      },
+    ],
+  };
+}
+
+/** Dos adultos y un infante: el formulario los manda en otro orden que la búsqueda. */
+function withFamily(input: OrderCreateRequest): OrderCreateRequest {
+  const adult = input.passengers[0];
+  if (adult === undefined) throw new Error('fixture sin pasajero');
+  const second = { ...adult, paxId: 'pax-2', requestedTravelerIndex: 1, givenName: 'Maria' };
+  const infant = {
+    ...adult,
+    paxId: 'pax-3',
+    requestedTravelerIndex: 2,
+    paxType: 'INF' as const,
+    givenName: 'Lucia',
+    birthdate: '2026-01-10',
+  };
+  return {
+    ...input,
+    criteria: { ...input.criteria, paxCount: { adults: 2, children: 0, infants: 1 } },
+    passengers: [second, adult, infant],
+  };
+}
+
+type SeatPedido = NonNullable<OrderCreateRequest['seats']>[number];
+
+function seatRequest(over: Partial<SeatPedido> = {}): SeatPedido {
+  return { passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C', ...over };
+}
+
+/** La reserva confirmada con los asientos que se le pasen en su vuelo. */
+function confirmedWithSeats(seats: readonly unknown[]): Record<string, unknown> {
+  return {
+    confirmationId: 'PYMUEZ',
+    booking: {
+      bookingId: 'PYMUEZ',
+      flights: [{ itemId: 'F1', flightStatusCode: 'HK', flightStatusName: 'Confirmed', seats }],
+    },
+  };
+}
+
+function flightsOf(wire: Wire): Array<Record<string, unknown>> {
+  return (wire.body['flightDetails'] as { flights: Array<Record<string, unknown>> }).flights;
+}
+
+describe('SAB-16 — los asientos viajan en el bloque de la reserva', () => {
+  it('flightDetails: cada asiento en SU vuelo, por número y viajero, sin id de oferta', async () => {
+    const input = withFamily(request(atpcoTwoSegments()));
+    const wire = await book(
+      {
+        ...input,
+        seats: [
+          seatRequest({ passengerIndex: 0, segmentRef: 0, row: 12, column: 'C' }),
+          seatRequest({ passengerIndex: 1, segmentRef: 0, row: 12, column: 'D' }),
+          seatRequest({ passengerIndex: 0, segmentRef: 1, row: 4, column: 'A', offerRef: 'x-1' }),
+        ],
+      },
+      CONFIRMED_RESPONSE,
+    );
+
+    const flights = flightsOf(wire);
+    // El formulario mandó a María primero: el viajero sale de requestedTravelerIndex, no del orden.
+    expect(flights[0]?.['seats']).toEqual([
+      { number: '12C', travelerIndex: 2 },
+      { number: '12D', travelerIndex: 1 },
+    ]);
+    expect(flights[1]?.['seats']).toEqual([{ number: '4A', travelerIndex: 2 }]);
+    expect(wire.raw).not.toContain('seatOfferId');
+    expect(wire.raw).not.toContain('changeOfGaugeSeats');
+  });
+
+  it('con asientos el caso de uso es FLIGHT_WITH_EXTRAS: un asiento caído no tumba el vuelo', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      confirmedWithSeats([{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }]),
+    );
+    expect(wire.body['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+    expect(wire.outcome.useCase).toBe('FLIGHT_WITH_EXTRAS');
+    expect(wire.outcome.seats).toEqual({ requested: 1, notConfirmed: 0 });
+    expect(wire.outcome.result.outcome).toBe('CONFIRMED');
+  });
+
+  it('sin asientos nada cambia: FLIGHT_ONLY y HALT_ON_ERROR, como antes', async () => {
+    const wire = await book({ ...request(atpcoOffer()), seats: [] }, CONFIRMED_RESPONSE);
+    expect(wire.body['errorHandlingPolicy']).toEqual(['HALT_ON_ERROR']);
+    expect(wire.outcome.useCase).toBe('FLIGHT_ONLY');
+    expect(wire.raw).not.toContain('"seats"');
+    expect(wire.outcome.providerRaw).not.toHaveProperty('seatsRequested');
+  });
+
+  it('el caso de uso declarado manda sobre el que sugieren los asientos', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      CONFIRMED_RESPONSE,
+      { useCase: 'FLIGHT_ONLY' },
+    );
+    expect(wire.body['errorHandlingPolicy']).toEqual(['HALT_ON_ERROR']);
+  });
+
+  it('cambio de equipo en flightDetails: el segundo avión va en changeOfGaugeSeats', async () => {
+    const wire = await book(
+      {
+        ...request(atpcoOffer()),
+        seats: [seatRequest({ legIndex: 0 }), seatRequest({ legIndex: 1, row: 30, column: 'C' })],
+      },
+      CONFIRMED_RESPONSE,
+    );
+    const flight = flightsOf(wire)[0];
+    expect(flight?.['seats']).toEqual([{ number: '12C', travelerIndex: 1 }]);
+    expect(flight?.['changeOfGaugeSeats']).toEqual([{ number: '30C', travelerIndex: 1 }]);
+  });
+
+  it('cambio de equipo con asiento en un solo avión no sale: Sabre exige los dos', async () => {
+    await expect(
+      book(
+        { ...request(atpcoOffer()), seats: [seatRequest({ legIndex: 1, row: 30 })] },
+        CONFIRMED_RESPONSE,
+      ),
+    ).rejects.toThrow(OrderCreateNotSentError);
+  });
+
+  it('flightOffer (Flight Check): seatOffers con el id de la oferta del asiento del mapa', async () => {
+    const wire = await book(
+      { ...request(flightCheckedOffer()), seats: [seatRequest({ offerRef: 'seat-offer-12c' })] },
+      CONFIRMED_RESPONSE,
+    );
+    expect(wire.body['flightOffer']).toEqual({
+      offerId: 'checked-offer-1',
+      selectedOfferItems: ['checked-offer-1-1'],
+      seatOffers: [{ seatOfferId: 'seat-offer-12c', number: '12C', travelerIndex: 1 }],
+    });
+    expect(wire.body['flightDetails']).toBeUndefined();
+  });
+
+  it('flightOffer (NDC): el viajero es el del binding de price', async () => {
+    const wire = await book(
+      { ...request(ndcOffer()), seats: [seatRequest({ offerRef: 'ndc-seat-1' })] },
+      CONFIRMED_RESPONSE,
+    );
+    expect((wire.body['flightOffer'] as Record<string, unknown>)['seatOffers']).toEqual([
+      { seatOfferId: 'ndc-seat-1', number: '12C', travelerIndex: 1 },
+    ]);
+  });
+});
+
+describe('SAB-16 — lo que no se puede pedir no sale al cable', () => {
+  async function refused(input: OrderCreateRequest): Promise<unknown> {
+    return book(input, CONFIRMED_RESPONSE).catch((err: unknown) => err);
+  }
+
+  it('un asiento de flightOffer sin la oferta del asiento del mapa', async () => {
+    const thrown = await refused({ ...request(flightCheckedOffer()), seats: [seatRequest()] });
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    expect((thrown as Error).message).toMatch(/seatOfferId/);
+  });
+
+  it('el segundo avión de un cambio de equipo en flightOffer, que no tiene campo', async () => {
+    const thrown = await refused({
+      ...request(flightCheckedOffer()),
+      seats: [
+        seatRequest({ offerRef: 'a-1' }),
+        seatRequest({ legIndex: 1, row: 30, offerRef: 'a-2' }),
+      ],
+    });
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+  });
+
+  it('un infante en brazos, que no ocupa asiento', async () => {
+    const thrown = await refused({
+      ...withFamily(request(atpcoOffer())),
+      seats: [seatRequest({ passengerIndex: 2 })],
+    });
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    expect((thrown as Error).message).toMatch(/infante/);
+  });
+
+  it('un pasajero que la reserva no tiene', async () => {
+    const thrown = await refused({
+      ...request(atpcoOffer()),
+      seats: [seatRequest({ passengerIndex: 4 })],
+    });
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+  });
+
+  it('un tramo que la oferta no tiene', async () => {
+    const thrown = await refused({
+      ...request(atpcoOffer()),
+      seats: [seatRequest({ segmentRef: 1 })],
+    });
+    expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+  });
+
+  it('dos asientos para el mismo pasajero en el mismo avión, o el mismo asiento dos veces', async () => {
+    const family = withFamily(request(atpcoOffer()));
+    for (const seats of [
+      [seatRequest(), seatRequest({ column: 'D' })],
+      [seatRequest({ passengerIndex: 0 }), seatRequest({ passengerIndex: 1 })],
+    ]) {
+      expect(await refused({ ...family, seats })).toBeInstanceOf(OrderCreateNotSentError);
+    }
+  });
+
+  it('una fila o una columna que no forman un número de asiento', async () => {
+    for (const seat of [seatRequest({ row: 0 }), seatRequest({ column: 'cc' })]) {
+      const thrown = await refused({ ...request(atpcoOffer()), seats: [seat] });
+      expect(thrown).toBeInstanceOf(OrderCreateNotSentError);
+    }
+  });
+});
+
+describe('SAB-16 — cada asiento pedido tiene que volver', () => {
+  it('confirmado sin el asiento pedido (SEAT_NOT_ALLOWED_FOR_BOOKING es un aviso): PARTIAL con el asiento FAILED', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      {
+        ...CONFIRMED_RESPONSE,
+        errors: [{ category: 'WARNING', type: 'SEAT_NOT_ALLOWED_FOR_BOOKING' }],
+      },
+    );
+
+    expect(wire.outcome.result.outcome).toBe('PARTIAL');
+    expect(wire.outcome.result.items).toEqual([
+      {
+        kind: 'flight',
+        providerItemId: 'F1',
+        status: 'CONFIRMED',
+        statusCode: 'HK',
+        message: 'Confirmed',
+      },
+      { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
+    ]);
+    expect(wire.outcome.seats).toEqual({ requested: 1, notConfirmed: 1 });
+    // El vuelo no se compensa por el asiento: es accesorio en FLIGHT_WITH_EXTRAS.
+    expect(wire.outcome.failures.dependencyFailed).toBe(false);
+    expect(wire.outcome.result.compensation).toBeUndefined();
+    expect(wire.outcome.providerRaw).toMatchObject({ seatsRequested: 1, seatsNotConfirmed: 1 });
+  });
+
+  it('el asiento devuelto con otro número tampoco cuenta como el pedido', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      confirmedWithSeats([{ number: '14A', statusCode: 'HK', statusName: 'Confirmed' }]),
+    );
+    expect(wire.outcome.result.outcome).toBe('PARTIAL');
+    expect(wire.outcome.result.items.filter((item) => item.kind === 'seat')).toEqual([
+      {
+        kind: 'seat',
+        status: 'CONFIRMED',
+        statusCode: 'HK',
+        message: 'Confirmed',
+        seatNumber: '14A',
+      },
+      { kind: 'seat', status: 'FAILED', seatNumber: '12C' },
+    ]);
+  });
+
+  it('el asiento denegado por la aerolínea no se duplica: sale una vez, FAILED, con su número', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest({ row: 12, column: 'A' })] },
+      SEAT_FAILED_RESPONSE,
+    );
+    expect(wire.outcome.result.items.filter((item) => item.kind === 'seat')).toEqual([
+      {
+        kind: 'seat',
+        status: 'FAILED',
+        statusCode: 'UC',
+        message: 'Cancelled',
+        seatNumber: '12A',
+      },
+    ]);
+    expect(wire.outcome.seats).toEqual({ requested: 1, notConfirmed: 1 });
+  });
+
+  it('sin vuelos en la respuesta no hay con qué cruzar: lo resuelve la lectura de cierre', async () => {
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      { confirmationId: 'PYMUEZ' },
+    );
+    expect(wire.outcome.result.outcome).toBe('PENDING');
+    expect(wire.outcome.result.items).toEqual([]);
+  });
+
+  it('el viajero del asiento devuelto se cruza por posición: el de otro pasajero no vale', async () => {
+    const input = withFamily(request(atpcoOffer()));
+    // Pedido para Juanito (posición 1 en travelers); la respuesta trae el 12C en la posición 0.
+    const wire = await book(
+      { ...input, seats: [seatRequest({ passengerIndex: 0 })] },
+      confirmedWithSeats([{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }]),
+    );
+    expect(wire.outcome.result.outcome).toBe('PARTIAL');
+    expect(wire.outcome.seats.notConfirmed).toBe(1);
+  });
+});

@@ -14,6 +14,9 @@ import {
   SabreFlightCheckRequestError,
   SabreFlightCheckTenantMismatchError,
   SabreGetBookingBuildError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreGetSeatsRequestError,
   SabreGetBookingMappingError,
   SabreIndexError,
   SabreOfferPriceEmptyError,
@@ -21,6 +24,8 @@ import {
   SabrePriceMappingError,
   SabrePriceRejectedError,
   SabrePriceRequestError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
   SabreShopMappingError,
   SabreTicketingNotSentError,
   type SabreFailureKind,
@@ -128,6 +133,15 @@ export function humanizeSabreError(err: unknown): string {
   ) {
     return 'No pudimos armar la operación con los datos de esta oferta. Revalida el precio y vuelve a intentar; si se repite, ya quedó registrado para el equipo.';
   }
+  // --- Mapa de asientos (SAB-16) ---------------------------------------------------------------
+  // Ninguno impide reservar: el asiento es opcional, y el mensaje lo dice.
+  if (err instanceof SabreGetSeatsRequestError || err instanceof SabreSeatMapTenantMismatchError) {
+    return 'No pudimos armar la consulta del mapa de asientos con esta oferta. Verifica el precio y vuelve a intentar; también puedes reservar sin asiento.';
+  }
+  if (err instanceof SabreGetSeatsRejectedError || err instanceof SabreSeatMapEmptyError) {
+    return 'Sabre no devolvió el mapa de asientos de este vuelo. Puedes reservar sin asiento.';
+  }
+
   if (err instanceof SabreTicketingNotSentError) return EMISION_NO_ENVIADA[err.code];
   if (err instanceof SabreFulfillBuildError) {
     // Como la cancelación: la regla es nuestra y cerrada, y dice qué dato no permitió armarla.
@@ -149,7 +163,8 @@ export function humanizeSabreError(err: unknown): string {
     err instanceof SabreFlightCheckMappingError ||
     err instanceof SabreCreateBookingMapError ||
     err instanceof SabreGetBookingMappingError ||
-    err instanceof SabreCancelMappingError
+    err instanceof SabreCancelMappingError ||
+    err instanceof SabreGetSeatsMappingError
   ) {
     return 'Sabre devolvió una respuesta que no pudimos interpretar. Ya quedó registrado para el equipo.';
   }
@@ -187,6 +202,11 @@ export const SABRE_THROWN_CLASSES = [
   SabreCancelBookingBuildError,
   SabreCancelMappingError,
   SabreIndexError,
+  SabreGetSeatsRequestError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
 ] as const;
 
 /**
@@ -213,7 +233,12 @@ export function sabreErrorStatus(err: unknown): number {
   ) {
     return HttpStatus.CONFLICT;
   }
-  if (err instanceof SabreFlightCheckTenantMismatchError) return HttpStatus.BAD_REQUEST;
+  if (
+    err instanceof SabreFlightCheckTenantMismatchError ||
+    err instanceof SabreSeatMapTenantMismatchError
+  ) {
+    return HttpStatus.BAD_REQUEST;
+  }
   return HttpStatus.BAD_GATEWAY;
 }
 

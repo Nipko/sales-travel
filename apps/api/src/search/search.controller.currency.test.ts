@@ -47,8 +47,17 @@ function banco(defaultCurrency: unknown): Banco {
     },
     priceOffer: (_offer: unknown, c: FlightSearchCriteria) => {
       visto = c;
-      return Promise.resolve({ offer: {}, priceChanged: false, warnings: [] });
+      return Promise.resolve({
+        offer: { provider: { name: 'air' } },
+        priceChanged: false,
+        warnings: [],
+      });
     },
+    seatMap: (_offer: unknown, c: FlightSearchCriteria) => {
+      visto = c;
+      return Promise.resolve({ seatMap: { segments: [], warnings: [] } });
+    },
+    seatSelectionAvailable: () => false,
   } as unknown as SearchService;
 
   const db = {
@@ -125,6 +134,23 @@ describe('moneda del tenant → criterio de búsqueda', () => {
       offer: {} as never,
       searchCriteria: criteria(),
     });
+
+    expect(b.visto()?.currency).toBe('COP');
+  });
+
+  it('la revalidación dice si el proveedor deja elegir asiento (SAB-16), sin consultar a nadie', async () => {
+    const b = banco('COP');
+    const priced = await b.controller.offerPrice('u1', {
+      offer: {} as never,
+      searchCriteria: criteria(),
+    });
+
+    expect(priced.seatSelection).toBe(false);
+  });
+
+  it('el mapa de asientos también pide la moneda de la agencia (SAB-16)', async () => {
+    const b = banco(' cop ');
+    await b.controller.seatMap('u1', { offer: {} as never, searchCriteria: criteria() });
 
     expect(b.visto()?.currency).toBe('COP');
   });

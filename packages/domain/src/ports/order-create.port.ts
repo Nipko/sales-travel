@@ -86,12 +86,46 @@ export interface PaymentInfo {
   currency: string;
 }
 
+/**
+ * Un asiento pedido al reservar (SAB-16): un pasajero, un tramo y un avión.
+ *
+ * Los ejes son los del mapa de asientos (`SeatMap` de `@sales-travel/canonical`), para que lo que el
+ * vendedor eligió en la pantalla llegue al ACL sin traducciones intermedias. Sólo asientos SIN
+ * CARGO: un asiento con precio se cobra con un EMD al emitir, y ese camino no existe todavía (D1:
+ * nunca con tarjeta). Quien arma la reserva ya lo comprobó contra el mapa leído justo antes.
+ */
+export interface SeatSelection {
+  /**
+   * `requestedTravelerIndex` del pasajero: índice global, base cero, sobre adultos, luego niños,
+   * luego infantes. Un infante en brazos no ocupa asiento y nunca aparece aquí.
+   */
+  passengerIndex: number;
+  /** Índice sobre los segmentos aplanados de la oferta (`SeatMapSegment.segmentRef`). */
+  segmentRef: number;
+  /** Avión dentro del tramo (`SeatMapSegment.legIndex`): 0 salvo cambio de equipo. */
+  legIndex: number;
+  row: number;
+  /** Letra de la columna: fila + columna es el número del asiento (`12C`). */
+  column: string;
+  /**
+   * La oferta del asiento para ESTE pasajero (`SeatOffer.offerRef`), tomada del mapa que se leyó
+   * justo antes de reservar —nunca del navegador—. Opaca: sólo la interpreta el ACL que la escribió.
+   */
+  offerRef?: string;
+}
+
 export interface OrderCreateRequest {
   offer: Offer;
   criteria: FlightSearchCriteria;
   passengers: Passenger[];
   contactInfo: BookingContactInfo;
   payment?: PaymentInfo;
+  /**
+   * Asientos a reservar junto con el vuelo. Ausente o vacío = sin asiento elegido. El asiento es
+   * accesorio: si la aerolínea no lo confirma, el vuelo se conserva y el asiento sale `FAILED` en
+   * `OrderCreateResult.items`.
+   */
+  seats?: SeatSelection[];
 }
 
 /**
@@ -164,6 +198,11 @@ export interface OrderItemResult {
   /** Código de estado crudo del vendor, dos letras (`^[A-Z]{2}$`): p.ej. 'HK', 'NN', 'UC'. */
   statusCode?: string;
   message?: string;
+  /**
+   * Sólo en `kind: 'seat'`: el número del asiento (`12C`). Es lo que el vendedor necesita para
+   * saber QUÉ asiento no quedó; no es un dato del pasajero.
+   */
+  seatNumber?: string;
 }
 
 export interface OrderCreateResult {

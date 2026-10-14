@@ -24,6 +24,8 @@ import {
   type Passenger,
   type PaymentInfo,
   type ProviderIssue,
+  type SeatMapPort,
+  type SeatSelection,
   type ServiceListResult,
   type TicketCheckResult,
 } from '@sales-travel/domain';
@@ -45,9 +47,11 @@ import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.fac
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { stampProviderEnvironment } from '../providers/provider-environment.js';
 import {
+  SeatSelectionNotAvailableError,
   TicketVoidNotAvailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
+  supportsSeatMap,
   supportsTicketing,
   type FlightProviderAdapter,
   type OrderCancelScope,
@@ -55,6 +59,7 @@ import {
   type TicketOperation,
 } from '../providers/provider.types.js';
 import { PostSaleQueueService } from '../queue/post-sale-queue.service.js';
+import { assertSeatRequestShape, bindSeatsToMap } from './seat-selection.js';
 import {
   ORDER_STATUS_BY_OUTCOME,
   compensationTargets,
@@ -62,6 +67,7 @@ import {
   decideAfterVerify,
   fallbackProviderRaw,
   planVerification,
+  seatsNotConfirmed,
   verificationSummary,
   type SagaDecision,
 } from './order-create.saga.js';
@@ -311,6 +317,8 @@ export interface CreateOrderDto {
   passengers: Passenger[];
   contactInfo: BookingContactInfo;
   quotationId?: string;
+  /** Asientos sin cargo a reservar con el vuelo (SAB-16). Ver `seat-selection.ts`. */
+  seats?: SeatSelection[];
 }
 
 /**
@@ -561,6 +569,8 @@ export class OrdersService {
       throw new BadRequestException('La oferta no pertenece a la agencia activa.');
     }
     this.assertCreateRequestConsistency(requested);
+    // SAB-16: la forma de los asientos pedidos, antes de tocar credenciales o la base.
+    assertSeatRequestShape(requested);
     const requestKey = createRequestKey(requested.quotationId, clientRequestId);
 
     const providerCode = requested.offer.provider.name;
@@ -568,6 +578,11 @@ export class OrdersService {
     // abre la orden. El resto (leer, cancelar, pagar, verificar) es post-venta y sigue por
     // `flightProviderForOrder`, que no mira la habilitación.
     const provider = await this.registry.byCodeForOffer(tenantId, providerCode);
+    // Con asientos, el proveedor tiene que saber reservarlos (capacidad `seatMap`, que cada factory
+    // enciende por despliegue). Si no, no se abre la orden: el vendedor reserva sin asiento.
+    if ((requested.seats?.length ?? 0) > 0 && !this.reservesSeats(provider)) {
+      throw new SeatSelectionNotAvailableError();
+    }
     // El entorno de la cuenta con la que se va a reservar, no el que mandó el navegador: es lo que
     // decide si la orden es una reserva de prueba (sin correo automático al pasajero, marcada en
     // Reservas). Se escribe ANTES del claim para que la fila `pending` ya nazca marcada.
@@ -600,7 +615,11 @@ export class OrdersService {
     // reglas de la BD. Nunca se confía en `offer.pricing` recibido del navegador.
     let verifiedDto: CreateOrderDto;
     try {
-      verifiedDto = await this.revalidateForCreate(tenantId, provider, dto);
+      verifiedDto = await this.bindSeats(
+        tenantId,
+        provider,
+        await this.revalidateForCreate(tenantId, provider, dto),
+      );
     } catch (error) {
       await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
@@ -636,6 +655,9 @@ export class OrdersService {
           amountMinor: verifiedDto.offer.pricing?.finalMinor ?? verifiedDto.offer.total.amountMinor,
           currency: verifiedDto.offer.total.currency,
           passengers: verifiedDto.passengers.length,
+          // Cuántos asientos se piden con el vuelo (SAB-16). El número, no cuáles: el detalle va en
+          // los ítems del resultado.
+          seats: verifiedDto.seats?.length ?? 0,
           quotationId: verifiedDto.quotationId ?? null,
         },
       });
@@ -883,6 +905,33 @@ export class OrdersService {
     return { ...dto, offer: await this.withTenantPricing(tenantId, providerOffer) };
   }
 
+  /** ¿El proveedor resuelto sabe reservar asientos y lo tiene encendido? (SAB-16) */
+  private reservesSeats(
+    provider: ResolvedProvider<FlightProviderAdapter>,
+  ): provider is ResolvedProvider<FlightProviderAdapter & SeatMapPort> {
+    return provider.capabilities.seatMap === true && supportsSeatMap(provider.adapter);
+  }
+
+  /**
+   * Los asientos pedidos, atados al mapa de la oferta YA revalidada (SAB-16). Se lee el mapa una
+   * vez, justo antes de reservar: otro vendedor puede haberse quedado el asiento desde que se pintó
+   * la pantalla, y la oferta de cada asiento (`offerRef`) es de este mapa, nunca del navegador. El
+   * mapa se pide con la oferta revalidada porque sus ofertas de asiento cuelgan de ella.
+   *
+   * Cuesta una llamada más al reservar, y sólo cuando hay asientos. Un rechazo aquí es un 400 con el
+   * motivo y no sale nada hacia la aerolínea: el vendedor elige otro asiento o reserva sin él.
+   */
+  private async bindSeats(
+    tenantId: string,
+    provider: ResolvedProvider<FlightProviderAdapter>,
+    dto: CreateOrderDto,
+  ): Promise<CreateOrderDto> {
+    if ((dto.seats?.length ?? 0) === 0) return dto;
+    if (!this.reservesSeats(provider)) throw new SeatSelectionNotAvailableError();
+    const seatMap = await provider.adapter.getSeatMap(dto.offer, dto.searchCriteria, { tenantId });
+    return { ...dto, seats: bindSeatsToMap(dto, seatMap) };
+  }
+
   /** La oferta con el precio de venta del tenant, calculado con las reglas de la BD sobre el neto. */
   private async withTenantPricing(tenantId: string, providerOffer: Offer): Promise<Offer> {
     const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
@@ -1016,6 +1065,7 @@ export class OrdersService {
       criteria: dto.searchCriteria,
       passengers: dto.passengers,
       contactInfo: dto.contactInfo,
+      ...((dto.seats?.length ?? 0) > 0 ? { seats: dto.seats } : {}),
     };
 
     try {
@@ -1348,6 +1398,24 @@ export class OrdersService {
           queued,
         },
       });
+    }
+
+    // Confirmada con asientos fuera (SAB-16): no necesita a nadie más que al vendedor que la está
+    // mirando, pero queda dicho. Best-effort, como el resto de la auditoría de este paso.
+    const missingSeats = seatsNotConfirmed(created.result);
+    if (decision.kind === 'settled' && missingSeats > 0) {
+      try {
+        await this.audit.emit({
+          eventType: ORDER_EVENTS.seatsNotConfirmed,
+          tenantId,
+          actorUserId: userId,
+          aggregateType: 'order',
+          aggregateId: order.id,
+          payload: { provider: order.provider, seats: missingSeats },
+        });
+      } catch {
+        // El asiento ya se ve en el resultado de la reserva; no se tumba el cierre por el registro.
+      }
     }
 
     // Sólo se escribe si el estado CAMBIA. Un UPDATE que no cambia nada mueve `updated_at` y

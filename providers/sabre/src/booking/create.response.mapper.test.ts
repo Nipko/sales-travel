@@ -472,11 +472,38 @@ describe('el asiento se pide y ahora también se lee', () => {
     expect(mapped.order.items.map((item) => item.kind)).toEqual(['flight', 'seat', 'seat']);
   });
 
-  it('el número de asiento no sale del mapper: nadie lo confunde con una clave de cancelación', () => {
+  it('el número de asiento sale como `seatNumber` y nunca como clave de cancelación', () => {
+    // SAB-16: el vendedor tiene que saber QUÉ asiento no quedó («no se confirmó el 13A»), así que
+    // el número sube. Pero en su campo: ni `providerItemId` ni la lista de compensación lo ven, que
+    // es lo que esta regla cuidaba.
     const mapped = mapSabreCreateBookingResponse(
       withSeats([seat({ number: '13A', statusCode: 'UC' })]),
     );
-    expect(JSON.stringify(mapped)).not.toContain('13A');
+    const asiento = mapped.order.items[1];
+    expect(asiento).toMatchObject({ kind: 'seat', status: 'FAILED', seatNumber: '13A' });
+    expect(asiento?.providerItemId).toBeUndefined();
+    expect(JSON.stringify(mapped.order.compensation ?? {})).not.toContain('13A');
+    expect(mapped.seats).toEqual([
+      { flightPosition: 0, travelerPosition: 0, legIndex: 0, number: '13A', status: 'FAILED' },
+    ]);
+  });
+
+  it('un número fuera del patrón del contrato no sube: el ítem sale sin número', () => {
+    const mapped = mapSabreCreateBookingResponse(
+      withSeats([seat({ number: '13a<script>', statusCode: 'UC' })]),
+    );
+    expect(mapped.order.items[1]).toMatchObject({ kind: 'seat', status: 'FAILED' });
+    expect(mapped.order.items[1]?.seatNumber).toBeUndefined();
+    expect(mapped.seats).toEqual([]);
+  });
+
+  it('la posición del asiento en el array es el viajero; el hueco no corre a los demás', () => {
+    const mapped = mapSabreCreateBookingResponse(
+      withSeats([null, seat({ number: '14C', statusCode: 'HK', statusName: 'Confirmed' })]),
+    );
+    expect(mapped.seats).toEqual([
+      { flightPosition: 0, travelerPosition: 1, legIndex: 0, number: '14C', status: 'CONFIRMED' },
+    ]);
   });
 
   it('CONTRAPESO: un asiento asignado no degrada nada', () => {
@@ -490,6 +517,7 @@ describe('el asiento se pide y ahora también se lee', () => {
       status: 'CONFIRMED',
       statusCode: 'HK',
       message: 'Confirmed',
+      seatNumber: '13A',
     });
   });
 
@@ -602,20 +630,29 @@ describe('el asiento se pide y ahora también se lee', () => {
     expect(mapped.order.items[3]?.status).toBe('CONFIRMED');
   });
 
-  it('`changeOfGaugeSeats` NO se lee, porque el builder tampoco lo pide', () => {
-    // Las dos mitades se mueven juntas. Este caso existe para que quien añada el carril al
-    // builder se encuentre el test rojo y añada también la lectura, en vez de repetir la
-    // asimetría que este bloque acaba de cerrar.
+  it('`changeOfGaugeSeats` se lee desde que el builder lo pide (SAB-16): el segundo avión cuenta', () => {
+    // Las dos mitades se mueven juntas: el builder pide el asiento del segundo avión de un cambio
+    // de equipo, y un rechazo de ese asiento tiene que degradar la reserva igual que el del primero.
     const mapped = mapSabreCreateBookingResponse(
       response({
         booking: {
           bookingId: 'PYMUEZ',
-          flights: [flight({ changeOfGaugeSeats: [seat({ statusCode: 'UC' })] })],
+          flights: [
+            flight({
+              seats: [seat({ number: '12C', statusCode: 'HK', statusName: 'Confirmed' })],
+              changeOfGaugeSeats: [seat({ number: '30C', statusCode: 'UC' })],
+            }),
+          ],
         },
       }),
     );
 
-    expect(mapped.order.items.map((item) => item.kind)).toEqual(['flight']);
-    expect(mapped.order.outcome).toBe('CONFIRMED');
+    expect(mapped.order.items.map((item) => item.kind)).toEqual(['flight', 'seat', 'seat']);
+    expect(mapped.order.outcome).toBe('PARTIAL');
+    expect(mapped.seats).toEqual([
+      { flightPosition: 0, travelerPosition: 0, legIndex: 0, number: '12C', status: 'CONFIRMED' },
+      { flightPosition: 0, travelerPosition: 0, legIndex: 1, number: '30C', status: 'FAILED' },
+    ]);
+    expect(mapped.flightCount).toBe(1);
   });
 });

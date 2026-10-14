@@ -25,6 +25,11 @@ export const ORDER_EVENTS = {
   compensationScheduled: 'OrderCompensationScheduled',
   /** Necesita una persona. Es la rama que impide que un desenlace desconocido pase por bueno. */
   escalated: 'OrderEscalated',
+  /**
+   * La reserva quedó confirmada con todos sus vuelos, pero la aerolínea no confirmó uno o más de los
+   * asientos elegidos (SAB-16). `{ provider, seats }`: cuántos, nunca cuáles ni de quién.
+   */
+  seatsNotConfirmed: 'OrderSeatsNotConfirmed',
   /** Cancelación ejecutada contra el proveedor (exitosa o rechazada). */
   cancelled: 'OrderCancellationAttempted',
 

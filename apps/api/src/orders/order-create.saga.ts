@@ -120,6 +120,23 @@ export function failedEssentialItems(result: OrderCreateResult): readonly OrderI
   );
 }
 
+/**
+ * Los asientos que no quedaron, en un parcial donde TODO lo demás sí quedó (SAB-16). `0` si el
+ * parcial es otra cosa: un vuelo sin confirmar, un hotel o un coche caídos, o un error sin ítem.
+ *
+ * Es el único parcial que se cierra como confirmado ({@link decideAfterVerify}). El asiento lo
+ * eligió el vendedor en la misma pantalla en la que ahora lee «el vuelo quedó reservado, pero la
+ * aerolínea no confirmó el asiento 12C»: la persona que tiene que decidir ya está mirando. Dejar la
+ * orden `pending` la dejaba sin poder emitirse y sin aviso de plazo por un extra que se pide de nuevo
+ * contra el PNR.
+ */
+export function seatsNotConfirmed(result: OrderCreateResult): number {
+  if (result.outcome !== 'PARTIAL') return 0;
+  if (!result.items.some((item) => item.kind === 'flight')) return 0;
+  if (result.items.some((item) => item.kind !== 'seat' && item.status !== 'CONFIRMED')) return 0;
+  return result.items.filter((item) => item.kind === 'seat' && item.status !== 'CONFIRMED').length;
+}
+
 /** Por qué hay que deshacer parte de lo que se creó. Vocabulario cerrado: va al `domain_event`. */
 export type CompensationReason =
   /** `PARTIAL`: la reserva existe y se cayó al menos un ítem **esencial**. */
@@ -145,7 +162,9 @@ export type EscalationReason =
   | 'compensation-targets-unknown'
   /**
    * El desenlace es parcial pero **no se cayó nada de lo que la compra depende**: un accesorio
-   * fuera (el asiento, un extra) o un `errors[]` sin ningún ítem caído.
+   * fuera (un extra, un hotel) o un `errors[]` sin ningún ítem caído. Con todos los vuelos
+   * confirmados y sólo asientos fuera, en cambio, se cierra como confirmada (SAB-16,
+   * {@link seatsNotConfirmed}).
    *
    * La reserva se CONSERVA. Cancelar un vuelo confirmado porque no había asiento es indefendible:
    * la tarifa puede haber desaparecido y el cliente se queda sin viaje por un extra. Perder el
@@ -324,6 +343,9 @@ export function decideAfterVerify(input: {
     // exactamente un id —el del VUELO CONFIRMADO, porque es el único ítem vivo con id— y el saga
     // cancela el vuelo del cliente porque no había asiento.
     if (failedEssentialItems(created).length === 0) {
+      // Todos los vuelos confirmados y sólo asientos fuera: la reserva vale y se cierra. El asiento
+      // que no quedó se ve en el resultado y en su `domain_event` (ver {@link seatsNotConfirmed}).
+      if (seatsNotConfirmed(created) > 0) return { kind: 'settled', status: 'confirmed' };
       return { kind: 'escalate', reason: 'partial-without-essential-failure', status };
     }
     return compensateOrEscalate(created, 'partial-items-failed', status);

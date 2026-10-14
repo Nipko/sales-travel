@@ -10,8 +10,17 @@ import { DatabaseService } from '../database/database.service.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { OfferPriceBodySchema, type OfferPriceBody } from './search.schemas.js';
-import { SearchService, type FlightSearchResponse } from './search.service.js';
+import {
+  OfferPriceBodySchema,
+  SeatMapBodySchema,
+  type OfferPriceBody,
+  type SeatMapBody,
+} from './search.schemas.js';
+import {
+  SearchService,
+  type FlightSearchResponse,
+  type SeatMapResponse,
+} from './search.service.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
@@ -31,6 +40,15 @@ import { SELLING_ROLES } from '../auth/roles.js';
  */
 export interface FlightSearchEnvelope extends FlightSearchResponse {
   showProviderInResults: boolean;
+}
+
+/**
+ * La revalidación tal como sale por HTTP. Crece, no cambia: `seatSelection` dice si el proveedor de
+ * la oferta deja elegir asiento al reservar (SAB-16), para que la pantalla ofrezca el botón sólo
+ * donde sirve. No consulta a nadie: es la capacidad del proveedor.
+ */
+export interface OfferPriceEnvelope extends OfferPriceResult {
+  seatSelection: boolean;
 }
 
 /**
@@ -99,7 +117,7 @@ export class SearchController {
   async offerPrice(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(OfferPriceBodySchema)) body: OfferPriceBody,
-  ): Promise<OfferPriceResult> {
+  ): Promise<OfferPriceEnvelope> {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
@@ -109,7 +127,31 @@ export class SearchController {
     const moneda = await this.monedaDelTenant(tenantId);
     if (moneda !== undefined) body.searchCriteria.currency = moneda;
 
-    return this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
+    const priced = await this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
+    return {
+      ...priced,
+      seatSelection: this.search.seatSelectionAvailable(priced.offer.provider.name),
+    };
+  }
+
+  /**
+   * El mapa de asientos de la oferta que el vendedor está por reservar (SAB-16). Es venta, como la
+   * revalidación: mismo rol, misma moneda y el mismo proveedor que emitió la oferta. Los asientos que
+   * se elijan viajan después con `POST /orders`, que vuelve a leer el mapa antes de reservar.
+   */
+  @SalesOperation()
+  @Post('seat-map')
+  async seatMap(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(SeatMapBodySchema)) body: SeatMapBody,
+  ): Promise<SeatMapResponse> {
+    if (!userId) throw new ForbiddenException();
+
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
+    const moneda = await this.monedaDelTenant(tenantId);
+    if (moneda !== undefined) body.searchCriteria.currency = moneda;
+
+    return this.search.seatMap(body.offer, body.searchCriteria, tenantId);
   }
 
   /** Moneda de venta de la agencia, ya normalizada y validada. Ver {@link tenantCurrency}. */

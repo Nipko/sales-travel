@@ -27,6 +27,7 @@ import {
   TicketVoidNotAvailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
+  supportsSeatMap,
   supportsTicketing,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
@@ -592,6 +593,8 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
       // Igual la anulación y la consulta de condiciones que la acompaña (SAB-09).
       ticketCheck: false,
       void: false,
+      // Y la elección de asiento al reservar (SAB-16), hasta certificarla en CERT (SAB-21).
+      seatMap: false,
     });
   });
 
@@ -2191,5 +2194,106 @@ describe('SabreProviderFactory — anular tiquetes (VOID)', () => {
     ).toMatch(
       /^No pudimos leer las condiciones de los tiquetes de esta reserva \(TICKET_CHECK_MALFORMED\)/,
     );
+  });
+});
+
+describe('SabreProviderFactory — asientos al reservar (SAB-16)', () => {
+  const RUTA_SEATS = '/v3/offers/getseats/byReservationPayload';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** El `fetch` del ACL: token, Get Seats y createBooking, con lo que salió por cada ruta. */
+  function cable(): { rutas: string[]; cuerpos: Map<string, string> } {
+    const rutas: string[] = [];
+    const cuerpos = new Map<string, string>();
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (typeof init?.body === 'string') cuerpos.set(ruta, init.body);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_SEATS) return respuesta({ response: { segments: [], seatMaps: [] } });
+      if (ruta === RUTA_CREATE) {
+        return respuesta({
+          confirmationId: PNR,
+          booking: {
+            bookingId: PNR,
+            flights: [
+              {
+                itemId: '1',
+                flightStatusCode: 'HK',
+                flightStatusName: 'Confirmed',
+                seats: [{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    return { rutas, cuerpos };
+  }
+
+  const criterios = (): OrderCreateRequest['criteria'] => pedidoDeReserva().criteria;
+
+  it('sin `seats` en SABRE_OPERATIONS: la capacidad apagada y el mapa no se consulta', async () => {
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities.seatMap).toBe(false);
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    const error = await adapter
+      .getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SabreOperationNotSupportedError);
+    // Ni siquiera el token: cada Get Seats es una llamada facturable.
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `seats` encendida: capacidad en true y Get Seats v3 por el cliente de la cuenta', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ seatMap: true, issue: false, void: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    // La respuesta no trae ningún mapa: el ACL lo dice en vez de pintar «no quedan asientos».
+    await expect(
+      adapter.getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' }),
+    ).rejects.toThrow();
+    expect(red.rutas).toEqual([RUTA_TOKEN, RUTA_SEATS]);
+    // Sin nombres ni documentos en la consulta del mapa.
+    expect(red.cuerpos.get(RUTA_SEATS)).not.toContain(PII.surname);
+  });
+
+  it('la reserva con asiento sale con FLIGHT_WITH_EXTRAS y el asiento en su vuelo', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+
+    const creada = await adapter.createOrderAudited(
+      {
+        ...pedidoDeReserva(),
+        seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+      },
+      { tenantId: 't1', requestId: 'req-asiento' },
+    );
+
+    const body = JSON.parse(red.cuerpos.get(RUTA_CREATE) ?? '{}') as Record<string, unknown>;
+    expect(body['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+    const vuelos = (body['flightDetails'] as { flights: Array<Record<string, unknown>> }).flights;
+    expect(vuelos[0]?.['seats']).toEqual([{ number: '12C', travelerIndex: 1 }]);
+    expect(creada.result.outcome).toBe('CONFIRMED');
+    expect(creada.result.items).toContainEqual(
+      expect.objectContaining({ kind: 'seat', status: 'CONFIRMED', seatNumber: '12C' }),
+    );
+    expect(creada.audit['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
   });
 });

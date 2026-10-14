@@ -5,6 +5,25 @@ import { OfferSchema } from '@sales-travel/canonical';
 /** Objetos JSON de pasajeros que se persisten verbatim después de validar el sobre. */
 const jsonObject = z.record(z.unknown());
 
+/** Nueve pasajeros con asiento, por hasta dieciséis aviones (tramos y cambios de equipo). */
+const SEATS_MAX = 9 * 16;
+
+/**
+ * Un asiento elegido al reservar (SAB-16), en los ejes del mapa de asientos. `strict` y sin
+ * `offerRef`: la oferta del asiento la pone el servidor desde el mapa que vuelve a leer justo antes
+ * de reservar, nunca el navegador. Tampoco hay precio: sólo se reservan asientos sin cargo, y eso
+ * también lo decide el mapa.
+ */
+export const SeatSelectionSchema = z
+  .object({
+    passengerIndex: z.number().int().min(0).max(8),
+    segmentRef: z.number().int().min(0).max(15),
+    legIndex: z.number().int().min(0).max(1).default(0),
+    row: z.number().int().min(1).max(999),
+    column: z.string().regex(/^[A-Z]$/),
+  })
+  .strict();
+
 // La Offer sí cruza una frontera de seguridad: de ella salen tenant, proveedor, precio e ids
 // opacos que se reenvían a Sabre. Por eso se valida completa contra el contrato canónico; aceptar
 // un record arbitrario aquí permitiría saltarse todos esos invariantes antes de la revalidación.
@@ -22,6 +41,7 @@ export const CreateOrderSchema = z
       })
       .passthrough(),
     quotationId: z.string().uuid().optional(),
+    seats: z.array(SeatSelectionSchema).min(1).max(SEATS_MAX).optional(),
   })
   // No existe cobro/emisión en createOrder. Rechazar `payment` evita que un cliente crea que una
   // tarjeta enviada y silenciosamente descartada fue procesada.

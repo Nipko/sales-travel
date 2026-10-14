@@ -6,7 +6,7 @@ import {
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
-import type { Offer } from '@sales-travel/canonical';
+import type { Offer, SeatMap } from '@sales-travel/canonical';
 import {
   OrderCreateNotSentError,
   type OrderCancelResult,
@@ -36,7 +36,9 @@ import type {
 import {
   ProviderDisabledByPlatformError,
   ProviderOrderAccountUnavailableError,
+  SeatSelectionNotAvailableError,
 } from '../providers/provider.types.js';
+import type { ProviderEnvironment } from '../providers/provider-environment.js';
 import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-flags.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
@@ -112,6 +114,10 @@ interface AdapterOptions {
   readonly cancelAudit?: Omit<OrderCancelAudit, 'result'>;
   readonly cancelResult?: OrderCancelResult;
   readonly cancelThrows?: Error;
+  /** Con un mapa, el adapter implementa `SeatMapPort` (SAB-16); sin él, no sabe pintarlo. */
+  readonly seatMap?: SeatMap;
+  /** La oferta que devuelve la revalidación. Por defecto, la misma que entra. */
+  readonly revalidated?: (offer: Offer) => Offer;
 }
 
 /**
@@ -143,10 +149,17 @@ class SagaAdapter implements FlightProviderAdapter {
     request: OrderCreateRequest,
     ctx: SearchContext,
   ) => Promise<OrderCreateAudit>;
+  readonly getSeatMap?: (
+    offer: Offer,
+    criteria: CreateOrderDto['searchCriteria'],
+    ctx: SearchContext,
+  ) => Promise<SeatMap>;
   /** Los ámbitos con los que se pidió cancelar, en orden. */
   readonly cancelScopes: (OrderCancelScope | undefined)[] = [];
 
   constructor(private readonly opts: AdapterOptions = {}) {
+    const seatMap = opts.seatMap;
+    if (seatMap !== undefined) this.getSeatMap = vi.fn(() => Promise.resolve(seatMap));
     if (opts.createAudit !== undefined) {
       this.createOrderAudited = vi.fn((request: OrderCreateRequest, ctx: SearchContext) =>
         this.createOrder(request, ctx).then((result) => ({
@@ -177,7 +190,11 @@ class SagaAdapter implements FlightProviderAdapter {
   // El resto del puerto no participa del saga de creación; existir con un rechazo explícito es
   // mejor que no existir: `undefined is not a function` sale como 500 genérico.
   priceOffer = vi.fn((offer: Offer) =>
-    Promise.resolve({ offer, priceChanged: false, warnings: [] }),
+    Promise.resolve({
+      offer: this.opts.revalidated === undefined ? offer : this.opts.revalidated(offer),
+      priceChanged: false,
+      warnings: [],
+    }),
   );
   cancelBnplOrder = vi.fn(() => Promise.reject(new Error('no usado en estos tests')));
   payOrder = vi.fn(() => Promise.reject(new Error('no usado en estos tests')));
@@ -195,6 +212,7 @@ class SagaFactory implements TenantProviderFactory<FlightProviderAdapter> {
   constructor(
     readonly adapter: SagaAdapter,
     capabilities: Partial<ProviderCapabilities> = {},
+    private readonly environment?: ProviderEnvironment,
   ) {
     this.capabilities = {
       retrieve: true,
@@ -211,7 +229,11 @@ class SagaFactory implements TenantProviderFactory<FlightProviderAdapter> {
   }
 
   resolveForTenant(): Promise<TenantAdapter<FlightProviderAdapter>> {
-    return Promise.resolve({ adapter: this.adapter, credentialSource: 'own' });
+    return Promise.resolve({
+      adapter: this.adapter,
+      credentialSource: 'own',
+      ...(this.environment === undefined ? {} : { providerEnvironment: this.environment }),
+    });
   }
 
   humanizeError(err: unknown): string {
@@ -584,6 +606,17 @@ function parcial(): OrderCreateResult {
   };
 }
 
+/** Un extra (no un asiento) caído con el vuelo dentro: la reserva se conserva y escala. */
+function extraCaido(): OrderCreateResult {
+  return {
+    ...parcial(),
+    items: [
+      { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+      { kind: 'ancillary', providerItemId: '13', status: 'FAILED', statusCode: 'UC' },
+    ],
+  };
+}
+
 /**
  * El parcial que SÍ compensa: un tramo dentro y el otro caído.
  *
@@ -930,7 +963,7 @@ describe('saga de creación — la compensación es selectiva y va a la cola', (
   });
 
   it('un PARTIAL no se persiste como confirmado aunque haya PNR', async () => {
-    const b = banco({ created: parcial() });
+    const b = banco({ created: extraCaido() });
     await b.orders.createOrder(TENANT, USER, dto());
 
     expect(b.fila()?.['status']).toBe('pending');
@@ -960,11 +993,9 @@ describe('saga de creación — un accesorio caído no cancela el producto', () 
     const b = banco({ created: parcial() });
     const { saga } = await b.orders.createOrder(TENANT, USER, dto());
 
-    expect(saga).toEqual({
-      kind: 'escalate',
-      reason: 'partial-without-essential-failure',
-      status: 'pending',
-    });
+    // SAB-16: con todos los vuelos confirmados y sólo el asiento fuera, la reserva se cierra
+    // confirmada (el vendedor ve en la misma pantalla qué asiento no quedó).
+    expect(saga).toEqual({ kind: 'settled', status: 'confirmed' });
     // Las dos formas de perder el vuelo: cancelarlo aquí, o encolar una compensación que lo
     // cancele dentro de un minuto. Ninguna ocurre —y el proveedor había declarado el vuelo
     // cancelable, así que la protección no viene de que la lista llegara vacía.
@@ -972,19 +1003,38 @@ describe('saga de creación — un accesorio caído no cancela el producto', () 
     expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
   });
 
-  it('y el caso ESCALA: sin reintento automático, porque lo tiene que ver una persona', async () => {
-    // Un asiento no se recupera solo. Lo que hace falta es alguien que pida otro, o que pregunte
-    // al cliente si quiere la reserva así — decisiones que ninguna cola puede tomar.
+  it('el asiento caído queda dicho: OrderSeatsNotConfirmed con cuántos, sin reintento automático', async () => {
+    // Un asiento no se recupera solo, y la persona que tiene que decidir —pedir otro o preguntarle
+    // al cliente— es el vendedor que lo está mirando. Queda el evento, con el conteo y sin quién.
     const b = banco({ created: parcial() });
     await b.orders.createOrder(TENANT, USER, dto());
 
-    const escalado = b.audit.first(ORDER_EVENTS.escalated);
-    expect(escalado?.payload).toMatchObject({
+    expect(b.audit.first(ORDER_EVENTS.seatsNotConfirmed)?.payload).toEqual({
+      provider: PROVEEDOR,
+      seats: 1,
+    });
+    expect(b.audit.first(ORDER_EVENTS.escalated)).toBeUndefined();
+    expect(b.fila()?.['status']).toBe('confirmed');
+    expect(b.queue.verifications).toEqual([]);
+    expect(b.queue.compensations).toEqual([]);
+  });
+
+  it('un EXTRA caído (no un asiento) sí ESCALA: lo tiene que ver una persona', async () => {
+    const b = banco({ created: extraCaido() });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+    expect(b.audit.first(ORDER_EVENTS.escalated)?.payload).toMatchObject({
       reason: 'partial-without-essential-failure',
       outcome: 'PARTIAL',
       queued: false,
     });
-    expect(b.queue.verifications).toEqual([]);
+    expect(b.queue.compensations).toEqual([]);
+    expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
   });
 
   it('CONTRAPESO: si el que se cae es el vuelo, SÍ se compensa lo que quedó vivo', async () => {
@@ -2212,5 +2262,186 @@ describe('la reserva guarda localizadores, tiquetes y plazo de cada lectura (008
     await expect(
       b.orders.retrieveOrder(TENANT, b.fila() as unknown as OrderRow, USER),
     ).resolves.toEqual(vistaConSeguimiento());
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// SAB-16 — asientos al reservar, por la puerta del servicio
+// ---------------------------------------------------------------------------------------------
+
+/** Un tramo, cuatro asientos: 12A sin cargo, 12C sin cargo, 12D ocupado, 14B con cargo. */
+function mapaDeAsientos(): SeatMap {
+  const asiento = (column: string, amountMinor: number | null) => ({
+    column,
+    available: amountMinor !== null,
+    characteristics: [],
+    adultOnly: false,
+    infantAllowed: true,
+    offers:
+      amountMinor === null
+        ? []
+        : [
+            {
+              passengerIndex: 0,
+              price: { amountMinor, currency: 'USD' },
+              offerRef: `oferta-${column}-${String(amountMinor)}`,
+            },
+          ],
+  });
+  return {
+    segments: [
+      {
+        segmentRef: 0,
+        legIndex: 0,
+        changeOfGauge: false,
+        displayOnly: false,
+        cabins: [
+          {
+            cabin: 'economy',
+            columns: ['A', 'B', 'C', 'D'],
+            aisleAfter: ['B'],
+            rows: [
+              { number: 12, seats: [asiento('A', 0), asiento('C', 0), asiento('D', null)] },
+              { number: 14, seats: [asiento('B', 4_500)] },
+            ],
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function dtoConAsiento(row = 12, column = 'C'): CreateOrderDto {
+  const base = dto();
+  return {
+    ...base,
+    passengers: [{ ...PASAJERO_ADULTO, requestedTravelerIndex: 0 }],
+    seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row, column }],
+  };
+}
+
+function bancoConAsientos(
+  opts: AdapterOptions,
+  caps: Partial<ProviderCapabilities>,
+  environment?: ProviderEnvironment,
+): Banco {
+  const adapter = new SagaAdapter(opts);
+  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps, environment)], {
+    decisionFor: () => Promise.resolve(undefined),
+  });
+  const { db, fila, operaciones } = dbFalsa();
+  const audit = new RecordingAuditService();
+  const queue = new RecordingQueueService();
+  return {
+    orders: new OrdersService(
+      db,
+      registry,
+      queue.asService(),
+      {} as unknown as AgentCarsProviderFactory,
+      audit.asService(),
+      PRICING_SIN_REGLAS,
+    ),
+    adapter,
+    audit,
+    queue,
+    fila,
+    operaciones,
+  };
+}
+
+describe('SAB-16 — asientos al reservar', () => {
+  it('sin la capacidad del proveedor: 400 antes de abrir la orden, sin tocar al proveedor', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, {});
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento())).rejects.toBeInstanceOf(
+      SeatSelectionNotAvailableError,
+    );
+    expect(b.fila()).toBeUndefined();
+    expect(b.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(b.adapter.getSeatMap).not.toHaveBeenCalled();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('con la capacidad pero un adapter que no pinta el mapa: tampoco', async () => {
+    const b = bancoConAsientos({}, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento())).rejects.toBeInstanceOf(
+      SeatSelectionNotAvailableError,
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('el mapa se lee UNA vez, con la oferta revalidada, y el asiento viaja con su oferta', async () => {
+    const b = bancoConAsientos(
+      {
+        seatMap: mapaDeAsientos(),
+        revalidated: (offer) => ({ ...offer, provider: { ...offer.provider, offerRef: 'REVAL' } }),
+      },
+      { seatMap: true },
+    );
+    await b.orders.createOrder(TENANT, USER, dtoConAsiento());
+
+    const getSeatMap = b.adapter.getSeatMap as ReturnType<typeof vi.fn>;
+    expect(getSeatMap).toHaveBeenCalledTimes(1);
+    const [ofertaDelMapa] = getSeatMap.mock.calls[0] as [Offer];
+    expect(ofertaDelMapa.provider.offerRef).toBe('REVAL');
+    // Revalidar, leer el mapa y reservar, en ese orden.
+    expect(b.adapter.priceOffer.mock.invocationCallOrder[0]).toBeLessThan(
+      getSeatMap.mock.invocationCallOrder[0]!,
+    );
+    expect(getSeatMap.mock.invocationCallOrder[0]).toBeLessThan(
+      b.adapter.createOrder.mock.invocationCallOrder[0]!,
+    );
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request.seats).toEqual([
+      {
+        passengerIndex: 0,
+        segmentRef: 0,
+        legIndex: 0,
+        row: 12,
+        column: 'C',
+        offerRef: 'oferta-C-0',
+      },
+    ]);
+    expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({ seats: 1 });
+  });
+
+  it('«El asiento 12D ya no está disponible»: 400, no sale nada y la cotización queda libre', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento(12, 'D'))).rejects.toThrow(
+      new BadRequestException('El asiento 12D ya no está disponible. Elige otro.'),
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+    expect(b.fila()?.['status']).toBe('failed');
+    // La clave de la cotización se libera: el vendedor elige otro asiento y vuelve a reservar.
+    expect(b.fila()?.['create_request_key']).toBeNull();
+    expect(b.audit.first(ORDER_EVENTS.createRequested)).toBeUndefined();
+  });
+
+  it('un asiento con cargo: 400 con el motivo, sin reservar', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento(14, 'B'))).rejects.toThrow(
+      'Los asientos con cargo todavía no se pueden reservar desde aquí.',
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('sin asientos nada cambia: ni la capacidad ni el mapa se consultan', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, {});
+    await b.orders.createOrder(TENANT, USER, dto());
+    expect(b.adapter.getSeatMap).not.toHaveBeenCalled();
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request).not.toHaveProperty('seats');
+  });
+
+  it('una reserva de prueba con asiento sigue marcada de prueba, como hoy', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true }, 'test');
+    await b.orders.createOrder(TENANT, USER, dtoConAsiento());
+
+    expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({
+      environment: 'test',
+      seats: 1,
+    });
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request.offer.provider.environment).toBe('test');
   });
 });

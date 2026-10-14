@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
-import type { Offer, ProviderEnvironment } from '@sales-travel/canonical';
+import type { Offer, ProviderEnvironment, SeatMap } from '@sales-travel/canonical';
 import type {
   FlightSearchCriteria,
   OfferPriceResult,
@@ -13,6 +13,7 @@ import type {
   OrderReshopResult,
   OrderView,
   SearchContext,
+  SeatMapPort,
   ServiceListRequest,
   ServiceListResult,
   TicketCheckResult,
@@ -30,6 +31,7 @@ import {
   SabreOfferPriceAdapter,
   SabreOrderCreateAdapter,
   SabreOrderManageAdapter,
+  SabreSeatMapAdapter,
   SabreShopOptionsSchema,
   SabreTicketingAdapter,
   SabreTicketingSettingsSchema,
@@ -312,6 +314,8 @@ interface SabreAdapterSet {
   readonly issue: TicketingPort;
   /** Las operaciones de `SABRE_OPERATIONS` encendidas en este despliegue. */
   readonly operations: ReadonlySet<SabreOperation>;
+  /** El mapa de asientos antes de reservar (Get Seats v3, SAB-15), sobre el mismo cliente. */
+  readonly seats: SeatMapPort;
 }
 
 /**
@@ -376,12 +380,16 @@ export class SabreOfferRevalidationRouter {
  *    este contrato. Fingirlas con un resultado plausible es lo que vende un asiento que no existe.
  *  - `issueTickets` mientras `issue` no esté en `SABRE_OPERATIONS`: la emisión está escrita y
  *    probada contra el contrato, pero no se enciende hasta certificarla (SAB-13).
+ *  - `getSeatMap` mientras `seats` no esté en `SABRE_OPERATIONS`: el mapa y la reserva de asientos
+ *    están escritos y probados contra el contrato, y se encienden al certificarlos (SAB-21).
  *
  * Lo que ya no hace falta gatear: el bloque de reserva contra una cuenta en modo simulado. Ese
  * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
  * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
-export class SabreFlightProviderAdapter implements FlightProviderAdapter, TicketingPort {
+export class SabreFlightProviderAdapter
+  implements FlightProviderAdapter, TicketingPort, SeatMapPort
+{
   constructor(private readonly inner: SabreAdapterSet) {}
 
   get missingCredentials(): readonly string[] {
@@ -634,6 +642,19 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     return this.inner.issue.checkTickets(orderId, ctx);
   }
 
+  /**
+   * El mapa de asientos de una oferta antes de reservarla (SAB-16). Segunda línea de defensa detrás
+   * de la capacidad `seatMap`: con `seats` apagado en este despliegue, rechaza sin consultar a
+   * Sabre (cada Get Seats es una llamada facturable). Los asientos elegidos viajan después con la
+   * reserva (`createBooking`), que los pide en el bloque que corresponda a la oferta.
+   */
+  getSeatMap(offer: Offer, criteria: FlightSearchCriteria, ctx: SearchContext): Promise<SeatMap> {
+    if (!this.inner.operations.has('seats')) {
+      return Promise.reject(new SabreOperationNotSupportedError('elegir asiento'));
+    }
+    return this.inner.seats.getSeatMap(offer, criteria, ctx);
+  }
+
   cancelBnplOrder(_orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
     return Promise.reject(new SabreOperationNotSupportedError('cancelar la reserva diferida'));
   }
@@ -729,6 +750,8 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       issue: this.operations.has('issue'),
       ticketCheck: this.operations.has('void'),
       void: this.operations.has('void'),
+      // El mapa y la reserva de asientos sin cargo (SAB-16), apagados hasta certificarlos en CERT.
+      seatMap: this.operations.has('seats'),
     };
     if (this.operations.size > 0) {
       // Encender una operación que mueve dinero tiene que verse en el log de arranque.
@@ -912,6 +935,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       ticketing: ticketing.settings,
       issue,
       operations: this.operations,
+      seats: new SabreSeatMapAdapter(cfg, http, { logger }),
     };
   }
 
