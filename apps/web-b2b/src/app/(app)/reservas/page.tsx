@@ -54,7 +54,7 @@ import {
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
-import { parseFlightTracking, retrieveNotice } from './flight-order-view';
+import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
@@ -227,10 +227,29 @@ export default function ReservasPage() {
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
   const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'hotels' | 'cars'>('all');
+  /** «Por vencer» (SAB-14): vuelos confirmados cuyo plazo de emisión vence en menos de 24 h. */
+  const [dueSoonF, setDueSoonF] = useState(false);
+  // El reloj de la lista: «Por vencer» y los avisos de la fila cambian solos con el paso del tiempo.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dueSoonIds = useMemo(
+    () =>
+      new Set(
+        orders
+          .filter((o) => orderVerticalOf(o) === 'flights' && isDueSoonOrder(o, new Date(now)))
+          .map((o) => o.id),
+      ),
+    [orders, now],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
+      if (dueSoonF && !dueSoonIds.has(o.id)) return false;
       if (verticalF !== 'all' && orderVerticalOf(o) !== verticalF) return false;
       if (statusF === 'confirmed' && !(o.status === 'confirmed' || o.status === 'ticketed'))
         return false;
@@ -256,7 +275,7 @@ export default function ReservasPage() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query, statusF, verticalF]);
+  }, [orders, query, statusF, verticalF, dueSoonF, dueSoonIds]);
 
   /**
    * Relee la lista. Después de una cancelación de hotel el estado lo decide el servidor (puede ser
@@ -664,6 +683,19 @@ export default function ReservasPage() {
             <FilterChip active={statusF === 'cancelled'} onClick={() => setStatusF('cancelled')}>
               Canceladas
             </FilterChip>
+            {dueSoonIds.size > 0 || dueSoonF ? (
+              <>
+                <span className="mx-1 h-4 w-px bg-[var(--color-border)]" aria-hidden />
+                <FilterChip
+                  active={dueSoonF}
+                  onClick={() => setDueSoonF((v) => !v)}
+                  title="Vuelos confirmados sin tiquete cuyo plazo de emisión vence en menos de 24 h o ya venció"
+                >
+                  <AlertTriangle aria-hidden="true" className="size-3" /> Por vencer
+                  <span className="tabular-nums">· {dueSoonIds.size}</span>
+                </FilterChip>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1717,16 +1749,20 @@ function OrderDetailModal({
 function FilterChip({
   active,
   onClick,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
+      title={title}
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
         active

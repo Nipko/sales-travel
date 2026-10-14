@@ -1,8 +1,10 @@
 import {
   ticketingDeadline,
+  ticketingState,
   type ProviderClockSource,
   type TicketingDeadline,
 } from '../../../lib/ticketing-deadline';
+import { walletHoldOf } from './wallet-hold-view';
 
 /*
  * Lo que una reserva de vuelo tiene guardado de su última lectura al proveedor, en Mis Reservas y
@@ -40,6 +42,8 @@ export interface FlightTrackingDeadline {
   readonly date: string;
   readonly time?: string;
   readonly zone: 'UTC' | 'PROVIDER_LOCAL';
+  /** Sólo con `PROVIDER_LOCAL`: la zona IANA de la oficina, que declara la cuenta (SAB-14). */
+  readonly timeZone?: string;
   readonly at?: string;
 }
 
@@ -58,6 +62,19 @@ const LOCATOR = /^[A-Z0-9]{5,16}$/;
 const DOCUMENT_NUMBER = /^[0-9]{10,16}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** La forma de una zona IANA, la misma que acepta el API (0084). */
+const IANA_ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
+
+/** ¿Una zona IANA que el navegador sabe convertir? */
+function ianaZone(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64 || !IANA_ZONE.test(value)) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function locatorOf(value: unknown): FlightTrackingLocator[] {
   if (!isRecord(value)) return [];
@@ -91,13 +108,14 @@ function documentOf(value: unknown): FlightTrackingDocument[] {
 
 function deadlineOf(value: unknown): FlightTrackingDeadline | null {
   if (!isRecord(value)) return null;
-  const { date, time, zone, at } = value;
+  const { date, time, zone, at, timeZone } = value;
   if (typeof date !== 'string' || !DATE.test(date)) return null;
   if (zone !== 'UTC' && zone !== 'PROVIDER_LOCAL') return null;
   return {
     date,
     zone,
     ...(typeof time === 'string' && TIME.test(time) ? { time } : {}),
+    ...(zone === 'PROVIDER_LOCAL' && ianaZone(timeZone) ? { timeZone } : {}),
     ...(typeof at === 'string' && !Number.isNaN(Date.parse(at)) ? { at } : {}),
   };
 }
@@ -176,13 +194,29 @@ export interface OrderDeadline {
   readonly fromOrder: boolean;
 }
 
-/** El plazo guardado al reloj de la librería: con instante si lo hay, si no la hora tal cual. */
+/**
+ * El plazo guardado al reloj de la librería: con instante si lo hay, si no la hora tal cual. La hora
+ * de la oficina tiene instante sólo si la cuenta declara su zona (SAB-14); entonces se muestra en la
+ * hora de quien mira y, si es otra, también la de la oficina.
+ */
 function trackedDeadline(deadline: FlightTrackingDeadline): TicketingDeadline {
   if (deadline.zone === 'UTC') {
     if (deadline.at !== undefined) return { kind: 'instant', at: deadline.at };
     if (deadline.time !== undefined) {
       return { kind: 'instant', at: `${deadline.date}T${deadline.time}:00.000Z` };
     }
+  }
+  if (
+    deadline.zone === 'PROVIDER_LOCAL' &&
+    deadline.at !== undefined &&
+    deadline.time !== undefined &&
+    deadline.timeZone !== undefined
+  ) {
+    return {
+      kind: 'instant',
+      at: deadline.at,
+      office: { time: deadline.time, timeZone: deadline.timeZone },
+    };
   }
   return deadline.time === undefined
     ? { kind: 'provider-clock', date: deadline.date }
@@ -209,6 +243,43 @@ export function orderTicketingDeadline(order: OrderLike): OrderDeadline | null {
   }
   const fare = ticketingDeadline(order.selectedOffer?.provider?.raw);
   return fare === null ? null : { deadline: fare, clock: 'fare', fromOrder: true };
+}
+
+interface DeadlineOrderLike extends OrderLike {
+  readonly status: string;
+  readonly walletHold?: unknown;
+}
+
+/**
+ * ¿Entra en «Por vencer»? Una reserva confirmada —sin tiquete— cuyo plazo vence en menos de 24 h
+ * o ya venció sin que nadie la emitiera ni la cancelara: las dos piden algo hoy. Con la hora de la
+ * oficina sin zona, peca de avisar de más, como el plazo mismo.
+ */
+export function isDueSoonOrder(order: DeadlineOrderLike, now: Date = new Date()): boolean {
+  if (order.status !== 'confirmed') return false;
+  const deadline = orderTicketingDeadline(order);
+  return deadline !== null && ticketingState(deadline.deadline, now) !== 'ok';
+}
+
+/** Lo que se lee bajo el plazo de una reserva vencida sin emitir que retiene cartera. */
+export const EXPIRED_HOLD_NOTE =
+  'Venció el plazo sin emitir: el saldo sigue retenido en la cartera hasta que canceles la reserva.';
+
+/**
+ * El aviso de la cartera de una reserva confirmada cuyo plazo venció sin emitir. La aerolínea la
+ * cancela sola, pero aquí no se cancela, y la retención de la red sigue tomada hasta que alguien la
+ * cancele: el vendedor lo tiene que ver en la fila. `undefined` si no aplica.
+ */
+export function expiredHoldNote(
+  order: DeadlineOrderLike,
+  now: Date = new Date(),
+): string | undefined {
+  if (order.status !== 'confirmed' || walletHoldOf(order.walletHold) === undefined) {
+    return undefined;
+  }
+  const deadline = orderTicketingDeadline(order);
+  if (deadline === null || ticketingState(deadline.deadline, now) !== 'expired') return undefined;
+  return EXPIRED_HOLD_NOTE;
 }
 
 function plural(count: number, singular: string, pluralForm: string): string {

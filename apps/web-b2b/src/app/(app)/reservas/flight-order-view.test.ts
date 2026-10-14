@@ -7,6 +7,9 @@ import {
   documentKindLabel,
   documentPassengerLabel,
   documentStatusTone,
+  EXPIRED_HOLD_NOTE,
+  expiredHoldNote,
+  isDueSoonOrder,
   locatorChipLabel,
   orderTicketingDeadline,
   parseFlightTracking,
@@ -261,5 +264,76 @@ describe('retrieveNotice — una reserva que el proveedor ya canceló no pasa co
       message: 'Reserva consultada en el proveedor.',
       alert: false,
     });
+  });
+});
+
+describe('la zona de la oficina y «Por vencer» (SAB-14)', () => {
+  const conZona = {
+    date: '2026-10-14',
+    time: '18:00',
+    zone: 'PROVIDER_LOCAL',
+    timeZone: 'America/Bogota',
+    at: '2026-10-14T23:00:00.000Z',
+  };
+  const ahora = new Date('2026-10-14T15:00:00.000Z');
+
+  it('lee la zona de la oficina sólo con la hora de la oficina y si es una zona conocida', () => {
+    expect(parseFlightTracking({ ticketingDeadline: conZona })?.ticketingDeadline).toEqual(conZona);
+    for (const timeZone of ['Marte/Olympus', 'America/Bogota<script>', 42]) {
+      expect(
+        parseFlightTracking({ ticketingDeadline: { ...conZona, timeZone } })?.ticketingDeadline,
+      ).not.toHaveProperty('timeZone');
+    }
+    expect(
+      parseFlightTracking({ ticketingDeadline: { ...conZona, zone: 'UTC' } })?.ticketingDeadline,
+    ).not.toHaveProperty('timeZone');
+  });
+
+  it('con zona e instante, el plazo de la oficina es un instante que recuerda su hora', () => {
+    expect(orderTicketingDeadline({ flightTracking: { ticketingDeadline: conZona } })).toEqual({
+      deadline: {
+        kind: 'instant',
+        at: '2026-10-14T23:00:00.000Z',
+        office: { time: '18:00', timeZone: 'America/Bogota' },
+      },
+      clock: 'office',
+      fromOrder: false,
+    });
+    // Sin la zona, o sin el instante, la hora de la oficina tal cual.
+    const { timeZone: _sinZona, ...sinZona } = conZona;
+    void _sinZona;
+    expect(
+      orderTicketingDeadline({ flightTracking: { ticketingDeadline: sinZona } })?.deadline,
+    ).toEqual({ kind: 'provider-clock', date: '2026-10-14', time: '18:00' });
+  });
+
+  it('«Por vencer»: confirmadas con el plazo a menos de 24 h o vencido', () => {
+    const orden = (status: string, at: string) => ({
+      status,
+      flightTracking: { ticketingDeadline: { ...conZona, at } },
+    });
+    expect(isDueSoonOrder(orden('confirmed', '2026-10-14T23:00:00.000Z'), ahora)).toBe(true);
+    expect(isDueSoonOrder(orden('confirmed', '2026-10-14T10:00:00.000Z'), ahora)).toBe(true);
+    expect(isDueSoonOrder(orden('confirmed', '2026-10-16T23:00:00.000Z'), ahora)).toBe(false);
+    // Emitida, cancelada o pendiente: no hay plazo que cuidar.
+    for (const status of ['ticketed', 'cancelled', 'pending', 'failed']) {
+      expect(isDueSoonOrder(orden(status, '2026-10-14T23:00:00.000Z'), ahora)).toBe(false);
+    }
+    expect(isDueSoonOrder({ status: 'confirmed' }, ahora)).toBe(false);
+  });
+
+  it('vencida sin emitir con saldo retenido: el aviso de la cartera; si no, nada', () => {
+    const vencida = {
+      status: 'confirmed',
+      walletHold: 'captured',
+      flightTracking: { ticketingDeadline: { ...conZona, at: '2026-10-14T10:00:00.000Z' } },
+    };
+    expect(expiredHoldNote(vencida, ahora)).toBe(EXPIRED_HOLD_NOTE);
+    expect(EXPIRED_HOLD_NOTE).toContain('el saldo sigue retenido');
+    expect(expiredHoldNote({ ...vencida, walletHold: null }, ahora)).toBeUndefined();
+    expect(expiredHoldNote({ ...vencida, status: 'cancelled' }, ahora)).toBeUndefined();
+    expect(
+      expiredHoldNote({ ...vencida, flightTracking: { ticketingDeadline: conZona } }, ahora),
+    ).toBeUndefined();
   });
 });
