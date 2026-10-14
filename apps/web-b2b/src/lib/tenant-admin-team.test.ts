@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANONYMOUS_ACTOR,
+  REMOVE_FROM_NODE_LABEL,
+  canRemoveFromNode,
+  memberRemovedMessage,
+  parseMembershipRemoval,
+  removeMemberCopy,
   MFA_REQUIRED_ROLES,
   PASSWORD_RESET_PENDING_HINT,
   PASSWORD_RESET_PENDING_LABEL,
@@ -29,6 +34,7 @@ import {
   teamLoadError,
   type NetworkMember,
 } from './tenant-admin-team';
+import { voseoIn } from './voseo';
 
 const RAW = {
   userId: '22222222-2222-4222-8222-222222222222',
@@ -174,6 +180,64 @@ describe('invitaciones que revoca un cambio', () => {
     expect(roleChangeCopy(member({ role: 'admin' }), 'vendedor', (r) => r).description).not.toMatch(
       /invitaci/,
     );
+  });
+});
+
+describe('quitar a alguien del nodo (USR-11)', () => {
+  it('se ofrece a quien está activo o suspendido en el nodo', () => {
+    expect(REMOVE_FROM_NODE_LABEL).toBe('Quitar de este nodo');
+    expect(canRemoveFromNode(member())).toBe(true);
+    expect(canRemoveFromNode(member({ membershipStatus: 'suspended' }))).toBe(true);
+    expect(canRemoveFromNode(member({ membershipStatus: 'invited' }))).toBe(false);
+    expect(canRemoveFromNode(member({ membershipStatus: 'removed' }))).toBe(false);
+  });
+
+  it('la confirmación: qué pierde, qué queda, cómo vuelve y las invitaciones que se revocan', () => {
+    const copy = removeMemberCopy(member(), 'Agencia Norte', 2);
+    expect(copy).toEqual({
+      title: 'Quitar a Ana Pérez de Agencia Norte',
+      description:
+        'Deja de pertenecer a este nodo y se cierran sus sesiones en él. Se revocarán 2 invitaciones que envió. Su historial y sus reservas quedan como están. Si después quieres que vuelva, tienes que invitarlo de nuevo.',
+      confirmLabel: 'Quitar del nodo',
+    });
+    expect(removeMemberCopy(member(), 'Agencia Norte', 0).description).not.toMatch(/invitaci.n/);
+    // Sin saber cuántas, se avisa igual; sin nombre del nodo, "este nodo"; sin nombre, el correo.
+    expect(removeMemberCopy(member(), undefined, null).description).toMatch(
+      /invitaciones que ya no podría enviar, se revocan/,
+    );
+    expect(removeMemberCopy(member({ name: null }), '  ').title).toBe(
+      'Quitar a ana@agencia.co de este nodo',
+    );
+    expect(voseoIn(Object.values(copy).join(' '))).toEqual([]);
+  });
+
+  it('el aviso de que salió bien, con las invitaciones que se revocaron', () => {
+    expect(memberRemovedMessage(member(), 'Agencia Norte', { revokedInvitations: 0 })).toBe(
+      'Quitamos a Ana Pérez de Agencia Norte.',
+    );
+    expect(memberRemovedMessage(member(), 'Agencia Norte', { revokedInvitations: 1 })).toBe(
+      'Quitamos a Ana Pérez de Agencia Norte. Se revocó 1 invitación que envió.',
+    );
+    expect(memberRemovedMessage(member(), undefined, { revokedInvitations: 3 })).toBe(
+      'Quitamos a Ana Pérez de este nodo. Se revocaron 3 invitaciones que envió.',
+    );
+    expect(memberRemovedMessage(member(), 'Norte', { revokedInvitations: undefined })).toBe(
+      'Quitamos a Ana Pérez de Norte.',
+    );
+  });
+
+  it('la respuesta del API nunca falla: sin conteos, se avisa sin ellos', () => {
+    expect(
+      parseMembershipRemoval({ status: 'removed', revokedSessions: 2, revokedInvitations: 0 }),
+    ).toEqual({ revokedSessions: 2, revokedInvitations: 0 });
+    expect(parseMembershipRemoval({ revokedSessions: -1, revokedInvitations: '1' })).toEqual({
+      revokedSessions: undefined,
+      revokedInvitations: undefined,
+    });
+    expect(parseMembershipRemoval(null)).toEqual({
+      revokedSessions: undefined,
+      revokedInvitations: undefined,
+    });
   });
 });
 

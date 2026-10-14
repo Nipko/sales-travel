@@ -3,16 +3,18 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { RequireRecentMfa } from '../auth/decorators/require-recent-mfa.decorator.js';
+import { assertRecentMfa } from '../auth/recent-mfa.js';
 import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
@@ -25,6 +27,7 @@ import {
   ListPlatformUsersQuerySchema,
   MembershipImpactQuerySchema,
   MoveTenantSchema,
+  RemoveMembershipSchema,
   SetMembershipStatusSchema,
   SetUserStatusSchema,
   TenantIdParamSchema,
@@ -36,6 +39,7 @@ import {
   type ListPlatformUsersQuery,
   type MembershipImpactQuery,
   type MoveTenantDto,
+  type RemoveMembershipDto,
   type SetMembershipStatusDto,
   type SetUserStatusDto,
   type UpdateSeatsDto,
@@ -44,6 +48,7 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
 import { InvitationsService } from './invitations.service.js';
+import { MembershipRemovedError } from './membership.errors.js';
 import { UserNotFoundError } from './platform-users.errors.js';
 import {
   PlatformUsersService,
@@ -66,6 +71,7 @@ import {
 interface TargetMembership {
   id: string;
   role: Role;
+  status: MembershipStatus;
 }
 
 /** Lo que arrastró un cambio sobre una membership o un usuario, además del cambio mismo. */
@@ -73,6 +79,15 @@ interface ChangeEffects {
   revokedSessions: number;
   revokedInvitations: number;
 }
+
+/** Lo que devuelve quitar a alguien de un nodo. */
+interface RemovedMembership extends ChangeEffects {
+  id: string;
+  status: 'removed';
+}
+
+/** Qué le haría al último admin del nodo el cambio que se rechaza: va en el mensaje del 403. */
+type LastAdminChange = 'suspenderlo' | 'quitarlo';
 
 /** Lo que arrastraría suspender una cuenta en toda la plataforma, para decirlo antes. */
 interface UserSuspensionImpact extends UserFootprint {
@@ -131,6 +146,8 @@ export class AdminController {
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
     const current = await this.targetMembership(userId, body.userId, body.tenantId);
+    // Quitada del nodo: un rol nuevo sólo llega con una invitación nueva.
+    if (current.status === 'removed') throw new MembershipRemovedError();
 
     // Hay que superar en rango tanto al rol actual del objetivo (para poder tocarlo) como
     // al rol que se le quiere dar (para no conceder más autoridad de la propia).
@@ -139,13 +156,14 @@ export class AdminController {
 
     // Degradar al último admin dejaría el nodo sin quien lo administre.
     if (isAdminRole(current.role) && !isAdminRole(body.role)) {
-      await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
+      await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'suspenderlo');
     }
 
     const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx) => {
         const previous = await this.lockMembership(trx, current.id);
+        if (previous.status === 'removed') throw new MembershipRemovedError();
         await this.writeRole(trx, current.id, body.role);
         const revoked = await this.invitations.revokeOrphaned(trx, {
           inviterUserId: body.userId,
@@ -180,10 +198,11 @@ export class AdminController {
   }
 
   /**
-   * Qué arrastraría suspender la membership o cambiarle el rol, para que la confirmación de Equipo
-   * lo diga antes de aplicarlo ("Se revocarán N invitaciones que envió"). Mismas validaciones que el
-   * cambio. Lo aplica en una transacción que se deshace: el número sale de la misma consulta que usa
-   * el cambio, no de una copia de la regla.
+   * Qué arrastraría suspender la membership, quitarla del nodo o cambiarle el rol, para que la
+   * confirmación de Equipo lo diga antes de aplicarlo ("Se revocarán N invitaciones que envió").
+   * Mismas validaciones que el cambio (una membership ya quitada es 409). Lo aplica en una
+   * transacción que se deshace: el número sale de la misma consulta que usa el cambio, no de una
+   * copia de la regla.
    */
   @Get('memberships/impact')
   async membershipImpact(
@@ -197,6 +216,7 @@ export class AdminController {
 
     const actorRole = await this.actorRoleOver(userId, query.tenantId);
     const target = await this.targetMembership(userId, query.userId, query.tenantId);
+    if (target.status === 'removed') throw new MembershipRemovedError();
     this.assertOutranks(actorRole, target.role);
     if (query.role !== undefined) this.assertOutranks(actorRole, query.role);
 
@@ -205,6 +225,7 @@ export class AdminController {
 
     const orphaned = await this.dryRun({ userId, tenantId: query.tenantId }, async (trx) => {
       if (query.role !== undefined) await this.writeRole(trx, target.id, query.role);
+      else if (query.status === 'removed') await this.writeRemoval(trx, target.id, userId);
       else await this.writeStatus(trx, target.id, 'suspended');
       return this.invitations.orphanedInvitations(trx, {
         inviterUserId: query.userId,
@@ -343,6 +364,9 @@ export class AdminController {
    * en una transacción, con su evento. Después del commit, si el estado de verdad cambió (contra el
    * que había al tomar la fila, `lockMembership`), la persona recibe el aviso de que su acceso a ese
    * nodo fue suspendido o reactivado.
+   *
+   * Una membership quitada del nodo (USR-11) no se reactiva por acá: 409 MEMBERSHIP_REMOVED, la vuelta
+   * es una invitación nueva.
    */
   @Patch('memberships/status')
   async setMembershipStatus(
@@ -356,18 +380,20 @@ export class AdminController {
 
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
     const target = await this.targetMembership(userId, body.userId, body.tenantId);
+    if (target.status === 'removed') throw new MembershipRemovedError();
 
     this.assertOutranks(actorRole, target.role);
 
     // No dejar el nodo sin ningún admin activo: quedaría inadministrable salvo por soporte.
     if (body.status === 'suspended' && isAdminRole(target.role)) {
-      await this.assertNotLastAdmin(userId, body.tenantId, body.userId);
+      await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'suspenderlo');
     }
 
     const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx): Promise<ChangeEffects & { changed: boolean }> => {
         const previous = await this.lockMembership(trx, target.id);
+        if (previous.status === 'removed') throw new MembershipRemovedError();
         await this.writeStatus(trx, target.id, body.status);
 
         let revokedSessions = 0;
@@ -413,6 +439,92 @@ export class AdminController {
       );
     }
     return { id: target.id, status: body.status, ...effects };
+  }
+
+  /**
+   * Quita a una persona de un nodo (USR-11, founder D2 = A): baja blanda. La membership pasa a
+   * `removed` con quién y cuándo (0067), desaparece de Equipo y deja de dar acceso en el acto (todo lo
+   * que da acceso o potestad mira `status = 'active'`), pero la fila queda: sus reservas, sus
+   * movimientos y su rastro en la auditoría siguen como estaban. Para volver, sólo una invitación
+   * nueva, que al aceptarse reactiva esta misma fila con el rol de la invitación.
+   *
+   * Las reglas de suspender: nunca uno mismo; administrar el nodo y superar su rol en él (o ser
+   * superadmin); nunca el último admin activo del nodo. Ya quitada, 409 MEMBERSHIP_REMOVED.
+   *
+   * Quitar a alguien es el trabajo de todos los días y no pide el 2FA reciente, salvo que su rol en
+   * el nodo sea de admin (D1 = C): sacarle el gobierno del nodo a un admin pesa como enviarle el
+   * enlace a uno, y con una sesión robada alcanzaría para ir sacando a los demás admins. Se pide
+   * después de autorizar, para no pedirle el código a quien igual no podía hacerlo.
+   *
+   * En una transacción, con la fila tomada: el cambio, el cierre de sus sesiones en el subárbol del
+   * nodo (las que no respalda otra membership activa suya, como al suspender), la revocación de las
+   * invitaciones que emitió y ya no podría emitir, y el evento `MembershipRemoved`. Después del
+   * commit, el aviso `membership_removed` a su correo.
+   */
+  @Post('memberships/remove')
+  @HttpCode(200)
+  async removeMembership(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(RemoveMembershipSchema)) body: RemoveMembershipDto,
+  ): Promise<RemovedMembership> {
+    if (!userId) throw new UnauthorizedException();
+    if (body.userId === userId.toLowerCase()) {
+      throw new ForbiddenException('no puedes quitarte a ti mismo de un nodo');
+    }
+
+    const actorRole = await this.actorRoleOver(userId, body.tenantId);
+    const target = await this.targetMembership(userId, body.userId, body.tenantId);
+    if (target.status === 'removed') throw new MembershipRemovedError();
+    this.assertOutranks(actorRole, target.role);
+
+    if (isAdminRole(target.role)) {
+      // Un admin suspendido ya no cuenta entre los activos: quitarlo no le deja menos al nodo.
+      if (target.status === 'active') {
+        await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'quitarlo');
+      }
+      assertRecentMfa();
+    }
+
+    const effects = await this.db.withRequestContext(
+      { userId, tenantId: body.tenantId },
+      async (trx): Promise<ChangeEffects> => {
+        const previous = await this.lockMembership(trx, target.id);
+        if (previous.status === 'removed') throw new MembershipRemovedError();
+        await this.writeRemoval(trx, target.id, userId);
+
+        const revokedSessions = await this.sessions.revokeForTenant(
+          body.userId,
+          body.tenantId,
+          'membership_removed',
+          trx,
+        );
+        const revoked = await this.invitations.revokeOrphaned(trx, {
+          inviterUserId: body.userId,
+          rootTenantId: invitationScope(previous.role, body.tenantId),
+          actorUserId: userId,
+          cause: 'membership_removed',
+        });
+
+        await this.audit.emitWithin(trx, {
+          eventType: 'MembershipRemoved',
+          tenantId: body.tenantId,
+          actorUserId: userId,
+          aggregateType: 'membership',
+          aggregateId: target.id,
+          payload: {
+            targetUserId: body.userId,
+            role: previous.role,
+            previousStatus: previous.status,
+            revokedSessions,
+            revokedInvitations: revoked.length,
+          },
+        });
+        return { revokedSessions, revokedInvitations: revoked.length };
+      },
+    );
+
+    this.notices.notify('membership_removed', { userId: body.userId, tenantId: body.tenantId });
+    return { id: target.id, status: 'removed', ...effects };
   }
 
   /**
@@ -506,7 +618,7 @@ export class AdminController {
     const target = await this.db.withRequestContext({ userId: actorUserId, tenantId }, (trx) =>
       trx
         .selectFrom('memberships')
-        .select(['id', 'role'])
+        .select(['id', 'role', 'status'])
         .where('user_id', '=', targetUserId)
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst(),
@@ -569,6 +681,22 @@ export class AdminController {
     );
   }
 
+  /** La deja quitada del nodo, con quién y cuándo (el CHECK de 0067 ata `removed_at` al estado). */
+  private async writeRemoval(
+    trx: Transaction<DB>,
+    membershipId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    AdminController.assertWritten(
+      await trx
+        .updateTable('memberships')
+        .set({ status: 'removed', removed_at: sql<Date>`now()`, removed_by: actorUserId })
+        .where('id', '=', membershipId)
+        .where('status', '!=', 'removed')
+        .executeTakeFirstOrThrow(),
+    );
+  }
+
   /**
    * Corre `fn` en una transacción con el contexto del request y la deshace: lo que `fn` escribió no
    * queda, lo que devolvió sí.
@@ -617,6 +745,7 @@ export class AdminController {
     actorUserId: string,
     tenantId: string,
     excludeUserId: string,
+    change: LastAdminChange,
   ): Promise<void> {
     const remaining = await this.db.withRequestContext(
       { userId: actorUserId, tenantId },
@@ -632,7 +761,7 @@ export class AdminController {
     );
     if (Number(remaining?.count ?? 0) === 0) {
       throw new ForbiddenException(
-        'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
+        `Es el último administrador activo del nodo: asigna otro antes de ${change}.`,
       );
     }
   }

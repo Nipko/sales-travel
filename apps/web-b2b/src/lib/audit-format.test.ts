@@ -130,6 +130,9 @@ describe('eventDetail', () => {
     expect(eventDetail(entry('UserInvitationRevoked', { cause: 'user_suspended' }))).toBe(
       'al suspender la cuenta de quien la envió',
     );
+    expect(eventDetail(entry('UserInvitationRevoked', { cause: 'membership_removed' }))).toBe(
+      'al quitar del nodo a quien la envió',
+    );
     expect(eventDetail(entry('UserInvitationRejected', { defect: 'tenant_inactive' }))).toBe(
       'el nodo está suspendido',
     );

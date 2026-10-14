@@ -18,6 +18,7 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  UserX,
   X,
 } from 'lucide-react';
 import { Fragment, useId, useRef } from 'react';
@@ -39,7 +40,9 @@ import {
   MFA_STATE_LABEL,
   PASSWORD_RESET_PENDING_HINT,
   PASSWORD_RESET_PENDING_LABEL,
+  REMOVE_FROM_NODE_LABEL,
   canActOn,
+  canRemoveFromNode,
   isSelf,
   memberAccess,
   memberMenuGroups,
@@ -145,7 +148,9 @@ export function MemberList({
   onOpen,
   onChangeRole,
   onSetStatus,
+  onRemove,
   onAction,
+  headingRef,
 }: {
   state: MembersState;
   search: string;
@@ -170,7 +175,14 @@ export function MemberList({
   onOpen?: (member: NetworkMember) => void;
   onChangeRole: (member: NetworkMember, role: string) => void;
   onSetStatus: (member: NetworkMember, status: 'active' | 'suspended') => void;
+  /** Quitarlo del nodo (USR-11). Sin él, el menú no lo ofrece. */
+  onRemove?: (member: NetworkMember) => void;
   onAction: (member: NetworkMember, action: MemberAction) => void;
+  /**
+   * El título "Miembros", enfocable desde el código: adonde va el foco cuando la fila desde la que
+   * se actuó desaparece (quitarlo del nodo).
+   */
+  headingRef?: React.Ref<HTMLHeadingElement>;
 }) {
   const now = useNow();
   const allRef = useRef<HTMLButtonElement>(null);
@@ -192,7 +204,12 @@ export function MemberList({
       className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
     >
       <div className="border-b border-[var(--color-border)] px-4 py-2.5">
-        <h2 id="members-title" className="text-sm font-semibold text-[var(--color-fg)]">
+        <h2
+          id="members-title"
+          ref={headingRef}
+          tabIndex={-1}
+          className="rounded text-sm font-semibold text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+        >
           Miembros
           {state.status === 'ready'
             ? narrowed
@@ -307,6 +324,7 @@ export function MemberList({
                 onOpen={onOpen === undefined ? undefined : () => onOpen(m)}
                 onChangeRole={(role) => onChangeRole(m, role)}
                 onSetStatus={(status) => onSetStatus(m, status)}
+                onRemove={onRemove === undefined ? undefined : () => onRemove(m)}
                 onAction={(action) => onAction(m, action)}
               />
             ))}
@@ -328,6 +346,7 @@ function MemberRow({
   onOpen,
   onChangeRole,
   onSetStatus,
+  onRemove,
   onAction,
 }: {
   member: NetworkMember;
@@ -340,6 +359,7 @@ function MemberRow({
   onOpen: (() => void) | undefined;
   onChangeRole: (role: string) => void;
   onSetStatus: (status: 'active' | 'suspended') => void;
+  onRemove: (() => void) | undefined;
   onAction: (action: MemberAction) => void;
 }) {
   const self = isSelf(actor, member);
@@ -386,6 +406,7 @@ function MemberRow({
             now={now}
             busy={busy}
             onSetStatus={onSetStatus}
+            onRemove={onRemove}
             onAction={onAction}
           />
         ) : null}
@@ -602,20 +623,23 @@ export function SupportActionGroups({
 
 /**
  * Lo de adentro del menú de un miembro: las acciones de soporte (Acceso, Seguridad) y, al final, su
- * membresía en este nodo (suspender o reactivar). Aparte del menú para poder pintarlo abierto en un
- * test; la ficha del miembro lo usa tal cual en su pie.
+ * membresía en este nodo (suspender o reactivar y, en rojo y última, quitarlo del nodo). Aparte del
+ * menú para poder pintarlo abierto en un test; la ficha del miembro lo usa tal cual en su pie.
  */
 export function MemberActionItems({
   member,
   now,
   onPick,
   onSetStatus,
+  onRemove,
   onAction,
 }: {
   member: NetworkMember;
   now: number;
   onPick: (run: () => void) => () => void;
   onSetStatus: (status: 'active' | 'suspended') => void;
+  /** Quitarlo del nodo (USR-11). Sin él, no se ofrece. */
+  onRemove?: () => void;
   onAction: (action: MemberAction) => void;
 }) {
   const suspended = member.membershipStatus === 'suspended';
@@ -640,6 +664,15 @@ export function MemberActionItems({
           )}
           {suspended ? 'Reactivar' : 'Suspender'}
         </DropdownMenu.Item>
+        {onRemove !== undefined && canRemoveFromNode(member) ? (
+          <DropdownMenu.Item
+            className={cn(ITEM, 'text-[var(--color-danger)]')}
+            onSelect={onPick(onRemove)}
+          >
+            <UserX aria-hidden="true" className="size-4" />
+            {REMOVE_FROM_NODE_LABEL}
+          </DropdownMenu.Item>
+        ) : null}
       </DropdownMenu.Group>
     </>
   );
@@ -651,6 +684,7 @@ function MemberActions({
   now,
   busy,
   onSetStatus,
+  onRemove,
   onAction,
 }: {
   name: string;
@@ -658,6 +692,7 @@ function MemberActions({
   now: number;
   busy: boolean;
   onSetStatus: (status: 'active' | 'suspended') => void;
+  onRemove: (() => void) | undefined;
   onAction: (action: MemberAction) => void;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -705,6 +740,7 @@ function MemberActions({
             now={now}
             onPick={later}
             onSetStatus={onSetStatus}
+            onRemove={onRemove}
             onAction={onAction}
           />
         </DropdownMenu.Content>

@@ -403,6 +403,73 @@ export function statusChangeCopy(
   };
 }
 
+/** El texto del menú para quitar a alguien del nodo (Equipo → acciones → Membresía). */
+export const REMOVE_FROM_NODE_LABEL = 'Quitar de este nodo';
+
+/**
+ * ¿Se le ofrece "Quitar de este nodo"? A quien está activo o suspendido en él: quitarlo es la baja
+ * que deja de apilar suspendidos en la lista. Quién puede lo decide el API.
+ */
+export function canRemoveFromNode(member: Pick<NetworkMember, 'membershipStatus'>): boolean {
+  return member.membershipStatus === 'active' || member.membershipStatus === 'suspended';
+}
+
+/** "Agencia Norte", o "este nodo" si no sabemos su nombre. */
+function nodeLabel(nodeName: string | undefined): string {
+  return nodeName?.trim() || 'este nodo';
+}
+
+/**
+ * La confirmación de quitar a alguien del nodo (USR-11): deja de pertenecer y se le cierran las
+ * sesiones en él, lo que envió y ya no podría enviar se revoca, y su historial y sus reservas quedan.
+ * La única vuelta es una invitación nueva.
+ */
+export function removeMemberCopy(
+  member: Pick<NetworkMember, 'name' | 'email'>,
+  nodeName: string | undefined,
+  invitationsToRevoke: number | null = 0,
+): ConfirmCopy {
+  return {
+    title: `Quitar a ${who(member)} de ${nodeLabel(nodeName)}`,
+    description: `Deja de pertenecer a este nodo y se cierran sus sesiones en él.${revokedInvitationsNotice(invitationsToRevoke)} Su historial y sus reservas quedan como están. Si después quieres que vuelva, tienes que invitarlo de nuevo.`,
+    confirmLabel: 'Quitar del nodo',
+  };
+}
+
+/** Lo que respondió el API al quitar a alguien del nodo. */
+export interface MembershipRemoval {
+  readonly revokedSessions: number | undefined;
+  readonly revokedInvitations: number | undefined;
+}
+
+/**
+ * La respuesta de `POST /admin/memberships/remove`. Nunca falla: el 2xx ya dice que salió bien, y
+ * sin los conteos se avisa sin ellos.
+ */
+export function parseMembershipRemoval(value: unknown): MembershipRemoval {
+  const r = asRecord(value);
+  return {
+    revokedSessions: count(r?.['revokedSessions']),
+    revokedInvitations: count(r?.['revokedInvitations']),
+  };
+}
+
+/** El aviso de que salió bien: "Quitamos a Ana de Agencia Norte.", con las invitaciones revocadas. */
+export function memberRemovedMessage(
+  member: Pick<NetworkMember, 'name' | 'email'>,
+  nodeName: string | undefined,
+  result: Pick<MembershipRemoval, 'revokedInvitations'>,
+): string {
+  const n = result.revokedInvitations ?? 0;
+  const invitations =
+    n <= 0
+      ? ''
+      : n === 1
+        ? ' Se revocó 1 invitación que envió.'
+        : ` Se revocaron ${n} invitaciones que envió.`;
+  return `Quitamos a ${who(member)} de ${nodeLabel(nodeName)}.${invitations}`;
+}
+
 export type MemberAction =
   | 'reset-mfa'
   | 'revoke-sessions'

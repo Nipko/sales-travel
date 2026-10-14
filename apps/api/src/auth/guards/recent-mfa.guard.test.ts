@@ -214,8 +214,9 @@ describe('dónde corre y qué rutas la llevan', () => {
         minutes: reflector.get<number | undefined>(REQUIRE_RECENT_MFA_KEY, handler),
       }))
       .filter((r) => r.minutes !== undefined);
-    // Enviar el enlace la pide sólo si la persona es admin: lo decide MemberSupportService. Cerrar
-    // sesiones y desbloquear son el soporte de todos los días: no la llevan.
+    // Enviar el enlace y quitar a alguien de un nodo la piden sólo si la persona es admin: lo deciden
+    // MemberSupportService y AdminController.removeMembership. Cerrar sesiones y desbloquear son el
+    // soporte de todos los días: no la llevan.
     expect(marked.sort((a, b) => a.route.localeCompare(b.route))).toEqual([
       { route: 'PATCH /admin/users/status', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/require-password-reset', minutes: 10 },

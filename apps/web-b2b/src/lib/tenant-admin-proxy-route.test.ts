@@ -257,4 +257,38 @@ describe('las rutas de invitaciones y de memberships: mismo origen y cuerpo reco
       expect(mocks.apiWithStatus).not.toHaveBeenCalled();
     },
   );
+
+  it('quitar del nodo: sólo desde el panel, cuerpo reconstruido, JSON roto = 400 y el 403 del 2FA con su motivo', async () => {
+    const { POST } = await import('../app/api/admin/memberships/remove/route');
+    const url = '/api/admin/memberships/remove';
+    const body = { userId: MEMBER, tenantId: TENANT };
+
+    const ok = await POST(request('POST', url, SAME, JSON.stringify({ ...body, role: 'x' })));
+    expect(ok.status).toBe(200);
+    expect(mocks.apiWithStatus).toHaveBeenCalledWith('/admin/memberships/remove', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+
+    mocks.apiWithStatus.mockClear();
+    expect((await POST(request('POST', url, CROSS, JSON.stringify(body)))).status).toBe(403);
+    expect((await POST(request('POST', url, SAME, 'no-json'))).status).toBe(400);
+    expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+
+    // Quitar a un admin puede pedir el código: el motivo llega para que el panel abra el diálogo.
+    mocks.apiWithStatus.mockResolvedValue({
+      kind: 'json',
+      status: 403,
+      body: {
+        message: 'Confirma con tu código de verificación en dos pasos para seguir.',
+        reason: 'MFA_RECENT_REQUIRED',
+      },
+    });
+    const stepUp = await POST(request('POST', url, SAME, JSON.stringify(body)));
+    expect(stepUp.status).toBe(403);
+    expect(await stepUp.json()).toEqual({
+      error: 'Confirma con tu código de verificación en dos pasos para seguir.',
+      reason: 'MFA_RECENT_REQUIRED',
+    });
+  });
 });

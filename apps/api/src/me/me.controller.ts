@@ -55,7 +55,8 @@ export class MeController {
    * logo efectivo, si se puede operar (y por qué no) y cuál es la agencia por defecto del login,
    * calculada con el mismo criterio que la API (`isDefault`, ver auth/default-tenant.ts).
    *
-   * El bloqueante es el nodo no activo de la cadena: el propio primero, si no el más alto.
+   * El bloqueante es el nodo no activo de la cadena: el propio primero, si no el más alto. Los nodos
+   * de los que lo quitaron (USR-11) no aparecen: ya no es de ahí, ni deshabilitado.
    * `tenants` no tiene RLS (0001): leer los ancestros no expone más que su nombre.
    */
   @AllowWithoutMfa()
@@ -90,6 +91,7 @@ export class MeController {
             LIMIT 1
           ) blocker ON true
           WHERE m.user_id = ${userId}::uuid
+            AND m.status <> 'removed'
           ORDER BY t.name, t.id
         `.execute(trx);
         return res.rows;
