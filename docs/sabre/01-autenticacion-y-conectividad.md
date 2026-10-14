@@ -1064,7 +1064,7 @@ cada `fetchToken()`.
 
 | Campo                             | Origen                                              | Nota                                                                                                                                                                                     |
 | --------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment`                     | —                                                   | `'cert' \| 'prod'`; resuelve los dos hosts (§3.4).                                                                                                                                       |
+| `environment`                     | —                                                   | `'cert' \| 'prod'`; resuelve los dos hosts por defecto (§3.4); el entorno efectivo sale de los hosts (nota de abajo).                                                                    |
 | `restEndpoint` / `soapEndpoint`   | `rest_endpoint`, `soap_endpoint`                    | Override opcional.                                                                                                                                                                       |
 | `homePcc`                         | `pcc`                                               | PCC de autenticación. **Entra en el `clientId`**, por eso `SabreConfig` lo necesita junto a `credentials`.                                                                               |
 | `ticketingPcc`                    | `pcc_tkt`                                           | PCC de emisión → `targetPcc`. **Campo bisagra del modelo consolidador** (§9).                                                                                                            |
@@ -1081,6 +1081,13 @@ cada `fetchToken()`.
 > (`get-hotel-avail-v4.yml:94`); (b) el comentario de la migración 0012 ya lo asigna a `config`
 > (`0012_provider_accounts.sql:26`); (c) la UI de agencia necesita mostrarlo, y `credentials` nunca sale por API.
 > El factory combina ambos lados, igual que `latam-ndc.factory.ts`.
+
+**El entorno lo dicen los hosts, no `environment` (revisión de SAB-10).** Los hosts se pueden sobrescribir aparte
+(`host`, `soapHost`), así que lo declarado ya no decide si la cuenta es de pruebas: el factory la trata como CERT
+sólo si sus dos hosts son los de CERT, y como producción en cualquier otro caso (un host de producción de Sabre o uno
+que no es de Sabre), con la retención de cartera de una venta real. `POST /provider-accounts` rechaza con 400 lo que
+se contradice: CERT con un host que no es el de CERT, producción apuntando a CERT, o un `environment` que no es
+`cert` ni `prod`.
 
 **Con reservas activas, la oficina y el entorno de la cuenta no se cambian.** Cada orden de Sabre guarda la cuenta
 de la bóveda con que se reservó y su post-venta sale con ella (RF-29). Un PNR vive en su PCC y en su sistema: con

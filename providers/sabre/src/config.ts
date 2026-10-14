@@ -51,6 +51,23 @@ export function sabreHostEnvironment(url: string): SabreEnvironment | undefined 
   return undefined;
 }
 
+/**
+ * El entorno EFECTIVO de una cuenta: el de los hosts con los que el ACL arma cada URL, no el que la
+ * cuenta declara. Es CERT sólo si TODOS son hosts de CERT; un host de producción de Sabre, o uno que
+ * no es de Sabre (un proxy que podría llegar a producción), la hacen de producción.
+ *
+ * Por qué así y no al revés: «de pruebas» apaga cosas —la retención de cartera de la red, por
+ * ejemplo— y se le concede sólo a lo que se puede comprobar que es CERT. `environment` sigue
+ * eligiendo los hosts por defecto, pero ya no puede convertir un host de producción en una cuenta de
+ * pruebas.
+ */
+export function sabreEnvironmentOfHosts(hosts: readonly (string | undefined)[]): SabreEnvironment {
+  const present = hosts.filter((host): host is string => host !== undefined);
+  return present.length > 0 && present.every((host) => sabreHostEnvironment(host) === 'cert')
+    ? 'cert'
+    : 'prod';
+}
+
 /** El literal `AA` del `clientId` REST (`V1:{epr}:{pcc}:AA`) — docs/sabre/01 §2.1. */
 export const SABRE_DEFAULT_DOMAIN = 'AA';
 

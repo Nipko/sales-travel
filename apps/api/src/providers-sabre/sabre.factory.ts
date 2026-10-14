@@ -52,6 +52,7 @@ import {
   isSabrePccTimeZone,
   missingSabreCredentials,
   parseSabreConfig,
+  sabreEnvironmentOfHosts,
   type SabreCancelOptions,
   type SabreCardBinPricingPolicy,
   type SabreConfig,
@@ -904,9 +905,10 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // desaloja a la otra en cada llamada —cada reconstrucción es un token y un cupo nuevos—.
     const key = `byoc:${resolved.ownerTenantId}:${resolved.id}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
-    // Sólo `prod` es real. CERT —y cualquier cuenta sin entorno legible, que `toConfig` ya manda a
-    // CERT— cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la búsqueda las
-    // marca y la orden lo guarda para que nadie se las venda a un cliente como reales.
+    // De pruebas sólo lo que sale a CERT: `toConfig` deriva el entorno de los hosts, no de lo que la
+    // cuenta declara. CERT cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la
+    // búsqueda las marca, la orden lo guarda y la reserva no retiene cartera. Un host de producción
+    // —o uno que no es de Sabre— es real, declare lo que declare la cuenta.
     const providerEnvironment: ProviderEnvironment = cfg.environment === 'prod' ? 'live' : 'test';
     const account: Omit<TenantAdapter<FlightProviderAdapter>, 'adapter'> = {
       credentialSource,
@@ -1141,15 +1143,28 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const maxConcurrentRequests = this.maxConcurrentRequests(config, ownerTenantId);
     const c = credentials;
     const g = config;
-    const environment = g['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
-    const hosts = SABRE_HOSTS[environment];
+    // Lo declarado sólo elige los hosts por defecto. El entorno es el de los hosts que quedan: una
+    // cuenta marcada CERT con el host de producción sobrescrito es de producción, y retiene cartera
+    // como cualquier venta real (revisión de SAB-10). `sabreEnvironmentOfHosts` es la misma regla con
+    // la que el borde de credenciales rechaza la combinación al guardar.
+    const declared = g['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
+    const hosts = SABRE_HOSTS[declared];
+    const host = str(g['host']) ?? hosts.rest;
+    const soapHost = str(g['soapHost']) ?? hosts.soap;
+    const environment = sabreEnvironmentOfHosts([host, soapHost]);
+    if (environment !== declared) {
+      // Sin hosts ni valores en el mensaje: el dueño y los dos entornos bastan para encontrarla.
+      this.logger.warn(
+        `la cuenta de Sabre de ${ownerTenantId} declara '${declared}' pero sus hosts son de '${environment}': se trata como '${environment}'`,
+      );
+    }
 
     // `password` sólo se lee del blob CIFRADO. Aceptarlo también desde `config` —como sí se
     // hace con `epr` y `homePcc`, que no son secretos— abriría una puerta para guardar la
     // contraseña de la oficina en un JSONB en claro que además se devuelve por `listSafe`.
     return parseSabreConfig({
-      host: str(g['host']) ?? hosts.rest,
-      soapHost: str(g['soapHost']) ?? hosts.soap,
+      host,
+      soapHost,
       environment,
       epr: str(c['epr']) ?? str(g['epr']),
       password: str(c['password']),

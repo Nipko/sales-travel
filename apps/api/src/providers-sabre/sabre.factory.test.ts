@@ -6,6 +6,7 @@ import type { Offer } from '@sales-travel/canonical';
 import { OrderCreateNotSentError, type OrderCreateRequest } from '@sales-travel/domain';
 import {
   REDACTED,
+  SABRE_HOSTS,
   SabreApiError,
   SabreCancelBookingBuildError,
   SabreFlightCheckRequestError,
@@ -419,6 +420,91 @@ describe('SabreProviderFactory — la cuenta declara si es de pruebas', () => {
     const { active } = await registry.forTenant('t1');
     expect(active.map((p) => p.environment)).toEqual(['test']);
     expect((await registry.byCodeForOffer('t1', SABRE_PROVIDER_CODE)).environment).toBe('test');
+  });
+});
+
+/**
+ * Revisión de SAB-10: «de pruebas» apaga la retención de cartera de la red, y lo declaraba
+ * `config.environment` aunque el host se sobrescribiera aparte. Un dueño de cuenta podía marcar
+ * CERT un host de producción y vender sin retener. Ahora el entorno sale de los hosts resueltos.
+ */
+describe('SabreProviderFactory — el entorno sale de los hosts, no de lo que declara la cuenta', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function entornoDe(config: Record<string, unknown>): Promise<string | undefined> {
+    const factory = factoryWith(() => Promise.resolve(resolved({ config })));
+    return (await factory.resolveForTenant('t1')).providerEnvironment;
+  }
+
+  it('marcada CERT con el host REST de producción, es de producción', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(await entornoDe({ environment: 'cert', host: SABRE_HOSTS.prod.rest })).toBe('live');
+  });
+
+  it('sin entorno declarado (CERT por defecto) y con el SOAP de producción, también', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(await entornoDe({ soapHost: SABRE_HOSTS.prod.soap })).toBe('live');
+  });
+
+  it('un host que no es de Sabre no se puede comprobar: es de producción', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(await entornoDe({ environment: 'cert', host: 'https://proxy.agencia.test' })).toBe(
+      'live',
+    );
+  });
+
+  it('declarada producción con los hosts de CERT es de pruebas: ahí no se emite ni se factura', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(
+      await entornoDe({
+        environment: 'prod',
+        host: SABRE_HOSTS.cert.rest,
+        soapHost: SABRE_HOSTS.cert.soap,
+      }),
+    ).toBe('test');
+  });
+
+  it('la cuenta CERT de siempre sigue siendo de pruebas, sin aviso', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    expect(await entornoDe({ environment: 'cert', host: SABRE_HOSTS.cert.rest })).toBe('test');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('avisa la discrepancia en el log, sin hosts ni credenciales', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    await entornoDe({ environment: 'cert', host: SABRE_HOSTS.prod.rest });
+    const lineas = warn.mock.calls.map((call) => String(call[0]));
+    expect(lineas).toContain(
+      "la cuenta de Sabre de owner-1 declara 'cert' pero sus hosts son de 'prod': se trata como 'prod'",
+    );
+    const texto = lineas.join('\n');
+    expect(texto).not.toContain(PASSWORD);
+    expect(texto).not.toContain(EPR);
+    expect(texto).not.toContain('api.platform');
+  });
+
+  it('la config del ACL lleva el entorno derivado: es lo que mira el arnés de certificación', () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const factory = factoryWith(() => Promise.reject(new Error('no se usa')));
+    const cfg = factory.configFor(
+      resolved({ config: { environment: 'cert', host: SABRE_HOSTS.prod.rest } }),
+    );
+    expect(cfg).toMatchObject({ environment: 'prod', host: SABRE_HOSTS.prod.rest });
+  });
+
+  it('el registry entrega ese entorno a la venta, que es lo que decide si retiene cartera', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const registry = new FlightProviderRegistry(
+      [
+        factoryWith(() =>
+          Promise.resolve(
+            resolved({ config: { environment: 'cert', host: SABRE_HOSTS.prod.rest } }),
+          ),
+        ),
+      ],
+      { decisionFor: () => Promise.resolve(ENCENDIDO) },
+    );
+    expect((await registry.byCodeForOffer('t1', SABRE_PROVIDER_CODE)).environment).toBe('live');
   });
 });
 

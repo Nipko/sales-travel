@@ -5,6 +5,7 @@ import {
   hasUsableSabreCredentials,
   missingSabreCredentials,
   parseSabreConfig,
+  sabreEnvironmentOfHosts,
   sabreHostEnvironment,
   sabreUrl,
   type SabreConfig,
@@ -130,5 +131,33 @@ describe('sabreHostEnvironment', () => {
     expect(sabreHostEnvironment('api.cert.platform.sabre.com')).toBeUndefined();
     expect(sabreHostEnvironment('ftp://api.cert.platform.sabre.com')).toBeUndefined();
     expect(sabreHostEnvironment('')).toBeUndefined();
+  });
+});
+
+/**
+ * El entorno de una cuenta sale de sus hosts (revisión de SAB-10): «de pruebas» apaga la retención
+ * de cartera, así que sólo se le concede a lo que se puede comprobar que es CERT.
+ */
+describe('sabreEnvironmentOfHosts', () => {
+  it('CERT sólo si todos los hosts son de CERT', () => {
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, SABRE_HOSTS.cert.soap])).toBe('cert');
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, undefined])).toBe('cert');
+  });
+
+  it('un solo host de producción hace de producción a la cuenta entera', () => {
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.prod.rest, SABRE_HOSTS.cert.soap])).toBe('prod');
+    expect(sabreEnvironmentOfHosts([SABRE_HOSTS.cert.rest, SABRE_HOSTS.prod.soap])).toBe('prod');
+  });
+
+  it('un host que no es de Sabre no se puede comprobar: producción', () => {
+    expect(sabreEnvironmentOfHosts(['https://proxy.agencia.test', SABRE_HOSTS.cert.soap])).toBe(
+      'prod',
+    );
+    expect(sabreEnvironmentOfHosts(['http://127.0.0.1:4010'])).toBe('prod');
+  });
+
+  it('sin ningún host no hay nada que comprobar: producción', () => {
+    expect(sabreEnvironmentOfHosts([])).toBe('prod');
+    expect(sabreEnvironmentOfHosts([undefined])).toBe('prod');
   });
 });

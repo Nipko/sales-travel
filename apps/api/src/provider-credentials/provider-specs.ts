@@ -13,6 +13,7 @@
  * `safeConfigView` y `accountReadiness`).
  */
 
+import { SABRE_HOSTS, sabreHostEnvironment } from '@sales-travel/sabre';
 import { TboConfigError, parseTboConfig } from '@sales-travel/tbo-hotels';
 
 /** De dónde puede venir el valor de un campo. */
@@ -88,6 +89,68 @@ export interface ProviderSpec {
      */
     readonly configDefaults?: Readonly<Record<string, string>>;
   };
+}
+
+const SABRE_INVALID_ENVIRONMENT =
+  '`environment` vale `cert` o `prod`: decide a qué Sabre va la credencial y si la cuenta es de pruebas. Cualquier otro valor se leía como CERT sin que nadie lo notara.';
+
+/** El host de CERT que corresponde a cada campo, para decir cuál se puede cargar. */
+const SABRE_CERT_HOST_FOR: Readonly<Record<'host' | 'soapHost', string>> = {
+  host: SABRE_HOSTS.cert.rest,
+  soapHost: SABRE_HOSTS.cert.soap,
+};
+
+/**
+ * `environment` contra los hosts de una cuenta de Sabre (revisión de SAB-10).
+ *
+ * El factory ya no se fía de lo declarado: deriva el entorno de los hosts con `sabreHostEnvironment`
+ * del ACL (`sabreEnvironmentOfHosts`), así que una cuenta marcada CERT con un host de producción se
+ * trata como de producción y retiene cartera igual. Esto es la misma regla un paso antes: lo que el
+ * factory leería distinto de lo declarado no se guarda, y el motivo lo dice. Un host vacío no se
+ * mira: el factory pone el del entorno declarado, que siempre coincide.
+ *
+ * - CERT (o sin entorno, que es CERT) sólo con los hosts de CERT: con uno de producción, o con uno que
+ *   no es de Sabre, no se puede comprobar que la cuenta sea de pruebas.
+ * - Producción no puede apuntar a CERT: las reservas irían a un sistema que no emite ni factura y se
+ *   mostrarían como reales. Un host propio que no es de Sabre sí se admite, como hasta hoy.
+ *
+ * Los mensajes no llevan el valor recibido.
+ */
+function sabreAccountIssues(account: {
+  readonly credentials: Record<string, unknown>;
+  readonly config: Record<string, unknown>;
+}): readonly ProviderAccountIssue[] {
+  const { config } = account;
+  const raw = config['environment'];
+  if (raw !== undefined && raw !== null && raw !== '' && raw !== 'cert' && raw !== 'prod') {
+    // Sin saber qué entorno se quiso, no se puede juzgar si los hosts coinciden.
+    return [{ path: ['config', 'environment'], message: SABRE_INVALID_ENVIRONMENT }];
+  }
+  const declared = raw === 'prod' ? 'prod' : 'cert';
+
+  const issues: ProviderAccountIssue[] = [];
+  for (const key of ['host', 'soapHost'] as const) {
+    const value = config[key];
+    if (value === undefined || value === null || value === '') continue;
+    const hostEnvironment = typeof value === 'string' ? sabreHostEnvironment(value) : undefined;
+    if (declared === 'cert' && hostEnvironment === 'prod') {
+      issues.push({
+        path: ['config', key],
+        message: `\`${key}\` es un host de producción de Sabre y la cuenta declara \`environment: cert\`. Una cuenta de pruebas no retiene cartera, así que con ese host la plataforma la trataría como de producción igual: elige \`environment: prod\` o deja el host vacío para usar el de CERT.`,
+      });
+    } else if (declared === 'cert' && hostEnvironment !== 'cert') {
+      issues.push({
+        path: ['config', key],
+        message: `Con \`environment: cert\` el \`${key}\` sólo puede ser el de CERT de Sabre (${SABRE_CERT_HOST_FOR[key]}) o quedar vacío: con otro host no se puede comprobar que la cuenta sea de pruebas, y la plataforma la trataría como de producción.`,
+      });
+    } else if (declared === 'prod' && hostEnvironment === 'cert') {
+      issues.push({
+        path: ['config', key],
+        message: `\`${key}\` es el host de CERT y la cuenta declara \`environment: prod\`. Las reservas irían a CERT, que no emite ni factura, y se mostrarían como reales: elige \`environment: cert\` o deja el host vacío para usar el de producción.`,
+      });
+    }
+  }
+  return issues;
 }
 
 /**
@@ -198,6 +261,7 @@ const SABRE: ProviderSpec = {
     'ticketingFormOfPayment',
     'pccTimeZone',
   ],
+  accountIssues: sabreAccountIssues,
   // Un PNR vive en la oficina (PCC) y en el sistema (CERT o producción, o el host que lo
   // reemplaza) donde se creó. Las órdenes guardan esta cuenta y operan su post-venta con ella
   // (RF-29): cambiarle el PCC o el entorno con reservas vivas las dejaría sin la única oficina que
