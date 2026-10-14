@@ -51,6 +51,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones → Membresía / ficha     | Admin del nodo que supere su rol; superadmin. Nunca el propio ni el último admin activo   | **Hecho (USR-11; D2 = A)**: vuelve sólo con una invitación nueva          |
 | Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | **Hecho (USR-13; D1 = C)**: pide el código si pasaron 10 minutos          |
+| Activar el 2FA por primera vez (o tras un restablecimiento) pide la contraseña | Seguridad / pantalla de 2FA obligatoria   | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-13b)**: suma al bloqueo y avisa por correo                   |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
 | Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
@@ -746,17 +747,18 @@ Sin cambios en la base ni en el panel.
 
 ### Qué avisos hay
 
-| Aviso                                             | Cuándo                                                            | Asunto                                                     |
-| ------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
-| `mfa_reset`                                       | Restablecer su 2FA                                                | Restablecimos tu verificación en dos pasos · PlaneTour     |
-| `sessions_revoked`                                | Cerrar todas sus sesiones, si tenía alguna abierta                | Cerramos tus sesiones abiertas · PlaneTour                 |
-| `session_revoked`                                 | Cerrar una sesión desde la ficha                                  | Cerramos una de tus sesiones · PlaneTour                   |
-| `unlocked`                                        | Desbloquear, si había un bloqueo vigente                          | Desbloqueamos tu cuenta · PlaneTour                        |
-| `role_changed`                                    | Cambiar su rol en un nodo, si cambió                              | Tu rol en {nodo} cambió · PlaneTour                        |
-| `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió              | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
-| `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió  | Tu cuenta de PlaneTour fue suspendida / reactivada         |
-| `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta | Tu contraseña cambió · PlaneTour                           |
-| `membership_removed`                              | Quitarla de un nodo (USR-11)                                      | Ya no formas parte de {nodo} · PlaneTour                   |
+| Aviso                                             | Cuándo                                                              | Asunto                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `mfa_reset`                                       | Restablecer su 2FA                                                  | Restablecimos tu verificación en dos pasos · PlaneTour     |
+| `sessions_revoked`                                | Cerrar todas sus sesiones, si tenía alguna abierta                  | Cerramos tus sesiones abiertas · PlaneTour                 |
+| `session_revoked`                                 | Cerrar una sesión desde la ficha                                    | Cerramos una de tus sesiones · PlaneTour                   |
+| `unlocked`                                        | Desbloquear, si había un bloqueo vigente                            | Desbloqueamos tu cuenta · PlaneTour                        |
+| `role_changed`                                    | Cambiar su rol en un nodo, si cambió                                | Tu rol en {nodo} cambió · PlaneTour                        |
+| `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió                | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
+| `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió    | Tu cuenta de PlaneTour fue suspendida / reactivada         |
+| `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta   | Tu contraseña cambió · PlaneTour                           |
+| `membership_removed`                              | Quitarla de un nodo (USR-11)                                        | Ya no formas parte de {nodo} · PlaneTour                   |
+| `mfa_enabled`                                     | Activar su 2FA por primera vez o tras un restablecimiento (USR-13b) | Activaste la verificación en dos pasos · PlaneTour         |
 
 - Enviarle el enlace y forzar el cambio de contraseña no suman un aviso: el correo del enlace ya lo
   es. Liberar un puesto (Equipo → Puestos) tampoco avisa: es operativo, de todos los días, y el panel
@@ -939,12 +941,73 @@ de sus nodos, no sólo en el de la ruta.
   enlace a un admin: recibe 403 `MFA_REQUIRED_FOR_ACTION` hasta que active el 2FA en Seguridad. Lo
   demás del soporte (enviar el enlace a un vendedor, desbloquear, cerrar sesiones) sigue igual. El
   superadmin y los roles que exigen el 2FA no cambian, salvo el código cada 10 minutos.
-- **Lo que no cubre**: en una cuenta SIN 2FA, una sesión robada puede activarlo con su propio
-  teléfono (el primer enrolamiento no pide la contraseña) y quedar reconfirmada en el acto. Activarlo
-  así cierra las demás sesiones de la persona (se nota: queda afuera y sin su código), pero no lo
-  impide, y hoy activarlo no manda aviso por correo. Cerrar ese hueco es pedir la contraseña en el
-  primer enrolamiento o exigir el 2FA a los admins de agencia: queda para una decisión aparte.
-  Tampoco lo piden, por D1, suspender en un solo nodo, cambiar un rol ni invitar.
+- **Lo que no cubre**: suspender en un solo nodo, cambiar un rol ni invitar no piden el código, por
+  D1. El hueco de la revisión adversarial (en una cuenta SIN 2FA, una sesión robada lo activaba con
+  su propio teléfono, sin la contraseña, y quedaba reconfirmada en el acto, cerraba las sesiones de
+  la persona y no salía ningún aviso) lo cierra USR-13b: ver abajo.
+
+### Pedir la contraseña al activar el 2FA por primera vez (USR-13b)
+
+Activar el 2FA por primera vez, también después de que un admin lo restableció, pide la contraseña
+de la cuenta, como Google, GitHub o Stripe antes de cambiar un factor de ingreso. Sin ella, una
+sesión robada de una cuenta sin 2FA lo activaba con el teléfono del atacante: la sesión contaba
+como recién verificada para las acciones de alto impacto, las demás sesiones de la persona se
+cerraban y no le llegaba nada. Con ella, hace falta además la contraseña, y la persona se entera
+por correo. Sin cambios en la base.
+
+- **API**: `POST /auth/mfa/confirm` acepta `{ code, currentPassword? }` (`MfaConfirmSchema`).
+  `MfaService.confirmEnrollment` decide con `users.mfa_enabled_at`: si la cuenta no tiene el 2FA
+  activo, la contraseña es obligatoria. Sin ella, **400 `MFA_PASSWORD_REQUIRED`** ("Escribe tu
+  contraseña para activar la verificación en dos pasos."), sin probar ni contar nada. Se prueba
+  antes que el código y como en el login: un `bcrypt.compare` aunque la cuenta no tenga contraseña
+  guardada (contra un hash de relleno, para que el tiempo no lo delate), dentro de `withLockout`
+  (acción `enroll`): el intento se reserva contra el mismo contador de fallos y bloqueo del login
+  antes de verificar, un acierto lo limpia, y cada fallo se audita como `auth.mfa.reauth_failed`.
+  Mala: **400 `MFA_PASSWORD_INVALID`** ("La contraseña no es correcta."); la quinta, o con la cuenta
+  ya bloqueada, **429 `MFA_ACCOUNT_LOCKED`**, que bloquea también el login 15 minutos. Un código con
+  otra forma se rechaza antes de probar la contraseña.
+- El `UPDATE` que activa el secreto exige además que la cuenta siga como se leyó
+  (`(mfa_enabled_at IS NOT NULL) = rotación`): si entre la lectura y la escritura pasó a tener (o
+  dejó de tener) el 2FA, 400 `MFA_CODE_INVALID` y no se activa nada.
+- **Aviso**: después del commit, `SecurityNoticeService.notify('mfa_enabled', { userId, tenantId:
+null, at })` con el `mfa_enabled_at` que devolvió el `UPDATE`. Sale por el correo de su membership
+  activa más antigua (`mail-node.ts`, que ahora trae también el país del nodo), sin nombrar ningún
+  nodo: "Activaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a
+  las 10:42 (GMT-5).", que desde ahora le pediremos el código, que cerramos las sesiones de otros
+  equipos y "Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «Olvidé mi
+  contraseña»… y pídele a tu administrador que restablezca tu verificación en dos pasos.". La hora va
+  en la zona del país de ese nodo (`noticeTime`, `security-notices.ts`; Bogotá si no se conoce) y
+  siempre con su desfase. Auditoría: el `auth.mfa.enabled` de siempre (`rotation: false`).
+- **Lo que no cambia**: cambiar de teléfono (ya tiene 2FA) sigue pidiendo la contraseña y un código
+  de la app actual en el paso 1, y no la vuelve a pedir al confirmar ni manda este aviso. El login,
+  el paso 1 (`POST /auth/mfa/enroll`, que sólo deja un secreto pendiente que no abre nada) y quien
+  ya tiene el 2FA activo, igual. El enrolamiento obligatorio de los roles que lo exigen no se
+  afloja: también pide la contraseña.
+- **Panel**: en el paso 3 de la activación (Seguridad y la pantalla de 2FA obligatoria), "Tu
+  contraseña" va antes del código, con `autocomplete="current-password"` y la ayuda "La misma con la
+  que ingresas. Así confirmamos que eres tú quien activa la verificación." asociada al campo. El
+  sexto dígito sigue enviando solo, pero sólo con la contraseña escrita. Una contraseña mala marca
+  ese campo (`aria-invalid`, el error con `role="alert"` y asociado), le lleva el foco con el texto
+  seleccionado y no borra el código, que no se llegó a usar. Al cambiar de teléfono el paso 3 no la
+  pide (`MfaSetupStep` con `requirePassword` sólo en la primera activación).
+- El historial de la persona muestra `auth.mfa.reauth_failed` como "Verificación fallida dentro de
+  su sesión", con qué intentaba ("Contraseña incorrecta al activar el 2FA", "Al reconfirmar el
+  2FA"…) y si bloqueó la cuenta.
+- **Despliegue**: API y panel juntos. Con el API nuevo y el panel viejo, la primera activación
+  responde 400 `MFA_PASSWORD_REQUIRED` y el panel viejo lo muestra como código inválido hasta que
+  salga el nuevo; quien ya tiene el 2FA no nota nada. Un enrolamiento a medio hacer al desplegar
+  sólo tiene que escribir la contraseña al confirmar.
+- **Tests**: `mfa.service.test.ts` (sin contraseña, 400 sin contar; mala, cuenta y la quinta
+  bloquea sin probar el código; sin contraseña guardada igual corre un bcrypt; código con otra forma
+  antes que la contraseña; buena, limpia el contador, audita y avisa con la hora; la cuenta cambió
+  en el medio, sin aviso; cambiar de teléfono no la pide ni avisa), `mfa.integration.test.ts`
+  (Postgres, como `app_user`: la sesión robada sin la contraseña no activa nada ni queda
+  reconfirmada y la de la persona sigue abierta; la mala suma al mismo bloqueo del login; la buena
+  activa y el aviso sale por el correo de su nodo con la hora; después de `admin_reset_user_mfa`
+  también la pide; cambiar de teléfono sin cambios), `security-notices.test.ts`,
+  `security-notice.service.test.ts`, `dto.test.ts`; en el panel `actions.test.ts`,
+  `security-errors.test.ts`, `security.render.test.ts` (campo, orden, ayuda, error asociado, en tú)
+  y `audit-format.test.ts`.
 
 ## Quitar a una persona de un nodo (USR-11)
 
