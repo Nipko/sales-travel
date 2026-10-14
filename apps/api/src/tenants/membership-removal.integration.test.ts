@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { HttpException } from '@nestjs/common';
-import { Kysely, PostgresDialect, sql } from 'kysely';
+import { Kysely, PostgresDialect, sql, type Transaction } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { platformRootId } from '../__fixtures__/platform-root.js';
@@ -14,6 +14,7 @@ import type { MailerService } from '../mail/mailer.service.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { MeController } from '../me/me.controller.js';
 import { NetworkService } from '../network/network.service.js';
+import type { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { requestContextStorage, type RequestContext } from '../request-context/request-context.js';
 import { AdminController } from './admin.controller.js';
 import { InvitationsService } from './invitations.service.js';
@@ -21,7 +22,7 @@ import { MemberDetailService } from './member-detail.service.js';
 import { MemberSupportService } from './member-support.service.js';
 import { PlatformUsersService } from './platform-users.service.js';
 import type { SeatsService } from './seats.service.js';
-import type { TenantsService } from './tenants.service.js';
+import { TenantsService } from './tenants.service.js';
 
 /**
  * Quitar a una persona de un nodo contra Postgres (USR-11, founder D2 = A): baja blanda.
@@ -128,6 +129,13 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     );
   }
   const admin = adminWith(audit);
+  const tenantsService = new TenantsService(
+    database,
+    network,
+    invitations,
+    audit,
+    {} as ProviderEnablementStore,
+  );
   const me = new MeController(database);
   const detail = new MemberDetailService(database, network, audit, asNotices);
   const support = new MemberSupportService(
@@ -303,6 +311,9 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     const inA = await session(seller, agencyA);
     const inB = await session(seller, agencyB);
     expect(await team(adminA, agencyA)).toContain(seller);
+    const before = await tenantsService.listNetwork(consAdmin);
+    const teamSizeA = before.find((n) => n.id === agencyA)!.userCount;
+    const teamSizeB = before.find((n) => n.id === agencyB)!.userCount;
 
     const res = await admin.removeMembership(adminA, { userId: seller, tenantId: agencyA });
 
@@ -340,6 +351,16 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     // Su selector de agencia ya no ofrece A, ni deshabilitada.
     const mine = await me.memberships(seller);
     expect(mine.map((m) => m.tenantId)).toEqual([agencyB]);
+
+    // Desde el consolidador su ficha se abre por B, y ya no lista A entre sus nodos.
+    const card = await detail.detail(consAdmin, cons, seller);
+    expect(card.memberships.map((m) => m.tenantId)).toEqual([agencyB]);
+
+    // Gestión de Agencias no la cuenta entre los usuarios de A.
+    const nodes = await tenantsService.listNetwork(consAdmin);
+    const countOf = (id: string) => nodes.find((n) => n.id === id)?.userCount;
+    expect(countOf(agencyA)).toBe(teamSizeA - 1);
+    expect(countOf(agencyB)).toBe(teamSizeB);
 
     // El rastro: el evento en la misma transacción y el aviso a su correo.
     expect(await events('MembershipRemoved', membershipId)).toEqual([
@@ -557,6 +578,101 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
     ).toBe('403/MFA_RECENT_REQUIRED');
     expect(await membership(agencyB, second)).toMatchObject({ status: 'active' });
     expect(await membership(agencyB, adminB)).toMatchObject({ status: 'active' });
+  });
+
+  it('dos admins de arriba quitan a la vez a los dos últimos admins del nodo: uno gana y el nodo no queda sin admin', async () => {
+    const node = await tenant('duelo', 'agency', cons);
+    const otherCons = await user('cons-admin-2');
+    await member(cons, otherCons, 'consolidator_admin');
+    const first = await user('duelo-1');
+    const second = await user('duelo-2');
+    await member(node, first, 'tenant_admin');
+    await member(node, second, 'tenant_admin');
+
+    // Cada uno ve al otro admin como el que queda: el chequeo de afuera pasa en los dos.
+    const results = await Promise.allSettled([
+      requestContextStorage.run(withMfa(consAdmin, 1), () =>
+        admin.removeMembership(consAdmin, { userId: first, tenantId: node }),
+      ),
+      requestContextStorage.run(withMfa(otherCons, 1), () =>
+        admin.removeMembership(otherCons, { userId: second, tenantId: node }),
+      ),
+    ]);
+
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    const lost = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect((lost?.reason as Error).message).toBe(
+      'Es el último administrador activo del nodo: asigna otro antes de quitarlo.',
+    );
+    const { rows } = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM memberships WHERE tenant_id = $1 AND status = 'active'`,
+      [node],
+    );
+    expect(rows[0]!.n).toBe(1);
+  });
+
+  it('el rol se vuelve a mirar con la fila tomada: si lo ascendieron en el medio, valen las reglas de admin', async () => {
+    const promoted = await user('ascendido');
+    await member(agencyA, promoted, 'vendedor');
+    // Lo leyó vendedor; antes de tomar la fila (la 2ª transacción del pedido), otro admin lo hace
+    // tenant_admin de A.
+    let calls = 0;
+    const slow = Object.create(database) as DatabaseService;
+    slow.withRequestContext = async <T>(
+      ctx: { userId?: string; tenantId?: string },
+      fn: (trx: Transaction<DB>) => Promise<T>,
+    ): Promise<T> => {
+      if (ctx.tenantId === agencyA && ++calls === 2) {
+        await pool.query(
+          `UPDATE memberships SET role = 'tenant_admin' WHERE tenant_id = $1 AND user_id = $2`,
+          [agencyA, promoted],
+        );
+      }
+      return database.withRequestContext(ctx, fn);
+    };
+    const racing = new AdminController(
+      slow,
+      network,
+      audit,
+      sessions,
+      {} as TenantsService,
+      {} as SeatsService,
+      invitations,
+      new PlatformUsersService(database),
+      asNotices,
+    );
+
+    // adminA es tenant_admin: no supera a otro tenant_admin.
+    expect(
+      await rejection(racing.removeMembership(adminA, { userId: promoted, tenantId: agencyA })),
+    ).toBe('403/ROLE_NOT_GRANTABLE');
+    expect(await membership(agencyA, promoted)).toMatchObject({
+      status: 'active',
+      role: 'tenant_admin',
+    });
+  });
+
+  it('un rol de plataforma no se quita: ninguna invitación lo devuelve', async () => {
+    const platform = await platformRootId(pool);
+    const superadmin = await user('super');
+    const other = await user('super-2');
+    await member(platform, superadmin, 'superadmin');
+    await member(platform, other, 'superadmin');
+
+    try {
+      expect(
+        await requestContextStorage.run(withMfa(superadmin, 1), () =>
+          rejection(admin.removeMembership(superadmin, { userId: other, tenantId: platform })),
+        ),
+      ).toBe('403/PLATFORM_ROLE_NOT_REMOVABLE');
+      expect(await membership(platform, other)).toMatchObject({ status: 'active' });
+    } finally {
+      // Otros archivos cuentan los superadmins de la plataforma: no dejarlos más de lo necesario.
+      await pool.query('DELETE FROM memberships WHERE tenant_id = $1 AND user_id = ANY($2)', [
+        platform,
+        [superadmin, other],
+      ]);
+    }
   });
 
   it('quien se quitó ya no es del equipo: ni su ficha ni el soporte ni su seguridad se abren desde el nodo', async () => {

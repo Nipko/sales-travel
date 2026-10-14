@@ -270,15 +270,34 @@ function bancoMembresia(
   membresia: { id: string; role: Role; status: MembershipStatus },
   roleOver: Role = 'tenant_admin',
   bloqueada: { role: Role; status: MembershipStatus } = membresia,
+  // Cuántos admins activos le quedan al nodo, contados dentro de la transacción.
+  adminsRestantes = '1',
 ) {
   const orden: string[] = [];
+  // El conteo de admins elige sus columnas con una función; tomar la fila, con una lista.
+  let contando = false;
   const select = {
-    select: vi.fn(() => select),
+    select: vi.fn((columnas: unknown) => {
+      contando = typeof columnas === 'function';
+      return select;
+    }),
     where: vi.fn(() => select),
     forNoKeyUpdate: vi.fn(() => select),
-    executeTakeFirst: vi.fn((): Promise<{ role: Role; status: MembershipStatus } | undefined> => {
-      orden.push('fila');
-      return Promise.resolve({ role: bloqueada.role, status: bloqueada.status });
+    executeTakeFirst: vi.fn(
+      (): Promise<{ role: Role; status: MembershipStatus } | { count: string } | undefined> => {
+        if (contando) return Promise.resolve({ count: adminsRestantes });
+        orden.push('fila');
+        return Promise.resolve({ role: bloqueada.role, status: bloqueada.status });
+      },
+    ),
+  };
+  // El candado del nodo (pg_advisory_xact_lock) es SQL crudo: pasa por el ejecutor.
+  const ejecutor = {
+    transformQuery: (nodo: unknown) => nodo,
+    compileQuery: (nodo: unknown) => ({ query: nodo, sql: '', parameters: [] }),
+    executeQuery: vi.fn(() => {
+      orden.push('candado');
+      return Promise.resolve({ rows: [] });
     }),
   };
   const update = {
@@ -289,7 +308,11 @@ function bancoMembresia(
       return Promise.resolve({ numUpdatedRows: 1n });
     }),
   };
-  const trx = { selectFrom: vi.fn(() => select), updateTable: vi.fn(() => update) };
+  const trx = {
+    selectFrom: vi.fn(() => select),
+    updateTable: vi.fn(() => update),
+    getExecutor: () => ejecutor,
+  };
   const db = {
     withRequestContext: vi
       .fn()
@@ -344,7 +367,7 @@ describe('AdminController: la persona se entera por su correo de su rol y su acc
 
     await controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'admin' });
 
-    expect(orden).toEqual(['fila', 'update', 'evento', 'commit', 'aviso']);
+    expect(orden).toEqual(['candado', 'fila', 'update', 'evento', 'commit', 'aviso']);
     expect(notices.notify).toHaveBeenCalledTimes(1);
     expect(notices.notify).toHaveBeenCalledWith('role_changed', {
       userId: OTRO,
@@ -371,7 +394,7 @@ describe('AdminController: la persona se entera por su correo de su rol y su acc
       status: 'suspended',
     });
 
-    expect(orden).toEqual(['fila', 'update', 'sesiones', 'evento', 'commit', 'aviso']);
+    expect(orden).toEqual(['candado', 'fila', 'update', 'sesiones', 'evento', 'commit', 'aviso']);
     expect(notices.notify).toHaveBeenCalledWith('membership_suspended', {
       userId: OTRO,
       tenantId: NODO,
@@ -530,7 +553,7 @@ describe('AdminController.removeMembership: quitar a una persona de un nodo (USR
       revokedSessions: 1,
       revokedInvitations: 1,
     });
-    expect(orden).toEqual(['fila', 'update', 'sesiones', 'evento', 'commit', 'aviso']);
+    expect(orden).toEqual(['candado', 'fila', 'update', 'sesiones', 'evento', 'commit', 'aviso']);
     // Queda con quién y cuándo, y sólo si no estaba quitada ya.
     expect(update.set).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'removed', removed_by: ACTOR }),
@@ -643,7 +666,7 @@ describe('AdminController.removeMembership: quitar a una persona de un nodo (USR
     await expect(quitar(carrera.controller, ACTOR)).rejects.toMatchObject({
       reason: 'MEMBERSHIP_REMOVED',
     });
-    expect(carrera.orden).toEqual(['fila']);
+    expect(carrera.orden).toEqual(['candado', 'fila']);
     expect(carrera.notices.notify).not.toHaveBeenCalled();
   });
 
@@ -683,6 +706,96 @@ describe('AdminController.removeMembership: quitar a una persona de un nodo (USR
     await expect(quitar(controller, ACTOR)).rejects.toThrow('el evento no entró');
     expect(notices.notify).not.toHaveBeenCalled();
   });
+
+  it('un rol de plataforma no se quita, ni siquiera el superadmin: ninguna invitación lo devuelve', async () => {
+    const SUPER = { ...VENDEDOR, role: 'superadmin' as Role };
+    const { controller, orden, notices } = bancoMembresia(SUPER, 'superadmin');
+
+    await expect(
+      requestContextStorage.run(conDosPasos(1), () => quitar(controller, ACTOR)),
+    ).rejects.toMatchObject({
+      reason: 'PLATFORM_ROLE_NOT_REMOVABLE',
+      message:
+        'Un rol de plataforma no se quita de un nodo: ninguna invitación lo devuelve. Si hace falta, suspende su acceso.',
+    });
+    expect(orden).toEqual([]);
+    expect(notices.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminController: las reglas valen otra vez con el nodo en fila y la fila tomada', () => {
+  const VENDEDOR = { id: 'm-40', role: 'vendedor' as Role, status: 'active' as MembershipStatus };
+  const ADMIN = { ...VENDEDOR, role: 'admin' as Role };
+  const quitar = (c: AdminController) =>
+    c.removeMembership(ACTOR, { userId: OTRO, tenantId: NODO });
+
+  it('quitar: si mientras tanto se fue el otro admin, es el último y no se quita', async () => {
+    const { controller, orden, notices, db } = bancoMembresia(ADMIN, 'tenant_admin', ADMIN, '0');
+    // Afuera todavía quedaba otro; adentro, después del candado, ya no.
+    db.withRequestContext.mockResolvedValueOnce({ count: '1' });
+
+    await expect(
+      requestContextStorage.run(conDosPasos(1), () => quitar(controller)),
+    ).rejects.toThrow('Es el último administrador activo del nodo: asigna otro antes de quitarlo.');
+    expect(orden).toEqual(['candado', 'fila']);
+    expect(notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('quitar: si lo ascendieron entre la lectura y la fila, valen el rango y el 2FA de su rol nuevo', async () => {
+    const porEncima = bancoMembresia(VENDEDOR, 'tenant_admin', {
+      role: 'tenant_admin',
+      status: 'active',
+    });
+    await expect(quitar(porEncima.controller)).rejects.toMatchObject({
+      reason: 'ROLE_NOT_GRANTABLE',
+    });
+    expect(porEncima.orden).toEqual(['candado', 'fila']);
+
+    const aAdmin = bancoMembresia(VENDEDOR, 'tenant_admin', { role: 'admin', status: 'active' });
+    await expect(
+      requestContextStorage.run(conDosPasos(11), () => quitar(aAdmin.controller)),
+    ).rejects.toMatchObject({ reason: 'MFA_RECENT_REQUIRED' });
+    expect(aAdmin.orden).toEqual(['candado', 'fila']);
+    expect(aAdmin.notices.notify).not.toHaveBeenCalled();
+  });
+
+  it('suspender y degradar: el mismo conteo adentro, con su propio motivo', async () => {
+    const suspender = bancoMembresia(ADMIN, 'tenant_admin', ADMIN, '0');
+    suspender.db.withRequestContext.mockResolvedValueOnce({ count: '1' });
+    await expect(
+      suspender.controller.setMembershipStatus(ACTOR, {
+        userId: OTRO,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toThrow(
+      'Es el último administrador activo del nodo: asigna otro antes de suspenderlo.',
+    );
+    expect(suspender.orden).toEqual(['candado', 'fila']);
+
+    const degradar = bancoMembresia(ADMIN, 'tenant_admin', ADMIN, '0');
+    degradar.db.withRequestContext.mockResolvedValueOnce({ count: '1' });
+    await expect(
+      degradar.controller.changeRole(ACTOR, { userId: OTRO, tenantId: NODO, role: 'vendedor' }),
+    ).rejects.toThrow(
+      'Es el último administrador activo del nodo: asigna otro antes de cambiarle el rol.',
+    );
+    expect(degradar.orden).toEqual(['candado', 'fila']);
+
+    // Ascendido a tenant_admin en el medio: un tenant_admin ya no lo puede suspender.
+    const ascendido = bancoMembresia(VENDEDOR, 'tenant_admin', {
+      role: 'tenant_admin',
+      status: 'active',
+    });
+    await expect(
+      ascendido.controller.setMembershipStatus(ACTOR, {
+        userId: OTRO,
+        tenantId: NODO,
+        status: 'suspended',
+      }),
+    ).rejects.toMatchObject({ reason: 'ROLE_NOT_GRANTABLE' });
+    expect(ascendido.orden).toEqual(['candado', 'fila']);
+  });
 });
 
 describe('AdminController: una membership quitada no se reactiva ni cambia de rol', () => {
@@ -712,7 +825,7 @@ describe('AdminController: una membership quitada no se reactiva ni cambia de ro
     await expect(
       controller.setMembershipStatus(ACTOR, { userId: OTRO, tenantId: NODO, status: 'active' }),
     ).rejects.toMatchObject({ reason: 'MEMBERSHIP_REMOVED' });
-    expect(orden).toEqual(['fila']);
+    expect(orden).toEqual(['candado', 'fila']);
   });
 
   it('el impacto de una ya quitada es 409; el de quitarla simula la baja con quién y cuándo', async () => {

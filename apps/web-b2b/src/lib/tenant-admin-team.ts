@@ -1,4 +1,5 @@
 import { lastAccessLabel, lockedUntilLabel, relativeTime } from './tenant-admin-format';
+import { PLATFORM_ROLES } from './viewer';
 
 /**
  * El equipo de un nodo en "Equipo": quién es cada miembro, si tiene 2FA, cuándo entró por última
@@ -408,9 +409,14 @@ export const REMOVE_FROM_NODE_LABEL = 'Quitar de este nodo';
 
 /**
  * ¿Se le ofrece "Quitar de este nodo"? A quien está activo o suspendido en él: quitarlo es la baja
- * que deja de apilar suspendidos en la lista. Quién puede lo decide el API.
+ * que deja de apilar suspendidos en la lista. No a un rol de plataforma (superadmin): ninguna
+ * invitación lo devuelve y el API lo rechaza (PLATFORM_ROLE_NOT_REMOVABLE). Quién puede lo decide
+ * el API.
  */
-export function canRemoveFromNode(member: Pick<NetworkMember, 'membershipStatus'>): boolean {
+export function canRemoveFromNode(
+  member: Pick<NetworkMember, 'membershipStatus' | 'role'>,
+): boolean {
+  if (PLATFORM_ROLES.includes(member.role)) return false;
   return member.membershipStatus === 'active' || member.membershipStatus === 'suspended';
 }
 

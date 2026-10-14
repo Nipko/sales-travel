@@ -192,6 +192,12 @@ describe('quitar a alguien del nodo (USR-11)', () => {
     expect(canRemoveFromNode(member({ membershipStatus: 'removed' }))).toBe(false);
   });
 
+  it('a un rol de plataforma no: ninguna invitación lo devuelve', () => {
+    expect(canRemoveFromNode(member({ role: 'superadmin' }))).toBe(false);
+    expect(canRemoveFromNode(member({ role: 'platform_admin' }))).toBe(false);
+    expect(canRemoveFromNode(member({ role: 'consolidator_admin' }))).toBe(true);
+  });
+
   it('la confirmación: qué pierde, qué queda, cómo vuelve y las invitaciones que se revocan', () => {
     const copy = removeMemberCopy(member(), 'Agencia Norte', 2);
     expect(copy).toEqual({

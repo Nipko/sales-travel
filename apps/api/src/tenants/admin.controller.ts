@@ -46,9 +46,9 @@ import {
   type UpdateTenantDto,
 } from './dto.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
+import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, isAdminRole, isPlatformRole } from '../auth/roles.js';
 import { InvitationsService } from './invitations.service.js';
-import { MembershipRemovedError } from './membership.errors.js';
+import { MembershipRemovedError, PlatformRoleNotRemovableError } from './membership.errors.js';
 import { UserNotFoundError } from './platform-users.errors.js';
 import {
   PlatformUsersService,
@@ -87,7 +87,7 @@ interface RemovedMembership extends ChangeEffects {
 }
 
 /** Qué le haría al último admin del nodo el cambio que se rechaza: va en el mensaje del 403. */
-type LastAdminChange = 'suspenderlo' | 'quitarlo';
+type LastAdminChange = 'suspenderlo' | 'quitarlo' | 'cambiarle el rol';
 
 /** Lo que arrastraría suspender una cuenta en toda la plataforma, para decirlo antes. */
 interface UserSuspensionImpact extends UserFootprint {
@@ -156,14 +156,26 @@ export class AdminController {
 
     // Degradar al último admin dejaría el nodo sin quien lo administre.
     if (isAdminRole(current.role) && !isAdminRole(body.role)) {
-      await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'suspenderlo');
+      await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'cambiarle el rol');
     }
 
     const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx) => {
+        await AdminController.lockNodeAdmins(trx, body.tenantId);
         const previous = await this.lockMembership(trx, current.id);
         if (previous.status === 'removed') throw new MembershipRemovedError();
+        // Con la fila tomada, otra vez: otro admin pudo cambiarle el rol entre la lectura y acá.
+        this.assertOutranks(actorRole, previous.role);
+        if (isAdminRole(previous.role) && !isAdminRole(body.role)) {
+          await this.assertNotLastAdmin(
+            userId,
+            body.tenantId,
+            body.userId,
+            'cambiarle el rol',
+            trx,
+          );
+        }
         await this.writeRole(trx, current.id, body.role);
         const revoked = await this.invitations.revokeOrphaned(trx, {
           inviterUserId: body.userId,
@@ -392,8 +404,14 @@ export class AdminController {
     const { changed, ...effects } = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx): Promise<ChangeEffects & { changed: boolean }> => {
+        await AdminController.lockNodeAdmins(trx, body.tenantId);
         const previous = await this.lockMembership(trx, target.id);
         if (previous.status === 'removed') throw new MembershipRemovedError();
+        // Con la fila tomada, otra vez: otro admin pudo cambiarle el rol entre la lectura y acá.
+        this.assertOutranks(actorRole, previous.role);
+        if (body.status === 'suspended' && isAdminRole(previous.role)) {
+          await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'suspenderlo', trx);
+        }
         await this.writeStatus(trx, target.id, body.status);
 
         let revokedSessions = 0;
@@ -449,7 +467,10 @@ export class AdminController {
    * nueva, que al aceptarse reactiva esta misma fila con el rol de la invitación.
    *
    * Las reglas de suspender: nunca uno mismo; administrar el nodo y superar su rol en él (o ser
-   * superadmin); nunca el último admin activo del nodo. Ya quitada, 409 MEMBERSHIP_REMOVED.
+   * superadmin); nunca el último admin activo del nodo. Ya quitada, 409 MEMBERSHIP_REMOVED. Además,
+   * un rol de plataforma no se quita (403 PLATFORM_ROLE_NOT_REMOVABLE): ninguna invitación lo
+   * devuelve. Las reglas se vuelven a mirar dentro de la transacción, con el nodo en fila
+   * (`lockNodeAdmins`) y la fila tomada.
    *
    * Quitar a alguien es el trabajo de todos los días y no pide el 2FA reciente, salvo que su rol en
    * el nodo sea de admin (D1 = C): sacarle el gobierno del nodo a un admin pesa como enviarle el
@@ -475,7 +496,7 @@ export class AdminController {
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
     const target = await this.targetMembership(userId, body.userId, body.tenantId);
     if (target.status === 'removed') throw new MembershipRemovedError();
-    this.assertOutranks(actorRole, target.role);
+    this.assertRemovable(actorRole, target.role);
 
     if (isAdminRole(target.role)) {
       // Un admin suspendido ya no cuenta entre los activos: quitarlo no le deja menos al nodo.
@@ -488,8 +509,18 @@ export class AdminController {
     const effects = await this.db.withRequestContext(
       { userId, tenantId: body.tenantId },
       async (trx): Promise<ChangeEffects> => {
+        await AdminController.lockNodeAdmins(trx, body.tenantId);
         const previous = await this.lockMembership(trx, target.id);
         if (previous.status === 'removed') throw new MembershipRemovedError();
+        // Lo de arriba, otra vez con la fila tomada y el nodo en fila: otro admin pudo ascenderla o
+        // quitar a otro admin entre la lectura y acá (dos que quitan a los dos últimos a la vez).
+        this.assertRemovable(actorRole, previous.role);
+        if (isAdminRole(previous.role)) {
+          if (previous.status === 'active') {
+            await this.assertNotLastAdmin(userId, body.tenantId, body.userId, 'quitarlo', trx);
+          }
+          assertRecentMfa();
+        }
         await this.writeRemoval(trx, target.id, userId);
 
         const revokedSessions = await this.sessions.revokeForTenant(
@@ -741,24 +772,53 @@ export class AdminController {
     assertCanGrant(actorRole, targetRole);
   }
 
+  /**
+   * Quitar del nodo: superarla en rango, como suspender, y que su rol no sea de plataforma, que
+   * ninguna invitación devuelve.
+   */
+  private assertRemovable(actorRole: Role, targetRole: Role): void {
+    this.assertOutranks(actorRole, targetRole);
+    if (isPlatformRole(targetRole)) throw new PlatformRoleNotRemovableError();
+  }
+
+  /**
+   * Pone en fila, hasta el fin de la transacción, los cambios sobre las memberships de un nodo que
+   * pueden dejarlo sin admin activo (degradar, suspender, quitar). El chequeo de "último admin" de
+   * afuera lee sin tomar nada: dos admins que sacaban a la vez a los dos últimos del nodo lo pasaban
+   * los dos y el nodo quedaba sin ninguno. Con esto, el segundo cuenta de nuevo después del commit
+   * del primero. Va antes de tomar la fila de la membership, siempre en ese orden.
+   */
+  private static async lockNodeAdmins(trx: Transaction<DB>, tenantId: string): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended('node-admins:' || ${tenantId}::uuid::text, 0))`.execute(
+      trx,
+    );
+  }
+
+  /**
+   * 403 si `excludeUserId` es el último admin activo de `tenantId`. Con `trx`, cuenta dentro de la
+   * transacción del cambio, ya con `lockNodeAdmins`: ése es el chequeo que vale; el de afuera sólo
+   * responde antes (y antes de pedir el 2FA).
+   */
   private async assertNotLastAdmin(
     actorUserId: string,
     tenantId: string,
     excludeUserId: string,
     change: LastAdminChange,
+    trx?: Transaction<DB>,
   ): Promise<void> {
-    const remaining = await this.db.withRequestContext(
-      { userId: actorUserId, tenantId },
-      async (trx) =>
-        trx
-          .selectFrom('memberships')
-          .select((eb) => eb.fn.countAll<string>().as('count'))
-          .where('tenant_id', '=', tenantId)
-          .where('status', '=', 'active')
-          .where('user_id', '!=', excludeUserId)
-          .where('role', 'in', [...ADMIN_ROLES])
-          .executeTakeFirst(),
-    );
+    const count = (t: Transaction<DB>) =>
+      t
+        .selectFrom('memberships')
+        .select((eb) => eb.fn.countAll<string>().as('count'))
+        .where('tenant_id', '=', tenantId)
+        .where('status', '=', 'active')
+        .where('user_id', '!=', excludeUserId)
+        .where('role', 'in', [...ADMIN_ROLES])
+        .executeTakeFirst();
+    const remaining =
+      trx === undefined
+        ? await this.db.withRequestContext({ userId: actorUserId, tenantId }, count)
+        : await count(trx);
     if (Number(remaining?.count ?? 0) === 0) {
       throw new ForbiddenException(
         `Es el último administrador activo del nodo: asigna otro antes de ${change}.`,

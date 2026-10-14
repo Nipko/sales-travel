@@ -977,6 +977,21 @@ a ella. Para volver, sólo una invitación nueva.
   antes de quitarlo."; un admin suspendido no cuenta entre los activos, así que quitarlo no pasa por
   esta guarda). Ya quitada: **409 `MEMBERSHIP_REMOVED`** ("Esta persona ya no forma parte de este
   nodo: para que vuelva, invítala de nuevo.").
+- **Un rol de plataforma no se quita**: **403 `PLATFORM_ROLE_NOT_REMOVABLE`** ("Un rol de plataforma
+  no se quita de un nodo: ninguna invitación lo devuelve. Si hace falta, suspende su acceso."). La
+  vuelta de una baja es una invitación, y ninguna concede `superadmin` (D7 B, 0025): quitarle la
+  membership de la plataforma a otro superadmin lo dejaba afuera para siempre, salvo una operación
+  manual en la base. Suspenderla sí se deshace. El panel no ofrece el ítem a esos roles.
+- **Las reglas valen con el nodo en fila**: las lecturas de arriba son sin tomar nada, así que dos
+  admins de arriba que quitaban a la vez a los dos últimos admins de un nodo pasaban los dos la
+  guarda y el nodo quedaba sin ninguno; y una membership ascendida a admin entre la lectura y el
+  cambio se quitaba sin el rango, la guarda ni el 2FA de su rol nuevo. Ahora la transacción toma
+  primero `pg_advisory_xact_lock(hashtextextended('node-admins:' || nodo, 0))` (la misma clave para
+  quitar, suspender y cambiar el rol en ese nodo), después la fila, y con la fila tomada vuelve a
+  mirar el rango, el rol de plataforma, el último admin activo (contado dentro de la transacción) y
+  el 2FA. La lectura de afuera sigue: responde antes, sin pedir el código a quien igual no podía.
+  Suspender y degradar a un admin pasan por el mismo candado y el mismo conteo (degradar dice
+  "…asigna otro antes de cambiarle el rol.").
 - **2FA reciente (D1)**: quitar a alguien es el trabajo de todos los días y no lo pide, **salvo que su
   rol en ese nodo sea de admin** (`ADMIN_ROLES`): sacarle el gobierno del nodo a un admin pesa como
   enviarle el enlace a uno, y con una sesión robada alcanzaría para ir sacando a los demás admins.
@@ -1010,8 +1025,8 @@ a ella. Para volver, sólo una invitación nueva.
 ### Panel
 
 - Equipo → acciones → **Membresía**: después de _Suspender_ / _Reactivar_, en rojo y último,
-  **Quitar de este nodo** (ícono `UserX`), para miembros activos o suspendidos; también en el menú
-  de su ficha. Primero pregunta el impacto; después la confirmación destructiva **"Quitar a {nombre}
+  **Quitar de este nodo** (ícono `UserX`), para miembros activos o suspendidos que no tengan un rol
+  de plataforma; también en el menú de su ficha. Primero pregunta el impacto; después la confirmación destructiva **"Quitar a {nombre}
   de {nodo}"**: "Deja de pertenecer a este nodo y se cierran sus sesiones en él.{ Se revocarán N
   invitaciones que envió.} Su historial y sus reservas quedan como están. Si después quieres que
   vuelva, tienes que invitarlo de nuevo." con **Quitar del nodo**. Al salir bien: "Quitamos a
@@ -1027,17 +1042,22 @@ a ella. Para volver, sólo una invitación nueva.
 
 ### Tests
 
-- `apps/api/src/tenants/admin.controller.test.ts`: el orden (fila, cambio, sesiones, evento, commit,
-  aviso), quién y cuándo, la causa de las invitaciones y el evento; uno mismo, fuera de la red, sin
-  rango, el último admin, ya quitada (también en una carrera), el 2FA sólo para un admin y después
-  de autorizar, sin aviso si la transacción falla; reactivar, suspender, cambiar el rol o preguntar el
+- `apps/api/src/tenants/admin.controller.test.ts`: el orden (candado del nodo, fila, cambio, sesiones,
+  evento, commit, aviso), quién y cuándo, la causa de las invitaciones y el evento; uno mismo, fuera
+  de la red, sin rango, el último admin, ya quitada (también en una carrera), el 2FA sólo para un
+  admin y después de autorizar, sin aviso si la transacción falla; un rol de plataforma no se quita;
+  con la fila tomada, el último admin contado adentro y el rango y el 2FA de un rol ascendido en el
+  medio (también al suspender y degradar); reactivar, suspender, cambiar el rol o preguntar el
   impacto de una quitada: 409; el borde Zod.
 - `apps/api/src/tenants/membership-removal.integration.test.ts` (Postgres, todo como `app_user`,
   también el canje): sale de Equipo, de `user_admin_overview` y de su selector; sus sesiones del nodo
   se cierran y las de otra agencia siguen; el evento en la transacción (si no entra, no queda nada);
   las invitaciones que ya no respalda; 409 al reactivarla; la invitación nueva reactiva la misma fila
-  con el rol nuevo; `ALREADY_MEMBER` deja la invitación pendiente; el CHECK; las reglas; y la ficha,
-  el soporte y su seguridad dejan de abrirse desde el nodo.
+  con el rol nuevo; `ALREADY_MEMBER` deja la invitación pendiente; el CHECK; las reglas; la ficha,
+  el soporte y su seguridad dejan de abrirse desde el nodo, y la ficha desde arriba y el conteo de
+  Gestión de Agencias ya no la cuentan en ese nodo; dos admins de arriba que quitan a la vez a los dos
+  últimos admins del nodo (gana uno); un ascenso entre la lectura y la fila; y un superadmin que
+  intenta quitar a otro.
 - `member-detail.service.test.ts` y `platform-users.service.test.ts`: las consultas descartan las
   quitadas.
 - Panel: `tenant-admin-team.test.ts` (textos, en tú), `tenant-admin-proxy.test.ts`,
