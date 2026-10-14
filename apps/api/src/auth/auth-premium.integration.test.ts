@@ -497,16 +497,23 @@ d('auth premium contra Postgres, como app_user', () => {
     const totp = new TotpService();
     const MIN = 60_000;
 
-    /** Una persona con el 2FA activo; quedan libres el paso actual y el siguiente. */
+    /**
+     * Una persona con el 2FA activo; quedan libres el paso actual y el siguiente. Si el paso cambia
+     * mientras se prueba la contraseña (un bcrypt antes que el código), el anterior ya no vale: se
+     * reintenta con el nuevo anterior en vez de fallar al azar.
+     */
     async function enrolled(label: string, tenantId: string = free, role = 'vendedor') {
       const u = await user(label, tenantId, role);
       const { secret } = await mfa.beginEnrollment(u.id, u.email);
-      await mfa.confirmEnrollment(
-        u.id,
-        undefined,
-        totp.generate(secret, totp.currentStep() - 1),
-        PASSWORD,
-      );
+      for (;;) {
+        const step = totp.currentStep();
+        try {
+          await mfa.confirmEnrollment(u.id, undefined, totp.generate(secret, step - 1), PASSWORD);
+          break;
+        } catch (err) {
+          if (!(err instanceof MfaCodeRejectedError) || totp.currentStep() === step) throw err;
+        }
+      }
       return { ...u, code: (offset: number) => totp.generate(secret, totp.currentStep() + offset) };
     }
 

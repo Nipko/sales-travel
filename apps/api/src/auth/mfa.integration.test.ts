@@ -10,7 +10,10 @@ import { InflightWorkRegistry } from '../lifecycle/inflight-work.registry.js';
 import type { MailerService, MailMessage } from '../mail/mailer.service.js';
 import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { noticeTime } from '../mail/security-notices.js';
-import { decryptCredentials } from '../provider-credentials/credentials-cipher.js';
+import {
+  decryptCredentials,
+  encryptCredentials,
+} from '../provider-credentials/credentials-cipher.js';
 import {
   MfaAlreadyEnabledError,
   MfaCodeRejectedError,
@@ -109,17 +112,28 @@ d('MfaService contra Postgres, como app_user', { timeout: 30_000 }, () => {
     return totp.generate(secret, totp.currentStep() + offset);
   }
 
-  /** Enrola y confirma con el paso anterior al actual: quedan el actual y el siguiente para usar. */
+  /**
+   * Enrola y confirma con el paso anterior al actual: quedan el actual y el siguiente para usar. La
+   * contraseña se prueba (un bcrypt) antes que el código: si en ese rato cambia el paso, el anterior
+   * queda fuera de la ventana y se reintenta con el nuevo anterior, en vez de fallar al azar.
+   */
   async function enrolled(label: string, role = 'vendedor') {
     const id = await user(label, role);
     const { secret } = await mfa.beginEnrollment(id, `${label}@test.local`);
-    const { recoveryCodes } = await mfa.confirmEnrollment(
-      id,
-      undefined,
-      code(secret, -1),
-      PASSWORD,
-    );
-    return { id, secret, recoveryCodes };
+    for (;;) {
+      const step = totp.currentStep();
+      try {
+        const { recoveryCodes } = await mfa.confirmEnrollment(
+          id,
+          undefined,
+          totp.generate(secret, step - 1),
+          PASSWORD,
+        );
+        return { id, secret, recoveryCodes };
+      } catch (err) {
+        if (!(err instanceof MfaCodeRejectedError) || totp.currentStep() === step) throw err;
+      }
+    }
   }
 
   async function rejection(p: Promise<unknown>): Promise<unknown> {
@@ -315,12 +329,22 @@ d('MfaService contra Postgres, como app_user', { timeout: 30_000 }, () => {
     );
   });
 
-  it('desactivar con contraseña y código limpia todo y conserva la sesión actual', async () => {
+  it('desactivar con contraseña y código limpia todo, conserva la sesión actual y avisa', async () => {
     const { id, secret } = await enrolled('disable');
     const current = await session(id);
     const other = await session(id);
+    await work.whenIdle();
+    mailer.sendToTenant.mockClear();
 
     await mfa.disable(id, current, PASSWORD, code(secret));
+
+    await work.whenIdle();
+    expect(mailer.sendToTenant).toHaveBeenCalledTimes(1);
+    const [tenantId, msg] = mailer.sendToTenant.mock.calls[0]!;
+    expect(tenantId).toBe(branch);
+    expect(msg.to).toBe(`mfa-disable-${sfx}@test.local`);
+    expect(msg.subject).toBe('Desactivaste la verificación en dos pasos · PlaneTour');
+    expect(msg.text).toContain('Si no fuiste tú');
 
     const row = await userRow(id);
     expect(row).toEqual({ mfa_secret: null, mfa_pending_secret: null, mfa_enabled_at: null });
@@ -439,7 +463,7 @@ d('MfaService contra Postgres, como app_user', { timeout: 30_000 }, () => {
       expect(mailer.sendToTenant).toHaveBeenCalledTimes(1);
     });
 
-    it('con el 2FA ya activo nada cambia: cambiar de teléfono confirma sin la contraseña y sin aviso', async () => {
+    it('con el 2FA ya activo: cambiar de teléfono confirma sin la contraseña y avisa del cambio', async () => {
       const { id, secret } = await enrolled('rotar-igual');
       await work.whenIdle();
       mailer.sendToTenant.mockClear();
@@ -455,7 +479,57 @@ d('MfaService contra Postgres, como app_user', { timeout: 30_000 }, () => {
       expect(decryptCredentials(Buffer.from(row.mfa_secret!, 'base64'))).toBe(next.secret);
       expect(await counters(id)).toEqual({ failed: 0, locked: false });
       await work.whenIdle();
-      expect(mailer.sendToTenant).not.toHaveBeenCalled();
+      expect(mailer.sendToTenant).toHaveBeenCalledTimes(1);
+      const [, msg] = mailer.sendToTenant.mock.calls[0]!;
+      expect(msg.subject).toBe('Cambiaste tu app de autenticación · PlaneTour');
+      expect(msg.text).toContain(`el ${noticeTime(row.mfa_enabled_at!, 'CO')}.`);
+    });
+
+    /** Espera a que el UPDATE del paso 1 (el secreto pendiente) quede esperando el lock de la fila. */
+    async function untilUpdateWaits(): Promise<void> {
+      for (let i = 0; i < 200; i++) {
+        const { rows } = await admin.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query ILIKE 'update "users" set "mfa_pending_secret"%'`,
+        );
+        if (rows[0]!.n > 0) return;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      throw new Error('el UPDATE del paso 1 nunca quedó esperando');
+    }
+
+    it('el paso 1 de una sesión robada no deja su secreto si la persona activó el 2FA en el medio', async () => {
+      const id = await user('carrera');
+      const victimSecret = totp.generateSecret();
+      // La persona confirma su 2FA: el UPDATE de su confirmación tiene la fila y todavía no hizo commit.
+      const victim = await admin.connect();
+      try {
+        await victim.query('BEGIN');
+        await victim.query(
+          `UPDATE users SET mfa_secret = $2, mfa_pending_secret = NULL, mfa_enabled_at = now()
+            WHERE id = $1`,
+          [id, encryptCredentials(victimSecret).toString('base64')],
+        );
+        // La sesión robada pide el paso 1 justo entonces: lee la cuenta sin 2FA (no pide nada) y su
+        // escritura espera la fila. Si al soltarla escribiera igual, la cuenta quedaría con el 2FA
+        // de la persona y el secreto del atacante pendiente: un "cambiar de teléfono" que nunca pidió
+        // la contraseña ni el código de la app de la persona.
+        const begin = mfa.beginEnrollment(id, 'carrera@test.local');
+        await untilUpdateWaits();
+        await victim.query('COMMIT');
+
+        expect(await rejection(begin)).toBeInstanceOf(MfaAlreadyEnabledError);
+      } finally {
+        victim.release();
+      }
+
+      const row = await userRow(id);
+      expect(row.mfa_pending_secret).toBeNull();
+      expect(decryptCredentials(Buffer.from(row.mfa_secret!, 'base64'))).toBe(victimSecret);
+      expect(await rejection(mfa.confirmEnrollment(id, undefined, '123456'))).toBeInstanceOf(
+        MfaNoPendingEnrollmentError,
+      );
     });
   });
 });

@@ -170,7 +170,11 @@ export async function confirmMfaAction(formData: FormData): Promise<CodesResult>
   });
   if (!res.ok) {
     const result = await fail(res.failure, withPassword ? 'password-and-code' : 'code');
-    return isPasswordFailure(res.failure) ? { ...result, field: 'currentPassword' } : result;
+    // Sin el campo (una pestaña abierta antes del despliegue, o la cuenta perdió el 2FA a mitad de un
+    // cambio de teléfono) el error va al código: marcar un campo que no está lo dejaba sin mostrar.
+    return withPassword && isPasswordFailure(res.failure)
+      ? { ...result, field: 'currentPassword' }
+      : result;
   }
   return toCodes(res.body);
 }

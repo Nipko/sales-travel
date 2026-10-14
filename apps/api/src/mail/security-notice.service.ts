@@ -19,7 +19,7 @@ export interface SecurityNoticeTarget {
   readonly nodeName?: string | null;
   /** El rol nuevo (`role_changed`). */
   readonly role?: Role;
-  /** Cuándo pasó, si el aviso lo dice (`mfa_enabled`). */
+  /** Cuándo pasó, si el aviso lo dice (`mfa_enabled`, `mfa_changed`, `mfa_disabled`). */
   readonly at?: Date;
 }
 

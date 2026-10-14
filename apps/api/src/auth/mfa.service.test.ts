@@ -562,7 +562,7 @@ describe('MfaService.confirmEnrollment: la contraseña de la primera activación
     expect(notices.notify).not.toHaveBeenCalled();
   });
 
-  it('cambiar de teléfono (ya tiene 2FA): no pide la contraseña, no cuenta y no avisa', async () => {
+  it('cambiar de teléfono (ya tiene 2FA): no pide la contraseña ni cuenta, y avisa del cambio', async () => {
     const { mfa, k, password, notices } = build({ enabled: true });
 
     const { recoveryCodes } = await mfa.confirmEnrollment(USER, 'sesion', '123456');
@@ -571,6 +571,11 @@ describe('MfaService.confirmEnrollment: la contraseña de la primera activación
     expect(password.verify).not.toHaveBeenCalled();
     expect(lockout.failed).toBe(0);
     expect(k.queries.find((q) => q.sql.includes('UPDATE users'))?.parameters).toContain(true);
-    expect(notices.notify).not.toHaveBeenCalled();
+    expect(notices.notify).toHaveBeenCalledTimes(1);
+    expect(notices.notify).toHaveBeenCalledWith('mfa_changed', {
+      userId: USER,
+      tenantId: null,
+      at: ENABLED_AT,
+    });
   });
 });

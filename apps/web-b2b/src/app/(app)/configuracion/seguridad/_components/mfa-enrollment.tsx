@@ -165,7 +165,9 @@ export function MfaSetupStep({
   const form = useSecurityForm<CodesResult>(confirmMfaAction, (result) => {
     if (result.recoveryCodes) onConfirmed(result.recoveryCodes);
   });
-  const passwordError = form.errorField === 'currentPassword' ? form.error : undefined;
+  // Sin el campo de la contraseña, su error se muestra en el del código: si no, no se vería.
+  const passwordError =
+    requirePassword && form.errorField === 'currentPassword' ? form.error : undefined;
 
   // Al aparecer el QR, el foco va al título: un lector de pantalla anuncia el paso nuevo.
   useEffect(() => {

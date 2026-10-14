@@ -219,6 +219,16 @@ describe('confirmMfaAction: la contraseña de la primera activación (USR-13b)',
     expect(res.field).toBeUndefined();
   });
 
+  it('sin el campo (pestaña de antes del despliegue): pide recargar, en el código y sin marcar un campo que no está', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(
+      json(400, { message: 'x', reason: 'MFA_PASSWORD_REQUIRED' }),
+    );
+    const res = await confirmMfaAction(form({ code: '654321' }));
+    expect(sentBody()).toEqual({ code: '654321' });
+    expect(res.error).toMatch(/Recarga la página/);
+    expect(res.field).toBeUndefined();
+  });
+
   it('cuenta bloqueada por intentos: lo dice, sin marcar un campo', async () => {
     mocks.apiWithStatus.mockResolvedValueOnce(
       json(429, { message: 'x', reason: 'MFA_ACCOUNT_LOCKED' }),

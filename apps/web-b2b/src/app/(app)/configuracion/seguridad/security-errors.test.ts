@@ -135,7 +135,9 @@ describe('la contraseña de la primera activación del 2FA (USR-13b)', () => {
         { status: 400, message: 'x', reason: 'MFA_PASSWORD_REQUIRED' },
         'password-and-code',
       ),
-    ).toBe('Escribe tu contraseña para activar la verificación en dos pasos.');
+    ).toBe(
+      'Para activar la verificación en dos pasos ahora también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo.',
+    );
     // Al llegar al tope, el mismo bloqueo del resto de la pantalla.
     expect(
       failureMessage(

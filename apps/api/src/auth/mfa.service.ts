@@ -145,12 +145,19 @@ export class MfaService {
       if (!ok) throw new MfaReauthInvalidError();
     }
 
+    // Sólo si la cuenta sigue como se leyó. Si no, un paso 1 sin contraseña que leyó la cuenta sin
+    // 2FA y escribió después de que la persona lo activó dejaba un pendiente "de cambio de teléfono"
+    // que confirmEnrollment activa sin contraseña ni código de la app de la persona (USR-13b).
     const secret = this.totp.generateSecret();
-    await this.db.db
+    const written = await this.db.db
       .updateTable('users')
       .set({ mfa_pending_secret: encryptCredentials(secret).toString('base64') })
       .where('id', '=', userId)
-      .execute();
+      .where('mfa_enabled_at', rotation ? 'is not' : 'is', null)
+      .executeTakeFirst();
+    if (written.numUpdatedRows === 0n) {
+      throw rotation ? new MfaNotEnabledError() : new MfaAlreadyEnabledError();
+    }
 
     await this.audit.emit({
       eventType: 'auth.mfa.enrollment_started',
@@ -176,7 +183,8 @@ export class MfaService {
    * `enroll`). Al cambiar de teléfono no: la contraseña y un código vigente ya se pidieron en
    * beginEnrollment, y `currentPassword` se ignora.
    *
-   * Después de una primera activación le avisa a la persona por correo (`mfa_enabled`, USR-12).
+   * Después le avisa a la persona por correo (USR-12): `mfa_enabled` la primera vez y
+   * `mfa_changed` al cambiar de teléfono.
    */
   async confirmEnrollment(
     userId: string,
@@ -264,10 +272,13 @@ export class MfaService {
     });
 
     // Después del commit: si no fue la persona, se entera por su propio buzón. Cambiar de teléfono
-    // no avisa: ahí ya se pidieron la contraseña y un código de la app anterior.
-    if (!rotation) {
-      this.notices.notify('mfa_enabled', { userId, tenantId: null, at: done.enabledAt });
-    }
+    // también avisa: pide la contraseña y un código de la app anterior, pero quien tiene las dos
+    // cosas deja a la persona afuera de su propia cuenta.
+    this.notices.notify(rotation ? 'mfa_changed' : 'mfa_enabled', {
+      userId,
+      tenantId: null,
+      at: done.enabledAt,
+    });
 
     return { recoveryCodes: codes.map(formatRecoveryCode) };
   }
@@ -430,7 +441,8 @@ export class MfaService {
   /**
    * Desactiva MFA. Exige la contraseña actual y un código: si no, una sesión secuestrada podría
    * quitar el segundo factor sin más. No se puede con un rol que lo exige. Cierra las demás
-   * sesiones y los equipos de confianza; la actual sigue.
+   * sesiones y los equipos de confianza; la actual sigue. Después le avisa a la persona por correo
+   * (`mfa_disabled`): si no fue ella, su cuenta quedó con la contraseña sola.
    */
   async disable(
     userId: string,
@@ -481,6 +493,7 @@ export class MfaService {
       aggregateId: userId,
       payload: { revokedSessions },
     });
+    this.notices.notify('mfa_disabled', { userId, tenantId: null, at: new Date() });
     return { ok: true };
   }
 

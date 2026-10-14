@@ -73,7 +73,9 @@ const BY_REASON: Record<string, string> = {
   MFA_CODE_INVALID: CODE_INVALID,
   MFA_REAUTH_INVALID: 'La contraseña o el código no son correctos.',
   MFA_PASSWORD_INVALID: 'La contraseña no es correcta. Revísala e inténtalo de nuevo.',
-  MFA_PASSWORD_REQUIRED: 'Escribe tu contraseña para activar la verificación en dos pasos.',
+  // El panel la pide antes de llamar al API: esto sólo llega si el formulario no tenía el campo.
+  MFA_PASSWORD_REQUIRED:
+    'Para activar la verificación en dos pasos ahora también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo.',
   MFA_ALREADY_ENABLED: 'La verificación en dos pasos ya está activa. Recarga la página.',
   MFA_REQUIRED_BY_ROLE:
     'Tu rol exige la verificación en dos pasos, así que no se puede desactivar.',
