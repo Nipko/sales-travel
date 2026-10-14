@@ -133,6 +133,11 @@ export class OrderTravelersStore {
    * Cierra la operación y, si hay qué, deja en la orden los pasajeros con lo que cambió
    * (enmascarado). Una transacción: o se cierra con los pasajeros al día, o nada. CAS desde
    * `pending`: `false` = otra ejecución (el barrido) ya la cerró, y la orden no se toca.
+   *
+   * `passengersOf` recibe los pasajeros de la orden leídos AQUÍ, con la fila bloqueada, y no la
+   * copia que el pedido leyó antes del claim: entre esa lectura y el claim pudo cerrar otro cambio
+   * de pasajeros, y escribir sobre la copia vieja le borraría lo suyo —o devolvería a la base el
+   * número entero de un documento que ya no es el de la reserva—.
    */
   async settle(
     tenantId: string,
@@ -141,7 +146,7 @@ export class OrderTravelersStore {
     status: Exclude<OrderOperationStatus, 'pending'>,
     result: TravelersOperationResult,
     lastError: string | null,
-    passengers?: readonly Record<string, unknown>[],
+    passengersOf?: (current: unknown) => readonly Record<string, unknown>[] | undefined,
   ): Promise<boolean> {
     return this.db.withTenant(tenantId, async (trx) => {
       const row = await trx
@@ -154,12 +159,21 @@ export class OrderTravelersStore {
         .returning('id')
         .executeTakeFirst();
       if (row === undefined) return false;
-      if (passengers !== undefined) {
-        await trx
-          .updateTable('orders')
-          .set({ passengers: JSON.stringify(passengers) })
+      if (passengersOf !== undefined) {
+        const current = await trx
+          .selectFrom('orders')
+          .select('passengers')
           .where('id', '=', orderId)
-          .execute();
+          .forUpdate()
+          .executeTakeFirst();
+        const passengers = current === undefined ? undefined : passengersOf(current.passengers);
+        if (passengers !== undefined) {
+          await trx
+            .updateTable('orders')
+            .set({ passengers: JSON.stringify(passengers) })
+            .where('id', '=', orderId)
+            .execute();
+        }
       }
       return true;
     });

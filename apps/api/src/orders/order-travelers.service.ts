@@ -330,7 +330,9 @@ export class FlightTravelersService {
       `flights.travelers.modify provider=${providerCode} order=${order.id} op=${operationId} outcome=${result.outcome} attempts=${result.attempts} applied=${result.applied.length} pending=${result.pending.length}`,
     );
 
-    const passengers = passengersAfterChange(order.passengers, changes, result.applied);
+    // Sobre los pasajeros que la orden tiene AL CERRAR, no sobre la copia de antes del claim: otro
+    // cambio pudo cerrar en el medio. Los servicios especiales no se guardan en la orden.
+    const touchesOrder = result.applied.some((ref) => ref.field !== 'specialServices');
     try {
       const closed = await this.store.settle(
         tenantId,
@@ -339,7 +341,9 @@ export class FlightTravelersService {
         status,
         settled,
         status === 'failed' ? message : null,
-        passengers,
+        touchesOrder
+          ? (current) => passengersAfterChange(current, changes, result.applied)
+          : undefined,
       );
       if (!closed) {
         // El barrido ya la pasó a revisión (y la escaló): lo que pasó en la aerolínea ya pasó y se

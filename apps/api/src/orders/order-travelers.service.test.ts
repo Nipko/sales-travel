@@ -291,14 +291,16 @@ describe('requestModify — el cambio y su desenlace', () => {
       string,
       TravelersOperationResult,
       string | null,
-      Record<string, unknown>[] | undefined,
+      ((current: unknown) => Record<string, unknown>[] | undefined) | undefined,
     ];
     expect(settleCall[3]).toBe('success');
     expect(settleCall[4]).toMatchObject({ stage: 'settled', outcome: 'MODIFIED' });
     expectSinPii(JSON.stringify([claimed, settleCall[4]]));
 
     // La orden: el documento y el viajero frecuente nuevos, ENMASCARADOS; el número viejo se va.
-    const pasajeros = settleCall[6];
+    // Se calcula sobre los pasajeros que la orden tiene al cerrar (los lee el store con la fila
+    // bloqueada), no sobre la copia de antes del claim.
+    const pasajeros = settleCall[6]?.(fila().passengers);
     expect(pasajeros?.[0]).toMatchObject({
       citizenshipCountryCode: 'CO',
       identityDoc: {
@@ -458,7 +460,9 @@ describe('requestModify — el cambio y su desenlace', () => {
     const settleCall = b.store.settle.mock.calls[0] as unknown as unknown[];
     expect(settleCall[3]).toBe('failed');
     expect(settleCall[4]).toMatchObject({ outcome: 'UNVERIFIED', reconciliationRequired: true });
-    const pasajeros = settleCall[6] as Record<string, unknown>[];
+    const pasajeros = (settleCall[6] as (current: unknown) => Record<string, unknown>[])(
+      fila().passengers,
+    );
     expect(pasajeros[0]?.['identityDoc']).toMatchObject({ numberLast4: '4567' });
     expect(pasajeros[0]).not.toHaveProperty('loyaltyProgramAccount');
 

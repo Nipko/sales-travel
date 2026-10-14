@@ -258,6 +258,46 @@ d('datos de los pasajeros de una reserva (SAB-25) contra Postgres', () => {
     expect(orden2).not.toContain('DBML');
   });
 
+  it('el cierre escribe sobre los pasajeros de la orden al cerrar, no sobre la copia de antes del claim', async () => {
+    // El pedido leyó la orden (con el pasaporte viejo entero) y, antes de su claim, cerró otro
+    // cambio que dejó el documento corregido y enmascarado.
+    const copia = await orden(agenciaA);
+    const corregido = {
+      type: 'P',
+      numberLast4: '2468',
+      issuingCountryCode: 'CO',
+      expiryDate: '2033-03-03',
+    };
+    await pool.query(
+      `UPDATE orders SET passengers = jsonb_set(passengers, '{0,identityDoc}', $2::jsonb)
+        WHERE id = $1`,
+      [copia.id, JSON.stringify(corregido)],
+    );
+    puerto(agenciaA, () =>
+      Promise.resolve({ ...HECHO, applied: [{ index: 0, field: 'loyalty' }] }),
+    );
+    const soloViajero = ModifyTravelersSchema.parse({
+      travelers: [{ index: 0, loyalty: { carrierCode: 'AV', number: VIAJERO } }],
+    });
+    await expect(
+      service.requestModify(agenciaA, copia, usuario, soloViajero),
+    ).resolves.toMatchObject({ outcome: 'MODIFIED' });
+
+    const { rows } = await pool.query<{ passengers: Record<string, unknown>[] }>(
+      'SELECT passengers FROM orders WHERE id = $1',
+      [copia.id],
+    );
+    const pasajero = rows[0]?.passengers[0];
+    // Lo del otro cambio sigue; el viajero frecuente nuevo, enmascarado.
+    expect(pasajero?.['identityDoc']).toEqual(corregido);
+    expect(pasajero?.['loyaltyProgramAccount']).toEqual({
+      airlineDesigCode: 'AV',
+      accountNumberLast4: '7788',
+    });
+    // Y el pasaporte viejo entero no vuelve a la base desde la copia.
+    expect(JSON.stringify(rows[0])).not.toContain(VIEJO);
+  });
+
   it('el claim es el lock: con un cambio en vuelo, otro cambio, una emisión y servicios chocan', async () => {
     const fila = await orden(agenciaA);
     let soltar: (value: OrderModifyResult) => void = () => undefined;
