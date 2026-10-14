@@ -55,6 +55,9 @@ const SKIP_DIRS: ReadonlySet<string> = new Set([
   '.turbo',
   'coverage',
   '.git',
+  // Sondas que pan-lint-rule.guard.test.ts escribe y borra mientras corre, en paralelo con este
+  // guard: si el recorrido las ve y la lectura llega después del borrado, sale ENOENT.
+  '__d1-lint-probe__',
 ]);
 
 function findPackageRoot(): string {
