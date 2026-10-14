@@ -57,7 +57,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
 | Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
-| Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | Pendiente (USR-18)                                                        |
+| Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-18)**: con historial; sólo la propia cuenta (0069)           |
 
 ## Enviar el enlace y desbloquear (USR-2)
 
@@ -1294,3 +1294,99 @@ correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre
   por un despliegue a medias.
 - Si alguien con cuenta olvidó su contraseña, el login ofrece restablecerla; después tiene que volver
   a abrir el enlace de la invitación (el restablecimiento no conserva la vuelta).
+
+## Editar tu nombre (USR-18)
+
+Hasta ahora nadie podía corregir su nombre: sólo existía `GET /me`, y el nombre quedaba como se
+escribió al aceptar la invitación. Ahora cada persona lo cambia desde **Mi cuenta → Perfil**, sólo el
+suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el buzón nuevo.
+
+### Base
+
+- `db/migrations/0069_users_name_self_only.sql`: `users` no tiene RLS (identidad global: el login la
+  lee por correo sin contexto) y `app_user` puede actualizar cualquier fila, así que la regla va en un
+  trigger, como 0025 y 0055: **`users_name_self_only`**, `BEFORE UPDATE OF name`, sólo cuando el valor
+  cambia. Si quien ejecuta no se salta la RLS (`app_user`), la fila tiene que ser la de
+  `app.current_user_id`; sin contexto, con uno que no es un UUID o con el de otra cuenta, **42501
+  `users_name_self_only`**. Un UPDATE de varias filas que incluye la propia falla entero. El resto de
+  las columnas de `users` (bloqueo, 2FA, contraseña, suspensión) las siguen tocando el login y el
+  soporte de un admin sobre otra cuenta, como antes. Migraciones y la consola del operador (roles que
+  se saltan la RLS) no se frenan. `app_user` no puede apagar el trigger (no es dueño de la tabla ni
+  puede cambiar `session_replication_role`).
+- La base no valida la forma del nombre: las cuentas ya creadas pueden tener nombres que hoy no
+  pasarían, y un CHECK las dejaría sin poder tocarse. Esa regla es del borde del API.
+
+### API
+
+- **`PATCH /me` `{ name }`** (con sesión, cualquier rol, con el 2FA obligatorio de siempre; tope de 10
+  por minuto por IP) → `200 { name }`, el nombre como quedó guardado. La cuenta es siempre la de la
+  sesión (`CurrentUser`): la ruta no lleva id y el cuerpo es estricto, así que un `email` o un
+  `userId` es **400** "Desde tu perfil sólo puedes cambiar tu nombre.", no algo que se ignora.
+- El nombre pasa por **`PersonNameSchema`** (`packages/validation/src/person-name.ts`, el primero de su
+  tipo: el canje de la invitación sólo acota el largo): NFC; cualquier espacio de Unicode, tabulador o
+  salto de línea seguidos pasan a un solo espacio; sin espacios en los bordes; de 1 a 120 (el tope del
+  canje de la invitación, en unidades UTF-16, contado después de normalizar); **sin caracteres de
+  control ni de formato** (los de dirección como U+202E, los de ancho cero, el guion blando), ni
+  sustitutos sueltos, uso privado o sin asignar (todo `\p{C}`), ni los rellenos que se pintan vacíos
+  (Hangul U+115F, U+1160, U+3164, U+FFA0 y el braille en blanco U+2800); y con al menos una letra. Lo
+  que no pasa se rechaza, no se limpia en silencio. Los mensajes van en tú ("Escribe tu nombre.", "Tu
+  nombre tiene caracteres invisibles o de control. Escríbelo de nuevo a mano.").
+- `ProfileService.updateName` corre con la cuenta en el contexto (`withRequestContext`, lo exige el
+  trigger), toma la fila `FOR UPDATE` y, si el nombre cambia, lo escribe y deja **`UserProfileUpdated`**
+  en la misma transacción (si el evento no entra, el cambio tampoco): actor y agregado = la cuenta,
+  payload `{ changed: ['name'], before: { name }, after: { name } }`, la forma de `tenant.updated`. Es
+  el nombre de la propia persona, el mismo que su equipo ya ve, y deja ver en el historial que alguien
+  se puso el nombre de otro. Con el mismo nombre no escribe ni audita.
+
+### Panel
+
+- **Mi cuenta → Perfil** (`/configuracion/perfil`), antes de Seguridad en el menú y en ⌘K, para
+  cualquier rol. Una tarjeta "Datos de tu cuenta" con **Tu nombre** (campo con etiqueta, ayuda "Es el
+  que ven tu equipo y las personas a las que invitas.", obligatorio) y **Tu correo** sólo para leer,
+  con "Para cambiar tu correo, pídeselo al equipo de soporte." (sin la marca de la plataforma: el
+  panel es white-label). Botón **Guardar**; al terminar, el toast "Guardamos tu nombre.".
+- El panel valida con las mismas reglas antes de llamar (`lib/person-name.ts`, espejo del esquema:
+  los tests de los dos lados usan los mismos casos); el error sale bajo el campo (`role="alert"`,
+  `aria-invalid`, `aria-describedby`) y el foco vuelve al campo. Se envía desde `onSubmit` y no con
+  `<form action>`, para que un error no borre lo escrito (como Seguridad). Un 400 del API muestra el
+  mensaje del campo si es uno conocido; 429, "Hiciste muchos cambios seguidos…"; sin sesión, al login
+  con el motivo y la vuelta al perfil.
+- Dónde se ve el nombre y por qué queda al día: la barra de arriba ahora muestra **el nombre** (con el
+  correo debajo en el menú, que suma **Tu perfil**; sin nombre, el correo como antes) y lo lee de
+  `GET /me` en cada render del layout; la acción revalida desde el layout, así que cambia al guardar.
+  Equipo, la ficha, el directorio de la plataforma y la vista previa de la invitación ("Te invitó…")
+  piden el nombre al API cada vez, y el saludo de los avisos por correo lo lee al enviarse (sin
+  controles en el texto y escapado en el HTML, USR-12). El correo de la invitación no lleva el nombre
+  de quien invita, y el remitente de los correos es el de la plataforma o el nodo. El historial y la
+  Actividad de la red nombran a las personas por correo, no por nombre; el cambio sale como **"Cambió
+  su nombre · de «Ana Ruiz» a «Ana María Ruiz»"** (filtro Usuarios). El nombre se pinta siempre como
+  texto.
+
+### Tests
+
+- `apps/api/src/me/me.dto.test.ts`: el esquema (recorte, espacios, NFC, alfabetos, tope de 120
+  después de normalizar, controles, los de dirección, invisibles y rellenos, sustituto suelto, al
+  menos una letra) y el cuerpo estricto.
+- `me.controller.test.ts`: `PATCH /me` sin id, con sesión, sin exención del 2FA ni roles, con su
+  tope; la cuenta de la sesión; 401 sin ella; el borde Zod (normaliza, 400 con `email` o `userId`,
+  400 en `name` con un control de dirección).
+- `profile.service.test.ts`: contexto de la sesión, `FOR UPDATE`, el UPDATE por id, el evento con el
+  antes y el después (también desde `null`), nada con el mismo nombre, 401 sin cuenta, y que un evento
+  que no entra hace fallar el cambio.
+- `profile.integration.test.ts` (Postgres, todo como `app_user`): cambia sólo la propia cuenta y deja
+  el evento; el mismo nombre no escribe; el trigger rechaza el nombre de otra cuenta, sin contexto,
+  con uno que no es un UUID y en un UPDATE de varias filas; el propio sí; las demás columnas de otra
+  cuenta sí; `app_user` no puede apagar el trigger; el superusuario cambia cualquiera.
+- Web: `lib/person-name.test.ts` (los mismos casos que el API), `perfil/actions.test.ts` (qué viaja,
+  la revalidación del layout, que un nombre inválido no llega al API, cada error, el 401 al login),
+  `perfil/profile.render.test.ts` (etiqueta, ayuda y campo enlazados, el correo para leer, un botón,
+  el nombre como texto, sin `GET /me`, en tú), `components/layout/account-display.test.ts`,
+  `lib/command-menu.test.ts` (Perfil antes que Seguridad) y `lib/audit-format.test.ts`.
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero). La API vieja no cambia nombres, así
+  que el trigger no la afecta.
+- Con el panel nuevo y la API vieja, `PATCH /me` responde 404 y el formulario dice "No pudimos guardar
+  tu nombre. Inténtalo de nuevo.". El canje de la invitación sigue aceptando el nombre como antes
+  (sólo el largo); llevarle `PersonNameSchema` queda pendiente.
