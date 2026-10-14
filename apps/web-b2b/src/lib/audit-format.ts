@@ -183,6 +183,7 @@ const OPERATION_LABELS: Readonly<Record<string, string>> = {
   OrderTicketed: 'Tiquetes emitidos',
   OrderTicketIssueFailed: 'La emisión de tiquetes no terminó',
   OrderTicketsVoided: 'Tiquetes anulados',
+  OrderTicketingDeadlineApproaching: 'Aviso del plazo de emisión',
   OrderProviderStatusChanged: 'Cambió el estado en el proveedor',
   OrderFlightDocumentsChanged: 'Cambiaron los documentos del vuelo',
   OrderReconciliationDiscrepancy: 'Diferencia en la conciliación',
