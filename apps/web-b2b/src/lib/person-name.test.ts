@@ -1,6 +1,32 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkPersonName, PERSON_NAME_MAX, PERSON_NAME_MESSAGES } from './person-name';
 import { voseoIn } from './voseo';
+
+/**
+ * Las reglas de los dos archivos, leídas como texto: web-b2b no depende de `packages/validation`
+ * (ni de Zod), así que no se puede importar el esquema. Cada patrón saca una declaración entera; si
+ * un lado cambia una regla, un mensaje o la normalización y el otro no, el panel aprobaría lo que el
+ * API rechaza (y el error llegaría genérico) o al revés.
+ */
+const RULES = {
+  max: /export const PERSON_NAME_MAX = [^;]+;/,
+  invisible: /const INVISIBLE_OR_CONTROL = [^;]+;/,
+  letter: /const LETTER = [^;]+;/,
+  messages: /export const PERSON_NAME_MESSAGES = \{[\s\S]*?\} as const;/,
+  normalize: /export function normalizePersonName\(raw: string\): string \{[^}]*\}/,
+  problem: /export function personNameProblem\(name: string\): string \| null \{[^}]*\}/,
+} as const;
+
+function rulesIn(relative: string): Record<keyof typeof RULES, string | undefined> {
+  const source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+  const out = {} as Record<keyof typeof RULES, string | undefined>;
+  for (const [key, pattern] of Object.entries(RULES) as [keyof typeof RULES, RegExp][]) {
+    out[key] = pattern.exec(source)?.[0];
+  }
+  return out;
+}
 
 /*
  * Los mismos casos que `apps/api/src/me/me.dto.test.ts` (PersonNameSchema): el panel dice el error
@@ -78,5 +104,17 @@ describe('checkPersonName (espejo de PersonNameSchema)', () => {
 
   it('los mensajes van en tú', () => {
     expect(voseoIn(Object.values(PERSON_NAME_MESSAGES).join(' '))).toEqual([]);
+  });
+});
+
+describe('el espejo no se aparta de PersonNameSchema (packages/validation)', () => {
+  it('las mismas reglas, mensajes y normalización, declaración por declaración', () => {
+    const api = rulesIn('../../../../packages/validation/src/person-name.ts');
+    const web = rulesIn('./person-name.ts');
+    for (const key of Object.keys(RULES) as (keyof typeof RULES)[]) {
+      // Si la lectura se rompe, el test tiene que fallar y no comparar dos vacíos.
+      expect(api[key], `${key} en packages/validation`).toBeDefined();
+      expect(web[key], `${key} en el panel`).toEqual(api[key]);
+    }
   });
 });

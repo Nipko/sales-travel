@@ -46,7 +46,8 @@ describe('ProfileService.updateName', () => {
     });
 
     const select = k.queries[k.indexOf('select "name" from "users"')];
-    expect(select?.sql).toMatch(/where "id" = \$1 for update$/);
+    // Sin FOR UPDATE: frenaría las inserciones que apuntan a la cuenta (sesiones, memberships).
+    expect(select?.sql).toMatch(/where "id" = \$1 for no key update$/);
     expect(select?.parameters).toEqual([USER]);
 
     const update = k.queries[k.indexOf('update "users"')];

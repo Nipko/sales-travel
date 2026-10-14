@@ -1,8 +1,9 @@
 /**
  * El nombre visible de una persona, del lado del panel: espejo de `packages/validation/src/
- * person-name.ts` (PersonNameSchema, el borde de PATCH /me). El panel no depende de ese paquete ni
- * de Zod; repite las reglas para decir el error junto al campo sin ir al API, y el API las vuelve a
- * aplicar. Si cambian allá, cambian acá: los tests de los dos lados usan los mismos casos.
+ * person-name.ts` (PersonNameSchema, el borde de PATCH /me y del canje de la invitación). El panel no
+ * depende de ese paquete ni de Zod; repite las reglas para decir el error junto al campo sin ir al
+ * API, y el API las vuelve a aplicar. Si cambian allá, cambian acá: `person-name.test.ts` lee las
+ * reglas de allá como texto y falla si difieren de éstas.
  */
 
 export const PERSON_NAME_MAX = 120;

@@ -4,9 +4,12 @@ import { z } from 'zod';
  * El nombre visible de una persona (`users.name`): el que ve su equipo en Equipo, la ficha y el
  * directorio, y el que sale en los correos ("Te invitó Laura Gómez", el saludo de los avisos).
  *
- * El tope es el del canje de la invitación (`AcceptInvitationSchema.name`, 1 a 120), contado en
- * unidades UTF-16 como `z.string().max()`, para que un nombre elegido al sumarse quepa siempre al
- * editarlo.
+ * Lo usan los dos bordes donde una persona elige su nombre: al sumarse (`AcceptInvitationSchema`,
+ * POST /invitations/accept) y al editarlo (PATCH /me). El tope, 120, se cuenta en unidades UTF-16
+ * como `z.string().max()`.
+ *
+ * El panel tiene un espejo sin Zod (`apps/web-b2b/src/lib/person-name.ts`) para decir el error junto
+ * al campo; su test compara estas reglas con las suyas, leídas de este archivo como texto.
  */
 export const PERSON_NAME_MAX = 120;
 

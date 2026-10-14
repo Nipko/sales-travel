@@ -27,6 +27,10 @@ export class ProfileService {
    * historial en la misma transacción: si el evento no entra, el cambio tampoco. Con el mismo
    * nombre no escribe ni audita nada.
    *
+   * La fila se toma `FOR NO KEY UPDATE`, como el resto de las escrituras sobre `users`: el nombre no
+   * es clave, y `FOR UPDATE` frenaba sin motivo las inserciones que apuntan a la cuenta (una sesión
+   * nueva, una membership) mientras dura el cambio.
+   *
    * El payload lleva el antes y el después: es el nombre de la propia persona, el mismo que su
    * equipo ya ve en Equipo, y es lo que deja ver en el historial que alguien se puso el nombre de
    * otro. Sigue la forma de `tenant.updated` (`changed`, `before`, `after`).
@@ -37,7 +41,7 @@ export class ProfileService {
         .selectFrom('users')
         .select('name')
         .where('id', '=', userId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (!current) throw new UnauthorizedException();
       if (current.name === name) return { name };
