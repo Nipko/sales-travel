@@ -197,6 +197,13 @@ describe('isQuietNode: el nodo que todavía no tiene ventas ni actividad', () =>
     expect(isQuietNode(quiet, null)).toBe(false);
     expect(isQuietNode({ ...quiet, sales: null }, 0)).toBe(false);
     expect(isQuietNode({ ...quiet, own: null }, 0)).toBe(false);
+    expect(isQuietNode({ ...quiet, attention: null }, 0)).toBe(false);
+  });
+
+  it('con una reserva de su red que espera a una persona, ya no (aunque sea vieja y sin ventas)', () => {
+    const quiet = parsed(quietSummaryPayload());
+    const byReason = { ...quiet.attention!.byReason, 'hold-orphan': 1 };
+    expect(isQuietNode({ ...quiet, attention: { total: 1, byReason } }, 0)).toBe(false);
   });
 
   it('con ventas de su red, o una reserva alguna vez, ya no', () => {

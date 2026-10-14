@@ -1130,11 +1130,13 @@ GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (im
                                          -- fallidas y lo confirmado por vertical; nunca suma
                                          -- monedas), attention {total, byReason}
                                          -- (admin_order_attention del subárbol, sin muestra) }. El
-                                         -- nodo se lee primero (404 TENANT_NOT_FOUND); después cada
-                                         -- sección (network, sales, attention) en su transacción: si
-                                         -- una falla llega en null y queda un warn
-                                         -- admin.node-summary.section-unavailable con el código del
-                                         -- error; el 42501 de la base es el 403 de siempre. Sólo
+                                         -- nodo se lee primero (404 TENANT_NOT_FOUND); después las
+                                         -- tres secciones (network, sales, attention) a la vez, cada
+                                         -- una en su transacción: si una falla llega en null y queda
+                                         -- un warn admin.node-summary.section-unavailable con el
+                                         -- código del error. Los permisos no se tapan así: el
+                                         -- 42501 admin_superadmin_required es el 403 de siempre y
+                                         -- cualquier otro 42501 o error HTTP sale tal cual. Sólo
                                          -- lee, no audita. En el panel:
                                          -- /admin/tenants/:id/resumen (BFF
                                          -- /api/admin/tenants/:id/summary), que además lee aparte

@@ -399,15 +399,19 @@ export const NODE_SUMMARY_EMPTY = 'Este nodo todavía no tiene ventas ni activid
 
 /**
  * ¿Un nodo sin nada que mostrar todavía? Nunca reservó, ni él ni su red en el período, no tiene
- * reservas vigentes y no hubo actividad. Si alguna de esas lecturas falta, no se afirma.
+ * reservas vigentes, ninguna de su red espera a una persona y no hubo actividad. Si alguna de esas
+ * lecturas falta, no se afirma: una reserva vieja de su red trabada no convive con "todavía no tiene
+ * ventas ni actividad".
  */
 export function isQuietNode(summary: NodeSummary, activityEvents: number | null): boolean {
-  if (summary.own === null || summary.sales === null || activityEvents === null) return false;
+  if (summary.own === null || summary.sales === null || summary.attention === null) return false;
+  if (activityEvents === null) return false;
   return (
     summary.own.lastOrderAt === null &&
     summary.own.openOrders === 0 &&
     (summary.subtree?.openOrders ?? 0) === 0 &&
     summary.sales.subtree.length === 0 &&
+    summary.attention.total === 0 &&
     activityEvents === 0
   );
 }

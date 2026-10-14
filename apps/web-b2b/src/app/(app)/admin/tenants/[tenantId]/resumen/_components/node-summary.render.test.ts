@@ -322,6 +322,17 @@ describe('NodeSummaryContent con un nodo recién creado', () => {
     expect(textOf(html2)).toContain('Sin actividad en los últimos 30 días.');
   });
 
+  it('con una reserva de su red que espera a una persona no dice que está vacío', () => {
+    const quiet = summary(quietSummaryPayload());
+    const byReason = { ...quiet.attention!.byReason, 'hold-orphan': 1 };
+    const html2 = render(NODE_HIJA, {
+      ...quietState(),
+      summary: { status: 'ready', data: { ...quiet, attention: { total: 1, byReason } } },
+    });
+    expect(textOf(html2)).not.toContain(NODE_SUMMARY_EMPTY);
+    expect(html2).toContain('atencion=1');
+  });
+
   it('va en tú', () => {
     expect(voseoIn(text)).toEqual([]);
   });

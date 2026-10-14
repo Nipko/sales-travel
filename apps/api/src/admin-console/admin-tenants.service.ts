@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { TenantHierarchyNotFoundError } from '../database/tenant-hierarchy-errors.js';
@@ -602,37 +602,25 @@ export class AdminTenantsService {
       rethrowAdminDbError(err);
     }
 
-    const network = await this.section('network', actorUserId, tenantId, async (trx) => {
-      const rows = await readSubtreeStats(trx, tenantId);
-      return { rows, people: await readSubtreePeople(trx, tenantId) };
-    });
-    const sales = await this.section('sales', actorUserId, tenantId, async (trx) => {
-      const { rows } = await sql<NodeSalesRow>`
-        SELECT s.tenant_id = ${tenantId}::uuid AS own,
-               s.vertical,
-               s.currency,
-               sum(s.orders_count)           AS orders_count,
-               sum(s.confirmed_count)        AS confirmed_count,
-               sum(s.confirmed_amount_minor) AS confirmed_amount_minor,
-               sum(s.cancelled_count)        AS cancelled_count,
-               sum(s.failed_count)           AS failed_count
-          FROM admin_sales_summary(now() - make_interval(days => ${NODE_SUMMARY_SALES_DAYS}::int), now()) s
-          JOIN tenants t ON t.id = s.tenant_id
-         WHERE t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${tenantId}::uuid)
-         GROUP BY 1, 2, 3
-      `.execute(trx);
-      return rows;
-    });
-    const attention = await this.section('attention', actorUserId, tenantId, (trx) =>
-      readOrderAttention(trx, tenantId),
-    );
+    // Las tres a la vez, cada una en su transacción: la ficha tarda lo que la más lenta, no la suma.
+    const [network, sales, attention] = await Promise.all([
+      this.section('network', actorUserId, tenantId, async (trx) => {
+        const rows = await readSubtreeStats(trx, tenantId);
+        return { rows, people: await readSubtreePeople(trx, tenantId) };
+      }),
+      this.section('sales', actorUserId, tenantId, (trx) => readSubtreeSales(trx, tenantId)),
+      this.section('attention', actorUserId, tenantId, (trx) => readOrderAttention(trx, tenantId)),
+    ]);
 
     return foldNodeSummary({ generatedAt: now, tenant, network, sales, attention });
   }
 
   /**
-   * Una sección de la ficha en su transacción. Si falla, `null` y una advertencia con el código del
-   * error (nunca su texto). El rechazo a quien no es superadmin (42501) sí corta: es un 403.
+   * Una sección de la ficha en su transacción. Si falla (una lectura lenta que corta el
+   * statement_timeout, por ejemplo), `null` y una advertencia con el código del error, nunca su
+   * texto. Lo que es de permisos no se tapa como una sección sin leer: el rechazo a quien no es
+   * superadmin es el 403 de la guarda, y cualquier otro 42501 (un GRANT que falta) o error HTTP sale
+   * tal cual.
    */
   private async section<T>(
     section: NodeSummarySection,
@@ -644,10 +632,39 @@ export class AdminTenantsService {
       return await this.db.withRequestContext({ userId: actorUserId }, read);
     } catch (err) {
       if (isAdminSuperadminDenial(err)) throw new SuperadminRequiredError();
+      if (isPermissionError(err)) throw err;
       this.logger.warn(
         `admin.node-summary.section-unavailable section=${section} tenant=${tenantId} error=${errorTag(err)}`,
       );
       return null;
     }
   }
+}
+
+/** Un error de permisos: un 42501 de la base o una respuesta HTTP ya decidida (401, 403…). */
+function isPermissionError(err: unknown): boolean {
+  if (err instanceof HttpException) return true;
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '42501';
+}
+
+/**
+ * Las ventas de {@link NODE_SUMMARY_SALES_DAYS} días del subárbol de `tenantId` (él incluido), por
+ * (¿del nodo?, vertical, moneda). Cada orden es de un solo nodo: sumar el subárbol no repite nada.
+ */
+async function readSubtreeSales(trx: Transaction<DB>, tenantId: string): Promise<NodeSalesRow[]> {
+  const { rows } = await sql<NodeSalesRow>`
+    SELECT s.tenant_id = ${tenantId}::uuid AS own,
+           s.vertical,
+           s.currency,
+           sum(s.orders_count)           AS orders_count,
+           sum(s.confirmed_count)        AS confirmed_count,
+           sum(s.confirmed_amount_minor) AS confirmed_amount_minor,
+           sum(s.cancelled_count)        AS cancelled_count,
+           sum(s.failed_count)           AS failed_count
+      FROM admin_sales_summary(now() - make_interval(days => ${NODE_SUMMARY_SALES_DAYS}::int), now()) s
+      JOIN tenants t ON t.id = s.tenant_id
+     WHERE t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${tenantId}::uuid)
+     GROUP BY 1, 2, 3
+  `.execute(trx);
+  return rows;
 }

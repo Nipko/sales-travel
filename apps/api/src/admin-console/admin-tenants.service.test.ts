@@ -1,4 +1,4 @@
-import { type ExecutionContext } from '@nestjs/common';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import {
@@ -596,6 +596,44 @@ describe('AdminTenantsService.summary: cada sección en su transacción', () => 
     await expect(new AdminTenantsService(database).summary(USUARIO, NODO)).rejects.toBeInstanceOf(
       SuperadminRequiredError,
     );
+  });
+
+  it('un problema de permisos en una sección no se tapa como "sin leer": sale tal cual', async () => {
+    // Un GRANT que falta (42501 sin el mensaje de la consola): un 500 ruidoso, no una tarjeta vacía.
+    const grant = Object.assign(new Error('permission denied for function admin_sales_summary'), {
+      code: '42501',
+    });
+    const { database } = baseQueContesta(responder({ sql: 'admin_sales_summary', err: grant }));
+    await expect(new AdminTenantsService(database).summary(USUARIO, NODO)).rejects.toBe(grant);
+
+    // Un error HTTP ya decidido (la sesión, la guarda) tampoco es una sección caída.
+    const forbidden = new ForbiddenException('no');
+    const { database: otra } = baseQueContesta(
+      responder({ sql: 'admin_order_attention', err: forbidden }),
+    );
+    await expect(new AdminTenantsService(otra).summary(USUARIO, NODO)).rejects.toBe(forbidden);
+  });
+
+  it('las tres secciones se piden a la vez, cada una en su transacción', async () => {
+    const empezadas: string[] = [];
+    let soltar: () => void = () => undefined;
+    const todas = new Promise<void>((resolve) => {
+      soltar = resolve;
+    });
+    const { database } = baseQueContesta(responder());
+    const real = database.withRequestContext.bind(database);
+    vi.spyOn(database, 'withRequestContext').mockImplementation(async (ctx, fn) => {
+      const n = empezadas.push('trx');
+      // La primera es la del nodo; las tres de la ficha esperan hasta que arrancaron todas.
+      if (n === 4) soltar();
+      if (n > 1) await todas;
+      return real(ctx, fn);
+    });
+    const view = await new AdminTenantsService(database).summary(USUARIO, NODO);
+    expect(empezadas).toHaveLength(4);
+    expect(view.own).not.toBeNull();
+    expect(view.sales).not.toBeNull();
+    expect(view.attention).not.toBeNull();
   });
 
   it('un nodo que no existe es 404 TENANT_NOT_FOUND, sin leer la red', async () => {
