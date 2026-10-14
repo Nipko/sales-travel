@@ -530,6 +530,47 @@ describe('lo que se rechaza antes del cable', () => {
     ).toBeDefined();
   });
 
+  it('dos pasajeros con el mismo apellido en otro orden: el nombre lo nota y nada sale', () => {
+    // La reserva trae a los hermanos Doe al revés que la orden: con el apellido solo, el pasaporte
+    // de John iría a Jane.
+    const read = officialRead();
+    const john = travelerOf(read);
+    const jane = { ...john, givenName: 'JANE', identityDocuments: [] };
+    read['travelers'] = [jane, john];
+    const error = refusal(() =>
+      buildSabreModifyBookingRequest(
+        input([{ index: 0, identityDocument: NEW_PASSPORT }], {
+          booking: read,
+          passengers: [
+            { paxType: 'ADT', surname: 'Doe', givenName: 'John' },
+            { paxType: 'ADT', surname: 'Doe', givenName: 'Jane' },
+          ],
+        }),
+      ),
+    );
+    expect(error.rule).toBe('TRAVELER_GIVEN_NAME_MISMATCH');
+    expect(error.code).toBe('TRAVELER_MISMATCH');
+    expect(error.message).not.toMatch(/JOHN|JANE/i);
+
+    // El tratamiento pegado al nombre, las tildes o un nombre recortado no son otra persona.
+    for (const [ours, theirs] of [
+      ['John', 'JOHN MR'],
+      ['Jóhn', 'JOHN'],
+      ['John Jack', 'JOHN'],
+    ] as const) {
+      const same = officialRead();
+      travelerOf(same)['givenName'] = theirs;
+      expect(
+        buildSabreModifyBookingRequest(
+          input([{ index: 0, identityDocument: NEW_PASSPORT }], {
+            booking: same,
+            passengers: [{ paxType: 'ADT', surname: 'Doe', givenName: ours }],
+          }),
+        ).request,
+      ).toBeDefined();
+    }
+  });
+
   it.each([
     ['número con separadores', { ...NEW_PASSPORT, number: 'AB-123.456' }],
     ['número en minúsculas', { ...NEW_PASSPORT, number: 'ab1234567' }],

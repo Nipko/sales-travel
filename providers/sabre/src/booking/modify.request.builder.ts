@@ -91,6 +91,7 @@ export type SabreModifyBuildRule =
   | 'TRAVELER_COUNT_MISMATCH'
   | 'TRAVELER_TYPE_MISMATCH'
   | 'TRAVELER_SURNAME_MISMATCH'
+  | 'TRAVELER_GIVEN_NAME_MISMATCH'
   | 'INFANT_LOYALTY'
   | 'INFANT_SPECIAL_SERVICE'
   | 'SPECIAL_SERVICES_NOT_SUPPORTED'
@@ -106,6 +107,7 @@ const REJECTION_BY_RULE: Readonly<Record<SabreModifyBuildRule, OrderModifyReject
   TRAVELER_COUNT_MISMATCH: 'TRAVELER_MISMATCH',
   TRAVELER_TYPE_MISMATCH: 'TRAVELER_MISMATCH',
   TRAVELER_SURNAME_MISMATCH: 'TRAVELER_MISMATCH',
+  TRAVELER_GIVEN_NAME_MISMATCH: 'TRAVELER_MISMATCH',
   INFANT_LOYALTY: 'INVALID_CHANGE',
   INFANT_SPECIAL_SERVICE: 'INVALID_CHANGE',
   SPECIAL_SERVICES_NOT_SUPPORTED: 'NOT_SUPPORTED_FOR_CONTENT',
@@ -296,7 +298,10 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** Apellido comparable: sin tildes, mayúsculas, sólo letras. «Pérez» y «PEREZ» son el mismo. */
+/**
+ * Apellido (o nombre) comparable: sin tildes, mayúsculas, sólo letras. «Pérez» y «PEREZ» son el
+ * mismo.
+ */
 function surnameKey(value: string): string {
   return value
     .normalize('NFD')
@@ -316,8 +321,8 @@ function stringField(record: Json, key: string): string | undefined {
 
 /**
  * El pasajero de la orden y el de la reserva son el mismo: misma cantidad, el infante en el mismo
- * lugar y, si los dos lo dicen, el mismo apellido. Sin esto, un pasaporte iría al pasajero de al
- * lado y nadie se enteraría hasta el control migratorio.
+ * lugar y, si los dos lo dicen, el mismo apellido y el mismo nombre. Sin esto, un pasaporte iría al
+ * pasajero de al lado y nadie se enteraría hasta el control migratorio.
  */
 function assertSamePassengers(travelers: readonly Json[], input: SabreModifyBookingInput): void {
   if (travelers.length !== input.passengers.length) {
@@ -341,6 +346,23 @@ function assertSamePassengers(travelers: readonly Json[], input: SabreModifyBook
       throw new SabreModifyBookingBuildError(
         'TRAVELER_SURNAME_MISMATCH',
         `travelers.${String(index)}.surname no casa con el pasajero de la orden`,
+      );
+    }
+    // Con el apellido solo, dos hermanos «PÉREZ» que la reserva trajera en otro orden se
+    // intercambiarían el pasaporte. El nombre se compara por prefijo en los dos sentidos: el sistema
+    // de reservas puede pegarle el tratamiento («ANA MRS») o recortarlo, y eso no es otra persona.
+    const ourGiven = passenger.givenName === undefined ? '' : surnameKey(passenger.givenName);
+    const theirGiven = stringField(traveler, 'givenName');
+    const theirGivenKey = theirGiven === undefined ? '' : surnameKey(theirGiven);
+    if (
+      ourGiven.length > 0 &&
+      theirGivenKey.length > 0 &&
+      !theirGivenKey.startsWith(ourGiven) &&
+      !ourGiven.startsWith(theirGivenKey)
+    ) {
+      throw new SabreModifyBookingBuildError(
+        'TRAVELER_GIVEN_NAME_MISMATCH',
+        `travelers.${String(index)}.givenName no casa con el pasajero de la orden`,
       );
     }
   });

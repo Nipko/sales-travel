@@ -93,12 +93,17 @@ export interface OrderModifyRef {
   readonly contentSource?: ProviderContentSource;
   /**
    * Los pasajeros de la orden en el orden en que se reservaron: el índice del array es el
-   * `TravelerChange.index`. El proveedor los cruza con los de su reserva por posición, tipo y
-   * apellido, y si no casan lanza en vez de adivinar a quién cambiarle el pasaporte.
+   * `TravelerChange.index`. El proveedor los cruza con los de su reserva por posición, tipo,
+   * apellido y nombre, y si no casan lanza en vez de adivinar a quién cambiarle el pasaporte.
    */
   readonly passengers: readonly {
     readonly paxType: PaxType;
     readonly surname?: string;
+    /**
+     * El nombre de pila como se reservó. Con el apellido solo, dos hermanos «PÉREZ» que la
+     * reserva trajera en otro orden se intercambiarían el pasaporte sin que nada lo notara.
+     */
+    readonly givenName?: string;
     /** `M`/`F`: el género del titular si la reserva no lo trae y hay que componer el documento. */
     readonly gender?: 'M' | 'F';
   }[];

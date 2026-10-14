@@ -199,14 +199,14 @@ afterEach(() => {
 });
 
 describe('la reserva como la entiende el puerto', () => {
-  it('localizador, carril y pasajeros por posición, tipo, apellido y género; ni un documento', () => {
+  it('localizador, carril y pasajeros por posición, tipo, nombre, apellido y género; ni un documento', () => {
     const ref = modifyRefOf(fila());
     expect(ref).toEqual({
       orderId: 'ABC123',
       contentSource: 'ATPCO',
       passengers: [
-        { paxType: 'ADT', surname: 'Secreta', gender: 'F' },
-        { paxType: 'INF', surname: 'Secreta', gender: 'M' },
+        { paxType: 'ADT', givenName: 'Ana', surname: 'Secreta', gender: 'F' },
+        { paxType: 'INF', givenName: 'Leo', surname: 'Secreta', gender: 'M' },
       ],
     });
     expect(JSON.stringify(ref)).not.toContain(VIEJO);

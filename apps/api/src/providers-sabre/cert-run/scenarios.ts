@@ -795,6 +795,7 @@ class CertRun {
       contentSource: booking.offer.provider.source ?? 'ATPCO',
       passengers: booking.passengers.map((p) => ({
         paxType: p.paxType,
+        givenName: p.givenName,
         surname: p.surname,
         gender: p.gender,
       })),

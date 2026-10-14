@@ -93,10 +93,12 @@ export function modifyRefOf(order: OrderRow): OrderModifyRef {
     const paxType = PaxTypeSchema.safeParse(record['paxType']);
     if (!paxType.success) throw new BadRequestException(TRAVELERS_MESSAGES.unavailable);
     const surname = record['surname'];
+    const givenName = record['givenName'];
     const gender = record['gender'];
     const passengerRef: OrderModifyRef['passengers'][number] = {
       paxType: paxType.data,
       ...(typeof surname === 'string' && surname.trim().length > 0 ? { surname } : {}),
+      ...(typeof givenName === 'string' && givenName.trim().length > 0 ? { givenName } : {}),
       ...(gender === 'M' || gender === 'F' ? { gender } : {}),
     };
     return passengerRef;
