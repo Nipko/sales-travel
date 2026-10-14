@@ -75,6 +75,55 @@ export const IssueOrderSchema = z
 export type IssueOrderInput = z.infer<typeof IssueOrderSchema>;
 
 /**
+ * Agregar maletas y servicios a una reserva confirmada (SAB-20). Sólo QUÉ y para QUIÉN: el precio lo
+ * pone el servidor con el catálogo que vuelve a leer. `expectedTotalMinor` es lo que el vendedor vio
+ * que suman los servicios elegidos: si el catálogo dice otra cosa, no se agrega nada (409).
+ */
+export const AddServicesSchema = z
+  .object({
+    selections: z
+      .array(
+        z
+          .object({
+            serviceOfferItemId: z.string().min(1).max(200),
+            passengerIndexes: z
+              .array(z.number().int().min(0).max(8))
+              .min(1)
+              .max(9)
+              .refine((ids) => new Set(ids).size === ids.length, 'passengerIndexes repetidos'),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20)
+      .refine(
+        (list) => new Set(list.map((s) => s.serviceOfferItemId)).size === list.length,
+        'serviceOfferItemId repetido',
+      ),
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type AddServicesInput = z.infer<typeof AddServicesSchema>;
+
+/**
+ * Quitar servicios agregados antes de emitir: las líneas de la orden (ids nuestros, nunca del
+ * proveedor) y lo que el vendedor vio que suman.
+ */
+export const RemoveServicesSchema = z
+  .object({
+    lineIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length, 'lineIds repetidos'),
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type RemoveServicesInput = z.infer<typeof RemoveServicesSchema>;
+
+/**
  * ¿El total guardado de la orden es el que el vendedor vio? `orders.total_amount` es BIGINT (0023)
  * y `pg` entrega BIGINT como TEXTO (`'34012'`), aunque `OrderRow` lo declare `number`: comparado
  * con `!==` contra el número del cuerpo, toda emisión salía con «el total cambió». Se compara el

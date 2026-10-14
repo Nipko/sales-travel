@@ -123,11 +123,25 @@ export function settleTicketVoid(attempt: {
   if (!attempt.verified) return { outcome: 'UNVERIFIED' };
   const read = attempt.read;
   const seen = read === undefined ? {} : { read, voidedTickets: voidedTicketCount(read) };
+  // Los servicios adicionales se cobraron con EMD al emitir (SAB-20). Si la relectura muestra uno
+  // todavía emitido, la anulación no deshizo todo lo cobrado: liberar la retención entera dejaría
+  // ese EMD pagado por la cuenta sin nada retenido. Se concilia como una anulación a medias.
+  if (attempt.success && read !== undefined && emdsStillIssued(read)) {
+    return { outcome: 'PARTIAL', ...seen };
+  }
   if (attempt.success) return { outcome: 'VOIDED', ...seen };
   if (attempt.partial) return { outcome: 'PARTIAL', ...seen };
   if (read === undefined) return { outcome: 'UNVERIFIED' };
   if (voidedTicketCount(read) > 0) return { outcome: 'PARTIAL', ...seen };
   return { outcome: ticketsStillIssued(read) ? 'REJECTED' : 'UNVERIFIED', ...seen };
+}
+
+/** ¿La lectura muestra algún EMD (servicio adicional cobrado) que sigue emitido? */
+function emdsStillIssued(view: OrderView): boolean {
+  if (!view.found) return false;
+  return (view.documents ?? []).some(
+    (document) => document.kind === 'EMD' && document.status === 'ISSUED',
+  );
 }
 
 /** ¿La lectura muestra tiquetes, y todos emitidos? Es la prueba de que un rechazo no anuló nada. */

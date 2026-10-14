@@ -96,12 +96,20 @@ describe('capabilitiesForViewer: el superadmin no vende desde Mis Reservas', () 
       reshop: false,
       // Emitir tiquetes también es venta (SAB-08): el superadmin no ve el botón.
       issue: false,
+      // Y agregar maletas y servicios (SAB-20).
+      addServices: false,
     });
     expect(latam.pay).toBe(true);
   });
 
   it('las de venta son exactamente las que la API marca @SalesOperation en órdenes', () => {
-    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual(['issue', 'pay', 'reshop', 'services']);
+    expect([...SALE_ORDER_CAPABILITIES].sort()).toEqual([
+      'addServices',
+      'issue',
+      'pay',
+      'reshop',
+      'services',
+    ]);
   });
 
   it('sin capabilities sigue fallando cerrada', () => {

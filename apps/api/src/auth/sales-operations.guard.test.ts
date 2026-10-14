@@ -95,6 +95,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/issue',
     'POST /orders/:id/reshop',
     'POST /orders/:id/services',
+    'POST /orders/:id/services/add',
   ),
   ...venta(
     'cotizaciones: crear, editar y enviar',
@@ -306,9 +307,10 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/send-confirmation',
   ),
   ...noVenta(
-    'corrección: cancelar lo vendido (también anulando sus tiquetes), reintentar una cancelación o rechazar un hold',
+    'corrección: cancelar lo vendido (también anulando sus tiquetes o quitando servicios adicionales), reintentar una cancelación o rechazar un hold',
     'POST /orders/:id/cancel',
     'POST /orders/:id/void',
+    'POST /orders/:id/services/remove',
     'POST /orders/:id/operations/:opId/retry',
     'POST /hotels/reservations/:id/cancel',
     'POST /cars/reservations/cancel',
@@ -404,6 +406,7 @@ const VENTAS_DEL_MODELO = [
   'POST /orders',
   'POST /orders/:id/pay',
   'POST /orders/:id/issue',
+  'POST /orders/:id/services/add',
   'POST /quotations',
   'PATCH /quotations/:id/status',
   'POST /quotations/:id/send-email',

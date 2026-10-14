@@ -57,6 +57,11 @@ describe('eventLabel', () => {
       ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',
       MarkupRuleCreated: 'Regla de markup creada',
       MarkupRuleDeleted: 'Regla de markup eliminada',
+      OrderServicesRequested: 'Pidió un cambio de servicios adicionales',
+      OrderServicesAdded: 'Servicios adicionales agregados a una reserva',
+      OrderServicesRemoved: 'Servicios adicionales quitados de una reserva',
+      OrderServicesChangeFailed: 'Cambio de servicios adicionales sin completar',
+      'portfolio.hold.adjusted': 'Retención de cartera ajustada por servicios adicionales',
     };
     for (const [type, text] of Object.entries(expected)) {
       expect(eventLabel(type, {}), type).toEqual({ text, raw: false });

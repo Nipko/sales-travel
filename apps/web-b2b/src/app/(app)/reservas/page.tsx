@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   Hotel,
+  Luggage,
   Mail,
   Package,
   Plane,
@@ -58,6 +59,8 @@ import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-or
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
+import { AddServicesSheet } from './_components/add-services-sheet';
+import { canManageServices } from './services-view';
 import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
 import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
@@ -223,6 +226,8 @@ export default function ReservasPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   /** La reserva cuya emisión se está confirmando (SAB-08). */
   const [issuing, setIssuing] = useState<Order | null>(null);
+  /** La reserva cuyas maletas y servicios se están viendo (SAB-20). */
+  const [servicesSheet, setServicesSheet] = useState<Order | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
@@ -911,6 +916,19 @@ export default function ReservasPage() {
                             {order.id in issuesInFlight ? 'Emitiendo…' : 'Emitir tiquete'}
                           </Button>
                         )}
+                        {/* Maletas y servicios antes de emitir; se cobran con el tiquete (SAB-20). */}
+                        {canManageServices(order) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id || order.id in issuesInFlight}
+                            onClick={() => setServicesSheet(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Luggage aria-hidden="true" className="size-3.5" /> Servicios
+                            adicionales
+                          </Button>
+                        )}
                         {(order.status === 'pending' || order.status === 'confirmed') &&
                           supportsOrderCapability(order.capabilities, 'pay') && (
                             <Button
@@ -939,7 +957,8 @@ export default function ReservasPage() {
                           </Button>
                         )}
                         {order.status === 'ticketed' &&
-                          supportsOrderCapability(order.capabilities, 'services') && (
+                          supportsOrderCapability(order.capabilities, 'services') &&
+                          !supportsOrderCapability(order.capabilities, 'addServices') && (
                             <Button
                               variant="secondary"
                               size="sm"
@@ -1168,6 +1187,7 @@ export default function ReservasPage() {
             }}
             issueInFlight={detailOrder.id in issuesInFlight}
             onIssueRequest={() => setIssuing(detailOrder)}
+            onServicesRequest={() => setServicesSheet(detailOrder)}
             onOrderChanged={() => void loadOrders(false)}
           />
         ))}
@@ -1207,6 +1227,16 @@ export default function ReservasPage() {
         />
       )}
 
+      {/* Maletas y servicios antes de emitir (SAB-20): el total y la retención los decide el API. */}
+      {servicesSheet && (
+        <AddServicesSheet
+          key={servicesSheet.id}
+          order={servicesSheet}
+          onClose={() => setServicesSheet(null)}
+          onChanged={() => void loadOrders(false)}
+        />
+      )}
+
       {/* Confirmación de cancelación (evita cancelaciones por error) */}
       {confirmCancel && (
         <ConfirmDialog
@@ -1237,6 +1267,7 @@ function OrderDetailModal({
   onPayRequest,
   issueInFlight,
   onIssueRequest,
+  onServicesRequest,
   onOrderChanged,
 }: {
   order: Order;
@@ -1246,6 +1277,8 @@ function OrderDetailModal({
   /** Hay una emisión de esta reserva siguiéndose en la página. */
   issueInFlight: boolean;
   onIssueRequest: () => void;
+  /** Abrir las maletas y servicios de la reserva (SAB-20). */
+  onServicesRequest: () => void;
   /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
   onOrderChanged: () => void;
 }) {
@@ -1266,6 +1299,7 @@ function OrderDetailModal({
     (order.status === 'pending' || order.status === 'confirmed') &&
     supportsOrderCapability(order.capabilities, 'pay');
   const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
+  const canServices = !isCar && canManageServices(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -1730,6 +1764,16 @@ function OrderDetailModal({
               className="gap-1.5 text-xs"
             >
               <Ticket aria-hidden="true" className="size-3.5" /> Emitir tiquete
+            </Button>
+          )}
+          {canServices && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onServicesRequest}
+              className="gap-1.5 text-xs"
+            >
+              <Luggage aria-hidden="true" className="size-3.5" /> Servicios adicionales
             </Button>
           )}
           {canPay && (

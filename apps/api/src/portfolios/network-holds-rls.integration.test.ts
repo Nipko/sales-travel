@@ -75,6 +75,8 @@ const ENTRY_POINTS = [
   'wallet_hold_preview(text,uuid,text,text,bigint,bigint)',
   'wallet_hold_report_block(uuid)',
   'wallet_hold_report_preview_block(text,uuid,text,text,bigint,bigint)',
+  // 0086: el ajuste por servicios adicionales de una orden confirmada.
+  'wallet_hold_adjust(uuid,uuid,uuid,bigint)',
 ];
 
 d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
@@ -369,6 +371,42 @@ d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
         ),
       ),
     ).toBe('42501/?');
+    // Los ajustes de 0086 tampoco: sólo los escribe wallet_hold_adjust.
+    expect(
+      await rule(
+        as(ctx, (c) =>
+          c.query(`UPDATE wallet_hold_adjustments SET amount_minor = 1 WHERE order_id = $1`, [
+            orderS1,
+          ]),
+        ),
+      ),
+    ).toBe('42501/?');
+  });
+
+  it('el ajuste (0086) no corre sin una operación de servicios pendiente de esa orden', async () => {
+    expect(
+      await rule(
+        as({ tenantId: net.ids.S1 }, (c) =>
+          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid, 0)', [
+            orderS1,
+            net.sellers.S1,
+            '00000000-0000-4000-8000-000000000000',
+          ]),
+        ),
+      ),
+    ).toMatch(/^STW01\/hold_order_not_(holdable|found)$/);
+    // La orden de una hermana no existe para el nodo.
+    expect(
+      await rule(
+        as({ tenantId: net.ids.S1 }, (c) =>
+          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid, 0)', [
+            orderS2,
+            net.sellers.S1,
+            '00000000-0000-4000-8000-000000000000',
+          ]),
+        ),
+      ),
+    ).toBe('STW01/hold_order_not_found');
   });
 
   it('un cambio de política no lo lee la red afectada: ni el modo, ni la razón, ni quién', async () => {

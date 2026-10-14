@@ -67,6 +67,19 @@ export class MemoryTicketIssueStore {
     return this.orders.get(id);
   }
 
+  /** Lo vendido como servicios adicionales por orden (SAB-20). Vacío por defecto. */
+  readonly servicesCharges = new Map<string, { amountMinor: number; currency: string }[]>();
+
+  servicesCharge(
+    tenantId: string,
+    orderId: string,
+  ): Promise<{ readonly amountMinor: number; readonly currency: string }[]> {
+    return this.run('servicesCharge', () => {
+      const order = this.orders.get(orderId);
+      return order?.tenant_id === tenantId ? [...(this.servicesCharges.get(orderId) ?? [])] : [];
+    });
+  }
+
   findOrder(tenantId: string, orderId: string): Promise<OrderRow | undefined> {
     return this.run('findOrder', () => {
       const order = this.orders.get(orderId);
@@ -79,11 +92,15 @@ export class MemoryTicketIssueStore {
     orderId: string,
     actorUserId: string | null,
     result: IssueOperationResult,
+    expectedTotalMinor?: number,
   ): Promise<IssueClaimOutcome> {
     return this.run('claim', (): IssueClaimOutcome => {
       const order = this.orders.get(orderId);
       if (order?.tenant_id !== tenantId) return { claimed: false, refusal: 'not-found' };
       if (order.status !== 'confirmed') return { claimed: false, refusal: 'not-confirmed' };
+      if (expectedTotalMinor !== undefined && Number(order.total_amount) !== expectedTotalMinor) {
+        return { claimed: false, refusal: 'total-changed' };
+      }
       const ops = this.ofOrder(tenantId, orderId);
       const latest = ops[ops.length - 1];
       if (latest?.status === 'pending') return { claimed: false, refusal: 'already-pending' };

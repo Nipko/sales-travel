@@ -307,6 +307,40 @@ describe('requestIssue — el pedido sale del request', () => {
   });
 });
 
+describe('runIssueById — los servicios adicionales vendidos (SAB-20)', () => {
+  it('le dice al proveedor cuánto se vendió en servicios, en la moneda de la reserva', async () => {
+    const b = banco();
+    b.store.servicesCharges.set(ORDER, [{ amountMinor: 4500, currency: 'USD' }]);
+
+    const operationId = await pedirYEmitir(b);
+
+    expect(b.issueTickets).toHaveBeenCalledWith(
+      PNR,
+      { tenantId: TENANT, requestId: operationId },
+      { travelerCount: 2, ancillaryCharge: { amountMinor: 4500, currency: 'USD' } },
+    );
+  });
+
+  it('servicios en otra moneda que la reserva: no se emite nada y se puede volver a pedir', async () => {
+    for (const charges of [
+      [{ amountMinor: 4500, currency: 'COP' }],
+      [
+        { amountMinor: 4500, currency: 'COP' },
+        { amountMinor: 100, currency: 'USD' },
+      ],
+    ]) {
+      const b = banco();
+      b.store.servicesCharges.set(ORDER, charges);
+
+      const operationId = await pedirYEmitir(b);
+
+      expect(b.issueTickets).not.toHaveBeenCalled();
+      expect(b.store.operation(operationId)).toMatchObject({ status: 'failed' });
+      expect(b.store.order(ORDER)?.status).toBe('confirmed');
+    }
+  });
+});
+
 describe('runIssueById — write-ahead y una sola emisión', () => {
   it('ISSUED: la orden queda emitida, con sus documentos, su evento y la confirmación', async () => {
     const b = banco();
@@ -345,6 +379,8 @@ describe('runIssueById — write-ahead y una sola emisión', () => {
       operationId,
       outcome: 'ISSUED',
       documents: 2,
+      // Los EMD de los servicios adicionales (SAB-20) se cuentan aparte; aquí no hay.
+      emds: 0,
       formOfPaymentType: 'CASH',
       reconciled: false,
       testContent: false,

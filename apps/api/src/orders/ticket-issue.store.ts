@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
-import type { DB, OrderOperationStatus, OrderStatus } from '../database/database.types.js';
+import {
+  PROVIDER_WRITE_OPERATION_TYPES,
+  type DB,
+  type OrderOperationStatus,
+  type OrderStatus,
+} from '../database/database.types.js';
+import { isSameMinorAmount } from './dto.js';
 import { uniqueViolationConstraint } from './order-create-intent.store.js';
+import { servicesOperationBlocks } from './order-services.plan.js';
 import type { OrderRow } from './orders.service.js';
 import {
   issueOperationPolicy,
@@ -40,13 +47,22 @@ export interface IssueOperationRecord {
  * - `already-pending`: hay una escritura pendiente en el proveedor (0083).
  * - `already-issued`: la última emisión salió bien.
  * - `previous-unverified`: la última quedó en duda; mientras no se concilie, no se reemite.
+ * - `services-pending`: hay un cambio de servicios adicionales en curso (SAB-20): se emitiría sin
+ *   saber qué EMD van.
+ * - `services-unverified`: el último cambio de servicios quedó en duda: el total y los EMD no se
+ *   saben hasta conciliarlo.
+ * - `total-changed`: el total de la orden ya no es el que el vendedor confirmó (un cambio de
+ *   servicios terminó entre la lectura del controlador y el claim).
  */
 export type IssueClaimRefusal =
   | 'not-found'
   | 'not-confirmed'
   | 'already-pending'
   | 'already-issued'
-  | 'previous-unverified';
+  | 'previous-unverified'
+  | 'services-pending'
+  | 'services-unverified'
+  | 'total-changed';
 
 export type IssueClaimOutcome =
   | { readonly claimed: true; readonly operationId: string }
@@ -137,17 +153,51 @@ export class TicketIssueStore {
     orderId: string,
     actorUserId: string | null,
     result: IssueOperationResult,
+    /** El total que el vendedor confirmó: con la orden bloqueada, tiene que seguir siendo ése. */
+    expectedTotalMinor?: number,
   ): Promise<IssueClaimOutcome> {
     try {
       return await this.db.withTenant(tenantId, async (trx): Promise<IssueClaimOutcome> => {
         const order = await trx
           .selectFrom('orders')
-          .select(['id', 'status'])
+          .select(['id', 'status', 'total_amount'])
           .where('id', '=', orderId)
           .forUpdate()
           .executeTakeFirst();
         if (!order) return { claimed: false, refusal: 'not-found' };
         if (order.status !== 'confirmed') return { claimed: false, refusal: 'not-confirmed' };
+        // Los servicios adicionales (SAB-20) cambian el total de una confirmada: lo que se emite
+        // (tiquete y EMD) tiene que ser lo que el vendedor vio, también si cambió después de que el
+        // controlador lo comparó.
+        if (
+          expectedTotalMinor !== undefined &&
+          !isSameMinorAmount(order.total_amount, expectedTotalMinor)
+        ) {
+          return { claimed: false, refusal: 'total-changed' };
+        }
+
+        // Otra escritura en el proveedor (servicios adicionales) en curso o en duda: el índice de
+        // 0083 la frenaría igual, pero con un mensaje que habla de emisiones.
+        const otherWrite = await trx
+          .selectFrom('order_operations')
+          .select('id')
+          .where('order_id', '=', orderId)
+          .where('status', '=', 'pending')
+          .where('type', 'in', [...PROVIDER_WRITE_OPERATION_TYPES])
+          .where('type', '<>', 'issue')
+          .executeTakeFirst();
+        if (otherWrite) return { claimed: false, refusal: 'services-pending' };
+        const services = await trx
+          .selectFrom('order_operations')
+          .select(['status', 'result'])
+          .where('order_id', '=', orderId)
+          .where('type', 'in', ['add-services', 'remove-services'])
+          .orderBy('created_at', 'desc')
+          .limit(1)
+          .executeTakeFirst();
+        if (services && servicesOperationBlocks(services.status, services.result)) {
+          return { claimed: false, refusal: 'services-unverified' };
+        }
 
         const latest = await trx
           .selectFrom('order_operations')
@@ -187,6 +237,29 @@ export class TicketIssueStore {
       }
       throw error;
     }
+  }
+
+  /**
+   * Lo vendido como servicios adicionales que la emisión tiene que cobrar (SAB-20): las líneas
+   * `active` de la orden con precio, por moneda. Las que están en duda frenan la emisión antes
+   * (claim), así que acá sólo cuentan las confirmadas. Vacío = no se vendió ninguno con precio.
+   */
+  async servicesCharge(
+    tenantId: string,
+    orderId: string,
+  ): Promise<{ readonly amountMinor: number; readonly currency: string }[]> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const rows = await trx
+        .selectFrom('order_ancillary_lines')
+        .select(['currency', sql<string>`sum(amount_minor)::text`.as('total')])
+        .where('order_id', '=', orderId)
+        .where('status', '=', 'active')
+        .where('amount_minor', '>', 0)
+        .groupBy('currency')
+        .orderBy('currency')
+        .execute();
+      return rows.map((row) => ({ amountMinor: Number(row.total), currency: row.currency }));
+    });
   }
 
   async getOperation(

@@ -12,7 +12,11 @@ import {
 } from './booking-hold.js';
 import { isUniqueViolation } from './portfolio-errors.js';
 import type { PortfolioRow, PortfolioTransactionRow } from './wallet-store.js';
-import { WalletHoldStore, translateWalletHoldError } from './wallet-hold.store.js';
+import {
+  WalletHoldStore,
+  translateWalletHoldError,
+  type WalletHoldAdjusted,
+} from './wallet-hold.store.js';
 
 /**
  * La retención de cartera de una reserva ANTES de llamar al proveedor y sobre una reserva ya
@@ -54,6 +58,20 @@ const CONFIRMED_ONLY = 'Sólo una reserva confirmada y no emitida puede retener 
 const OPEN_INTENT_ONLY =
   'Sólo una reserva abierta, antes de enviarse al proveedor, puede retener saldo de cartera.';
 const ALREADY_HELD = 'Esta reserva ya tiene una retención activa. No se realizó un segundo débito.';
+const NOT_ADJUSTABLE =
+  'La retención de saldo de esta reserva está cerrada o en revisión, así que no se puede ajustar. No se cambió nada en la reserva.';
+
+/**
+ * El ajuste de la retención de UNA orden dentro de la transacción que cambia su total
+ * ({@link BookingHoldPolicyService.adjustOrderHold}): `wallet_hold_adjust` con el actor, la operación
+ * de servicios que lo explica y la diferencia que esa operación acaba de escribir en el total (la
+ * base la compara con la de la orden y, si no es esa, no mueve nada).
+ */
+export type HoldAdjuster = (
+  actorId: string,
+  operationId: string,
+  expectedDeltaMinor: number,
+) => Promise<WalletHoldAdjusted>;
 
 function normalizeCurrency(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -255,6 +273,49 @@ export class BookingHoldPolicyService {
       });
     } catch (error) {
       throw await this.holdFailure(tenantId, orderId, error, target.currency, OPEN_INTENT_ONLY);
+    }
+  }
+
+  /**
+   * Corre `work` en la transacción de las retenciones (la de 0060: `lock_timeout` acotado y la
+   * transacción entera repetida ante un bloqueo) con el ajuste de la retención de la orden a mano
+   * (0086). Es para lo que cambia el total de una orden ya confirmada —los servicios adicionales—:
+   * el total y la retención se mueven juntos o no se mueve ninguno.
+   *
+   * La diferencia la decide la base desde la orden (`orders.total_amount` contra lo retenido), así
+   * que `work` primero escribe el total nuevo y después llama al ajuste. Sin retención (cuenta de
+   * pruebas, proveedor que cobra por su cuenta) o con la cuenta propia del nodo, el ajuste no hace
+   * nada y lo dice.
+   *
+   * Un error que no es de las retenciones (un índice único de quien llama, por ejemplo) sale tal
+   * cual, para que lo traduzca quien lo provocó.
+   *
+   * @throws BookingHoldRejectedError si al retener un nivel no cubre la diferencia: no queda nada.
+   * @throws PortfolioHoldBusyError o PortfolioReleaseBusyError si la red siguió contenida.
+   * @throws BadRequestException si la retención está cerrada o en conflicto.
+   */
+  async adjustOrderHold<T>(
+    tenantId: string,
+    order: { readonly id: string; readonly currency: string },
+    direction: 'retain' | 'release',
+    work: (trx: Transaction<DB>, adjust: HoldAdjuster) => Promise<T>,
+  ): Promise<T> {
+    const run = (trx: Transaction<DB>): Promise<T> =>
+      work(trx, (actorId, operationId, expectedDeltaMinor) =>
+        this.walletHolds.adjust(trx, order.id, actorId, operationId, expectedDeltaMinor),
+      );
+    try {
+      return direction === 'retain'
+        ? await this.walletHolds.run(tenantId, run)
+        : await this.walletHolds.runRelease(tenantId, run);
+    } catch (error) {
+      throw (
+        translateWalletHoldError(
+          error,
+          normalizeCurrency(order.currency) ?? undefined,
+          NOT_ADJUSTABLE,
+        ) ?? error
+      );
     }
   }
 

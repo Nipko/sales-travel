@@ -26,6 +26,7 @@ import type {
   StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
 import type { FlightTicketIssueService, TicketIssueSweepReport } from './ticket-issue.service.js';
+import type { FlightServicesService, ServicesSweepReport } from './order-services.service.js';
 import type {
   DeadlineAlertSweepReport,
   FlightDeadlineAlertService,
@@ -111,6 +112,10 @@ function informeDeEmisiones(parcial: Partial<TicketIssueSweepReport> = {}): Tick
   return { examined: 0, abandoned: 0, reconciling: 0, skipped: 0, ...parcial };
 }
 
+function informeDeServicios(parcial: Partial<ServicesSweepReport> = {}): ServicesSweepReport {
+  return { examined: 0, reconciling: 0, skipped: 0, ...parcial };
+}
+
 function informeDeAvisos(
   parcial: Partial<DeadlineAlertSweepReport> = {},
 ): DeadlineAlertSweepReport {
@@ -191,6 +196,9 @@ function banco(tenants: string[], redis = true) {
   const sweepDeadlineAlerts = vi.fn<FlightDeadlineAlertService['sweepTenant']>(() =>
     Promise.resolve(informeDeAvisos()),
   );
+  const sweepServiceChanges = vi.fn<FlightServicesService['sweepTenant']>(() =>
+    Promise.resolve(informeDeServicios()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -205,6 +213,7 @@ function banco(tenants: string[], redis = true) {
     { emit } as unknown as AuditService,
     { sweepTenant: sweepTicketIssues } as unknown as FlightTicketIssueService,
     { sweepTenant: sweepDeadlineAlerts } as unknown as FlightDeadlineAlertService,
+    { sweepTenant: sweepServiceChanges } as unknown as FlightServicesService,
   );
   return {
     sweeper,
@@ -215,6 +224,7 @@ function banco(tenants: string[], redis = true) {
     sweepStaleClaims,
     sweepTicketIssues,
     sweepDeadlineAlerts,
+    sweepServiceChanges,
     queue,
     consulta,
     work,
@@ -368,6 +378,7 @@ describe('PostSaleSweeper — la corrida', () => {
     expect(report).toEqual({
       ticketIssues: informeDeEmisiones(),
       deadlineAlerts: informeDeAvisos(),
+      serviceChanges: informeDeServicios(),
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
@@ -614,6 +625,7 @@ describe('PostSaleSweeper — la corrida', () => {
     expect(await b.sweeper.run()).toEqual({
       ticketIssues: informeDeEmisiones(),
       deadlineAlerts: informeDeAvisos(),
+      serviceChanges: informeDeServicios(),
       tenants: 1,
       tenantsFailed: 0,
       ...informe(),
@@ -649,6 +661,7 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
     b.sweepDeadlineAlerts.mockResolvedValue(
       informeDeAvisos({ examined: 1, claimed: 1, mailed: 1 }),
     );
+    b.sweepServiceChanges.mockResolvedValue(informeDeServicios({ examined: 1, reconciling: 1 }));
 
     const report = await b.sweeper.run(1_000);
 
@@ -671,6 +684,7 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
         reconciliation: informeConciliacion({ accounts: 1, queued: 1 }),
         ticketIssues: informeDeEmisiones({ examined: 2, abandoned: 2 }),
         deadlineAlerts: informeDeAvisos({ examined: 2, claimed: 2, mailed: 2 }),
+        serviceChanges: informeDeServicios({ examined: 2, reconciling: 2 }),
       },
     });
     // El informe que devuelve no cambia por dejar el rastro.

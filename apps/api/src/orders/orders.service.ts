@@ -85,6 +85,8 @@ import {
 import { isTestContentOrder } from './order-confirmation-mail.js';
 import { ORDER_EVENTS, createdSummary, type TicketVoidEscalationReason } from './order-events.js';
 import { issueOperationPolicy } from './ticket-issue.plan.js';
+import { FlightServicesService } from './order-services.service.js';
+import { servicesOperationPolicy, type PublicServicesCatalog } from './order-services.plan.js';
 import {
   TICKET_VOID_MESSAGES,
   VOID_REJECTED_LAST_ERROR,
@@ -407,6 +409,11 @@ export class OrdersService {
      * ninguna reserva de vuelo retiene.
      */
     @Optional() private readonly walletHolds?: BookingHoldPolicyService,
+    /**
+     * Maletas y servicios sobre una reserva confirmada (SAB-20), para los proveedores que los venden
+     * por el puerto de ancillares. Opcional por el mismo motivo: en la app siempre está.
+     */
+    @Optional() private readonly services?: FlightServicesService,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -1578,7 +1585,7 @@ export class OrdersService {
       .executeTakeFirst();
     if (pending) {
       throw new ConflictException(
-        'Hay una emisión en curso para esta reserva. Espera a que termine antes de cancelarla.',
+        'Hay una emisión o un cambio de servicios en curso para esta reserva. Espera a que termine antes de cancelarla.',
       );
     }
   }
@@ -2607,7 +2614,16 @@ export class OrdersService {
     }
   }
 
-  async listServices(tenantId: string, row: OrderRow): Promise<ServiceListResult> {
+  /**
+   * Los servicios que se le pueden agregar a la reserva. Un proveedor con el puerto de ancillares
+   * (capacidad `addServices`) devuelve su catálogo con lo ya agregado (SAB-20); el resto, el listado
+   * de equipaje de siempre.
+   */
+  async listServices(
+    tenantId: string,
+    row: OrderRow,
+  ): Promise<ServiceListResult | PublicServicesCatalog> {
+    if (this.services?.handles(row) === true) return this.services.catalog(tenantId, row);
     const passengers = (row.passengers as { paxId: string; paxType: string }[]) ?? [];
     const { adapter } = await this.flightProviderForOrder(tenantId, row);
     return adapter.listServices(
@@ -2706,6 +2722,15 @@ export class OrdersService {
           return {
             ...base,
             ...issueOperationPolicy(row.status, row.result),
+            outcome: null,
+          } as unknown as OrderOperationRow;
+        }
+        if (row.type === 'add-services' || row.type === 'remove-services') {
+          // Un cambio de servicios no se reintenta desde el historial: se vuelve a pedir con el
+          // catálogo de ahora. En duda, se concilia y nunca se repite.
+          return {
+            ...base,
+            ...servicesOperationPolicy(row.status, row.result),
             outcome: null,
           } as unknown as OrderOperationRow;
         }

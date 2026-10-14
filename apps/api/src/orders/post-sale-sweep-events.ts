@@ -9,7 +9,7 @@
  * minutos taparían lo que hicieron las personas.
  */
 export const POST_SALE_SWEEP_EVENTS = {
-  /** `{ durationMs, tenants, tenantsFailed, examined, adopted, staleCancelClaims, cancellations, hcn, reconciliation, ticketIssues, deadlineAlerts }`. */
+  /** `{ durationMs, tenants, tenantsFailed, examined, adopted, staleCancelClaims, cancellations, hcn, reconciliation, ticketIssues, deadlineAlerts, serviceChanges }`. */
   completed: 'system.post_sale_sweep.completed',
   /**
    * `{ errorClass }`: el nombre de la clase del error, nunca su mensaje. Una corrida que terminó sin
