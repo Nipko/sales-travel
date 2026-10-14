@@ -25,6 +25,7 @@ import {
   type HotelCancelVerifySweepReport,
 } from './hotel-order-cancellation.service.js';
 import {
+  POST_SALE_SWEEP_ALL_TENANTS_FAILED,
   POST_SALE_SWEEP_EVENTS,
   POST_SALE_SWEEP_JOB_ID,
   SYSTEM_JOB_AGGREGATE,
@@ -70,9 +71,10 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * Dos corridas a la vez no se estorban: cada paso es un CAS sobre la fila.
  *
  * Cada corrida deja su rastro en `domain_events` (POST_SALE_SWEEP_EVENTS), en la raíz `platform` y
- * sin actor: `completed` con los conteos y la duración, o `failed` con la clase del error. Es lo que
- * mira Plataforma → Sistema › Procesos para avisar si el barrido dejó de correr. La emisión es
- * best-effort, como toda auditoría: no frena ni cambia el resultado de la corrida.
+ * sin actor: `completed` con los conteos y la duración, o `failed` con la clase del error (también si
+ * no pudo revisar ningún nodo). Es lo que mira Plataforma → Sistema › Procesos para avisar si el
+ * barrido dejó de correr. La emisión es best-effort, como toda auditoría: no frena ni cambia el
+ * resultado de la corrida.
  */
 export type PostSaleSweepReport = HotelVerificationSweepReport & {
   tenants: number;
@@ -146,9 +148,10 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   /**
-   * Una corrida, con su rastro: `completed` al terminar o `failed` si se cae entera (hoy, sólo si no
-   * se puede leer la lista de tenants: lo de cada tenant ya se cuenta en `tenantsFailed`). El error
-   * se relanza igual, para que quien la llamó (el job de BullMQ o el temporizador) lo vea.
+   * Una corrida, con su rastro: `completed` al terminar o `failed` si se cae entera (si no se puede
+   * leer la lista de tenants; el error se relanza igual, para que quien la llamó —el job de BullMQ o
+   * el temporizador— lo vea) o si no pudo revisar ninguno de los nodos (`AllTenantsFailed`: el informe
+   * se devuelve igual). Que fallen algunos nodos no la hace fallar: se cuentan en `tenantsFailed`.
    */
   async run(now: number = Date.now()): Promise<PostSaleSweepReport> {
     const startedAt = Date.now();
@@ -159,8 +162,18 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       await this.trace(POST_SALE_SWEEP_EVENTS.failed, { errorClass: errorName(err) });
       throw err;
     }
+    const durationMs = Math.max(0, Date.now() - startedAt);
+    if (report.tenants > 0 && report.tenantsFailed >= report.tenants) {
+      await this.trace(POST_SALE_SWEEP_EVENTS.failed, {
+        errorClass: POST_SALE_SWEEP_ALL_TENANTS_FAILED,
+        durationMs,
+        tenants: report.tenants,
+        tenantsFailed: report.tenantsFailed,
+      });
+      return report;
+    }
     await this.trace(POST_SALE_SWEEP_EVENTS.completed, {
-      durationMs: Math.max(0, Date.now() - startedAt),
+      durationMs,
       tenants: report.tenants,
       tenantsFailed: report.tenantsFailed,
       examined: report.examined,
@@ -176,17 +189,22 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
   /**
    * El rastro de una corrida, en la raíz `platform` (la lee el superadmin con la RLS de siempre,
    * domain_events_subtree_read). Sin raíz —una base sin sembrar— queda sin tenant: no se pierde, pero
-   * la consola no la ve. `AuditService.emit` no lanza.
+   * la consola no la ve. `AuditService.emit` no lanza, y si alguna vez lo hiciera el rastro se pierde
+   * pero no la corrida: ni su informe ni el error que se relanza cambian por no haberlo escrito.
    */
   private async trace(eventType: string, payload: Record<string, unknown>): Promise<void> {
-    await this.audit.emit({
-      eventType,
-      tenantId: (await this.platformRootId()) ?? null,
-      actorUserId: null,
-      aggregateType: SYSTEM_JOB_AGGREGATE,
-      aggregateId: POST_SALE_SWEEP_JOB_ID,
-      payload,
-    });
+    try {
+      await this.audit.emit({
+        eventType,
+        tenantId: (await this.platformRootId()) ?? null,
+        actorUserId: null,
+        aggregateType: SYSTEM_JOB_AGGREGATE,
+        aggregateId: POST_SALE_SWEEP_JOB_ID,
+        payload,
+      });
+    } catch (err) {
+      this.logger.warn(`post_sale.sweep.trace_failed event=${eventType} error=${errorName(err)}`);
+    }
   }
 
   /**

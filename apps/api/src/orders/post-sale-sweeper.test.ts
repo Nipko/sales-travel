@@ -648,4 +648,58 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
       'system.post_sale_sweep.completed',
     ]);
   });
+
+  it('si no pudo revisar ningún nodo, la corrida cuenta como caída (AllTenantsFailed) y el informe sale igual', async () => {
+    const b = banco([A, B]);
+    b.sweepHcn.mockRejectedValue(new Error('permission denied for table hotel_order_tracking'));
+
+    const report = await b.sweeper.run();
+
+    expect(report).toMatchObject({ tenants: 2, tenantsFailed: 2 });
+    expect(b.emit).toHaveBeenCalledTimes(1);
+    expect(b.emit.mock.calls[0]?.[0]).toEqual({
+      eventType: 'system.post_sale_sweep.failed',
+      tenantId: PLATAFORMA,
+      actorUserId: null,
+      aggregateType: 'system_job',
+      aggregateId: 'post-sale-sweep',
+      payload: {
+        errorClass: 'AllTenantsFailed',
+        durationMs: expect.any(Number) as number,
+        tenants: 2,
+        tenantsFailed: 2,
+      },
+    });
+    expect(JSON.stringify(b.emit.mock.calls)).not.toContain('permission denied');
+
+    // Con un solo nodo revisado la corrida es correcta: los demás se cuentan en tenantsFailed.
+    const c = banco([A, B]);
+    c.sweepHcn.mockImplementation((tenantId) =>
+      tenantId === A ? Promise.reject(new Error('base caída')) : Promise.resolve(informeHcn()),
+    );
+    await c.sweeper.run();
+    expect(c.emit.mock.calls[0]?.[0]).toMatchObject({
+      eventType: 'system.post_sale_sweep.completed',
+      payload: { tenants: 2, tenantsFailed: 1 },
+    });
+  });
+
+  it('el rastro es best-effort: si no se puede escribir, la corrida devuelve su informe o relanza su propio error', async () => {
+    const b = banco([A]);
+    b.emit.mockRejectedValue(new Error('audit caído'));
+    b.sweepTenant.mockResolvedValue(informe({ examined: 3 }));
+
+    await expect(b.sweeper.run()).resolves.toMatchObject({ tenants: 1, examined: 3 });
+
+    const caida = new TypeError('connect ECONNREFUSED');
+    b.listarTenants.mockRejectedValueOnce(caida);
+    await expect(b.sweeper.run()).rejects.toBe(caida);
+
+    // Ni siquiera si lanza sin promesa.
+    b.emit.mockImplementation(() => {
+      throw new Error('audit roto');
+    });
+    await expect(b.sweeper.run()).resolves.toMatchObject({ tenants: 1 });
+    expect(b.emit).toHaveBeenCalledTimes(3);
+  });
 });

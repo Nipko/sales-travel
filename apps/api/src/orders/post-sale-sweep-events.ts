@@ -11,9 +11,20 @@
 export const POST_SALE_SWEEP_EVENTS = {
   /** `{ durationMs, tenants, tenantsFailed, examined, adopted, staleCancelClaims, cancellations, hcn, reconciliation }`. */
   completed: 'system.post_sale_sweep.completed',
-  /** `{ errorClass }`: el nombre de la clase del error, nunca su mensaje. */
+  /**
+   * `{ errorClass }`: el nombre de la clase del error, nunca su mensaje. Una corrida que terminó sin
+   * poder revisar ningún nodo también es una caída: `{ errorClass: 'AllTenantsFailed', durationMs,
+   * tenants, tenantsFailed }` ({@link POST_SALE_SWEEP_ALL_TENANTS_FAILED}).
+   */
   failed: 'system.post_sale_sweep.failed',
 } as const;
+
+/**
+ * La "clase" del `failed` de una corrida que recorrió la lista pero no pudo revisar ningún nodo (una
+ * migración a medias, la RLS que rechaza a `app_user`): si contara como correcta, Sistema › Procesos
+ * diría "Corriendo" mientras el barrido no hace nada, y el Resumen nunca avisaría.
+ */
+export const POST_SALE_SWEEP_ALL_TENANTS_FAILED = 'AllTenantsFailed';
 
 /** El agregado de las tareas automáticas en `domain_events`. */
 export const SYSTEM_JOB_AGGREGATE = 'system_job';

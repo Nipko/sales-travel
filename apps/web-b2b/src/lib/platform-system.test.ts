@@ -147,6 +147,27 @@ describe('el barrido en palabras', () => {
     ]);
   });
 
+  it('corre sin errores pero sin llegar a todos los nodos: no es verde', () => {
+    const status = sweepStatus(sweep({ tenantsFailed: 3 }), NOW);
+    expect(status).toMatchObject({ tone: 'warning', badge: 'Corriendo' });
+    expect(status.details).toContain(
+      'En la última ejecución correcta, 3 nodos no se pudieron revisar.',
+    );
+  });
+
+  it('con la pantalla abierta, el atraso se vuelve a medir: no sigue "Corriendo" junto a "hace 2 horas"', () => {
+    // Leído a las 12:00 con la última correcta a las 11:55; la pantalla sigue abierta dos horas.
+    const later = NOW + 2 * 60 * MIN;
+    expect(sweepStatus(sweep(), later)).toMatchObject({
+      tone: 'danger',
+      badge: 'Detenido',
+      headline: 'No corre hace 2 horas: revisa el contenedor del api.',
+    });
+    // Justo en el borde de los 45 minutos todavía corre.
+    expect(sweepStatus(sweep(), NOW + 40 * MIN).badge).toBe('Corriendo');
+    expect(sweepStatus(sweep(), NOW + 40 * MIN + 1).badge).toBe('Detenido');
+  });
+
   it('sin registro de ninguna ejecución, o con todas cayéndose', () => {
     const never = sweepStatus(
       sweep({

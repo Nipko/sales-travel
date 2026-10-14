@@ -272,7 +272,9 @@ _Requiere tu atención_ (tarjeta **Procesos**). Sin barrido no se verifican las 
 quedaron sin respuesta ni se recupera la conciliación del día.
 
 Cada corrida deja `system.post_sale_sweep.completed` (conteos y duración) o `.failed` (la clase del error) en
-`domain_events`, en el tenant de la plataforma. Qué revisar, en orden:
+`domain_events`, en el tenant de la plataforma. Una corrida que no pudo revisar ningún nodo también queda como
+`.failed`, con `errorClass` `AllTenantsFailed`: suele ser una migración a medias o la base rechazando al api, y el log
+dice qué falló en cada nodo (`post_sale.sweep.*.tenant_failed`). Qué revisar, en orden:
 
 En el VPS, en `/opt/sales-travel`:
 

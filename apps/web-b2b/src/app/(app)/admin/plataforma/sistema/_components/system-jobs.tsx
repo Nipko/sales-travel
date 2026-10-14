@@ -28,7 +28,13 @@ import { loadSystemJobs } from '../../../../../../lib/platform-system-client';
 type ViewState =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly message: string }
-  | { readonly status: 'ready'; readonly data: Jobs; readonly refreshing: boolean };
+  | {
+      readonly status: 'ready';
+      readonly data: Jobs;
+      readonly refreshing: boolean;
+      /** El reloj de este navegador cuando llegó `data`. */
+      readonly loadedAt: number;
+    };
 
 /** Cada cuánto se rehacen los "hace…" sin volver a pedir nada. */
 const CLOCK_TICK_MS = 30_000;
@@ -47,7 +53,8 @@ export function SystemJobs() {
   const load = useCallback(async () => {
     setView((v) => (v.status === 'ready' ? { ...v, refreshing: true } : { status: 'loading' }));
     const res = await loadSystemJobs();
-    setNow(Date.now());
+    const loadedAt = Date.now();
+    setNow(loadedAt);
     if (!res.ok) {
       if (showing.current) {
         toast.error(`No pudimos actualizar los procesos: ${res.message}`);
@@ -58,7 +65,7 @@ export function SystemJobs() {
       return;
     }
     showing.current = true;
-    setView({ status: 'ready', data: res.data, refreshing: false });
+    setView({ status: 'ready', data: res.data, refreshing: false, loadedAt });
   }, []);
 
   useEffect(() => {
@@ -71,6 +78,10 @@ export function SystemJobs() {
   }, []);
 
   const ready = view.status === 'ready' ? view : null;
+  // Los "hace…" y el atraso se miden con el reloj del api (`generatedAt`) más lo que pasó desde que
+  // llegó la lectura: un navegador con la hora corrida no muestra un barrido detenido que corre.
+  const serverNow =
+    ready === null ? now : Date.parse(ready.data.generatedAt) + Math.max(0, now - ready.loadedAt);
 
   return (
     <div className="space-y-4">
@@ -78,7 +89,7 @@ export function SystemJobs() {
         {ready !== null ? (
           <p className="text-xs text-[var(--color-fg-muted)]">
             <time dateTime={ready.data.generatedAt}>
-              {systemUpdatedLabel(ready.data.generatedAt, now)}
+              {systemUpdatedLabel(ready.data.generatedAt, serverNow)}
             </time>
           </p>
         ) : null}
@@ -118,7 +129,7 @@ export function SystemJobs() {
           aria-busy={view.refreshing}
           className={cn('transition-opacity', view.refreshing && 'opacity-60')}
         >
-          <SystemJobsContent jobs={view.data} now={now} />
+          <SystemJobsContent jobs={view.data} now={serverNow} />
         </div>
       )}
     </div>

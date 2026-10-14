@@ -987,10 +987,13 @@ GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos 
                                          -- system.post_sale_sweep.completed {durationMs, tenants,
                                          -- tenantsFailed, examined, adopted, staleCancelClaims,
                                          -- cancellations, hcn, reconciliation} o .failed {errorClass}
-                                         -- en domain_events, en la raíz platform y sin actor (sólo
-                                         -- conteos y códigos; ~35.000 filas al año). Se lee con la
-                                         -- RLS de siempre (domain_events_subtree_read): la red no lo
-                                         -- ve. stale = sin corrida correcta en 45 min (corre cada 15).
+                                         -- (también AllTenantsFailed {durationMs, tenants,
+                                         -- tenantsFailed} si no pudo revisar ningún nodo: no cuenta
+                                         -- como correcta) en domain_events, en la raíz platform y
+                                         -- sin actor (sólo conteos y códigos; ~35.000 filas al
+                                         -- año). Se lee con la RLS de siempre
+                                         -- (domain_events_subtree_read): la red no lo ve. stale = sin
+                                         -- corrida correcta en 45 min (corre cada 15).
                                          -- reconciliation = admin_reconciliation_health(7 días) por
                                          -- proveedor, con stale a las 36 h sin terminar una corrida;
                                          -- catalogs = hotel_provider_city por proveedor (hoy sólo

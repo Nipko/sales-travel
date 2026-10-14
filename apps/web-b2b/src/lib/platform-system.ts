@@ -277,8 +277,17 @@ export interface SweepStatus {
   readonly details: readonly string[];
 }
 
-/** El barrido de post-venta en palabras: si corre, desde cuándo no, y lo que falló en 24 h. */
+/**
+ * El barrido de post-venta en palabras: si corre, desde cuándo no, y lo que falló en 24 h.
+ *
+ * El API dice si está atrasado al armar la lectura; con la pantalla abierta, el atraso se vuelve a
+ * medir con `now`, para que "Corriendo" no siga en verde junto a "hace 3 horas".
+ */
 export function sweepStatus(sweep: PostSaleSweep, now: number): SweepStatus {
+  const stale =
+    sweep.stale ||
+    (sweep.lastOkAt !== null &&
+      now - Date.parse(sweep.lastOkAt) > sweep.staleAfterMinutes * MINUTE_MS);
   const every = `corre cada ${plural(sweep.everyMinutes, 'minuto', 'minutos')}`;
   const details: string[] = [];
   if (sweep.failures24h > 0) {
@@ -288,7 +297,7 @@ export function sweepStatus(sweep: PostSaleSweep, now: number): SweepStatus {
         : `${sweep.failures24h.toLocaleString('es-CO')} ejecuciones con error en 24 h`,
     );
   }
-  if (sweep.lastOk === false && !sweep.stale) {
+  if (sweep.lastOk === false && !stale) {
     details.push('La última ejecución terminó con error; la anterior terminó bien.');
   }
   if (sweep.tenantsFailed !== null && sweep.tenantsFailed > 0) {
@@ -316,7 +325,7 @@ export function sweepStatus(sweep: PostSaleSweep, now: number): SweepStatus {
       details,
     };
   }
-  if (sweep.stale) {
+  if (stale) {
     return {
       tone: 'danger',
       badge: 'Detenido',
@@ -325,7 +334,11 @@ export function sweepStatus(sweep: PostSaleSweep, now: number): SweepStatus {
     };
   }
   return {
-    tone: sweep.failures24h > 0 ? 'warning' : 'success',
+    // Corre, pero con errores o sin llegar a todos los nodos: no es verde.
+    tone:
+      sweep.failures24h > 0 || (sweep.tenantsFailed !== null && sweep.tenantsFailed > 0)
+        ? 'warning'
+        : 'success',
     badge: 'Corriendo',
     headline: `Última ejecución correcta ${agoText(sweep.lastOkAt, now)} · ${every}`,
     details,
