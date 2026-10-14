@@ -566,7 +566,13 @@ export interface SabreFlightToBook {
   readonly arrivalDate?: string;
   readonly arrivalTime?: string;
   readonly source?: SabreFlightSource;
+  /** `:5243`. Con `changeOfGaugeSeats` al lado, son los asientos del PRIMER avión. */
   readonly seats?: readonly SabreBookSeat[];
+  /**
+   * `:5250-5255`, `BookGenericSeat`: los asientos del avión que sale del punto de cambio (el
+   * segundo) en un vuelo con cambio de equipo. Ver la nota de {@link SabreSeatInput}.
+   */
+  readonly changeOfGaugeSeats?: readonly SabreBookSeat[];
 }
 
 /** `PaymentMethod` — `:5730-5757`. Son ÍNDICES dentro de `payment.formsOfPayment[]`, no objetos. */
@@ -788,6 +794,14 @@ const SeatInputSchema = z
  * `areaPreferences` (`:5262-5271`) **no se soporta**: no está ejercitado por la colección, es
  * mutuamente excluyente con `number`, y su error `INVALID_COMBINATION` añade una regla más sobre
  * `changeOfGaugeSeats`. Se añade cuando haya un caso de uso y un fixture, no antes.
+ *
+ * **Cambio de equipo** (SAB-16). El mismo número de vuelo cambia de avión a mitad de camino y cada
+ * avión tiene su mapa: `seats[]` lleva los asientos del primero y `changeOfGaugeSeats[]` los del
+ * que sale del punto de cambio (`:5243-5255`; docs/sabre/03 §4.5). El contrato es ambiguo —«the
+ * departing aircraft»— y la lectura se confirma en CERT (SAB-21). Lo que sí es regla dura: Sabre
+ * exige asiento en los DOS aviones o en ninguno («Change of gauge flights require seat selection
+ * for both the arriving and departing aircraft», lista de errores de createBooking), así que un
+ * viajero que aparece en uno y no en el otro se rechaza aquí, antes de la red.
  */
 export type SabreSeatInput = z.infer<typeof SeatInputSchema>;
 
@@ -907,8 +921,22 @@ const FlightInputSchema = z
     arrivalTime: timeSchema.optional(),
     source: z.enum(SABRE_FLIGHT_SOURCES).optional(),
     seats: z.array(SeatInputSchema).min(1).optional(),
+    changeOfGaugeSeats: z.array(SeatInputSchema).min(1).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((flight, ctx) => {
+    if (flight.changeOfGaugeSeats === undefined) return;
+    const first = new Set((flight.seats ?? []).map((seat) => seat.travelerPosition));
+    const second = new Set(flight.changeOfGaugeSeats.map((seat) => seat.travelerPosition));
+    const same = first.size === second.size && [...first].every((p) => second.has(p));
+    if (!same) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['changeOfGaugeSeats'],
+        message: 'change_of_gauge_needs_both_aircraft',
+      });
+    }
+  });
 
 export type SabreFlightInput = z.infer<typeof FlightInputSchema>;
 
@@ -1376,6 +1404,13 @@ function buildFlight(flight: SabreFlightInput, travelers: readonly unknown[]): S
     ...(flight.seats === undefined
       ? {}
       : { seats: flight.seats.map((seat) => buildAtpcoSeat(seat, travelers)) }),
+    ...(flight.changeOfGaugeSeats === undefined
+      ? {}
+      : {
+          changeOfGaugeSeats: flight.changeOfGaugeSeats.map((seat) =>
+            buildAtpcoSeat(seat, travelers),
+          ),
+        }),
   };
 }
 

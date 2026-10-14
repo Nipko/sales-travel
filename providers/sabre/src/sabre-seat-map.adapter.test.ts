@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Offer } from '@sales-travel/canonical';
+import { SeatMapSchema, type Offer, type SeatMapSegment } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
 import type { FlightSearchCriteria, SearchContext, SeatMapPort } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import { SABRE_HOSTS, type SabreConfig } from './config';
+import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import { SabreApiError, SabreConfigError } from './errors';
 import { SabreHttpClient } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
@@ -585,5 +586,85 @@ describe('SabreSeatMapAdapter — D1: ningún PAN de la entrada llega al cable',
         `offer.provider.raw.${SABRE_RAW_KEYS.pricePassengerBindings}.0.pricePassengerId`,
       ),
     ).toBe('dropped');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// SAB-16 — lo vendible es lo que el bloque de la reserva puede pedir
+// ---------------------------------------------------------------------------------------------
+
+describe('SabreSeatMapAdapter — cambio de equipo y bloque de la reserva (SAB-16)', () => {
+  /** El ejemplo de payload con el primer tramo partido en dos aviones (no hay ejemplo oficial). */
+  function changeOfGauge(): Json {
+    const body = structuredClone(fixture('getseats-payload-200.json'));
+    const response = body['response'] as Json;
+    const segment = (response['segments'] as Json[])[0]!;
+    segment['isChangeOfGauge'] = true;
+    segment['flightLegs'] = [
+      { id: '0', departureAirportCode: 'SCL', arrivalAirportCode: 'ANF', aircraftCode: '320' },
+      { id: '1', departureAirportCode: 'ANF', arrivalAirportCode: 'LIM', aircraftCode: '321' },
+    ];
+    const seatMaps = response['seatMaps'] as Json[];
+    const second = structuredClone(seatMaps[0]!);
+    second['flightLegRef'] = '1';
+    seatMaps.splice(1, 0, second);
+    return body;
+  }
+
+  /** La misma oferta revalidada con Flight Check: reserva por `flightOffer`. */
+  function flightChecked(): Offer {
+    const offer = latamOffer();
+    return {
+      ...offer,
+      provider: {
+        ...offer.provider,
+        raw: {
+          [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId]: 'checked-1',
+          [SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds]: ['checked-1-1'],
+        },
+      },
+    };
+  }
+
+  const sellable = (segment: SeatMapSegment): boolean =>
+    segment.cabins.some((cabin) => cabin.rows.some((row) => row.seats.some((s) => s.available)));
+
+  it('reserva por flightOffer: los dos aviones del tramo se pintan, pero no se ofrecen', async () => {
+    const h = wire({ [SABRE_GETSEATS_PAYLOAD_PATH]: [ok(changeOfGauge())] });
+    const map = await h.port.getSeatMap(flightChecked(), criteria(), CTX);
+
+    const legs = map.segments.filter((segment) => segment.segmentRef === 0);
+    expect(legs.map((segment) => [segment.legIndex, segment.displayOnly])).toEqual([
+      [0, true],
+      [1, true],
+    ]);
+    for (const leg of legs) {
+      expect(sellable(leg)).toBe(false);
+      for (const cabin of leg.cabins) {
+        for (const row of cabin.rows) for (const seat of row.seats) expect(seat.offers).toEqual([]);
+      }
+    }
+    // El tramo sin cambio de equipo sigue vendible.
+    expect(sellable(map.segments.find((segment) => segment.segmentRef === 1)!)).toBe(true);
+    expect(map.warnings).toContain('seat-map-change-of-gauge-not-bookable');
+    // El canónico se sigue cumpliendo: ningún tramo de exhibición ofrece un asiento.
+    expect(SeatMapSchema.safeParse(map).success).toBe(true);
+  });
+
+  it('reserva por flightDetails: los dos aviones se ofrecen (changeOfGaugeSeats)', async () => {
+    const h = wire({ [SABRE_GETSEATS_PAYLOAD_PATH]: [ok(changeOfGauge())] });
+    const map = await h.port.getSeatMap(latamOffer(), criteria(), CTX);
+
+    const legs = map.segments.filter((segment) => segment.segmentRef === 0);
+    expect(legs.map((segment) => segment.changeOfGauge)).toEqual([true, true]);
+    expect(legs.every(sellable)).toBe(true);
+    expect(map.warnings).not.toContain('seat-map-change-of-gauge-not-bookable');
+  });
+
+  it('sin cambio de equipo la oferta revalidada no pierde nada', async () => {
+    const h = wire({ [SABRE_GETSEATS_PAYLOAD_PATH]: [ok(fixture('getseats-payload-200.json'))] });
+    const map = await h.port.getSeatMap(flightChecked(), criteria(), CTX);
+    expect(map.segments.every(sellable)).toBe(true);
+    expect(map.warnings).toEqual(['seat-price-undetermined']);
   });
 });

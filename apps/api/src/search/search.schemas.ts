@@ -14,3 +14,16 @@ export const OfferPriceBodySchema = z.object({
   searchCriteria: FlightSearchCriteriaSchema,
 });
 export type OfferPriceBody = z.infer<typeof OfferPriceBodySchema>;
+
+/**
+ * El mapa de asientos de una oferta antes de reservarla (SAB-16). La misma oferta y los mismos
+ * criterios que la revalidación: de los criterios salen los índices de pasajero y quién viaja con un
+ * infante en brazos. `strict`: el mapa no recibe nada más del navegador.
+ */
+export const SeatMapBodySchema = z
+  .object({
+    offer: OfferSchema,
+    searchCriteria: FlightSearchCriteriaSchema,
+  })
+  .strict();
+export type SeatMapBody = z.infer<typeof SeatMapBodySchema>;

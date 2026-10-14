@@ -13,6 +13,7 @@ import type {
   OrderCreateResult,
   OrderManagePort,
   SearchContext,
+  SeatMapPort,
   TicketingPort,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
@@ -152,6 +153,15 @@ export function supportsTicketing<T extends object>(adapter: T): adapter is T & 
 }
 
 /**
+ * ¿Este adapter sabe pintar el mapa de asientos de una oferta (`SeatMapPort`)? Por presencia del
+ * método, como {@link supportsTicketing}. Que sepa pintarlo no quiere decir que la elección de
+ * asiento esté encendida: eso lo dice la capacidad `seatMap` del factory.
+ */
+export function supportsSeatMap<T extends object>(adapter: T): adapter is T & SeatMapPort {
+  return typeof (adapter as { getSeatMap?: unknown }).getSeatMap === 'function';
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -181,6 +191,12 @@ export interface ProviderCapabilities {
    * emitida, y un proveedor nuevo no la hereda por olvido.
    */
   readonly void?: boolean;
+  /**
+   * Elegir asiento al reservar (SAB-16): pintar el mapa de una oferta (`SeatMapPort`) y reservar
+   * los asientos SIN CARGO junto con el vuelo. Ausente = `false`: la reserva de un asiento se
+   * certifica por proveedor antes de ofrecerla, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly seatMap?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;
@@ -700,5 +716,24 @@ export class TicketVoidNotAvailableError extends ConflictException {
   constructor() {
     super(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
     this.name = 'TicketVoidNotAvailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando el proveedor de la tarifa no deja elegir asiento desde aquí. */
+export const SEAT_SELECTION_NOT_AVAILABLE_MESSAGE =
+  'La elección de asiento no está disponible para esta tarifa. Puedes reservar sin asiento.';
+
+/**
+ * El proveedor de la oferta no ofrece la elección de asiento: no implementa el mapa
+ * (`SeatMapPort`) o la plataforma no la encendió (capacidad `seatMap`). Se decide antes de leer
+ * nada. 400 y no 501: no es un error del sistema, es una tarifa sin esta opción; se reserva sin
+ * asiento.
+ */
+export class SeatSelectionNotAvailableError extends BadRequestException {
+  readonly reason = 'SEAT_SELECTION_NOT_AVAILABLE';
+
+  constructor() {
+    super(SEAT_SELECTION_NOT_AVAILABLE_MESSAGE);
+    this.name = 'SeatSelectionNotAvailableError';
   }
 }

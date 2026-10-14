@@ -58,6 +58,11 @@ interface PassengerFormProps {
   disabled?: boolean;
   disabledReason?: string;
   onSubmit: (passengers: Passenger[], contactInfo: ContactInfo) => Promise<void>;
+  /**
+   * Los nombres de pila a medida que se escriben, por `requestedTravelerIndex`. Los usa la elección
+   * de asientos para decir «Ana 12C» en vez de «Adulto 1 12C» (SAB-16).
+   */
+  onGivenNamesChange?: (names: readonly string[]) => void;
 }
 
 export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
@@ -189,8 +194,15 @@ export function PassengerForm({
   disabled = false,
   disabledReason,
   onSubmit,
+  onGivenNamesChange,
 }: PassengerFormProps) {
   const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
+
+  // Una clave estable por contenido: el efecto avisa cuando cambia un nombre, no en cada render.
+  const givenNames = JSON.stringify(passengers.map((p) => p.givenName.trim()));
+  useEffect(() => {
+    onGivenNamesChange?.(JSON.parse(givenNames) as string[]);
+  }, [givenNames, onGivenNamesChange]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // `attempted` activa el marcado de errores recién cuando el usuario intenta reservar.

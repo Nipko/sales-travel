@@ -157,6 +157,36 @@ export const SABRE_WARNING_ERROR_CATEGORY = 'WARNING';
  */
 export const SABRE_ACL_ISSUE_CATEGORY = 'ACL';
 
+/**
+ * `Error.type` de `createBooking` que hablan SÓLO de asientos (SAB-16), del catálogo oficial
+ * (`help-documentation-create-booking-error-list.txt`) y de docs/sabre/03 §4.5. Con ellos la
+ * incidencia sale con `itemKind: 'seat'` y el saga puede cerrar «el vuelo sí, el asiento no».
+ *
+ * Lista CERRADA y no un prefijo: un tipo que no está aquí queda sin atribuir y la reserva escala,
+ * que es el lado seguro. `UNABLE_TO_END_TRANSACTION_TRAVELER_NOT_ELIGIBLE_FOR_PREMIUM_SEATS` no
+ * entra a propósito: es un fallo al cerrar la transacción del PNR entero, no de un asiento.
+ */
+const SABRE_SEAT_ISSUE_TYPES: ReadonlySet<string> = new Set([
+  'UNABLE_TO_BOOK_SEATS',
+  'UNABLE_TO_BOOK_SEATS_CHECK_ASSIGNMENT',
+  'UNABLE_TO_BOOK_SEATS_CHECK_TRAVELERS',
+  'UNABLE_TO_BOOK_SEATS_TRAVELERS_ISSUE',
+  'UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE',
+  'UNABLE_TO_BOOK_SEATS_AREA_PREFERENCE_NOT_ACCEPTED',
+  'PARTIAL_SEAT_ASSIGNMENT',
+  'AIRCRAFT_CHANGE',
+  'DUPLICATE_SEAT_ASSIGNMENT',
+  'SEAT_NOT_ALLOWED_FOR_BOOKING',
+  'SEATS_OFFER_EXPIRED',
+  'SEATS_OFFER_INVALID',
+  'SEATS_OFFER_UNAVAILABLE',
+  'SEATS_OFFER_ID_MISSING',
+  'SEATS_NUMBER_INVALID',
+  'SEATS_ASSIGNMENT_INVALID',
+  'SEATS_DUPLICATE_ASSOCIATION',
+  'SEATS_NOT_AVAILABLE',
+]);
+
 // ---------------------------------------------------------------------------------------------
 // Zod en el borde
 // ---------------------------------------------------------------------------------------------
@@ -210,13 +240,14 @@ const SabreFlightItemSchema = z.object({
   itemId: ItemIdSchema,
   flightStatusCode: z.string().optional(),
   flightStatusName: z.string().optional(),
-  /**
-   * `:2027`. ⚠️ `changeOfGaugeSeats` (`:2038`) NO se lee **porque el builder tampoco lo pide**
-   * (`create.request.builder.ts`, nota de `SabreSeatInput`). Las dos mitades se mueven juntas o
-   * no se mueven: leer un asiento que nunca pedimos no arregla nada y pedir uno que no leemos es
-   * el fallo que este bloque existe para cerrar.
-   */
+  /** `:2027`. Con cambio de equipo, los asientos del primer avión. */
   seats: z.array(SabreSeatSchema).optional(),
+  /**
+   * `:2037-2043`. Los asientos del segundo avión en un vuelo con cambio de equipo. Se lee desde que
+   * el builder lo pide (SAB-16): las dos mitades se mueven juntas, porque pedir un asiento que no
+   * se lee es el fallo que este bloque existe para cerrar.
+   */
+  changeOfGaugeSeats: z.array(SabreSeatSchema).optional(),
 });
 
 const SabreHotelItemSchema = z.object({
@@ -282,8 +313,29 @@ export class SabreCreateBookingMapError extends Error {
  * respuesta, es una propiedad del endpoint, y el compilador impide escribir código que espere lo
  * contrario.
  */
+/**
+ * Un asiento que la respuesta nombra, con su posición. `Seat` no trae `itemId` ni viajero: la
+ * posición en el array ES el viajero (`:2027-2032`, «the first seat corresponds to the first
+ * traveler»), y el vuelo es el de su bloque. Es lo que permite comprobar que cada asiento PEDIDO
+ * volvió, y no sólo que los que volvieron están bien.
+ */
+export interface SabreAssignedSeat {
+  /** Posición, base cero, del vuelo en `booking.flights[]`. */
+  readonly flightPosition: number;
+  /** Posición, base cero, del viajero en `travelers[]`. */
+  readonly travelerPosition: number;
+  /** 0 = `seats[]`; 1 = `changeOfGaugeSeats[]` (el segundo avión). */
+  readonly legIndex: number;
+  readonly number: string;
+  readonly status: OrderItemStatus;
+}
+
 export interface SabreCreateBookingMapped {
   readonly order: OrderCreateResult;
+  /** Los asientos que la respuesta nombra, con su posición. Vacío si no hay reserva legible. */
+  readonly seats: readonly SabreAssignedSeat[];
+  /** Cuántos vuelos trae `booking.flights[]`: dice si las posiciones se pueden cruzar con la oferta. */
+  readonly flightCount: number;
   /** Siempre `false`. Modificar exige encadenar `getBooking` (docs/sabre/04 §6.3). */
   readonly hasBookingSignature: typeof SABRE_CREATE_RETURNS_BOOKING_SIGNATURE;
   /**
@@ -368,7 +420,7 @@ function toMapped(
   extraIssues: readonly ProviderIssue[],
 ): SabreCreateBookingMapped {
   const issues = [...extraIssues, ...(response.errors ?? []).map(toProviderIssue)];
-  const items = collectItems(response.booking);
+  const { items, seats } = collectItems(response.booking);
   const locator = response.confirmationId ?? response.booking?.bookingId;
 
   const order: OrderCreateResult = {
@@ -383,6 +435,8 @@ function toMapped(
 
   return {
     order,
+    seats,
+    flightCount: response.booking?.flights?.length ?? 0,
     hasBookingSignature: SABRE_CREATE_RETURNS_BOOKING_SIGNATURE,
     ...(response.timestamp === undefined ? {} : { timestamp: response.timestamp }),
   };
@@ -408,33 +462,54 @@ function toProviderIssue(error: z.infer<typeof SabreErrorSchema>): ProviderIssue
     ...(error.fieldPath === undefined ? {} : { fieldPath: error.fieldPath }),
     ...(error.fieldName === undefined ? {} : { fieldName: error.fieldName }),
     ...(error.fieldValue === undefined ? {} : { fieldValue: error.fieldValue }),
+    ...(SABRE_SEAT_ISSUE_TYPES.has(error.type.trim().toUpperCase())
+      ? { itemKind: 'seat' as const }
+      : {}),
   };
 }
 
+/**
+ * El número de un asiento, como lo pide el contrato (`^[0-9]+[A-Z]$`, `:5293`). Uno que no encaja
+ * no se repite hacia arriba: sale en `items[]` sin número, con su estado, y no se cruza con lo pedido.
+ */
+const SEAT_NUMBER = /^[0-9]{1,3}[A-Z]$/;
+
 // El puerto declara `items` mutable, así que aquí se devuelve un array normal en vez de un
 // `readonly` que obligaría a copiarlo en el borde.
-function collectItems(booking: z.infer<typeof SabreBookingSchema> | undefined): OrderItemResult[] {
-  if (booking === undefined) return [];
+function collectItems(booking: z.infer<typeof SabreBookingSchema> | undefined): {
+  items: OrderItemResult[];
+  seats: SabreAssignedSeat[];
+} {
+  if (booking === undefined) return { items: [], seats: [] };
   const items: OrderItemResult[] = [];
+  const seats: SabreAssignedSeat[] = [];
 
-  for (const flight of booking.flights ?? []) {
+  (booking.flights ?? []).forEach((flight, flightPosition) => {
     items.push(toItem('flight', flight.itemId, flight.flightStatusCode, flight.flightStatusName));
     // Los asientos van pegados a SU vuelo y no en un bloque aparte: `Seat` no trae `itemId`, así
     // que la posición en `items[]` es lo único que dice a qué tramo pertenece el asiento.
-    for (const seat of flight.seats ?? []) {
-      // `null` y el `Seat` vacío son el hueco que declara el contrato: ese pasajero no lleva
-      // asiento en este tramo, y eso no es un fallo. `number` es el único campo obligatorio de
-      // `Seat` (`:2413-2414`), así que sin él la entrada no describe ningún asiento.
-      if (seat === null || seat.number === undefined) continue;
-      items.push({
-        kind: 'seat',
-        // Sin `providerItemId`: ver {@link buildCompensation}.
-        status: classifySeatStatus(seat.statusCode, seat.statusName),
-        ...(seat.statusCode === undefined ? {} : { statusCode: seat.statusCode }),
-        ...(seat.statusName === undefined ? {} : { message: seat.statusName }),
+    const legs = [flight.seats ?? [], flight.changeOfGaugeSeats ?? []] as const;
+    legs.forEach((legSeats, legIndex) => {
+      legSeats.forEach((seat, travelerPosition) => {
+        // `null` y el `Seat` vacío son el hueco que declara el contrato: ese pasajero no lleva
+        // asiento en este tramo, y eso no es un fallo. `number` es el único campo obligatorio de
+        // `Seat` (`:2413-2414`), así que sin él la entrada no describe ningún asiento.
+        if (seat === null || seat.number === undefined) return;
+        const status = classifySeatStatus(seat.statusCode, seat.statusName);
+        items.push({
+          kind: 'seat',
+          // Sin `providerItemId`: ver {@link buildCompensation}.
+          status,
+          ...(seat.statusCode === undefined ? {} : { statusCode: seat.statusCode }),
+          ...(seat.statusName === undefined ? {} : { message: seat.statusName }),
+          ...(SEAT_NUMBER.test(seat.number) ? { seatNumber: seat.number } : {}),
+        });
+        if (SEAT_NUMBER.test(seat.number)) {
+          seats.push({ flightPosition, travelerPosition, legIndex, number: seat.number, status });
+        }
       });
-    }
-  }
+    });
+  });
   for (const hotel of booking.hotels ?? []) {
     items.push(toItem('hotel', hotel.itemId, hotel.hotelStatusCode, hotel.hotelStatusName));
   }
@@ -442,7 +517,7 @@ function collectItems(booking: z.infer<typeof SabreBookingSchema> | undefined): 
     items.push(toItem('car', car.itemId, car.carStatusCode, car.carStatusName));
   }
 
-  return items;
+  return { items, seats };
 }
 
 function toItem(

@@ -229,8 +229,23 @@ function vueloSiAsientoNo(): OrderCreateResult {
         fieldPath: 'flights[0].seats[0]',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO_DEL_PASAJERO,
+        itemKind: 'seat',
       },
     ],
+    compensation: { cancellableItemIds: ['12'] },
+  });
+}
+
+/** Un parcial que NO es de asientos: el hotel del paquete se cayó y el vuelo quedó. */
+function vueloSiHotelNo(): OrderCreateResult {
+  return resultado({
+    outcome: 'PARTIAL',
+    pnr: 'ABC123',
+    items: [
+      { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+      { kind: 'hotel', providerItemId: 'H1', status: 'FAILED', statusCode: 'UC' },
+    ],
+    issues: [{ severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'HOTEL_NOT_AVAILABLE' }],
     compensation: { cancellableItemIds: ['12'] },
   });
 }
@@ -243,12 +258,22 @@ describe('OrdersService.createOrder — el desenlace decide el estado de la fila
   });
 
   it('PARTIAL NO se persiste como confirmed: hay PNR pero hay un ítem fuera', async () => {
-    const b = banco(vueloSiAsientoNo());
+    const b = banco(vueloSiHotelNo());
     await b.orders.createOrder(TENANT, USER, dto());
 
     expect(b.insertado()?.status).not.toBe('confirmed');
     expect(b.insertado()?.status).toBe('pending');
     // Y sin embargo la fila conserva el PNR: sin él no se puede compensar lo que sí entró.
+    expect(b.insertado()?.provider_order_id).toBe('ABC123');
+  });
+
+  it('SAB-16: todos los vuelos confirmados y sólo el asiento fuera se cierra confirmada', async () => {
+    // La única excepción a la regla de arriba, y es acotada: el vendedor eligió el asiento en la
+    // pantalla en la que ahora lee que no quedó. Dejarla `pending` la dejaba sin poder emitirse.
+    const b = banco(vueloSiAsientoNo());
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(b.insertado()?.status).toBe('confirmed');
     expect(b.insertado()?.provider_order_id).toBe('ABC123');
   });
 
@@ -429,7 +454,7 @@ describe('OrdersController.create — lo que sale por HTTP', () => {
   });
 
   it('un PARTIAL no dispara el email de "reserva confirmada"', async () => {
-    const b = bancoHttp(vueloSiAsientoNo());
+    const b = bancoHttp(vueloSiHotelNo());
     await b.controller.create(USER, dto());
     await new Promise((r) => setTimeout(r, 0));
 

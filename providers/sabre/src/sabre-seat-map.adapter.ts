@@ -1,10 +1,11 @@
 import type { LoggerPort } from '@sales-travel/core';
-import type { Offer, SeatMap } from '@sales-travel/canonical';
+import type { Offer, SeatMap, SeatMapSegment } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, SearchContext, SeatMapPort } from '@sales-travel/domain';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
 import type { SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
+import { sabreBookingLaneOf } from './sabre-order-create.adapter';
 import {
   buildSabreGetSeatsRequest,
   type SabreGetSeatsMode,
@@ -106,7 +107,7 @@ export class SabreSeatMapAdapter implements SeatMapPort {
       passengerIndexById: plan.passengerIndexById,
     });
 
-    const seatMap: SeatMap =
+    const authorized: SeatMap =
       result.partialUnauthorized.length === 0
         ? mapped.seatMap
         : {
@@ -115,6 +116,7 @@ export class SabreSeatMapAdapter implements SeatMapPort {
             // mapa llega capado y el vendedor tiene que saberlo (docs/sabre/03 §4.2).
             warnings: [...new Set([...mapped.seatMap.warnings, 'seat-map-partial-unauthorized'])],
           };
+    const seatMap = bookableOnLane(authorized, offer);
 
     const displayOnlySegments = seatMap.segments.filter((segment) => segment.displayOnly).length;
     const meta = {
@@ -156,6 +158,45 @@ export class SabreSeatMapAdapter implements SeatMapPort {
   private log(level: SabreLogLevel, message: string, meta: Record<string, unknown>): void {
     logRedacted(this.deps.logger, level, message, meta);
   }
+}
+
+/**
+ * Lo que este mapa promete vendible tiene que poder reservarse por el bloque con que va a salir la
+ * reserva de ESTA oferta (SAB-16). Una oferta revalidada —NDC o ATPCO con Flight Check— reserva por
+ * `flightOffer.seatOffers[]`, que no tiene dónde pedir el asiento del segundo avión de un cambio de
+ * equipo; y Sabre exige asiento en los dos aviones o en ninguno. Así que, en ese bloque, los dos
+ * aviones de un tramo con cambio de equipo salen como «elección de asiento no disponible»
+ * (`displayOnly`): se pintan, pero no se ofrecen. El bloque `flightDetails` sí los reserva
+ * (`changeOfGaugeSeats`).
+ */
+export function bookableOnLane(seatMap: SeatMap, offer: Offer): SeatMap {
+  if (sabreBookingLaneOf(offer) !== 'flightOffer') return seatMap;
+  if (!seatMap.segments.some((segment) => segment.changeOfGauge)) return seatMap;
+  return {
+    segments: seatMap.segments.map((segment) =>
+      segment.changeOfGauge ? notBookable(segment) : segment,
+    ),
+    warnings: [...new Set([...seatMap.warnings, 'seat-map-change-of-gauge-not-bookable'])],
+  };
+}
+
+function notBookable(segment: SeatMapSegment): SeatMapSegment {
+  const anyFree = segment.cabins.some((cabin) =>
+    cabin.rows.some((row) => row.seats.some((seat) => seat.available)),
+  );
+  return {
+    ...segment,
+    // `displayOnly` dice «hay sitio y no se vende por aquí». Un avión sin un solo asiento libre
+    // sigue siendo un avión lleno: no se disfraza de otra cosa.
+    displayOnly: segment.displayOnly || anyFree,
+    cabins: segment.cabins.map((cabin) => ({
+      ...cabin,
+      rows: cabin.rows.map((row) => ({
+        ...row,
+        seats: row.seats.map((seat) => ({ ...seat, available: false, offers: [] })),
+      })),
+    })),
+  };
 }
 
 /** Avisos agregados por código: 300 asientos repiten el mismo, y el número es lo que importa. */
