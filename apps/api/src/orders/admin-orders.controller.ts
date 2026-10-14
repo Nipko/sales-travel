@@ -2,16 +2,21 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import type { OrderCancelResult } from '@sales-travel/domain';
+import type { Response } from 'express';
+import { EXPORT_ROWS_HEADER } from '../audit/admin-audit.controller.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { RequireRecentMfa } from '../auth/decorators/require-recent-mfa.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
 import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
@@ -29,18 +34,20 @@ import type { AdminOrderDetail, AdminOrdersPage } from './admin-order-view.js';
 import {
   AdminOrderActionSchema,
   AdminOrderCancelSchema,
+  AdminOrdersExportQuerySchema,
   AdminOrdersQuerySchema,
   type AdminOrderActionDto,
   type AdminOrderCancelDto,
+  type AdminOrdersExportQuery,
   type AdminOrdersQuery,
 } from './admin-orders.schemas.js';
 import { AdminOrdersService } from './admin-orders.service.js';
 import type { OrderConfirmationSent } from './order-confirmation.service.js';
 
 /**
- * Plataforma → Reservas de la red: buscar cualquier reserva de cualquier nodo, abrir su ficha y,
- * desde ella, la post-venta que la agencia haría (FD-1 C): reenviar la confirmación, consultar al
- * proveedor, reintentar una cancelación fallida y cancelar en su nombre.
+ * Plataforma → Reservas de la red: buscar cualquier reserva de cualquier nodo, exportar la vista
+ * filtrada a CSV, abrir su ficha y, desde ella, la post-venta que la agencia haría (FD-1 C): reenviar
+ * la confirmación, consultar al proveedor, reintentar una cancelación fallida y cancelar en su nombre.
  *
  * Sólo el superadmin, como el resto del panel de la plataforma: `@Roles` deja fuera a los roles de
  * nodo y {@link SuperadminGuard} a `platform_admin`. Ninguna ruta es venta (nunca
@@ -68,6 +75,28 @@ export class AdminOrdersController {
     @Query(new ZodValidationPipe(AdminOrdersQuerySchema)) query: AdminOrdersQuery,
   ): Promise<AdminOrdersPage> {
     return this.orders.search(userId, query);
+  }
+
+  /**
+   * La vista filtrada de la lista, entera, en CSV: hasta 5.000 reservas (más, 422 EXPORT_TOO_LARGE).
+   * `X-Export-Rows` dice cuántas. Exportar es de alto impacto (founder D1 = C): pide el 2FA de los
+   * últimos 10 minutos y queda en la auditoría (`platform.orders.exported`).
+   *
+   * Va antes de `:id`: Express prueba las rutas en orden y `export` no es un UUID.
+   */
+  @Get('export')
+  @RequireRecentMfa()
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  async export(
+    @CurrentUser() userId: string,
+    @Query(new ZodValidationPipe(AdminOrdersExportQuerySchema)) query: AdminOrdersExportQuery,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    const out = await this.orders.exportCsv(userId, query);
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.setHeader(EXPORT_ROWS_HEADER, String(out.rows));
+    return out.csv;
   }
 
   @Get(':id')

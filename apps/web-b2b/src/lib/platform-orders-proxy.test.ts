@@ -5,6 +5,7 @@ import {
   adminOrderEstimateTarget,
   adminOrderPlan,
   adminOrderRetryPlan,
+  adminOrdersExportTarget,
   adminOrdersPlan,
 } from './platform-orders-proxy';
 
@@ -113,6 +114,51 @@ describe('adminOrdersPlan', () => {
       status: 405,
       error: 'Operación no admitida en esta ruta.',
     });
+  });
+});
+
+describe('adminOrdersExportTarget', () => {
+  const target = (query: string) => adminOrdersExportTarget(new URLSearchParams(query));
+  const FILTROS = new URLSearchParams({
+    tenantId: NODE,
+    subtree: 'false',
+    vertical: 'hotels',
+    provider: 'tbo-hotels',
+    status: 'pending,cancelled,pending',
+    from: '2026-10-01',
+    to: '2026-10-13',
+    q: 'ana@cliente.com',
+    attention: 'true',
+  }).toString();
+
+  it('los mismos filtros que la lista, rearmados igual, hacia /admin/orders/export', () => {
+    const res = target(FILTROS);
+    const list = plan(FILTROS);
+    expect(res.ok && list.ok).toBe(true);
+    if (!res.ok || !list.ok) return;
+    expect(res.path).toBe(list.path.replace('/admin/orders?', '/admin/orders/export?'));
+    expect(target('')).toEqual({ ok: true, path: '/admin/orders/export' });
+  });
+
+  it('sin página: cursor o limit son un 400, como en el API', () => {
+    expect(target('cursor=abc')).toEqual({ ok: false, error: 'Filtro desconocido: cursor.' });
+    expect(target('limit=10')).toEqual({ ok: false, error: 'Filtro desconocido: limit.' });
+  });
+
+  it('lo que la lista rechaza, la exportación también', () => {
+    for (const query of [
+      'tenant_id=x',
+      'status=pending&status=failed',
+      'tenantId=no-uuid',
+      'vertical=trenes',
+      'from=2026-10-13&to=2026-10-01',
+      'q=a',
+      'attention=1',
+    ]) {
+      const list = plan(query);
+      expect(list.ok, query).toBe(false);
+      expect(target(query), query).toEqual({ ok: false, error: !list.ok ? list.error : '' });
+    }
   });
 });
 

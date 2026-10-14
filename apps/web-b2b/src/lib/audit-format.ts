@@ -475,13 +475,22 @@ function operationDetail(
       return [provider(p['providerCode'] ?? p['provider'])];
     case 'ProviderAccountIssueDetected':
       return [provider(p['providerCode'] ?? p['provider'])];
-    case 'platform.audit.exported':
-    case 'platform.orders.exported': {
+    case 'platform.audit.exported': {
       const rows = count(p['rows']);
       return [
         rows === null
           ? null
           : plural(rows, 'fila', 'filas') + (p['truncated'] === true ? ' (hasta el tope)' : ''),
+      ];
+    }
+    case 'platform.orders.exported': {
+      // Nunca se corta: con más de 5.000 no sale archivo. La búsqueda por correo del cliente no
+      // trae el correo (sólo `qByClientEmail`).
+      const rows = count(p['rows']);
+      const filters = record(p['filters']);
+      return [
+        rows === null ? null : plural(rows, 'reserva', 'reservas'),
+        filters?.['qByClientEmail'] === true ? 'buscando por el correo de un cliente' : null,
       ];
     }
     case 'system.post_sale_sweep.completed': {

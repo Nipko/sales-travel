@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { ADMIN_ORDERS_EXPORT_MAX_ROWS } from './admin-orders.schemas.js';
 
 /**
  * Los errores propios de Plataforma → Reservas de la red. La puerta (sólo el superadmin) es de
@@ -23,6 +29,22 @@ export class AdminOrderWithoutLocatorError extends ConflictException {
   constructor() {
     super('La reserva no tiene localizador del proveedor: no hay nada que consultar ni cancelar.');
     this.name = 'AdminOrderWithoutLocatorError';
+  }
+}
+
+/**
+ * Con estos filtros hay más reservas de las que caben en una exportación. 422: no se manda un archivo
+ * a medias, que en una planilla de contabilidad pasaría por completo.
+ */
+export class AdminOrdersExportTooLargeError extends UnprocessableEntityException {
+  readonly reason = 'EXPORT_TOO_LARGE';
+
+  constructor() {
+    super(
+      `Hay más de ${ADMIN_ORDERS_EXPORT_MAX_ROWS.toLocaleString('es-CO')} reservas con estos ` +
+        'filtros: acota las fechas o el nodo.',
+    );
+    this.name = 'AdminOrdersExportTooLargeError';
   }
 }
 

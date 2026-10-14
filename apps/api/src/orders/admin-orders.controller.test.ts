@@ -63,6 +63,7 @@ function banco() {
 
 type RouteName =
   | 'list'
+  | 'export'
   | 'detail'
   | 'sendConfirmation'
   | 'retrieve'
@@ -74,6 +75,7 @@ type RouteName =
 const ROUTES: Record<RouteName, object> = AdminOrdersController.prototype;
 const ALL_ROUTES: readonly RouteName[] = [
   'list',
+  'export',
   'detail',
   'sendConfirmation',
   'retrieve',
@@ -257,7 +259,7 @@ describe('AdminOrdersController: acciones de post-venta', () => {
   });
 
   it('los ids de la reserva y de la operación son UUID: lo demás es un 400', () => {
-    for (const name of ALL_ROUTES.filter((n) => n !== 'list')) {
+    for (const name of ALL_ROUTES.filter((n) => n !== 'list' && n !== 'export')) {
       expect(pipesOf(name, 'id')[0], name).toBeInstanceOf(ParseUUIDPipe);
     }
     expect(pipesOf('retry', 'opId')[0]).toBeInstanceOf(ParseUUIDPipe);

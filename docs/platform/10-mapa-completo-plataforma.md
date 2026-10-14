@@ -969,7 +969,11 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
                                          -- 30 días por defecto, hasta 366. tenantId = el subárbol de
                                          -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
-                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- monedas; cada monto con su moneda y el exponente de sus
+                                         -- unidades menores: el de reservas es SIEMPRE 2, porque
+                                         -- orders.total_amount va en centésimos en toda moneda
+                                         -- (Money.fromMajor), y el de carteras es el ISO 4217),
+                                         -- tendencia de 12 meses, top 10 nodos por reservas
                                          -- confirmadas, red (nodos, personas, sesiones vivas),
                                          -- carteras (cupo, deuda, exposición de Planetour), lo que
                                          -- espera a una persona (depósitos, post-venta fallida o
@@ -1075,6 +1079,44 @@ GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attenti
                                          -- (created_at con microsegundos + id), hasta 100 por página.
                                          -- Sin pasajeros ni contacto: el correo que sale es el del
                                          -- vendedor.
+GET    /admin/orders/export?<los mismos filtros, sin cursor ni limit>
+                                         -- Exportar CSV (implementado, sin migración; ADM-14): la
+                                         -- MISMA lectura que la lista (AdminOrdersService.searchRows,
+                                         -- admin_search_orders con los mismos parámetros), sin
+                                         -- página: el archivo no puede traer una reserva que la
+                                         -- pantalla no mostraría. Zod estricto (cursor o limit, 400).
+                                         -- Hasta 5.000 (pide 5.001): con más, 422 EXPORT_TOO_LARGE
+                                         -- "Hay más de 5.000 reservas con estos filtros: acota las
+                                         -- fechas o el nodo." y no sale nada (nunca un archivo a
+                                         -- medias). text/csv, UTF-8 con BOM, CRLF,
+                                         -- reservas-AAAA-MM-DD.csv (día de Bogotá), X-Export-Rows.
+                                         -- Columnas: fecha (America/Bogota), nodo, sucursal (sí/no),
+                                         -- vertical, proveedor, localizador, referencia, n_orden,
+                                         -- estado, subestado (código del hotel), total, moneda,
+                                         -- vendedor_email, atencion, atencion_desde
+                                         -- (America/Bogota). Fechas `AAAA-MM-DD HH:MM:SS` en hora de
+                                         -- Bogotá (la zona va en el encabezado); total con punto en
+                                         -- unidades de su moneda (orders.total_amount va SIEMPRE en
+                                         -- centésimos, Money.fromMajor: 150000 CLP = 1500.00), la
+                                         -- moneda en su columna y sin fila de totales (nunca se suman
+                                         -- monedas); estado, vertical y motivo con los nombres de la
+                                         -- consola (un test del panel los compara). Nada de
+                                         -- pasajeros, documentos, contacto del cliente ni pagos: el
+                                         -- único correo es el del vendedor. Guarda contra fórmulas y
+                                         -- comillas para ; y tab (admin-console/csv.ts; el reporte
+                                         -- de ventas del panel usa la misma regla en lib/csv.ts, que
+                                         -- un test compara con la del API). @RequireRecentMfa (2FA
+                                         -- de los últimos 10 min, USR-13). Escribe
+                                         -- platform.orders.exported {filters {tenantId, subtree,
+                                         -- vertical, provider, statuses, from, to, q, attention}
+                                         -- (una búsqueda por correo del cliente queda como q: null,
+                                         -- qByClientEmail: true), rows} en la raíz platform, en la
+                                         -- misma transacción que la lectura: sin rastro no hay
+                                         -- archivo. En el panel: "Exportar CSV" en el encabezado de
+                                         -- /admin/plataforma/reservas con los filtros de la lista en
+                                         -- pantalla (BFF /api/admin/orders/export, sólo del mismo
+                                         -- origen, query rearmada con la lista blanca de la lista y
+                                         -- withStepUp); el 422 sale como aviso.
 GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de qué nodo es y se lee
                                          -- con las lecturas de Reservas de ese nodo (withTenant, RLS
                                          -- de cada tabla): orden (pasajeros sólo con nombre y tipo,
@@ -1130,7 +1172,8 @@ GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (im
                                          -- 30, own, subtree} (admin_sales_summary del subárbol por
                                          -- moneda con cuántas, confirmadas y su monto, canceladas,
                                          -- fallidas y lo confirmado por vertical; nunca suma
-                                         -- monedas), attention {total, byReason}
+                                         -- monedas; exponent 2 en toda moneda, como el Resumen),
+                                         -- attention {total, byReason}
                                          -- (admin_order_attention del subárbol, sin muestra) }. El
                                          -- nodo se lee primero (404 TENANT_NOT_FOUND); después las
                                          -- tres secciones (network, sales, attention) a la vez, cada

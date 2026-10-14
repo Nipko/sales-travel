@@ -1300,6 +1300,9 @@ export function salesVerticalLabel(vertical: string): string {
 /**
  * Un promedio en unidades enteras de la moneda: los centavos de un ticket promedio no dicen nada y
  * sólo agregan ruido ("$ 1.541.666,67" → "$ 1.541.667").
+ *
+ * `exponent` es el de las unidades menores del monto, como lo manda el API: en lo de reservas es
+ * siempre 2 (`orders.total_amount` va en centésimos en toda moneda, también en CLP), no el ISO.
  */
 export function wholeUnits(minor: number, exponent: number | null): number {
   const factor = 10 ** (exponent ?? 2);

@@ -188,6 +188,16 @@ describe('los nombres de la operación', () => {
     expect(detail('platform.audit.exported', { rows: 5000, truncated: true })).toBe(
       '5.000 filas (hasta el tope)',
     );
+    // Reservas de la red › Exportar CSV: cuántas reservas, y si se buscó por el correo de un
+    // cliente (el correo no está en el rastro).
+    expect(eventLabel('platform.orders.exported', {}).text).toBe('Exportó las reservas de la red');
+    expect(
+      detail('platform.orders.exported', { rows: 1234, filters: { statuses: ['confirmed'] } }),
+    ).toBe('1.234 reservas');
+    expect(
+      detail('platform.orders.exported', { rows: 1, filters: { q: null, qByClientEmail: true } }),
+    ).toBe('1 reserva · buscando por el correo de un cliente');
+    expect(detail('platform.orders.exported', { rows: 0 })).toBe('0 reservas');
     expect(detail('system.post_sale_sweep.completed', { tenants: 12, tenantsFailed: 1 })).toBe(
       '12 nodos revisados · 1 nodo con error',
     );

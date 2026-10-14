@@ -37,6 +37,8 @@ import {
   quietOrders,
   quietProviders,
 } from './platform-overview.fixture';
+import { formatMoney } from './flight-format';
+import { formatMinor } from './wallets';
 
 /** Formas del voseo que no pueden colarse en el Resumen (va en tú neutro). */
 const VOSEO =
@@ -857,6 +859,14 @@ describe('textos', () => {
     expect(wholeUnits(81_667, 2)).toBe(81_700);
     expect(wholeUnits(1_234, 0)).toBe(1_234);
     expect(wholeUnits(1_550, null)).toBe(1_600);
+  });
+
+  it('una venta en CLP se ve como en Reservas de la red: el API la manda en centésimos (exponente 2)', () => {
+    // 150.000 pesos chilenos son 15.000.000 centésimos (Money.fromMajor), no 15.000.000 de pesos.
+    const clp = 15_000_000;
+    expect(formatMinor(clp, 'CLP', 2)).toBe(formatMoney(clp, 'CLP'));
+    expect(formatMinor(clp, 'CLP', 2)).toMatch(/150.000$/);
+    expect(formatMinor(wholeUnits(clp + 49, 2), 'CLP', 2)).toBe(formatMoney(clp, 'CLP'));
   });
 
   it('cuándo se actualizó', () => {

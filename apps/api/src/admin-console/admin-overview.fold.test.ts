@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CATALOG_STALE_HOURS,
+  ORDER_AMOUNT_EXPONENT,
   foldAttention,
   foldCatalogs,
   foldNetwork,
@@ -145,9 +146,9 @@ describe('foldSales', () => {
     ]);
   });
 
-  it('sin confirmadas, el ticket promedio es null; una moneda retirada, exponente null', () => {
+  it('sin confirmadas, el ticket promedio es null; una moneda retirada también va en centésimos', () => {
     const only = foldSales([row('XYZ', 'latam-ndc', 'failed', 1, 100)], []);
-    expect(only.byCurrency[0]).toMatchObject({ currency: 'XYZ', exponent: null });
+    expect(only.byCurrency[0]).toMatchObject({ currency: 'XYZ', exponent: 2 });
     expect(only.byCurrency[0]?.averageTicketMinor).toBeNull();
     expect(only.byVertical).toEqual([]);
   });
@@ -163,6 +164,84 @@ describe('foldSales', () => {
         byStatus: { draft: 0, sent: 0, accepted: 0, expired: 0, cancelled: 0 },
       },
     });
+  });
+});
+
+describe('el exponente de los montos de reservas', () => {
+  /*
+   * orders.total_amount va SIEMPRE en centésimos (Money.fromMajor multiplica por 100 en toda moneda),
+   * como lo leen la consola de Reservas y su CSV. Con el exponente ISO, 150.000 pesos chilenos
+   * (15.000.000 centésimos, exponente ISO 0) se verían como 15.000.000 de pesos.
+   */
+  const CLP_SALE = 15_000_000;
+
+  it('es el de Money (2) y no el ISO, también en CLP, JPY o KWD', () => {
+    expect(ORDER_AMOUNT_EXPONENT).toBe(2);
+    const sales = foldSales(
+      [
+        row('CLP', 'latam-ndc', 'ticketed', 1, CLP_SALE),
+        row('JPY', 'tbo-hotels', 'confirmed', 2, 4_000_000, 'hotels'),
+        row('KWD', 'latam-ndc', 'cancelled', 1, 12_345),
+      ],
+      [],
+    );
+    expect(sales.byCurrency.map((c) => [c.currency, c.exponent])).toEqual([
+      ['CLP', 2],
+      ['JPY', 2],
+      ['KWD', 2],
+    ]);
+    expect(sales.byVertical.map((v) => [v.currency, v.exponent])).toEqual([
+      ['CLP', 2],
+      ['JPY', 2],
+    ]);
+    expect(sales.byProvider.map((p) => [p.provider, p.currency, p.exponent])).toEqual([
+      ['latam-ndc', 'CLP', 2],
+      ['latam-ndc', 'KWD', 2],
+      ['tbo-hotels', 'JPY', 2],
+    ]);
+    expect(sales.byCurrency[0]).toMatchObject({
+      confirmedAmountMinor: CLP_SALE,
+      averageTicketMinor: CLP_SALE,
+    });
+
+    const trend = foldTrend(
+      [{ month: '2026-10', currency: 'CLP', orders: 1, amount_minor: CLP_SALE }],
+      ['2026-10'],
+    );
+    expect(trend.series[0]).toMatchObject({ currency: 'CLP', exponent: 2 });
+
+    const [node] = foldTopNodes([
+      {
+        tenant_id: 'a',
+        name: 'A',
+        slug: 'a',
+        tenant_type: 'agency',
+        is_branch: false,
+        status: 'active',
+        orders_total: 1,
+        currency: 'CLP',
+        orders: 1,
+        amount_minor: CLP_SALE,
+      },
+    ]);
+    expect(node?.amounts).toEqual([{ currency: 'CLP', exponent: 2, amountMinor: CLP_SALE }]);
+  });
+
+  it('las carteras sí van con el ISO de su moneda: sus montos son unidades menores ISO', () => {
+    const [clp] = foldWallets([
+      {
+        currency: 'CLP',
+        wallets: 1,
+        credit_limit_minor: 150_000,
+        debt_minor: 0,
+        funds_minor: 0,
+        overlimit: 0,
+        suspended: 0,
+        platform_credit_limit_minor: 0,
+        platform_debt_minor: 0,
+      },
+    ]);
+    expect(clp?.exponent).toBe(0);
   });
 });
 

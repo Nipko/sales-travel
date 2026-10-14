@@ -85,8 +85,7 @@ const StatusList = z
 const INVALID_CURSOR = 'el cursor no es válido: vuelve a cargar la lista desde el principio';
 
 /**
- * `GET /admin/orders`. Estricto: el BFF reconstruye la query parámetro por parámetro, así que un
- * campo de más es un error de programación y no un filtro que se ignora en silencio.
+ * Los filtros que comparten la lista y la exportación:
  *
  * - `tenantId` y `subtree`: el nodo y, por defecto, su red; `subtree=false`, sólo ese nodo. Sin
  *   `tenantId`, toda la red (y `subtree` no cambia nada).
@@ -95,62 +94,87 @@ const INVALID_CURSOR = 'el cursor no es válido: vuelve a cargar la lista desde 
  * - `q`: PNR o localizador, nuestra referencia de reserva, el número de orden, el correo EXACTO del
  *   cliente o el id. Ver admin_search_orders (0076).
  * - `attention=true`: sólo las que necesitan a una persona.
- * - `cursor` y `limit`: la página.
+ */
+const filterFields = {
+  tenantId: Uuid.optional(),
+  subtree: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  vertical: z.enum(ADMIN_ORDER_VERTICALS).optional(),
+  provider: z
+    .string()
+    .regex(/^[a-z0-9-]{2,40}$/, { message: 'el proveedor es un código como latam-ndc' })
+    .optional(),
+  status: StatusList.optional(),
+  from: CalendarDate.optional(),
+  to: CalendarDate.optional(),
+  // Sin caracteres de control: un NUL llega a Postgres como 22021 y sería un 500, no un 400.
+  q: z
+    .string()
+    .trim()
+    .min(2, { message: 'escribe al menos 2 caracteres' })
+    .max(ADMIN_ORDERS_MAX_QUERY, {
+      message: `la búsqueda puede tener hasta ${ADMIN_ORDERS_MAX_QUERY} caracteres`,
+    })
+    .refine((v) => !/\p{Cc}/u.test(v), { message: 'la búsqueda tiene caracteres no válidos' })
+    .optional(),
+  attention: z
+    .literal('true')
+    .transform(() => true as const)
+    .optional(),
+};
+
+/** `cursor` y `limit`: la página. Sólo de la lista. */
+const pageFields = {
+  cursor: z
+    .string()
+    .max(200, { message: INVALID_CURSOR })
+    .transform((raw, ctx) => {
+      const cursor = decodeAdminOrdersCursor(raw);
+      if (cursor === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: INVALID_CURSOR });
+        return z.NEVER;
+      }
+      return cursor;
+    })
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(ADMIN_ORDERS_MAX_PAGE).default(ADMIN_ORDERS_PAGE),
+};
+
+function checkDates(query: { from?: string; to?: string }, ctx: z.RefinementCtx): void {
+  if (query.from !== undefined && query.to !== undefined && query.from > query.to) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: 'la fecha "hasta" no puede ser anterior a "desde"',
+    });
+  }
+}
+
+/**
+ * `GET /admin/orders`: los filtros ({@link filterFields}) y la página. Estricto: el BFF reconstruye la
+ * query parámetro por parámetro, así que un campo de más es un error de programación y no un filtro
+ * que se ignora en silencio.
  */
 export const AdminOrdersQuerySchema = z
-  .object({
-    tenantId: Uuid.optional(),
-    subtree: z
-      .enum(['true', 'false'])
-      .default('true')
-      .transform((v) => v === 'true'),
-    vertical: z.enum(ADMIN_ORDER_VERTICALS).optional(),
-    provider: z
-      .string()
-      .regex(/^[a-z0-9-]{2,40}$/, { message: 'el proveedor es un código como latam-ndc' })
-      .optional(),
-    status: StatusList.optional(),
-    from: CalendarDate.optional(),
-    to: CalendarDate.optional(),
-    // Sin caracteres de control: un NUL llega a Postgres como 22021 y sería un 500, no un 400.
-    q: z
-      .string()
-      .trim()
-      .min(2, { message: 'escribe al menos 2 caracteres' })
-      .max(ADMIN_ORDERS_MAX_QUERY, {
-        message: `la búsqueda puede tener hasta ${ADMIN_ORDERS_MAX_QUERY} caracteres`,
-      })
-      .refine((v) => !/\p{Cc}/u.test(v), { message: 'la búsqueda tiene caracteres no válidos' })
-      .optional(),
-    attention: z
-      .literal('true')
-      .transform(() => true as const)
-      .optional(),
-    cursor: z
-      .string()
-      .max(200, { message: INVALID_CURSOR })
-      .transform((raw, ctx) => {
-        const cursor = decodeAdminOrdersCursor(raw);
-        if (cursor === undefined) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: INVALID_CURSOR });
-          return z.NEVER;
-        }
-        return cursor;
-      })
-      .optional(),
-    limit: z.coerce.number().int().min(1).max(ADMIN_ORDERS_MAX_PAGE).default(ADMIN_ORDERS_PAGE),
-  })
+  .object({ ...filterFields, ...pageFields })
   .strict()
-  .superRefine((query, ctx) => {
-    if (query.from !== undefined && query.to !== undefined && query.from > query.to) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['to'],
-        message: 'la fecha "hasta" no puede ser anterior a "desde"',
-      });
-    }
-  });
+  .superRefine(checkDates);
 export type AdminOrdersQuery = z.infer<typeof AdminOrdersQuerySchema>;
+
+/** Las reservas que caben en una exportación. Con más, 422 EXPORT_TOO_LARGE. */
+export const ADMIN_ORDERS_EXPORT_MAX_ROWS = 5000;
+
+/**
+ * `GET /admin/orders/export`: los MISMOS filtros que la lista, sin la página. Estricto: `cursor` o
+ * `limit` son un 400, porque la exportación es la vista entera y no una página.
+ */
+export const AdminOrdersExportQuerySchema = z.object(filterFields).strict().superRefine(checkDates);
+export type AdminOrdersExportQuery = z.infer<typeof AdminOrdersExportQuerySchema>;
+
+/** Los filtros, sin la página: lo que lee admin_search_orders para la lista y la exportación. */
+export type AdminOrdersFilters = AdminOrdersExportQuery;
 
 // ───────────────────────────── Acciones de post-venta ─────────────────────────────
 

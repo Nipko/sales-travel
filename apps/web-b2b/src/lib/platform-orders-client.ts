@@ -12,6 +12,8 @@ import {
 } from './platform-order-actions';
 import {
   ordersErrorMessage,
+  ordersExportErrorMessage,
+  ordersExportFilename,
   ordersSearch,
   parsePlatformOrderDetail,
   parsePlatformOrdersPage,
@@ -20,11 +22,12 @@ import {
   type PlatformOrdersPage,
 } from './platform-orders';
 import { readJson } from './read-json';
+import { reasonOf, withStepUp, type StepUpAware, type StepUpCancelled } from './step-up';
 
 /**
- * Las llamadas del navegador a Plataforma → Reservas de la red (`/api/admin/orders`): la lista, la
- * ficha y la post-venta desde la ficha. Devuelven datos ya validados o un mensaje para la pantalla;
- * nunca lanzan.
+ * Las llamadas del navegador a Plataforma → Reservas de la red (`/api/admin/orders`): la lista, su
+ * exportación a CSV, la ficha y la post-venta desde la ficha. Devuelven datos ya validados o un
+ * mensaje para la pantalla; nunca lanzan.
  */
 
 export type OrdersResult<T> =
@@ -82,6 +85,64 @@ export function loadPlatformOrders(
     parsePlatformOrdersPage,
     'list',
   );
+}
+
+// ───────────────────────────── Exportar CSV ─────────────────────────────
+
+/** El archivo exportado, listo para guardar (saveFile de platform-audit-client). */
+export interface OrdersExportFile {
+  readonly blob: Blob;
+  readonly filename: string;
+  readonly rows: number;
+}
+
+async function requestOrdersExport(
+  filters: OrdersFilters,
+  now: Date,
+): Promise<StepUpAware<OrdersExportFile>> {
+  let res: Response;
+  try {
+    // Los mismos filtros que la lista que está en pantalla, sin la página.
+    res = await fetch(`/api/admin/orders/export?${ordersSearch(filters)}`, { cache: 'no-store' });
+  } catch {
+    return { ok: false, message: ordersExportErrorMessage(0, undefined) };
+  }
+  if (!res.ok) {
+    const body = await readJson<unknown>(res);
+    const reason = body.ok ? reasonOf(body.data) : undefined;
+    return {
+      ok: false,
+      message: ordersExportErrorMessage(res.status, body.ok ? errorOf(body.data) : undefined),
+      ...(reason ? { reason } : {}),
+    };
+  }
+  let blob: Blob;
+  try {
+    blob = await res.blob();
+  } catch {
+    return { ok: false, message: ordersExportErrorMessage(0, undefined) };
+  }
+  const rows = Number(res.headers.get('x-export-rows'));
+  return {
+    ok: true,
+    data: {
+      blob,
+      filename: ordersExportFilename(res.headers.get('content-disposition'), now),
+      rows: Number.isSafeInteger(rows) && rows >= 0 ? rows : 0,
+    },
+  };
+}
+
+/**
+ * Exporta a CSV la vista filtrada de la lista. Es de alto impacto: si el 2FA de la sesión no es de
+ * los últimos minutos, `withStepUp` pide el código y la repite una vez (USR-13). Si se cierra el
+ * diálogo, vuelve `StepUpCancelled`.
+ */
+export function exportPlatformOrders(
+  filters: OrdersFilters,
+  now: Date = new Date(),
+): Promise<StepUpAware<OrdersExportFile> | StepUpCancelled> {
+  return withStepUp(() => requestOrdersExport(filters, now));
 }
 
 /** La ficha de una reserva. El API deja constancia de que se abrió. */

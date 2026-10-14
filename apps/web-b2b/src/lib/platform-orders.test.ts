@@ -1,7 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ATTENTION_REASON_LABEL } from './attention-labels';
 import { ATTENTION_ORDERS_HREF, attentionOrdersHref, platformOrderHref } from './platform-overview';
 import {
   DEFAULT_ORDERS_FILTERS,
+  ORDERS_EXPORT_MAX_ROWS,
+  ORDERS_EXPORT_NOTE,
+  ORDER_STATUS_VIEW,
   activeFilterCount,
   activePreset,
   appendOrders,
@@ -18,6 +24,9 @@ import {
   orderFromSearchParams,
   orderSheetTitle,
   ordersErrorMessage,
+  ordersExportDoneMessage,
+  ordersExportErrorMessage,
+  ordersExportFilename,
   ordersHref,
   ordersSearch,
   parsePlatformOrderDetail,
@@ -528,5 +537,92 @@ describe('selectores', () => {
     expect(labels).toContain('TBO Holidays');
     expect(labels).toContain('LATAM NDC');
     expect(providerOptions('nuevo-bedbank').map((p) => p.value)).toContain('nuevo-bedbank');
+  });
+});
+
+describe('Exportar CSV', () => {
+  it('la nota dice qué se lleva el archivo y qué no', () => {
+    expect(ORDERS_EXPORT_NOTE).toBe(
+      'Exporta las reservas con los filtros actuales (hasta 5.000), sin datos de pasajeros.',
+    );
+    expect(ORDERS_EXPORT_NOTE.match(VOSEO)).toBeNull();
+  });
+
+  it('cuántas se exportaron', () => {
+    expect(ordersExportDoneMessage(0)).toBe(
+      'Exportamos el archivo: no hay reservas con estos filtros.',
+    );
+    expect(ordersExportDoneMessage(1)).toBe('Exportamos 1 reserva.');
+    expect(ordersExportDoneMessage(5000)).toBe('Exportamos 5.000 reservas.');
+  });
+
+  it('los errores: el 422 y el 403 del 2FA con su texto; lo demás, el de la consola', () => {
+    const tooLarge = 'Hay más de 5.000 reservas con estos filtros: acota las fechas o el nodo.';
+    expect(ordersExportErrorMessage(422, tooLarge)).toBe(tooLarge);
+    expect(ordersExportErrorMessage(422, undefined)).toBe(tooLarge);
+    expect(
+      ordersExportErrorMessage(403, 'Para hacer esto necesitas la verificación en dos pasos.'),
+    ).toBe('Para hacer esto necesitas la verificación en dos pasos.');
+    expect(ordersExportErrorMessage(403, undefined)).toBe(
+      'Sólo el superadmin de la plataforma ve las reservas de toda la red.',
+    );
+    expect(ordersExportErrorMessage(400, 'Filtro desconocido: x.')).toBe('Filtro desconocido: x.');
+    expect(ordersExportErrorMessage(0, undefined)).toMatch(/No pudimos conectar/);
+    expect(ordersExportErrorMessage(500, 'stack')).toBe(
+      'No pudimos exportar las reservas. Reintenta en unos segundos.',
+    );
+  });
+
+  it('el nombre del archivo: el del API si es limpio; si no, el de hoy en Bogotá', () => {
+    const lateInBogota = new Date('2026-10-14T03:30:00.000Z');
+    expect(ordersExportFilename('attachment; filename="reservas-2026-10-13.csv"', NOW)).toBe(
+      'reservas-2026-10-13.csv',
+    );
+    expect(ordersExportFilename('attachment; filename="../x.csv"', lateInBogota)).toBe(
+      'reservas-2026-10-13.csv',
+    );
+    expect(ordersExportFilename(null, lateInBogota)).toBe('reservas-2026-10-13.csv');
+  });
+});
+
+/**
+ * Un archivo del API leído como texto: web-b2b no depende del API, pero el CSV que arma el API y la
+ * pantalla tienen que nombrar igual cada cosa y contar con el mismo tope.
+ */
+function apiSource(path: string): string {
+  return readFileSync(fileURLToPath(new URL(`../../../api/src/${path}`, import.meta.url)), 'utf8');
+}
+
+/** Las entradas `clave: 'texto'` del objeto `name` de un archivo del API. */
+function apiLabels(source: string, name: string): Record<string, string> {
+  const block = new RegExp(`export const ${name}[^=]*= [{]([^}]*)[}]`).exec(source)?.[1] ?? '';
+  return Object.fromEntries(
+    [...block.matchAll(/^\s*'?([a-z-]+)'?: '([^']+)',$/gm)].map((m) => [m[1] ?? '', m[2] ?? '']),
+  );
+}
+
+describe('el CSV del API y la consola dicen lo mismo', () => {
+  const source = apiSource('orders/admin-orders-export.ts');
+
+  it('los motivos de atención con los nombres de la consola', () => {
+    const api = apiLabels(source, 'ATTENTION_REASON_LABEL');
+    // Si la lectura se rompe, el test tiene que fallar y no comparar dos vacíos.
+    expect(Object.keys(api)).toHaveLength(8);
+    expect(api).toEqual(ATTENTION_REASON_LABEL);
+  });
+
+  it('los estados con los nombres de la tabla', () => {
+    const api = apiLabels(source, 'ORDER_STATUS_LABEL');
+    expect(Object.keys(api)).toHaveLength(5);
+    expect(api).toEqual(
+      Object.fromEntries(Object.entries(ORDER_STATUS_VIEW).map(([k, v]) => [k, v.label])),
+    );
+  });
+
+  it('el mismo tope de 5.000', () => {
+    const cap = /export const ADMIN_ORDERS_EXPORT_MAX_ROWS = (\d+);/.exec(
+      apiSource('orders/admin-orders.schemas.ts'),
+    )?.[1];
+    expect(Number(cap)).toBe(ORDERS_EXPORT_MAX_ROWS);
   });
 });

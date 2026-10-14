@@ -124,6 +124,16 @@ describe('OrdersConsole en su primer pintado', () => {
     expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>.*Filtros/);
   });
 
+  it('"Exportar CSV" en el encabezado, con la nota de qué se lleva el archivo', () => {
+    const button =
+      /<button[^>]*aria-describedby="reservas-nota-exportar"[^>]*>(.*?)<\/button>/.exec(html);
+    expect(button?.[0]).not.toContain('disabled=""');
+    expect(text(button?.[1] ?? '').trim()).toBe('Exportar CSV');
+    expect(html).toMatch(
+      /<p id="reservas-nota-exportar"[^>]*>Exporta las reservas con los filtros actuales \(hasta 5\.000\), sin datos de pasajeros\.<\/p>/,
+    );
+  });
+
   it('desde el Resumen (?atencion=1): "Requieren atención" ya puesto', () => {
     const attention = renderToStaticMarkup(
       createElement(OrdersConsole, {

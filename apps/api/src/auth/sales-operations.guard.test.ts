@@ -364,8 +364,9 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/tenants/:id/summary',
   ),
   ...noVenta(
-    'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',
+    'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo, y exporta la vista filtrada (sólo lectura, auditada)',
     'GET /admin/orders',
+    'GET /admin/orders/export',
     'GET /admin/orders/:id',
   ),
   ...noVenta(

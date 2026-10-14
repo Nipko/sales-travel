@@ -10,6 +10,7 @@ import {
 } from '../network/superadmin.errors.js';
 import { currencyExponent } from '../portfolios/wallet-currency.js';
 import {
+  ORDER_AMOUNT_EXPONENT,
   foldOrderAttention,
   type OrderAttentionView,
   type OverviewOrderAttentionRow,
@@ -24,7 +25,8 @@ import { readOrderAttention } from './admin-overview.service.js';
  * Va aparte de `GET /admin/tenants` (TenantsService.listNetwork) para que la lista de la red no
  * dependa de estas lecturas: si fallan, el árbol se sigue viendo y se corrige.
  *
- * Nunca se suman monedas distintas: lo retenido va por moneda, con su exponente.
+ * Nunca se suman monedas distintas: lo retenido va por moneda, con su exponente ISO (montos de
+ * cartera); las ventas, con el de reservas ({@link ORDER_AMOUNT_EXPONENT}: centésimos en toda moneda).
  *
  * Las ventas son las del Resumen y Reportes: reservas confirmadas o emitidas (`admin_sales_summary`).
  * `orders_30d` y `last_order_at` de `admin_node_stats()` cuentan órdenes en cualquier estado, las
@@ -141,6 +143,10 @@ export interface NodeSalesVerticalView {
 /** Las reservas del período en una moneda: cuántas, y lo vendido (confirmadas o emitidas). */
 export interface NodeSalesView {
   currency: string;
+  /**
+   * Siempre {@link ORDER_AMOUNT_EXPONENT}: `orders.total_amount` va en centésimos en toda moneda, así
+   * que no es el ISO (en CLP sería 0 y la venta se vería 100 veces más grande).
+   */
   exponent: number | null;
   /** Creadas en el período, en cualquier estado. */
   ordersCount: number;
@@ -319,7 +325,7 @@ function foldSalesRows(rows: readonly NodeSalesRow[]): NodeSalesView[] {
   for (const row of rows) {
     const total = byCurrency.get(row.currency) ?? {
       currency: row.currency,
-      exponent: currencyExponent(row.currency) ?? null,
+      exponent: ORDER_AMOUNT_EXPONENT,
       ordersCount: 0,
       confirmedCount: 0,
       confirmedAmountMinor: 0,
