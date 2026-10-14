@@ -231,9 +231,10 @@ describe('PlatformUsersService.list', () => {
 
     // Los nodos y las sesiones se piden sólo para los de la página.
     const nodos = k.queries[k.indexOf('from "memberships" as "m"')]!;
-    // Sin los nodos de los que la quitaron (USR-11).
-    expect(nodos.sql).toContain('"m"."status" != $3');
-    expect(nodos.parameters).toEqual([ANA, BETO, 'removed']);
+    // Sin los nodos de los que la quitaron (USR-11). Los ids van en un solo arreglo.
+    expect(nodos.sql).toContain('m.user_id = ANY($1::uuid[])');
+    expect(nodos.sql).toContain('"m"."status" != $2');
+    expect(nodos.parameters).toEqual([[ANA, BETO], 'removed']);
     const sesiones = k.queries[k.indexOf('platform_user_session_stats')]!;
     expect(sesiones.parameters).toEqual([[ANA, BETO]]);
   });

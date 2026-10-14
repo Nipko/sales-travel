@@ -407,7 +407,7 @@ export async function readAuditEvents(
 
 /**
  * La raíz `platform` (0050: hay una sola), donde queda el rastro de las exportaciones de la consola
- * (ésta y la de Reservas de la red). Sin ella, sin tenant.
+ * (ésta, la de Reservas de la red y la de usuarios, USR-16). Sin ella, sin tenant.
  */
 export async function platformTenantId(trx: Transaction<DB>): Promise<string | null> {
   const row = await trx

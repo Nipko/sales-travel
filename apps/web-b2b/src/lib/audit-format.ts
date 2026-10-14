@@ -569,6 +569,22 @@ export function eventDetail(
     case 'UserProfileUpdated':
       parts.push(nameChange(p));
       break;
+    case 'users.exported': {
+      // USR-16: qué se exportó y cuántas personas; los filtros quedan en el payload.
+      const users = count(p['users']);
+      parts.push(
+        p['scope'] === 'platform'
+          ? 'Toda la plataforma'
+          : p['scope'] === 'node'
+            ? 'El equipo del nodo'
+            : null,
+        users === null
+          ? null
+          : plural(users, 'persona', 'personas') +
+              (p['truncated'] === true ? ' (hasta el tope)' : ''),
+      );
+      break;
+    }
     case 'auth.sessions.revoked_by_admin':
       parts.push(target, sessionsClosed(p['revoked']));
       break;

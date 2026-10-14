@@ -56,7 +56,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Activar el 2FA por primera vez (o tras un restablecimiento) pide la contraseña | Seguridad / pantalla de 2FA obligatoria   | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-13b)**: suma al bloqueo y avisa por correo                   |
 | Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
-| Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
+| Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | **Hecho (USR-16)**: lo mismo que la pantalla; pide el 2FA y queda rastro  |
 | Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-18)**: con historial; sólo la propia cuenta (0069)           |
 
 ## Enviar el enlace y desbloquear (USR-2)
@@ -841,15 +841,16 @@ de otra cuenta ni para golpear a toda la plataforma. Antes de esas acciones se p
 2FA si la sesión no lo pasó en los últimos **10 minutos**; el soporte de todos los días no lo pide.
 Sin cambios en la base: la ventana se mide con `sessions.mfa_verified_at`, que ya existía.
 
-| Acción                                                    | Pide el código                         |
-| --------------------------------------------------------- | -------------------------------------- |
-| Suspender o reactivar una cuenta en toda la plataforma    | Siempre                                |
-| Restablecer el 2FA de otra persona                        | Siempre                                |
-| Forzar el cambio de contraseña                            | Siempre                                |
-| Enviarle el enlace para restablecer la contraseña         | Si tiene un rol de admin en algún nodo |
-| Quitarla de un nodo (USR-11)                              | Si su rol en ese nodo es de admin      |
-| Exportar a CSV y forzar el cambio en bloque (USR-16, -14) | Siempre, cuando existan                |
-| Desbloquear, cerrar sus sesiones, cerrar una sesión       | No                                     |
+| Acción                                                     | Pide el código                         |
+| ---------------------------------------------------------- | -------------------------------------- |
+| Suspender o reactivar una cuenta en toda la plataforma     | Siempre                                |
+| Restablecer el 2FA de otra persona                         | Siempre                                |
+| Forzar el cambio de contraseña                             | Siempre                                |
+| Enviarle el enlace para restablecer la contraseña          | Si tiene un rol de admin en algún nodo |
+| Quitarla de un nodo (USR-11)                               | Si su rol en ese nodo es de admin      |
+| Exportar a CSV (la Actividad, ADM-8; los usuarios, USR-16) | Siempre                                |
+| Forzar el cambio de contraseña en bloque (USR-14)          | Siempre, cuando exista                 |
+| Desbloquear, cerrar sus sesiones, cerrar una sesión        | No                                     |
 
 "Rol de admin" = `ADMIN_ROLES` (de `admin` para arriba, incluidos los de plataforma), en cualquiera
 de sus nodos, no sólo en el de la ruta.
@@ -862,8 +863,10 @@ de sus nodos, no sólo en el de la ruta.
   marcadas. Cuando la exigencia depende de los datos, el servicio llama a `assertRecentMfa()`
   después de autorizar (así lo hacen `MemberSupportService.sendPasswordReset` y
   `AdminController.removeMembership`): a quien no podía hacerlo igual no se le pide el código. Hoy
-  llevan la marca `PATCH /admin/users/status`, `POST /tenants/:id/members/:userId/reset-mfa` y
-  `.../require-password-reset`; un test fija esa lista contra la metadata real de `AppModule`.
+  llevan la marca `PATCH /admin/users/status`, `POST /tenants/:id/members/:userId/reset-mfa`,
+  `.../require-password-reset`, `GET /admin/audit/export` (ADM-8), `GET /admin/exports/users` y
+  `GET /tenants/:id/members-export` (USR-16); un test fija esa lista contra la metadata real de
+  `AppModule`.
 - Sin el 2FA reciente: **403 `MFA_RECENT_REQUIRED`** ("Confirma con tu código de verificación en
   dos pasos para seguir."). 403 y no 401: la sesión sigue viva. Quien no tiene el 2FA activo (los
   roles que no lo exigen: `agency_admin`, `admin`) recibe **403 `MFA_REQUIRED_FOR_ACTION`** ("Para
@@ -894,8 +897,8 @@ de sus nodos, no sólo en el de la ruta.
   Si se cierra el diálogo devuelve `StepUpCancelled` (`isStepUpCancelled`): la acción no se hizo y
   no hay error que mostrar. Dos acciones a la vez comparten un solo código. La llamada envuelta
   tiene que devolver el `reason` del API en el fallo (`StepUpAware<T>`): hoy `runMemberAction`
-  (todas las acciones de soporte de Equipo y de la ficha), `removeMembership` (quitar del nodo) y
-  `setPlatformUserStatus`.
+  (todas las acciones de soporte de Equipo y de la ficha), `removeMembership` (quitar del nodo),
+  `setPlatformUserStatus` y las exportaciones `exportPlatformUsers` y `exportTeam` (USR-16).
 - `StepUpProvider` (`apps/web-b2b/src/components/step-up-dialog.tsx`), montado una vez en el layout
   del panel: **"Confirma que eres tú"**, "Escribe el código de 6 dígitos de tu app de
   autenticación.", seis casillas (`inputMode="numeric"`, `autocomplete="one-time-code"`); se envía
@@ -1400,3 +1403,114 @@ UPDATE` frenaba las inserciones que apuntan a la cuenta) y, si el nombre cambia,
   un nombre que la API rechaza (controles, invisibles, sin letras) sale como "enlace usado o vencido":
   raro y sólo mientras dura el despliegue. Las cuentas creadas antes pueden tener nombres que hoy no
   pasarían; se ven como antes y su dueño los corrige desde Perfil.
+
+## Exportar la lista de usuarios a CSV (USR-16)
+
+Para las revisiones de cumplimiento y de puestos: el superadmin baja el directorio de la plataforma
+con los filtros que tiene puestos, y quien administra un nodo baja su equipo. Lo que sale es lo que la
+pantalla muestra, nada más, y cada exportación queda en la auditoría.
+
+### Base
+
+- Sin migración. El directorio y Equipo ya tenían todo lo que el archivo lleva.
+
+### API
+
+- **`GET /admin/exports/users?<los filtros del directorio>`**: sólo el superadmin (la misma puerta que
+  `GET /admin/users`: `@Roles(AGENCY_ADMIN_ROLES)` y `NetworkService.isSuperadmin`; si no, 403
+  `SUPERADMIN_REQUIRED`). `PlatformUsersExportQuerySchema` es `ListPlatformUsersQuerySchema` sin
+  `cursor` ni `limit` y sigue estricto: un `cursor` es 400, no una página que se ignora.
+- **`GET /tenants/:id/members-export`**: quien administra el nodo (`canManageTenant`, como Equipo: su
+  nodo o un descendiente; el superadmin, cualquiera); si no, 403 `TENANT_NOT_MANAGED`. Es el equipo
+  entero del nodo, como lo trae la lista de Equipo antes de sus filtros (que corren en el navegador).
+- Las rutas no terminan en `.csv` (un borde que guarda en caché por extensión no se queda con una
+  lista de personas) ni cuelgan de `/admin/users/:userId` o `/tenants/:id/members/:userId`, que son
+  la ficha de una persona. Las dos piden el **2FA de los últimos 10 minutos** (`@RequireRecentMfa`,
+  están en la lista del test del guard) y como mucho **5 por minuto** (`@Throttle`, 429). Responden
+  `text/csv; charset=utf-8`, `Cache-Control: no-store`, `Content-Disposition` con
+  `usuarios-AAAA-MM-DD.csv` o `equipo-<slug del nodo>-AAAA-MM-DD.csv` (el día de Bogotá) y las
+  cabeceras `X-Export-Users` (personas), `X-Export-Rows` (filas) y `X-Export-Truncated`.
+- **Lo mismo que la pantalla**: las personas salen de la MISMA consulta, no de una copia.
+  `directoryQuery` (el directorio) acepta el tope como parámetro y la exportación la usa sin cursor;
+  los nodos de cada persona salen de `directoryMemberships`, que ahora usa también la lista (los ids
+  van en un solo arreglo, `= ANY`). El equipo sale de `readTenantUsers` (`network.service.ts`), que
+  usa `listTenantUsers`. En los dos, sin los nodos de los que se quitó a alguien (USR-11): una persona
+  cuyo único nodo se quitó sale en el directorio con "Sin nodos", como en pantalla.
+- **Tope**: 10.000 personas por archivo (`USER_EXPORT_MAX_USERS`); se pide una de más para saber si
+  había más. El directorio se corta en las altas más recientes (su orden); Equipo, en las primeras en
+  sumarse al nodo. El panel lo dice al terminar.
+- **Columnas** (una fila por persona y nodo): `Correo`, `Nombre`, `Nodo`, `Rol` (el nombre que ve la
+  persona, `roleName` de `security-notices.ts`), `Estado en el nodo` (Activo/Suspendido),
+  `Estado de la cuenta` (Activa/Suspendida), `2FA` (Sí/No), `Último ingreso (hora de Bogotá UTC-5)` y
+  `Alta de la cuenta (…)` en el directorio o `Alta en el nodo (…)` en Equipo (su columna Alta). Las
+  fechas van `AAAA-MM-DD HH:MM` en hora de Bogotá y la zona en el encabezado. Nunca IPs, hashes,
+  secretos del 2FA, tokens, sesiones ni bloqueos. Una membership vieja en estado `invited` (lo admite
+  el esquema original, 0001) sale "Invitado", como en Equipo. Las invitaciones sin aceptar no salen:
+  no son cuentas todavía (están en Plataforma → Usuarios → Invitaciones y en la lista de Equipo).
+- **El archivo**: lo escribe `apps/api/src/admin-console/csv.ts` (el de la Actividad, ADM-8): UTF-8
+  con BOM, CRLF, comillas cuando hacen falta (también con `;` y tabulación) y un apóstrofo delante de
+  una celda que empieza con `=`, `+`, `-`, `@`, tabulación o retorno de carro (CSV injection).
+- **El rastro**: `users.exported` con `{ scope: 'platform' | 'node', filters, users, rows, truncated }`,
+  en la raíz `platform` (el directorio, como ADM-8) o en el nodo (Equipo: lo ve su Actividad de la red,
+  filtro Usuarios). Va con `emitWithin` en la MISMA transacción que leyó las filas: si no se escribe,
+  la transacción se deshace y no sale el archivo. Nunca lleva correos: la búsqueda queda sólo como
+  `search: true` (puede ser un correo); los demás filtros, como se aplicaron.
+
+### Panel
+
+- **Plataforma → Usuarios**: **Exportar CSV** en el encabezado (sólo en la pestaña Usuarios), con la
+  nota "Se exportan hasta 10.000 personas con estos filtros, una fila por cada nodo." enlazada con
+  `aria-describedby`. Exporta con la consulta de la lista que se ve (la búsqueda ya esperada y los
+  filtros), sin paginar. Mientras exporta el botón espera ("Exportando…").
+- **Equipo**: **Exportar equipo** al final de la barra de filtros (`member-filters.tsx`), con la
+  descripción "Descarga un CSV con todo el equipo de este nodo, sin los filtros." (como `title` y para
+  el lector de pantalla): los filtros de Equipo corren en el navegador y el archivo es el equipo
+  entero.
+- `apps/web-b2b/src/lib/user-export.ts`: `exportPlatformUsers` y `exportTeam`, envueltas en
+  `withStepUp` (si pasaron 10 minutos, el diálogo del código y un reintento; si se cierra, no pasa
+  nada), y los textos: "Exportamos 12 personas.", "Exportamos el equipo: 3 personas.", el tope ("…las
+  altas más recientes. Acota los filtros para ver el resto."), 429 ("Exportaste varias veces
+  seguidas…") y los 403 con el motivo del API. El archivo se guarda con `saveFile` (el de ADM-8).
+- BFF: `GET /api/admin/exports/users` (`platformUsersExportTarget`: los parámetros del directorio
+  rearmados uno por uno; `cursor`, `limit` o uno desconocido o repetido es 400) y
+  `GET /api/tenants/[tenantId]/members-export` (`teamExportTarget`: sólo un UUID). Las dos por
+  `forwardUsersExport` (`lib/csv-export-route.ts`): sólo desde el panel (mismo origen, si no 403), el
+  CSV en bytes con `no-store` y las cabeceras de la exportación; los errores con el estado y el
+  `reason` del API (así `withStepUp` ve el `MFA_RECENT_REQUIRED`).
+- La Actividad dice **"Exportó la lista de usuarios · Toda la plataforma · 1.234 personas"** (o "El
+  equipo del nodo", y "(hasta el tope)" si se cortó). `platform-audit.test.ts` lee
+  `USERS_EXPORTED_EVENT` del API y falla si no tiene nombre legible.
+
+### Tests
+
+- `apps/api/src/tenants/user-export.service.test.ts`: encabezados con la zona, fechas de Bogotá
+  (también cuando en UTC ya es otro día), nombre del archivo y slug limpio, una fila por persona y
+  nodo, "Sin nodos", nombres de rol y estados, que no sale nada sensible, CSV injection (`=`, `+`, `-`,
+  `@`, tabulación, retorno de carro; comillas, comas, `;` y saltos de línea), que la consulta de
+  personas es la del directorio con los mismos filtros (mismo SQL y parámetros salvo el tope), el
+  tope en los dos alcances (una persona de más se corta y lo dice; justo el tope, no), el rastro
+  después de leer y sin correos, y que un rastro que falla no deja salir el archivo.
+- `user-export.controller.test.ts`: rutas, roles, el 2FA de 10 minutos en las dos (y sin 2FA activo,
+  `MFA_REQUIRED_FOR_ACTION`), el 429 a la sexta en el minuto con el guard de la app, 403 sin leer nada
+  (no superadmin, nodo ajeno), 401 y las cabeceras.
+- `user-export.integration.test.ts` (Postgres, como `app_user`): para cada filtro del directorio, las
+  mismas personas en el mismo orden y con los mismos nodos que `PlatformUsersService.list`; sin los
+  nodos quitados; el equipo igual a `listTenantUsers`; 403 sin rastro para quien no es superadmin y
+  para un nodo fuera del subárbol; nombres y nodos hostiles neutralizados; el rastro con su payload;
+  un rastro que falla deshace todo; y el 2FA con el reloj de la base (código de hace 30 minutos, se
+  pide; de hace 2, pasa).
+- `recent-mfa.guard.test.ts`: la lista de rutas marcadas suma las dos.
+- Web: `lib/user-export.test.ts` (la consulta, el reintento con el código, cancelar, los mensajes y el
+  nombre del archivo, en tú), `app/api/admin/exports/users/users-export.route.test.ts` (las dos rutas
+  del panel y sus targets), `audit-format.test.ts`, `platform-audit.test.ts`,
+  `platform-users.render.test.ts` y `team.render.test.ts` (los botones, su descripción y la espera).
+
+### Despliegue
+
+- Sin migración. API y panel van juntos: con el panel nuevo y la API vieja, exportar responde 404 y
+  el aviso dice "No pudimos exportar la lista. Inténtalo de nuevo en unos segundos.".
+- Quien exporta necesita el 2FA activo: un `agency_admin` o un `admin` sin 2FA (esos roles no lo
+  exigen) recibe 403 `MFA_REQUIRED_FOR_ACTION` hasta activarlo en Seguridad.
+- Como en la Actividad (ADM-8), el 2FA se pide antes de saber si quien pide puede: un admin que
+  intenta exportar un nodo ajeno escribe el código y después recibe el 403. El panel sólo le ofrece
+  los nodos de su red.

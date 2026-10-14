@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, ArrowUpDown, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useState, type Ref } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/field';
@@ -17,6 +17,7 @@ import {
   type TeamFilters,
   type TeamSort,
 } from '../../../../../lib/team-filters';
+import { TEAM_EXPORT_HINT } from '../../../../../lib/user-export';
 import { offeredRoleLabel } from './roles';
 
 /** Espera antes de escribir la URL: Safari corta más de 100 `replaceState` en 30 s. */
@@ -92,6 +93,8 @@ function Chip({
 /**
  * La barra de filtros de la lista de miembros: los filtros rápidos con cuántos deja cada uno, el
  * rol, ocultar los suspendidos y, en el teléfono (donde no hay encabezado de columnas), el orden.
+ * Al final, "Exportar equipo" (USR-16) si la pantalla lo ofrece: descarga el equipo entero del nodo
+ * en CSV, sin los filtros (lo dice su descripción).
  *
  * `allRef`: el botón "Todos", adonde vuelve el foco al quitar los filtros (el botón que se tocó
  * desaparece con ellos).
@@ -104,6 +107,8 @@ export function MemberFilters({
   allRef,
   onChange,
   onClear,
+  onExport,
+  exporting = false,
 }: {
   filters: TeamFilters;
   counts: Readonly<Record<TeamChip, number>>;
@@ -114,10 +119,15 @@ export function MemberFilters({
   onChange: (next: TeamFilters) => void;
   /** "Quitar filtros": la lista decide adónde va el foco cuando el botón desaparece. */
   onClear: () => void;
+  /** Exportar el equipo del nodo a CSV. Sin él, no se ofrece. */
+  onExport?: (() => void) | undefined;
+  /** La exportación está en curso: el botón espera. */
+  exporting?: boolean | undefined;
 }) {
   const roleId = useId();
   const hideId = useId();
   const sortId = useId();
+  const exportHintId = useId();
   const toggleChip = (chip: TeamChip) =>
     onChange({ ...filters, chip: filters.chip === chip ? null : chip });
 
@@ -210,6 +220,29 @@ export function MemberFilters({
             <X aria-hidden="true" />
             Quitar filtros
           </Button>
+        ) : null}
+
+        {onExport ? (
+          <div className="md:ml-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={exporting}
+              aria-describedby={exportHintId}
+              title={TEAM_EXPORT_HINT}
+              onClick={onExport}
+            >
+              {exporting ? (
+                <RefreshCw aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              {exporting ? 'Exportando…' : 'Exportar equipo'}
+            </Button>
+            <span id={exportHintId} className="sr-only">
+              {TEAM_EXPORT_HINT}
+            </span>
+          </div>
         ) : null}
       </div>
     </div>

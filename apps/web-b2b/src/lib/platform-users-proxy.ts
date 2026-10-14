@@ -118,6 +118,17 @@ export function platformUsersListTarget(query: URLSearchParams): TenantAdminProx
   return { ok: true, path: qs === '' ? '/admin/users' : `/admin/users?${qs}` };
 }
 
+/**
+ * `GET /admin/exports/users?…`: el directorio con estos filtros, en CSV (USR-16). Los mismos
+ * parámetros que la lista, validados igual, sin `cursor` ni `limit`: el archivo no es una página.
+ */
+export function platformUsersExportTarget(query: URLSearchParams): TenantAdminProxyTarget {
+  if (query.has('cursor') || query.has('limit')) return { ok: false, error: INVALID };
+  const list = platformUsersListTarget(query);
+  if (!list.ok) return list;
+  return { ok: true, path: list.path.replace(/^\/admin\/users/, '/admin/exports/users') };
+}
+
 /** `GET /admin/users/:userId/impact`: qué arrastraría suspender la cuenta en toda la plataforma. */
 export function platformUserImpactTarget(userId: string): TenantAdminProxyTarget {
   if (!isUuid(userId)) return { ok: false, error: 'Usuario inválido.' };

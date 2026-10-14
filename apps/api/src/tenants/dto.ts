@@ -212,6 +212,17 @@ export const ListPlatformUsersQuerySchema = z
 export type ListPlatformUsersQuery = z.infer<typeof ListPlatformUsersQuerySchema>;
 
 /**
+ * La exportación del directorio a CSV (GET /admin/exports/users, USR-16): los MISMOS filtros que la
+ * lista, sin paginar (sin `cursor` ni `limit`; el tope lo pone el servicio). Sigue siendo estricta:
+ * un `cursor` es 400, no una página que se ignora.
+ */
+export const PlatformUsersExportQuerySchema = ListPlatformUsersQuerySchema.omit({
+  cursor: true,
+  limit: true,
+});
+export type PlatformUsersExportQuery = z.infer<typeof PlatformUsersExportQuerySchema>;
+
+/**
  * Qué invitaciones sin aceptar ni revocar lista la plataforma: las que todavía sirven (`pending`), las
  * vencidas (`expired`) o las dos (`all`).
  */

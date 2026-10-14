@@ -9,6 +9,7 @@ import { voseoIn } from '../../../../../../lib/voseo';
 import {
   DirectoryFiltersBar,
   DirectoryResults,
+  ExportUsersButton,
   PlatformSheetMenuItems,
   UserActionItems,
   type DirectoryState,
@@ -401,5 +402,26 @@ describe('DirectoryFiltersBar', () => {
     });
     expect(html).toContain('No pudimos cargar los nodos de la red.');
     expect(html).toContain('aria-label="Volver a cargar los nodos"');
+  });
+});
+
+describe('ExportUsersButton: exportar el directorio a CSV (USR-16)', () => {
+  const button = (exporting: boolean) =>
+    renderToStaticMarkup(createElement(ExportUsersButton, { exporting, onExport: () => {} }));
+
+  it('el botón lleva la nota de qué sale, enlazada', () => {
+    const html = button(false);
+    const id = /<button[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeDefined();
+    expect(html).toContain(
+      `<p id="${id}" class="text-xs text-[var(--color-fg-muted)] sm:text-right">Se exportan hasta 10.000 personas con estos filtros, una fila por cada nodo.</p>`,
+    );
+    expect(html).toMatch(/<button[^>]*>.*Exportar CSV<\/button>/);
+    expect(html).not.toContain('disabled=""');
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('mientras exporta, espera y lo dice', () => {
+    expect(button(true)).toMatch(/<button[^>]*disabled=""[^>]*>.*Exportando…<\/button>/);
   });
 });

@@ -819,6 +819,8 @@ PATCH  /admin/users/status               -- suspender cierra todas sus sesiones 
 GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
 GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
 GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
+GET    /admin/exports/users              -- el directorio en CSV con sus mismos filtros (sin cursor ni limit), hasta 10.000 personas · 2FA de 10 min · 5/min · users.exported (doc 15, USR-16)
+GET    /tenants/:id/members-export       -- el equipo del nodo en CSV (canManageTenant) · 2FA de 10 min · 5/min · users.exported (doc 15, USR-16)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
 POST   /invitations/accept               -- sólo cuenta nueva · 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera · 409 INVITATION_SIGN_IN_REQUIRED si el correo ya tiene cuenta (0068, doc 15)
 POST   /invitations/preview              -- público: { token } → { valid: true, tenantName, role, inviterName, expiresAt, existingAccount, viewer } o { valid: false } (0068, doc 15)

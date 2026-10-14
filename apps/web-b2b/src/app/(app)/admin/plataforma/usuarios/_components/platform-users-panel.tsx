@@ -4,6 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   CircleAlert,
   CirclePlay,
+  Download,
   MoreHorizontal,
   RefreshCw,
   Search,
@@ -58,6 +59,7 @@ import {
   type DirectoryFilters,
   type PlatformUser,
 } from '../../../../../../lib/platform-users';
+import { saveFile } from '../../../../../../lib/platform-audit-client';
 import { DIRECTORY_ROLES } from '../../../../../../lib/platform-users-proxy';
 import { isStepUpCancelled } from '../../../../../../lib/step-up';
 import { exactTime } from '../../../../../../lib/tenant-admin-format';
@@ -69,6 +71,11 @@ import {
   type NetworkMember,
 } from '../../../../../../lib/tenant-admin-team';
 import type { NetworkNode } from '../../../../../../lib/tenant-network';
+import {
+  exportPlatformUsers,
+  PLATFORM_EXPORT_NOTE,
+  usersExportDoneMessage,
+} from '../../../../../../lib/user-export';
 import { SupportActionGroups } from '../../../usuarios/_components/member-list';
 import { MemberNameButton, MemberSheet } from '../../../usuarios/_components/member-sheet';
 import { roleLabel } from '../../../usuarios/_components/roles';
@@ -172,6 +179,7 @@ export function PlatformUsersPanel({
   const [rowError, setRowError] = useState<RowError | null>(null);
   // La persona cuya ficha está abierta.
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const query = useMemo<DirectoryFilters>(() => ({ ...filters, q }), [filters, q]);
   // Una respuesta de filtros viejos (la persona siguió escribiendo) no pinta encima de la nueva.
@@ -324,6 +332,24 @@ export function PlatformUsersPanel({
     );
   }
 
+  /**
+   * Exportar a CSV (USR-16) con los filtros de la lista que se ve: la misma consulta, sin paginar. Es
+   * de alto impacto: puede pedir el código del 2FA en el medio y repetirse (USR-13).
+   */
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    const res = await exportPlatformUsers(query);
+    setExporting(false);
+    if (isStepUpCancelled(res)) return;
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    saveFile(res.data);
+    toast.success(usersExportDoneMessage(res.data, 'platform'));
+  }
+
   const filtered = hasFilters({ ...filters, q: '' }) || q.trim() !== '';
   const sheetUser =
     state.status === 'ready' ? state.users.find((u) => u.id === sheetId) : undefined;
@@ -332,13 +358,18 @@ export function PlatformUsersPanel({
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-5 sm:py-8">
       {confirmDialog}
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
-          Usuarios de la plataforma
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Todas las personas de la red, en todos los nodos.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
+            Usuarios de la plataforma
+          </h1>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+            Todas las personas de la red, en todos los nodos.
+          </p>
+        </div>
+        {tab === 'users' ? (
+          <ExportUsersButton exporting={exporting} onExport={() => void exportCsv()} />
+        ) : null}
       </header>
 
       <div>
@@ -448,6 +479,41 @@ export function PlatformUsersPanel({
           onClose={() => setSheetId(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Exportar CSV" del directorio, con la nota de qué sale. Aparte para pintarlo en un test. Mientras
+ * exporta, el botón espera (y lo dice) en vez de desaparecer.
+ */
+export function ExportUsersButton({
+  exporting,
+  onExport,
+}: {
+  exporting: boolean;
+  onExport: () => void;
+}) {
+  const noteId = useId();
+  return (
+    <div className="flex flex-col items-start gap-1.5 sm:items-end">
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={exporting}
+        aria-describedby={noteId}
+        onClick={onExport}
+      >
+        {exporting ? (
+          <RefreshCw aria-hidden="true" className="animate-spin" />
+        ) : (
+          <Download aria-hidden="true" />
+        )}
+        {exporting ? 'Exportando…' : 'Exportar CSV'}
+      </Button>
+      <p id={noteId} className="text-xs text-[var(--color-fg-muted)] sm:text-right">
+        {PLATFORM_EXPORT_NOTE}
+      </p>
     </div>
   );
 }
