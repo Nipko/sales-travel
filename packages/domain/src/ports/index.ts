@@ -11,3 +11,4 @@ export * from './hotel-book.port';
 export * from './hotel-booking-read.port';
 export * from './hotel-cancel.port';
 export * from './hotel-optional.port';
+export * from './order-modify.port';

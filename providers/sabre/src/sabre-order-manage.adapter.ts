@@ -3,8 +3,16 @@ import type {
   OrderCancelResult,
   OrderForModification,
   OrderModificationReadPort,
+  OrderModifyPort,
+  OrderModifyRef,
+  OrderModifyResult,
+  OrderTravelersView,
   OrderView,
+  ProviderIssue,
   SearchContext,
+  TravelerChange,
+  TravelerFieldRef,
+  TravelerModification,
 } from '@sales-travel/domain';
 import {
   SABRE_CANCEL_BOOKING_PATH,
@@ -48,7 +56,23 @@ import {
   type SabreBookingItem,
   type SabreBookingSnapshot,
 } from './booking/get.response.mapper';
+import {
+  SABRE_MODIFY_BOOKING_PATH,
+  SabreModifyBookingBuildError,
+  buildSabreModifyBookingRequest,
+  describeSabreModifyBookingRequest,
+  parseSabreTravelerChanges,
+} from './booking/modify.request.builder';
+import {
+  mapSabreModifyBookingResponse,
+  maskSabreTravelers,
+  readSabreTravelersState,
+  requestedTravelerFields,
+  verifySabreTravelerChanges,
+  type SabreBookingTravelersState,
+} from './booking/modify.response.mapper';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
+import { SabreApiError, type SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 
@@ -140,7 +164,7 @@ export interface SabreCancelOptions extends SabreOrderManageOptions {
  * operaciones de este contrato y fingirlas con un resultado plausible es lo que vende un asiento
  * que no existe. Quien componga el `FlightProviderAdapter` completo las rechaza explícitamente.
  */
-export class SabreOrderManageAdapter implements OrderModificationReadPort {
+export class SabreOrderManageAdapter implements OrderModificationReadPort, OrderModifyPort {
   constructor(
     private readonly cfg: SabreConfig,
     private readonly http: SabreHttpClient,
@@ -399,6 +423,342 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
     return evidence;
   }
 
+  // -------------------------------------------------------------------------------------------
+  // Datos de los pasajeros: documento, viajero frecuente y servicios especiales (SAB-25, RF-17)
+  // -------------------------------------------------------------------------------------------
+
+  /** Lo que `modifyBooking` cambia de un pasajero por este adapter, en cualquier reserva. */
+  supportedModifications(): readonly TravelerModification[] {
+    return SABRE_SUPPORTED_MODIFICATIONS;
+  }
+
+  /**
+   * La reserva enmascarada para la pantalla de edición (`OrderModifyPort.readTravelers`).
+   *
+   * Lectura de display con `FLIGHTS` (el carril decide si se pueden pedir servicios especiales),
+   * `TRAVELERS` y `SPECIAL_SERVICES`. Trae los documentos enteros: se enmascaran aquí mismo y al log
+   * sólo van conteos.
+   */
+  async readTravelers(
+    order: OrderModifyRef,
+    ctx: SearchContext,
+    options: SabreOrderManageOptions = {},
+  ): Promise<OrderTravelersView> {
+    const state = await this.readTravelersState(
+      order.orderId,
+      ctx,
+      SABRE_TRAVELERS_SECTIONS_WITH_FLIGHTS,
+      options,
+    );
+    const view = maskSabreTravelers(state, order.passengers.length, order.contentSource);
+    this.log('debug', 'sabre.getBooking.travelers', {
+      tenantId: ctx.tenantId,
+      travelers: state.travelers.length,
+      passengers: order.passengers.length,
+      specialServices: state.specialServices.length,
+      lanes: [...state.lanes],
+      supported: [...view.supported],
+      warnings: [...view.warnings],
+    });
+    return view;
+  }
+
+  /**
+   * Modifica en bloque los datos de los pasajeros (`OrderModifyPort.modifyTravelers`).
+   *
+   * Read-modify-write sobre una lectura fresca, nunca cacheada:
+   *
+   *  1. `getBooking` SIN `returnOnly` → la reserva entera y su `bookingSignature`.
+   *  2. `before`/`after` desde esa lectura (`buildSabreModifyBookingRequest`). Si la reserva ya
+   *     tiene lo pedido, no se manda nada.
+   *  3. `modifyBooking`, sin reintentos del cliente (está en `SABRE_NON_IDEMPOTENT_PATHS`).
+   *  4. Con la firma vieja (`UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNATURE`, o el fallo interno de la
+   *     verificación de firma) NO se aplicó nada: se vuelve al paso 1 con una lectura nueva, hasta
+   *     {@link SABRE_MODIFY_MAX_ATTEMPTS} escrituras. `modifyBooking` no devuelve firma nueva
+   *     (`:890-909`): cada intento lee la suya.
+   *  5. El desenlace se VERIFICA contra la reserva: la de la respuesta (`retrieveBooking: true`) o,
+   *     si no vino o no muestra todo, una lectura de display. Lo que la reserva no muestra no se da
+   *     por hecho.
+   *
+   * Lanza sólo lo que pasa antes de mandar la primera escritura (o si todas las anteriores se
+   * rechazaron por firma, que tampoco escribe): datos inválidos, pasajeros que no casan, una lectura
+   * que falla. El lock por reserva lo sostiene quien llama (el claim de la operación).
+   */
+  async modifyTravelers(
+    order: OrderModifyRef,
+    changes: readonly TravelerChange[],
+    ctx: SearchContext,
+    options: SabreModifyOptions = {},
+  ): Promise<OrderModifyResult> {
+    const parsed = parseSabreTravelerChanges(changes, order.passengers.length);
+    const requested = requestedTravelerFields(parsed);
+    let attempts = 0;
+
+    for (let round = 1; ; round += 1) {
+      const read = await this.readForModify(order.orderId, ctx, options);
+      const plan = buildSabreModifyBookingRequest({
+        confirmationId: order.orderId,
+        signature: read.signature,
+        booking: read.booking,
+        changes: parsed,
+        passengers: order.passengers,
+        ...(order.contentSource === undefined ? {} : { contentSource: order.contentSource }),
+        ...(options.receivedFrom === undefined ? {} : { receivedFrom: options.receivedFrom }),
+        ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
+      });
+      if (plan.request === undefined) {
+        return this.finishModify(ctx, {
+          outcome: 'MODIFIED',
+          unchanged: true,
+          applied: requested,
+          pending: [],
+          attempts,
+          issues: [],
+        });
+      }
+
+      attempts += 1;
+      const shape = describeSabreModifyBookingRequest(plan.request, plan.changed);
+      let result: SabreResult<unknown>;
+      try {
+        // Sin `idempotent`: y aunque se pidiera, el path está en `SABRE_NON_IDEMPOTENT_PATHS`.
+        result = await this.http.postJson<unknown>(
+          SABRE_MODIFY_BOOKING_PATH,
+          plan.request,
+          this.conversation(ctx),
+        );
+      } catch (error) {
+        if (!(error instanceof SabreApiError)) throw error;
+        // La cola local venció antes de mandar: la reserva no se tocó en este intento, y los
+        // anteriores (si los hubo) se rechazaron por firma.
+        if ((error as { sentToProvider?: unknown }).sentToProvider === false) throw error;
+        const issues = providerIssues(error.issues);
+
+        if (isSignatureConflict(error)) {
+          if (round < SABRE_MODIFY_MAX_ATTEMPTS) {
+            this.log('warn', 'sabre.modifyBooking.signature_retry', {
+              tenantId: ctx.tenantId,
+              round,
+              ...shape,
+            });
+            continue;
+          }
+          return this.finishModify(
+            ctx,
+            {
+              outcome: 'FAILED',
+              unchanged: false,
+              applied: [],
+              pending: requested,
+              attempts,
+              failureReason: 'CONCURRENT_CHANGE',
+              issues,
+            },
+            { ...shape, status: error.status },
+          );
+        }
+
+        const verdict = sabreModifyFailureVerdict(error);
+        if (verdict === 'REJECTED') {
+          return this.finishModify(
+            ctx,
+            {
+              outcome: 'FAILED',
+              unchanged: false,
+              applied: [],
+              pending: requested,
+              attempts,
+              failureReason: 'REJECTED',
+              issues,
+            },
+            { ...shape, status: error.status, verdict },
+          );
+        }
+
+        // Se mandó y Sabre contestó un error de negocio, o no contestó: la reserva dice qué quedó.
+        const check = await this.verifyWrite(order.orderId, parsed, ctx, options);
+        if (check !== undefined && check.pending.length === 0) {
+          return this.finishModify(
+            ctx,
+            { outcome: 'MODIFIED', unchanged: false, ...check, attempts, issues },
+            { ...shape, status: error.status, verdict, verifiedBy: 'read' },
+          );
+        }
+        if (verdict === 'APPLICATION' && check !== undefined && check.applied.length === 0) {
+          return this.finishModify(
+            ctx,
+            {
+              outcome: 'FAILED',
+              unchanged: false,
+              ...check,
+              attempts,
+              failureReason: 'REJECTED',
+              issues,
+            },
+            { ...shape, status: error.status, verdict, verifiedBy: 'read' },
+          );
+        }
+        return this.finishModify(
+          ctx,
+          {
+            outcome: 'UNVERIFIED',
+            unchanged: false,
+            applied: check?.applied ?? [],
+            pending: check?.pending ?? requested,
+            attempts,
+            issues,
+          },
+          {
+            ...shape,
+            status: error.status,
+            verdict,
+            verifiedBy: check === undefined ? 'none' : 'read',
+          },
+        );
+      }
+
+      // 2xx: la reserva de la respuesta tiene que mostrar lo pedido. Si no vino, no se entiende o no
+      // lo muestra todo, se relee: la respuesta puede venir sin la reserva
+      // (`UNABLE_TO_RETRIEVE_BOOKING`, que el fabricante declara aviso) o con una foto anterior.
+      let check = verifyModifyResponse(result.data, parsed);
+      let verifiedBy = 'response';
+      if (check === undefined || check.pending.length > 0) {
+        const fresh = await this.verifyWrite(order.orderId, parsed, ctx, options);
+        if (fresh !== undefined) {
+          check = fresh;
+          verifiedBy = 'read';
+        } else if (check === undefined) {
+          verifiedBy = 'none';
+        }
+      }
+      const issues = providerIssues(result.warnings);
+      const meta = {
+        ...shape,
+        status: result.status,
+        conversationId: result.conversationId,
+        durationMs: result.durationMs,
+        verifiedBy,
+      };
+      if (check !== undefined && check.pending.length === 0) {
+        return this.finishModify(
+          ctx,
+          { outcome: 'MODIFIED', unchanged: false, ...check, attempts, issues },
+          meta,
+        );
+      }
+      return this.finishModify(
+        ctx,
+        {
+          outcome: 'UNVERIFIED',
+          unchanged: false,
+          applied: check?.applied ?? [],
+          pending: check?.pending ?? requested,
+          attempts,
+          issues,
+        },
+        meta,
+      );
+    }
+  }
+
+  /**
+   * La lectura que da la firma: `getBooking` sin `returnOnly` y con el perfil de `extraFeatures`
+   * de siempre. Devuelve la respuesta CRUDA —`before` se copia de ella— y la firma; sin firma no
+   * hay modificación posible y se lanza antes de armar nada.
+   */
+  private async readForModify(
+    orderId: string,
+    ctx: SearchContext,
+    options: SabreOrderManageOptions,
+  ): Promise<{ readonly signature: string; readonly booking: unknown }> {
+    const request = buildSabreGetBookingForModification({
+      confirmationId: orderId,
+      ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
+    });
+    const result = await this.http.postJson<unknown>(SABRE_GET_BOOKING_PATH, request, {
+      idempotent: true,
+      ...this.conversation(ctx),
+    });
+    const mapped = mapSabreGetBookingForModification(result.data, {
+      now: new Date((this.deps.now ?? Date.now)()).toISOString(),
+    });
+    this.log(mapped.retrieved ? 'debug' : 'warn', 'sabre.getBooking.forModification', {
+      tenantId: ctx.tenantId,
+      conversationId: result.conversationId,
+      durationMs: result.durationMs,
+      ...describeSabreGetBookingRequest(request),
+      retrieved: mapped.retrieved,
+      ...(mapped.retrieved ? {} : { warnings: [...mapped.warnings] }),
+    });
+    if (!mapped.retrieved) {
+      throw new SabreModifyBookingBuildError(
+        'SIGNATURE_ABSENT',
+        'la lectura para modificar no trajo bookingSignature',
+      );
+    }
+    return { signature: mapped.signature, booking: result.data };
+  }
+
+  private async readTravelersState(
+    orderId: string,
+    ctx: SearchContext,
+    sections: readonly SabreReturnOnly[],
+    options: SabreOrderManageOptions,
+  ): Promise<SabreBookingTravelersState> {
+    const request = buildSabreGetBookingForDisplay({
+      confirmationId: orderId,
+      sections,
+      ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
+      ...(options.surname === undefined ? {} : { surname: options.surname }),
+    });
+    const result = await this.http.postJson<unknown>(SABRE_GET_BOOKING_PATH, request, {
+      idempotent: true,
+      ...this.conversation(ctx),
+    });
+    return readSabreTravelersState(result.data);
+  }
+
+  /** La verificación por lectura de display. `undefined` si la lectura no se pudo hacer. */
+  private async verifyWrite(
+    orderId: string,
+    changes: readonly TravelerChange[],
+    ctx: SearchContext,
+    options: SabreOrderManageOptions,
+  ): Promise<
+    { readonly applied: TravelerFieldRef[]; readonly pending: TravelerFieldRef[] } | undefined
+  > {
+    try {
+      const state = await this.readTravelersState(orderId, ctx, SABRE_TRAVELERS_SECTIONS, options);
+      return verifySabreTravelerChanges(state, changes);
+    } catch (error) {
+      this.log('warn', 'sabre.modifyBooking.verify_failed', {
+        tenantId: ctx.tenantId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return undefined;
+    }
+  }
+
+  private finishModify(
+    ctx: SearchContext,
+    result: OrderModifyResult,
+    meta: Record<string, unknown> = {},
+  ): OrderModifyResult {
+    this.log(result.outcome === 'MODIFIED' ? 'info' : 'warn', 'sabre.modifyBooking', {
+      tenantId: ctx.tenantId,
+      ...meta,
+      outcome: result.outcome,
+      unchanged: result.unchanged,
+      attempts: result.attempts,
+      applied: result.applied.map((ref) => ref.field),
+      pending: result.pending.map((ref) => ref.field),
+      ...(result.failureReason === undefined ? {} : { failureReason: result.failureReason }),
+      // Sólo el vocabulario cerrado del proveedor; `description` y `fieldValue` no salen nunca.
+      issueTypes: result.issues.map((issue) => issue.type),
+    });
+    return result;
+  }
+
   private conversation(ctx: SearchContext): { conversationId?: string } {
     if (ctx.requestId === undefined) return {};
     return { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` };
@@ -483,4 +843,133 @@ export function cancellableItemsOf(
   snapshot: SabreBookingSnapshot,
 ): readonly { readonly itemId: string; readonly kind: SabreBookingItem['kind'] }[] {
   return snapshot.items.map((item) => ({ itemId: item.itemId, kind: item.kind }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// modifyBooking de los pasajeros (SAB-25)
+// ---------------------------------------------------------------------------------------------
+
+/** Lo que este adapter cambia de un pasajero (`OrderModifyPort.supportedModifications`). */
+export const SABRE_SUPPORTED_MODIFICATIONS: readonly TravelerModification[] = Object.freeze([
+  'identityDocuments',
+  'loyalty',
+  'specialServices',
+] as const);
+
+/**
+ * Escrituras por pedido: la primera y DOS reintentos con lectura nueva ante una firma vieja
+ * (docs/sabre/05 §9, RF-17 CA-4). Más allá, la reserva cambia más rápido de lo que se la lee y se
+ * le dice al vendedor en vez de insistir.
+ */
+export const SABRE_MODIFY_MAX_ATTEMPTS = 3;
+
+/** La lectura de la pantalla de edición: el carril, los pasajeros y sus servicios especiales. */
+export const SABRE_TRAVELERS_SECTIONS_WITH_FLIGHTS: readonly SabreReturnOnly[] = Object.freeze([
+  'FLIGHTS',
+  'TRAVELERS',
+  'SPECIAL_SERVICES',
+] as const satisfies readonly SabreReturnOnly[]);
+
+/** La lectura que verifica un cambio: sólo pasajeros y servicios especiales. */
+export const SABRE_TRAVELERS_SECTIONS: readonly SabreReturnOnly[] = Object.freeze([
+  'TRAVELERS',
+  'SPECIAL_SERVICES',
+] as const satisfies readonly SabreReturnOnly[]);
+
+export interface SabreModifyOptions extends SabreOrderManageOptions {
+  /** Quién firma el cambio en el historial del PNR (`receivedFrom`). */
+  readonly receivedFrom?: string;
+}
+
+/**
+ * Los tipos con que Sabre dice que la firma no sirvió: la verificación de firma corre ANTES de
+ * aplicar nada, así que la reserva no cambió y se puede leer de nuevo e intentar otra vez
+ * (`help-documentation-modify-booking-error-list-0.txt`).
+ */
+export const SABRE_MODIFY_SIGNATURE_TYPES: ReadonlySet<string> = new Set([
+  'UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNATURE',
+  'UNABLE_TO_RETRIEVE_BOOKING_SIGNATURE',
+]);
+
+/**
+ * Tipos de error de `modifyBooking` que NO dicen si el cambio se aplicó: tiempos agotados, un
+ * servicio interno caído a mitad de la orquestación, el cierre de la transacción. Ante ellos, que
+ * la reserva no muestre el cambio todavía no prueba que no vaya a quedar.
+ */
+export const SABRE_MODIFY_AMBIGUOUS_TYPES: ReadonlySet<string> = new Set([
+  'TIMEOUT',
+  'INTERNAL_SERVER_TIMEOUT',
+  'INTERNAL_PROCESSING_TIMEOUT',
+  'DOWNLINE_SERVICE_FAILURE',
+  'DOWNLINE_SERVICE_ERROR',
+  'FAULT_RESPONSE',
+  'UNABLE_TO_END_TRANSACTION',
+  'UNABLE_TO_UPDATE_RESERVATION',
+  'UNABLE_TO_CONFIRM_MODIFICATION_STATUS',
+  'INTERNAL_SERVER_ERROR',
+]);
+
+function errorIssues(error: SabreApiError): readonly SabreIssue[] {
+  return error.issues.filter((issue) => issue.severity === 'error');
+}
+
+function isSignatureConflict(error: SabreApiError): boolean {
+  const errors = errorIssues(error);
+  return (
+    errors.length > 0 &&
+    errors.every(
+      (issue) => issue.type !== undefined && SABRE_MODIFY_SIGNATURE_TYPES.has(issue.type),
+    )
+  );
+}
+
+/**
+ * Qué se sabe de un `modifyBooking` que terminó en `SabreApiError`:
+ *
+ * - `REJECTED`: no se ejecutó. Un 4xx sin error de negocio (petición inválida, token, cuota) o un
+ *   rechazo de validación (`BAD_REQUEST`).
+ * - `APPLICATION`: Sabre lo procesó y lo rechazó por una regla de negocio (la aerolínea no acepta el
+ *   viajero frecuente, el documento…). Puede haber aplicado una parte: decide la lectura.
+ * - `UNKNOWN`: un corte, un 5xx o un error de los que no dicen si quedó. Nunca se da por fallido.
+ */
+export function sabreModifyFailureVerdict(
+  error: SabreApiError,
+): 'REJECTED' | 'APPLICATION' | 'UNKNOWN' {
+  if (error.status === 0) return 'UNKNOWN';
+  const errors = errorIssues(error);
+  if (
+    errors.some((issue) => issue.type !== undefined && SABRE_MODIFY_AMBIGUOUS_TYPES.has(issue.type))
+  ) {
+    return 'UNKNOWN';
+  }
+  if (errors.some((issue) => issue.category === 'APPLICATION_ERROR')) return 'APPLICATION';
+  if (error.status >= 400 && error.status < 500) return 'REJECTED';
+  if (errors.length > 0 && errors.every((issue) => issue.category === 'BAD_REQUEST')) {
+    return 'REJECTED';
+  }
+  return 'UNKNOWN';
+}
+
+/** Lo que muestra la reserva de la respuesta, o `undefined` si no vino o no se entiende. */
+function verifyModifyResponse(
+  raw: unknown,
+  changes: readonly TravelerChange[],
+): { readonly applied: TravelerFieldRef[]; readonly pending: TravelerFieldRef[] } | undefined {
+  try {
+    const mapped = mapSabreModifyBookingResponse(raw);
+    if (mapped.booking === undefined) return undefined;
+    return verifySabreTravelerChanges(readSabreTravelersState(mapped.booking), changes);
+  } catch {
+    return undefined;
+  }
+}
+
+/** `SabreIssue` ya pasó la puerta de vocabulario del cliente: sin texto libre ni valores. */
+function providerIssues(issues: readonly SabreIssue[]): ProviderIssue[] {
+  return issues.map((issue) => ({
+    severity: issue.severity === 'error' ? 'ERROR' : 'WARNING',
+    category: issue.category ?? 'UNKNOWN',
+    type: issue.type ?? 'UNKNOWN',
+    ...(issue.fieldPath === undefined ? {} : { fieldPath: issue.fieldPath }),
+  }));
 }

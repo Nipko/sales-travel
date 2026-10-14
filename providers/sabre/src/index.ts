@@ -210,3 +210,15 @@ export * from './canonical-json';
 export * from './ticketing/fulfill.request.builder';
 export * from './ticketing/fulfill.response.mapper';
 export * from './sabre-ticketing.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Datos de los pasajeros de una reserva hecha — modifyBooking (SAB-25, RF-17)
+//
+// Bloque propio y al final: los nombres llevan `SabreModify`, `SABRE_MODIFY_`, `SabreTraveler*`,
+// `sabreTravel*`, `SABRE_DOCUMENT_TYPE_BY_`, `SABRE_FREQUENT_FLYER_` o son funciones con «Travelers»
+// en el nombre, así que no vuelven ambiguo nada de arriba. El adapter sigue siendo
+// `SabreOrderManageAdapter`, ya publicado arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './booking/modify.request.builder';
+export * from './booking/modify.response.mapper';

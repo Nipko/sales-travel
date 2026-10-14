@@ -11,6 +11,8 @@ import * as createRequest from './booking/create.request.builder';
 import * as createResponse from './booking/create.response.mapper';
 import * as getRequest from './booking/get.request.builder';
 import * as getResponse from './booking/get.response.mapper';
+import * as modifyRequest from './booking/modify.request.builder';
+import * as modifyResponse from './booking/modify.response.mapper';
 import * as indices from './indices';
 import * as priceRequest from './price/request.builder';
 import * as priceResponse from './price/response.mapper';
@@ -125,6 +127,9 @@ const PROBED: readonly ProbedModule[] = [
   { name: 'ticketing/fulfill.request.builder', module: fulfillRequest },
   { name: 'ticketing/fulfill.response.mapper', module: fulfillResponse },
   { name: 'sabre-ticketing.adapter', module: ticketingAdapter },
+  // Datos de los pasajeros de una reserva hecha (SAB-25).
+  { name: 'booking/modify.request.builder', module: modifyRequest },
+  { name: 'booking/modify.response.mapper', module: modifyResponse },
 ];
 
 describe('el entry público republica los módulos, no copias de ellos', () => {

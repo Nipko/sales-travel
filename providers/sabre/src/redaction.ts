@@ -167,6 +167,8 @@ const PII_KEYS = new Set([
   'phonenumber',
   'documentnumber',
   'passportnumber',
+  // El número de viajero frecuente identifica a la persona en el programa de la aerolínea (SAB-25).
+  'programnumber',
   'nationalid',
   'cardnumber',
   'creditcardnumber',
