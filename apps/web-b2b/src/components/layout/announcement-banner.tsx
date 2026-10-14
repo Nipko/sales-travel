@@ -7,6 +7,7 @@ import {
   SEVERITY_BANNER_LABEL,
   browserStorage,
   canDismiss,
+  dismissKey,
   parseActiveAnnouncements,
   readDismissed,
   rememberDismissed,
@@ -54,7 +55,7 @@ export function AnnouncementBannerItem({
   className,
 }: {
   announcement: ActiveAnnouncement;
-  onDismiss?: (id: string) => void;
+  onDismiss?: (announcement: ActiveAnnouncement) => void;
   className?: string;
 }) {
   const style = SEVERITY_STYLE[announcement.severity];
@@ -83,7 +84,7 @@ export function AnnouncementBannerItem({
       {dismissible ? (
         <button
           type="button"
-          onClick={() => onDismiss(announcement.id)}
+          onClick={() => onDismiss(announcement)}
           aria-label="Ocultar aviso"
           className="-my-1 -mr-2 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface)]/60 hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
         >
@@ -103,15 +104,14 @@ export function AnnouncementBannerList({
   onDismiss,
 }: {
   items: readonly ActiveAnnouncement[];
-  onDismiss: (id: string) => void;
+  onDismiss: (announcement: ActiveAnnouncement) => void;
 }) {
   if (items.length === 0) return null;
   return (
     <div
       role="region"
       aria-label="Avisos de la plataforma"
-      aria-live="polite"
-      className="max-h-[40dvh] shrink-0 overflow-y-auto"
+      className="max-h-[40dvh] overflow-y-auto"
     >
       {items.map((a) => (
         <AnnouncementBannerItem key={a.id} announcement={a} onDismiss={onDismiss} />
@@ -160,12 +160,21 @@ function AnnouncementFeed() {
     };
   }, []);
 
-  const onDismiss = useCallback((id: string) => {
-    setDismissed((current) => rememberDismissed(browserStorage(), current, id));
+  const onDismiss = useCallback((announcement: ActiveAnnouncement) => {
+    setDismissed((current) =>
+      rememberDismissed(browserStorage(), current, dismissKey(announcement)),
+    );
   }, []);
 
+  // La región viva existe desde el primer pintado, vacía: un lector de pantalla anuncia lo que
+  // aparece DENTRO de una región que ya estaba, no una que llega junto con su texto.
   return (
-    <AnnouncementBannerList items={visibleAnnouncements(items, dismissed)} onDismiss={onDismiss} />
+    <div aria-live="polite" className="shrink-0">
+      <AnnouncementBannerList
+        items={visibleAnnouncements(items, dismissed)}
+        onDismiss={onDismiss}
+      />
+    </div>
   );
 }
 

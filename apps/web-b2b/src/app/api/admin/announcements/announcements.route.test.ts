@@ -115,9 +115,17 @@ describe('las lecturas', () => {
 
     mocks.api.mockResolvedValue({ ok: true, data: { announcements: [] } });
     expect(await (await active()).json()).toEqual({ announcements: [] });
-    expect(mocks.api).toHaveBeenCalledWith('/announcements/active');
+    expect(mocks.api).toHaveBeenCalledWith('/announcements/active', expect.anything());
 
     mocks.api.mockResolvedValue({ ok: false, error: { status: 401, message: 'Sin sesión' } });
     expect((await active()).status).toBe(401);
+  });
+
+  it('la franja pregunta sin contar como actividad: una pestaña abandonada igual vence', async () => {
+    mocks.api.mockResolvedValue({ ok: true, data: { announcements: [] } });
+    await active();
+    expect(mocks.api).toHaveBeenCalledWith('/announcements/active', {
+      headers: { 'x-session-ping': 'passive' },
+    });
   });
 });

@@ -14,6 +14,7 @@ import {
   cleanBody,
   cleanTitle,
   createAnnouncementPlan,
+  dismissKey,
   draftFromAnnouncement,
   draftToCreateBody,
   draftToPatchBody,
@@ -94,42 +95,67 @@ describe('parseActiveAnnouncements', () => {
 describe('ocultar avisos', () => {
   it('lo oculto sobrevive a una recarga con almacenamiento', () => {
     const storage = memoryStorage();
-    const after = rememberDismissed(storage, readDismissed(storage), A.toUpperCase());
-    expect(after.has(A)).toBe(true);
+    const aviso = { ...active(A, 'info'), id: A.toUpperCase() };
+    const key = dismissKey(aviso);
+    expect(key).toMatch(new RegExp(`^${A}:[0-9a-f]{8}$`));
+    const after = rememberDismissed(storage, readDismissed(storage), key);
+    expect(after.has(key)).toBe(true);
     // "Recarga": se vuelve a leer de cero.
-    expect([...readDismissed(storage)]).toEqual([A]);
-    expect(storage.data.get(DISMISSED_STORAGE_KEY)).toBe(JSON.stringify([A]));
+    const reloaded = readDismissed(storage);
+    expect([...reloaded]).toEqual([key]);
+    expect(storage.data.get(DISMISSED_STORAGE_KEY)).toBe(JSON.stringify([key]));
+    expect(visibleAnnouncements([active(A, 'info')], reloaded)).toEqual([]);
   });
 
   it('sin almacenamiento (o si lanza) no rompe: queda oculto hasta recargar', () => {
+    const key = dismissKey(active(A, 'info'));
     expect(readDismissed(null).size).toBe(0);
     expect(readDismissed(brokenStorage).size).toBe(0);
-    expect(rememberDismissed(brokenStorage, new Set(), A).has(A)).toBe(true);
-    expect(rememberDismissed(null, new Set(), A).has(A)).toBe(true);
+    expect(rememberDismissed(brokenStorage, new Set(), key).has(key)).toBe(true);
+    expect(rememberDismissed(null, new Set(), key).has(key)).toBe(true);
   });
 
   it('un valor guardado roto o ajeno se ignora', () => {
     const storage = memoryStorage();
+    const key = dismissKey(active(A, 'info'));
     storage.setItem(DISMISSED_STORAGE_KEY, '{no es json');
     expect(readDismissed(storage).size).toBe(0);
-    storage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([A, 'x', 3, null]));
-    expect([...readDismissed(storage)]).toEqual([A]);
+    storage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([key, A, `${A}:xyz`, 'x', 3, null]));
+    expect([...readDismissed(storage)]).toEqual([key]);
+  });
+
+  it('si el superadmin lo corrige, vuelve a verse; si sólo cambia la vigencia, no', () => {
+    const v1: ActiveAnnouncement = {
+      id: A,
+      severity: 'info',
+      title: 'TBO en mantenimiento el sábado',
+      body: 'De 02:00 a 04:00.',
+    };
+    const dismissed = new Set([dismissKey(v1)]);
+    expect(visibleAnnouncements([v1], dismissed)).toEqual([]);
+    for (const v2 of [
+      { ...v1, body: 'De 03:00 a 05:00.' },
+      { ...v1, title: 'TBO en mantenimiento el domingo' },
+      { ...v1, severity: 'warning' as const },
+    ]) {
+      expect(visibleAnnouncements([v2], dismissed), JSON.stringify(v2)).toEqual([v2]);
+    }
+    // La franja no recibe la vigencia: el mismo texto es la misma versión.
+    expect(dismissKey({ ...v1 })).toBe(dismissKey(v1));
   });
 
   it('se recuerdan los últimos 50', () => {
     const storage = memoryStorage();
+    const key = (i: number) =>
+      dismissKey(active(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, 'info'));
     let set = readDismissed(storage);
     for (let i = 0; i < 60; i++) {
-      set = rememberDismissed(
-        storage,
-        set,
-        `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
-      );
+      set = rememberDismissed(storage, set, key(i));
     }
     const kept = readDismissed(storage);
     expect(kept.size).toBe(50);
-    expect(kept.has('00000000-0000-4000-8000-000000000059')).toBe(true);
-    expect(kept.has('00000000-0000-4000-8000-000000000000')).toBe(false);
+    expect(kept.has(key(59))).toBe(true);
+    expect(kept.has(key(0))).toBe(false);
   });
 
   it('lo crítico no se oculta nunca; se muestran 3 como mucho', () => {
@@ -137,7 +163,7 @@ describe('ocultar avisos', () => {
     expect(canDismiss('warning')).toBe(true);
     expect(canDismiss('info')).toBe(true);
     const list = [active(A, 'critical'), active(B, 'warning'), active(C, 'info')];
-    const dismissed = new Set([A, B]);
+    const dismissed = new Set([dismissKey(list[0]!), dismissKey(list[1]!)]);
     expect(visibleAnnouncements(list, dismissed).map((a) => a.id)).toEqual([A, C]);
     const many = [...list, active(NODO, 'info')];
     expect(visibleAnnouncements(many, new Set())).toHaveLength(ANNOUNCEMENTS_SHOWN_MAX);

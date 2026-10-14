@@ -272,6 +272,38 @@ d('system_announcements (0079) contra Postgres', () => {
       expect(await seen(vendSubA, subA)).toEqual(['SUB', 'A', 'NET2']);
     });
 
+    it('el superadmin, en la raíz platform, ve sólo lo de toda la red', async () => {
+      expect(await seen(superadmin, platform)).toEqual(['NET2', 'NET']);
+    });
+
+    it('sólo con la membership activa y el usuario activo: suspendido o invitado no ve nada', async () => {
+      const membresiaSuspendida = await user('m-susp', agA, 'agency_admin');
+      await pool.query(`UPDATE memberships SET status = 'suspended' WHERE user_id = $1`, [
+        membresiaSuspendida,
+      ]);
+      const invitado = await user('m-inv', agA, 'vendedor');
+      await pool.query(`UPDATE memberships SET status = 'invited' WHERE user_id = $1`, [invitado]);
+      const usuarioSuspendido = await user('u-susp', agA, 'vendedor');
+      await pool.query(`UPDATE users SET status = 'suspended' WHERE id = $1`, [usuarioSuspendido]);
+
+      for (const u of [membresiaSuspendida, invitado, usuarioSuspendido]) {
+        expect(await seen(u, agA)).toEqual([]);
+      }
+    });
+
+    it('un rol de administración suspendido no cuenta para "sólo administradores"', async () => {
+      // Vendedor activo en la agencia y admin del consolidador, pero esa membership está suspendida.
+      const exAdmin = await user('ex-adm', agA, 'vendedor');
+      await pool.query(
+        `INSERT INTO memberships (tenant_id, user_id, role, status)
+         VALUES ($1, $2, 'consolidator_admin', 'suspended')`,
+        [consA, exAdmin],
+      );
+      const names = await seen(exAdmin, agA);
+      expect(names).toContain('A');
+      expect(names).not.toContain('A_ADM');
+    });
+
     it('un anuncio de un nodo no sube: el consolidador no ve el de su subagencia', async () => {
       expect(await seen(adminConsA, consA)).not.toContain('SUB');
       expect(await seen(vendA, agA)).not.toContain('SUB');

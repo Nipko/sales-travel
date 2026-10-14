@@ -1027,10 +1027,14 @@ GET    /announcements/active             -- La franja de avisos del panel, para 
                                          -- panel: components/layout/announcement-banner.tsx, en el
                                          -- AppShell bajo la barra superior (no en la pantalla de
                                          -- enrolamiento del 2FA); pregunta al abrir y cada 5 min
-                                         -- (no con la pestaña oculta), pinta texto (sin HTML ni
-                                         -- enlaces, saltos de línea respetados) y deja ocultar info
-                                         -- y warning (localStorage st.announcements.dismissed);
-                                         -- critical no se oculta. Si falla, no pinta nada.
+                                         -- (no con la pestaña oculta) con x-session-ping: passive,
+                                         -- así que no cuenta como actividad ni impide que la sesión
+                                         -- venza por inactividad. Pinta texto (sin HTML ni enlaces,
+                                         -- saltos de línea respetados) y deja ocultar info y
+                                         -- warning (localStorage st.announcements.dismissed, por id
+                                         -- y una huella de gravedad, título y mensaje: si se corrige
+                                         -- el texto, vuelve a verse); critical no se oculta. Si
+                                         -- falla, no pinta nada.
 GET    /admin/announcements              -- Plataforma → Sistema › Anuncios (sólo superadmin): los
                                          -- últimos 50 con status scheduled|active|expired|archived
                                          -- (con la hora de la base) y el público {rootTenantId,

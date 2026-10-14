@@ -93,8 +93,12 @@ describe('AnnouncementBannerList', () => {
 });
 
 describe('AnnouncementBanner', () => {
-  it('el primer pintado (antes de preguntar) no pinta nada', () => {
-    expect(renderToStaticMarkup(createElement(AnnouncementBanner))).toBe('');
+  it('el primer pintado (antes de preguntar) no pinta avisos: sólo la región viva, vacía', () => {
+    // La región viva tiene que estar antes que el texto: un lector de pantalla no anuncia una que
+    // llega junto con su contenido.
+    expect(renderToStaticMarkup(createElement(AnnouncementBanner))).toBe(
+      '<div aria-live="polite" class="shrink-0"></div>',
+    );
   });
 
   it('nunca inyecta HTML', () => {

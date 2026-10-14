@@ -303,7 +303,7 @@ export function AnnouncementFormFields({
           <AnnouncementBannerItem announcement={preview} className="border-b-0" />
         </div>
         <p className="text-xs text-[var(--color-fg-muted)]">
-          {severity?.detail} Cada panel lo muestra en hasta 5 minutos o al abrir una página.
+          {severity?.detail} Cada panel lo muestra en hasta 5 minutos o al recargar la página.
         </p>
       </section>
     </div>

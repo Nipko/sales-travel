@@ -203,7 +203,31 @@ export function browserStorage(): KeyValueStorage | null {
   }
 }
 
-/** Los ids que el usuario ocultó en este navegador. Nunca lanza. */
+/** FNV-1a de 32 bits en hex. No protege nada: sólo distingue una versión del texto de otra. */
+function fingerprint(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+const DISMISS_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}$/;
+
+/**
+ * Cómo se recuerda que el usuario ocultó un aviso: su id y una huella de lo que dice (gravedad,
+ * título y mensaje). Si el superadmin lo corrige —otra hora para el mantenimiento, más grave—, la
+ * huella cambia y vuelve a verse: con el id solo, quien ocultó la primera versión nunca veía la
+ * corrección. Cambiar sólo la vigencia no lo hace volver.
+ */
+export function dismissKey(
+  a: Pick<ActiveAnnouncement, 'id' | 'severity' | 'title' | 'body'>,
+): string {
+  return `${a.id.toLowerCase()}:${fingerprint(`${a.severity}\u0000${a.title}\u0000${a.body}`)}`;
+}
+
+/** Las versiones de avisos ({@link dismissKey}) que el usuario ocultó en este navegador. Nunca lanza. */
 export function readDismissed(storage: KeyValueStorage | null): ReadonlySet<string> {
   if (storage === null) return new Set();
   try {
@@ -211,22 +235,27 @@ export function readDismissed(storage: KeyValueStorage | null): ReadonlySet<stri
     if (raw === null) return new Set();
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter(isAnnouncementId).map((id) => id.toLowerCase()));
+    return new Set(
+      parsed
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => v.toLowerCase())
+        .filter((v) => DISMISS_KEY.test(v)),
+    );
   } catch {
     return new Set();
   }
 }
 
 /**
- * Oculta `id`: lo devuelve sumado a los ocultos y lo intenta guardar. Si no se puede guardar, sigue
- * oculto hasta recargar. Nunca lanza.
+ * Oculta la versión `key` ({@link dismissKey}): la devuelve sumada a las ocultas y lo intenta
+ * guardar. Si no se puede guardar, sigue oculta hasta recargar. Nunca lanza.
  */
 export function rememberDismissed(
   storage: KeyValueStorage | null,
   current: ReadonlySet<string>,
-  id: string,
+  dismissed: string,
 ): ReadonlySet<string> {
-  const key = id.toLowerCase();
+  const key = dismissed.toLowerCase();
   const next = [...[...current].filter((x) => x !== key), key].slice(-DISMISSED_KEEP);
   if (storage !== null) {
     try {
@@ -238,13 +267,16 @@ export function rememberDismissed(
   return new Set(next);
 }
 
-/** Lo que se pinta: sin los ocultos (lo crítico, siempre), hasta {@link ANNOUNCEMENTS_SHOWN_MAX}. */
+/**
+ * Lo que se pinta: sin las versiones ocultas (lo crítico, siempre), hasta
+ * {@link ANNOUNCEMENTS_SHOWN_MAX}.
+ */
 export function visibleAnnouncements(
   list: readonly ActiveAnnouncement[],
   dismissed: ReadonlySet<string>,
 ): ActiveAnnouncement[] {
   return list
-    .filter((a) => !canDismiss(a.severity) || !dismissed.has(a.id.toLowerCase()))
+    .filter((a) => !canDismiss(a.severity) || !dismissed.has(dismissKey(a)))
     .slice(0, ANNOUNCEMENTS_SHOWN_MAX);
 }
 
