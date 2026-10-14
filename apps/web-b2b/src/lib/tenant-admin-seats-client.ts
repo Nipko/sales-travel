@@ -1,5 +1,7 @@
+import { parseIssuedInvitation, type IssuedInvitation } from './invitation-notice';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
+import { reasonOf, withStepUp, type StepUpAware, type StepUpCancelled } from './step-up';
 import { tenantAdminErrorMessage } from './tenant-admin-client';
 import {
   parseSeatsView,
@@ -13,10 +15,12 @@ import {
   parseMemberActionResult,
   parseMembers,
   parseMembershipImpact,
+  parseMembershipRemoval,
   teamLoadError,
   type MemberAction,
   type MemberActionResult,
   type MembershipImpact,
+  type MembershipRemoval,
   type NetworkMember,
   type PendingInvitation,
 } from './tenant-admin-team';
@@ -27,8 +31,8 @@ import {
  * vacía: esa confusión es la que hacía decir "Esta agencia no tiene usuarios" ante un 403.
  */
 
-const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recargá la página.';
-const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.';
+const UNREADABLE = 'El servidor respondió algo que no pudimos leer. Recarga la página.';
+const OFFLINE = 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.';
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -41,12 +45,13 @@ function errorOf(body: unknown): string | undefined {
   return typeof e === 'string' ? e : undefined;
 }
 
+/** El fallo lleva el `reason` del API cuando vino: con él `withStepUp` sabe si pedir el código. */
 async function call<T>(
   url: string,
   init: RequestInit,
   parse: (value: unknown) => T | undefined,
   errorMessage: (status: number, message: string | undefined) => string,
-): Promise<Loaded<T>> {
+): Promise<StepUpAware<T>> {
   let res: Response;
   try {
     res = await fetch(url, { cache: 'no-store', ...init });
@@ -55,9 +60,11 @@ async function call<T>(
   }
   const read = await readJson<unknown>(res);
   if (!res.ok) {
+    const reason = read.ok ? reasonOf(read.data) : undefined;
     return {
       ok: false,
       message: errorMessage(res.status, read.ok ? errorOf(read.data) : undefined),
+      ...(reason ? { reason } : {}),
     };
   }
   if (!read.ok) return { ok: false, message: read.message };
@@ -71,11 +78,11 @@ function seg(id: string): string {
 
 /** El 403 de la vista de puestos es de permiso sobre el nodo, no de superadmin. */
 function seatsReadError(status: number, message: string | undefined): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
-  if (status === 403) return 'No administrás este nodo: no podés ver sus puestos.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if (status === 403) return 'No administras este nodo: no puedes ver sus puestos.';
   // El texto de un 404 puede ser el "Cannot GET …" de la ruta: no se muestra.
   if (status === 404) return 'No encontramos los puestos de este nodo.';
-  return message?.trim() || 'No pudimos cargar los puestos. Probá de nuevo.';
+  return message?.trim() || 'No pudimos cargar los puestos. Inténtalo de nuevo.';
 }
 
 export function loadSeats(tenantId: string): Promise<Loaded<SeatsView>> {
@@ -109,21 +116,30 @@ export function saveSeatPolicy(
   );
 }
 
+/**
+ * Una acción de soporte sobre un miembro. Restablecer su 2FA, forzar el cambio de contraseña y
+ * enviarle el enlace a un admin pueden pedir el código del 2FA (USR-13): `withStepUp` abre el
+ * diálogo y la repite una vez. Si se cierra el diálogo, vuelve `StepUpCancelled`.
+ */
 export function runMemberAction(
   tenantId: string,
   userId: string,
   action: MemberAction,
-): Promise<Loaded<MemberActionResult>> {
-  return call(
-    `/api/tenants/${seg(tenantId)}/members/${seg(userId)}/${action}`,
-    { method: 'POST' },
-    parseMemberActionResult,
-    memberActionError,
+): Promise<StepUpAware<MemberActionResult> | StepUpCancelled> {
+  return withStepUp(() =>
+    call(
+      `/api/tenants/${seg(tenantId)}/members/${seg(userId)}/${action}`,
+      { method: 'POST' },
+      parseMemberActionResult,
+      memberActionError,
+    ),
   );
 }
 
 /** El cambio sobre una membership que la confirmación está por aplicar. */
-export type MembershipChange = { readonly status: 'suspended' } | { readonly role: string };
+export type MembershipChange =
+  | { readonly status: 'suspended' | 'removed' }
+  | { readonly role: string };
 
 /**
  * Qué arrastraría el cambio (las invitaciones que se revocarían). Se pregunta antes de abrir la
@@ -147,6 +163,29 @@ export function loadMembershipImpact(
   );
 }
 
+/**
+ * Quitar a alguien del nodo (USR-11). Si es admin, el API puede pedir el código del 2FA (USR-13):
+ * `withStepUp` abre el diálogo y la repite una vez. Si se cierra el diálogo, vuelve
+ * `StepUpCancelled`.
+ */
+export function removeMembership(
+  tenantId: string,
+  userId: string,
+): Promise<StepUpAware<MembershipRemoval> | StepUpCancelled> {
+  return withStepUp(() =>
+    call(
+      '/api/admin/memberships/remove',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, tenantId }),
+      },
+      parseMembershipRemoval,
+      memberActionError,
+    ),
+  );
+}
+
 export function loadMembers(tenantId: string): Promise<Loaded<NetworkMember[]>> {
   return call(`/api/tenants/network/users?tenantId=${seg(tenantId)}`, {}, parseMembers, (status) =>
     teamLoadError(status),
@@ -156,45 +195,116 @@ export function loadMembers(tenantId: string): Promise<Loaded<NetworkMember[]>> 
 export function loadInvitations(tenantId: string): Promise<Loaded<PendingInvitation[]>> {
   return call(`/api/invitations?tenantId=${seg(tenantId)}`, {}, parseInvitations, (status) =>
     status === 403
-      ? 'No tenés permiso para ver las invitaciones de este nodo.'
+      ? 'No tienes permiso para ver las invitaciones de este nodo.'
       : 'No pudimos cargar las invitaciones pendientes.',
   );
 }
 
-/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
-export function revokeInvitation(tenantId: string, invitationId: string): Promise<Loaded<true>> {
-  return call(
-    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
-    accepted,
-    (status, message) =>
-      status === 401
-        ? 'Tu sesión venció. Volvé a iniciar sesión.'
-        : message?.trim() || 'No pudimos revocar la invitación. Probá de nuevo.',
-  );
+/**
+ * Lo que devuelven reenviar y revocar. `gone`: la invitación ya no está pendiente (la aceptaron o la
+ * revocaron desde otra sesión), así que la fila de la lista quedó vieja y hay que recargarla.
+ */
+export type InvitationActionResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly message: string; readonly gone?: true };
+
+/** Reenviar o revocar una invitación: el error, con el mensaje del API tal cual. Nunca lanza. */
+async function invitationAction<T>(
+  url: string,
+  parse: (value: unknown) => T | undefined,
+  fallback: string,
+): Promise<InvitationActionResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', cache: 'no-store' });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : errorOf(body)?.trim() || fallback;
+    return body?.['reason'] === 'INVITATION_NOT_PENDING'
+      ? { ok: false, message, gone: true }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parse(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
 }
 
-/** `{ id, expiresAt }` del reenvío. `undefined` si la forma no es la esperada. */
-function parseResent(value: unknown): { expiresAt: string } | undefined {
-  const expiresAt = asRecord(value)?.['expiresAt'];
-  return typeof expiresAt === 'string' ? { expiresAt } : undefined;
+/** Revocar una invitación: el mensaje del API tal cual (ya viene en castellano). */
+export function revokeInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<InvitationActionResult<true>> {
+  return invitationAction(
+    `/api/invitations/${seg(invitationId)}/revoke?tenantId=${seg(tenantId)}`,
+    accepted,
+    'No pudimos revocar la invitación. Inténtalo de nuevo.',
+  );
 }
 
 /**
  * Reenviar una invitación: enlace nuevo (el anterior deja de valer) y 7 días más. Devuelve el nuevo
- * vencimiento; el error, el mensaje del API tal cual.
+ * vencimiento y si el correo salió; el error, el mensaje del API tal cual.
  */
 export function resendInvitation(
   tenantId: string,
   invitationId: string,
-): Promise<Loaded<{ expiresAt: string }>> {
-  return call(
+): Promise<InvitationActionResult<IssuedInvitation>> {
+  return invitationAction(
     `/api/invitations/${seg(invitationId)}/resend?tenantId=${seg(tenantId)}`,
-    { method: 'POST' },
-    parseResent,
-    (status, message) =>
-      status === 401
-        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
-        : message?.trim() || 'No pudimos reenviar la invitación. Inténtalo de nuevo.',
+    parseIssuedInvitation,
+    'No pudimos reenviar la invitación. Inténtalo de nuevo.',
   );
+}
+
+/** Lo que pide el formulario de "Invitar usuario". */
+export interface InvitationRequest {
+  readonly email: string;
+  readonly tenantId: string;
+  readonly role: string;
+}
+
+/**
+ * El resultado de invitar. Si ya había una pendiente para ese correo en el nodo, el error trae su id
+ * (`pendingInvitationId`), para ofrecer reenviarla en vez de crear otra.
+ */
+export type InvitationResult =
+  | { readonly ok: true; readonly data: IssuedInvitation }
+  | { readonly ok: false; readonly message: string; readonly pendingInvitationId?: string };
+
+/** Invitar a alguien a un nodo. Nunca lanza. */
+export async function sendInvitation(input: InvitationRequest): Promise<InvitationResult> {
+  let res: Response;
+  try {
+    res = await fetch('/api/invitations', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+  const read = await readJson<unknown>(res);
+  if (!res.ok) {
+    const body = read.ok ? asRecord(read.data) : undefined;
+    const message =
+      res.status === 401
+        ? 'Tu sesión venció. Vuelve a iniciar sesión.'
+        : errorOf(body)?.trim() || 'No pudimos enviar la invitación. Inténtalo de nuevo.';
+    const pendingInvitationId = asRecord(body?.['details'])?.['invitationId'];
+    return body?.['reason'] === 'INVITATION_ALREADY_PENDING' &&
+      typeof pendingInvitationId === 'string'
+      ? { ok: false, message, pendingInvitationId }
+      : { ok: false, message };
+  }
+  if (!read.ok) return { ok: false, message: read.message };
+  const data = parseIssuedInvitation(read.data);
+  return data === undefined ? { ok: false, message: UNREADABLE } : { ok: true, data };
 }

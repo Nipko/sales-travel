@@ -14,8 +14,8 @@ const ICONS: Record<SessionMotivo, LucideIcon> = {
  * puede ser la primera señal de que alguien más tiene la contraseña.
  */
 const HINTS: Partial<Record<SessionMotivo, string>> = {
-  'otro-dispositivo': 'Si no fuiste vos, cambiá tu contraseña después de ingresar.',
-  liberada: 'Si necesitás seguir trabajando, volvé a ingresar cuando haya un puesto libre.',
+  'otro-dispositivo': 'Si no fuiste tú, cambia tu contraseña después de ingresar.',
+  liberada: 'Si necesitas seguir trabajando, vuelve a ingresar cuando haya un puesto libre.',
 };
 
 /**

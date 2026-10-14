@@ -3042,6 +3042,9 @@ function bancoTbo(
     breaker,
     contexts,
   );
+  const marca = {
+    resolveSupportContact: () => Promise.resolve(SOPORTE),
+  } as unknown as BrandingService;
   const permisos = permisosFake() as unknown as BookingPermissionsService;
   const prebookService = new HotelPrebookService(
     registry,
@@ -3052,6 +3055,7 @@ function bancoTbo(
     audit,
     fondos.service,
     permisos,
+    marca,
   );
   const bookings = new HotelBookingService(
     registry,
@@ -3061,7 +3065,7 @@ function bancoTbo(
     pricing,
     breaker,
     audit,
-    { resolveSupportContact: () => Promise.resolve(SOPORTE) } as unknown as BrandingService,
+    marca,
     new InflightWorkRegistry(),
     verification,
     fondos.service,
@@ -3280,7 +3284,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
     });
 
     const avisoAlVendedor =
-      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avisale al consolidador.';
+      'La cuenta de TBO del consolidador no tiene saldo suficiente para esta reserva. Avísale al consolidador.';
     expect(res.body).toMatchObject({
       status: 'failed',
       reason: 'insufficient-balance',

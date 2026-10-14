@@ -6,6 +6,7 @@ import {
 } from '@sales-travel/canonical';
 import type { z } from '@sales-travel/validation';
 import type {
+  HotelAccountEnvironment,
   HotelOccupancyLimits,
   HotelSearchProfile,
 } from '../providers/hotel-provider.types.js';
@@ -88,6 +89,12 @@ export interface HotelProviderOutcome {
    * `status` son los de lo que respondió; `reason` dice qué faltó. Sólo presente en `true`.
    */
   readonly partial?: true;
+  /**
+   * El entorno de la cuenta con que respondió, si el proveedor lo declara. Sólo en `ok` y `empty`
+   * (también si fue `partial`): con `test`, la web avisa que sus tarifas no son habitaciones de
+   * verdad.
+   */
+  readonly accountEnvironment?: HotelAccountEnvironment;
 }
 
 /**
@@ -121,9 +128,9 @@ export const SKIP_REASON_TEXT: Readonly<
   'no-destination-map':
     'Este destino todavía no está vinculado con las ciudades de este proveedor.',
   'foreign-hotel-ids':
-    'Los IDs de hotel escritos a mano son de otro catálogo: buscá por destino para ver sus tarifas.',
+    'Los IDs de hotel escritos a mano son de otro catálogo: busca por destino para ver sus tarifas.',
   'guest-nationality-missing':
-    'Cotiza según la nacionalidad del pasajero principal: indicala en la búsqueda para ver sus tarifas.',
+    'Cotiza según la nacionalidad del pasajero principal: indícala en la búsqueda para ver sus tarifas.',
 };
 
 export function skippedOutcome(
@@ -276,7 +283,7 @@ export function currencyMismatchReason(
   droppedCurrencies: readonly string[],
   expected: string,
 ): string {
-  return `Cotiza en ${droppedCurrencies.join(', ')} y esta búsqueda es en ${expected}: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.`;
+  return `Cotiza en ${droppedCurrencies.join(', ')} y esta búsqueda es en ${expected}: sus tarifas no se pueden mostrar sin convertir la moneda. Revisa la moneda de la cuenta del proveedor en Mi Red → Credenciales.`;
 }
 
 function partialDropReason(
@@ -353,6 +360,19 @@ export function partialOutcome(
     partial: true,
     reason: outcome.reason === undefined ? reason : `${reason} ${outcome.reason}`,
   };
+}
+
+/**
+ * La parte de un proveedor con el entorno de su cuenta. Sólo si respondió con tarifas o sin ellas
+ * (`ok` o `empty`): un omitido o un caído no aporta tarifas de las que avisar.
+ */
+export function withAccountEnvironment(
+  outcome: HotelProviderOutcome,
+  environment: HotelAccountEnvironment | undefined,
+): HotelProviderOutcome {
+  if (environment === undefined) return outcome;
+  if (outcome.status !== 'ok' && outcome.status !== 'empty') return outcome;
+  return { ...outcome, accountEnvironment: environment };
 }
 
 // ───────────────────────── Contenido desde el catálogo ─────────────────────────

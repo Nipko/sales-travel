@@ -2,7 +2,6 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import type { BrandingService } from '../branding/branding.service.js';
-import type { DatabaseService } from '../database/database.service.js';
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -15,7 +14,7 @@ import type {
   HotelOrderTrackingRow,
   HotelOrderTrackingStore,
 } from './hotel-order-tracking.store.js';
-import { OrdersController } from './orders.controller.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
 
 /**
@@ -106,19 +105,18 @@ function banco(filas: OrderRow[]) {
     ),
     cancellationEstimate: vi.fn(() => ({ kind: 'unavailable', reason: 'no-snapshot' })),
   };
-  const controller = new OrdersController(
-    orders as unknown as OrdersService,
-    {} as unknown as DatabaseService,
-    { sendToTenant } as unknown as MailerService,
-    {
+  const controller = ordersController({
+    orders: orders as unknown as OrdersService,
+    mailer: { sendToTenant } as unknown as MailerService,
+    branding: {
       resolve: () => Promise.resolve({ name: 'Agencia Sur', color: null }),
     } as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
       decisionFor: () => Promise.resolve(undefined),
     }),
-    reads,
-  );
+    hotelReads: reads,
+  });
   return { controller, orders, listTracking, sendToTenant };
 }
 

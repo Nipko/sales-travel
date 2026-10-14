@@ -40,7 +40,7 @@ export class TenantParentRequiredError extends BadRequestException {
   readonly reason = 'TENANT_PARENT_REQUIRED';
 
   constructor() {
-    super('Indicá de qué nodo de tu red cuelga el nuevo.');
+    super('Indica de qué nodo de tu red cuelga el nuevo.');
     this.name = 'TenantParentRequiredError';
   }
 }
@@ -87,7 +87,7 @@ export class RoleNotGrantableError extends ForbiddenException {
   readonly reason = 'ROLE_NOT_GRANTABLE';
 
   constructor(
-    message = 'No podés asignar ni modificar un rol igual o superior al tuyo en ese nodo.',
+    message = 'No puedes asignar ni modificar un rol igual o superior al tuyo en ese nodo.',
   ) {
     super(message);
     this.name = 'RoleNotGrantableError';
@@ -203,7 +203,7 @@ export class TenantNotManagedError extends ForbiddenException {
   readonly reason = 'TENANT_NOT_MANAGED';
 
   constructor() {
-    super('No administrás este nodo.');
+    super('No administras este nodo.');
     this.name = 'TenantNotManagedError';
   }
 }
@@ -216,8 +216,10 @@ export class TenantNotManagedError extends ForbiddenException {
 export class MemberSelfActionError extends ForbiddenException {
   readonly reason = 'MEMBER_SELF_ACTION';
 
-  constructor() {
-    super('No podés hacer esto sobre tu propio usuario: pedíselo a otro administrador.');
+  constructor(
+    message = 'No puedes hacer esto sobre tu propio usuario: pídeselo a otro administrador.',
+  ) {
+    super(message);
     this.name = 'MemberSelfActionError';
   }
 }
@@ -238,7 +240,7 @@ export class MemberOutsideNetworkError extends ForbiddenException {
 
   constructor() {
     super(
-      'Este usuario también trabaja en nodos que no administrás: sólo puede hacerlo quien ' +
+      'Este usuario también trabaja en nodos que no administras: sólo puede hacerlo quien ' +
         'administre todos sus nodos, o el superadmin.',
     );
     this.name = 'MemberOutsideNetworkError';
@@ -290,7 +292,7 @@ export function assertCanSupportMember(req: MemberSupportRequest): void {
     const actorRole = req.actorRoles.get(m.tenantId);
     if (actorRole === undefined || !canGrantRole(actorRole, m.role)) {
       throw new RoleNotGrantableError(
-        'No podés hacerlo sobre alguien de rango igual o superior al tuyo en alguno de sus nodos.',
+        'No puedes hacerlo sobre alguien de rango igual o superior al tuyo en alguno de sus nodos.',
       );
     }
   }

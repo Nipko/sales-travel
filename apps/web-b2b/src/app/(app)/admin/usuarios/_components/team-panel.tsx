@@ -4,26 +4,40 @@ import { Mail, RefreshCw, Search, UserPlus, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../../../components/ui/button';
-import { Dialog, useConfirm } from '../../../../../components/ui/dialog';
+import { useConfirm } from '../../../../../components/ui/dialog';
 import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/cn';
-import { invitationExpiry } from '../../../../../lib/invitation-expiry';
+import {
+  invitationNotice,
+  type InvitationKind,
+  type InvitationNotice,
+  type IssuedInvitation,
+} from '../../../../../lib/invitation-notice';
+import {
+  ACTION_CANCELLED,
+  ACTION_DONE,
+  type SheetActionOutcome,
+} from '../../../../../lib/member-detail';
 import { readJson } from '../../../../../lib/read-json';
+import { isStepUpCancelled } from '../../../../../lib/step-up';
+import { queryWithTeamTenant } from '../../../../../lib/team-filters';
 import {
   loadInvitations,
   loadMembers,
   loadMembershipImpact,
+  removeMembership,
   resendInvitation,
   revokeInvitation,
-  runMemberAction,
   type MembershipChange,
 } from '../../../../../lib/tenant-admin-seats-client';
 import {
+  canActOn,
   demotes,
   grantableRoles,
-  memberActionCopy,
-  memberActionDoneMessage,
+  isSelf,
   memberName,
+  memberRemovedMessage,
+  removeMemberCopy,
   roleChangeCopy,
   statusChangeCopy,
   type MemberAction,
@@ -32,10 +46,15 @@ import {
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
 import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/tenant-network';
-import { MemberList, type MemberRowError } from './member-list';
-import { INVITABLE_ROLES, roleLabel } from './roles';
+import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
+import { InviteDialog } from './invite-dialog';
+import { useTeamFilters } from './member-filters';
+import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
+import { MemberSheet } from './member-sheet';
+import { invitableRolesIn, offeredRoleLabel } from './roles';
 import { SeatsCard, useSeatsView } from './seats-ui';
+import { supportMember } from './support-action';
 
 /**
  * Equipo de la red.
@@ -60,12 +79,6 @@ type NetworkState =
   | { readonly status: 'error'; readonly message: string }
   | { readonly status: 'ready'; readonly tenants: readonly NetworkNode[] };
 
-const inputClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-
-const selectClass =
-  'h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
-
 /** " Se revocaron N invitaciones que envió." para el aviso de éxito, según lo que devolvió el API. */
 function revokedSuffix(body: unknown): string {
   const n =
@@ -76,6 +89,15 @@ function revokedSuffix(body: unknown): string {
   return n === 1
     ? ' Se revocó 1 invitación que envió.'
     : ` Se revocaron ${n} invitaciones que envió.`;
+}
+
+/** Un aviso pasajero: el éxito, o la advertencia de un correo que no salió. */
+function notify(notice: InvitationNotice) {
+  const show = notice.tone === 'warning' ? toast.warning : toast.success;
+  show(
+    notice.message,
+    notice.description === undefined ? undefined : { description: notice.description },
+  );
 }
 
 function Alert({
@@ -131,6 +153,7 @@ export function TeamPanel({
     status: 'loading',
   });
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useTeamFilters();
   // Errores que no son de un miembro (revocar una invitación). Los de una acción sobre un miembro
   // van en su fila (`memberError`): acá arriba quedaban fuera de vista con la lista larga.
   const [actionError, setActionError] = useState('');
@@ -139,7 +162,11 @@ export function TeamPanel({
   const [showInvite, setShowInvite] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState('');
+  // La persona cuya ficha está abierta (por id: la fila se refresca después de cada acción).
+  const [sheetUserId, setSheetUserId] = useState<string | null>(null);
   const seats = useSeatsView(tenantId === '' ? null : tenantId);
+  // Adonde va el foco cuando la fila de quien se quitó del nodo desaparece.
+  const membersHeading = useRef<HTMLHeadingElement>(null);
   const reloadSeats = seats.reload;
 
   // Carga de la red, en orden del árbol. Arranca en la raíz de la red del usuario (la plataforma, si
@@ -159,7 +186,7 @@ export function TeamPanel({
         status: 'error',
         message:
           res.status === 403
-            ? 'No administrás ningún nodo de la red.'
+            ? 'No administras ningún nodo de la red.'
             : 'No pudimos cargar tu red de agencias.',
       });
       return;
@@ -167,7 +194,11 @@ export function TeamPanel({
     const list = read.data.tenants as NetworkNode[];
     setNetwork({ status: 'ready', tenants: treeOrder(list) });
     const root = networkRoot(list);
-    const initial = list.some((t) => t.id === initialTenantId) ? initialTenantId : undefined;
+    // Manda el `?tenant=` del navegador: al volver con "atrás", el router de Next pinta la página que
+    // tiene en caché, con el nodo de antes de que `chooseTenant` escribiera el elegido, y la pantalla
+    // abría en ése con los filtros (leídos de la URL) del otro.
+    const wanted = new URLSearchParams(window.location.search).get('tenant') ?? initialTenantId;
+    const initial = list.some((t) => t.id === wanted) ? wanted : undefined;
     setTenantId((current) => current || initial || root?.id || '');
   }, [initialTenantId]);
 
@@ -204,8 +235,33 @@ export function TeamPanel({
     void load();
   }, [load]);
 
+  /**
+   * El nodo elegido queda en la URL junto a los filtros: una recarga o un enlace abren el mismo nodo
+   * con los mismos filtros, no la raíz con filtros de otro.
+   */
+  function chooseTenant(id: string) {
+    setTenantId(id);
+    setSheetUserId(null);
+    const { pathname, search: query, hash } = window.location;
+    try {
+      // `null`: el router de Next conserva su propio estado.
+      window.history.replaceState(null, '', `${pathname}${queryWithTeamTenant(query, id)}${hash}`);
+    } catch {
+      // El navegador limitó los cambios de URL: el nodo cambia igual, sólo no se recuerda.
+    }
+  }
+
   function failOn(member: NetworkMember, message: string) {
     setMemberError({ userId: member.userId, message });
+  }
+
+  /**
+   * Una acción pedida desde la fila: si falla, el motivo va en su fila. Pedida desde la ficha, lo
+   * muestra la ficha (que tapa la fila).
+   */
+  async function fromRow(member: NetworkMember, outcome: Promise<SheetActionOutcome>) {
+    const out = await outcome;
+    if (out.status === 'failed') failOn(member, out.message);
   }
 
   /**
@@ -225,14 +281,17 @@ export function TeamPanel({
     }
   }
 
-  async function setStatus(member: NetworkMember, status: 'active' | 'suspended') {
+  async function setStatus(
+    member: NetworkMember,
+    status: 'active' | 'suspended',
+  ): Promise<SheetActionOutcome> {
     const suspending = status === 'suspended';
     const revoking = suspending ? await invitationsToRevoke(member, { status }) : 0;
     const ok = await confirm({
       ...statusChangeCopy(member, status, revoking),
       destructive: suspending,
     });
-    if (!ok) return;
+    if (!ok) return ACTION_CANCELLED;
     setActionError('');
     setMemberError(null);
     setBusyUserId(member.userId);
@@ -244,12 +303,12 @@ export function TeamPanel({
       });
       if (!res.ok) {
         const read = await readJson<{ error?: string }>(res);
-        failOn(
-          member,
-          (read.ok ? read.data.error : undefined) ??
+        return {
+          status: 'failed',
+          message:
+            (read.ok ? read.data.error : undefined) ??
             `No pudimos ${suspending ? 'suspender' : 'reactivar'} a ${memberName(member)}.`,
-        );
-        return;
+        };
       }
       const done = await readJson<unknown>(res);
       toast.success(
@@ -258,8 +317,44 @@ export function TeamPanel({
           : `${memberName(member)} volvió a tener acceso.`,
       );
       await Promise.all([load(true), reloadSeats(true)]);
+      return ACTION_DONE;
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      return {
+        status: 'failed',
+        message: 'No pudimos conectar con el servidor. Inténtalo de nuevo.',
+      };
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  /**
+   * Quitarlo del nodo (USR-11): primero cuántas invitaciones se revocarían, después la confirmación
+   * destructiva. Si es admin, el API puede pedir el código del 2FA (lo abre `removeMembership`); si
+   * se cierra ese diálogo, no se hizo nada y no hay error que mostrar. Al salir bien deja de estar en
+   * la lista, y su ficha se cierra.
+   */
+  async function removeMember(member: NetworkMember): Promise<SheetActionOutcome> {
+    const nodeName = selectedName;
+    const revoking = await invitationsToRevoke(member, { status: 'removed' });
+    const ok = await confirm({
+      ...removeMemberCopy(member, nodeName, revoking),
+      destructive: true,
+    });
+    if (!ok) return ACTION_CANCELLED;
+    setActionError('');
+    setMemberError(null);
+    setBusyUserId(member.userId);
+    try {
+      const res = await removeMembership(tenantId, member.userId);
+      if (isStepUpCancelled(res)) return ACTION_CANCELLED;
+      if (!res.ok) return { status: 'failed', message: res.message };
+      toast.success(memberRemovedMessage(member, nodeName, res.data));
+      setSheetUserId((open) => (open === member.userId ? null : open));
+      await Promise.all([load(true), reloadSeats(true)]);
+      // Su fila (y el botón desde el que se quitó) ya no está: el foco no queda en el documento.
+      membersHeading.current?.focus();
+      return ACTION_DONE;
     } finally {
       setBusyUserId(null);
     }
@@ -269,7 +364,7 @@ export function TeamPanel({
     if (role === member.role) return;
     const revoking = demotes(member.role, role) ? await invitationsToRevoke(member, { role }) : 0;
     const ok = await confirm({
-      ...roleChangeCopy(member, role, roleLabel, revoking),
+      ...roleChangeCopy(member, role, offeredRoleLabel, revoking),
       destructive: false,
     });
     if (!ok) return;
@@ -289,44 +384,36 @@ export function TeamPanel({
       }
       const done = await readJson<unknown>(res);
       toast.success(
-        `${memberName(member)} ahora es ${roleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
+        `${memberName(member)} ahora es ${offeredRoleLabel(role)}.${revokedSuffix(done.ok ? done.data : undefined)}`,
       );
       await load(true);
     } catch {
-      failOn(member, 'No pudimos conectar con el servidor. Probá de nuevo.');
+      failOn(member, 'No pudimos conectar con el servidor. Inténtalo de nuevo.');
     } finally {
       setBusyUserId(null);
     }
   }
 
-  async function memberAction(member: NetworkMember, action: MemberAction) {
-    const copy = memberActionCopy(action, member);
-    const ok = await confirm({
-      title: copy.title,
-      description: copy.description,
-      confirmLabel: copy.confirmLabel,
-      destructive: true,
+  async function memberAction(
+    member: NetworkMember,
+    action: MemberAction,
+  ): Promise<SheetActionOutcome> {
+    const out = await supportMember(confirm, tenantId, member, action, (busy) => {
+      if (busy) {
+        setActionError('');
+        setMemberError(null);
+      }
+      setBusyUserId(busy ? member.userId : null);
     });
-    if (!ok) return;
-    setActionError('');
-    setMemberError(null);
-    setBusyUserId(member.userId);
-    const res = await runMemberAction(tenantId, member.userId, action);
-    setBusyUserId(null);
-    if (!res.ok) {
-      // Un aviso que queda (no un toast que se va): el 403 dice a quién hay que pedírselo.
-      failOn(member, res.message);
-      return;
-    }
-    toast.success(memberActionDoneMessage(action, member, res.data));
-    await Promise.all([load(true), reloadSeats(true)]);
+    if (out.status === 'done') await Promise.all([load(true), reloadSeats(true)]);
+    return out;
   }
 
   async function revoke(invitation: PendingInvitation) {
     const ok = await confirm({
       title: `Revocar la invitación a ${invitation.email}`,
       description:
-        'El enlace que le enviamos deja de funcionar. Si después querés sumarlo, tenés que invitarlo de nuevo.',
+        'El enlace que le enviamos deja de funcionar. Si después quieres sumarlo, tienes que invitarlo de nuevo.',
       confirmLabel: 'Revocar',
       destructive: true,
     });
@@ -336,6 +423,8 @@ export function TeamPanel({
     const res = await revokeInvitation(tenantId, invitation.id);
     if (!res.ok) {
       setActionError(res.message);
+      // Ya no estaba pendiente (la aceptaron o la revocaron desde otra sesión): la fila quedó vieja.
+      if (res.gone) await load(true);
       return;
     }
     toast.success(`Revocamos la invitación a ${invitation.email}.`);
@@ -350,20 +439,36 @@ export function TeamPanel({
       const res = await resendInvitation(tenantId, invitation.id);
       if (!res.ok) {
         setActionError(res.message);
+        if (res.gone) await load(true);
         return;
       }
-      const expiry = invitationExpiry(res.data.expiresAt, new Date());
-      toast.success(`Reenviamos la invitación a ${invitation.email}.`, {
-        description: `El enlace anterior ya no sirve. El nuevo ${expiry?.label ?? 'vence en 7 días'}.`,
-      });
+      notify(invitationNotice('resent', invitation.email, res.data, new Date()));
       await load(true);
     } finally {
       setResendingId(null);
     }
   }
 
+  /**
+   * Lo que emitió "Invitar usuario": una invitación nueva o el reenvío de la pendiente. Una nueva cuyo
+   * correo salió queda en el aviso de arriba; lo demás (un reenvío, un correo que no salió) es un
+   * aviso pasajero.
+   */
+  function invitationIssued(kind: InvitationKind, email: string, issued: IssuedInvitation) {
+    setShowInvite(false);
+    const notice = invitationNotice(kind, email, issued, new Date());
+    if (kind === 'invited' && notice.tone === 'success') setInviteSent(notice.message);
+    else notify(notice);
+    void load(true);
+  }
+
   const tenants = network.status === 'ready' ? network.tenants : [];
-  const selectedName = tenants.find((t) => t.id === tenantId)?.name;
+  const selected = tenants.find((t) => t.id === tenantId);
+  const selectedName = selected?.name;
+  const roles = grantableRoles(invitableRolesIn(selected?.tenantType), actor);
+  const sheetMember =
+    members.status === 'ready' ? members.items.find((m) => m.userId === sheetUserId) : undefined;
+  const sheetActionable = sheetMember !== undefined && canActOn(actor, sheetMember);
 
   return (
     <div className="space-y-6">
@@ -404,7 +509,7 @@ export function TeamPanel({
         <Alert tone="success" onDismiss={() => setInviteSent('')}>
           <span className="inline-flex items-center gap-2">
             <Mail aria-hidden="true" className="size-4 text-[var(--color-success)]" />
-            Invitación enviada a {inviteSent}. Elige su propia contraseña al aceptarla.
+            {inviteSent}
           </span>
         </Alert>
       ) : null}
@@ -418,7 +523,7 @@ export function TeamPanel({
           <select
             id="tenant"
             value={tenantId}
-            onChange={(e) => setTenantId(e.target.value)}
+            onChange={(e) => chooseTenant(e.target.value)}
             disabled={network.status !== 'ready' || tenants.length === 0}
             className={selectClass}
           >
@@ -457,7 +562,7 @@ export function TeamPanel({
         <div className="rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] px-6 py-10 text-center">
           <Users aria-hidden="true" className="mx-auto mb-2 size-6 text-[var(--color-fg-subtle)]" />
           <p className="text-sm font-medium text-[var(--color-fg)]">
-            No administrás ningún nodo de la red.
+            No administras ningún nodo de la red.
           </p>
         </div>
       ) : null}
@@ -494,7 +599,10 @@ export function TeamPanel({
         <MemberList
           state={members}
           search={search}
+          filters={filters}
+          onFiltersChange={setFilters}
           actor={actor}
+          roles={roles}
           tenantName={selectedName}
           busyUserId={busyUserId}
           memberError={memberError}
@@ -504,9 +612,51 @@ export function TeamPanel({
             setShowInvite(true);
             setInviteSent('');
           }}
+          onOpen={(m) => setSheetUserId(m.userId)}
           onChangeRole={(m, role) => void changeRole(m, role)}
-          onSetStatus={(m, status) => void setStatus(m, status)}
-          onAction={(m, action) => void memberAction(m, action)}
+          onSetStatus={(m, status) => void fromRow(m, setStatus(m, status))}
+          onRemove={(m) => void fromRow(m, removeMember(m))}
+          onAction={(m, action) => void fromRow(m, memberAction(m, action))}
+          headingRef={membersHeading}
+        />
+      ) : null}
+
+      {sheetUserId !== null && tenantId !== '' ? (
+        <MemberSheet
+          key={`${tenantId}:${sheetUserId}`}
+          source={{ kind: 'team', tenantId, userId: sheetUserId }}
+          fallbackName={sheetMember ? memberName(sheetMember) : ''}
+          fallbackEmail={sheetMember?.email}
+          self={sheetMember ? isSelf(actor, sheetMember) : actor.userId === sheetUserId}
+          busy={busyUserId === sheetUserId}
+          canRevokeSessions={sheetActionable}
+          renderMenu={
+            sheetMember !== undefined && sheetActionable
+              ? (_detail, { pick, run, now }) => (
+                  <MemberActionItems
+                    member={sheetMember}
+                    now={now}
+                    onPick={pick}
+                    onSetStatus={(status) => run(() => setStatus(sheetMember, status))}
+                    // Al salir bien la ficha se cierra: no hay nada que recargar en ella.
+                    onRemove={() =>
+                      run(async () => {
+                        const out = await removeMember(sheetMember);
+                        return out.status === 'done' ? ACTION_CANCELLED : out;
+                      })
+                    }
+                    onAction={(action) => run(() => memberAction(sheetMember, action))}
+                  />
+                )
+              : undefined
+          }
+          unlockAction={
+            sheetMember !== undefined && sheetActionable
+              ? () => () => memberAction(sheetMember, 'unlock')
+              : undefined
+          }
+          onChanged={() => void Promise.all([load(true), reloadSeats(true)])}
+          onClose={() => setSheetUserId(null)}
         />
       ) : null}
 
@@ -514,136 +664,16 @@ export function TeamPanel({
         <InviteDialog
           tenantId={tenantId}
           tenantName={selectedName}
-          roles={grantableRoles(INVITABLE_ROLES, actor)}
+          roles={roles}
+          pendingRoleOf={(id) =>
+            invitations.status === 'ready'
+              ? invitations.items.find((i) => i.id === id)?.role
+              : undefined
+          }
           onClose={() => setShowInvite(false)}
-          onSent={(email) => {
-            setShowInvite(false);
-            setInviteSent(email);
-            void load(true);
-          }}
+          onDone={invitationIssued}
         />
       ) : null}
     </div>
-  );
-}
-
-function InviteDialog({
-  tenantId,
-  tenantName,
-  roles,
-  onClose,
-  onSent,
-}: {
-  tenantId: string;
-  tenantName: string | undefined;
-  roles: readonly { readonly value: string; readonly label: string; readonly hint: string }[];
-  onClose: () => void;
-  onSent: (email: string) => void;
-}) {
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState(
-    roles.find((r) => r.value === 'vendedor')?.value ?? roles[0]?.value ?? '',
-  );
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
-  const hint = roles.find((r) => r.value === role)?.hint;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (sending) return;
-    setSending(true);
-    setError('');
-    try {
-      const res = await fetch('/api/invitations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), tenantId, role }),
-      });
-      if (!res.ok) {
-        const read = await readJson<{ error?: string }>(res);
-        setError((read.ok ? read.data.error : undefined) ?? 'No pudimos enviar la invitación.');
-        return;
-      }
-      onSent(email.trim());
-    } catch {
-      setError('No pudimos conectar con el servidor. Probá de nuevo.');
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={() => {
-        if (!sending) onClose();
-      }}
-      title="Invitar usuario"
-      description={
-        tenantName
-          ? `Se suma a ${tenantName} y elige su propia contraseña al aceptar.`
-          : 'Elige su propia contraseña al aceptar.'
-      }
-      className="max-w-sm"
-    >
-      <form onSubmit={(e) => void submit(e)} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="inv-email" className="text-xs font-semibold">
-            Correo electrónico
-          </Label>
-          <input
-            id="inv-email"
-            type="email"
-            required
-            autoComplete="off"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="persona@agencia.com"
-            className={inputClass}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="inv-role" className="text-xs font-semibold">
-            Rol
-          </Label>
-          <select
-            id="inv-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            aria-describedby="inv-role-hint"
-            className={selectClass}
-          >
-            {roles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-          <p id="inv-role-hint" className="text-xs text-[var(--color-fg-muted)]">
-            {hint ?? 'No podés invitar con un rol igual o superior al tuyo.'}
-          </p>
-        </div>
-
-        {error ? (
-          <p
-            role="alert"
-            className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/5 px-3 py-2 text-xs text-[var(--color-danger)]"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={sending}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={sending || role === ''}>
-            {sending ? <RefreshCw aria-hidden="true" className="animate-spin" /> : null}
-            {sending ? 'Enviando…' : 'Enviar invitación'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
   );
 }

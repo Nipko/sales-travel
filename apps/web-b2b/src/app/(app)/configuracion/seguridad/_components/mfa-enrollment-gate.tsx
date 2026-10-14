@@ -8,7 +8,7 @@ import { Button } from '../../../../../components/ui/button';
 import { MfaEnrollment } from './mfa-enrollment';
 import { RecoveryCodes } from './recovery-codes';
 
-export const GATE_TITLE = 'Activá la verificación en dos pasos';
+export const GATE_TITLE = 'Activa la verificación en dos pasos';
 
 /**
  * El mismo cierre que el menú del panel: revoca en el API y avisa a las demás pestañas, que se van
@@ -106,7 +106,8 @@ export function MfaEnrollmentGate({ email, tenantName }: MfaEnrollmentGateProps)
           )}
         </div>
         <p className="mt-4 text-center text-xs text-[var(--color-fg-muted)]">
-          ¿No tenés cómo hacerlo ahora? Cerrá sesión y pedile ayuda al administrador de tu agencia.
+          ¿No tienes cómo hacerlo ahora? Cierra sesión y pídele ayuda al administrador de tu
+          agencia.
         </p>
       </main>
     </div>

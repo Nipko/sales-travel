@@ -112,7 +112,7 @@ describe('HotelAvailabilityInputSchema', () => {
     expect(r.error?.issues).toEqual([
       expect.objectContaining({
         path: ['destinationId'],
-        message: 'Indicá un destino o al menos un ID de hotel.',
+        message: 'Indica un destino o al menos un ID de hotel.',
       }),
     ]);
   });

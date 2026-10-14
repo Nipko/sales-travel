@@ -1,4 +1,5 @@
 import { lastAccessLabel, lockedUntilLabel, relativeTime } from './tenant-admin-format';
+import { PLATFORM_ROLES } from './viewer';
 
 /**
  * El equipo de un nodo en "Equipo": quién es cada miembro, si tiene 2FA, cuándo entró por última
@@ -50,6 +51,11 @@ export interface NetworkMember {
   readonly mfaEnabled: boolean | undefined;
   readonly lockedUntil: string | null | undefined;
   readonly activeSessions: number | undefined;
+  /**
+   * Un admin le pidió elegir una contraseña nueva y todavía no lo hizo: no puede ingresar hasta usar
+   * el enlace del correo. `undefined` si el API no lo dice.
+   */
+  readonly passwordResetRequired: boolean | undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -78,6 +84,7 @@ function parseMember(value: unknown): NetworkMember | undefined {
   if (userId === undefined || email === undefined || role === undefined) return undefined;
   const sessions = r['activeSessions'];
   const mfa = r['mfaEnabled'];
+  const resetRequired = r['passwordResetRequired'];
   return {
     userId,
     email,
@@ -93,6 +100,7 @@ function parseMember(value: unknown): NetworkMember | undefined {
       typeof sessions === 'number' && Number.isInteger(sessions) && sessions >= 0
         ? sessions
         : undefined,
+    passwordResetRequired: typeof resetRequired === 'boolean' ? resetRequired : undefined,
   };
 }
 
@@ -253,6 +261,27 @@ export function memberAccess(member: NetworkMember, now: number): MemberAccess {
   };
 }
 
+/** La marca de la fila de quien tiene que elegir una contraseña nueva antes de volver a ingresar. */
+export const PASSWORD_RESET_PENDING_LABEL = 'Cambio de contraseña pendiente';
+
+export const PASSWORD_RESET_PENDING_HINT =
+  'No puede ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo.';
+
+/** Tiene un bloqueo por intentos fallidos vigente: sólo entonces se ofrece "Desbloquear cuenta". */
+export function isLocked(member: Pick<NetworkMember, 'lockedUntil'>, now: number): boolean {
+  return lockedUntilLabel(member.lockedUntil, now) !== undefined;
+}
+
+/**
+ * Su acceso está suspendido, en la plataforma o en este nodo: un enlace para restablecer la
+ * contraseña no le serviría para entrar (el API lo rechaza con 409).
+ */
+export function accessSuspended(
+  member: Pick<NetworkMember, 'userStatus' | 'membershipStatus'>,
+): boolean {
+  return member.userStatus === 'suspended' || member.membershipStatus === 'suspended';
+}
+
 /** El nombre con que se nombra a un miembro en una confirmación. */
 export function memberName(member: Pick<NetworkMember, 'name' | 'email'>): string {
   return member.name?.trim() || member.email;
@@ -280,6 +309,11 @@ export function teamActorOf(
     superadmin: active.some((m) => m.role === 'superadmin'),
     rank: active.reduce((max, m) => Math.max(max, roleRank(m.role)), 0),
   };
+}
+
+/** Equipo abierto en ese nodo. Un id fuera de la red de quien mira, Equipo lo ignora. */
+export function teamHrefFor(tenantId: string): string {
+  return `/admin/usuarios?${new URLSearchParams({ tenant: tenantId }).toString()}`;
 }
 
 export function isSelf(actor: TeamActor, member: Pick<NetworkMember, 'userId'>): boolean {
@@ -370,7 +404,84 @@ export function statusChangeCopy(
   };
 }
 
-export type MemberAction = 'reset-mfa' | 'revoke-sessions';
+/** El texto del menú para quitar a alguien del nodo (Equipo → acciones → Membresía). */
+export const REMOVE_FROM_NODE_LABEL = 'Quitar de este nodo';
+
+/**
+ * ¿Se le ofrece "Quitar de este nodo"? A quien está activo o suspendido en él: quitarlo es la baja
+ * que deja de apilar suspendidos en la lista. No a un rol de plataforma (superadmin): ninguna
+ * invitación lo devuelve y el API lo rechaza (PLATFORM_ROLE_NOT_REMOVABLE). Quién puede lo decide
+ * el API.
+ */
+export function canRemoveFromNode(
+  member: Pick<NetworkMember, 'membershipStatus' | 'role'>,
+): boolean {
+  if (PLATFORM_ROLES.includes(member.role)) return false;
+  return member.membershipStatus === 'active' || member.membershipStatus === 'suspended';
+}
+
+/** "Agencia Norte", o "este nodo" si no sabemos su nombre. */
+function nodeLabel(nodeName: string | undefined): string {
+  return nodeName?.trim() || 'este nodo';
+}
+
+/**
+ * La confirmación de quitar a alguien del nodo (USR-11): deja de pertenecer y se le cierran las
+ * sesiones en él, lo que envió y ya no podría enviar se revoca, y su historial y sus reservas quedan.
+ * La única vuelta es una invitación nueva.
+ */
+export function removeMemberCopy(
+  member: Pick<NetworkMember, 'name' | 'email'>,
+  nodeName: string | undefined,
+  invitationsToRevoke: number | null = 0,
+): ConfirmCopy {
+  return {
+    title: `Quitar a ${who(member)} de ${nodeLabel(nodeName)}`,
+    description: `Deja de pertenecer a este nodo y se cierran sus sesiones en él.${revokedInvitationsNotice(invitationsToRevoke)} Su historial y sus reservas quedan como están. Si después quieres que vuelva, tienes que invitarlo de nuevo.`,
+    confirmLabel: 'Quitar del nodo',
+  };
+}
+
+/** Lo que respondió el API al quitar a alguien del nodo. */
+export interface MembershipRemoval {
+  readonly revokedSessions: number | undefined;
+  readonly revokedInvitations: number | undefined;
+}
+
+/**
+ * La respuesta de `POST /admin/memberships/remove`. Nunca falla: el 2xx ya dice que salió bien, y
+ * sin los conteos se avisa sin ellos.
+ */
+export function parseMembershipRemoval(value: unknown): MembershipRemoval {
+  const r = asRecord(value);
+  return {
+    revokedSessions: count(r?.['revokedSessions']),
+    revokedInvitations: count(r?.['revokedInvitations']),
+  };
+}
+
+/** El aviso de que salió bien: "Quitamos a Ana de Agencia Norte.", con las invitaciones revocadas. */
+export function memberRemovedMessage(
+  member: Pick<NetworkMember, 'name' | 'email'>,
+  nodeName: string | undefined,
+  result: Pick<MembershipRemoval, 'revokedInvitations'>,
+): string {
+  const n = result.revokedInvitations ?? 0;
+  const invitations =
+    n <= 0
+      ? ''
+      : n === 1
+        ? ' Se revocó 1 invitación que envió.'
+        : ` Se revocaron ${n} invitaciones que envió.`;
+  return `Quitamos a ${who(member)} de ${nodeLabel(nodeName)}.${invitations}`;
+}
+
+export type MemberAction =
+  | 'reset-mfa'
+  | 'revoke-sessions'
+  | 'send-password-reset'
+  | 'require-password-reset'
+  | 'unlock';
 
 export interface MemberActionCopy {
   readonly label: string;
@@ -380,12 +491,55 @@ export interface MemberActionCopy {
   readonly done: string;
 }
 
+/** Lo que los textos de una acción miran del miembro. */
+export type MemberCopySubject = Pick<NetworkMember, 'name' | 'email' | 'role'> &
+  Partial<Pick<NetworkMember, 'passwordResetRequired'>>;
+
 /** Los textos de la confirmación y del aviso de cada acción de soporte. */
 export function memberActionCopy(
   action: MemberAction,
-  member: Pick<NetworkMember, 'name' | 'email' | 'role'>,
+  member: MemberCopySubject,
 ): MemberActionCopy {
   const name = who(member);
+  if (action === 'send-password-reset' && member.passwordResetRequired === true) {
+    // Con el cambio forzado pendiente la actual ya no sirve: no se puede decir que sigue funcionando.
+    return {
+      label: 'Enviar enlace para restablecer contraseña',
+      title: `Enviar a ${name} un enlace para restablecer su contraseña`,
+      description: `Le enviamos a ${member.email} un enlace nuevo para que elija su contraseña. Vence en 60 minutos y deja sin efecto los enlaces anteriores. Tú no ves el enlace ni la contraseña, y hasta que la elija no puede ingresar.`,
+      confirmLabel: 'Enviar enlace',
+      done: `Le enviamos a ${name} un enlace nuevo para elegir su contraseña. Vence en 1 hora.`,
+    };
+  }
+  if (action === 'require-password-reset') {
+    return {
+      label: 'Forzar cambio de contraseña',
+      title: `Forzar a ${name} a cambiar su contraseña`,
+      description:
+        'Se cierran todas sus sesiones y no puede volver a ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo. Úsalo si crees que su contraseña está comprometida.',
+      confirmLabel: 'Forzar cambio',
+      done: `${name} tiene que elegir una contraseña nueva. Le enviamos el enlace y cerramos sus sesiones.`,
+    };
+  }
+  if (action === 'send-password-reset') {
+    return {
+      label: 'Enviar enlace para restablecer contraseña',
+      title: `Enviar a ${name} un enlace para restablecer su contraseña`,
+      description: `Le enviamos a ${member.email} un enlace para que elija una contraseña nueva. Vence en 60 minutos y deja sin efecto los enlaces anteriores. Tú no ves el enlace ni la contraseña, y la actual sigue funcionando hasta que la cambie.`,
+      confirmLabel: 'Enviar enlace',
+      done: `Le enviamos a ${name} un enlace para elegir una contraseña nueva. Vence en 1 hora.`,
+    };
+  }
+  if (action === 'unlock') {
+    return {
+      label: 'Desbloquear cuenta',
+      title: `Desbloquear a ${name}`,
+      description:
+        'Se levanta el bloqueo por intentos fallidos y puede volver a intentar ingresar de inmediato. No cambia su contraseña ni su 2FA. Si no reconoce esos intentos, mejor envíale un enlace para restablecer la contraseña.',
+      confirmLabel: 'Desbloquear',
+      done: `Desbloqueamos la cuenta de ${name}.`,
+    };
+  }
   if (action === 'reset-mfa') {
     return {
       label: 'Restablecer 2FA',
@@ -394,7 +548,7 @@ export function memberActionCopy(
         requiresMfa(member.role)
           ? 'Como su rol lo exige, al próximo ingreso tiene que configurarlo de nuevo antes de seguir.'
           : 'Al próximo ingreso entra sólo con su contraseña y puede volver a activarlo.'
-      } Hacelo sólo si confirmaste que es la persona (por ejemplo, perdió el teléfono).`,
+      } Hazlo sólo si confirmaste que es la persona (por ejemplo, perdió el teléfono).`,
       confirmLabel: 'Restablecer 2FA',
       done: `Restablecimos el 2FA de ${name}. Se cerraron sus sesiones.`,
     };
@@ -413,6 +567,16 @@ export function memberActionCopy(
 export interface MemberActionResult {
   /** Cuántas sesiones cerró "Cerrar sus sesiones"; `undefined` si la respuesta no lo dice. */
   readonly revoked: number | undefined;
+  /** Si salió el correo con el enlace para restablecer (o elegir, si se forzó) la contraseña. */
+  readonly sent?: boolean | undefined;
+  /** Cuántas sesiones cerró "Forzar cambio de contraseña". */
+  readonly revokedSessions?: number | undefined;
+  /** Si "Desbloquear cuenta" levantó un bloqueo; `false` = ya no estaba bloqueado. */
+  readonly unlocked?: boolean | undefined;
+}
+
+function bool(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 /**
@@ -420,29 +584,111 @@ export interface MemberActionResult {
  * igual salió bien (el 2xx lo dice) y se avisa con el texto general.
  */
 export function parseMemberActionResult(value: unknown): MemberActionResult {
-  const revoked = asRecord(value)?.['revoked'];
+  const r = asRecord(value);
   return {
-    revoked:
-      typeof revoked === 'number' && Number.isInteger(revoked) && revoked >= 0
-        ? revoked
-        : undefined,
+    revoked: count(r?.['revoked']),
+    sent: bool(r?.['sent']),
+    revokedSessions: count(r?.['revokedSessions']),
+    unlocked: bool(r?.['unlocked']),
   };
+}
+
+function count(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 /**
  * El aviso tras una acción que salió bien. "Cerrar sus sesiones" se ofrece siempre (el "En línea"
  * de la lista no ve las sesiones de otros nodos del miembro), así que puede no haber cerrado
- * ninguna: se dice, en vez de afirmar que se cerraron.
+ * ninguna: se dice, en vez de afirmar que se cerraron. Lo mismo con un desbloqueo que llegó tarde
+ * (el bloqueo venció solo) y con un enlace cuyo correo no salió.
  */
 export function memberActionDoneMessage(
   action: MemberAction,
-  member: Pick<NetworkMember, 'name' | 'email' | 'role'>,
+  member: MemberCopySubject,
   result: MemberActionResult,
 ): string {
   if (action === 'revoke-sessions' && result.revoked === 0) {
     return `${who(member)} no tenía sesiones abiertas.`;
   }
+  if (action === 'send-password-reset' && result.sent === false) {
+    return 'Generamos el enlace, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo e inténtalo de nuevo.';
+  }
+  if (action === 'require-password-reset' && result.sent === false) {
+    return `${who(member)} tiene que elegir una contraseña nueva y cerramos sus sesiones, pero no pudimos enviar el correo. Revisa el correo configurado para este nodo y envíale el enlace de nuevo.`;
+  }
+  if (action === 'unlock' && result.unlocked === false) {
+    return `${who(member)} ya no estaba bloqueado.`;
+  }
   return memberActionCopy(action, member).done;
+}
+
+/**
+ * Un enlace cuyo correo no salió es un éxito a medias: se avisa como advertencia, para que el admin
+ * revise el correo del nodo en vez de esperar a que llegue.
+ */
+export function memberActionNoticeTone(
+  action: MemberAction,
+  result: MemberActionResult,
+): 'success' | 'warning' {
+  const sendsLink = action === 'send-password-reset' || action === 'require-password-reset';
+  return sendsLink && result.sent === false ? 'warning' : 'success';
+}
+
+/** Una acción del menú de un miembro, con su texto y si se puede elegir. */
+export interface MemberMenuItem {
+  readonly action: MemberAction;
+  readonly label: string;
+  readonly disabled: boolean;
+}
+
+/** Un grupo del menú, con su encabezado. */
+export interface MemberMenuGroup {
+  readonly heading: string;
+  readonly items: readonly MemberMenuItem[];
+}
+
+/**
+ * Las acciones de soporte del menú de un miembro, agrupadas: lo que le devuelve el acceso y lo que
+ * se lo corta. Suspender o reactivar va aparte, al final.
+ *
+ * "Desbloquear cuenta" sólo aparece con un bloqueo vigente. "Enviar enlace…" y "Forzar cambio de
+ * contraseña" se ven deshabilitados si su acceso está suspendido, con el motivo en el texto, en vez
+ * de esconderse: así el admin sabe que existen y qué le falta.
+ */
+export function memberMenuGroups(member: NetworkMember, now: number): MemberMenuGroup[] {
+  const label = (action: MemberAction) => memberActionCopy(action, member).label;
+  const suspended = accessSuspended(member);
+  const linkItem = (action: 'send-password-reset' | 'require-password-reset'): MemberMenuItem => ({
+    action,
+    label: suspended ? `${label(action)} (acceso suspendido)` : label(action),
+    disabled: suspended,
+  });
+  const access: MemberMenuItem[] = [
+    linkItem('send-password-reset'),
+    linkItem('require-password-reset'),
+  ];
+  if (isLocked(member, now)) {
+    access.push({ action: 'unlock', label: label('unlock'), disabled: false });
+  }
+  const canResetMfa = member.mfaEnabled !== false;
+  return [
+    { heading: 'Acceso', items: access },
+    {
+      heading: 'Seguridad',
+      items: [
+        // Siempre disponible: `activeSessions` cuenta sólo las sesiones de este subárbol y el
+        // miembro puede tener la suya abierta en otro de sus nodos. La acción las cierra todas, y si
+        // no había ninguna el aviso lo dice.
+        { action: 'revoke-sessions', label: label('revoke-sessions'), disabled: false },
+        {
+          action: 'reset-mfa',
+          label: canResetMfa ? label('reset-mfa') : `${label('reset-mfa')} (no lo tiene activo)`,
+          disabled: !canResetMfa,
+        },
+      ],
+    },
+  ];
 }
 
 /**
@@ -451,24 +697,32 @@ export function memberActionDoneMessage(
  * quién pedírselo.
  */
 export function memberActionError(status: number, message: string | undefined): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   const text = message?.trim() ?? '';
   if (status === 403) {
     return text !== ''
       ? `No lo pudimos hacer: ${text}`
-      : 'No tenés permiso para hacer esto con este miembro. Pedíselo a quien administra todos sus nodos o al superadmin.';
+      : 'No tienes permiso para hacer esto con este miembro. Pídeselo a quien administra todos sus nodos o al superadmin.';
   }
-  if (status === 404) return text || 'Ese miembro ya no está en este nodo. Recargá la lista.';
+  if (status === 404) return text || 'Ese miembro ya no está en este nodo. Recarga la lista.';
+  // El 409 (su acceso está suspendido) y el 429 (ya se le enviaron varios enlaces) traen el motivo
+  // del API y qué hacer: se muestran tal cual.
+  if (status === 409) {
+    return text || 'No lo pudimos hacer: su acceso está suspendido. Reactívalo primero.';
+  }
+  if (status === 429) {
+    return text || 'Hiciste varios pedidos seguidos. Espera unos minutos e inténtalo de nuevo.';
+  }
   if (text !== '') return text;
   return status >= 500
-    ? 'No pudimos completar la acción. Probá de nuevo en unos minutos.'
+    ? 'No pudimos completar la acción. Inténtalo de nuevo en unos minutos.'
     : 'No pudimos completar la acción.';
 }
 
 /** El error de carga del equipo, distinto de "no hay nadie". */
 export function teamLoadError(status: number): string {
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
-  if (status === 403) return 'No tenés permiso para ver el equipo de este nodo.';
-  if (status === 404) return 'No encontramos ese nodo. Elegí otro de la lista.';
-  return 'No pudimos cargar el equipo. Probá de nuevo.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if (status === 403) return 'No tienes permiso para ver el equipo de este nodo.';
+  if (status === 404) return 'No encontramos ese nodo. Elige otro de la lista.';
+  return 'No pudimos cargar el equipo. Inténtalo de nuevo.';
 }

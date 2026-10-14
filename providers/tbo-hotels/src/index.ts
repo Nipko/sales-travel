@@ -264,6 +264,7 @@ export type {
   TboCityListResult,
   TboCountryListResult,
   TboHotelCodeListResult,
+  TboHotelDetailsOptions,
   TboHotelDetailsResult,
   TboStaticCall,
   TboStaticCallOptions,
@@ -287,6 +288,9 @@ export type {
   TboHotelContent,
   TboHotelDetailsMapping,
   TboHotelDetailsOutcome,
+  TboHotelRoomContents,
+  TboRoomContent,
+  TboRoomDetailShape,
   TboStaticDiagnostics,
   TboStaticNote,
   TboStaticRejection,
@@ -294,6 +298,22 @@ export type {
 
 // El lote de HotelDetails lo parte el sync (E4): necesita el techo y el tamaño por defecto.
 export { TBO_HOTEL_DETAILS_LIMITS } from './static/hotel-details.request.builder';
+
+// Detalle por habitación de HotelDetails (Q-65): los topes con que el lector entrega cada
+// habitación, que el catálogo vuelve a exigir al guardarla, y el interruptor `TBO_ROOM_DETAILS`
+// que lee el factory de `apps/api` (el paquete no lee `process.env`). El lector recibe el JSON
+// crudo y no sale; la compuerta es estado del proceso y la usa sólo el cliente.
+export { TBO_ROOM_DETAIL_LIMITS } from './static/room-detail.reader';
+export {
+  TBO_ROOM_DETAILS_SWITCH_VALUES,
+  parseTboRoomDetailsSwitch,
+} from './static/room-detail.gate';
+export type {
+  TboRoomDetailRejectionReason,
+  TboRoomDetailStatus,
+  TboRoomDetailsSwitch,
+  TboRoomDetailsSwitchRead,
+} from './static/room-detail.gate';
 
 // Un lote de HotelDetails hasta su respuesta final: respaldo en inglés y aislamiento del lote sin
 // contenido (05 CE-23). Lo usan el API (fotos de los resultados) y el sync (E4), con su manera de

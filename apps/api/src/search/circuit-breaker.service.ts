@@ -1,4 +1,5 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { KillSwitchStore } from '../provider-enablement/kill-switch.store.js';
 
 /** Fallos consecutivos antes de abrir el circuito. */
 const FAILURE_THRESHOLD = 5;
@@ -25,6 +26,19 @@ interface Circuit {
   failures: number;
   state: State;
   openedAt: number;
+  /** Cuándo sumó el último fallo (0 = nunca). Sólo para el panel: no decide nada. */
+  lastFailureAt: number;
+}
+
+/** El circuito de un proveedor como lo ve el panel de la plataforma. */
+export interface AdminCircuitView {
+  readonly state: State;
+  readonly failures: number;
+  /** `null` con el circuito cerrado. */
+  readonly openedAt: Date | null;
+  readonly lastFailureAt: Date | null;
+  /** Cuántas cuentas del proveedor están suspendidas ahora. Sólo el número, nunca cuáles. */
+  readonly suspendedAccounts: number;
 }
 
 /**
@@ -118,18 +132,30 @@ export class BreakerRejectionError extends ServiceUnavailableException {
 
 export type KillLevel = 'all' | 'sales';
 
+/** El apagado más amplio de los dos: `all` le gana a `sales`, y cualquiera a ninguno. */
+function widest(a: KillLevel | undefined, b: KillLevel | undefined): KillLevel | undefined {
+  if (a === 'all' || b === 'all') return 'all';
+  return a ?? b;
+}
+
 /**
- * Nivel de apagado de `providerCode` en `PROVIDERS_DISABLED`, o `undefined` si está encendido.
+ * Nivel de apagado de `providerCode`: el más amplio entre `PROVIDERS_DISABLED` y el apagado de
+ * emergencia del panel (`panel`, 0077), o `undefined` si está encendido.
  *
- * `código` apaga todo, que es lo que hacía antes. `código:ventas` apaga sólo las ventas: frenar la
- * venta de un proveedor no puede impedir leer ni cancelar lo que ya se vendió. Cualquier otro
- * sufijo apaga todo, porque un error de tipeo del operador no puede dejar las ventas encendidas; y
- * si el código aparece dos veces gana el apagado más amplio.
+ * En la variable, `código` apaga todo, que es lo que hacía antes. `código:ventas` apaga sólo las
+ * ventas: frenar la venta de un proveedor no puede impedir leer ni cancelar lo que ya se vendió.
+ * Cualquier otro sufijo apaga todo, porque un error de tipeo del operador no puede dejar las ventas
+ * encendidas; y si el código aparece dos veces gana el apagado más amplio. El panel nunca enciende
+ * lo que la variable apaga: la variable es el respaldo que gana siempre.
  *
- * Se exporta sólo para que el panel de la plataforma pueda decir que el kill-switch le gana a sus
- * ajustes; quien lo aplica sigue siendo {@link CircuitBreakerService.execute}.
+ * Pura salvo por leer el entorno. Se exporta para que el panel de la plataforma diga qué está
+ * apagado y por qué; quien lo aplica sigue siendo {@link CircuitBreakerService.execute}.
  */
-export function killLevel(providerCode: string): KillLevel | undefined {
+export function killLevel(providerCode: string, panel?: KillLevel): KillLevel | undefined {
+  return widest(envKillLevel(providerCode), panel);
+}
+
+function envKillLevel(providerCode: string): KillLevel | undefined {
   let level: KillLevel | undefined;
   for (const entry of (process.env['PROVIDERS_DISABLED'] ?? '').split(',')) {
     // Sin límite en el split: `código:ventas:algo` es un sufijo que nadie definió y apaga todo;
@@ -185,16 +211,25 @@ export class CircuitBreakerService {
   private readonly logger = new Logger(CircuitBreakerService.name);
   private readonly circuits = new Map<string, Circuit>();
   /**
-   * `código@accountRef` → hasta cuándo está suspendida. Las vencidas se barren en cada suspensión
-   * nueva ({@link suspend}): la huella de una credencial rotada no vuelve a consultarse nunca, y
-   * sin el barrido su entrada quedaría para siempre.
+   * `código@accountRef` → de qué proveedor es y hasta cuándo está suspendida. Las vencidas se barren
+   * en cada suspensión nueva ({@link suspend}): la huella de una credencial rotada no vuelve a
+   * consultarse nunca, y sin el barrido su entrada quedaría para siempre.
    */
-  private readonly suspendedAccounts = new Map<string, number>();
+  private readonly suspendedAccounts = new Map<
+    string,
+    { readonly providerCode: string; readonly until: number }
+  >();
+
+  /**
+   * Sin el almacén (los tests que arman `new CircuitBreakerService()`) sólo cuenta la variable
+   * `PROVIDERS_DISABLED`, como antes del apagado desde el panel.
+   */
+  constructor(@Optional() private readonly killSwitches?: KillSwitchStore) {}
 
   private get(providerCode: string): Circuit {
     let c = this.circuits.get(providerCode);
     if (!c) {
-      c = { failures: 0, state: 'closed', openedAt: 0 };
+      c = { failures: 0, state: 'closed', openedAt: 0, lastFailureAt: 0 };
       this.circuits.set(providerCode, c);
     }
     return c;
@@ -213,6 +248,47 @@ export class CircuitBreakerService {
   }
 
   /**
+   * Lo que ve el panel de la plataforma (autenticado, sólo superadmin): por código, el circuito con
+   * cuándo se abrió y cuándo falló por última vez, y CUÁNTAS cuentas del proveedor están
+   * suspendidas. Nunca cuáles: la huella de una cuenta no sale de esta clase.
+   */
+  adminSnapshot(now: number = Date.now()): Record<string, AdminCircuitView> {
+    const suspended = new Map<string, number>();
+    for (const { providerCode, until } of this.suspendedAccounts.values()) {
+      if (until > now) suspended.set(providerCode, (suspended.get(providerCode) ?? 0) + 1);
+    }
+    const out: Record<string, AdminCircuitView> = {};
+    for (const code of new Set([...this.circuits.keys(), ...suspended.keys()])) {
+      const c = this.circuits.get(code);
+      out[code] = {
+        state: c?.state ?? 'closed',
+        failures: c?.failures ?? 0,
+        openedAt: c === undefined || c.state === 'closed' ? null : new Date(c.openedAt),
+        lastFailureAt: c === undefined || c.lastFailureAt === 0 ? null : new Date(c.lastFailureAt),
+        suspendedAccounts: suspended.get(code) ?? 0,
+      };
+    }
+    return out;
+  }
+
+  /**
+   * Cierra el circuito del proveedor desde el panel: la próxima llamada sale sin esperar la sonda.
+   * No toca las cuentas suspendidas (ésas las arregla la agencia con su credencial) ni el apagado de
+   * emergencia. Devuelve cómo estaba, o `undefined` si el proveedor no tenía circuito.
+   */
+  reset(providerCode: string): AdminCircuitView | undefined {
+    const before = this.adminSnapshot()[providerCode];
+    const c = this.circuits.get(providerCode);
+    if (c !== undefined) {
+      c.failures = 0;
+      c.state = 'closed';
+      c.openedAt = 0;
+      this.logger.warn(`circuito de ${providerCode} cerrado desde el panel`);
+    }
+    return before;
+  }
+
+  /**
    * Ejecuta `run` a través del circuito del proveedor y, si se indica, del de su cuenta.
    * Lanza {@link BreakerRejectionError} sin llamar al proveedor si está apagado o abierto.
    */
@@ -224,7 +300,7 @@ export class CircuitBreakerService {
     const { scope = 'sales', accountRef, effectOf: declared, passive = false } = options;
 
     // Por código y no por la clave del circuito: apagar un proveedor apaga también sus cuentas.
-    const level = killLevel(providerCode);
+    const level = killLevel(providerCode, this.killSwitches?.panelLevel(providerCode));
     if (level === 'all' || (level === 'sales' && scope === 'sales')) {
       throw new BreakerRejectionError(
         providerCode,
@@ -273,7 +349,7 @@ export class CircuitBreakerService {
   }
 
   private isSuspended(accountKey: string): boolean {
-    const until = this.suspendedAccounts.get(accountKey);
+    const until = this.suspendedAccounts.get(accountKey)?.until;
     if (until === undefined) return false;
     if (Date.now() < until) return true;
     // Vencida la ventana la cuenta vuelve a salir: si el proveedor la sigue rechazando, el mismo
@@ -282,12 +358,12 @@ export class CircuitBreakerService {
     return false;
   }
 
-  private suspend(accountKey: string, ms: number): void {
+  private suspend(providerCode: string, accountKey: string, ms: number): void {
     const now = Date.now();
-    for (const [key, until] of this.suspendedAccounts) {
+    for (const [key, { until }] of this.suspendedAccounts) {
       if (until <= now) this.suspendedAccounts.delete(key);
     }
-    this.suspendedAccounts.set(accountKey, now + ms);
+    this.suspendedAccounts.set(accountKey, { providerCode, until: now + ms });
   }
 
   private recordFailure(
@@ -305,7 +381,7 @@ export class CircuitBreakerService {
     if (effect === 'OPEN_ACCOUNT' && accountKey !== undefined) {
       const ms =
         (kind === undefined ? undefined : ACCOUNT_OPEN_MS_BY_KIND.get(kind)) ?? ACCOUNT_OPEN_MS;
-      this.suspend(accountKey, ms);
+      this.suspend(providerCode, accountKey, ms);
       // `accountRef` es una huella, no un dato del tenant: puede ir al log.
       this.logger.warn(
         `circuito de la cuenta ${accountKey} ABIERTO por ${kind ?? 'OPEN_ACCOUNT'} durante ${ms / 60_000} min`,
@@ -314,6 +390,7 @@ export class CircuitBreakerService {
     }
 
     c.failures += 1;
+    c.lastFailureAt = Date.now();
     // En half-open, un solo fallo vuelve a abrir: el proveedor sigue caído.
     if (effect === 'OPEN_NOW' || c.state === 'half-open' || c.failures >= FAILURE_THRESHOLD) {
       c.state = 'open';

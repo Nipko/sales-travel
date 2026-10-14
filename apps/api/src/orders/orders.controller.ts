@@ -1,8 +1,7 @@
 import {
-  BadRequestException,
   Body,
-  ConflictException,
   Controller,
+  ConflictException,
   ForbiddenException,
   Get,
   Header,
@@ -18,18 +17,13 @@ import {
 } from '@nestjs/common';
 import type { ProviderIssue } from '@sales-travel/domain';
 import { AgentCarsExceptionFilter } from '../cars/agent-cars-exception.filter.js';
-import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import type { ProviderCapabilities, ProviderCapability } from '../providers/provider.types.js';
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { DatabaseService } from '../database/database.service.js';
 import { BookingHoldLedger, type OpenWalletHold } from '../portfolios/booking-hold.ledger.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
-import { MailerService } from '../mail/mailer.service.js';
-import { hotelOrderConfirmationEmailHtml } from '../mail/templates.js';
-import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   CreateOrderSchema,
@@ -48,11 +42,8 @@ import {
   HotelOrderReadsService,
   type PublicHotelOrderTracking,
 } from './hotel-order-reads.service.js';
-import {
-  flightOrderConfirmationMail,
-  isTestContentOrder,
-  orderContactEmail,
-} from './order-confirmation-mail.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
+import { OrderConfirmationService, isTestContent } from './order-confirmation.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import {
@@ -70,23 +61,6 @@ type PublicProviderIssue = Pick<
   ProviderIssue,
   'severity' | 'category' | 'type' | 'fieldPath' | 'fieldName'
 >;
-
-const NO_FLIGHT_CAPABILITIES: ProviderCapabilities = {
-  retrieve: false,
-  cancel: false,
-  pay: false,
-  services: false,
-  reshop: false,
-};
-
-/** AgentCars no tiene registry: su factory es único y hoy sólo expone cancelación dentro de Orders. */
-const AGENT_CARS_ORDER_CAPABILITIES: ProviderCapabilities = {
-  retrieve: false,
-  cancel: true,
-  pay: false,
-  services: false,
-  reshop: false,
-};
 
 /**
  * Selecciona campos estructurados antes de que la incidencia salga del backend. `message` y
@@ -115,12 +89,10 @@ export class OrdersController {
 
   constructor(
     private readonly orders: OrdersService,
-    private readonly db: DatabaseService,
-    private readonly mailer: MailerService,
-    private readonly branding: BrandingService,
     private readonly activeTenant: ActiveTenantService,
-    private readonly registry: FlightProviderRegistry,
     private readonly hotelReads: HotelOrderReadsService,
+    private readonly confirmation: OrderConfirmationService,
+    private readonly capabilities: OrderCapabilitiesService,
     /**
      * Localizadores, documentos y plazo de emisión guardados de las órdenes de vuelo (0082).
      * Opcional sólo para los dobles de las suites que no los miran: en la app siempre está.
@@ -135,9 +107,9 @@ export class OrdersController {
     @Optional() private readonly walletHolds?: BookingHoldLedger,
   ) {}
 
-  /** Vuelo = ni hotel ni auto. Una orden de un proveedor de vuelos ya retirado también cuenta. */
+  /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
   private isFlightOrder(row: Pick<OrderRow, 'provider'>): boolean {
-    return !this.hotelReads.handles(row.provider) && row.provider !== 'agent-cars';
+    return this.capabilities.isFlightOrder(row);
   }
 
   /**
@@ -211,7 +183,7 @@ export class OrdersController {
     // Tampoco sale con una reserva de la cuenta de pruebas del proveedor: el pasajero recibiría un
     // localizador que no le sirve para viajar. Si el vendedor quiere mandarla, la reenvía a mano y
     // sale marcada como prueba (`send-confirmation`).
-    if (saga.kind === 'settled' && saga.status === 'confirmed' && !isTestContentOrder(order)) {
+    if (saga.kind === 'settled' && saga.status === 'confirmed' && !isTestContent(order)) {
       void this.sendConfirmationEmail(tenantId, order);
     }
 
@@ -257,56 +229,12 @@ export class OrdersController {
     const tenantId = await this.activeTenant.resolve(userId);
     const order = await this.orders.findById(tenantId, id);
     if (!order) throw new NotFoundException();
-    const to = this.contactEmail(order);
-    if (!to) throw new NotFoundException('La reserva no tiene email de contacto');
-    // Sólo hay algo que confirmar si la reserva existe del lado del proveedor. Una pendiente,
-    // fallida o cancelada no se «reenvía»: se le mentiría al cliente con su total.
-    if (order.status !== 'confirmed' && order.status !== 'ticketed') {
-      throw new ConflictException(
-        'Sólo se puede enviar la confirmación de una reserva confirmada o emitida.',
-      );
-    }
-    const sent = await this.sendConfirmationEmail(tenantId, order);
+    const { sent, to } = await this.confirmation.resend(tenantId, order);
     return { sent, to };
   }
 
-  private contactEmail(order: OrderRow): string {
-    return orderContactEmail(order);
-  }
-
   private async sendConfirmationEmail(tenantId: string, order: OrderRow): Promise<boolean> {
-    const to = this.contactEmail(order);
-    if (!to) return false;
-    const brand = await this.branding.resolve(tenantId);
-    // Una reserva de hotel lleva su plantilla: la estadía, el localizador y, si la tarifa no es
-    // reembolsable, el aviso con el 100 %. La de vuelos hablaría de una ruta vacía.
-    const mail = this.hotelReads.handles(order.provider)
-      ? hotelOrderConfirmationEmailHtml({
-          orderNumber: order.order_number,
-          locator: order.provider_order_id,
-          searchCriteria: order.search_criteria,
-          selectedOffer: order.selected_offer,
-          passengers: order.passengers,
-          totalAmount: order.total_amount,
-          currency: order.currency,
-          brand,
-        })
-      : this.flightConfirmationEmail(order, brand);
-    return this.mailer.sendToTenant(tenantId, {
-      to,
-      subject: mail.subject,
-      html: mail.html,
-      text: mail.text,
-    });
-  }
-
-  private flightConfirmationEmail(
-    order: OrderRow,
-    brand: Awaited<ReturnType<BrandingService['resolve']>>,
-  ): { subject: string; html: string; text: string } {
-    // Sólo llega aquí una de prueba si el vendedor la reenvió a mano: asunto «[PRUEBA] » y el aviso
-    // de que no es un tiquete válido para viajar.
-    return flightOrderConfirmationMail(order, brand);
+    return (await this.confirmation.send(tenantId, order)).sent;
   }
 
   @Get()
@@ -361,38 +289,13 @@ export class OrdersController {
     return { ...result, flightTracking: flights.get(row.id) ?? null };
   }
 
-  /**
-   * Rechaza la operación si el proveedor de la reserva no la sabe hacer.
-   *
-   * Antes esto era `row.provider !== '<un proveedor concreto>'`: cada proveedor nuevo obligaba
-   * a acordarse de tocar este `if`, y olvidarlo significaba mandar una operación a un adapter
-   * que no la implementa. Ahora lo decide el propio proveedor, declarando sus capacidades.
-   */
+  /** Rechaza la operación si el proveedor de la reserva no la sabe hacer. */
   private assertSupports(row: OrderRow, capability: ProviderCapability): void {
-    if (capability === 'cancel' && row.status === 'ticketed') {
-      // La única forma de cancelar una reserva emitida es anular (o reembolsar) sus tiquetes.
-      throw new BadRequestException(TICKET_VOID_MESSAGES.ticketedCancel);
-    }
-    if (!this.capabilitiesForOrder(row)[capability]) {
-      throw new BadRequestException(
-        `La operación no está disponible para reservas de proveedor '${row.provider}'.`,
-      );
-    }
-  }
-
-  /** Lo declara el registry de la vertical del proveedor; ninguna vertical se fija aquí. */
-  private capabilitiesFor(provider: string): ProviderCapabilities {
-    if (provider === 'agent-cars') return AGENT_CARS_ORDER_CAPABILITIES;
-    return (
-      this.hotelReads.capabilitiesOf(provider) ??
-      this.registry.capabilitiesOf(provider) ??
-      NO_FLIGHT_CAPABILITIES
-    );
+    this.capabilities.assertSupports(row, capability);
   }
 
   private capabilitiesForOrder(row: Pick<OrderRow, 'provider' | 'status'>): ProviderCapabilities {
-    const capabilities = this.capabilitiesFor(row.provider);
-    return row.status === 'ticketed' ? { ...capabilities, cancel: false } : capabilities;
+    return this.capabilities.capabilitiesForOrder(row);
   }
 
   @Post(':id/cancel')
@@ -633,7 +536,7 @@ export class OrdersController {
       errorMessage: row.error_message,
       // Reserva de la cuenta de pruebas del proveedor: la pantalla la marca para que nadie la
       // gestione como una venta real.
-      testContent: isTestContentOrder(row),
+      testContent: isTestContent(row),
       providerTracking: tracking ?? null,
       flightTracking: flightTracking ?? null,
       walletHold: walletHold ?? null,

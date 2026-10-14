@@ -51,6 +51,11 @@ export interface RequestContext {
   mfaRequired?: boolean;
   mfaEnabled?: boolean;
   mfaVerified?: boolean;
+  /**
+   * Cuándo pasó ESTA sesión el segundo factor por última vez (login o POST /auth/step-up), en el
+   * reloj de este proceso. RecentMfaGuard lo compara con la ventana de las acciones de alto impacto.
+   */
+  mfaVerifiedAt?: Date;
   session?: SessionTiming;
   /** Para el audit log (domain_events.meta) y las sesiones: la IP y el navegador del USUARIO. */
   ip?: string;
@@ -73,4 +78,17 @@ export function currentTenantId(): string | undefined {
 
 export function currentRole(): Role | undefined {
   return requestContextStorage.getStore()?.role;
+}
+
+/**
+ * Corre `fn` con el contexto del request pero con `tenantId` como tenant activo.
+ *
+ * Es para quien actúa sobre lo de OTRO nodo sin ser miembro: el superadmin, desde Reservas de la
+ * red, sobre la reserva de una agencia. Lo que cae al tenant del contexto cuando no se lo pasan
+ * —la auditoría (`AuditService`) y la bóveda de payloads de proveedor (`currentTenantId()`)— tiene
+ * que ir al nodo de la reserva, no al de la plataforma. El usuario, la sesión, la IP y el resto
+ * del contexto no cambian: sigue siendo quien actúa.
+ */
+export function runWithTenantContext<T>(tenantId: string, fn: () => T): T {
+  return requestContextStorage.run({ ...currentContext(), tenantId }, fn);
 }

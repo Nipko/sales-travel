@@ -69,7 +69,7 @@ const MESSAGES: Readonly<Record<PortfolioReason, string>> = {
   PORTFOLIO_BALANCE_OUT_OF_RANGE:
     'El movimiento dejaría el saldo fuera del rango que la cartera puede registrar.',
   PORTFOLIO_IDEMPOTENCY_KEY_REUSED:
-    'La Idempotency-Key ya se usó para otro movimiento o con otros datos: generá una nueva.',
+    'La Idempotency-Key ya se usó para otro movimiento o con otros datos: genera una nueva.',
   PORTFOLIO_IDENTITY_IMMUTABLE:
     'La moneda y el nodo de una cartera no cambian: para otra moneda se habilita otra cartera.',
   PORTFOLIO_ENTRY_AUTHOR: 'Un depósito o un ajuste de cartera lo firma el usuario que lo registra.',

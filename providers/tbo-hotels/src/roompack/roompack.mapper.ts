@@ -424,8 +424,26 @@ function beddingFor(room: TboSearchRoom, scope: TboPackScope): readonly (string 
   return texts;
 }
 
+/**
+ * Si el pack trae `RoomID` (o `RoomId`), una vez por pack y sólo por su FORMA: `present` si alguna
+ * habitación trae un id usable, `zero` si viene la lista y ninguno sirve (`0` es "sin mapeo",
+ * p. 57) y `absent` si no viene. Es lo que dice si las fotos por habitación pueden enlazar por id o
+ * sólo por nombre (Q-65).
+ */
+function countRoomIds(room: TboSearchRoom, scope: TboPackScope): void {
+  const raw = room.RoomID ?? room.RoomId;
+  const shape =
+    raw === undefined || raw === null || raw.length === 0
+      ? 'absent'
+      : room.Name.some((_, j) => roomTypeIdFor(room, j) !== undefined)
+        ? 'present'
+        : 'zero';
+  scope.observer.count(`tbo.${scope.op}.room_id`, { op: scope.op, shape });
+}
+
 function readRooms(room: TboSearchRoom, scope: TboPackScope): HotelRoom[] {
   const bedding = beddingFor(room, scope);
+  countRoomIds(room, scope);
   return room.Name.map((name, j) => {
     const promotions = promotionsFor(room, j);
     const roomTypeId = roomTypeIdFor(room, j);

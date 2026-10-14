@@ -9,6 +9,7 @@ import {
   TboApiError,
   TboConfigError,
   TboCredentialsMissingError,
+  TboDispatchRejectedError,
   TboRequestBuildError,
   TboResponseMappingError,
 } from './errors';
@@ -20,6 +21,7 @@ import {
   type TboHttpDeps,
 } from './http/tbo-http.client';
 import { resolveTboHotelDetails, type TboDetailsFetch } from './static/hotel-details.resolver';
+import { TBO_PROCESS_ROOM_DETAIL_GATE, TboRoomDetailGate } from './static/room-detail.gate';
 import {
   TBO_STATIC_TIMEOUTS_MS,
   TboStaticContentClient,
@@ -600,7 +602,7 @@ describe('TboStaticContentClient: construcción', () => {
 describe('TboStaticContentClient: sólo contenido, sin venta (06 §4.2)', () => {
   const SALES = /search|prebook|book|cancel|booking|rates|availability|send/i;
 
-  it('su superficie son exactamente los cinco métodos de contenido', () => {
+  it('su superficie son exactamente los cinco métodos de contenido y dos lecturas', () => {
     const own = Object.getOwnPropertyNames(TboStaticContentClient.prototype).sort();
     expect(own).toEqual(
       [
@@ -611,6 +613,7 @@ describe('TboStaticContentClient: sólo contenido, sin venta (06 §4.2)', () => 
         'listCities',
         'listCityHotels',
         'listCountries',
+        'roomDetailAvailable',
       ].sort(),
     );
     expect(own.filter((name) => SALES.test(name))).toEqual([]);
@@ -948,5 +951,445 @@ describe('TboStaticContentClient: HotelDetails sin contenido (producción, 2026-
     });
     // Ni un reintento del cliente: cada "No Hotels Found" rápido es un valor, no un 500.
     expect(logsOf(h).filter((log) => log.message === 'tbo.http.error')).toEqual([]);
+  });
+});
+
+describe('TboStaticContentClient: detalle por habitación (IsRoomDetailRequired; Q-65)', () => {
+  interface Body {
+    readonly Hotelcodes: string;
+    readonly Language: string;
+    readonly IsRoomDetailRequired?: boolean;
+  }
+
+  const conHabitaciones = JSON.parse(
+    readFileSync(
+      join(__dirname, '__fixtures__', 'inferred', 'hotel-details-room-array.json'),
+      'utf8',
+    ),
+  ) as { Status: unknown; HotelDetails: Record<string, unknown>[] };
+  const hotel = conHabitaciones.HotelDetails[0] ?? {};
+  const hotelSinHabitaciones = Object.fromEntries(
+    Object.entries(hotel).filter(([key]) => key !== 'Rooms'),
+  );
+  const sinHabitaciones = { Status: conHabitaciones.Status, HotelDetails: [hotelSinHabitaciones] };
+  const NHF = '{"Status":{"Code":500,"Description":"No Hotels Found"}}';
+
+  type Responder = (body: Body) => Response | Promise<Response>;
+
+  const ok =
+    (payload: unknown): Responder =>
+    () =>
+      json(payload);
+  const noHotels: Responder = () =>
+    new Response(NHF, { status: 200, headers: { 'content-type': 'application/json' } });
+  const tboCode =
+    (code: number, description: string): Responder =>
+    () =>
+      json({ Status: { Code: code, Description: description } });
+  const transport: Responder = () => Promise.reject(new TypeError('fetch failed'));
+  /** Varios hoteles: devuelve los pedidos que estén en `codes`, con o sin habitaciones. */
+  const hotels =
+    (codes: readonly string[], rooms: boolean): Responder =>
+    (body) =>
+      json({
+        Status: conHabitaciones.Status,
+        HotelDetails: body.Hotelcodes.split(',')
+          .filter((code) => codes.includes(code))
+          .map((code) => ({ ...(rooms ? hotel : hotelSinHabitaciones), HotelCode: code })),
+      });
+
+  /** Un HotelDetails guionado: con la clave responde `conClave`; sin ella, `sinClave`. */
+  function roomsTbo(
+    conClave: Responder | Responder[],
+    sinClave: Responder | Responder[] = ok(sinHabitaciones),
+    options: TboStaticContentOptions = {},
+  ) {
+    const bodies: Body[] = [];
+    const pick = (r: Responder | Responder[]): Responder =>
+      Array.isArray(r) ? (r.shift() ?? noHotels) : r;
+    const fetch: TboFetch = (url, init) => {
+      const body = bodyOf({ url, init }) as Body;
+      bodies.push(body);
+      return Promise.resolve(
+        (body.IsRoomDetailRequired === true ? pick(conClave) : pick(sinClave))(body),
+      );
+    };
+    const gate = new TboRoomDetailGate(3);
+    const metrics: { name: string; tags: Record<string, string> }[] = [];
+    const h = harness(
+      ROUTES,
+      { roomDetailGate: gate, ...options },
+      {
+        fetch,
+        metrics: {
+          counter: (name: string, _value: number, tags?: Record<string, string>) => {
+            metrics.push({ name, tags: tags ?? {} });
+          },
+          histogram: () => undefined,
+          gauge: () => undefined,
+        } as unknown as TboHttpDeps['metrics'],
+      },
+    );
+    return { h, bodies, gate, metrics };
+  }
+
+  function logsOf(h: Harness): { level: string; message: string; meta: Record<string, unknown> }[] {
+    return h.logs.map(
+      (line) =>
+        JSON.parse(line) as { level: string; message: string; meta: Record<string, unknown> },
+    );
+  }
+
+  const withKey = (bodies: readonly Body[]): boolean[] =>
+    bodies.map((body) => body.IsRoomDetailRequired === true);
+
+  it('sin pedirlo: el body y el resultado de siempre, `not_requested`', async () => {
+    const { h, bodies } = roomsTbo(ok(conHabitaciones), ok(conHabitaciones));
+    const result = await h.client.getHotelDetails(['1000000'], 'en');
+    expect(bodies).toEqual([{ Hotelcodes: '1000000', Language: 'EN' }]);
+    expect(result.roomDetail).toBe('not_requested');
+    expect(result.roomContents).toEqual([]);
+    expect(result.diagnostics.unknownKeys).toEqual(['HotelDetails[].Rooms']);
+  });
+
+  it('pedido y aceptado: UNA llamada con la clave, `served` y las habitaciones del hotel', async () => {
+    const { h, bodies, gate } = roomsTbo(ok(conHabitaciones));
+    const result = await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    expect(bodies).toEqual([{ Hotelcodes: '1000000', Language: 'EN', IsRoomDetailRequired: true }]);
+    expect(result.roomDetail).toBe('served');
+    expect(result.contents.map((c) => c.hotelId)).toEqual(['1000000']);
+    expect(result.roomContents).toHaveLength(1);
+    expect(result.roomContents[0]).toMatchObject({ hotelId: '1000000', shape: 'array' });
+    expect(result.roomContents[0]?.rooms.map((room) => room.roomKey).slice(0, 2)).toEqual([
+      '197354',
+      '197355',
+    ]);
+    expect(result.diagnostics.unknownKeys).toEqual([]);
+    expect(gate.consecutiveRejections).toBe(0);
+  });
+
+  it('interruptor en `off`: la clave no sale aunque se pida, `switched_off`', async () => {
+    const { h, bodies } = roomsTbo(ok(conHabitaciones), ok(sinHabitaciones), {
+      roomDetails: 'off',
+    });
+    const result = await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    expect(withKey(bodies)).toEqual([false]);
+    expect(result.roomDetail).toBe('switched_off');
+    expect(result.roomContents).toEqual([]);
+    expect(result.contents).toHaveLength(1);
+  });
+
+  it('`roomDetailAvailable`: sólo con el interruptor en `on` y la compuerta abierta', () => {
+    expect(roomsTbo(ok(conHabitaciones)).h.client.roomDetailAvailable).toBe(true);
+    expect(
+      roomsTbo(ok(conHabitaciones), ok(sinHabitaciones), { roomDetails: 'off' }).h.client
+        .roomDetailAvailable,
+    ).toBe(false);
+    const suspendida = new TboRoomDetailGate(1);
+    suspendida.recordRejection();
+    expect(
+      roomsTbo(ok(conHabitaciones), ok(sinHabitaciones), { roomDetailGate: suspendida }).h.client
+        .roomDetailAvailable,
+    ).toBe(false);
+  });
+
+  it('un valor del interruptor fuera de la lista es un error de configuración', () => {
+    expect(() => harness(ROUTES, { roomDetails: 'maybe' as unknown as 'on' })).toThrow(
+      TboConfigError,
+    );
+  });
+
+  it.each([
+    ['un 400 "Invalid Request"', tboCode(400, 'Invalid Request'), 'CLIENT_BUG'],
+    [
+      'un 500 "Unexpected Error", sin reintento con la clave',
+      tboCode(500, 'Unexpected Error'),
+      'UPSTREAM',
+    ],
+    ['un fallo de transporte', transport, 'TRANSPORT'],
+  ] as const)(
+    'con la clave TBO devuelve %s: se repite SIN la clave y el hotel conserva su contenido',
+    async (_label, responder, kind) => {
+      const { h, bodies, gate, metrics } = roomsTbo(responder);
+      const result = await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+      expect(withKey(bodies)).toEqual([true, false]);
+      expect(result).toMatchObject({
+        roomDetail: 'fallback',
+        outcome: 'DETAILS',
+        roomContents: [],
+      });
+      expect(result.contents.map((c) => c.hotelId)).toEqual(['1000000']);
+      expect(result.contents[0]?.images).toHaveLength(1);
+      expect(gate.consecutiveRejections).toBe(1);
+      expect(metrics).toContainEqual({
+        name: 'tbo.hotelDetails.room_detail_fallback',
+        tags: { reason: 'error' },
+      });
+      const fallback = logsOf(h).find((log) => log.message === 'tbo.static.room_detail_fallback');
+      expect(fallback).toMatchObject({
+        level: 'info',
+        meta: {
+          provider: 'tbo-hotels',
+          op: 'hotelDetails',
+          lang: 'en',
+          reason: 'error',
+          hotelCodeCount: 1,
+          requestId: result.requestId,
+          consecutiveRejections: 1,
+          rejectionLimit: 3,
+          errorClass: 'TboApiError',
+          kind,
+        },
+      });
+    },
+  );
+
+  it('"No Hotels Found" con la clave y contenido sin ella: rechazo, y el contenido de siempre', async () => {
+    const { h, bodies, gate } = roomsTbo(noHotels);
+    const result = await h.client.getHotelDetails(['1000000'], 'es', {}, { roomDetail: true });
+    expect(withKey(bodies)).toEqual([true, false]);
+    expect(result).toMatchObject({ roomDetail: 'fallback', outcome: 'DETAILS', roomContents: [] });
+    expect(result.contents).toHaveLength(1);
+    expect(gate.consecutiveRejections).toBe(1);
+    const fallback = logsOf(h).find((log) => log.message === 'tbo.static.room_detail_fallback');
+    expect(fallback?.meta).toMatchObject({ reason: 'no_hotels_found' });
+    expect(fallback?.meta).not.toHaveProperty('errorClass');
+  });
+
+  it('"No Hotels Found" con y sin la clave: TBO no tiene ese idioma, `served` y sin rechazo', async () => {
+    const { h, bodies, gate } = roomsTbo(noHotels, noHotels);
+    const result = await h.client.getHotelDetails(['1000000'], 'es', {}, { roomDetail: true });
+    expect(withKey(bodies)).toEqual([true, false]);
+    expect(result).toMatchObject({
+      roomDetail: 'served',
+      outcome: 'NO_HOTELS_FOUND',
+      missingHotelCodes: ['1000000'],
+      roomContents: [],
+    });
+    expect(gate.consecutiveRejections).toBe(0);
+    expect(logsOf(h).filter((log) => log.message === 'tbo.static.room_detail_fallback')).toEqual(
+      [],
+    );
+  });
+
+  it('con la clave falta un hotel que sin ella viene: rechazo, y las habitaciones que vinieron se quedan', async () => {
+    const { h, bodies, gate } = roomsTbo(
+      hotels(['1000000'], true),
+      hotels(['1000000', '1000001'], false),
+    );
+    const result = await h.client.getHotelDetails(
+      ['1000000', '1000001'],
+      'en',
+      {},
+      { roomDetail: true },
+    );
+    expect(withKey(bodies)).toEqual([true, false]);
+    expect(result.roomDetail).toBe('fallback');
+    expect(result.contents.map((c) => c.hotelId)).toEqual(['1000000', '1000001']);
+    expect(result.missingHotelCodes).toEqual([]);
+    expect(result.roomContents.map((r) => [r.hotelId, r.shape])).toEqual([['1000000', 'array']]);
+    expect(gate.consecutiveRejections).toBe(1);
+    const fallback = logsOf(h).find((log) => log.message === 'tbo.static.room_detail_fallback');
+    expect(fallback?.meta).toMatchObject({ reason: 'missing_hotels', hotelCodeCount: 2 });
+  });
+
+  it('con la clave falta un hotel que sin ella TAMPOCO viene: vale la respuesta con la clave', async () => {
+    const { h, gate } = roomsTbo(hotels(['1000000'], true), hotels(['1000000'], false));
+    const result = await h.client.getHotelDetails(
+      ['1000000', '1000001'],
+      'en',
+      {},
+      { roomDetail: true },
+    );
+    expect(result.roomDetail).toBe('served');
+    expect(result.missingHotelCodes).toEqual(['1000001']);
+    expect(result.roomContents).toHaveLength(1);
+    expect(gate.consecutiveRejections).toBe(0);
+  });
+
+  it('con la clave falla y sin ella no hay contenido: `fallback` sin contarlo como rechazo', async () => {
+    const { h, gate } = roomsTbo(tboCode(400, 'Invalid Request'), noHotels);
+    const result = await h.client.getHotelDetails(['1000000'], 'es', {}, { roomDetail: true });
+    expect(result).toMatchObject({ roomDetail: 'fallback', outcome: 'NO_HOTELS_FOUND' });
+    expect(gate.consecutiveRejections).toBe(0);
+  });
+
+  it('si sin la clave también falla, sale ESE error: el de siempre', async () => {
+    const { h, bodies } = roomsTbo(
+      tboCode(400, 'Invalid Request'),
+      tboCode(500, 'Unexpected Error'),
+    );
+    const error = await h.client
+      .getHotelDetails(['1000000'], 'en', { maxAttempts: 1 }, { roomDetail: true })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(TboApiError);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+    expect(withKey(bodies)).toEqual([true, false]);
+  });
+
+  it('con la clave vino un hotel y el respaldo sin ella falla: se queda lo que vino, no el error', async () => {
+    const { h, bodies, gate, metrics } = roomsTbo(
+      hotels(['1000000'], true),
+      tboCode(500, 'Unexpected Error'),
+    );
+    const result = await h.client.getHotelDetails(
+      ['1000000', '1000001'],
+      'en',
+      { maxAttempts: 1 },
+      { roomDetail: true },
+    );
+    expect(withKey(bodies)).toEqual([true, false]);
+    expect(result.roomDetail).toBe('served');
+    expect(result.contents.map((c) => c.hotelId)).toEqual(['1000000']);
+    expect(result.missingHotelCodes).toEqual(['1000001']);
+    expect(result.roomContents.map((r) => r.hotelId)).toEqual(['1000000']);
+    expect(gate.consecutiveRejections).toBe(0);
+    expect(metrics).toContainEqual({
+      name: 'tbo.hotelDetails.room_detail_fallback_failed',
+      tags: { reason: 'missing_hotels' },
+    });
+    const failed = logsOf(h).find(
+      (log) => log.message === 'tbo.static.room_detail_fallback_failed',
+    );
+    expect(failed).toMatchObject({
+      level: 'info',
+      meta: {
+        op: 'hotelDetails',
+        reason: 'missing_hotels',
+        requestId: result.requestId,
+        errorClass: 'TboApiError',
+        kind: 'UPSTREAM',
+      },
+    });
+  });
+
+  it('con la clave no vino ningún hotel y el respaldo falla: sale el error del respaldo', async () => {
+    const { h } = roomsTbo(noHotels, tboCode(500, 'Unexpected Error'));
+    const error = await h.client
+      .getHotelDetails(['1000000'], 'en', { maxAttempts: 1 }, { roomDetail: true })
+      .catch((err: unknown) => err);
+    expect((error as TboApiError).kind).toBe('UPSTREAM');
+  });
+
+  it('tres rechazos seguidos suspenden la clave en el proceso, con UN warn', async () => {
+    const { h, bodies, gate } = roomsTbo(noHotels);
+    for (let i = 0; i < 3; i += 1) {
+      await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    }
+    expect(gate.suspended).toBe(true);
+    const suspended = logsOf(h).filter((log) => log.message === 'tbo.static.room_detail_suspended');
+    expect(suspended).toHaveLength(1);
+    expect(suspended[0]).toMatchObject({
+      level: 'warn',
+      meta: {
+        provider: 'tbo-hotels',
+        op: 'hotelDetails',
+        lang: 'en',
+        reason: 'no_hotels_found',
+        hotelCodeCount: 1,
+        consecutiveRejections: 3,
+        rejectionLimit: 3,
+      },
+    });
+
+    bodies.length = 0;
+    const after = await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    expect(withKey(bodies)).toEqual([false]);
+    expect(after).toMatchObject({ roomDetail: 'suspended', roomContents: [] });
+    expect(after.contents).toHaveLength(1);
+    expect(
+      logsOf(h).filter((log) => log.message === 'tbo.static.room_detail_suspended'),
+    ).toHaveLength(1);
+  });
+
+  it('un lote completo con la clave corta la racha', async () => {
+    const { h, gate } = roomsTbo([noHotels, noHotels, ok(conHabitaciones), noHotels, noHotels]);
+    for (let i = 0; i < 5; i += 1) {
+      await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    }
+    expect(gate.suspended).toBe(false);
+    expect(gate.consecutiveRejections).toBe(2);
+  });
+
+  it('sin respaldo si quien espera ya cortó: el error sale tal cual, en UNA llamada', async () => {
+    const controller = new AbortController();
+    const { h, bodies } = roomsTbo(() => {
+      controller.abort();
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    });
+    await expect(
+      h.client.getHotelDetails(
+        ['1000000'],
+        'en',
+        { signal: controller.signal },
+        { roomDetail: true },
+      ),
+    ).rejects.toBeInstanceOf(TboApiError);
+    expect(bodies).toHaveLength(1);
+  });
+
+  it.each([
+    ['credenciales', tboCode(401, 'Access Credentials is incorrect'), 'CREDENTIALS_INVALID'],
+    ['cupo', tboCode(429, 'Limit exceeded'), 'THROTTLED'],
+  ] as const)(
+    'sin respaldo ante un fallo de %s: es de la cuenta, no de la clave',
+    async (_label, responder, kind) => {
+      const { h, bodies, gate } = roomsTbo(responder);
+      const error = await h.client
+        .getHotelDetails(['1000000'], 'en', {}, { roomDetail: true })
+        .catch((err: unknown) => err);
+      expect((error as TboApiError).kind).toBe(kind);
+      expect(withKey(bodies)).toEqual([true]);
+      expect(gate.consecutiveRejections).toBe(0);
+    },
+  );
+
+  it('sin respaldo si el limitador no dio cupo: el lote sin la clave tampoco lo tendría', async () => {
+    const { fetch, calls } = spyFetch(ROUTES);
+    const client = new TboStaticContentClient(
+      config(),
+      {
+        fetch,
+        limiter: {
+          acquire: () => Promise.resolve({ granted: false, reason: 'QUEUE_TIMEOUT' }),
+          reportThrottled: () => undefined,
+        },
+      },
+      {},
+      { roomDetailGate: new TboRoomDetailGate() },
+    );
+    await expect(
+      client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true }),
+    ).rejects.toBeInstanceOf(TboDispatchRejectedError);
+    expect(calls).toEqual([]);
+  });
+
+  it('un código ilegible se corta antes del cable, sin respaldo', async () => {
+    const { h, bodies } = roomsTbo(ok(conHabitaciones));
+    await expect(
+      h.client.getHotelDetails(['1 2'], 'en', {}, { roomDetail: true }),
+    ).rejects.toBeInstanceOf(TboRequestBuildError);
+    expect(bodies).toEqual([]);
+  });
+
+  it('sin `roomDetailGate`, el cliente usa la compuerta del proceso', async () => {
+    const { fetch } = spyFetch(ROUTES);
+    const client = new TboStaticContentClient(
+      config(),
+      { fetch, sleep: () => Promise.resolve() },
+      {},
+    );
+    const result = await client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    expect(result.roomDetail).toBe('served');
+    expect(TBO_PROCESS_ROOM_DETAIL_GATE.consecutiveRejections).toBe(0);
+  });
+
+  it('ni el log ni las métricas llevan nombres, fotos ni descripciones de habitaciones', async () => {
+    const { h, metrics } = roomsTbo([noHotels, ok(conHabitaciones)]);
+    await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    await h.client.getHotelDetails(['1000000'], 'en', {}, { roomDetail: true });
+    const all = JSON.stringify({ logs: h.logs, metrics });
+    expect(all).not.toMatch(/Deluxe|Nile|example\d|Garden|Sofitel|Balcony|1830/);
+    expect(all).not.toContain(PASSWORD);
   });
 });

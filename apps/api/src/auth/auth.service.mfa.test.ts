@@ -18,6 +18,7 @@ import {
   type MfaChallengeService,
 } from './mfa-challenge.service.js';
 import type { MfaService } from './mfa.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import type { PasswordService } from './password.service.js';
 import type { SeatService } from './seat.service.js';
 import type { SessionService } from './session.service.js';
@@ -151,6 +152,7 @@ function build(user: Record<string, unknown> | undefined = undefined): AuthServi
     challenges as unknown as MfaChallengeService,
     { create: createDevice, use: useDevice } as unknown as TrustedDeviceService,
     { registerFailure, registerSuccess, clearFailures } as unknown as LoginAttemptsService,
+    {} as PasswordResetService,
   );
 }
 
@@ -196,7 +198,7 @@ describe('AuthService: paso MFA del login', () => {
     createDevice = vi.fn(() =>
       Promise.resolve({ token: 'equipo', expiresAt: new Date('2026-10-29T00:00:00Z') }),
     );
-    useDevice = vi.fn(() => Promise.resolve(false));
+    useDevice = vi.fn(() => Promise.resolve(null));
     events = [];
     auth = build();
   });
@@ -366,7 +368,7 @@ describe('AuthService.login con MFA activo', () => {
         seatTenantId: null,
       }),
     );
-    useDevice = vi.fn(() => Promise.resolve(false));
+    useDevice = vi.fn(() => Promise.resolve(null));
     events = [];
     auth = build(USER_ROW);
   });
@@ -380,7 +382,8 @@ describe('AuthService.login con MFA activo', () => {
   });
 
   it('un equipo de confianza válido del usuario reemplaza al código', async () => {
-    useDevice.mockResolvedValue(true);
+    const trustedAt = new Date('2026-10-01T12:00:00Z');
+    useDevice.mockResolvedValue(trustedAt);
     const result = await auth.login({
       email: 'a@test.local',
       password: 'x',
@@ -388,7 +391,11 @@ describe('AuthService.login con MFA activo', () => {
     });
     expect(useDevice).toHaveBeenCalledWith(USER, 'token-del-equipo');
     expect(result).toMatchObject({ userId: USER });
-    expect(issue).toHaveBeenCalledWith(expect.objectContaining({ mfaVerified: true }));
+    // El segundo factor cuenta desde que se confió en el equipo: entrar sin tipear el código no
+    // reconfirma las acciones de alto impacto (USR-13).
+    expect(issue).toHaveBeenCalledWith(
+      expect.objectContaining({ mfaVerified: true, mfaVerifiedAt: trustedAt }),
+    );
     expect(challenges.rows.size).toBe(0);
     expect(registerSuccess).toHaveBeenCalledWith(USER);
   });

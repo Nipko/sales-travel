@@ -5,7 +5,11 @@ import { AgentCarsProviderModule } from '../providers-agent-cars/agent-cars.modu
 import { HotelProvidersModule } from '../providers/hotel-providers.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
+import { NetworkModule } from '../network/network.module.js';
 import { SearchModule } from '../search/search.module.js';
+import { AdminOrderActionsService } from './admin-order-actions.service.js';
+import { AdminOrdersController } from './admin-orders.controller.js';
+import { AdminOrdersService } from './admin-orders.service.js';
 import { ExternalOrderIntentService } from './external-order-intent.service.js';
 import { FlightDeadlineAlertService } from './flight-deadline-alert.service.js';
 import { FlightDeadlineAlertStore } from './flight-deadline-alert.store.js';
@@ -14,6 +18,8 @@ import { HotelOrderCancellationService } from './hotel-order-cancellation.servic
 import { HotelOrderCancellationStore } from './hotel-order-cancellation.store.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
+import { OrderCapabilitiesService } from './order-capabilities.service.js';
+import { OrderConfirmationService } from './order-confirmation.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { StaleCancelClaimService } from './stale-cancel-claim.service.js';
@@ -39,6 +45,12 @@ import { TicketIssueStore } from './ticket-issue.store.js';
  * Los claims de cancelación que un proceso dejó en vuelo (HARD-1) los vence `PostSaleModule` con
  * `StaleCancelClaimService`, que es de todas las verticales.
  *
+ * Reservas de la red (`/admin/orders`, la consola del superadmin) vive acá para reusar las lecturas
+ * de la ficha (`OrdersService`, `HotelOrderReadsService`) sin exportarlas; `NetworkModule` trae
+ * `SuperadminGuard`. Su post-venta (`AdminOrderActionsService`) usa los mismos servicios que
+ * Reservas de la agencia: el reenvío de la confirmación (`OrderConfirmationService`) y las
+ * capacidades de cada proveedor (`OrderCapabilitiesService`), que antes vivían en su controlador.
+ *
  * La emisión de tiquetes (SAB-08) la pide el controlador y la ejecuta `PostSaleModule` desde la
  * cola: `FlightTicketIssueService` se exporta para el worker y el barrido.
  *
@@ -52,12 +64,17 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     PricingModule,
     HotelProvidersModule,
     SearchModule,
+    NetworkModule,
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, AdminOrdersController],
   // El worker de post-venta vive en `PostSaleModule`: enruta también jobs de hoteles, y
   // `HotelsModule` ya importa este módulo.
   providers: [
     OrdersService,
+    OrderConfirmationService,
+    OrderCapabilitiesService,
+    AdminOrdersService,
+    AdminOrderActionsService,
     ExternalOrderIntentService,
     FlightOrderTrackingStore,
     HotelOrderTrackingStore,

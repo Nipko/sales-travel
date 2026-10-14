@@ -231,16 +231,16 @@ export function releaseConfirm(session: SeatSession): {
  */
 export function seatReleaseError(status: number, message: string | undefined): string {
   const text = message?.trim() ?? '';
-  if (status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';
+  if (status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.';
   if (status === 404) return 'Esa sesión ya se había cerrado. Actualizamos la lista.';
   if (status === 403) {
     return text !== ''
       ? `No lo pudimos hacer: ${text}`
-      : 'No administrás el nodo de esa sesión: pedíselo a quien lo administra.';
+      : 'No administras el nodo de esa sesión: pídeselo a quien lo administra.';
   }
   if (text !== '') return text;
   return status >= 500
-    ? 'No pudimos desconectarla. Probá de nuevo en unos minutos.'
+    ? 'No pudimos desconectarla. Inténtalo de nuevo en unos minutos.'
     : 'No pudimos desconectarla.';
 }
 
@@ -294,14 +294,14 @@ export function idleChoices(saved: number | null): readonly number[] {
 }
 
 export function seatsError(raw: string, required: boolean): string | undefined {
-  if (raw.trim() === '') return required ? 'Indicá cuántos puestos simultáneos tiene.' : undefined;
+  if (raw.trim() === '') return required ? 'Indica cuántos puestos simultáneos tiene.' : undefined;
   if (parseSeats(raw) !== undefined) return undefined;
   return `Un número entero entre ${SEATS_MIN} y ${SEATS_MAX.toLocaleString('es-CO')}.`;
 }
 
 export function idleError(raw: string): string | undefined {
   if (raw === '' || parseIdle(raw) !== undefined) return undefined;
-  return 'Elegí uno de los tiempos de la lista.';
+  return 'Elige uno de los tiempos de la lista.';
 }
 
 /** El borrador a partir de lo que el nodo fija hoy. */

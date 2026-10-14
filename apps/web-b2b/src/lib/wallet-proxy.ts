@@ -39,12 +39,12 @@ const BAD_METHOD: WalletProxyPlan = {
 const UNREADABLE: WalletProxyPlan = {
   ok: false,
   status: 400,
-  error: 'El pedido no se pudo leer. Recargá la página e intentá de nuevo.',
+  error: 'El pedido no se pudo leer. Recarga la página e inténtalo de nuevo.',
 };
 const MISSING_KEY: WalletProxyPlan = {
   ok: false,
   status: 400,
-  error: 'No pudimos identificar este movimiento. Cerrá el formulario y volvé a cargarlo.',
+  error: 'No pudimos identificar este movimiento. Cierra el formulario y vuelve a cargarlo.',
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

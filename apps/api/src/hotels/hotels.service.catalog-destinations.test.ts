@@ -39,6 +39,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import {
   CATALOG_SUGGESTION_LIMIT,
   CATALOG_SUGGESTION_MIN_SIMILARITY,
@@ -223,6 +224,7 @@ function banco(
     {} as HotelBookingService,
     {} as HotelContentService,
     {} as BookingPermissionsService,
+    {} as HotelRoomContentService,
   );
   return { service, controller, despegar, fetch, db, instrument, breaker };
 }
@@ -491,7 +493,12 @@ describe('producción sin clave de Despegar: ausente, y la vertical sigue con TB
 
     expect(red).not.toHaveBeenCalled();
     expect(b.fetch).toHaveBeenCalledTimes(1);
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: CATALOGO_TBO.length });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: CATALOGO_TBO.length,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toMatchObject({
       status: 'unavailable',
       unavailableReason: 'no-credentials',
@@ -534,7 +541,12 @@ describe('POST /hotels/availability — una ciudad del catálogo local', () => {
     expect(cuerpoDe(b.fetch.mock.calls[0]?.[1])).toMatchObject({
       HotelCodes: CATALOGO_TBO.join(','),
     });
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: 2 });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: 2,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toMatchObject({
       status: 'skipped',
       skipReason: 'opt-in-disabled',

@@ -24,6 +24,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import { normalizeCityName } from './hotel-destination.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
@@ -218,6 +219,7 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
       {} as HotelBookingService,
       {} as HotelContentService,
       {} as BookingPermissionsService,
+      {} as HotelRoomContentService,
     );
     return { controller, fetch, despegar };
   }
@@ -439,6 +441,7 @@ d('destinos del catálogo local en /hotels, contra Postgres sembrado', () => {
       code: TBO,
       status: 'ok',
       count: 2,
+      accountEnvironment: 'test',
     });
     expect(res.hotels.map((o) => o.hotelId).sort()).toEqual([T1, T2].sort());
   });

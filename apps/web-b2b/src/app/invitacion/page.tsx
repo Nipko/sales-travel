@@ -34,7 +34,7 @@ function InvitationForm() {
     return (
       <AuthShell title="Invitación inválida" description="Este enlace no tiene un token válido.">
         <p className="text-xs text-[var(--color-fg-muted)]">
-          Puede que lo hayas copiado incompleto. Pedile a tu administrador que te reenvíe la
+          Puede que lo hayas copiado incompleto. Pídele a tu administrador que te reenvíe la
           invitación.
         </p>
       </AuthShell>
@@ -43,7 +43,7 @@ function InvitationForm() {
 
   if (state.done) {
     return (
-      <AuthShell title="Cuenta creada" description="Ya podés entrar con tu contraseña.">
+      <AuthShell title="Cuenta creada" description="Ya puedes entrar con tu contraseña.">
         <div className="space-y-4">
           <FormSuccess message="Listo. Tu correo quedó verificado al aceptar la invitación." />
           <Link href="/login">
@@ -62,7 +62,7 @@ function InvitationForm() {
   return (
     <AuthShell
       title="Aceptar invitación"
-      description="Elegí tu contraseña. Sólo vos la vas a conocer."
+      description="Elige tu contraseña. Sólo tú la vas a conocer."
     >
       <form action={formAction} className="space-y-5">
         <input type="hidden" name="token" value={token} />

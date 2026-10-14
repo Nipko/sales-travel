@@ -28,6 +28,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
@@ -195,6 +196,7 @@ d('TBO en la búsqueda de /hotels, contra Postgres sembrado', () => {
       {} as HotelBookingService,
       {} as HotelContentService,
       {} as BookingPermissionsService,
+      {} as HotelRoomContentService,
     );
     return { controller, fetch, despegar };
   }
@@ -403,7 +405,12 @@ d('TBO en la búsqueda de /hotels, contra Postgres sembrado', () => {
       location: { lat: 4.6781, lng: -74.0455 },
     });
     expect(hotelDe(res, T2)?.providerHotels).toBeUndefined();
-    expect(parteDe(res, TBO)).toEqual({ code: TBO, status: 'ok', count: 2 });
+    expect(parteDe(res, TBO)).toEqual({
+      code: TBO,
+      status: 'ok',
+      count: 2,
+      accountEnvironment: 'test',
+    });
     expect(parteDe(res, DESPEGAR)).toEqual({ code: DESPEGAR, status: 'ok', count: 3 });
   });
 

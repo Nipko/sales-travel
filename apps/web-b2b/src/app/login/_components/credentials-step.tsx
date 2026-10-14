@@ -62,7 +62,7 @@ export function CredentialsStep({
   }, [state.attempt, state.email, state.notice, error]);
 
   return (
-    <StepCard title="Ingresá a tu cuenta" description="Usá el correo con el que te dieron acceso.">
+    <StepCard title="Ingresa a tu cuenta" description="Usa el correo con el que te dieron acceso.">
       {motivo && state.attempt === 0 ? (
         <ReasonBanner motivo={motivo} idleMinutes={idleMinutes} />
       ) : null}
@@ -73,6 +73,13 @@ export function CredentialsStep({
             <p>
               <Link href="/olvide-password" className={RESET_LINK_CLASS}>
                 Restablecer contraseña
+              </Link>
+            </p>
+          ) : null}
+          {state.passwordResetRequired ? (
+            <p>
+              <Link href="/olvide-password" className={RESET_LINK_CLASS}>
+                {LOGIN_MESSAGES.passwordResetRequiredLink}
               </Link>
             </p>
           ) : null}

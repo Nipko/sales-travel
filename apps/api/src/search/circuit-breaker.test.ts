@@ -3,11 +3,14 @@ import { DespegarApiError } from '@sales-travel/despegar-hotels';
 import { LatamApiError } from '@sales-travel/latam-ndc';
 import { SabreApiError } from '@sales-travel/sabre';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { KillSwitchStore } from '../provider-enablement/kill-switch.store.js';
 import {
   BreakerRejectionError,
   CircuitBreakerService,
+  killLevel,
   type CallScope,
   type CircuitEffect,
+  type KillLevel,
 } from './circuit-breaker.service.js';
 
 /** Los mismos números que declara el servicio; si cambian allá, este test debe fallar. */
@@ -736,5 +739,189 @@ describe('CircuitBreakerService — llamada pasiva (contenido de hotel, PR-3.6)'
       reason: 'provider-circuit',
     });
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('killLevel: la variable y el panel (0077), gana el apagado más amplio', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each<[string, string, KillLevel | undefined, KillLevel | undefined]>([
+    ['sin nada, encendido', '', undefined, undefined],
+    ['sólo la variable', 'prov-a:ventas', undefined, 'sales'],
+    ['sólo el panel', '', 'sales', 'sales'],
+    ['variable sólo ventas + panel todo = todo', 'prov-a:ventas', 'all', 'all'],
+    ['variable todo + panel sólo ventas = todo', 'prov-a', 'sales', 'all'],
+    ['los dos sólo ventas', 'prov-a:ventas', 'sales', 'sales'],
+    ['la variable de otro proveedor no cuenta', 'prov-b', 'sales', 'sales'],
+  ])('%s', (_caso, env, panel, esperado) => {
+    vi.stubEnv('PROVIDERS_DISABLED', env);
+    expect(killLevel('prov-a', panel)).toBe(esperado);
+  });
+});
+
+describe('CircuitBreakerService — apagado de emergencia del panel (0077)', () => {
+  let panel: Map<string, KillLevel>;
+  let breaker: CircuitBreakerService;
+
+  beforeEach(() => {
+    vi.stubEnv('PROVIDERS_DISABLED', '');
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    panel = new Map();
+    const store = { panelLevel: (code: string) => panel.get(code) };
+    breaker = new CircuitBreakerService(store as unknown as KillSwitchStore);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('`sales` frena las ventas con `kill-switch`, sin llamar, y deja pasar la post-venta', async () => {
+    panel.set('prov-a', 'sales');
+    const venta = vi.fn(ok);
+    const err = await breaker.execute('prov-a', venta, { scope: 'sales' }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BreakerRejectionError);
+    expect(err).toMatchObject({ reason: 'kill-switch', sentToProvider: false });
+    expect(venta).not.toHaveBeenCalled();
+    await expect(breaker.execute('prov-a', ok, { scope: 'post-sale' })).resolves.toBe('ok');
+  });
+
+  it('`all` corta también la post-venta y las cuentas', async () => {
+    panel.set('prov-a', 'all');
+    await expect(
+      breaker.execute('prov-a', ok, { scope: 'post-sale', accountRef: 'acct-1' }),
+    ).rejects.toMatchObject({ reason: 'kill-switch' });
+  });
+
+  it('el panel no enciende lo que la variable apaga', async () => {
+    vi.stubEnv('PROVIDERS_DISABLED', 'prov-a');
+    panel.set('prov-a', 'sales');
+    await expect(breaker.execute('prov-a', ok, { scope: 'post-sale' })).rejects.toMatchObject({
+      reason: 'kill-switch',
+    });
+  });
+
+  it('levantado en el panel, vuelve a salir en la llamada siguiente', async () => {
+    panel.set('prov-a', 'all');
+    await expect(breaker.execute('prov-a', ok)).rejects.toMatchObject({ reason: 'kill-switch' });
+    panel.delete('prov-a');
+    await expect(breaker.execute('prov-a', ok)).resolves.toBe('ok');
+  });
+});
+
+describe('CircuitBreakerService — lo que ve el panel y cerrar el circuito', () => {
+  const CUENTA_A = 'acct-3f9a1c';
+  const CUENTA_B = 'acct-77be02';
+  let breaker: CircuitBreakerService;
+
+  beforeEach(() => {
+    vi.stubEnv('PROVIDERS_DISABLED', '');
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    breaker = new CircuitBreakerService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  async function suspender(code: string, cuenta: string): Promise<void> {
+    await breaker
+      .execute(code, () => Promise.reject(fallo('OPEN_ACCOUNT', 'CREDENTIALS_INVALID')), {
+        accountRef: cuenta,
+      })
+      .catch(() => undefined);
+  }
+
+  it('arranca vacío; un circuito sano sale cerrado y sin fechas', async () => {
+    expect(breaker.adminSnapshot()).toEqual({});
+    await breaker.execute('prov-a', ok);
+    expect(breaker.adminSnapshot()).toEqual({
+      'prov-a': {
+        state: 'closed',
+        failures: 0,
+        openedAt: null,
+        lastFailureAt: null,
+        suspendedAccounts: 0,
+      },
+    });
+  });
+
+  it('abierto: cuándo se abrió y cuándo falló por última vez', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-13T12:00:00Z'));
+    await abrirCircuito(breaker, 'prov-a');
+
+    expect(breaker.adminSnapshot()['prov-a']).toEqual({
+      state: 'open',
+      failures: FAILURE_THRESHOLD,
+      openedAt: new Date('2026-10-13T12:00:00Z'),
+      lastFailureAt: new Date('2026-10-13T12:00:00Z'),
+      suspendedAccounts: 0,
+    });
+  });
+
+  it('cuenta las cuentas suspendidas por proveedor y NUNCA dice cuáles', async () => {
+    await suspender('prov-a', CUENTA_A);
+    await suspender('prov-a', CUENTA_B);
+    await suspender('prov-b', CUENTA_A);
+
+    const vista = breaker.adminSnapshot();
+    expect(vista['prov-a']?.suspendedAccounts).toBe(2);
+    expect(vista['prov-b']?.suspendedAccounts).toBe(1);
+    // Una cuenta suspendida no es un fallo del proveedor.
+    expect(vista['prov-a']).toMatchObject({ state: 'closed', failures: 0, lastFailureAt: null });
+    expect(JSON.stringify(vista)).not.toContain(CUENTA_A);
+    expect(JSON.stringify(vista)).not.toContain(CUENTA_B);
+  });
+
+  it('las suspensiones vencidas no se cuentan', async () => {
+    vi.useFakeTimers();
+    await suspender('prov-a', CUENTA_A);
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(breaker.adminSnapshot()['prov-a']?.suspendedAccounts).toBe(0);
+  });
+
+  it('`snapshot()` de /health sigue siendo sólo `{ state, failures }`', async () => {
+    await abrirCircuito(breaker, 'prov-a');
+    await suspender('prov-b', CUENTA_A);
+
+    expect(breaker.snapshot()).toEqual({
+      'prov-a': { state: 'open', failures: FAILURE_THRESHOLD },
+      'prov-b': { state: 'closed', failures: 0 },
+    });
+    expect(Object.keys(breaker.snapshot()['prov-a'] ?? {}).sort()).toEqual(['failures', 'state']);
+    expect(JSON.stringify(breaker.snapshot())).not.toContain(CUENTA_A);
+  });
+
+  it('`reset` cierra el circuito al instante y devuelve cómo estaba', async () => {
+    await abrirCircuito(breaker, 'prov-a');
+    const antes = breaker.reset('prov-a');
+
+    expect(antes).toMatchObject({ state: 'open', failures: FAILURE_THRESHOLD });
+    expect(breaker.snapshot()['prov-a']).toEqual({ state: 'closed', failures: 0 });
+    const run = vi.fn(ok);
+    await expect(breaker.execute('prov-a', run)).resolves.toBe('ok');
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('`reset` no levanta las cuentas suspendidas', async () => {
+    await suspender('prov-a', CUENTA_A);
+    breaker.reset('prov-a');
+
+    await expect(breaker.execute('prov-a', ok, { accountRef: CUENTA_A })).rejects.toMatchObject({
+      reason: 'account-circuit',
+    });
+    expect(breaker.adminSnapshot()['prov-a']?.suspendedAccounts).toBe(1);
+  });
+
+  it('`reset` de un proveedor sin circuito no hace nada', () => {
+    expect(breaker.reset('prov-z')).toBeUndefined();
+    expect(breaker.snapshot()).toEqual({});
   });
 });

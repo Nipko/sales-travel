@@ -279,7 +279,7 @@ function TenantResults({
   let hint: string | null = null;
   if (tenants === null) hint = 'Cargando tenants…';
   else if (!tenants.ok) hint = `No se pudo cargar la lista de tenants: ${tenants.message}`;
-  else if (query.trim() === '') hint = 'Escribí parte del nombre o del slug.';
+  else if (query.trim() === '') hint = 'Escribe parte del nombre o del slug.';
   else if (matches.length === 0) hint = 'Ningún tenant sin excepción coincide con esa búsqueda.';
 
   return (

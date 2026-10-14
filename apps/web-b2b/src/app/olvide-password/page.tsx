@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
         <div className="space-y-4">
           <FormSuccess message="Si ese correo tiene una cuenta activa, te llega un enlace en unos minutos. El enlace vence en 1 hora." />
           <p className="text-xs text-[var(--color-fg-subtle)]">
-            Revisá también la carpeta de spam. Si no llega, puede que la dirección no esté
+            Revisa también la carpeta de spam. Si no llega, puede que la dirección no esté
             registrada.
           </p>
         </div>

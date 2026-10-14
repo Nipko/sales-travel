@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/guards/auth.guard.js';
 import { MfaEnforcementGuard } from './auth/guards/mfa-enforcement.guard.js';
+import { RecentMfaGuard } from './auth/guards/recent-mfa.guard.js';
 import { RolesGuard } from './auth/guards/roles.guard.js';
 import { IpThrottlerGuard } from './throttler/ip-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -22,6 +23,7 @@ import { CustomersModule } from './customers/customers.module.js';
 import { PortfoliosModule } from './portfolios/portfolios.module.js';
 import { BookingPermissionsModule } from './booking-permissions/booking-permissions.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { AdminConsoleModule } from './admin-console/admin-console.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
 import { ProviderEnablementAdminModule } from './provider-enablement/provider-enablement-admin.module.js';
@@ -62,6 +64,7 @@ import { PackagesModule } from './packages/packages.module.js';
     PortfoliosModule,
     BookingPermissionsModule,
     ReportsModule,
+    AdminConsoleModule,
     ProviderCredentialsModule,
     ProviderDisclosureModule,
     ProviderEnablementAdminModule,
@@ -95,6 +98,12 @@ import { PackagesModule } from './packages/packages.module.js';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // El último: en las rutas @RequireRecentMfa() (alto impacto) pide el 2FA de los últimos minutos
+    // sólo a quien ya pasó el rol de la ruta. Las demás no lo ven.
+    {
+      provide: APP_GUARD,
+      useClass: RecentMfaGuard,
     },
   ],
 })

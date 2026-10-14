@@ -32,7 +32,7 @@ function crossOrigin(req: Request): NextResponse | null {
   return isSameOriginRequest(req.headers)
     ? null
     : NextResponse.json(
-        { error: 'No pudimos confirmar que el pedido venga del panel. Recargá la página.' },
+        { error: 'No pudimos confirmar que el pedido venga del panel. Recarga la página.' },
         { status: 403 },
       );
 }
@@ -58,7 +58,7 @@ export async function forwardRead(target: TenantAdminProxyTarget): Promise<NextR
 export async function forwardPlan(
   req: Request,
   plan: TenantAdminProxyPlan,
-  method: 'PATCH' | 'POST',
+  method: 'PATCH' | 'POST' | 'PUT',
 ): Promise<NextResponse> {
   const rejected = crossOrigin(req);
   if (rejected) return rejected;

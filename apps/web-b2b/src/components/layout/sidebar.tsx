@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { navSections, type NavItem } from '../../lib/nav';
 import { cn } from '../../lib/cn';
 import { BrandMark } from './brand-mark';
+import { badgeLabel, badgeText, useNavBadges } from './nav-badges';
 import { useViewer } from './viewer-context';
 
 interface SidebarProps {
@@ -18,8 +19,9 @@ interface SidebarProps {
   brandAccessory?: ReactNode;
 }
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+function NavLink({ item, active, count }: { item: NavItem; active: boolean; count?: number }) {
   const Icon = item.icon;
+  const badge = badgeText(count);
   return (
     <Link
       href={item.href}
@@ -45,6 +47,12 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
         )}
       />
       <span>{item.label}</span>
+      {badge !== undefined && item.badge !== undefined && count !== undefined ? (
+        <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-primary)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--color-primary-fg)]">
+          <span aria-hidden="true">{badge}</span>
+          <span className="sr-only">, {badgeLabel(item.badge, count)}</span>
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -66,6 +74,7 @@ export function SidebarContent({
   const pathname = usePathname();
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
   const sections = navSections(role, useViewer());
+  const badges = useNavBadges(role);
 
   return (
     <>
@@ -110,7 +119,11 @@ export function SidebarContent({
             <ul className="space-y-1">
               {section.items.map((item) => (
                 <li key={item.href}>
-                  <NavLink item={item} active={isActive(item.href)} />
+                  <NavLink
+                    item={item}
+                    active={isActive(item.href)}
+                    count={item.badge === undefined ? undefined : badges[item.badge]}
+                  />
                 </li>
               ))}
             </ul>

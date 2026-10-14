@@ -12,7 +12,6 @@ import type { TicketCheckResult } from '@sales-travel/domain';
 import { describe, expect, it, vi } from 'vitest';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { BrandingService } from '../branding/branding.service.js';
-import type { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -21,6 +20,7 @@ import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.fac
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { requestContextStorage } from '../request-context/request-context.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
 import { OrdersController } from './orders.controller.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
 import { TICKET_VOID_MESSAGES } from './ticket-void.plan.js';
@@ -89,18 +89,17 @@ function banco(
     }),
   );
   const cancelOrder = vi.fn();
-  const controller = new OrdersController(
-    {
+  const controller = ordersController({
+    orders: {
       findById: vi.fn(() => Promise.resolve(row)),
       checkTickets,
       voidTickets,
       cancelOrder,
     } as unknown as OrdersService,
-    {} as unknown as DatabaseService,
-    {} as unknown as MailerService,
-    {} as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry(
+    mailer: {} as unknown as MailerService,
+    branding: {} as unknown as BrandingService,
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry(
       [
         new StubProviderFactory({
           code: AIR,
@@ -109,11 +108,11 @@ function banco(
       ],
       { decisionFor: () => Promise.resolve(undefined) },
     ),
-    {
+    hotelReads: {
       handles: () => false,
       capabilitiesOf: () => undefined,
     } as unknown as HotelOrderReadsService,
-  );
+  });
   return { controller, checkTickets, voidTickets, cancelOrder };
 }
 

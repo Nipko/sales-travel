@@ -49,12 +49,20 @@ export interface NetworkNode extends TenantState {
  * Qué pasó con el admin inicial, que siempre se invita (docs/platform/14):
  * - `invited`: la invitación quedó pendiente y salió el correo; acepta y elige su contraseña. Lo
  *   mismo tenga o no cuenta en la plataforma: la respuesta no lo delata.
+ * - `invited_email_failed`: la invitación quedó pendiente pero el correo no salió (no hay correo
+ *   configurado para el nodo o el envío falló); se reenvía desde Equipo cuando el correo funcione.
  * - `invite_failed`: el nodo se creó pero la invitación no; se invita desde Equipo.
  */
-export type InitialAdminOutcome = 'invited' | 'invite_failed';
+export type InitialAdminOutcome = 'invited' | 'invited_email_failed' | 'invite_failed';
 
 export type InitialAdmin =
-  | { email: string; role: Role; status: 'invited'; invitationId: string; expiresAt: Date }
+  | {
+      email: string;
+      role: Role;
+      status: 'invited' | 'invited_email_failed';
+      invitationId: string;
+      expiresAt: Date;
+    }
   | { email: string; role: Role; status: 'invite_failed' };
 
 export interface CreatedTenant {
@@ -214,7 +222,7 @@ export class TenantsService {
       adminEmail === undefined ? undefined : initialAdminRole(tenantType, actorRole);
     if (adminEmail !== undefined && adminRole === undefined) {
       throw new RoleNotGrantableError(
-        'Tu rol no alcanza para darle un admin al nodo nuevo: crealo sin admin y pedíselo a tu red.',
+        'Tu rol no alcanza para darle un admin al nodo nuevo: créalo sin admin y pídeselo a tu red.',
       );
     }
 
@@ -278,7 +286,7 @@ export class TenantsService {
         admin: {
           email: adminEmail,
           role: adminRole,
-          status: 'invited',
+          status: invitation.emailSent ? 'invited' : 'invited_email_failed',
           invitationId: invitation.id,
           expiresAt: invitation.expiresAt,
         },
@@ -301,7 +309,9 @@ export class TenantsService {
    * resuelve rol bajo un nodo suspendido). La plataforma no se suspende. Un consolidador con
    * reservas abiertas hechas con sus credenciales no cambia de tipo (409).
    *
-   * El cambio y su `tenant.updated`, con el antes y el después, van en una transacción.
+   * El cambio y su `tenant.updated`, con el antes, el después y el motivo (obligatorio al suspender,
+   * lo exige UpdateTenantSchema), van en una transacción. Las sesiones abiertas no se cierran: dejan
+   * de funcionar al instante, pero ocupan su puesto hasta que vencen por inactividad.
    */
   async update(
     actorUserId: string,
@@ -355,6 +365,7 @@ export class TenantsService {
             changed: changed.map(([field]) => field),
             before: Object.fromEntries(changed.map(([field, column]) => [field, before[column]])),
             after: Object.fromEntries(changed.map(([field]) => [field, after[field]])),
+            ...(patch.reason === undefined ? {} : { reason: patch.reason }),
           },
         });
 
@@ -499,6 +510,7 @@ export class TenantsService {
               .select(['tenant_id'])
               .select((eb) => eb.fn.countAll<number>().as('count'))
               .where('tenant_id', 'in', ids)
+              .where('status', '!=', 'removed')
               .groupBy('tenant_id')
               .execute(),
           );

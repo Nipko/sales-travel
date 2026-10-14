@@ -724,7 +724,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
 /admin/incidents                 -- monitoreo + status page
-/admin/users                     -- usuarios cross-tenant (sólo lectura: el alta es por invitación, ver 14)
+/admin/plataforma/usuarios       -- directorio de personas de toda la red, filtros y suspensión global (doc 15; el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
 /admin/audit                     -- log global
 /admin/reports                   -- métricas de plataforma
@@ -799,6 +799,10 @@ POST   /auth/change-password             -- devuelve token nuevo: la sesión act
 GET    /tenants/:id/seats                -- uso del cupo y conectados del subárbol (admin del nodo)
 POST   /tenants/:id/seats/sessions/:sessionId/release
 POST   /tenants/:id/members/:userId/reset-mfa · POST /tenants/:id/members/:userId/revoke-sessions
+POST   /tenants/:id/members/:userId/send-password-reset -- { sent, expiresAt }; nunca el enlace · 409 · 429 (doc 15)
+POST   /tenants/:id/members/:userId/unlock  -- { unlocked }: levanta el bloqueo por intentos fallidos (doc 15)
+GET    /tenants/:id/members/:userId      -- ficha: perfil, seguridad, nodos, sesiones e invitaciones del subárbol · 403 · 404 (0064, doc 15)
+POST   /tenants/:id/members/:userId/sessions/:sessionId/revoke -- { ok }: cierra UNA sesión; hay que superarlo en rango en su nodo (doc 15)
 PATCH  /admin/tenants/:id/seats          -- { concurrentSeats, idleTimeoutMinutes } sólo superadmin
 ```
 
@@ -807,9 +811,15 @@ Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_s
 ```
 PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations
 PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
-PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes
+PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes · 404 USER_NOT_FOUND · 409 LAST_SUPERADMIN (doc 15)
+GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
+GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
+GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
 POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
+POST   /invitations                      -- { id, expiresAt, emailSent } · 409 INVITATION_ALREADY_PENDING con details.invitationId (0066, doc 15)
+POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace nuevo y 7 días más
+POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING
 ```
 
 ### Tenant
@@ -901,6 +911,15 @@ GET    /tenants/:tenantId/portfolios/transactions?currency
 GET    /tenants/:tenantId/portfolios/network-holds?currency&status
 GET    /tenants/:tenantId/portfolios/deposit-reports
 POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
+
+-- El superadmin, sobre toda la red (Plataforma → Carteras, /admin/plataforma/carteras
+-- ?estado&alcance&moneda&nodo). Sólo lectura: se aprueba y se rechaza con las dos rutas de arriba,
+-- en el nodo dueño del informe, y desde la cola sólo lo que financia Planetour (lo que financia
+-- otro nodo llegó a su cuenta: "Lo aprueba {nodo}").
+GET    /admin/deposit-reports?status&financedBy&currency&tenantId&q&cursor&limit
+                                                -- la cola: pendientes del más viejo al más nuevo (o el historial),
+                                                --   con nodo, financiador y totales por moneda; financedBy=platform|network
+GET    /admin/deposit-reports/pending-count     -- { total, platform, network }: el contador del menú
 ```
 
 `network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §14.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.
@@ -942,6 +961,105 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ### Admin (superadmin)
 
 ```
+GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
+                                         -- 30 días por defecto, hasta 366. tenantId = el subárbol de
+                                         -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
+                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- confirmadas, red (nodos, personas, sesiones vivas),
+                                         -- carteras (cupo, deuda, exposición de Planetour), lo que
+                                         -- espera a una persona (depósitos, post-venta fallida o
+                                         -- trabada, hoteles sin verificar, retenciones en conflicto,
+                                         -- conciliación, invitaciones), las reservas con problemas
+                                         -- (admin_order_attention: total, por motivo y muestra de 10),
+                                         -- puestos al 90 %, corridas de conciliación de 7 días,
+                                         -- frescura de los catálogos de hoteles, si el barrido de
+                                         -- post-venta dejó de correr (attention.jobs: sin corrida
+                                         -- correcta en 45 min) y señales de
+                                         -- proveedores. Sólo lee; las funciones platform_overview_* y
+                                         -- admin_* exigen en la base is_platform_superadmin() (42501
+                                         -- admin_superadmin_required → 403 SUPERADMIN_REQUIRED con
+                                         -- rethrowAdminDbError). En el panel: /admin/plataforma/resumen,
+                                         -- adonde entra el superadmin al abrir `/` (BFF
+                                         -- /api/admin/overview?period=today|7d|30d|month, traducido
+                                         -- a días de Bogotá).
+GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos (implementado, sin
+                                         -- migración): lo que corre solo, sin leer los logs.
+                                         -- postSaleSweep {lastRunAt, lastOk, lastOkAt, durationMs,
+                                         -- tenantsFailed, runs24h, failures24h, stale} del rastro del
+                                         -- barrido: cada corrida de PostSaleSweeper deja
+                                         -- system.post_sale_sweep.completed {durationMs, tenants,
+                                         -- tenantsFailed, examined, adopted, staleCancelClaims,
+                                         -- cancellations, hcn, reconciliation, ticketIssues} o
+                                         -- .failed {errorClass}
+                                         -- (también AllTenantsFailed {durationMs, tenants,
+                                         -- tenantsFailed} si no pudo revisar ningún nodo: no cuenta
+                                         -- como correcta) en domain_events, en la raíz platform y
+                                         -- sin actor (sólo conteos y códigos; ~35.000 filas al
+                                         -- año). Se lee con la RLS de siempre
+                                         -- (domain_events_subtree_read): la red no lo ve. stale = sin
+                                         -- corrida correcta en 45 min (corre cada 15).
+                                         -- reconciliation = admin_reconciliation_health(7 días) por
+                                         -- proveedor, con stale a las 36 h sin terminar una corrida;
+                                         -- catalogs = hotel_provider_city por proveedor (hoy sólo
+                                         -- TBO: el sync de Despegar reemplaza hotel_inventory y no
+                                         -- escribe ciudades), stale a las 36 h; airports {count};
+                                         -- schedules = el barrido, la conciliación (04:30 UTC) y los
+                                         -- crones de sync-airports.yml, sync-hotel-inventory.yml y
+                                         -- sync-tbo-hotel-inventory.yml (un test los compara con los
+                                         -- workflows). La actividad de la red (networkAudit) deja
+                                         -- fuera los eventos system.*, con cualquier filtro de
+                                         -- categoría o de persona. En el panel:
+                                         -- /admin/plataforma/sistema (BFF /api/admin/system/jobs).
+GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
+                                         -- Plataforma → Reservas de la red (implementado, 0076):
+                                         -- admin_search_orders. tenantId con su red (subtree=false,
+                                         -- sólo ese nodo); status = lista separada por comas; días de
+                                         -- Bogotá, ambos incluidos; q = PNR (sin distinguir
+                                         -- mayúsculas), nuestra referencia, n.º de orden, correo
+                                         -- EXACTO del cliente o id; attention=true = sólo las que
+                                         -- necesitan a una persona, cada fila con su motivo más grave.
+                                         -- De la más nueva a la más vieja, paginada por cursor
+                                         -- (created_at con microsegundos + id), hasta 100 por página.
+                                         -- Sin pasajeros ni contacto: el correo que sale es el del
+                                         -- vendedor.
+GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de qué nodo es y se lee
+                                         -- con las lecturas de Reservas de ese nodo (withTenant, RLS
+                                         -- de cada tabla): orden (pasajeros sólo con nombre y tipo,
+                                         -- contacto sólo con correo y teléfono), nodo y su camino,
+                                         -- vendedor, operaciones, seguimiento del hotel, retención,
+                                         -- conciliación, motivos de atención y los últimos 50 eventos
+                                         -- (payload sin claves sensibles, redactPayload). Cada ficha
+                                         -- abierta deja platform.order.viewed en el nodo de la
+                                         -- reserva (lo ve su administrador). 404 ORDER_NOT_FOUND.
+                                         -- `capabilities: { retrieve, cancel }` (OrderCapabilities-
+                                         -- Service; lo de vender no sale).
+-- Post-venta del superadmin desde la ficha (FD-1 C, 2026-10-13; implementado). Nunca venden
+-- (sin @SalesOperation): pagar, emitir, servicios y recotizar no existen aquí. Cuerpo Zod
+-- estricto `{ reason }` (5..500, recortado; queda en la auditoría). Cada una resuelve el nodo con
+-- admin_order_tenant, lee la orden con ese tenant y corre en su contexto (runWithTenantContext):
+-- los servicios de Reservas de la agencia, con sus reglas y el superadmin como actor. Deja
+-- `platform.order.action` {action, orderId, operationId?, reason, outcome ok|error,
+-- errorReason?, result?} en el nodo de la reserva: lo ven la agencia y la plataforma. Una
+-- cancelación respondida que no canceló dice por qué con el intento del historial:
+-- PROVIDER_REJECTED (la reserva sigue), PROVIDER_UNVERIFIED (hay que conciliar) o
+-- PROVIDER_NOT_CANCELLED (no se pudo leer).
+POST   /admin/orders/:id/send-confirmation -- reenvía la confirmación con la marca y el correo del
+                                         -- nodo (confirmada o emitida, 409; sin correo, 404).
+                                         -- → { sent, to }
+POST   /admin/orders/:id/retrieve        -- consulta al proveedor (capacidad retrieve).
+                                         -- → { reading (sin pasajeros), detail (la ficha releída) }
+POST   /admin/orders/:id/operations/:opId/retry
+                                         -- reintenta una cancelación fallida y reintentable con el
+                                         -- mismo claim (OrdersService.retryOperation).
+GET    /admin/orders/:id/cancellation-estimate
+                                         -- la penalidad estimada (sólo hoteles), sin evento.
+POST   /admin/orders/:id/cancel          -- `{ reason, orderNumber }`: cancela en nombre de la
+                                         -- agencia; el número escrito tiene que ser el de la orden
+                                         -- (400 ORDER_NUMBER_MISMATCH). Mismas reglas que la agencia
+                                         -- (emitida no; intento fallido → reintento). La retención de
+                                         -- cartera se libera como en una cancelación de la agencia.
+-- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
+-- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status

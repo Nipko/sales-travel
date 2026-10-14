@@ -102,7 +102,10 @@ export interface TboPrebookMapping {
   readonly pack: TboSearchPackContext;
   /** Huella del texto saneado de `RateConditions`, para la comparación C2 (03 §2.9). */
   readonly rateConditionsHash: string;
-  /** `Amenities` de la habitación, en texto plano: el contrato neutral todavía no los modela. */
+  /**
+   * `Amenities` de la unidad reservable, en texto plano y sin repetidos. TBO da UNA lista para todas
+   * sus habitaciones (03 §2.7); el servidor la muestra en el checkout, fuera de la comparación C1.
+   */
   readonly amenities: readonly string[];
   readonly diagnostics: TboPrebookDiagnostics;
 }
@@ -118,7 +121,10 @@ const UNKNOWN_KEY_MAX = 120;
 const MAX_AMENITIES = 200;
 const AMENITY_MAX = 200;
 
-const AmenitiesSchema = z.array(z.string()).nullish();
+const AmenitiesSchema = z.array(z.unknown()).nullish();
+
+/** Medio par UTF-16 sin su otra mitad: lo deja un recorte por largo justo sobre un emoji. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -227,15 +233,31 @@ function readContext(context: TboPrebookMapContext): ReadContext {
   };
 }
 
-/** `Amenities` como lista de textos cortos, sin vacíos. Un valor ilegible no invalida la tarifa. */
+/**
+ * `Amenities` como lista de textos cortos, sin vacíos ni repetidos (sin distinguir mayúsculas). Un
+ * valor ilegible no invalida la tarifa, y un ítem que no es texto se salta sin llevarse a los demás.
+ */
 function readAmenities(rawRoom: unknown): string[] {
   const raw = isRecord(rawRoom) ? rawRoom['Amenities'] : undefined;
   const parsed = AmenitiesSchema.safeParse(raw);
   if (!parsed.success) return [];
-  return (parsed.data ?? [])
-    .map((amenity) => amenity.replace(/\s+/g, ' ').trim().slice(0, AMENITY_MAX))
-    .filter((amenity) => amenity.length > 0)
-    .slice(0, MAX_AMENITIES);
+  const seen = new Set<string>();
+  const amenities: string[] = [];
+  for (const item of parsed.data ?? []) {
+    if (amenities.length >= MAX_AMENITIES) break;
+    if (typeof item !== 'string') continue;
+    const amenity = item
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, AMENITY_MAX)
+      .replace(LONE_SURROGATE, '')
+      .trim();
+    const key = amenity.toLowerCase();
+    if (amenity.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    amenities.push(amenity);
+  }
+  return amenities;
 }
 
 // ───────────────────────── Entrada ─────────────────────────

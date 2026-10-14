@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BrandingService } from '../branding/branding.service.js';
-import type { DatabaseService } from '../database/database.service.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { TEST_CONTENT_NOTICE } from '../mail/templates.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
-import { OrdersController } from './orders.controller.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
 import type { CreateOrderDto, OrderRow, OrdersService } from './orders.service.js';
 
 /**
@@ -84,19 +83,18 @@ function banco(filas: OrderRow[]) {
     capabilitiesOf: () => undefined,
     trackingOf: () => Promise.resolve(new Map()),
   } as unknown as HotelOrderReadsService;
-  const controller = new OrdersController(
-    orders as unknown as OrdersService,
-    {} as unknown as DatabaseService,
-    { sendToTenant } as unknown as MailerService,
-    {
+  const controller = ordersController({
+    orders: orders as unknown as OrdersService,
+    mailer: { sendToTenant } as unknown as MailerService,
+    branding: {
       resolve: () => Promise.resolve({ name: 'Agencia Sur', color: null }),
     } as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
       decisionFor: () => Promise.resolve(undefined),
     }),
-    hotelReads,
-  );
+    hotelReads: hotelReads,
+  });
   return { controller, sendToTenant };
 }
 

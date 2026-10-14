@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { enablementProxyPlan, tenantProvidersPath } from './provider-enablement-proxy';
+import {
+  circuitResetPlan,
+  enablementProxyPlan,
+  killSwitchClearPlan,
+  killSwitchPlan,
+  tenantProvidersPath,
+} from './provider-enablement-proxy';
 
 const AGENCIA = '10000000-0000-4000-8000-000000000002';
 
@@ -68,5 +74,52 @@ describe('tenantProvidersPath', () => {
   it('sólo con un UUID', () => {
     expect(tenantProvidersPath(AGENCIA)).toBe(`/admin/providers/tenants/${AGENCIA}`);
     expect(tenantProvidersPath('mi-agencia')).toBeUndefined();
+  });
+});
+
+describe('las palancas de un incidente', () => {
+  it('apagar: la ruta del proveedor y sólo nivel, motivo y vencimiento', () => {
+    expect(
+      killSwitchPlan('tbo-hotels', {
+        level: 'sales',
+        reason: ' Cobra de más ',
+        expiresInMinutes: 240,
+        setBy: 'otro',
+      }),
+    ).toEqual({
+      ok: true,
+      path: '/admin/providers/tbo-hotels/kill-switch',
+      body: { level: 'sales', reason: 'Cobra de más', expiresInMinutes: 240 },
+    });
+  });
+
+  it('levantar y cerrar el circuito: sus rutas, con el motivo rearmado', () => {
+    expect(killSwitchClearPlan('sabre', undefined)).toEqual({
+      ok: true,
+      path: '/admin/providers/sabre/kill-switch/clear',
+      body: { reason: null },
+    });
+    expect(circuitResetPlan('sabre', { reason: ' Sabre volvió ', force: true })).toEqual({
+      ok: true,
+      path: '/admin/providers/sabre/circuit/reset',
+      body: { reason: 'Sabre volvió' },
+    });
+  });
+
+  it('un código que compondría otra ruta del API se frena', () => {
+    const body = { level: 'all', reason: 'Responde basura', expiresInMinutes: null };
+    expect(killSwitchPlan('..%2Fglobal', body).ok).toBe(false);
+    expect(killSwitchClearPlan('sabre/../x', {}).ok).toBe(false);
+    expect(circuitResetPlan('Sabre', { reason: 'Sabre volvió' }).ok).toBe(false);
+  });
+
+  it('un cuerpo inválido se frena antes de llegar al API, con un mensaje para la pantalla', () => {
+    expect(killSwitchPlan('sabre', { level: 'all', reason: 'x' })).toEqual({
+      ok: false,
+      error:
+        'El apagado tiene que decir si corta sólo las ventas o todo, con un motivo de 5 a 500 caracteres y su vencimiento.',
+    });
+    expect(killSwitchClearPlan('sabre', { reason: 'x'.repeat(501) }).ok).toBe(false);
+    expect(circuitResetPlan('sabre', {}).ok).toBe(false);
   });
 });

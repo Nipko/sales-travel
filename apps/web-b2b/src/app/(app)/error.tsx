@@ -23,7 +23,7 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
       </div>
       <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">Algo salió mal</h1>
       <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
-        No pudimos cargar esta sección. Podés reintentar; si sigue fallando, avisale al
+        No pudimos cargar esta sección. Puedes reintentar; si sigue fallando, avísale al
         administrador de tu agencia.
       </p>
       <Button onClick={reset} className="mt-6 gap-2">

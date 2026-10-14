@@ -50,6 +50,33 @@ describe('JwtService: desafío MFA y liberación de puesto', () => {
     expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(5 * 60 * 1000);
   });
 
+  it('conserva cuándo se probó el segundo factor, al segundo (USR-13)', async () => {
+    const mfaVerifiedAt = new Date('2026-10-01T12:00:00.000Z');
+    const { token } = await svc.signSeatRelease({
+      userId: 'user-1',
+      poolTenantId: 'pool-1',
+      tenantId: null,
+      mfa: true,
+      mfaVerifiedAt,
+      remember: false,
+      jti: randomUUID(),
+    });
+    expect((await svc.verifySeatRelease(token)).mfaVerifiedAt).toEqual(mfaVerifiedAt);
+  });
+
+  it('un permiso con MFA firmado sin el instante cuenta desde su emisión', async () => {
+    const { token } = await svc.signSeatRelease({
+      userId: 'user-1',
+      poolTenantId: 'pool-1',
+      tenantId: null,
+      mfa: true,
+      remember: false,
+      jti: randomUUID(),
+    });
+    const claims = await svc.verifySeatRelease(token);
+    expect(claims.mfaVerifiedAt).toEqual(claims.issuedAt);
+  });
+
   it('sin tenant, sin MFA ni "recordar"', async () => {
     const { token } = await svc.signSeatRelease({
       userId: 'user-1',
@@ -59,11 +86,9 @@ describe('JwtService: desafío MFA y liberación de puesto', () => {
       remember: false,
       jti: randomUUID(),
     });
-    expect(await svc.verifySeatRelease(token)).toMatchObject({
-      tenantId: null,
-      mfa: false,
-      remember: false,
-    });
+    const claims = await svc.verifySeatRelease(token);
+    expect(claims).toMatchObject({ tenantId: null, mfa: false, remember: false });
+    expect(claims.mfaVerifiedAt).toBeUndefined();
   });
 
   it('ni el permiso sirve de bearer ni el bearer de permiso', async () => {

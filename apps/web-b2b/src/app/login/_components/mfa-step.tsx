@@ -65,10 +65,10 @@ export function MfaStep({
       descriptionId={descriptionId}
       description={
         recovery ? (
-          'Ingresá uno de los códigos de recuperación que guardaste al activar la verificación. Cada uno sirve una sola vez.'
+          'Ingresa uno de los códigos de recuperación que guardaste al activar la verificación. Cada uno sirve una sola vez.'
         ) : (
           <>
-            Ingresá el código de 6 dígitos de tu app de autenticación
+            Ingresa el código de 6 dígitos de tu app de autenticación
             {state.email ? (
               <>
                 {' '}
@@ -102,7 +102,7 @@ export function MfaStep({
               {REMEMBER_DEVICE_LABEL}
             </span>
             <span id={rememberHintId} className="block text-xs text-[var(--color-fg-muted)]">
-              En este navegador no te vamos a pedir el código. Desmarcalo si la computadora es
+              En este navegador no te vamos a pedir el código. Desmárcalo si la computadora es
               compartida.
             </span>
           </span>

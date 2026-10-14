@@ -49,9 +49,14 @@ export function flightDate(iso: string, style: DateStyle = 'short'): string {
  */
 const SIN_DECIMALES = new Set(['COP', 'CLP', 'PYG', 'JPY', 'KRW', 'VND', 'ISK', 'UGX']);
 
+/** Los decimales con que se muestra un monto de la moneda (ver {@link SIN_DECIMALES}). */
+export function currencyDecimals(currency: string): 0 | 2 {
+  return SIN_DECIMALES.has(currency.toUpperCase()) ? 0 : 2;
+}
+
 /** `amountMinor` es SIEMPRE centésimas (ver `Money.fromMajor`), también en COP. */
 export function formatMoney(amountMinor: number, currency: string): string {
-  const decimales = SIN_DECIMALES.has(currency.toUpperCase()) ? 0 : 2;
+  const decimales = currencyDecimals(currency);
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency,

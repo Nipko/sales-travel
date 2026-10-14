@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AuditService } from '../audit/audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
 import type { HcnSweepReport, HcnTrackingService } from '../hotels/hcn-tracking.service.js';
 import type {
@@ -125,8 +126,19 @@ function informeDeAvisos(
   };
 }
 
+/** La raíz `platform` de la base de mentira. */
+const PLATAFORMA = '00000000-0000-4000-8000-0000000000aa';
+
 function banco(tenants: string[], redis = true) {
   const consulta = { tabla: '', columna: '', orden: '' };
+  /** Cuántas veces se buscó la raíz `platform`, y qué contesta la base. */
+  const raiz = {
+    lecturas: 0,
+    leer: vi.fn<() => Promise<{ id: string } | undefined>>(() =>
+      Promise.resolve({ id: PLATAFORMA }),
+    ),
+  };
+  const listarTenants = vi.fn(() => Promise.resolve(tenants.map((id) => ({ id }))));
   const db = {
     db: {
       selectFrom: (tabla: string) => {
@@ -137,7 +149,21 @@ function banco(tenants: string[], redis = true) {
             return {
               orderBy: (orden: string) => {
                 consulta.orden = orden;
-                return { execute: () => Promise.resolve(tenants.map((id) => ({ id }))) };
+                return { execute: listarTenants };
+              },
+              where: (campo: string, op: string, valor: string) => {
+                expect([tabla, campo, op, valor]).toEqual([
+                  'tenants',
+                  'tenant_type',
+                  '=',
+                  'platform',
+                ]);
+                return {
+                  executeTakeFirst: () => {
+                    raiz.lecturas += 1;
+                    return raiz.leer();
+                  },
+                };
               },
             };
           },
@@ -145,6 +171,7 @@ function banco(tenants: string[], redis = true) {
       },
     },
   } as unknown as DatabaseService;
+  const emit = vi.fn<AuditService['emit']>(() => Promise.resolve());
   const sweepTenant = vi.fn<HotelBookingVerificationService['sweepTenant']>(() =>
     Promise.resolve(informe()),
   );
@@ -175,6 +202,7 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant: sweepHcn } as unknown as HcnTrackingService,
     { sweepTenant: sweepReconciliation } as unknown as ReconciliationService,
     { sweepTenant: sweepStaleClaims } as unknown as StaleCancelClaimService,
+    { emit } as unknown as AuditService,
     { sweepTenant: sweepTicketIssues } as unknown as FlightTicketIssueService,
     { sweepTenant: sweepDeadlineAlerts } as unknown as FlightDeadlineAlertService,
   );
@@ -190,6 +218,9 @@ function banco(tenants: string[], redis = true) {
     queue,
     consulta,
     work,
+    emit,
+    raiz,
+    listarTenants,
   };
 }
 
@@ -591,5 +622,179 @@ describe('PostSaleSweeper — la corrida', () => {
       hcn: informeHcn(),
       reconciliation: informeConciliacion(),
     });
+  });
+});
+
+describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)', () => {
+  it('al terminar deja system.post_sale_sweep.completed en la raíz platform, sin actor y sólo con conteos', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse('2026-10-13T12:00:00.000Z'));
+    const b = banco([A, B]);
+    b.sweepTenant.mockImplementation((tenantId) => {
+      // La corrida tarda: el reloj avanza mientras lee al proveedor.
+      vi.setSystemTime(Date.now() + 1_500);
+      return Promise.resolve(
+        tenantId === A ? informe({ examined: 2, adopted: 1, held: 1 }) : informe({ examined: 1 }),
+      );
+    });
+    b.sweepHcn.mockResolvedValue(informeHcn({ examined: 1, received: 1 }));
+    b.sweepReconciliation.mockImplementation((tenantId) =>
+      tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(informeConciliacion({ accounts: 1, queued: 1 })),
+    );
+    b.sweepStaleClaims.mockResolvedValue(informeDeClaims({ examined: 1, expired: 1 }));
+    b.sweepCancellations.mockResolvedValue(informeDeCancelaciones({ examined: 1, closed: 1 }));
+    b.sweepTicketIssues.mockResolvedValue(informeDeEmisiones({ examined: 1, abandoned: 1 }));
+    b.sweepDeadlineAlerts.mockResolvedValue(
+      informeDeAvisos({ examined: 1, claimed: 1, mailed: 1 }),
+    );
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.emit).toHaveBeenCalledTimes(1);
+    expect(b.emit).toHaveBeenCalledWith({
+      eventType: 'system.post_sale_sweep.completed',
+      tenantId: PLATAFORMA,
+      actorUserId: null,
+      aggregateType: 'system_job',
+      aggregateId: 'post-sale-sweep',
+      payload: {
+        durationMs: 3_000,
+        tenants: 2,
+        tenantsFailed: 1,
+        examined: 3,
+        adopted: 1,
+        staleCancelClaims: informeDeClaims({ examined: 2, expired: 2 }),
+        cancellations: informeDeCancelaciones({ examined: 2, closed: 2 }),
+        hcn: informeHcn({ examined: 2, received: 2 }),
+        reconciliation: informeConciliacion({ accounts: 1, queued: 1 }),
+        ticketIssues: informeDeEmisiones({ examined: 2, abandoned: 2 }),
+        deadlineAlerts: informeDeAvisos({ examined: 2, claimed: 2, mailed: 2 }),
+      },
+    });
+    // El informe que devuelve no cambia por dejar el rastro.
+    expect(report.tenantsFailed).toBe(1);
+    // Ni un id de tenant ni de orden: sólo números.
+    const payload = JSON.stringify(b.emit.mock.calls[0]?.[0]?.payload);
+    expect(payload).not.toContain(A);
+    expect(payload).not.toContain(B);
+  });
+
+  it('si la corrida se cae entera deja system.post_sale_sweep.failed con la clase del error, nunca el mensaje, y relanza', async () => {
+    const b = banco([A]);
+    const caida = new TypeError('connect ECONNREFUSED 10.0.0.5:5432 password=secreto');
+    b.listarTenants.mockRejectedValueOnce(caida);
+
+    await expect(b.sweeper.run()).rejects.toBe(caida);
+
+    expect(b.sweepTenant).not.toHaveBeenCalled();
+    expect(b.emit).toHaveBeenCalledWith({
+      eventType: 'system.post_sale_sweep.failed',
+      tenantId: PLATAFORMA,
+      actorUserId: null,
+      aggregateType: 'system_job',
+      aggregateId: 'post-sale-sweep',
+      payload: { errorClass: 'TypeError' },
+    });
+    expect(JSON.stringify(b.emit.mock.calls)).not.toContain('ECONNREFUSED');
+
+    const c = banco([A]);
+    c.listarTenants.mockRejectedValueOnce('boom');
+    await expect(c.sweeper.run()).rejects.toBe('boom');
+    expect(c.emit.mock.calls[0]?.[0]).toMatchObject({ payload: { errorClass: 'UnknownError' } });
+  });
+
+  it('la raíz platform se busca una sola vez; si no se pudo leer, se reintenta en la próxima', async () => {
+    const b = banco([A]);
+    b.raiz.leer.mockRejectedValueOnce(new Error('base caída'));
+
+    await b.sweeper.run();
+    // Sin raíz el rastro queda igual, sin tenant: no se pierde.
+    expect(b.emit.mock.calls[0]?.[0]).toMatchObject({ tenantId: null });
+
+    await b.sweeper.run();
+    await b.sweeper.run();
+    expect(b.emit.mock.calls.map((c) => c[0].tenantId)).toEqual([null, PLATAFORMA, PLATAFORMA]);
+    expect(b.raiz.lecturas).toBe(2);
+  });
+
+  it('una base sin raíz platform: el rastro va sin tenant y se vuelve a buscar', async () => {
+    const b = banco([A]);
+    b.raiz.leer.mockResolvedValue(undefined);
+
+    await b.sweeper.run();
+    await b.sweeper.run();
+
+    expect(b.emit.mock.calls.map((c) => c[0].tenantId)).toEqual([null, null]);
+    expect(b.raiz.lecturas).toBe(2);
+  });
+
+  it('el temporizador también deja el rastro de cada corrida', async () => {
+    vi.useFakeTimers();
+    const b = banco([A], false);
+
+    b.sweeper.onApplicationBootstrap();
+    await vi.advanceTimersByTimeAsync(POST_SALE_SWEEP_FIRST_RUN_MS + QUINCE_MIN);
+    b.sweeper.onModuleDestroy();
+
+    expect(b.emit.mock.calls.map((c) => c[0].eventType)).toEqual([
+      'system.post_sale_sweep.completed',
+      'system.post_sale_sweep.completed',
+    ]);
+  });
+
+  it('si no pudo revisar ningún nodo, la corrida cuenta como caída (AllTenantsFailed) y el informe sale igual', async () => {
+    const b = banco([A, B]);
+    b.sweepHcn.mockRejectedValue(new Error('permission denied for table hotel_order_tracking'));
+
+    const report = await b.sweeper.run();
+
+    expect(report).toMatchObject({ tenants: 2, tenantsFailed: 2 });
+    expect(b.emit).toHaveBeenCalledTimes(1);
+    expect(b.emit.mock.calls[0]?.[0]).toEqual({
+      eventType: 'system.post_sale_sweep.failed',
+      tenantId: PLATAFORMA,
+      actorUserId: null,
+      aggregateType: 'system_job',
+      aggregateId: 'post-sale-sweep',
+      payload: {
+        errorClass: 'AllTenantsFailed',
+        durationMs: expect.any(Number) as number,
+        tenants: 2,
+        tenantsFailed: 2,
+      },
+    });
+    expect(JSON.stringify(b.emit.mock.calls)).not.toContain('permission denied');
+
+    // Con un solo nodo revisado la corrida es correcta: los demás se cuentan en tenantsFailed.
+    const c = banco([A, B]);
+    c.sweepHcn.mockImplementation((tenantId) =>
+      tenantId === A ? Promise.reject(new Error('base caída')) : Promise.resolve(informeHcn()),
+    );
+    await c.sweeper.run();
+    expect(c.emit.mock.calls[0]?.[0]).toMatchObject({
+      eventType: 'system.post_sale_sweep.completed',
+      payload: { tenants: 2, tenantsFailed: 1 },
+    });
+  });
+
+  it('el rastro es best-effort: si no se puede escribir, la corrida devuelve su informe o relanza su propio error', async () => {
+    const b = banco([A]);
+    b.emit.mockRejectedValue(new Error('audit caído'));
+    b.sweepTenant.mockResolvedValue(informe({ examined: 3 }));
+
+    await expect(b.sweeper.run()).resolves.toMatchObject({ tenants: 1, examined: 3 });
+
+    const caida = new TypeError('connect ECONNREFUSED');
+    b.listarTenants.mockRejectedValueOnce(caida);
+    await expect(b.sweeper.run()).rejects.toBe(caida);
+
+    // Ni siquiera si lanza sin promesa.
+    b.emit.mockImplementation(() => {
+      throw new Error('audit roto');
+    });
+    await expect(b.sweeper.run()).resolves.toMatchObject({ tenants: 1 });
+    expect(b.emit).toHaveBeenCalledTimes(3);
   });
 });

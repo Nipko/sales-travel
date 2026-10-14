@@ -2,7 +2,7 @@ import type { ActionResult } from '../actions';
 
 /** Lo que ve el usuario cuando la llamada a la server action ni siquiera volvió. */
 export const TRANSPORT_FAILURE_MESSAGE =
-  'No pudimos completar la operación. Revisá tu conexión e intentá de nuevo.';
+  'No pudimos completar la operación. Revisa tu conexión e inténtalo de nuevo.';
 
 /**
  * La server action no respondió: se cortó la red entre el navegador y Next, o un deploy nuevo dejó

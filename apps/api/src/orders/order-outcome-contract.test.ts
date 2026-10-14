@@ -20,7 +20,8 @@ import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.ser
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
-import { OrdersController } from './orders.controller.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
+import type { OrdersController } from './orders.controller.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
 
 /**
@@ -301,22 +302,24 @@ function bancoHttp(
   const brandingResolve = vi.fn(() => Promise.resolve(null));
   const mailerSend = vi.fn(() => Promise.resolve(true));
 
-  const controller = new OrdersController(
+  const controller = ordersController({
     orders,
-    {} as unknown as DatabaseService,
-    { sendToTenant: mailerSend } as unknown as MailerService,
-    { resolve: brandingResolve } as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry([new StubProviderFactory({ code: PROVEEDOR, capabilities })], {
-      decisionFor: () => Promise.resolve(undefined),
-    }),
+    mailer: { sendToTenant: mailerSend } as unknown as MailerService,
+    branding: { resolve: brandingResolve } as unknown as BrandingService,
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry(
+      [new StubProviderFactory({ code: PROVEEDOR, capabilities })],
+      {
+        decisionFor: () => Promise.resolve(undefined),
+      },
+    ),
     // Un proveedor de vuelos: la post-venta de hoteles no lo reconoce.
-    {
+    hotelReads: {
       handles: () => false,
       capabilitiesOf: () => undefined,
       trackingOf: () => Promise.resolve(new Map()),
     } as unknown as HotelOrderReadsService,
-  );
+  });
 
   return { controller, orders, insertado, brandingResolve, mailerSend };
 }

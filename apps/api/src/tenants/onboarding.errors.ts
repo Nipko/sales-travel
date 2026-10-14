@@ -1,4 +1,4 @@
-import { GoneException, NotFoundException } from '@nestjs/common';
+import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
 
 /**
  * `POST /admin/users` ya no da de alta a nadie (docs/platform/14). Vinculaba a su nodo cualquier
@@ -25,6 +25,25 @@ export class InvitationNotPendingError extends NotFoundException {
   constructor() {
     super('Esa invitación ya no está pendiente en este nodo.');
     this.name = 'InvitationNotPendingError';
+  }
+}
+
+/**
+ * Ya hay una invitación pendiente (vencida o no) para ese correo en el nodo. Una segunda dejaría a
+ * la persona con dos enlaces vigentes; lo que sirve es reenviar la que existe. 409.
+ *
+ * `publicDetails.invitationId` es para que Equipo ofrezca "Reenviar la invitación" sin buscarla: quien
+ * invita administra el nodo y ya la ve en su lista. Puede faltar si la que ganó la carrera no se pudo
+ * releer (la revocaron en el medio): el mensaje alcanza igual.
+ */
+export class InvitationAlreadyPendingError extends ConflictException {
+  readonly reason = 'INVITATION_ALREADY_PENDING';
+  readonly publicDetails: { readonly invitationId: string } | undefined;
+
+  constructor(invitationId?: string) {
+    super('Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.');
+    this.name = 'InvitationAlreadyPendingError';
+    this.publicDetails = invitationId === undefined ? undefined : { invitationId };
   }
 }
 

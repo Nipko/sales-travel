@@ -21,11 +21,11 @@ import type { SessionFailureReason } from '../request-context/request-context.js
  */
 
 const SESSION_MESSAGES: Record<SessionFailureReason, string> = {
-  SESSION_IDLE: 'Cerramos tu sesión por inactividad. Volvé a ingresar.',
+  SESSION_IDLE: 'Cerramos tu sesión por inactividad. Vuelve a ingresar.',
   SESSION_REPLACED: 'Tu sesión se abrió en otro dispositivo.',
   SESSION_RELEASED: 'Un administrador liberó tu puesto.',
-  SESSION_EXPIRED: 'Tu sesión venció. Volvé a ingresar.',
-  SESSION_REVOKED: 'Tu sesión se cerró. Volvé a ingresar.',
+  SESSION_EXPIRED: 'Tu sesión venció. Vuelve a ingresar.',
+  SESSION_REVOKED: 'Tu sesión se cerró. Vuelve a ingresar.',
 };
 
 /** El bearer venía firmado pero su sesión ya no sirve (inactividad, otro dispositivo...). 401. */
@@ -48,7 +48,7 @@ export class SessionCheckUnavailableError extends ServiceUnavailableException {
   readonly reason = 'SESSION_CHECK_UNAVAILABLE';
 
   constructor() {
-    super('No pudimos verificar tu sesión. Probá de nuevo en unos segundos.');
+    super('No pudimos verificar tu sesión. Inténtalo de nuevo en unos segundos.');
     this.name = 'SessionCheckUnavailableError';
   }
 }
@@ -58,7 +58,7 @@ export class MfaEnrollmentRequiredError extends ForbiddenException {
   readonly reason = 'MFA_ENROLLMENT_REQUIRED';
 
   constructor() {
-    super('Tu rol exige la verificación en dos pasos. Activala para seguir.');
+    super('Tu rol exige la verificación en dos pasos. Actívala para seguir.');
     this.name = 'MfaEnrollmentRequiredError';
   }
 }
@@ -68,8 +68,38 @@ export class MfaStepUpRequiredError extends UnauthorizedException {
   readonly reason = 'MFA_STEP_UP_REQUIRED';
 
   constructor() {
-    super('Esta sesión no pasó la verificación en dos pasos. Volvé a ingresar.');
+    super('Esta sesión no pasó la verificación en dos pasos. Vuelve a ingresar.');
     this.name = 'MfaStepUpRequiredError';
+  }
+}
+
+/**
+ * La acción es de alto impacto (USR-13, founder D1 = C) y la sesión no pasó el segundo factor en los
+ * últimos minutos (RECENT_MFA_WINDOW_MINUTES). 403 y no 401: la sesión sigue viva; el panel pide el
+ * código, llama a POST /auth/step-up y repite la acción una vez.
+ */
+export class MfaRecentRequiredError extends ForbiddenException {
+  readonly reason = 'MFA_RECENT_REQUIRED';
+
+  constructor() {
+    super('Confirma con tu código de verificación en dos pasos para seguir.');
+    this.name = 'MfaRecentRequiredError';
+  }
+}
+
+/**
+ * La acción es de alto impacto, pero quien la pide no tiene el 2FA activo: no hay código que
+ * reconfirmar. 403 con su propio motivo para que el panel no le pida un código que no tiene y le
+ * diga dónde activarlo. Pasa con los roles que no lo exigen (`agency_admin`, `admin`).
+ */
+export class MfaRequiredForActionError extends ForbiddenException {
+  readonly reason = 'MFA_REQUIRED_FOR_ACTION';
+
+  constructor() {
+    super(
+      'Para hacer esto necesitas la verificación en dos pasos. Actívala en Seguridad y vuelve a intentarlo.',
+    );
+    this.name = 'MfaRequiredForActionError';
   }
 }
 
@@ -94,7 +124,7 @@ export class MfaChallengeExpiredError extends UnauthorizedException {
   readonly reason = 'MFA_CHALLENGE_EXPIRED';
 
   constructor() {
-    super('La verificación venció o superó los intentos. Volvé a ingresar tu contraseña.');
+    super('La verificación venció o superó los intentos. Vuelve a ingresar tu contraseña.');
     this.name = 'MfaChallengeExpiredError';
   }
 }
@@ -109,7 +139,7 @@ export class MfaAccountLockedError extends UnauthorizedException {
 
   constructor(minutes: number) {
     super(
-      `Demasiados intentos fallidos: bloqueamos la cuenta ${minutes} minutos por seguridad. Probá de nuevo más tarde.`,
+      `Demasiados intentos fallidos: bloqueamos la cuenta ${minutes} minutos por seguridad. Inténtalo de nuevo más tarde.`,
     );
     this.name = 'MfaAccountLockedError';
   }
@@ -124,7 +154,7 @@ export class MfaReauthLockedError extends HttpException {
 
   constructor(minutes: number) {
     super(
-      `Demasiados intentos fallidos: pausamos la verificación ${minutes} minutos por seguridad. Probá de nuevo más tarde.`,
+      `Demasiados intentos fallidos: pausamos la verificación ${minutes} minutos por seguridad. Inténtalo de nuevo más tarde.`,
       HttpStatus.TOO_MANY_REQUESTS,
     );
     this.name = 'MfaReauthLockedError';
@@ -136,7 +166,7 @@ export class MfaCodeRejectedError extends BadRequestException {
   readonly reason = 'MFA_CODE_INVALID';
 
   constructor() {
-    super('El código no es válido o ya se usó. Esperá el siguiente e intentá de nuevo.');
+    super('El código no es válido o ya se usó. Espera el siguiente e inténtalo de nuevo.');
     this.name = 'MfaCodeRejectedError';
   }
 }
@@ -157,7 +187,7 @@ export class MfaAlreadyEnabledError extends ConflictException {
 
   constructor() {
     super(
-      'Ya tenés la verificación en dos pasos activa. Para cambiar de teléfono confirmá tu contraseña y un código actual.',
+      'Ya tienes la verificación en dos pasos activa. Para cambiar de teléfono confirma tu contraseña y un código actual.',
     );
     this.name = 'MfaAlreadyEnabledError';
   }
@@ -168,7 +198,7 @@ export class MfaNoPendingEnrollmentError extends ConflictException {
   readonly reason = 'MFA_NO_PENDING_ENROLLMENT';
 
   constructor() {
-    super('No hay una activación en curso. Empezá de nuevo.');
+    super('No hay una activación en curso. Empieza de nuevo.');
     this.name = 'MfaNoPendingEnrollmentError';
   }
 }
@@ -227,12 +257,41 @@ export class SeatsFullError extends ConflictException {
   }
 }
 
+/**
+ * La contraseña era correcta, pero un admin le pidió elegir una nueva y todavía no lo hizo. 403 y no
+ * 401: el panel muestra qué hacer (abrir el enlace del correo) en vez de "credenciales incorrectas".
+ * Decirlo no enumera nada: sólo llega quien acertó la contraseña, y el enlace va al buzón de la
+ * persona.
+ */
+export class PasswordResetRequiredError extends ForbiddenException {
+  readonly reason = 'PASSWORD_RESET_REQUIRED';
+
+  constructor() {
+    super('Tienes que elegir una contraseña nueva: te enviamos un enlace a tu correo.');
+    this.name = 'PasswordResetRequiredError';
+  }
+}
+
+/**
+ * Al canjear el enlace con el cambio forzado pendiente, la contraseña nueva es la misma de antes. Un
+ * admin la forzó porque la actual pudo quedar expuesta: aceptarla levantaría la marca y la dejaría
+ * servir otra vez. 400 con su motivo: el enlace sigue vigente para elegir otra.
+ */
+export class PasswordReuseError extends BadRequestException {
+  readonly reason = 'PASSWORD_REUSED';
+
+  constructor() {
+    super('Elige una contraseña distinta de la anterior.');
+    this.name = 'PasswordReuseError';
+  }
+}
+
 /** El permiso para liberar un puesto venció, ya se usó o no es válido. 401. */
 export class SeatReleaseExpiredError extends UnauthorizedException {
   readonly reason = 'SEAT_RELEASE_EXPIRED';
 
   constructor() {
-    super('El permiso para liberar un puesto venció o ya se usó. Volvé a ingresar.');
+    super('El permiso para liberar un puesto venció o ya se usó. Vuelve a ingresar.');
     this.name = 'SeatReleaseExpiredError';
   }
 }
@@ -242,7 +301,7 @@ export class SeatReleaseForbiddenError extends ForbiddenException {
   readonly reason = 'SEAT_RELEASE_FORBIDDEN';
 
   constructor() {
-    super('Ya no administrás este nodo: pedile a un administrador que libere un puesto.');
+    super('Ya no administras este nodo: pídele a un administrador que libere un puesto.');
     this.name = 'SeatReleaseForbiddenError';
   }
 }
@@ -252,7 +311,7 @@ export class CurrentSessionRevokeError extends BadRequestException {
   readonly reason = 'CANNOT_REVOKE_CURRENT_SESSION';
 
   constructor() {
-    super('Esta es la sesión que estás usando: cerrala con "Cerrar sesión".');
+    super('Esta es la sesión que estás usando: ciérrala con "Cerrar sesión".');
     this.name = 'CurrentSessionRevokeError';
   }
 }

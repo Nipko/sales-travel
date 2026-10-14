@@ -1128,6 +1128,8 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 **Postura si no responden.** La función queda apagada hasta tener un fixture real; `RoomId`/`RoomID` se normalizan a string y `0` significa sin mapeo; sin mapeo se usa `Rooms[].Name` de Search ([05](./05-contenido-estatico-e-inventario.md) §2.6.3; [02](./02-search-y-oferta-canonica.md) §9.9).
 
+**Postura aplicada (TBO-05 y TBO-06, 2026-10-13).** En vez de esperar el fixture, se pide bajo demanda desde la ficha y se lee con un lector tolerante (la forma del bloque va a la métrica y al log, sin valores): (a) si no lo encuentra, el hotel queda `unreadable` un día y la ficha sigue como antes; (b) la API entrega `roomId` y `nameKey` para que la ficha enlace por `RoomId` con el `roomTypeId` de la tarifa y, sin id, por nombre normalizado sólo con un candidato único, marcado "Foto de referencia" (D-TBO-H2, TBO-07); (c) `RoomSize` se muestra tal cual y, si dice pies, también convertido a m². El contenido del hotel nunca empeora por pedirlo (repetición sin la clave, suspensión tras tres rechazos) y se apaga con `HOTEL_ROOM_CONTENT=off` o `TBO_ROOM_DETAILS=off` ([05](./05-contenido-estatico-e-inventario.md) §2.6.3).
+
 ### Q-66
 
 **Idiomas de contenido** · Importante · Abierta · Origen: [05](./05-contenido-estatico-e-inventario.md) §2.6.1, §2.6.4, §10, CE-11, CE-23.

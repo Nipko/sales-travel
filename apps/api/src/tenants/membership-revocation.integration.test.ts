@@ -10,9 +10,11 @@ import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, Role, TenantType } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
+import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { AdminController } from './admin.controller.js';
 import { InvitationsService } from './invitations.service.js';
+import { PlatformUsersService } from './platform-users.service.js';
 import type { SeatsService } from './seats.service.js';
 import type { TenantsService } from './tenants.service.js';
 
@@ -86,6 +88,7 @@ d('suspender o degradar una membership, contra Postgres', () => {
     mailer as unknown as MailerService,
     audit,
   );
+  const notices = { notify: vi.fn() };
   const admin = new AdminController(
     database,
     network,
@@ -94,6 +97,8 @@ d('suspender o degradar una membership, contra Postgres', () => {
     {} as TenantsService,
     {} as SeatsService,
     invitations,
+    new PlatformUsersService(database),
+    notices as unknown as SecurityNoticeService,
   );
 
   let platform: string;
@@ -337,6 +342,22 @@ d('suspender o degradar una membership, contra Postgres', () => {
       expect(res).toMatchObject({ status: 'active', revokedSessions: 0, revokedInvitations: 0 });
       expect(await revokedReason(fresh)).toBeNull();
     });
+
+    it('la persona recibe un aviso por cada cambio real, con el estado anterior leído con la RLS del actor', async () => {
+      const dani = await user('aviso');
+      await member(agencyA, dani, 'vendedor');
+      notices.notify.mockClear();
+
+      for (const status of ['suspended', 'suspended', 'active', 'active'] as const) {
+        await admin.setMembershipStatus(adminA, { userId: dani, tenantId: agencyA, status });
+      }
+      await admin.changeRole(adminA, { userId: dani, tenantId: agencyA, role: 'vendedor' });
+
+      expect(notices.notify.mock.calls).toEqual([
+        ['membership_suspended', { userId: dani, tenantId: agencyA }],
+        ['membership_reactivated', { userId: dani, tenantId: agencyA }],
+      ]);
+    });
   });
 
   describe('invitaciones: valen mientras su invitador las pueda volver a emitir', () => {
@@ -565,6 +586,10 @@ d('suspender o degradar una membership, contra Postgres', () => {
       ).toBe('403/?');
       expect(await membershipStatus(agencyA, seller)).toMatchObject({ status: 'active' });
       expect(await revokedReason(inA)).toBeNull();
+      expect(notices.notify).not.toHaveBeenCalledWith(expect.anything(), {
+        userId: seller,
+        tenantId: agencyA,
+      });
     });
 
     it('las invitaciones del suspendido fuera de la red del actor no se tocan ni se cuentan', async () => {

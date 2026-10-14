@@ -443,7 +443,7 @@ export class DespegarHotelProviderAdapter
       ChoiceRawSchema,
       request.offer,
       'missing-choice',
-      'La tarifa no trae un único token de reserva de Despegar. Volvé a pedir las tarifas del hotel y elegí la habitación.',
+      'La tarifa no trae un único token de reserva de Despegar. Vuelve a pedir las tarifas del hotel y elige la habitación.',
     );
     const options = parseOptions(PrebookOptionsSchema, request.providerOptions);
     const result = await this.acl.prebook({
@@ -477,7 +477,7 @@ export class DespegarHotelProviderAdapter
       RoomReferencesRawSchema,
       request.offer,
       'room-references',
-      'La tarifa no trae la numeración de habitaciones de Despegar. Volvé a pedir las tarifas del hotel.',
+      'La tarifa no trae la numeración de habitaciones de Despegar. Vuelve a pedir las tarifas del hotel.',
     );
     if (roomReferences.length !== request.rooms.length) {
       throw new DespegarHotelInputError(

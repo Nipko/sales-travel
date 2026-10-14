@@ -13,7 +13,7 @@ export async function forgotPasswordAction(
 ): Promise<ForgotState> {
   const raw = formData.get('email');
   const email = typeof raw === 'string' ? raw.trim() : '';
-  if (!email) return { error: 'Ingresá tu correo electrónico.' };
+  if (!email) return { error: 'Ingresa tu correo electrónico.' };
 
   const res = await api<{ sent: true }>('/auth/forgot-password', {
     method: 'POST',
@@ -22,7 +22,7 @@ export async function forgotPasswordAction(
 
   if (!res.ok) {
     if (res.error.status === 429) {
-      return { error: 'Demasiados pedidos. Esperá un minuto antes de reintentar.' };
+      return { error: 'Demasiados pedidos. Espera un minuto antes de reintentar.' };
     }
     return { error: res.error.message };
   }

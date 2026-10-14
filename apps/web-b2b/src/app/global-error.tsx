@@ -27,7 +27,7 @@ export default function GlobalError({
           </div>
           <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">Algo salió mal</h1>
           <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
-            No pudimos cargar el panel. Probá de nuevo; si sigue fallando, avisale al administrador
+            No pudimos cargar el panel. Prueba de nuevo; si sigue fallando, avísale al administrador
             de tu agencia.
           </p>
           <Button onClick={reset} className="mt-6 gap-2">

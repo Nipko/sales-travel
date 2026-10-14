@@ -24,8 +24,8 @@ export async function acceptInvitationAction(
   const confirm = asString(formData.get('confirm'));
 
   if (!token)
-    return { error: 'La invitación no es válida. Pedile a tu administrador que la reenvíe.' };
-  if (!name) return { error: 'Ingresá tu nombre.' };
+    return { error: 'La invitación no es válida. Pídele a tu administrador que la reenvíe.' };
+  if (!name) return { error: 'Ingresa tu nombre.' };
   if (password.length < MIN_PASSWORD) {
     return { error: `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.` };
   }

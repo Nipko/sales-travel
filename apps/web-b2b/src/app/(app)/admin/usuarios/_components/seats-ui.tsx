@@ -160,7 +160,7 @@ function SessionRow({
           <span className="truncate">{person}</span>
           {session.current ? (
             <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
-              Vos
+              Tú
             </span>
           ) : null}
         </p>
@@ -311,7 +311,7 @@ export function SeatsCard({
           </div>
           {state.view.limit === null ? (
             <p className="border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-fg-muted)]">
-              Como no hay límite, las sesiones de este nodo no ocupan puesto y no se listan acá.
+              Como no hay límite, las sesiones de este nodo no ocupan puesto y no se listan aquí.
             </p>
           ) : (
             <div className="border-t border-[var(--color-border)]">
@@ -339,7 +339,7 @@ export function SeatsCard({
               {state.view.inherited && state.view.sessions.length < state.view.inUse ? (
                 <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-fg-subtle)]">
                   El cupo es compartido: el resto de los puestos en uso son de otros nodos de{' '}
-                  {state.view.poolTenantName ?? 'la red'} que no administrás desde acá.
+                  {state.view.poolTenantName ?? 'la red'} que no administras desde aquí.
                 </p>
               ) : null}
             </div>

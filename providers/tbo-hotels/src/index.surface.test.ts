@@ -51,6 +51,8 @@ import * as hotelDetailsResolver from './static/hotel-details.resolver';
 import * as hotelDetailsMapper from './static/hotel-details.response.mapper';
 import * as hotelRecord from './static/hotel-record';
 import * as htmlSanitizer from './static/html-sanitizer';
+import * as roomDetailGate from './static/room-detail.gate';
+import * as roomDetailReader from './static/room-detail.reader';
 import * as imageHosts from './static/image-hosts';
 import * as staticNormalize from './static/normalize';
 import * as staticObserver from './static/observer';
@@ -405,6 +407,26 @@ const PROBED: readonly ProbedModule[] = [
     notPublished: {
       mapTboHotelDetailsResponse: 'recibe el sobre crudo de TBO',
       emptyTboHotelDetailsMapping: 'la usa el cliente de contenido ante un "No Hotels Found"',
+    },
+  },
+  {
+    name: 'static/room-detail.reader',
+    module: roomDetailReader,
+    notPublished: {
+      readTboRoomDetails: 'recibe un hotel crudo de TBO; lo aplica el mapper de HotelDetails',
+      TBO_ROOM_CONTAINER_KEYS: 'detalle de dónde busca el lector el bloque de habitaciones',
+      normalizeTboRoomName:
+        'espejo de `normalizeRoomName` de la web; fuera se lee el `nameKey` ya calculado',
+      tboSyntheticRoomKey: 'lo aplica el lector; fuera se lee el `roomKey` ya calculado',
+    },
+  },
+  {
+    name: 'static/room-detail.gate',
+    module: roomDetailGate,
+    notPublished: {
+      TboRoomDetailGate: 'la racha de rechazos la lleva el cliente; los tests inyectan una propia',
+      TBO_PROCESS_ROOM_DETAIL_GATE: 'estado del proceso: sólo lo toca el cliente de contenido',
+      TBO_ROOM_DETAIL_REJECTION_LIMIT: 'detalle de la compuerta; no es configurable desde fuera',
     },
   },
   {

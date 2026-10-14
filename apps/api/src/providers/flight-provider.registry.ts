@@ -1,5 +1,7 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { z } from '@sales-travel/validation';
+import { KillSwitchStore } from '../provider-enablement/kill-switch.store.js';
+import { killLevel } from '../search/circuit-breaker.service.js';
 import {
   CallPolicySchema,
   DEFAULT_PROVIDER_SETTLEMENT,
@@ -12,6 +14,7 @@ import {
   ProviderOrderAccountUnavailableError,
   isDisabledByPlatform,
   isProviderEnabled,
+  killSwitchedSaleError,
   type CallPolicy,
   type FlightProviderAdapter,
   type FlightProviderResolution,
@@ -91,6 +94,8 @@ export class FlightProviderRegistry {
     @Inject(FLIGHT_PROVIDER_FACTORIES)
     factories: TenantProviderFactory<FlightProviderAdapter>[],
     @Inject(FLIGHT_PROVIDER_FLAGS) private readonly flags: ProviderFlagsPort,
+    /** Sin él (tests que arman el registry a mano) sólo cuenta `PROVIDERS_DISABLED`. */
+    @Optional() private readonly killSwitches?: KillSwitchStore,
   ) {
     // Orden ESTABLE, alfabético por code: es parte de la clave de caché y del orden de
     // `providers[]` en la respuesta. Un orden que dependa del orden de inyección produce
@@ -248,10 +253,10 @@ export class FlightProviderRegistry {
    * Un proveedor concreto para seguir la VENTA de una oferta que él ya emitió: revalidar el precio
    * y crear la orden.
    *
-   * Si la plataforma lo apagó para el tenant, 400 sin tocar la bóveda: una venta nueva no se abre
-   * con un proveedor apagado, aunque la oferta venga de una búsqueda anterior al apagado. Un
-   * `opt-in` que simplemente nadie encendió NO se corta aquí, como antes: la oferta ya la emitió
-   * ese proveedor.
+   * Si la plataforma lo apagó para el tenant, o lo apagó de emergencia para todos (la variable o el
+   * panel), 400 sin tocar la bóveda: una venta nueva no se abre con un proveedor apagado, aunque la
+   * oferta venga de una búsqueda anterior al apagado. Un `opt-in` que simplemente nadie encendió NO
+   * se corta aquí, como antes: la oferta ya la emitió ese proveedor.
    */
   async byCodeForOffer(
     tenantId: string,
@@ -259,6 +264,12 @@ export class FlightProviderRegistry {
   ): Promise<ResolvedProvider<FlightProviderAdapter>> {
     const factory = this.factories.find((f) => f.code === code);
     if (factory === undefined) throw new ProviderNotAvailableError(code);
+    // La revalidación y la creación de la orden de vuelos no pasan por el circuit breaker, que es
+    // quien aplica el apagado de emergencia: sin esto, una oferta buscada antes del apagado se
+    // seguía reservando. Cualquier nivel (`sales` o `all`) corta la venta.
+    if (killLevel(factory.code, this.killSwitches?.panelLevel(factory.code)) !== undefined) {
+      throw killSwitchedSaleError(factory.code);
+    }
     if (isDisabledByPlatform(await this.flags.decisionFor(tenantId, factory.code))) {
       throw new ProviderDisabledByPlatformError(factory.code);
     }

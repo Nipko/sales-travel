@@ -9,11 +9,13 @@ import {
   TboStaticContentClient,
   missingTboCredentials,
   parseTboConfig,
+  parseTboRoomDetailsSwitch,
   type TBO_HOTELS_PROVIDER_CODE,
   type TboFetch,
   type TboHotelsConfig,
   type TboHttpDeps,
   type TboRateLimiter,
+  type TboRoomDetailsSwitch,
 } from '@sales-travel/tbo-hotels';
 import type { TenantType } from '../database/database.types.js';
 import {
@@ -62,10 +64,10 @@ const ALLOWED_OWNER_TYPES: ReadonlySet<TenantType> = new Set<TenantType>([
 ]);
 
 const OWN_AGENCY_ACCOUNT =
-  'TBO opera sólo con la cuenta del consolidador: las cuentas propias de agencias todavía no están habilitadas. Quitá la cuenta de TBO de esta agencia en Mi Red → Credenciales para usar la del consolidador.';
+  'TBO opera sólo con la cuenta del consolidador: las cuentas propias de agencias todavía no están habilitadas. Quita la cuenta de TBO de esta agencia en Mi Red → Credenciales para usar la del consolidador.';
 
 const INHERITED_AGENCY_ACCOUNT =
-  'La cuenta de TBO que hereda esta agencia es de otra agencia de la red, y TBO opera sólo con la cuenta del consolidador. Pedile a quien la cargó que la quite para heredar la del consolidador.';
+  'La cuenta de TBO que hereda esta agencia es de otra agencia de la red, y TBO opera sólo con la cuenta del consolidador. Pídele a quien la cargó que la quite para heredar la del consolidador.';
 
 /**
  * Factory del ACL de TBO Hotels por tenant (docs/tbo/06 §5.2; 08 RF-36, RNF-06).
@@ -169,6 +171,14 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
   private readonly limiter: TboRateLimiter = new TboInMemoryRateLimiter();
 
   /**
+   * Interruptor del detalle por habitación de HotelDetails (`TBO_ROOM_DETAILS`, `on` por defecto):
+   * con `off` el cliente de contenido nunca manda `IsRoomDetailRequired`, aunque se lo pidan. Se
+   * lee al arrancar, como `PROVIDERS_DISABLED`: cambiarlo es un redeploy. Un valor que no es `on`
+   * ni `off` lo apaga y se avisa una vez.
+   */
+  readonly roomDetails: TboRoomDetailsSwitch;
+
+  /**
    * @param payloadWriter la bóveda de payloads (PR-4.9). Sin ella, o apagada por falta de clave,
    *   el ACL no guarda RQ/RS y todo lo demás funciona igual.
    */
@@ -178,7 +188,15 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
     @Optional()
     @Inject(PROVIDER_PAYLOAD_WRITER)
     private readonly payloadWriter?: ProviderPayloadWriter,
-  ) {}
+  ) {
+    const roomDetails = parseTboRoomDetailsSwitch(process.env['TBO_ROOM_DETAILS']);
+    if (roomDetails.invalid) {
+      this.logger.warn(
+        'TBO_ROOM_DETAILS no es "on" ni "off": el detalle por habitación de TBO queda apagado',
+      );
+    }
+    this.roomDetails = roomDetails.value;
+  }
 
   async resolveForTenant(tenantId: string): Promise<TenantAdapter<HotelProviderAdapter>> {
     // Sin `try/catch`: la `NotFoundException` de la bóveda se propaga tal cual y el registry la
@@ -248,7 +266,9 @@ export class TboHotelsProviderFactory implements HotelProviderFactory {
         new TboHotelsAdapter(cfg, this.httpDeps(resolved), account),
         { accountId: resolved.id, updatedAt: resolved.updatedAt.toISOString() },
         cfg.environment,
-        new TboStaticContentClient(cfg, this.contentDeps(), account),
+        new TboStaticContentClient(cfg, this.contentDeps(), account, {
+          roomDetails: this.roomDetails,
+        }),
       );
       this.cache.set(key, adapter);
       this.evictStale(key);

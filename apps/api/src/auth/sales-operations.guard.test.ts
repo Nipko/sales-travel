@@ -141,6 +141,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/mfa/confirm',
     'POST /auth/mfa/recovery-codes',
     'POST /auth/mfa/disable',
+    'POST /auth/step-up',
     'POST /auth/resend-verification',
     'GET /me',
     'GET /me/memberships',
@@ -153,11 +154,16 @@ const ENTRADAS: [string, Clase][] = [
     'PATCH /admin/tenants/:id/seats',
     'POST /admin/tenants/:id/move',
     'GET /admin/users',
+    'GET /admin/users/:userId',
+    'GET /admin/users/:userId/impact',
+    'GET /admin/users/:userId/audit',
     'POST /admin/users',
     'PATCH /admin/users/status',
     'PATCH /admin/memberships/role',
     'PATCH /admin/memberships/status',
+    'POST /admin/memberships/remove',
     'GET /admin/memberships/impact',
+    'GET /admin/invitations',
     'POST /invitations',
     'GET /invitations',
     'POST /invitations/:id/revoke',
@@ -172,6 +178,12 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:id/seats/sessions/:sessionId/release',
     'POST /tenants/:id/members/:userId/reset-mfa',
     'POST /tenants/:id/members/:userId/revoke-sessions',
+    'POST /tenants/:id/members/:userId/send-password-reset',
+    'POST /tenants/:id/members/:userId/require-password-reset',
+    'POST /tenants/:id/members/:userId/unlock',
+    'GET /tenants/:id/members/:userId',
+    'GET /tenants/:id/members/:userId/audit',
+    'POST /tenants/:id/members/:userId/sessions/:sessionId/revoke',
     'GET /tenants/:id/branding',
     'GET /tenants/:id/branding/own',
     'PATCH /tenants/:id/branding',
@@ -179,7 +191,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /mail/test',
   ),
   ...noVenta(
-    'administración de proveedores: credenciales, habilitación, visibilidad, conciliación y payloads',
+    'administración de proveedores: credenciales, habilitación, salud, apagado de emergencia, visibilidad, conciliación y payloads',
     'POST /provider-accounts',
     'GET /provider-accounts',
     'GET /provider-accounts/resolve',
@@ -191,10 +203,18 @@ const ENTRADAS: [string, Clase][] = [
     'DELETE /admin/providers/:code/global',
     'PUT /admin/providers/:code/tenants/:tenantId',
     'DELETE /admin/providers/:code/tenants/:tenantId',
+    'GET /admin/providers/health',
+    'PUT /admin/providers/:code/kill-switch',
+    'POST /admin/providers/:code/kill-switch/clear',
+    'POST /admin/providers/:code/circuit/reset',
     'GET /provider-disclosure',
     'PATCH /provider-disclosure',
     'GET /provider-payloads/requests/:requestId',
     'GET /provider-payloads/orders/:orderId',
+  ),
+  ...noVenta(
+    'diagnóstico de la plataforma: qué le falta a cada sucursal para probar una reserva de hotel, sin precio',
+    'GET /admin/hotels/readiness',
   ),
   ...noVenta(
     'reglas de precio y su simulador: configuración, no venta',
@@ -242,6 +262,10 @@ const ENTRADAS: [string, Clase][] = [
   ...noVenta(
     'ficha estática de un hotel, sin precio: la usa también el voucher de una reserva hecha',
     'GET /hotels/content/:providerCode/:hotelId',
+  ),
+  ...noVenta(
+    'fotos, tamaño y descripción de las habitaciones de un hotel: contenido estático sin precio',
+    'GET /hotels/content/:providerCode/:hotelId/rooms',
   ),
   ...noVenta(
     'fotos de los resultados por lote: contenido estático sin precio, por el cupo de fondo',
@@ -299,6 +323,37 @@ const ENTRADAS: [string, Clase][] = [
     'GET /tenants/:tenantId/portfolios/network-holds',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve',
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
+  ),
+  ...noVenta(
+    'el superadmin ve en una cola los depósitos informados de toda la red (sólo lectura)',
+    'GET /admin/deposit-reports',
+    'GET /admin/deposit-reports/pending-count',
+  ),
+  ...noVenta(
+    'el Resumen de la plataforma: agregados de toda la red para el superadmin (sólo lectura)',
+    'GET /admin/overview',
+  ),
+  ...noVenta(
+    'Sistema › Procesos: si el barrido, la conciliación y los catálogos están corriendo (sólo lectura)',
+    'GET /admin/system/jobs',
+  ),
+  ...noVenta(
+    'Agencias en números: puestos, ventas y pendientes de cada nodo, y el impacto de suspender uno (sólo lectura)',
+    'GET /admin/tenants/stats',
+    'GET /admin/tenants/:id/impact',
+  ),
+  ...noVenta(
+    'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',
+    'GET /admin/orders',
+    'GET /admin/orders/:id',
+  ),
+  ...noVenta(
+    'Reservas de la red: la post-venta del superadmin sobre lo ya vendido (FD-1 C): reenviar, consultar, reintentar y cancelar',
+    'POST /admin/orders/:id/send-confirmation',
+    'POST /admin/orders/:id/retrieve',
+    'POST /admin/orders/:id/operations/:opId/retry',
+    'GET /admin/orders/:id/cancellation-estimate',
+    'POST /admin/orders/:id/cancel',
   ),
   ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
@@ -565,7 +620,7 @@ describe('RolesGuard con la metadata REAL de cada venta', () => {
         expect(err, role).toBeInstanceOf(PlatformRoleCannotSellError);
         expect((err as PlatformRoleCannotSellError).getStatus()).toBe(403);
         expect((err as PlatformRoleCannotSellError).message).toBe(
-          'El superadministrador no vende: usá un usuario de una sucursal',
+          'El superadministrador no vende: usa un usuario de una sucursal',
         );
       }
     },
@@ -636,7 +691,7 @@ describe('la respuesta HTTP del 403', () => {
     expect(json).toHaveBeenCalledWith({
       statusCode: 403,
       error: 'Forbidden',
-      message: 'El superadministrador no vende: usá un usuario de una sucursal',
+      message: 'El superadministrador no vende: usa un usuario de una sucursal',
       reason: 'PLATFORM_ROLE_CANNOT_SELL',
     });
   });

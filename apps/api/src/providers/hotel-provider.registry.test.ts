@@ -16,6 +16,7 @@ import type {
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
 import { HotelProviderRegistry } from './hotel-provider.registry.js';
 import {
+  hasAccountEnvironment,
   supportsHotelBookingByClientReference,
   supportsHotelBookingsByDate,
   supportsHotelPaymentOptions,
@@ -289,7 +290,7 @@ describe('HotelProviderRegistry', () => {
           code: 'despegar-hotels',
           reason: 'no-credentials',
           detail:
-            'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cargalas en Mi Red → Credenciales.',
+            'Esta agencia no tiene credenciales propias ni heredadas para este proveedor. Cárgalas en Mi Red → Credenciales.',
         },
       ]);
       // La post-venta de una reserva de Despegar tampoco sale sin clave: 400 que lo dice, no un 401
@@ -500,6 +501,76 @@ describe('HotelProviderRegistry', () => {
 
       expect(beta.adapterFor(TENANT).searchAvailability).toHaveBeenCalledTimes(1);
       expect(alfa.adapterFor(TENANT).searchAvailability).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('accountStatusOf (diagnóstico de la plataforma)', () => {
+    it('con cuenta: de dónde sale y su entorno, sin consultar la habilitación ni llamar al proveedor', async () => {
+      const alfa = new StubHotelProviderFactory({
+        code: 'alfa-hotels',
+        callPolicy: 'opt-in',
+        credentialSource: 'inherited',
+        accountEnvironment: 'test',
+      });
+      const beta = new StubHotelProviderFactory({ code: 'beta-hotels', credentialSource: 'own' });
+      const { port, decisionFor } = flags(false);
+      const r = registry([alfa, beta], port);
+
+      expect(await r.accountStatusOf(TENANT, 'alfa-hotels')).toEqual({
+        status: 'ok',
+        source: 'inherited',
+        environment: 'test',
+      });
+      // Sin entorno declarado, no se inventa uno.
+      expect(await r.accountStatusOf(TENANT, 'beta-hotels')).toEqual({
+        status: 'ok',
+        source: 'own',
+      });
+      expect(decisionFor).not.toHaveBeenCalled();
+      expect(alfa.adapterFor(TENANT).searchAvailability).not.toHaveBeenCalled();
+    });
+
+    it('distingue la cuenta ausente, la incompleta y la que el proveedor no admite', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({ code: 'sin-hotels', failResolve: true }),
+        new StubHotelProviderFactory({
+          code: 'media-hotels',
+          failResolveWith: new ProviderAccountIncompleteError('media-hotels', ['password']),
+        }),
+        new StubHotelProviderFactory({
+          code: 'ajena-hotels',
+          failResolveWith: new ProviderAccountNotAllowedError(
+            'ajena-hotels',
+            'Sólo la del consolidador.',
+          ),
+        }),
+      ]);
+
+      expect(await r.accountStatusOf(TENANT, 'sin-hotels')).toEqual({ status: 'no-credentials' });
+      expect(await r.accountStatusOf(TENANT, 'media-hotels')).toEqual({ status: 'incomplete' });
+      expect(await r.accountStatusOf(TENANT, 'ajena-hotels')).toEqual({ status: 'not-allowed' });
+    });
+
+    it('la cuenta de la plataforma sin fallback habilitado cuenta como sin cuenta', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({ code: 'alfa-hotels', credentialSource: 'env' }),
+      ]);
+
+      expect(await r.accountStatusOf(TENANT, 'alfa-hotels')).toEqual({ status: 'no-credentials' });
+    });
+
+    it('el proveedor desconocido es 400 y un fallo real de la bóveda se propaga', async () => {
+      const r = registry([
+        new StubHotelProviderFactory({
+          code: 'alfa-hotels',
+          failResolveWith: new Error('bóveda caída'),
+        }),
+      ]);
+
+      await expect(r.accountStatusOf(TENANT, 'no-existe')).rejects.toBeInstanceOf(
+        ProviderNotAvailableError,
+      );
+      await expect(r.accountStatusOf(TENANT, 'alfa-hotels')).rejects.toThrow('bóveda caída');
     });
   });
 
@@ -811,6 +882,62 @@ describe('capacidades opcionales por presencia del método', () => {
     expect(supportsHotelBookingByClientReference(soloReferencia)).toBe(true);
     expect(supportsHotelBookingsByDate(soloReferencia)).toBe(false);
     expect(supportsHotelSuggest(soloReferencia)).toBe(false);
+  });
+});
+
+describe('entorno de la cuenta', () => {
+  it('la guarda mira el valor: sólo `test` o `live` declaran entorno', () => {
+    expect(hasAccountEnvironment({ accountEnvironment: 'test' })).toBe(true);
+    expect(hasAccountEnvironment({ accountEnvironment: 'live' })).toBe(true);
+    expect(hasAccountEnvironment({})).toBe(false);
+    expect(hasAccountEnvironment({ accountEnvironment: undefined })).toBe(false);
+    expect(hasAccountEnvironment({ accountEnvironment: 'produccion' })).toBe(false);
+  });
+
+  it('la venta lo lleva en el proveedor resuelto: `forTenant`, `byCode` y `byCodeForOffer`', async () => {
+    const r = registry([
+      new StubHotelProviderFactory({ code: 'alfa-hotels', accountEnvironment: 'test' }),
+      new StubHotelProviderFactory({ code: 'beta-hotels', accountEnvironment: 'live' }),
+    ]);
+
+    const { active } = await r.forTenant(TENANT);
+    expect(active.map((p) => [p.code, p.accountEnvironment])).toEqual([
+      ['alfa-hotels', 'test'],
+      ['beta-hotels', 'live'],
+    ]);
+    expect((await r.byCode(TENANT, 'alfa-hotels')).accountEnvironment).toBe('test');
+    expect((await r.byCodeForOffer(TENANT, 'beta-hotels')).accountEnvironment).toBe('live');
+  });
+
+  it('la post-venta también: `forOrder` y `forAccount` con la cuenta de la orden', async () => {
+    const base = new StubHotelProviderFactory({
+      code: 'alfa-hotels',
+      capabilities: { reconcileByDate: true },
+      accountEnvironment: 'test',
+    });
+    const conCuenta = (tenantId: string) =>
+      Promise.resolve({ adapter: base.adapterFor(tenantId), credentialSource: 'own' as const });
+    const factory = Object.assign(base, {
+      resolveForOrder: conCuenta,
+      resolveForAccount: conCuenta,
+    });
+    const r = registry([factory]);
+
+    const orden = await r.forOrder(TENANT, {
+      orderId: 'o-1',
+      provider: 'alfa-hotels',
+      providerAccountId: 'acc-1',
+    });
+    const cuenta = await r.forAccount(TENANT, { provider: 'alfa-hotels', accountId: 'acc-1' });
+    expect(orden.accountEnvironment).toBe('test');
+    expect(cuenta.accountEnvironment).toBe('test');
+  });
+
+  it('un adapter que no declara entorno sale sin el campo: no se inventa uno', async () => {
+    const r = registry([new StubHotelProviderFactory({ code: 'alfa-hotels' })]);
+
+    const { active } = await r.forTenant(TENANT);
+    expect(active[0]).not.toHaveProperty('accountEnvironment');
   });
 });
 

@@ -32,6 +32,12 @@ export interface ValidSession {
   /** ESTA sesión pasó el segundo factor (`sessions.mfa_verified_at`). */
   mfaVerified: boolean;
   /**
+   * Cuándo lo pasó por última vez, en el reloj de ESTE proceso: se arma con la antigüedad que mide la
+   * base (`now() - mfa_verified_at`), así la ventana de la reconfirmación (USR-13) no depende de que
+   * los relojes de la API y de Postgres coincidan. Ausente si la sesión no lo pasó.
+   */
+  mfaVerifiedAt?: Date;
+  /**
    * El tenant pedido (`requestedTenantId`) consume de otro cupo que la sesión: no se adoptó, y el
    * rol es el del tenant firmado. El middleware vuelve al `tid` del token.
    */
@@ -72,10 +78,12 @@ interface SessionRow {
   last_seen_at: Date;
   idle_timeout_seconds: number;
   mfa_verified_at: Date | null;
+  mfa_verified_age_seconds: number | null;
   expired: boolean;
   idle: boolean;
   user_status: UserStatus;
   password_changed_at: Date | null;
+  password_reset_required: boolean;
   mfa_enabled_at: Date | null;
   role: Role | null;
   membership_status: string | null;
@@ -104,9 +112,10 @@ export class SessionService {
    * Valida la sesión y resuelve el rol efectivo y el estado del MFA, en una sola consulta.
    *
    * Una sesión que no sirve vuelve con el motivo, que el panel le muestra al usuario: revocada
-   * (con el motivo de la revocación), vencida, usuario suspendido, token anterior al último cambio
-   * de contraseña o inactiva. Una sesión viva que superó su inactividad se revoca ACÁ con
-   * `idle_timeout`: la inactividad la aplica el servidor, no el reloj del navegador.
+   * (con el motivo de la revocación), vencida, usuario suspendido, cambio de contraseña pendiente,
+   * token anterior al último cambio de contraseña o inactiva. Una sesión viva que superó su
+   * inactividad se revoca ACÁ con `idle_timeout`: la inactividad la aplica el servidor, no el reloj
+   * del navegador.
    *
    * El rol se lee de la base, NO del JWT, para que una degradación de rol o una membership
    * suspendida apliquen en el acto. Tampoco hay rol si el nodo, o alguno de sus ancestros, no está
@@ -150,10 +159,12 @@ export class SessionService {
                s.last_seen_at,
                s.idle_timeout_seconds,
                s.mfa_verified_at,
+               EXTRACT(EPOCH FROM now() - s.mfa_verified_at)::float8                   AS mfa_verified_age_seconds,
                s.expires_at <= now()                                                   AS expired,
                s.last_seen_at <= now() - s.idle_timeout_seconds * interval '1 second'  AS idle,
                u.status              AS user_status,
                u.password_changed_at,
+               u.password_reset_required_at IS NOT NULL AS password_reset_required,
                u.mfa_enabled_at,
                m.role                AS role,
                m.status              AS membership_status,
@@ -216,6 +227,10 @@ export class SessionService {
     if (row.revoked_at !== null) return invalid(reasonForRevocation(row.revoked_reason));
     if (row.expired) return invalid('SESSION_EXPIRED');
     if (row.user_status !== 'active') return invalid('SESSION_REVOKED');
+    // Un admin le pidió elegir una contraseña nueva (0062). Forzarlo cierra sus sesiones, pero un
+    // login que pasó la contraseña justo antes podía emitir una después: mientras la marca esté,
+    // ninguna sirve.
+    if (row.password_reset_required === true) return invalid('SESSION_REVOKED');
 
     // Un cambio de contraseña invalida todo token emitido antes, aunque su sesión siga viva. El
     // `iat` del JWT tiene resolución de segundos: se compara contra el segundo del cambio, o el
@@ -254,6 +269,14 @@ export class SessionService {
       mfaRequired: row.mfa_required === true,
       mfaEnabled: row.mfa_enabled_at !== null,
       mfaVerified: row.mfa_verified_at !== null,
+      ...(row.mfa_verified_at !== null
+        ? {
+            mfaVerifiedAt: verifiedAtOnLocalClock(
+              row.mfa_verified_at,
+              row.mfa_verified_age_seconds,
+            ),
+          }
+        : {}),
       idleTimeoutSeconds: row.idle_timeout_seconds,
       lastSeenAt,
       expiresAt: row.expires_at,
@@ -368,11 +391,15 @@ export class SessionService {
     return res.rows[0]?.revoked ?? 0;
   }
 
-  /** El tenant y el estado del MFA con que se emitió una sesión propia (switch-tenant, cambio de contraseña). */
+  /**
+   * El tenant y el estado del MFA con que se emitió una sesión propia (switch-tenant, cambio de
+   * contraseña). `mfaVerifiedAt` es el instante de la base, tal cual: la sesión que la reemplaza lo
+   * hereda en vez de estrenar uno (ver IssueSessionParams.mfaVerifiedAt).
+   */
   async snapshot(
     sessionId: string,
     userId: string,
-  ): Promise<{ tenantId: string | null; mfaVerified: boolean } | null> {
+  ): Promise<{ tenantId: string | null; mfaVerified: boolean; mfaVerifiedAt: Date | null } | null> {
     const row = await this.db.withRequestContext({ userId }, (trx) =>
       trx
         .selectFrom('sessions')
@@ -381,7 +408,13 @@ export class SessionService {
         .where('user_id', '=', userId)
         .executeTakeFirst(),
     );
-    return row ? { tenantId: row.tenant_id, mfaVerified: row.mfa_verified_at !== null } : null;
+    return row
+      ? {
+          tenantId: row.tenant_id,
+          mfaVerified: row.mfa_verified_at !== null,
+          mfaVerifiedAt: row.mfa_verified_at,
+        }
+      : null;
   }
 
   /** Sesiones vivas del usuario (no revocadas, no vencidas ni inactivas), para el panel de dispositivos. */
@@ -412,4 +445,23 @@ export class SessionService {
 
 function invalid(reason: SessionFailureReason): InvalidSession {
   return { ok: false, reason };
+}
+
+/**
+ * `mfa_verified_at` llevado al reloj de este proceso con la antigüedad que midió la base. Sin la
+ * antigüedad (no debería faltar: sale de la misma consulta), el instante de la base tal cual.
+ *
+ * Nunca en el futuro: un instante adelantado (un reloj corrido al heredarlo) dejaría la ventana de
+ * la reconfirmación abierta más de lo que dice; se toma como recién.
+ */
+export function verifiedAtOnLocalClock(
+  verifiedAt: Date,
+  ageSeconds: number | null,
+  nowMs: number = Date.now(),
+): Date {
+  const at =
+    ageSeconds === null || !Number.isFinite(ageSeconds)
+      ? verifiedAt.getTime()
+      : nowMs - ageSeconds * 1000;
+  return new Date(Math.min(at, nowMs));
 }

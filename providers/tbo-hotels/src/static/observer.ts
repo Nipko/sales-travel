@@ -41,6 +41,7 @@ export class TboStaticObserver {
   readonly #notes: Partial<Record<TboStaticNote, number>> = {};
   readonly #unknownKeys = new Set<string>();
   readonly #issues: string[] = [];
+  readonly #warned = new Set<string>();
   readonly #op: TboStaticOperation;
   readonly #deps: TboStaticMapDeps;
 
@@ -61,6 +62,21 @@ export class TboStaticObserver {
   note(note: TboStaticNote, issue?: string): void {
     this.#notes[note] = (this.#notes[note] ?? 0) + 1;
     if (issue !== undefined) this.#issue(`${note} ${issue}`);
+  }
+
+  /** Un contador suelto, p. ej. la forma del bloque de habitaciones. Nunca cambia el resultado. */
+  count(name: string, tags: Readonly<Record<string, string>>): void {
+    this.#safely(() => this.#deps.metrics?.counter(name, 1, { ...tags }));
+  }
+
+  /**
+   * Un `warn` que sale UNA vez por respuesta aunque lo pidan varios hoteles: la forma del bloque de
+   * habitaciones se repite en todo el lote y una línea basta. Pasa por la misma lista blanca.
+   */
+  warnOnce(message: string, meta: Record<string, unknown>): void {
+    if (this.#warned.has(message)) return;
+    this.#warned.add(message);
+    this.#log('warn', message, meta);
   }
 
   /** Nombres de claves de `value` que no están en `known` (minúsculas), con la ruta del nivel. */

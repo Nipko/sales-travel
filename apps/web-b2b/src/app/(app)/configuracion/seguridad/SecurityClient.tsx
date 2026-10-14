@@ -138,7 +138,7 @@ function MfaEnabledSummary({ mfa, onOpen }: { mfa: MfaStatus; onOpen: (panel: Mf
                 : `Te quedan ${remaining} códigos de recuperación`
           }
         >
-          <p>Generá códigos nuevos: son la forma de entrar si perdés o te roban el teléfono.</p>
+          <p>Genera códigos nuevos: son la forma de entrar si pierdes o te roban el teléfono.</p>
           <Button
             type="button"
             variant="secondary"
@@ -154,7 +154,7 @@ function MfaEnabledSummary({ mfa, onOpen }: { mfa: MfaStatus; onOpen: (panel: Mf
       {mfa.pendingEnrollment ? (
         <Notice tone="info">
           Empezaste a cambiar de teléfono y no terminaste. Tu app actual sigue funcionando; si
-          querés, empezá de nuevo con «Cambiar de teléfono».
+          quieres, empieza de nuevo con «Cambiar de teléfono».
         </Notice>
       ) : null}
 
@@ -200,7 +200,7 @@ function MfaEnabledSummary({ mfa, onOpen }: { mfa: MfaStatus; onOpen: (panel: Mf
           <SettingRow
             icon={ShieldCheck}
             title="Obligatoria para tu rol"
-            detail="Tu rol exige la verificación en dos pasos, así que no se puede desactivar. Si perdés el teléfono, entrá con un código de recuperación o pedile a un administrador que te la restablezca."
+            detail="Tu rol exige la verificación en dos pasos, así que no se puede desactivar. Si pierdes el teléfono, entra con un código de recuperación o pídele a un administrador que te la restablezca."
           />
         ) : (
           <SettingRow
@@ -243,8 +243,8 @@ function RegenerateCodesForm({
           Generar códigos de recuperación nuevos
         </h3>
         <p className="text-sm text-[var(--color-fg-muted)]">
-          Los códigos que tenés ahora dejan de servir y te damos otros. Confirmá con un código de tu
-          app.
+          Los códigos que tienes ahora dejan de servir y te damos otros. Confirma con un código de
+          tu app.
         </p>
       </div>
       <TotpField
@@ -290,7 +290,7 @@ export function DisableMfaForm({ onCancel }: { onCancel: () => void }) {
   const [mode, setMode] = useState<ReauthCodeMode>('totp');
   // El foco va al código sólo cuando el usuario cambió de tipo; al abrir, lo tiene la contraseña.
   const [switched, setSwitched] = useState(false);
-  // Un error del otro tipo de código ("Ingresá los 6 dígitos…") no se muestra bajo el campo nuevo.
+  // Un error del otro tipo de código ("Ingresa los 6 dígitos…") no se muestra bajo el campo nuevo.
   const [errorsBefore, setErrorsBefore] = useState(0);
   // Éxito: la acción revalida y la tarjeta pasa sola a "desactivada" (o manda al login si el API
   // cerró también esta sesión).
@@ -478,7 +478,7 @@ function MfaStatusUnavailable() {
   const [retrying, startRetry] = useTransition();
   return (
     <Notice tone="error" title="No pudimos cargar el estado de la verificación en dos pasos">
-      <p>Tu configuración no cambió. Probá de nuevo en unos segundos.</p>
+      <p>Tu configuración no cambió. Inténtalo de nuevo en unos segundos.</p>
       <Button
         type="button"
         variant="secondary"
@@ -591,7 +591,7 @@ export function SecurityClient({
           <div className="space-y-4">
             {enrollmentRequired ? (
               <Notice tone="warning" title="Tu rol requiere la verificación en dos pasos">
-                Activala ahora para seguir operando con normalidad.
+                Actívala ahora para seguir operando con normalidad.
               </Notice>
             ) : null}
             <MfaEnrollment mode="enroll" onConfirmed={(codes) => reveal(codes, 'enabled')} />

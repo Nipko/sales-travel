@@ -1,8 +1,7 @@
 import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
-import { MODULE_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { MetadataScanner, Reflector } from '@nestjs/core';
-import { RequestMethod } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
+import { appRoutes } from '../../__fixtures__/app-routes.js';
 import { AppModule } from '../../app.module.js';
 import {
   requestContextStorage,
@@ -142,62 +141,14 @@ describe('rutas exentas del MFA obligatorio', () => {
     'GET /auth/sessions',
   ];
 
-  type Controller = abstract new (...args: never[]) => unknown;
-
-  function controllers(root: unknown): Set<Controller> {
-    const seen = new Set<unknown>();
-    const out = new Set<Controller>();
-    const visit = (mod: unknown): void => {
-      if (mod === undefined || mod === null) return;
-      if (typeof mod === 'object' && 'forwardRef' in mod) {
-        visit((mod as { forwardRef: () => unknown }).forwardRef());
-        return;
-      }
-      if (typeof mod === 'object' && 'module' in mod) {
-        const dyn = mod as { module: unknown; imports?: unknown[]; controllers?: Controller[] };
-        for (const c of dyn.controllers ?? []) out.add(c);
-        for (const i of dyn.imports ?? []) visit(i);
-        visit(dyn.module);
-        return;
-      }
-      if (typeof mod !== 'function' || seen.has(mod)) return;
-      seen.add(mod);
-      for (const c of (Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, mod) ??
-        []) as Controller[]) {
-        out.add(c);
-      }
-      for (const i of (Reflect.getMetadata(MODULE_METADATA.IMPORTS, mod) ?? []) as unknown[]) {
-        visit(i);
-      }
-    };
-    visit(root);
-    return out;
-  }
-
-  function segments(path: unknown): string[] {
-    return typeof path === 'string' ? path.split('/').filter((s) => s.length > 0) : [];
-  }
-
   it('son exactamente las del SPEC', () => {
     const reflector = new Reflector();
-    const scanner = new MetadataScanner();
     const exempt: string[] = [];
-    for (const controller of controllers(AppModule)) {
-      const base = segments(Reflect.getMetadata(PATH_METADATA, controller));
-      const proto = controller.prototype as Record<string, unknown>;
-      for (const name of scanner.getAllMethodNames(proto)) {
-        const handler = proto[name];
-        if (typeof handler !== 'function') continue;
-        const method: unknown = Reflect.getMetadata(METHOD_METADATA, handler);
-        if (typeof method !== 'number') continue;
-        const targets = [handler, controller];
-        const isPublic = reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets) === true;
-        const allowed =
-          reflector.getAllAndOverride<boolean>(ALLOW_WITHOUT_MFA_KEY, targets) === true;
-        if (!allowed || isPublic) continue;
-        const path = [...base, ...segments(Reflect.getMetadata(PATH_METADATA, handler))];
-        exempt.push(`${RequestMethod[method]} /${path.join('/')}`);
-      }
+    for (const { route, handler, controller } of appRoutes(AppModule)) {
+      const targets = [handler, controller];
+      const isPublic = reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets) === true;
+      const allowed = reflector.getAllAndOverride<boolean>(ALLOW_WITHOUT_MFA_KEY, targets) === true;
+      if (allowed && !isPublic) exempt.push(route);
     }
     expect(exempt.sort()).toEqual([...EXENTAS].sort());
   });

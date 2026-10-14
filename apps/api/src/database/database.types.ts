@@ -5,7 +5,8 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export type TenantStatus = 'active' | 'suspended' | 'archived';
 export type TenantType = 'platform' | 'consolidator' | 'agency' | 'subagency';
 export type UserStatus = 'active' | 'suspended';
-export type MembershipStatus = 'active' | 'suspended' | 'invited';
+/** `removed` = la quitaron del nodo (0067): no da acceso ni aparece en Equipo, pero la fila queda. */
+export type MembershipStatus = 'active' | 'suspended' | 'invited' | 'removed';
 export type LanguageCode = 'es' | 'pt' | 'en';
 export type Role =
   | 'superadmin'
@@ -164,6 +165,12 @@ export interface UsersTable {
   mfa_pending_secret: string | null;
   /** 0061: última agencia con la que operó. Preferencia del login, no autoriza nada. */
   last_tenant_id: string | null;
+  /**
+   * 0062: un admin le pidió elegir una contraseña nueva. Mientras no es null, el login responde 403
+   * PASSWORD_RESET_REQUIRED y ninguna sesión suya vale; la limpian el canje del enlace y el cambio de
+   * contraseña.
+   */
+  password_reset_required_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -284,6 +291,10 @@ export interface MembershipsTable {
   role: Role;
   status: Generated<MembershipStatus>;
   invited_by: string | null;
+  /** Desde cuándo está quitada del nodo (0067); `null` si no lo está. */
+  removed_at: Timestamp | null;
+  /** Quién la quitó (0067). */
+  removed_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -407,16 +418,40 @@ export interface HotelContentTable {
   fetched_at: Generated<Timestamp>;
 }
 
-/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+/**
+ * 0041 + 0070: contenido por habitación. `room_id` es el `roomKey` del ACL (el id del proveedor o
+ * `n-` + 16 hex del nombre normalizado) y nunca `'0'` (centinela de "sin mapeo"). La app la escribe
+ * sólo por `hotel_catalog_store_room_contents`.
+ */
 export interface HotelRoomContentTable {
   provider_code: string;
   hotel_id: string;
   room_id: string;
   lang: LanguageCode;
+  /** Id de la habitación en el proveedor (TBO `RoomId`); `null` si no vino. */
+  room_ref: string | null;
+  /** Nombre normalizado como `normalizeRoomName` de la web. */
+  name_key: string | null;
   name: string | null;
   size_text: string | null;
+  /** Texto plano, sin `<` ni `>`. */
   description: string | null;
+  /** `string[]` de URLs `https`. */
   images: unknown;
+  position: Generated<number>;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** Qué respondió el proveedor al detalle por habitación de un hotel en un idioma (0070). */
+export type HotelRoomContentOutcome = 'rooms' | 'none' | 'unreadable';
+
+/** 0070: la última vez que se pidió el detalle por habitación de un hotel en un idioma. */
+export interface HotelRoomContentFetchTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  outcome: HotelRoomContentOutcome;
+  room_count: Generated<number>;
   fetched_at: Generated<Timestamp>;
 }
 
@@ -1059,6 +1094,20 @@ export interface ProviderEnablementTable {
   updated_at: Timestamp;
 }
 
+/**
+ * 0077: apagado de emergencia de un proveedor puesto desde el panel. `sales` frena las ventas;
+ * `all`, también la post-venta. Lectura abierta para el servidor (lo aplica el circuit breaker);
+ * sólo escribe el superadmin de la plataforma (RLS). Vencida, la fila no apaga nada.
+ */
+export interface ProviderKillSwitchesTable {
+  provider_code: string;
+  level: 'all' | 'sales';
+  reason: string;
+  set_by: string;
+  set_at: Timestamp;
+  expires_at: Timestamp | null;
+}
+
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -1137,6 +1186,7 @@ export interface DB {
   hotel_match: HotelMatchTable;
   hotel_content: HotelContentTable;
   hotel_room_content: HotelRoomContentTable;
+  hotel_room_content_fetch: HotelRoomContentFetchTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
@@ -1146,6 +1196,7 @@ export interface DB {
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;
+  provider_kill_switches: ProviderKillSwitchesTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

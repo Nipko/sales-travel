@@ -309,7 +309,7 @@ describe('afterMfa', () => {
   });
 
   // Cada código fallido suma al bloqueo de la cuenta: agotar el desafío es quedar bloqueado. Decir
-  // "venció, ingresá la contraseña" hacía que la contraseña correcta pareciera incorrecta 15 min.
+  // "venció, ingresa la contraseña" hacía que la contraseña correcta pareciera incorrecta 15 min.
   it('sin intentos, vuelve a la contraseña avisando del bloqueo (no hay bucle)', () => {
     expect(afterMfa({ kind: 'mfa-invalid', attemptsLeft: 0 }, ctx)).toEqual({
       step: 'credentials',
@@ -464,7 +464,7 @@ describe('códigos', () => {
   it('intentos restantes en singular y plural', () => {
     expect(mfaInvalidMessage(1)).toBe('El código no es correcto. Te queda 1 intento.');
     expect(mfaInvalidMessage(4)).toBe('El código no es correcto. Te quedan 4 intentos.');
-    expect(mfaInvalidMessage(null)).toBe('El código no es correcto. Probá de nuevo.');
+    expect(mfaInvalidMessage(null)).toBe('El código no es correcto. Inténtalo de nuevo.');
   });
 });
 
@@ -486,5 +486,53 @@ describe('estado inicial e intento', () => {
     expect(nextAttempt({ attempt: Number.MAX_SAFE_INTEGER + 10 })).toBe(1);
     expect(nextAttempt(null)).toBe(1);
     expect(nextAttempt('x')).toBe(1);
+  });
+});
+
+describe('cambio de contraseña pedido por un admin', () => {
+  const forced = json(403, {
+    statusCode: 403,
+    message: 'Tienes que elegir una contraseña nueva: te enviamos un enlace a tu correo.',
+    reason: 'PASSWORD_RESET_REQUIRED',
+  });
+
+  it('el 403 con su motivo se reconoce en el login, el código y liberar un puesto', () => {
+    for (const call of ['login', 'mfa', 'release'] as const) {
+      expect(classifyAuthResponse(call, forced)).toEqual({ kind: 'password-reset-required' });
+    }
+    // Otro 403 del login no se confunde con éste.
+    expect(classifyAuthResponse('login', json(403, { reason: 'OTRO' }))).toEqual({
+      kind: 'unexpected',
+    });
+    // Ni otro código con el mismo motivo.
+    expect(classifyAuthResponse('login', json(401, { reason: 'PASSWORD_RESET_REQUIRED' }))).toEqual(
+      { kind: 'invalid-credentials' },
+    );
+  });
+
+  it('vuelve a la contraseña con el aviso del correo y la salida para pedir otro enlace', () => {
+    const base = { attempt: 3, email: 'ana@andinos.co' };
+    const expected = {
+      step: 'credentials',
+      ...base,
+      notice: LOGIN_MESSAGES.passwordResetRequired,
+      passwordResetRequired: true,
+    };
+    expect(afterLogin({ kind: 'password-reset-required' }, base)).toEqual(expected);
+
+    const mfa: MfaContext = { ...base, mfaToken: 'mfa-jwt', rememberDevice: true, mode: 'totp' };
+    expect(afterMfa({ kind: 'password-reset-required' }, mfa)).toEqual(expected);
+
+    const seats: SeatsFull = { tenantName: 'Andinos', limit: 1, inUse: 1, release: null };
+    expect(
+      afterRelease({ kind: 'password-reset-required' }, { ...base, seats, listedAt: 0 }),
+    ).toEqual(expected);
+  });
+
+  it('los textos, en tú', () => {
+    expect(LOGIN_MESSAGES.passwordResetRequired).toBe(
+      'Tienes que elegir una contraseña nueva. Te enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar.',
+    );
+    expect(LOGIN_MESSAGES.passwordResetRequiredLink).toBe('¿No te llegó? Pide otro enlace');
   });
 });

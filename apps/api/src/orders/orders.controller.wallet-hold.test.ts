@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import type { BrandingService } from '../branding/branding.service.js';
-import type { DatabaseService } from '../database/database.service.js';
 import { hotelFlags, hotelRegistry } from '../hotels/__fixtures__/fake-despegar-hotels.adapter.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import type { BookingHoldLedger, OpenWalletHold } from '../portfolios/booking-hold.ledger.js';
@@ -12,7 +11,7 @@ import type { ActiveTenantService } from '../request-context/active-tenant.servi
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { HotelOrderReadsService } from './hotel-order-reads.service.js';
 import type { HotelOrderTrackingStore } from './hotel-order-tracking.store.js';
-import { OrdersController } from './orders.controller.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
 
 /**
@@ -80,20 +79,18 @@ function banco(
       Promise.resolve(filas.find((f) => f.id === id)),
     ),
   };
-  const controller = new OrdersController(
-    orders as unknown as OrdersService,
-    {} as unknown as DatabaseService,
-    {} as unknown as MailerService,
-    {} as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
+  const controller = ordersController({
+    orders: orders as unknown as OrdersService,
+    mailer: {} as unknown as MailerService,
+    branding: {} as unknown as BrandingService,
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry([new StubProviderFactory({ code: VUELOS })], {
       decisionFor: () => Promise.resolve(undefined),
     }),
-    reads,
-    undefined,
-    undefined,
-    ledger === 'ninguno' ? undefined : ({ openHoldsOf } as unknown as BookingHoldLedger),
-  );
+    hotelReads: reads,
+    walletHolds:
+      ledger === 'ninguno' ? undefined : ({ openHoldsOf } as unknown as BookingHoldLedger),
+  });
   return { controller, openHoldsOf };
 }
 

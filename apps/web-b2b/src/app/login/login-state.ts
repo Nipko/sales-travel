@@ -61,6 +61,11 @@ export interface CredentialsState extends StepBase {
    * entrar antes de que pasen los 15 minutos.
    */
   offerPasswordReset?: true;
+  /**
+   * Un admin le pidió elegir una contraseña nueva: el aviso dice que el enlace está en su correo y
+   * ofrece pedir otro si no le llegó.
+   */
+  passwordResetRequired?: true;
 }
 
 export interface MfaState extends StepBase {
@@ -126,32 +131,35 @@ export function nextAttempt(prev: unknown): number {
 // Los números del bloqueo son los de `apps/api/src/auth/auth.service.ts` (LOCKOUT_THRESHOLD,
 // LOCKOUT_MINUTES): si cambian allá, cambian acá.
 export const LOGIN_MESSAGES = {
-  missing: 'Ingresá tu correo y tu contraseña.',
+  missing: 'Ingresa tu correo y tu contraseña.',
   invalid: 'El correo o la contraseña no son correctos.',
   lockoutHint:
     'Después de 5 intentos fallidos bloqueamos la cuenta por 15 minutos; restablecer la contraseña la desbloquea en el momento.',
-  rateLimited: 'Hiciste muchos intentos seguidos. Esperá un minuto y probá de nuevo.',
-  unavailable: 'No pudimos conectar con el servidor. Probá de nuevo en unos segundos.',
-  unexpected: 'No pudimos completar el ingreso. Probá de nuevo.',
-  mfaExpired: 'Por seguridad, la verificación venció. Ingresá tu contraseña de nuevo.',
+  rateLimited: 'Hiciste muchos intentos seguidos. Espera un minuto e inténtalo de nuevo.',
+  unavailable: 'No pudimos conectar con el servidor. Inténtalo de nuevo en unos segundos.',
+  unexpected: 'No pudimos completar el ingreso. Inténtalo de nuevo.',
+  mfaExpired: 'Por seguridad, la verificación venció. Ingresa tu contraseña de nuevo.',
   mfaLocked:
     'Hubo demasiados intentos fallidos, así que bloqueamos la cuenta por 15 minutos. Restablecer la contraseña la desbloquea en el momento.',
-  mfaLost: 'Se perdió el paso de verificación. Ingresá tu contraseña de nuevo.',
-  totpFormat: 'Ingresá los 6 dígitos del código.',
+  mfaLost: 'Se perdió el paso de verificación. Ingresa tu contraseña de nuevo.',
+  totpFormat: 'Ingresa los 6 dígitos del código.',
   // Guion que no corta la línea (U+2011): el ejemplo partido en dos renglones parecía dos códigos.
-  recoveryFormat: 'Revisá el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.',
+  recoveryFormat: 'Revisa el código de recuperación: son 10 caracteres, como A1B2C\u20113D4E5.',
   releaseExpired:
-    'El permiso para liberar un puesto venció. Ingresá de nuevo para ver quién está conectado.',
-  releaseMissing: 'Elegí a quién desconectar.',
+    'El permiso para liberar un puesto venció. Ingresa de nuevo para ver quién está conectado.',
+  releaseMissing: 'Elige a quién desconectar.',
   releaseForbidden:
-    'Ya no administrás el nodo de estos puestos: pedile a un administrador que libere uno.',
+    'Ya no administras el nodo de estos puestos: pídele a un administrador que libere uno.',
   releaseSessionGone:
-    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Ingresá de nuevo.',
-  seatsTakenAgain: 'Alguien ocupó el puesto antes que vos. Revisá la lista de nuevo.',
+    'Esa sesión ya se había cerrado, así que puede haber un puesto libre. Ingresa de nuevo.',
+  seatsTakenAgain: 'Alguien ocupó el puesto antes que tú. Revisa la lista de nuevo.',
+  passwordResetRequired:
+    'Tienes que elegir una contraseña nueva. Te enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar.',
+  passwordResetRequiredLink: '¿No te llegó? Pide otro enlace',
 } as const;
 
 export function mfaInvalidMessage(attemptsLeft: number | null): string {
-  if (attemptsLeft === null) return 'El código no es correcto. Probá de nuevo.';
+  if (attemptsLeft === null) return 'El código no es correcto. Inténtalo de nuevo.';
   if (attemptsLeft === 1) return 'El código no es correcto. Te queda 1 intento.';
   return `El código no es correcto. Te quedan ${attemptsLeft} intentos.`;
 }
@@ -194,6 +202,7 @@ export type AuthOutcome =
   | { kind: 'release-invalid' }
   | { kind: 'release-forbidden' }
   | { kind: 'release-session-gone' }
+  | { kind: 'password-reset-required' }
   | { kind: 'rate-limited' }
   | { kind: 'unavailable' }
   | { kind: 'unexpected' };
@@ -287,6 +296,11 @@ export function classifyAuthResponse(call: AuthCall, res: ApiResponse): AuthOutc
   if (status === 409 && reason === 'SEATS_FULL') {
     return { kind: 'seats', seats: parseSeatsFull(body?.['details']) };
   }
+  // Un admin le pidió elegir una contraseña nueva. Llega del login (la contraseña era correcta) y
+  // también del código o de liberar un puesto, si el admin lo pidió mientras tanto.
+  if (status === 403 && reason === 'PASSWORD_RESET_REQUIRED') {
+    return { kind: 'password-reset-required' };
+  }
   if (status === 429) return { kind: 'rate-limited' };
   if (status >= 500) return { kind: 'unavailable' };
 
@@ -338,6 +352,19 @@ function seatsState(
 }
 
 /**
+ * Vuelta a la contraseña con el cambio pendiente: la sesión no se abre hasta que use el enlace del
+ * correo, así que lo único útil es decírselo y ofrecerle pedir otro.
+ */
+function passwordResetPending(base: StepBase): CredentialsState {
+  return {
+    step: 'credentials',
+    ...base,
+    notice: LOGIN_MESSAGES.passwordResetRequired,
+    passwordResetRequired: true,
+  };
+}
+
+/**
  * Vuelta a la contraseña con la cuenta bloqueada. Sin decirlo, el aviso era "la verificación
  * venció" y la contraseña correcta se rechazaba después como incorrecta durante 15 minutos.
  */
@@ -368,6 +395,8 @@ export function afterLogin(
       };
     case 'seats':
       return seatsState(base, outcome.seats, nowMs);
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'invalid-credentials':
       return credentialsError(base, 'invalid', LOGIN_MESSAGES.invalid);
     case 'rate-limited':
@@ -400,6 +429,8 @@ export function afterMfa(
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.mfaExpired };
     case 'mfa-locked':
       return lockedOut(base);
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'mfa-invalid':
       // Sin intentos, el desafío ya no sirve: seguir pidiendo el código sería un bucle. Y como cada
       // código fallido suma al bloqueo de la cuenta (5, igual que el desafío), a esta altura la
@@ -433,6 +464,8 @@ export function afterRelease(
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.releaseExpired };
     case 'release-session-gone':
       return { step: 'credentials', ...base, notice: LOGIN_MESSAGES.releaseSessionGone };
+    case 'password-reset-required':
+      return passwordResetPending(base);
     case 'release-forbidden':
       // Sin permiso para liberar, la pantalla pasa a ser la de quien no administra el nodo.
       return {

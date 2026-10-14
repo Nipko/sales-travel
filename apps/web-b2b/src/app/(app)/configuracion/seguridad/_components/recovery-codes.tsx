@@ -118,8 +118,8 @@ export function RecoveryCodes({
             {TITLE[reason]}
           </h3>
           <p className="text-sm text-[var(--color-fg-muted)]">
-            Guardá estos códigos de recuperación. Cada uno sirve una sola vez para entrar si perdés
-            o cambiás el teléfono.{' '}
+            Guarda estos códigos de recuperación. Cada uno sirve una sola vez para entrar si pierdes
+            o cambias el teléfono.{' '}
             <strong className="font-semibold text-[var(--color-fg)]">
               No los vamos a volver a mostrar.
             </strong>
@@ -178,7 +178,7 @@ export function RecoveryCodes({
       </p>
       {copy === 'failed' ? (
         <p role="alert" className="text-xs text-[var(--color-danger)]">
-          No pudimos copiar. Seleccioná los códigos y copialos a mano, o descargalos.
+          No pudimos copiar. Selecciona los códigos y cópialos a mano, o descárgalos.
         </p>
       ) : null}
 
@@ -208,7 +208,7 @@ export function RecoveryCodes({
           </Button>
           {saved ? null : (
             <p id={doneHintId} className="text-xs text-[var(--color-fg-muted)]">
-              Marcá la casilla cuando los tengas guardados.
+              Marca la casilla cuando los tengas guardados.
             </p>
           )}
         </div>
@@ -222,7 +222,7 @@ export function RecoveryCodes({
               {email ? <p>Cuenta: {email}</p> : null}
               <p>Generados: {localTimestamp(generatedAt)}</p>
               <p>
-                Cada código sirve una sola vez para entrar si no tenés tu teléfono. Si generás
+                Cada código sirve una sola vez para entrar si no tienes tu teléfono. Si generas
                 códigos nuevos, estos dejan de servir.
               </p>
               <ol>

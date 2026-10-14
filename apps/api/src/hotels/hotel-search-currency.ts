@@ -67,7 +67,7 @@ export class HotelSearchCurrencyMarkupError extends ConflictException {
     readonly tenantCurrency: string,
   ) {
     super(
-      `El markup de hoteles de tu red incluye un monto fijo, que está en ${tenantCurrency}, y no se puede sumar a tarifas en ${currency} sin convertir la moneda. Buscá en ${tenantCurrency}, o pedí que ese markup se configure como porcentaje.`,
+      `El markup de hoteles de tu red incluye un monto fijo, que está en ${tenantCurrency}, y no se puede sumar a tarifas en ${currency} sin convertir la moneda. Busca en ${tenantCurrency}, o pide que ese markup se configure como porcentaje.`,
     );
     this.name = 'HotelSearchCurrencyMarkupError';
   }

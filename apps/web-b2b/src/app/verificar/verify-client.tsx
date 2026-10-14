@@ -29,7 +29,7 @@ export function VerifyClient({ token }: { token: string }) {
         }
       } catch {
         setStatus('error');
-        setMessage('Error de conexión. Intentá de nuevo.');
+        setMessage('Error de conexión. Inténtalo de nuevo.');
       }
     })();
   }, [token]);
@@ -48,7 +48,7 @@ export function VerifyClient({ token }: { token: string }) {
             <CheckCircle2 className="mx-auto mb-4 size-12 text-emerald-500" />
             <h1 className="text-lg font-semibold text-[var(--color-fg)]">¡Correo verificado!</h1>
             <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
-              Tu dirección quedó confirmada. Ya podés usar tu cuenta con normalidad.
+              Tu dirección quedó confirmada. Ya puedes usar tu cuenta con normalidad.
             </p>
             <a
               href="/"

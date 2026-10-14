@@ -35,7 +35,8 @@ propio cambio: `0056_membership_scoped_revocation`, `revoke_user_sessions_for_te
 - **`TenantsService.create` siempre invita** al admin inicial: nunca crea la cuenta ni la membership.
   `admin` en la respuesta es `{ email, role, status: 'invited', invitationId, expiresAt }` o
   `{ email, role, status: 'invite_failed' }`, igual tenga o no cuenta ese email. `TenantCreated`
-  registra `admin: 'invited'`.
+  registra `admin: 'invited'`. Desde USR-8 (doc 15), si el correo no sale el estado es
+  `invited_email_failed`, con `invitationId` y `expiresAt`.
 - **Reenviar**: `POST /invitations/:id/resend?tenantId=` rota el token (el anterior deja de valer) y
   lo deja vencer a los 7 días, también si ya había vencido. Exige administrar el nodo y superar en
   rango al rol invitado. Quien reenvía pasa a ser `invited_by` (el que la respalda al canjear); el
@@ -69,5 +70,8 @@ propio cambio: `0056_membership_scoped_revocation`, `revoke_user_sessions_for_te
 
 ## Fuera de alcance
 
-Usuarios ya creados con una contraseña elegida por un admin siguen con ella. Si el founder lo pide, se
-les fuerza un restablecimiento (revocar sesiones + correo de restablecer).
+Usuarios ya creados con una contraseña elegida por un admin siguen con ella hasta que alguien la
+cambie. Desde USR-3 (doc 15) existe el **restablecimiento forzado por persona**: _Equipo → acciones
+→ Acceso → Forzar cambio de contraseña_ cierra sus sesiones, le envía el enlace a su correo y el login
+la rechaza (403 `PASSWORD_RESET_REQUIRED`) hasta que elija una contraseña nueva; nadie la elige por
+ella. Forzarlo en bloque a esas cuentas heredadas es USR-14 (founder D3 = B, pendiente).

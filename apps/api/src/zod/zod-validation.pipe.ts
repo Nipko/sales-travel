@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable, type PipeTransform } from '@nestjs/common';
-import type { ZodSchema } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 
 @Injectable()
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
-  constructor(private readonly schema: ZodSchema<T>) {}
+  /**
+   * Lo que entra es lo que manda el cliente; lo que sale, `T`. Un esquema con defaults o
+   * transformaciones (`z.coerce`, listas separadas por comas) tiene una entrada distinta de su salida.
+   */
+  constructor(private readonly schema: ZodType<T, ZodTypeDef, unknown>) {}
 
   transform(value: unknown): T {
     const result = this.schema.safeParse(value);
@@ -17,7 +21,7 @@ export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
         .map((f) => `${f.field}: ${f.message}`)
         .join('; ');
       throw new BadRequestException({
-        message: `Revisá los datos ingresados — ${summary}`,
+        message: `Revisa los datos ingresados — ${summary}`,
         fields,
       });
     }

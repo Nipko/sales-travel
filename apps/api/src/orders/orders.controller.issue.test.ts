@@ -13,7 +13,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { PlatformRoleCannotSellError } from '../auth/sales-operation-errors.js';
 import type { BrandingService } from '../branding/branding.service.js';
-import type { DatabaseService } from '../database/database.service.js';
 import type { Role } from '../database/database.types.js';
 import type { MailerService } from '../mail/mailer.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
@@ -24,6 +23,7 @@ import { requestContextStorage } from '../request-context/request-context.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { IssueOrderSchema, isSameMinorAmount } from './dto.js';
 import type { HotelOrderReadsService } from './hotel-order-reads.service.js';
+import { ordersController } from './__fixtures__/orders-controller.js';
 import { OrdersController } from './orders.controller.js';
 import type { OrderRow, OrdersService } from './orders.service.js';
 import type { FlightTicketIssueService } from './ticket-issue.service.js';
@@ -78,23 +78,22 @@ function banco(
   const requestIssue = vi.fn(() =>
     Promise.resolve({ operationId: 'op-1', status: 'pending' as const }),
   );
-  const controller = new OrdersController(
-    { findById: vi.fn(() => Promise.resolve(row)) } as unknown as OrdersService,
-    {} as unknown as DatabaseService,
-    {} as unknown as MailerService,
-    {} as unknown as BrandingService,
-    { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
-    new FlightProviderRegistry(
+  const controller = ordersController({
+    orders: { findById: vi.fn(() => Promise.resolve(row)) } as unknown as OrdersService,
+    mailer: {} as unknown as MailerService,
+    branding: {} as unknown as BrandingService,
+    activeTenant: { resolve: () => Promise.resolve(TENANT) } as unknown as ActiveTenantService,
+    registry: new FlightProviderRegistry(
       [new StubProviderFactory({ code: AIR, capabilities: { issue: true, ...o.capabilities } })],
       { decisionFor: () => Promise.resolve(undefined) },
     ),
-    {
+    hotelReads: {
       handles: () => false,
       capabilitiesOf: () => undefined,
     } as unknown as HotelOrderReadsService,
-    undefined,
-    o.sinEmision === true ? undefined : ({ requestIssue } as unknown as FlightTicketIssueService),
-  );
+    ticketIssues:
+      o.sinEmision === true ? undefined : ({ requestIssue } as unknown as FlightTicketIssueService),
+  });
   return { controller, requestIssue };
 }
 

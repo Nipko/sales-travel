@@ -918,8 +918,11 @@ CI con `pg_trgm` y `unaccent`.
 **Enunciado.** El borde Zod acepta lo observado además de lo declarado y entrega un solo tipo canónico
 ([05](./05-contenido-estatico-e-inventario.md) §3). El HTML de `Description` y `Attractions` se sanea con lista
 blanca al ingerir; se deriva texto plano para WhatsApp; los servicios negados ("… – no") no se muestran como
-disponibles; las imágenes se guardan como URL `https`; los horarios pasan a `HH:mm`. El enlace por `RoomID` queda
-apagado hasta tener un fixture real.
+disponibles; las imágenes se guardan como URL `https`; los horarios pasan a `HH:mm`. El contenido por habitación
+(`IsRoomDetailRequired`) se pide bajo demanda desde la ficha con un lector tolerante, se guarda en `hotel_room_content`
+sólo por la función de 0070 (texto plano sin `<`/`>`, fotos `https`, id `0` nunca como id) y se apaga con
+`HOTEL_ROOM_CONTENT=off` o `TBO_ROOM_DETAILS=off` ([05](./05-contenido-estatico-e-inventario.md) §2.6.3). Mientras no
+haya un fixture real, el enlace por nombre sólo vale con un candidato único y se marca "Foto de referencia" (D-TBO-H2).
 
 **Fuente.** p. 52-69 (VERIFICADO-PDF); [05](./05-contenido-estatico-e-inventario.md) §3-§4.
 
@@ -1965,6 +1968,9 @@ Sin detalle, Search no trae políticas; TBO recomienda buscar sin detalle y decl
 - **(B) Solo después del PreBook.** Más fiel a la recomendación de TBO, pero el vendedor elige a ciegas entre tarifas
   reembolsables.
 - **(C) Siempre con detalle.** Contradice el Key Point 2 y hace las respuestas más pesadas y lentas.
+
+**Desde 2026-10** también se reserva desde el listado (botón «Reservar» en cada tarifa de la tarjeta), sin pasar por las
+políticas indicativas del detalle: las políticas finales las sigue dando el PreBook, antes de cargar los huéspedes.
 
 **Bloquea:** RF-05, RF-11. **Consolida:** [02](./02-search-y-oferta-canonica.md) D02-6.
 

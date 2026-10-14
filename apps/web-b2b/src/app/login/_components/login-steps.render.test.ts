@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { voseoIn } from '../../../lib/voseo';
 import {
   LOGIN_MESSAGES,
   parseSeatsFull,
@@ -64,7 +65,7 @@ describe('CredentialsStep', () => {
     expect(hidden(html, 'intent')).toBe('credentials');
     expect(hidden(html, 'next')).toBe('/reservas/9');
     expect(html).toContain('href="/olvide-password"');
-    expect(html).toMatch(/<h1[^>]*>Ingresá a tu cuenta<\/h1>/);
+    expect(html).toMatch(/<h1[^>]*>Ingresa a tu cuenta<\/h1>/);
   });
 
   it('Tab desde el email va a la contraseña: el link de olvido queda después del botón', () => {
@@ -149,10 +150,33 @@ describe('CredentialsStep', () => {
     expect(status).toContain('Restablecer contraseña');
   });
 
+  it('cambio de contraseña pedido por un admin: dónde está el enlace y cómo pedir otro', () => {
+    const html = credentials({
+      attempt: 1,
+      email: EMAIL,
+      notice: LOGIN_MESSAGES.passwordResetRequired,
+      passwordResetRequired: true,
+    });
+    const id = html.match(/<div id="([^"]+)" role="status"/)?.[1];
+    const status = html.match(/<div id="[^"]+" role="status"[^>]*>(.*?)<\/div><\/div>/)?.[1];
+    expect(status).toContain(
+      'Tienes que elegir una contraseña nueva. Te enviamos un enlace a tu correo: ábrelo y elige una contraseña para volver a ingresar.',
+    );
+    expect(status).toContain('href="/olvide-password"');
+    expect(status).toContain('¿No te llegó? Pide otro enlace');
+    expect(status).not.toContain('Restablecer contraseña');
+    // No es un error de credenciales: los campos no quedan marcados como inválidos.
+    expect(html).not.toContain('aria-invalid');
+    // El foco va a la contraseña (el email ya está): el aviso la describe.
+    const password = inputs(html).find((i) => i.includes('name="password"'));
+    expect(attr(password, 'aria-describedby')).toBe(id);
+    expect(voseoIn(html)).toEqual([]);
+  });
+
   it('muestra el motivo del cierre sólo en la primera pantalla', () => {
     const first = credentials({}, { motivo: 'otro-dispositivo' });
     expect(first).toContain('Tu sesión se abrió en otro dispositivo.');
-    expect(first).toContain('Si no fuiste vos, cambiá tu contraseña');
+    expect(first).toContain('Si no fuiste tú, cambia tu contraseña');
     const retry = credentials(
       { attempt: 1, email: EMAIL, error: { kind: 'invalid', message: LOGIN_MESSAGES.invalid } },
       { motivo: 'otro-dispositivo' },
@@ -357,7 +381,7 @@ describe('SeatsFullStep', () => {
 
   it('quien no administra el cupo ve a quién pedírselo, sin lista', () => {
     const html = seats({ seats: { ...SEATS, release: null } });
-    expect(html).toContain('Pedile a un administrador de Viajes Andinos que libere uno');
+    expect(html).toContain('Pídele a un administrador de Viajes Andinos que libere uno');
     expect(html).toContain('Volver a intentar');
     expect(html).not.toContain(RELEASE_BUTTON_LABEL);
     expect(html).not.toContain('Ana Pérez');
@@ -443,7 +467,7 @@ describe('LoginPage', () => {
       expect(html).not.toContain(ustedeo);
     }
     expect(html).not.toContain('cursor-pointer');
-    expect(html).toContain('¿No podés ingresar? Pedile ayuda al administrador de tu agencia.');
+    expect(html).toContain('¿No puedes ingresar? Pídele ayuda al administrador de tu agencia.');
     // Un solo h1 por pantalla: el del paso.
     expect(html.match(/<h1\b/g)).toHaveLength(1);
   });

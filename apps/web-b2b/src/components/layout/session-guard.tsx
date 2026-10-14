@@ -132,7 +132,7 @@ export function IdleWarningDialog({ remainingMs, onStay, onLogout }: IdleWarning
         className="relative w-full max-w-sm animate-scale-up rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-xl)]"
       >
         <h2 id={titleId} className="text-base font-semibold text-[var(--color-fg)]">
-          ¿Seguís ahí?
+          ¿Sigues ahí?
         </h2>
         <p id={descriptionId} className="mt-1.5 text-sm text-[var(--color-fg-muted)]">
           Tu sesión se va a cerrar por inactividad en{' '}

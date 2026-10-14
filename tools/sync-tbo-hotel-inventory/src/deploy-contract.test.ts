@@ -85,8 +85,14 @@ describe('variables: env.ts ↔ deploy.yml ↔ workflow', () => {
   it('deploy.yml escribe en el .env todas las TBO_SYNC_* y ninguna otra TBO_ (D-TBO-03 A)', () => {
     // Sin variables de venta `TBO_*` en el despliegue: la cuenta de venta vive en la bóveda del
     // consolidador, sin fallback de plataforma. Las únicas son las del catálogo (D-TBO-04 A).
-    const rendered = [...renderedEnv().keys()].filter((name) => name.startsWith('TBO_'));
+    // La excepción es un interruptor de la API sin credenciales: TBO_ROOM_DETAILS apaga el detalle por
+    // habitación de HotelDetails (TBO-05) sin redesplegar.
+    const apiSwitches = ['TBO_ROOM_DETAILS'];
+    const rendered = [...renderedEnv().keys()].filter(
+      (name) => name.startsWith('TBO_') && !apiSwitches.includes(name),
+    );
     expect([...rendered].sort()).toEqual([...SYNC_ENV_VARIABLES].sort());
+    expect(renderedEnv().has('TBO_ROOM_DETAILS')).toBe(true);
   });
 
   it('las variables vacías que deja deploy.yml sin vars configuradas valen su valor por defecto', () => {

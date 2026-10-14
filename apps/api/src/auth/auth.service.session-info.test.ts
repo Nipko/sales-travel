@@ -9,6 +9,7 @@ import type { JwtService } from './jwt.service.js';
 import type { LoginAttemptsService } from './login-attempts.service.js';
 import type { MfaChallengeService } from './mfa-challenge.service.js';
 import type { MfaService } from './mfa.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import type { PasswordService } from './password.service.js';
 import type { SeatService } from './seat.service.js';
 import type { SessionService } from './session.service.js';
@@ -32,6 +33,7 @@ const auth = new AuthService(
   {} as MfaChallengeService,
   {} as TrustedDeviceService,
   {} as LoginAttemptsService,
+  {} as PasswordResetService,
 );
 
 const SESSION = {

@@ -370,7 +370,7 @@ describe('sesiones', () => {
     mocks.apiWithStatus.mockResolvedValueOnce({
       kind: 'unreachable',
       status: 503,
-      message: 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.',
+      message: 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
     });
     expect((await revokeAllSessionsAction()).error).toMatch(/No pudimos conectar/);
     expect(mocks.clearSession).not.toHaveBeenCalled();
