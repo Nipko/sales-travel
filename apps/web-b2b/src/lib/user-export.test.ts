@@ -143,6 +143,22 @@ describe('exportTeam: el equipo del nodo', () => {
     });
   });
 
+  it('sin el 2FA reciente pide el código y repite; si se cierra el diálogo, nada', async () => {
+    const prompt = vi.fn(() => Promise.resolve(true));
+    unregister = registerStepUpPrompt(prompt);
+    fetchMock.mockResolvedValueOnce(json(403, MFA_403)).mockResolvedValueOnce(csv());
+    expect(await exportTeam(NODO)).toMatchObject({ ok: true });
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    unregister();
+    unregister = registerStepUpPrompt(() => Promise.resolve(false));
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(json(403, MFA_403));
+    expect(isStepUpCancelled(await exportTeam(NODO))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('el 403 de un nodo ajeno, tal cual; el 429, en castellano', async () => {
     fetchMock.mockResolvedValueOnce(
       json(403, { error: 'No administras este nodo.', reason: 'TENANT_NOT_MANAGED' }),

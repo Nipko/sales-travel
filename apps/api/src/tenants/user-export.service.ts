@@ -83,9 +83,12 @@ export interface UsersExport {
 
 // ─────────────────────────── Plegados (sin I/O) ───────────────────────────
 
+// `invited`: el esquema original (0001) lo admite y una membership vieja puede tenerlo. Equipo la
+// muestra como "Invitado"; el archivo dice lo mismo y no el código en inglés.
 const MEMBERSHIP_STATUS: Readonly<Record<string, string>> = {
   active: 'Activo',
   suspended: 'Suspendido',
+  invited: 'Invitado',
 };
 
 const ACCOUNT_STATUS: Readonly<Record<string, string>> = {

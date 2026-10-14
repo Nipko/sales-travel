@@ -1444,7 +1444,9 @@ pantalla muestra, nada más, y cada exportación queda en la auditoría.
   `Estado de la cuenta` (Activa/Suspendida), `2FA` (Sí/No), `Último ingreso (hora de Bogotá UTC-5)` y
   `Alta de la cuenta (…)` en el directorio o `Alta en el nodo (…)` en Equipo (su columna Alta). Las
   fechas van `AAAA-MM-DD HH:MM` en hora de Bogotá y la zona en el encabezado. Nunca IPs, hashes,
-  secretos del 2FA, tokens, sesiones ni bloqueos.
+  secretos del 2FA, tokens, sesiones ni bloqueos. Una membership vieja en estado `invited` (lo admite
+  el esquema original, 0001) sale "Invitado", como en Equipo. Las invitaciones sin aceptar no salen:
+  no son cuentas todavía (están en Plataforma → Usuarios → Invitaciones y en la lista de Equipo).
 - **El archivo**: lo escribe `apps/api/src/admin-console/csv.ts` (el de la Actividad, ADM-8): UTF-8
   con BOM, CRLF, comillas cuando hacen falta (también con `;` y tabulación) y un apóstrofo delante de
   una celda que empieza con `=`, `+`, `-`, `@`, tabulación o retorno de carro (CSV injection).
@@ -1486,7 +1488,8 @@ pantalla muestra, nada más, y cada exportación queda en la auditoría.
   nodo, "Sin nodos", nombres de rol y estados, que no sale nada sensible, CSV injection (`=`, `+`, `-`,
   `@`, tabulación, retorno de carro; comillas, comas, `;` y saltos de línea), que la consulta de
   personas es la del directorio con los mismos filtros (mismo SQL y parámetros salvo el tope), el
-  tope, el rastro después de leer y sin correos, y que un rastro que falla no deja salir el archivo.
+  tope en los dos alcances (una persona de más se corta y lo dice; justo el tope, no), el rastro
+  después de leer y sin correos, y que un rastro que falla no deja salir el archivo.
 - `user-export.controller.test.ts`: rutas, roles, el 2FA de 10 minutos en las dos (y sin 2FA activo,
   `MFA_REQUIRED_FOR_ACTION`), el 429 a la sexta en el minuto con el guard de la app, 403 sin leer nada
   (no superadmin, nodo ajeno), 401 y las cabeceras.

@@ -308,6 +308,10 @@ describe('las filas: lo mínimo para revisar accesos', () => {
     ]);
   });
 
+  it('una membership "invited" del esquema original dice "Invitado", como en Equipo', () => {
+    expect(teamLines('N', [member({ membershipStatus: 'invited' })])[0]?.[4]).toBe('Invitado');
+  });
+
   it('nunca salen hashes, secretos, sesiones ni bloqueos, aunque la fila los traiga', () => {
     const row = {
       ...person(ANA, 'ana@agencia.co'),
@@ -475,6 +479,15 @@ describe('UserExportService.exportPlatform', () => {
     expect((nodos.parameters[0] as string[]).length).toBe(USER_EXPORT_MAX_USERS);
   });
 
+  it(`justo ${USER_EXPORT_MAX_USERS} personas: salen todas y no se cortó`, async () => {
+    const personas = Array.from({ length: USER_EXPORT_MAX_USERS }, (_, i) =>
+      person(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`, `p${i}@x.co`),
+    );
+    const { service } = banco({ personas });
+    const out = await service.exportPlatform(SUPERADMIN, PlatformUsersExportQuerySchema.parse({}));
+    expect(out).toMatchObject({ users: USER_EXPORT_MAX_USERS, truncated: false });
+  });
+
   it('si el rastro no se escribe, no sale el archivo: el error sube', async () => {
     const { service, scripted } = banco({
       personas: [person(ANA, 'ana@agencia.co')],
@@ -550,6 +563,36 @@ describe('UserExportService.exportTeam', () => {
     expect(scripted.indexOf('insert into "domain_events"')).toBeGreaterThan(
       scripted.indexOf('user_admin_overview('),
     );
+  });
+
+  it(`más de ${USER_EXPORT_MAX_USERS} en el equipo: las primeras del tope y lo dice; justo el tope, no`, async () => {
+    const equipo = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        userId: `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`,
+        email: `p${i}@x.co`,
+        name: null,
+        userStatus: 'active',
+        role: 'vendedor',
+        membershipStatus: 'active',
+        createdAt: new Date('2026-09-01T13:05:00Z'),
+      }));
+
+    const over = banco({ equipo: equipo(USER_EXPORT_MAX_USERS + 1) });
+    const cut = await over.service.exportTeam(SUPERADMIN, NODO, NOW);
+    expect(cut).toMatchObject({
+      users: USER_EXPORT_MAX_USERS,
+      rows: USER_EXPORT_MAX_USERS,
+      truncated: true,
+    });
+    expect(lines(cut.csv)).toHaveLength(USER_EXPORT_MAX_USERS + 1);
+    expect(over.eventos()[0]?.payload).toMatchObject({
+      users: USER_EXPORT_MAX_USERS,
+      truncated: true,
+    });
+
+    const exact = banco({ equipo: equipo(USER_EXPORT_MAX_USERS) });
+    const all = await exact.service.exportTeam(SUPERADMIN, NODO, NOW);
+    expect(all).toMatchObject({ users: USER_EXPORT_MAX_USERS, truncated: false });
   });
 
   it('si el nodo ya no existe: 403 como cualquier nodo ajeno, sin leer ni dejar rastro', async () => {
