@@ -27,7 +27,7 @@ import {
   type ServiceListResult,
   type TicketCheckResult,
 } from '@sales-travel/domain';
-import type { Offer } from '@sales-travel/canonical';
+import type { Money, Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
 import {
   PROVIDER_WRITE_OPERATION_TYPES,
@@ -38,6 +38,7 @@ import {
 } from '../database/database.types.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
+import { BookingHoldPolicyService } from '../portfolios/booking-hold-policy.service.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
@@ -166,6 +167,17 @@ export function summarizeIssues(issues: ProviderIssue[]): string | null {
         .join(': '),
     )
     .join(' | ');
+}
+
+/**
+ * El precio de venta de una oferta: el final de la cascada si se calculó, o el neto si no hay
+ * reglas. Es lo que la orden guarda como `total_amount` y lo que retiene la cartera.
+ */
+function saleTotalOf(offer: Offer): Money {
+  return {
+    amountMinor: offer.pricing?.finalMinor ?? offer.total.amountMinor,
+    currency: offer.total.currency,
+  };
 }
 
 /** Identidad comercial estable; no incluye precio, TTL ni ids opacos del proveedor. */
@@ -381,6 +393,12 @@ export class OrdersService {
      * Opcional por el mismo motivo: en la app siempre está, y sin él las lecturas no se guardan.
      */
     @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
+    /**
+     * La retención de cartera ANTES de reservar con un proveedor que liquida la red (SAB-10). Es la
+     * misma de los hoteles (0060). Opcional por el mismo motivo: en la app siempre está, y sin ella
+     * ninguna reserva de vuelo retiene.
+     */
+    @Optional() private readonly walletHolds?: BookingHoldPolicyService,
   ) {
     // Se construye acá y no se inyecta: la saga de vuelos y la de las verticales externas tienen
     // que compartir los primitivos, no la instancia, y la firma pública del servicio no cambia.
@@ -562,6 +580,20 @@ export class OrdersService {
     // proveedor. La transacción también valida que la cotización pertenezca al tenant.
     const intent = await this.insertCreateIntent(tenantId, userId, dto, provider, requestKey);
 
+    // SAB-10: lo que la red liquida retiene la cartera, como un hotel. Primero el aviso, que sólo
+    // lee: sin cartera en la moneda, sin saldo ni cupo, o con un nivel de la red que no la cubre,
+    // no se le pregunta nada al proveedor. Va después de abrir la orden, como en hoteles, para que
+    // un reenvío con la misma clave siga siendo un 409 de duplicado.
+    const retains = this.retainsWallet(provider);
+    if (retains) {
+      try {
+        await this.assertWalletCovers(tenantId, provider, dto, intent);
+      } catch (error) {
+        await this.intents.failBeforeProvider(tenantId, intent);
+        throw error;
+      }
+    }
+
     // La verificación de la pantalla es UX; ésta es la puerta de integridad. Un cliente puede
     // saltarse el botón, reenviar una cotización vieja o modificar el JSON. El servidor vuelve
     // a consultar al proveedor justo antes del write y reconstruye el precio de venta con las
@@ -572,6 +604,18 @@ export class OrdersService {
     } catch (error) {
       await this.intents.failBeforeProvider(tenantId, intent);
       throw error;
+    }
+
+    // La retención que vale, con las carteras bloqueadas y sobre lo revalidado, antes del write:
+    // si no alcanza, la reserva no sale. Con la cuenta propia del nodo la base no retiene a nadie.
+    let held = false;
+    if (retains) {
+      try {
+        held = await this.holdWallet(tenantId, userId, provider, verifiedDto, intent);
+      } catch (error) {
+        await this.closeBeforeProviderWithHold(tenantId, userId, provider.code, intent);
+        throw error;
+      }
     }
 
     // Antes de llamar, no después: si el proveedor no contesta, este evento es lo único que
@@ -596,11 +640,23 @@ export class OrdersService {
         },
       });
     } catch (error) {
-      await this.intents.failBeforeProvider(tenantId, intent);
+      if (held) {
+        await this.closeBeforeProviderWithHold(tenantId, userId, provider.code, intent);
+      } else {
+        await this.intents.failBeforeProvider(tenantId, intent);
+      }
       throw error;
     }
 
-    const created = await this.callCreate(tenantId, userId, provider, verifiedDto, intent);
+    let created: CreatedOrderResult;
+    try {
+      created = await this.callCreate(tenantId, userId, provider, verifiedDto, intent);
+    } catch (error) {
+      // Lo que no salió ya dejó la orden `failed`, y la retención se libera; una creación incierta
+      // la deja `pending`, y la retención sigue hasta que se concilie (D-TBO-24 A).
+      if (held) await this.settleWalletHold(tenantId, intent.id, provider.code, userId, 'create');
+      throw error;
+    }
 
     // Tras el write externo, un fallo del audit log no puede convertir la respuesta en un 500 que
     // invite a reservar otra vez. El intent durable sigue siendo la fuente de conciliación.
@@ -659,42 +715,58 @@ export class OrdersService {
       return { order: intent, providerResult: created.result, saga };
     }
 
+    let closed: { finalOrder: OrderRow; saga: SagaDecision } | undefined;
     try {
       const saga = await this.closeCreation(tenantId, userId, provider, order, created);
       const finalOrder = await this.applyDecision(tenantId, userId, order, created, saga);
-      return { order: finalOrder, providerResult: created.result, saga };
+      closed = { finalOrder, saga };
     } catch {
-      const saga: SagaDecision = {
-        kind: 'escalate',
-        reason: 'post-create-finalization-unavailable',
-        status: 'pending',
-      };
-      const marked = await this.intents.markPending(tenantId, order);
-      try {
-        await this.audit.emit({
-          eventType: ORDER_EVENTS.escalated,
-          tenantId,
-          actorUserId: userId,
-          aggregateType: 'order',
-          aggregateId: order.id,
-          payload: {
-            provider: providerCode,
-            reason: saga.reason,
-            ...createdSummary(created.result),
-            retryForbidden: true,
-            reconciliationRequired: true,
-          },
-        });
-      } catch {
-        // El locator ya está en la fila consolidada; nunca se transforma esta caída secundaria en
-        // otro 500 que permita repetir el write.
-      }
-      return {
-        order: marked ?? { ...order, status: 'pending' },
-        providerResult: created.result,
-        saga,
-      };
+      closed = undefined;
     }
+
+    if (closed !== undefined) {
+      // Confirmada, la base ya la cobró (el trigger de 0060). Si el proveedor no la hizo o ya la da
+      // por cancelada, se libera; pendiente, se conserva hasta que se concilie.
+      if (
+        held &&
+        (closed.finalOrder.status === 'failed' || closed.finalOrder.status === 'cancelled')
+      ) {
+        await this.settleWalletHold(tenantId, order.id, providerCode, userId, 'create');
+      }
+      return { order: closed.finalOrder, providerResult: created.result, saga: closed.saga };
+    }
+
+    // La reserva existe del otro lado y su cierre falló: queda pendiente con su retención.
+    const saga: SagaDecision = {
+      kind: 'escalate',
+      reason: 'post-create-finalization-unavailable',
+      status: 'pending',
+    };
+    const marked = await this.intents.markPending(tenantId, order);
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.escalated,
+        tenantId,
+        actorUserId: userId,
+        aggregateType: 'order',
+        aggregateId: order.id,
+        payload: {
+          provider: providerCode,
+          reason: saga.reason,
+          ...createdSummary(created.result),
+          retryForbidden: true,
+          reconciliationRequired: true,
+        },
+      });
+    } catch {
+      // El locator ya está en la fila consolidada; nunca se transforma esta caída secundaria en
+      // otro 500 que permita repetir el write.
+    }
+    return {
+      order: marked ?? { ...order, status: 'pending' },
+      providerResult: created.result,
+      saga,
+    };
   }
 
   /** Invariantes que deben fallar antes de resolver credenciales o llamar al proveedor. */
@@ -808,20 +880,119 @@ export class OrdersService {
     // El entorno, por lo mismo, se vuelve a escribir desde la cuenta resuelta.
     const { pricing: _untrustedPricing, ...checkedOffer } = checked.offer;
     const providerOffer = stampProviderEnvironment(checkedOffer, provider.environment);
-    const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
-    const offer: Offer =
-      rules.length === 0
-        ? providerOffer
-        : {
-            ...providerOffer,
-            pricing: toTenantView(
-              applyCascade(providerOffer.total.amountMinor, rules),
-              tenantId,
-              providerOffer.total.currency,
-            ),
-          };
+    return { ...dto, offer: await this.withTenantPricing(tenantId, providerOffer) };
+  }
 
-    return { ...dto, offer };
+  /** La oferta con el precio de venta del tenant, calculado con las reglas de la BD sobre el neto. */
+  private async withTenantPricing(tenantId: string, providerOffer: Offer): Promise<Offer> {
+    const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
+    return rules.length === 0
+      ? providerOffer
+      : {
+          ...providerOffer,
+          pricing: toTenantView(
+            applyCascade(providerOffer.total.amountMinor, rules),
+            tenantId,
+            providerOffer.total.currency,
+          ),
+        };
+  }
+
+  // ─────────────── Retención de cartera de lo que liquida la red (SAB-10) ───────────────
+
+  /**
+   * ¿Esta reserva retiene la cartera? Sólo si el proveedor liquida por la red (`network-wallet`:
+   * el tiquete lo paga por BSP el dueño de la cuenta) y la cuenta no es de pruebas: una reserva de
+   * certificación no se factura (SAB-FD-2 A). Si la cuenta es la propia del nodo, lo decide la base
+   * y no retiene a nadie (decisión del founder del 2026-09-30).
+   */
+  private retainsWallet(provider: ResolvedProvider<FlightProviderAdapter>): boolean {
+    return (
+      this.walletHolds !== undefined &&
+      provider.environment !== 'test' &&
+      this.registry.settlementOf(provider.code) === 'network-wallet'
+    );
+  }
+
+  /**
+   * El aviso, antes de revalidar con el proveedor: la venta que se pide, con el precio que le dan
+   * las reglas de la BD al neto de la oferta (nunca el `pricing` del navegador), y la cuenta con la
+   * que se va a reservar. Sólo lee; la retención vuelve a decidir con las carteras bloqueadas.
+   *
+   * @throws BookingHoldRejectedError si la cartera del nodo o la de un nivel de su red no alcanza.
+   */
+  private async assertWalletCovers(
+    tenantId: string,
+    provider: ResolvedProvider<FlightProviderAdapter>,
+    dto: CreateOrderDto,
+    intent: OrderRow,
+  ): Promise<void> {
+    if (this.walletHolds === undefined) return;
+    const { pricing: _untrustedPricing, ...requested } = dto.offer;
+    const priced = await this.withTenantPricing(tenantId, requested);
+    await this.walletHolds.assertBookingHoldAffordable(
+      tenantId,
+      {
+        amount: saleTotalOf(priced),
+        // En vuelos el neto es el total de la oferta canónica: el mismo que la base lee de la orden.
+        netMinor: priced.total.amountMinor,
+        vertical: 'flights',
+        providerCode: provider.code,
+        providerAccountId: this.orderAccountOf(provider) ?? null,
+      },
+      { reportOrderId: intent.id },
+    );
+  }
+
+  /**
+   * La retención sobre el intent abierto, con lo revalidado. La base lee la venta y el neto de la
+   * orden, así que primero la orden tiene que decir lo que se va a reservar y no lo que mandó el
+   * navegador. `true` si retuvo; `false` con la cuenta propia del nodo, que no retiene nada.
+   *
+   * @throws BookingHoldRejectedError si la cartera del nodo o la de un nivel de su red no alcanza.
+   * @throws ConflictException si otro camino ya cerró la orden.
+   */
+  private async holdWallet(
+    tenantId: string,
+    userId: string,
+    provider: ResolvedProvider<FlightProviderAdapter>,
+    dto: CreateOrderDto,
+    intent: OrderRow,
+  ): Promise<boolean> {
+    if (this.walletHolds === undefined) return false;
+    const total = saleTotalOf(dto.offer);
+    const revised = await this.intents.revise(tenantId, intent.id, {
+      selectedOffer: dto.offer,
+      totalAmountMinor: total.amountMinor,
+      currency: total.currency,
+    });
+    if (!revised) {
+      throw new ConflictException(
+        'La reserva cambió antes de retener el saldo de la cartera. No se envió a la aerolínea.',
+      );
+    }
+    const outcome = await this.walletHolds.holdBookingIntent(tenantId, intent.id, userId, total);
+    if (outcome.status === 'own-account') {
+      this.logger.log(
+        `flights.create.hold_own_account provider=${provider.code} order=${intent.id}`,
+      );
+    }
+    return outcome.status === 'held';
+  }
+
+  /**
+   * Nada salió hacia el proveedor: la orden se cierra como no enviada, la clave se libera y, si la
+   * orden se cerró, se libera la retención que pudo quedar (un COMMIT que se confirmó con la
+   * respuesta perdida). Sin retención no hace nada. Nunca lanza.
+   */
+  private async closeBeforeProviderWithHold(
+    tenantId: string,
+    userId: string,
+    providerCode: string,
+    intent: OrderRow,
+  ): Promise<void> {
+    const closed = await this.intents.failBeforeProvider(tenantId, intent);
+    if (closed) await this.settleWalletHold(tenantId, intent.id, providerCode, userId, 'create');
   }
 
   /**
@@ -1007,9 +1178,7 @@ export class OrdersService {
     provider: ResolvedProvider<FlightProviderAdapter>,
     requestKey: string,
   ): Promise<OrderRow> {
-    const accountId = this.registry.recordsOrderAccount(provider.code)
-      ? provider.accountId
-      : undefined;
+    const accountId = this.orderAccountOf(provider);
     const version = accountId === undefined ? undefined : provider.accountUpdatedAt?.toISOString();
     return this.intents.insert(
       tenantId,
@@ -1031,6 +1200,11 @@ export class OrdersService {
       },
       'pnr',
     );
+  }
+
+  /** La cuenta que la orden guarda: sólo la de un proveedor que sabe volver a operar con ella. */
+  private orderAccountOf(provider: ResolvedProvider<FlightProviderAdapter>): string | undefined {
+    return this.registry.recordsOrderAccount(provider.code) ? provider.accountId : undefined;
   }
 
   /** Consolida con CAS sobre el intent; `undefined` si otro camino ya lo cerró. */
@@ -1695,12 +1869,17 @@ export class OrdersService {
    * de la orden, la del nodo y la de cada nivel de su red (0060), como el rechazo desde Carteras.
    * Antes sólo la liberaba ese rechazo. Best-effort: la cancelación ya ocurrió y no se deshace; si
    * la liberación falla o la retención está en conflicto, se escala y la retoma el rechazo.
+   *
+   * La reserva de un vuelo que liquida la red (SAB-10) la cierra igual (`create`) cuando el
+   * proveedor no la hizo: la orden `failed` o `cancelled` libera, una `pending` la conserva. Se
+   * cierra según el estado de la orden, nunca recalculando la red.
    */
   private async settleWalletHold(
     tenantId: string,
     orderId: string,
     provider: string,
     actorUserId: string,
+    stage: 'cancel' | 'create' = 'cancel',
   ): Promise<void> {
     if (this.holds === undefined) return;
     let reason: 'portfolio-hold-state-conflict' | 'portfolio-hold-release-failed' | undefined;
@@ -1715,7 +1894,7 @@ export class OrdersService {
     if (reason === undefined) return;
 
     this.logger.warn(
-      `orders.cancel.hold_${reason === 'portfolio-hold-state-conflict' ? 'conflict' : 'release_failed'} provider=${provider} order=${orderId}${failure === undefined ? '' : ` error=${failure}`}`,
+      `orders.${stage}.hold_${reason === 'portfolio-hold-state-conflict' ? 'conflict' : 'release_failed'} provider=${provider} order=${orderId}${failure === undefined ? '' : ` error=${failure}`}`,
     );
     try {
       await this.audit.emit({
@@ -1732,9 +1911,10 @@ export class OrdersService {
         },
       });
     } catch {
-      // La cancelación ya está confirmada: que falte el aviso no la vuelve un error.
+      // La cancelación ya está confirmada (o la reserva ya se cerró): que falte el aviso no la
+      // vuelve un error.
       this.logger.warn(
-        `orders.cancel.hold_escalation_unsaved provider=${provider} order=${orderId}`,
+        `orders.${stage}.hold_escalation_unsaved provider=${provider} order=${orderId}`,
       );
     }
   }

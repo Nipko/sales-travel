@@ -1569,6 +1569,11 @@ describe('FlightProviderRegistry + Sabre', () => {
       expect(registry.recordsOrderAccount(SABRE_PROVIDER_CODE)).toBe(true);
     });
 
+    it('lo que se reserva con Sabre lo liquida la red: retiene la cartera como un hotel (SAB-10)', () => {
+      const { registry } = registryConOrden(() => Promise.resolve(resolved()));
+      expect(registry.settlementOf(SABRE_PROVIDER_CODE)).toBe('network-wallet');
+    });
+
     it('una orden con cuenta sale con ESA cuenta aunque el tenant tenga otra vigente', async () => {
       const { registry, creds } = registryConOrden(() =>
         Promise.resolve(resolved({ id: 'acc-de-la-orden', inherited: true })),

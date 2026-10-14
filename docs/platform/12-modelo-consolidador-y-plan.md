@@ -788,7 +788,8 @@ Los motivos de la cartera propia no cambian (`PORTFOLIO_CURRENCY_NOT_ENABLED`, `
 
 ### 14.8 Límites
 
-- **Vuelos y autos** retienen sólo por `POST /portfolios/hold-booking`, que ninguna pantalla llama. Ahora lo hacen en cascada, con O resuelto por la bóveda o la raíz.
+- **Los vuelos de Sabre retienen al reservar (SAB-10; SAB-FD-2 A)**, como un hotel: el factory declara que lo reservado lo liquida la red (`settlement: network-wallet`, el tiquete en CASH o a crédito por BSP), y `OrdersService.createOrder` avisa antes de revalidar y retiene sobre el intent abierto antes de `createBooking`, con la cuenta grabada en la orden. No retienen una cuenta de pruebas (CERT) ni la cuenta propia del nodo (`exempt`). La cancelación, la anulación de los tiquetes y una reserva que el proveedor no hizo liberan; emitir no la mueve. Detalle en `docs/sabre/06` §7.4.
+- **Los demás vuelos y los autos** retienen sólo por `POST /portfolios/hold-booking`, que ninguna pantalla llama. Ahora lo hacen en cascada, con O resuelto por la bóveda o la raíz.
 - **La cuenta propia no exime a los vuelos de LATAM ni a los autos**, salvo a la plataforma (§14.1): la orden no graba con qué cuenta se reservó. Los vuelos de Sabre sí la graban desde 0081 (su post-venta sale con la cuenta de la reserva, RF-29), y uno reservado con la cuenta propia del nodo queda exento como un hotel. Para eximir a los otros, el factory de LATAM y el de autos tienen que devolver la cuenta que resolvieron y saber volver a operar con ella (`resolveForOrder`), como Sabre y los hoteles. Además, el factory de autos completa una cuenta de la bóveda sin `accessToken` con el de Planetour (y el de Despegar, una sin `apiKey`, con la de la plataforma): antes de eximir a esos proveedores, una cuenta así tiene que fallar como incompleta, como LATAM y TBO.
 - **Hoteles de Despegar:** siguen sin retención.
 - **Lo retenido antes de 0060** queda como un grupo `legacy` de un solo nivel. No se debita a nadie hacia atrás.

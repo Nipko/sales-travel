@@ -21,6 +21,7 @@ import type {
   CredentialSource,
   FlightProviderAdapter,
   ProviderCapabilities,
+  ProviderSettlement,
   ProviderVertical,
   TenantAdapter,
   TenantProviderFactory,
@@ -117,6 +118,8 @@ export interface StubFactoryOptions extends StubAdapterOptions {
   accountId?: string;
   /** Su versión (`TenantAdapter.accountUpdatedAt`). */
   accountUpdatedAt?: Date;
+  /** Quién liquida lo reservado (`TenantProviderFactory.settlement`). Ausente = no lo declara. */
+  settlement?: ProviderSettlement;
 }
 
 export class StubProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
@@ -124,6 +127,7 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
   readonly vertical: ProviderVertical;
   readonly capabilities: ProviderCapabilities;
   readonly defaultCallPolicy: CallPolicy;
+  readonly settlement?: ProviderSettlement;
 
   /** Un adapter por tenant, para poder afirmar aislamiento sin montar credenciales reales. */
   private readonly adapters = new Map<string, StubFlightAdapter>();
@@ -135,6 +139,7 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
     this.vertical = opts.vertical ?? 'flights';
     this.capabilities = { ...CAPACIDADES_PLENAS, ...opts.capabilities };
     this.defaultCallPolicy = opts.callPolicy ?? 'always';
+    if (opts.settlement !== undefined) this.settlement = opts.settlement;
   }
 
   async forTenant(tenantId: string): Promise<FlightProviderAdapter> {

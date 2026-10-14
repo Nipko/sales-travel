@@ -61,6 +61,7 @@ import {
   type OrderCancelScope,
   type OrderCreateAudit,
   type ProviderCapabilities,
+  type ProviderSettlement,
   type ProviderVertical,
   type TenantAdapter,
   type TenantProviderFactory,
@@ -661,6 +662,15 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * en provider_accounts, salvo que se configure explícitamente callPolicy: opt-in o fallback.
    */
   readonly defaultCallPolicy: CallPolicy = 'always';
+
+  /**
+   * Lo que se reserva con Sabre lo liquida la red: el tiquete sale en CASH o a crédito (D1, nunca
+   * con tarjeta) y lo paga por BSP el dueño de la cuenta. Por eso la reserva retiene la cartera del
+   * nodo que vende y la de su red hasta ese dueño, como un hotel (SAB-FD-2 A; docs/platform/12
+   * §14). Una cuenta de pruebas (CERT) no retiene, y con la cuenta propia del nodo la base no
+   * retiene a nadie.
+   */
+  readonly settlement: ProviderSettlement = 'network-wallet';
 
   /**
    * Lo que Sabre sabe hacer HOY, ni más ni menos.

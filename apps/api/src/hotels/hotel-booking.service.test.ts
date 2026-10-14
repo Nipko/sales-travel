@@ -2329,7 +2329,7 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({ reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED' });
     expect((err as BookingHoldRejectedError).message).toBe(
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     );
     expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
       reportOrderId: fila(b)['id'],
@@ -2486,7 +2486,7 @@ describe('RF-23 CA-1 (D-TBO-21 A): sin cartera, saldo ni cupo no se reserva, y e
     expect(err).toMatchObject({
       reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
       message:
-        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     });
     // Con la orden ya abierta: la base puede avisarle al nivel que bloqueó.
     expect(b.fondos.assertBookingHoldAffordable).toHaveBeenCalledWith(AGENCIA, cotizacion(PISO), {
@@ -3187,7 +3187,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
       status: 'blocked',
       currency: 'USD',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     });
     const prebooksDelVendedor = cuerpos(b.fetch, '/PreBook').length;
 
@@ -3207,7 +3207,7 @@ describe('TBO de punta a punta: búsqueda de p. 16, PreBook de p. 28, Book y Boo
     expect(err).toBeInstanceOf(BookingHoldRejectedError);
     expect(err).toMatchObject({
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     });
     // Ni el PreBook de C2 ni el Book salieron: TBO no se enteró.
     expect(cuerpos(b.fetch, '/PreBook')).toHaveLength(prebooksDelVendedor);

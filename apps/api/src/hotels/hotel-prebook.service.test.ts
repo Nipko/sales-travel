@@ -567,7 +567,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       currency: 'USD',
       reason: 'PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE',
       message:
-        'Tu red no tiene cupo disponible en USD para esta reserva. Pedile a quien te financia que lo revise.',
+        'Tu red no tiene cupo disponible en USD para esta reserva. Pídele a quien te financia que lo revise.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 
@@ -599,7 +599,7 @@ describe('RF-23: el PreBook avisa de la cartera antes de que el vendedor cargue 
       status: 'blocked',
       currency: 'USD',
       reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-      message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     };
     const b = await bancoConBusqueda({ cartera: vi.fn(() => Promise.resolve(aviso)) });
 

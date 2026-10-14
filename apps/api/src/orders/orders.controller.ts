@@ -25,6 +25,7 @@ import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
+import { BookingHoldLedger, type OpenWalletHold } from '../portfolios/booking-hold.ledger.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { hotelOrderConfirmationEmailHtml } from '../mail/templates.js';
@@ -127,6 +128,11 @@ export class OrdersController {
     @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
     /** La emisión de tiquetes (SAB-08). Opcional por lo mismo: en la app siempre está. */
     @Optional() private readonly ticketIssues?: FlightTicketIssueService,
+    /**
+     * Qué órdenes tienen saldo retenido en la cartera (0060; SAB-10), para que Reservas avise que
+     * cancelar o anular lo libera. Opcional por lo mismo: en la app siempre está.
+     */
+    @Optional() private readonly walletHolds?: BookingHoldLedger,
   ) {}
 
   /** Vuelo = ni hotel ni auto. Una orden de un proveedor de vuelos ya retirado también cuenta. */
@@ -151,6 +157,28 @@ export class OrdersController {
     } catch (error) {
       this.logger.warn(
         `flights.tracking.read_failed orders=${ids.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+      return new Map();
+    }
+  }
+
+  /**
+   * La retención abierta de las órdenes pedidas, en una sola lectura. Si la base falla, la lista
+   * sale igual sin ella (`walletHold: null`): el aviso de la cancelación no tumba Reservas.
+   */
+  private async walletHoldsOf(
+    tenantId: string,
+    rows: readonly Pick<OrderRow, 'id'>[],
+  ): Promise<Map<string, OpenWalletHold>> {
+    if (this.walletHolds === undefined || rows.length === 0) return new Map();
+    try {
+      return await this.walletHolds.openHoldsOf(
+        tenantId,
+        rows.map((row) => row.id),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `orders.wallet_hold.read_failed orders=${rows.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
       );
       return new Map();
     }
@@ -291,8 +319,11 @@ export class OrdersController {
       rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
     );
     const flights = await this.flightTrackingOf(tenantId, rows);
+    const holds = await this.walletHoldsOf(tenantId, rows);
     return {
-      orders: rows.map((r) => this.serialize(r, tracking.get(r.id), flights.get(r.id))),
+      orders: rows.map((r) =>
+        this.serialize(r, tracking.get(r.id), flights.get(r.id), holds.get(r.id)),
+      ),
     };
   }
 
@@ -306,7 +337,10 @@ export class OrdersController {
       ? await this.hotelReads.trackingOf(tenantId, [row.id])
       : undefined;
     const flights = await this.flightTrackingOf(tenantId, [row]);
-    return { order: this.serialize(row, tracking?.get(row.id), flights.get(row.id)) };
+    const holds = await this.walletHoldsOf(tenantId, [row]);
+    return {
+      order: this.serialize(row, tracking?.get(row.id), flights.get(row.id), holds.get(row.id)),
+    };
   }
 
   /**
@@ -552,6 +586,9 @@ export class OrdersController {
    * `flightTracking`: lo guardado de una orden de vuelo (0082): localizadores de la aerolínea,
    * tiquetes con su estado y plazo de emisión. `null` en las demás verticales y en un vuelo que
    * todavía no tiene lecturas guardadas.
+   *
+   * `walletHold`: la retención de cartera abierta de la orden (`held` o `captured`), o `null` si no
+   * tiene una que liberar: sin retención, exenta por la cuenta propia, ya liberada o en conflicto.
    */
   private serialize(
     row: {
@@ -575,6 +612,7 @@ export class OrdersController {
     },
     tracking?: PublicHotelOrderTracking,
     flightTracking?: PublicFlightOrderTracking,
+    walletHold?: OpenWalletHold,
   ) {
     return {
       id: row.id,
@@ -598,6 +636,7 @@ export class OrdersController {
       testContent: isTestContentOrder(row),
       providerTracking: tracking ?? null,
       flightTracking: flightTracking ?? null,
+      walletHold: walletHold ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

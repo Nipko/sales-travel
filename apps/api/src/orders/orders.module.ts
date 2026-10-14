@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BookingHoldPolicyService } from '../portfolios/booking-hold-policy.service.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { AgentCarsProviderModule } from '../providers-agent-cars/agent-cars.module.js';
 import { HotelProvidersModule } from '../providers/hotel-providers.module.js';
@@ -27,6 +28,8 @@ import { TicketIssueStore } from './ticket-issue.store.js';
  * La cancelación de una orden de hotel (PR-5.3) libera la retención de la cartera cuando la orden
  * queda cancelada. `PortfoliosModule` importa este módulo, así que no se puede importar al revés: se
  * usa `BookingHoldLedger`, que sólo depende de la base. Su verificación la ejecuta `PostSaleModule`.
+ * Por lo mismo, la reserva de un vuelo que liquida la red (SAB-10) retiene con
+ * `BookingHoldPolicyService`, que también depende sólo de la base.
  *
  * La conciliación (PR-5.5, `ReconciliationModule`) cierra órdenes de hotel con lo que confirma una
  * lectura: usa el mismo seguimiento, la misma transición de la cancelación y la misma retención.
@@ -59,6 +62,7 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     StaleCancelClaimStore,
     StaleCancelClaimService,
     BookingHoldLedger,
+    BookingHoldPolicyService,
     TicketIssueStore,
     FlightTicketIssueService,
   ],

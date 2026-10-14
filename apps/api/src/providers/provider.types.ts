@@ -290,6 +290,21 @@ export interface ProviderErrorContext {
 }
 
 /**
+ * Quién paga lo que se reserva con la cuenta del proveedor.
+ *
+ * - `provider-direct`: el proveedor le cobra a la agencia o al cliente por su cuenta (LATAM cobra
+ *   la orden con su propio pago): la red no adelanta nada y la reserva no retiene cartera.
+ * - `network-wallet`: lo liquida el dueño de la cuenta (un tiquete emitido en CASH o a crédito que
+ *   paga por BSP). La reserva retiene la cartera del nodo que vende y la de cada nivel de su red
+ *   hasta ese dueño, como un hotel (docs/platform/12 §14; SAB-FD-2 A). Una cuenta de pruebas no
+ *   retiene: no factura.
+ */
+export type ProviderSettlement = 'network-wallet' | 'provider-direct';
+
+/** Lo que vale un factory que no lo declara: el proveedor cobra por su cuenta. */
+export const DEFAULT_PROVIDER_SETTLEMENT: ProviderSettlement = 'provider-direct';
+
+/**
  * Contrato que los factories por proveedor ya cumplían de facto, sin declararlo.
  *
  * `forTenant` se conserva porque es la firma que usaba el resto de la app; `resolveForTenant`
@@ -301,6 +316,11 @@ export interface TenantProviderFactory<TAdapter> {
   readonly vertical: ProviderVertical;
   readonly capabilities: ProviderCapabilities;
   readonly defaultCallPolicy: CallPolicy;
+  /**
+   * Quién liquida lo que se reserva con este proveedor ({@link ProviderSettlement}). Estático por
+   * proveedor. Ausente = `provider-direct`.
+   */
+  readonly settlement?: ProviderSettlement;
   /** Lanza `NotFoundException` si el tenant no resuelve credenciales y no hay fallback. */
   forTenant(tenantId: string): Promise<TAdapter>;
   resolveForTenant(tenantId: string): Promise<TenantAdapter<TAdapter>>;
