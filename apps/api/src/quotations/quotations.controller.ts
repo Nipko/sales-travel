@@ -16,6 +16,7 @@ import { ActiveTenantService } from '../request-context/active-tenant.service.js
 import type { QuotationStatus } from '../database/database.types.js';
 import { MailerService } from '../mail/mailer.service.js';
 import { quotationEmailHtml } from '../mail/templates.js';
+import { isTestSelectedOffer } from '../providers/provider-environment.js';
 import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
@@ -52,7 +53,7 @@ export class QuotationsController {
     const row = await this.quotations.findById(tenantId, id);
     if (!row) throw new NotFoundException();
     if (!row.customer_email) {
-      throw new BadRequestException('La cotización no tiene email de cliente. Guardalo primero.');
+      throw new BadRequestException('La cotización no tiene email de cliente. Guárdalo primero.');
     }
     const mail = quotationEmailHtml({
       quoteNumber: row.quote_number,
@@ -61,6 +62,10 @@ export class QuotationsController {
       selectedOffer: row.selected_offer,
       // El correo lo recibe el cliente final: lleva la marca de SU agencia.
       brand: await this.branding.resolve(tenantId),
+      // Una tarifa de la cuenta de pruebas del proveedor sale marcada: el cliente no puede creer
+      // que responder este correo le consigue un tiquete. La marca la escribió la búsqueda; si el
+      // navegador la quitó, la reserva la vuelve a poner desde la cuenta (`createOrder`).
+      testContent: isTestSelectedOffer(row.selected_offer),
     });
     const sent = await this.mailer.sendToTenant(tenantId, {
       to: row.customer_email,

@@ -25,8 +25,42 @@ export const ORDER_EVENTS = {
   compensationScheduled: 'OrderCompensationScheduled',
   /** Necesita una persona. Es la rama que impide que un desenlace desconocido pase por bueno. */
   escalated: 'OrderEscalated',
+  /**
+   * La reserva quedó confirmada con todos sus vuelos, pero la aerolínea no confirmó uno o más de los
+   * asientos elegidos (SAB-16). `{ provider, seats }`: cuántos, nunca cuáles ni de quién.
+   */
+  seatsNotConfirmed: 'OrderSeatsNotConfirmed',
   /** Cancelación ejecutada contra el proveedor (exitosa o rechazada). */
   cancelled: 'OrderCancellationAttempted',
+
+  // Emisión de tiquetes (SAB-08). El pedido sale del request a la cola de post-venta: el primer
+  // evento dice que se pidió, y el último en qué quedó. Conteos y vocabulario cerrado: nunca los
+  // números de tiquete, que el panel de red muestra a cualquier admin del subárbol.
+
+  /** Un vendedor pidió emitir: hay una operación `issue` pendiente y un job en la cola. */
+  issueRequested: 'OrderTicketIssueRequested',
+  /** La reserva quedó emitida: la orden pasó a `ticketed`, con sus documentos guardados. */
+  ticketed: 'OrderTicketed',
+  /**
+   * La emisión no terminó en `ticketed`: rechazada sin emitir (se puede volver a pedir), o en duda
+   * (parcial, sin confirmar o para revisar), que se concilia releyendo la reserva y nunca reemitiendo.
+   */
+  issueFailed: 'OrderTicketIssueFailed',
+  /**
+   * Los tiquetes de la reserva quedaron anulados (VOID) y la reserva, cancelada (SAB-09). Va además
+   * del `OrderCancellationAttempted` de la misma operación, que lleva `ticketOperation: 'VOID'`.
+   * Conteos, nunca los números.
+   */
+  ticketsVoided: 'OrderTicketsVoided',
+  /**
+   * El plazo de emisión de una reserva confirmada y sin tiquete vence pronto, y el barrido cerró el
+   * aviso al vendedor (SAB-14). `threshold` es `24h` o `2h`; uno por orden, umbral e instante del
+   * plazo: sale cuando el aviso tomado (`deadline_alerted_*`, 0084) se cierra, no en cada intento.
+   * `outcome`: `mailed`, `no-recipient` (el vendedor ya no está activo) o `mail-failed` (se agotaron
+   * los intentos, 0085), con `attempts`. Lleva el instante, la zona del plazo, si es de prueba y si
+   * retiene cartera; nunca a quién se escribió.
+   */
+  ticketingDeadlineApproaching: 'OrderTicketingDeadlineApproaching',
 
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
@@ -37,6 +71,12 @@ export const ORDER_EVENTS = {
    * la fila de seguimiento para que lo revise una persona.
    */
   providerStatusChanged: 'OrderProviderStatusChanged',
+  /**
+   * Una lectura de una reserva de vuelo vio documentos (tiquetes o EMD) nuevos o con otro estado
+   * (0082). El `payload` lleva conteos (`added`, `statusChanged`) y la fuente de la lectura, nunca
+   * los números: el panel de red lo muestra a cualquier admin del subárbol.
+   */
+  flightDocumentsChanged: 'OrderFlightDocumentsChanged',
   /** El número de confirmación del HOTEL apareció o cambió. Es un localizador, como el PNR. */
   hotelConfirmationNumberReceived: 'HotelConfirmationNumberReceived',
   /** Se agotaron el SLA y los reintentos sin HCN: hay tarea de operaciones (RF-27). */
@@ -69,6 +109,29 @@ export const POST_SALE_ESCALATION_REASONS = [
   'provider-status-unknown',
 ] as const;
 export type PostSaleEscalationReason = (typeof POST_SALE_ESCALATION_REASONS)[number];
+
+/** Motivos de `OrderEscalated` de la emisión de tiquetes. Vocabulario cerrado: el panel filtra. */
+export const TICKET_ISSUE_ESCALATION_REASONS = [
+  /** Una emisión en duda y las relecturas se agotaron sin ver todos los tiquetes emitidos. */
+  'issue-unverified',
+  /** El proveedor declaró una emisión parcial o ambigua: una persona tiene que mirar la reserva. */
+  'issue-needs-human',
+  /** Se emitió y la orden ya no estaba confirmada al cerrarla (otra operación la cambió). */
+  'issue-order-state-conflict',
+] as const;
+export type TicketIssueEscalationReason = (typeof TICKET_ISSUE_ESCALATION_REASONS)[number];
+
+/**
+ * Motivos de `OrderEscalated` de la anulación de tiquetes, además de `cancellation-unverified` (el
+ * proveedor no dijo qué pasó). Vocabulario cerrado: el panel filtra por él.
+ */
+export const TICKET_VOID_ESCALATION_REASONS = [
+  /** El proveedor anuló unos tiquetes y otros no: la reserva quedó a medias. */
+  'void-partial',
+  /** La anulación fue rechazada y no se pudo releer la reserva para ver si algo quedó anulado. */
+  'void-unverified',
+] as const;
+export type TicketVoidEscalationReason = (typeof TICKET_VOID_ESCALATION_REASONS)[number];
 
 /** Clasificación de una divergencia con el proveedor (04 §9.4). */
 export const RECONCILIATION_DISCREPANCY_KINDS = [

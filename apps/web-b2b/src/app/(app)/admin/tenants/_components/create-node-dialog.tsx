@@ -206,7 +206,7 @@ export function CreateNodeDialog({
                 disabled={options.length === 0}
               >
                 <option value="" disabled>
-                  Elegí el padre…
+                  Elige el padre…
                 </option>
                 {options.map((n) => (
                   <option key={n.id} value={n.id}>

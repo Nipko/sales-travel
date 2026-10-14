@@ -37,7 +37,7 @@ const BOOK = TBO_OPERATIONS.book.path;
 const CANCEL = TBO_OPERATIONS.cancel.path;
 const PREBOOK = TBO_OPERATIONS.prebook.path;
 
-const GENERICO = 'No pudimos procesar la solicitud con TBO. Intentá nuevamente.';
+const GENERICO = 'No pudimos procesar la solicitud con TBO. Inténtalo de nuevo.';
 
 function apiError(kind: TboFailureKind, path: string = SEARCH, status = 200): TboApiError {
   return new TboApiError({ status, tboCode: 999, path, kind, requestId: 'req-00000001' });
@@ -146,7 +146,7 @@ describe('variantes según de quién es la cuenta (docs/tbo/01 §9.4)', () => {
 
   it('credencial propia rechazada: el camino del panel para corregirla', () => {
     expect(humanizeTboError(apiError('CREDENTIALS_INVALID'), { credentialSource: 'own' })).toBe(
-      'TBO rechazó el usuario o la contraseña de tu agencia. Verificalos en Mi Red → Credenciales → TBO Hoteles.',
+      'TBO rechazó el usuario o la contraseña de tu agencia. Verifícalos en Mi Red → Credenciales → TBO Hoteles.',
     );
   });
 
@@ -188,7 +188,7 @@ describe('variantes según la operación', () => {
 
   it('en una búsqueda, la caída es sólo una caída', () => {
     expect(humanizeTboError(apiError('TRANSPORT', SEARCH))).toBe(
-      'No pudimos conectar con TBO. Probá de nuevo en unos segundos.',
+      'No pudimos conectar con TBO. Prueba de nuevo en unos segundos.',
     );
   });
 
@@ -196,7 +196,7 @@ describe('variantes según la operación', () => {
     expect(humanizeTboError(apiError('NO_AVAILABILITY', SEARCH))).toContain(
       'no tiene habitaciones disponibles',
     );
-    expect(humanizeTboError(apiError('NO_AVAILABILITY', PREBOOK))).toContain('Volvé a buscar');
+    expect(humanizeTboError(apiError('NO_AVAILABILITY', PREBOOK))).toContain('Vuelve a buscar');
   });
 
   it('la lectura fallida de un Book o un Cancel es incierta; la de un PreBook, no', () => {

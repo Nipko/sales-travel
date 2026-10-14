@@ -15,6 +15,7 @@ import {
   sortOutcomes,
   telemetrySlices,
   unavailableOutcome,
+  withAccountEnvironment,
   withCatalogFacts,
   type HotelProviderOutcome,
 } from './hotel-search.aggregate.js';
@@ -93,7 +94,7 @@ describe('searchEligibilitySkip — a quién no se le pregunta (RF-06, PR-2.4)',
       count: 0,
       skipReason: 'guest-nationality-missing',
       reason:
-        'Cotiza según la nacionalidad del pasajero principal: indicala en la búsqueda para ver sus tarifas.',
+        'Cotiza según la nacionalidad del pasajero principal: indícala en la búsqueda para ver sus tarifas.',
     });
   });
 
@@ -211,7 +212,7 @@ describe('respondedOutcome — parte de un proveedor que respondió', () => {
       count: 0,
       skipReason: 'currency-mismatch',
       reason:
-        'Cotiza en USD y esta búsqueda es en COP: sus tarifas no se pueden mostrar sin convertir la moneda. Revisá la moneda de la cuenta del proveedor en Mi Red → Credenciales.',
+        'Cotiza en USD y esta búsqueda es en COP: sus tarifas no se pueden mostrar sin convertir la moneda. Revisa la moneda de la cuenta del proveedor en Mi Red → Credenciales.',
       droppedForCurrency: 1,
       droppedCurrencies: ['USD'],
     });
@@ -277,13 +278,13 @@ describe('outcomes armados', () => {
 
   it('un ausente lleva su motivo del registry y, si lo hay, el detalle para el vendedor', () => {
     expect(
-      unavailableOutcome({ code: 'alfa', reason: 'no-credentials', detail: 'Cargalas en Mi Red.' }),
+      unavailableOutcome({ code: 'alfa', reason: 'no-credentials', detail: 'Cárgalas en Mi Red.' }),
     ).toEqual({
       code: 'alfa',
       status: 'unavailable',
       count: 0,
       unavailableReason: 'no-credentials',
-      reason: 'Cargalas en Mi Red.',
+      reason: 'Cárgalas en Mi Red.',
     });
     expect(unavailableOutcome({ code: 'beta', reason: 'incomplete-account' })).toEqual({
       code: 'beta',
@@ -472,6 +473,34 @@ describe('partialOutcome — respuesta parcial (RF-14 CA 3)', () => {
     expect(partialOutcome(conMoneda, 'Faltó el lote 2.').reason).toBe(
       'Faltó el lote 2. 1 tarifa en EUR no se muestra: esta búsqueda es en USD.',
     );
+  });
+});
+
+describe('withAccountEnvironment — de qué entorno es la cuenta que respondió', () => {
+  const ok: HotelProviderOutcome = { code: 'tbo-hotels', status: 'ok', count: 3 };
+
+  it('va en lo que respondió, con hoteles o sin ellos, también si fue parcial', () => {
+    expect(withAccountEnvironment(ok, 'test')).toEqual({ ...ok, accountEnvironment: 'test' });
+    expect(
+      withAccountEnvironment({ code: 'tbo-hotels', status: 'empty', count: 0 }, 'live'),
+    ).toEqual({ code: 'tbo-hotels', status: 'empty', count: 0, accountEnvironment: 'live' });
+    const parcial = partialOutcome(ok, 'Un lote no respondió.');
+    expect(withAccountEnvironment(parcial, 'test')).toEqual({
+      ...parcial,
+      accountEnvironment: 'test',
+    });
+  });
+
+  it('no va en lo que no aportó tarifas: caído, omitido o sin cuenta', () => {
+    const caido = errorOutcome('tbo-hotels', 'no respondió');
+    const omitido = skippedOutcome('tbo-hotels', 'currency-mismatch', 'Cotiza en USD.');
+
+    expect(withAccountEnvironment(caido, 'test')).toBe(caido);
+    expect(withAccountEnvironment(omitido, 'test')).toBe(omitido);
+  });
+
+  it('un proveedor que no declara entorno sale como llegó', () => {
+    expect(withAccountEnvironment(ok, undefined)).toBe(ok);
   });
 });
 

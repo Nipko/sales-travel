@@ -309,7 +309,9 @@ export class TenantsService {
    * resuelve rol bajo un nodo suspendido). La plataforma no se suspende. Un consolidador con
    * reservas abiertas hechas con sus credenciales no cambia de tipo (409).
    *
-   * El cambio y su `tenant.updated`, con el antes y el después, van en una transacción.
+   * El cambio y su `tenant.updated`, con el antes, el después y el motivo (obligatorio al suspender,
+   * lo exige UpdateTenantSchema), van en una transacción. Las sesiones abiertas no se cierran: dejan
+   * de funcionar al instante, pero ocupan su puesto hasta que vencen por inactividad.
    */
   async update(
     actorUserId: string,
@@ -363,6 +365,7 @@ export class TenantsService {
             changed: changed.map(([field]) => field),
             before: Object.fromEntries(changed.map(([field, column]) => [field, before[column]])),
             after: Object.fromEntries(changed.map(([field]) => [field, after[field]])),
+            ...(patch.reason === undefined ? {} : { reason: patch.reason }),
           },
         });
 

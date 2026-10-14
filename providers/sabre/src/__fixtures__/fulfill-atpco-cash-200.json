@@ -1,0 +1,53 @@
+{
+  "timestamp": "2024-04-10T13:53:25",
+  "tickets": [
+    {
+      "isCommitted": true,
+      "number": "0016802004060",
+      "date": "2024-04-10",
+      "travelerGivenName": "JOHN",
+      "travelerSurname": "DRAKE",
+      "payment": {
+        "total": "2340.68",
+        "currencyCode": "USD"
+      },
+      "ticketStatusName": "Issued",
+      "ticketStatusCode": "TE",
+      "ticketingPcc": "E9E7"
+    }
+  ],
+  "request": {
+    "confirmationId": "ABCDEF",
+    "retainAccounting": false,
+    "fulfillments": [
+      {
+        "payment": {
+          "primaryFormOfPayment": 1
+        }
+      }
+    ],
+    "receivedFrom": "Fulfill Flight Tickets",
+    "designatePrinters": [
+      {
+        "hardcopy": {
+          "address": "498BF1"
+        }
+      },
+      {
+        "ticket": {
+          "countryCode": "AT"
+        }
+      }
+    ],
+    "formsOfPayment": [
+      {
+        "type": "CASH"
+      }
+    ],
+    "generateSingleInvoice": false,
+    "acceptNegotiatedFare": true,
+    "acceptPriceChanges": true,
+    "backDatePriceQuoteMethod": "Reprice",
+    "priceQuoteExpirationMethod": "Reprice"
+  }
+}

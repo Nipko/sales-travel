@@ -2,7 +2,8 @@ import type { HotelOffer } from '../../actions';
 import type { HotelProviderHotelRef } from '../../_components/hotel-key';
 import { hotelRateRows, type HotelRateRow } from '../../_components/hotel-rate-view';
 import type { HotelStay } from '../../_components/hotel-search-handoff';
-import type { RateRefundability } from '../../_components/rate-refundability';
+import { rateRefundability, type RateRefundability } from '../../_components/rate-refundability';
+import { roomTypeGroups, type RoomTypeGroup } from '../../_components/room-type-groups';
 import type { HotelContentResult, HotelDetailRatesResult } from '../actions';
 import {
   addressLine,
@@ -181,8 +182,16 @@ export interface FailedProvider {
   readonly reason: string;
 }
 
+/** Una tarifa de la ficha con su reembolso leído a la hora en que llegaron las tarifas. */
+export interface DetailRatePlan {
+  readonly row: HotelRateRow;
+  readonly refund: RateRefundability;
+}
+
 export interface DetailRatesView {
   readonly rows: readonly HotelRateRow[];
+  /** Las mismas tarifas por tipo de habitación, que es como se pintan. */
+  readonly groups: readonly RoomTypeGroup<DetailRatePlan>[];
   /** Las tarifas de todos los proveedores juntas, para el contador de vencimiento. */
   readonly offers: readonly Pick<HotelOffer, 'roompacks'>[];
   readonly failed: readonly FailedProvider[];
@@ -192,16 +201,22 @@ export interface DetailRatesView {
 
 /**
  * Las tarifas de todos los proveedores en una lista, de la más barata a la más cara por precio de
- * VENTA, con la misma función que arma las filas de la tarjeta: misma pastilla, misma regla.
+ * VENTA, con la misma función que arma las filas de la tarjeta: misma pastilla, misma regla. Se
+ * agrupan por tipo de habitación como en la tarjeta; con la hora en que llegaron, una reembolsable
+ * cuyo 100 % ya rige se lee como no reembolsable.
  */
 export function detailRatesView(
   rates: HotelDetailRatesResult,
   showProvider: boolean,
+  isExpired: (row: HotelRateRow) => boolean = () => false,
 ): DetailRatesView {
   const offers = rates.outcomes.map((o) => o.offer).filter((o): o is HotelOffer => o !== undefined);
   const roompacks = offers.flatMap((o) => o.roompacks);
+  const rows = hotelRateRows({ roompacks }, showProvider);
+  const plans = rows.map((row) => ({ row, refund: rateRefundability(row.pack, rates.receivedAt) }));
   return {
-    rows: hotelRateRows({ roompacks }, showProvider),
+    rows,
+    groups: roomTypeGroups(plans, (plan) => isExpired(plan.row)),
     offers: [{ roompacks }],
     failed: rates.outcomes
       .filter((o) => o.offer === undefined)

@@ -24,10 +24,10 @@ export function humanizeDespegarError(status: number, body: string): string {
   const m = detail.toLowerCase();
 
   if (status === 0) {
-    return 'No pudimos conectar con el proveedor de hoteles. Probá de nuevo en unos segundos.';
+    return 'No pudimos conectar con el proveedor de hoteles. Prueba de nuevo en unos segundos.';
   }
   if (status >= 500) {
-    return 'El proveedor de hoteles tuvo un problema interno. Probá de nuevo en unos minutos.';
+    return 'El proveedor de hoteles tuvo un problema interno. Prueba de nuevo en unos minutos.';
   }
 
   if (
@@ -38,7 +38,7 @@ export function humanizeDespegarError(status: number, body: string): string {
     m.includes('api key') ||
     m.includes('forbidden')
   ) {
-    return 'Las credenciales de Despegar Hoteles son inválidas o faltan. Verificá la API key en Mi Red → Credenciales → Despegar Hoteles.';
+    return 'Las credenciales de Despegar Hoteles son inválidas o faltan. Verifica la API key en Mi Red → Credenciales → Despegar Hoteles.';
   }
 
   if (
@@ -50,11 +50,11 @@ export function humanizeDespegarError(status: number, body: string): string {
     m.includes('no availability') ||
     m.includes('unavailable')
   ) {
-    return 'La tarifa o disponibilidad seleccionada ya venció. Volvé a buscar para ver opciones actualizadas y reintentá la reserva.';
+    return 'La tarifa o disponibilidad seleccionada ya venció. Vuelve a buscar para ver opciones actualizadas y reintenta la reserva.';
   }
 
   if (detail && detail.length <= 160) {
     return `Despegar Hoteles rechazó la operación: ${detail}`;
   }
-  return 'No pudimos procesar la solicitud con Despegar Hoteles. Revisá los datos e intentá nuevamente.';
+  return 'No pudimos procesar la solicitud con Despegar Hoteles. Revisa los datos e intenta nuevamente.';
 }

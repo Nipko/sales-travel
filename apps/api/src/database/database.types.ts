@@ -422,16 +422,40 @@ export interface HotelContentTable {
   fetched_at: Generated<Timestamp>;
 }
 
-/** 0041: contenido por habitación. `room_id` nunca es `'0'` (centinela de "sin mapeo"). */
+/**
+ * 0041 + 0070: contenido por habitación. `room_id` es el `roomKey` del ACL (el id del proveedor o
+ * `n-` + 16 hex del nombre normalizado) y nunca `'0'` (centinela de "sin mapeo"). La app la escribe
+ * sólo por `hotel_catalog_store_room_contents`.
+ */
 export interface HotelRoomContentTable {
   provider_code: string;
   hotel_id: string;
   room_id: string;
   lang: LanguageCode;
+  /** Id de la habitación en el proveedor (TBO `RoomId`); `null` si no vino. */
+  room_ref: string | null;
+  /** Nombre normalizado como `normalizeRoomName` de la web. */
+  name_key: string | null;
   name: string | null;
   size_text: string | null;
+  /** Texto plano, sin `<` ni `>`. */
   description: string | null;
+  /** `string[]` de URLs `https`. */
   images: unknown;
+  position: Generated<number>;
+  fetched_at: Generated<Timestamp>;
+}
+
+/** Qué respondió el proveedor al detalle por habitación de un hotel en un idioma (0070). */
+export type HotelRoomContentOutcome = 'rooms' | 'none' | 'unreadable';
+
+/** 0070: la última vez que se pidió el detalle por habitación de un hotel en un idioma. */
+export interface HotelRoomContentFetchTable {
+  provider_code: string;
+  hotel_id: string;
+  lang: LanguageCode;
+  outcome: HotelRoomContentOutcome;
+  room_count: Generated<number>;
   fetched_at: Generated<Timestamp>;
 }
 
@@ -558,6 +582,89 @@ export interface HotelOrderTrackingTable {
   cancel_verify_anchor_at: Timestamp | null;
   cancel_verify_step: number | null;
   cancel_verify_next_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/*
+ * 0082: vocabularios cerrados de `flight_order_tracking` y `order_flight_documents`. Valores y no
+ * sólo tipos por lo mismo que los de 0042: los CHECK de la migración dicen lo mismo, y un test los
+ * compara con el SQL y con el vocabulario del dominio.
+ */
+export const FLIGHT_DOCUMENT_KINDS = ['TICKET', 'EMD'] as const;
+export type FlightDocumentKind = (typeof FLIGHT_DOCUMENT_KINDS)[number];
+
+export const FLIGHT_DOCUMENT_STATUSES = [
+  'ISSUED',
+  'VOIDED',
+  'REFUNDED',
+  'EXCHANGED',
+  'UNKNOWN',
+] as const;
+export type FlightDocumentStatus = (typeof FLIGHT_DOCUMENT_STATUSES)[number];
+
+export const TICKETING_DEADLINE_ZONES = ['UTC', 'PROVIDER_LOCAL'] as const;
+export type TicketingDeadlineZone = (typeof TICKETING_DEADLINE_ZONES)[number];
+
+/** `DATE` de Postgres: `pg` lo entrega como `Date` a medianoche LOCAL; se lee con `to_char`. */
+type PgDate = ColumnType<Date | null, string | null | undefined, string | null>;
+
+/**
+ * 0082: lo que la última lectura del proveedor dijo de una orden de vuelo. Una fila por orden, con
+ * tenant_id y RLS forzada; `(order_id, tenant_id)` apunta a `(id, tenant_id)` de `orders`. Sin PII.
+ */
+export interface FlightOrderTrackingTable {
+  order_id: string;
+  tenant_id: string;
+  /** `[{ carrierCode, locator }]`. La forma la valida el store; la base, que es una lista. */
+  airline_locators: ColumnType<unknown, string | undefined, string>;
+  /** Va con su zona: los dos o ninguno. */
+  ticketing_deadline_date: PgDate;
+  /** `HH:MM`; sólo con fecha. */
+  ticketing_deadline_time: string | null;
+  ticketing_deadline_zone: TicketingDeadlineZone | null;
+  /**
+   * 0084: zona IANA de la oficina del proveedor, la que declara la cuenta de la reserva. Sólo con
+   * zona `PROVIDER_LOCAL`.
+   */
+  ticketing_deadline_time_zone: string | null;
+  /**
+   * Con zona `UTC`, o (0084) con `PROVIDER_LOCAL` más hora y la zona de la oficina. Sin esa zona,
+   * la hora de la oficina daría un instante inventado.
+   */
+  ticketing_deadline_at: Timestamp | null;
+  /**
+   * 0084: el aviso de «vence en menos de 24 h» del plazo vigente, tomado (el candado del envío).
+   * NULL: no salió, o su correo falló y espera la próxima corrida (0085).
+   */
+  deadline_alerted_24h_at: Timestamp | null;
+  /** 0084: el de «vence en menos de 2 h». Al tomarse marca también el de 24 h. */
+  deadline_alerted_2h_at: Timestamp | null;
+  /** 0085: correos fallidos del aviso de 24 h del plazo vigente; al tope se cierra sin correo. */
+  deadline_alert_24h_failures: Generated<number>;
+  /** 0085: lo mismo para el aviso de 2 h. */
+  deadline_alert_2h_failures: Generated<number>;
+  last_read_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/** 0082: tiquetes y EMD de una orden de vuelo, uno por `(order_id, number)`. */
+export interface OrderFlightDocumentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  /** Número principal, `^[0-9]{10,16}$`. */
+  number: string;
+  kind: FlightDocumentKind;
+  /** Posición del pasajero en `orders.passengers`, desde 0. */
+  traveler_index: number | null;
+  status: FlightDocumentStatus;
+  /** Código del proveedor, `^[A-Z0-9]{1,4}$`. */
+  provider_status_code: string | null;
+  issued_at: Timestamp | null;
+  voided_at: Timestamp | null;
+  refunded_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -869,6 +976,9 @@ export interface PackageItemsTable {
 /**
  * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
  * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
+ *
+ * `issue`, `modify` y `add-services` son escrituras en el proveedor de una orden de vuelo: como
+ * máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083).
  */
 export type OrderOperationType =
   | 'cancel'
@@ -877,7 +987,17 @@ export type OrderOperationType =
   | 'retrieve'
   | 'hcn-check'
   | 'hcn-ticket'
-  | 'reconcile';
+  | 'reconcile'
+  | 'issue'
+  | 'modify'
+  | 'add-services';
+
+/** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
+export const PROVIDER_WRITE_OPERATION_TYPES = [
+  'issue',
+  'modify',
+  'add-services',
+] as const satisfies readonly OrderOperationType[];
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
 export interface OrderOperationsTable {
@@ -978,6 +1098,42 @@ export interface ProviderEnablementTable {
   updated_at: Timestamp;
 }
 
+/**
+ * 0077: apagado de emergencia de un proveedor puesto desde el panel. `sales` frena las ventas;
+ * `all`, también la post-venta. Lectura abierta para el servidor (lo aplica el circuit breaker);
+ * sólo escribe el superadmin de la plataforma (RLS). Vencida, la fila no apaga nada.
+ */
+export interface ProviderKillSwitchesTable {
+  provider_code: string;
+  level: 'all' | 'sales';
+  reason: string;
+  set_by: string;
+  set_at: Timestamp;
+  expires_at: Timestamp | null;
+}
+
+/** Anuncios de la plataforma (0079). Sólo los lee y escribe el superadmin; el resto, por active_announcements(). */
+export interface SystemAnnouncementsTable {
+  id: Generated<string>;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  body: Generated<string>;
+  /** NULL = toda la red. */
+  audience_root_tenant_id: string | null;
+  audience_admins_only: Generated<boolean>;
+  starts_at: Timestamp;
+  ends_at: RequiredTimestamp;
+  created_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  archived_at: Timestamp | null;
+}
+
+/**
+ * El audit log, append-only (0015), con RLS por subárbol (0029). Toda la plataforma, eventos sin
+ * nodo incluidos, sólo se lee por funciones del superadmin: platform_user_audit_trail (0065) y
+ * admin_audit_events (0078, Plataforma → Actividad; índice idx_domain_events_time).
+ */
 export interface DomainEventsTable {
   id: Generated<string>;
   occurred_at: Generated<Timestamp>;
@@ -1056,13 +1212,18 @@ export interface DB {
   hotel_match: HotelMatchTable;
   hotel_content: HotelContentTable;
   hotel_room_content: HotelRoomContentTable;
+  hotel_room_content_fetch: HotelRoomContentFetchTable;
   quotations: QuotationsTable;
   orders: OrdersTable;
   order_operations: OrderOperationsTable;
   hotel_order_tracking: HotelOrderTrackingTable;
+  flight_order_tracking: FlightOrderTrackingTable;
+  order_flight_documents: OrderFlightDocumentsTable;
   provider_reconciliation_runs: ProviderReconciliationRunsTable;
   provider_reconciliation_items: ProviderReconciliationItemsTable;
   provider_enablement: ProviderEnablementTable;
+  provider_kill_switches: ProviderKillSwitchesTable;
+  system_announcements: SystemAnnouncementsTable;
   customers: CustomersTable;
   customer_passengers: CustomerPassengersTable;
   customer_documents_vault: CustomerDocumentsVaultTable;

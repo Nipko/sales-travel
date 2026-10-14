@@ -132,7 +132,11 @@ describe('TBO pasa por el breaker con la huella de su cuenta', () => {
 
     const oferta = await b.service.getHotelDetail(AGENCIA, DETALLE);
 
-    expect(oferta).toEqual({ hotelId: DETALLE.hotelId, roompacks: [] });
+    expect(oferta).toEqual({
+      hotelId: DETALLE.hotelId,
+      roompacks: [],
+      accountEnvironment: 'test',
+    });
     expect(b.fetch).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
     const [codigo, , opciones] = execute.mock.calls[0] ?? [];
@@ -203,6 +207,7 @@ describe('TBO pasa por el breaker con la huella de su cuenta', () => {
     await expect(b.service.getHotelDetail(CONSOLIDADOR, DETALLE)).resolves.toEqual({
       hotelId: DETALLE.hotelId,
       roompacks: [],
+      accountEnvironment: 'test',
     });
     expect(b.fetch).toHaveBeenCalledTimes(1);
   });

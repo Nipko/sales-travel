@@ -550,6 +550,10 @@ describe('FALSO POSITIVO — medido sobre los cuerpos oficiales del devhub', () 
     const byKey = [...masked].filter((key) => isSensitiveKey(key)).sort();
     const byShape = [...masked].filter((key) => !isSensitiveKey(key)).sort();
 
+    // `emails` y `phones` entran con la ronda que cerró el plural en `PII_KEYS`. No son un falso
+    // positivo: en los ejemplos oficiales de createBooking son `contactInfo.emails[]` y
+    // `travelers[].phones[]`, o sea el correo y el teléfono del pasajero, que antes salían en
+    // claro en cualquier rechazo que hiciera eco de la request.
     expect(byKey).toEqual([
       'PseudoCityCode',
       'access_token',
@@ -557,7 +561,9 @@ describe('FALSO POSITIVO — medido sobre los cuerpos oficiales del devhub', () 
       'birthDate',
       'cardNumber',
       'documentNumber',
+      'emails',
       'givenName',
+      'phones',
       'pseudoCityCode',
       'surname',
       'targetPcc',

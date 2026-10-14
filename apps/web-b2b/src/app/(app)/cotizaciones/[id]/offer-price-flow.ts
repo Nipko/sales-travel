@@ -5,6 +5,16 @@ export interface OfferPriceEnvelope {
   readonly offer: Offer;
   readonly priceChanged: boolean;
   readonly warnings: readonly string[];
+  /**
+   * El proveedor de la oferta deja elegir asiento al reservar (SAB-16). Ausente o cualquier otra
+   * cosa que no sea `true` = no: el botón no se ofrece.
+   */
+  readonly seatSelection?: boolean;
+}
+
+/** ¿Se ofrece «Elegir asientos»? Sólo con un `true` explícito del API. */
+export function offersSeatSelection(envelope: OfferPriceEnvelope): boolean {
+  return envelope.seatSelection === true;
 }
 
 export type OfferPriceRead =
@@ -130,11 +140,11 @@ export function reservationGateMessage(
   state: PriceVerificationState | null,
   verifying: boolean,
 ): string | undefined {
-  if (verifying) return 'Esperá a que termine la revalidación antes de reservar.';
-  if (state === null) return 'Verificá el precio para habilitar la reserva.';
+  if (verifying) return 'Espera a que termine la revalidación antes de reservar.';
+  if (state === null) return 'Verifica el precio para habilitar la reserva.';
   if (state.kind === 'error') return state.message;
   if (state.kind === 'acceptance-required') {
-    return 'Aceptá la tarifa revalidada para habilitar la reserva.';
+    return 'Acepta la tarifa revalidada para habilitar la reserva.';
   }
   return undefined;
 }

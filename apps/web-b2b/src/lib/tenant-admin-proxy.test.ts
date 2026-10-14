@@ -19,7 +19,10 @@ import {
   seatReleaseTarget,
   seatsViewTarget,
   tenantAdminProxyReply,
+  tenantImpactTarget,
   tenantMovePlan,
+  tenantStatsTarget,
+  tenantSummaryTarget,
   tenantUpdatePlan,
   userAuditQuery,
 } from './tenant-admin-proxy';
@@ -29,10 +32,12 @@ const PARENT = '11111111-2222-4333-8444-555555555555';
 
 describe('tenantUpdatePlan: PATCH /admin/tenants/:id', () => {
   it('reconstruye el cuerpo campo por campo, con el id en minúsculas', () => {
-    expect(tenantUpdatePlan(ID, { status: 'suspended', extra: 'x' })).toEqual({
+    expect(
+      tenantUpdatePlan(ID, { status: 'suspended', reason: '  Deuda vencida  ', extra: 'x' }),
+    ).toEqual({
       ok: true,
       path: `/admin/tenants/${ID.toLowerCase()}`,
-      body: { status: 'suspended' },
+      body: { status: 'suspended', reason: 'Deuda vencida' },
     });
     expect(tenantUpdatePlan(ID, { isBranch: true })).toMatchObject({ body: { isBranch: true } });
     expect(tenantUpdatePlan(ID, { tenantType: 'agency' })).toMatchObject({
@@ -57,6 +62,65 @@ describe('tenantUpdatePlan: PATCH /admin/tenants/:id', () => {
     expect(tenantUpdatePlan(ID, {}).ok).toBe(false);
     expect(tenantUpdatePlan(ID, undefined).ok).toBe(false);
     expect(tenantUpdatePlan(ID, [{ status: 'active' }]).ok).toBe(false);
+    // El motivo solo no es un cambio.
+    expect(tenantUpdatePlan(ID, { reason: 'Deuda vencida' }).ok).toBe(false);
+  });
+
+  it('suspender sin motivo no viaja; reactivar sí, con o sin él', () => {
+    expect(tenantUpdatePlan(ID, { status: 'suspended' })).toEqual({
+      ok: false,
+      error: 'Indica el motivo de la suspensión.',
+    });
+    expect(tenantUpdatePlan(ID, { status: 'suspended', reason: '   ' }).ok).toBe(false);
+    expect(tenantUpdatePlan(ID, { status: 'active' })).toMatchObject({
+      ok: true,
+      body: { status: 'active' },
+    });
+    expect(tenantUpdatePlan(ID, { status: 'active', reason: '' })).toMatchObject({
+      body: { status: 'active' },
+    });
+    expect(tenantUpdatePlan(ID, { status: 'active', reason: null })).toMatchObject({
+      body: { status: 'active' },
+    });
+    expect(tenantUpdatePlan(ID, { status: 'active', reason: 'Pagó la deuda' })).toMatchObject({
+      body: { status: 'active', reason: 'Pagó la deuda' },
+    });
+  });
+
+  it('un motivo que no es texto o pasa de 500 caracteres no viaja', () => {
+    expect(tenantUpdatePlan(ID, { status: 'suspended', reason: 42 })).toEqual({
+      ok: false,
+      error: 'El motivo no se pudo leer.',
+    });
+    expect(tenantUpdatePlan(ID, { status: 'suspended', reason: 'x'.repeat(501) })).toEqual({
+      ok: false,
+      error: 'El motivo puede tener hasta 500 caracteres.',
+    });
+    expect(tenantUpdatePlan(ID, { status: 'suspended', reason: 'x'.repeat(500) }).ok).toBe(true);
+  });
+});
+
+describe('Agencias en números: rutas del API', () => {
+  it('GET /admin/tenants/stats', () => {
+    expect(tenantStatsTarget()).toEqual({ ok: true, path: '/admin/tenants/stats' });
+  });
+
+  it('GET /admin/tenants/:id/impact con el id en minúsculas; otro segmento no compone otra ruta', () => {
+    expect(tenantImpactTarget(ID)).toEqual({
+      ok: true,
+      path: `/admin/tenants/${ID.toLowerCase()}/impact`,
+    });
+    expect(tenantImpactTarget('stats')).toEqual({ ok: false, error: 'Nodo inválido.' });
+    expect(tenantImpactTarget('../users').ok).toBe(false);
+  });
+
+  it('GET /admin/tenants/:id/summary con el id en minúsculas; otro segmento no compone otra ruta', () => {
+    expect(tenantSummaryTarget(ID)).toEqual({
+      ok: true,
+      path: `/admin/tenants/${ID.toLowerCase()}/summary`,
+    });
+    expect(tenantSummaryTarget('stats')).toEqual({ ok: false, error: 'Nodo inválido.' });
+    expect(tenantSummaryTarget('../users').ok).toBe(false);
   });
 });
 

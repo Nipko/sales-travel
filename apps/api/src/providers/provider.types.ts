@@ -13,9 +13,12 @@ import type {
   OrderCreateResult,
   OrderManagePort,
   SearchContext,
+  SeatMapPort,
+  TicketingPort,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
 import type { ProviderCircuitOptions } from '../search/circuit-breaker.service.js';
+import type { ProviderEnvironment } from './provider-environment.js';
 
 /**
  * Un adapter de vuelos = los cuatro ports del dominio.
@@ -80,7 +83,20 @@ export interface OrderCancelAudit {
    * releer la reserva y comparar. Reintentar a ciegas puede cancelar lo que sobrevivió.
    */
   readonly verified: boolean;
+  /**
+   * `true` ⇒ el proveedor aplicó una PARTE: anuló unos tiquetes y otros no. No es éxito ni un
+   * rechazo limpio —la reserva quedó a medias—, así que tampoco se reintenta: se concilia y lo mira
+   * una persona. Ausente = no hubo nada parcial que declarar.
+   */
+  readonly partial?: boolean;
 }
+
+/**
+ * Qué se hace con los tiquetes de una reserva emitida al cancelarla. `VOID` es la anulación IATA:
+ * dentro de la ventana de la aerolínea, sin penalidad. El reembolso entra cuando exista su flujo.
+ */
+export const TICKET_OPERATIONS = ['VOID'] as const;
+export type TicketOperation = (typeof TICKET_OPERATIONS)[number];
 
 /** Ámbito de una compensación selectiva. Ausente = se cancela la reserva entera. */
 export interface OrderCancelScope {
@@ -90,6 +106,13 @@ export interface OrderCancelScope {
    * también lo que estaba bien.
    */
   readonly itemIds?: readonly string[];
+  /**
+   * Una reserva emitida sólo se cancela diciendo qué pasa con sus tiquetes. Con `VOID` se cancela
+   * la reserva entera y se anulan sus tiquetes en la misma operación; el adapter vuelve a comprobar
+   * en el proveedor que se puede y, si no, lanza {@link TicketVoidNotAvailableError} sin mandar
+   * nada. No se combina con `itemIds`.
+   */
+  readonly ticketOperation?: TicketOperation;
 }
 
 export interface AuditedOrderCancelPort {
@@ -120,6 +143,25 @@ export function supportsAuditedCancel<T extends object>(
 }
 
 /**
+ * ¿Este adapter sabe emitir los tiquetes de una reserva (`TicketingPort`)? Por presencia de los dos
+ * métodos, como {@link supportsAuditedCreate}. Que el adapter sepa emitir no quiere decir que la
+ * emisión esté encendida: eso lo dice la capacidad `issue` del factory.
+ */
+export function supportsTicketing<T extends object>(adapter: T): adapter is T & TicketingPort {
+  const port = adapter as { issueTickets?: unknown; checkTickets?: unknown };
+  return typeof port.issueTickets === 'function' && typeof port.checkTickets === 'function';
+}
+
+/**
+ * ¿Este adapter sabe pintar el mapa de asientos de una oferta (`SeatMapPort`)? Por presencia del
+ * método, como {@link supportsTicketing}. Que sepa pintarlo no quiere decir que la elección de
+ * asiento esté encendida: eso lo dice la capacidad `seatMap` del factory.
+ */
+export function supportsSeatMap<T extends object>(adapter: T): adapter is T & SeatMapPort {
+  return typeof (adapter as { getSeatMap?: unknown }).getSeatMap === 'function';
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -132,6 +174,29 @@ export interface ProviderCapabilities {
   /** Ancillaries: equipaje, asientos y demás servicios sueltos. */
   readonly services: boolean;
   readonly reshop: boolean;
+  /**
+   * Emitir los tiquetes de una reserva confirmada, sin tarjeta (`TicketingPort`). Opcional y
+   * ausente = `false`: es la primera operación que mueve dinero irreversible, y un proveedor nuevo
+   * no la hereda por olvido. Distinta de `pay`, que es el pago diferido de LATAM.
+   */
+  readonly issue?: boolean;
+  /**
+   * Consultar en el proveedor las condiciones de los tiquetes emitidos: si todavía se pueden anular
+   * sin costo o reembolsar (`TicketingPort.checkTickets`). Es una lectura. Ausente = `false`.
+   */
+  readonly ticketCheck?: boolean;
+  /**
+   * Anular (VOID) los tiquetes de una reserva emitida, que la deja cancelada (`OrderCancelScope`
+   * con `ticketOperation: 'VOID'`). Ausente = `false`: es la compuerta que deja cancelar una reserva
+   * emitida, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly void?: boolean;
+  /**
+   * Elegir asiento al reservar (SAB-16): pintar el mapa de una oferta (`SeatMapPort`) y reservar
+   * los asientos SIN CARGO junto con el vuelo. Ausente = `false`: la reserva de un asiento se
+   * certifica por proveedor antes de ofrecerla, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly seatMap?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;
@@ -188,6 +253,44 @@ export interface TenantAdapter<TAdapter> {
    * forzada): sólo el factory, que la resolvió, sabe de quién es.
    */
   readonly accountOwnerTenantId?: string | undefined;
+  /**
+   * Entorno de la cuenta con que sale el adapter: `test` (sandbox, certificación) o `live`.
+   * `undefined` = el factory no lo dice y se lee como `live`, que es lo que eran todas las cuentas
+   * antes de que existiera el campo.
+   *
+   * Lo declara el factory porque es el único que leyó la cuenta: ni el ACL (que no sabe con qué
+   * cuenta lo construyeron) ni el fan-out (que no lee configuraciones de nadie) pueden saberlo. Con
+   * esto la búsqueda marca cada tarifa de una cuenta de pruebas y la orden lo guarda, para que el
+   * vendedor nunca le venda a un cliente un tiquete que no sirve para viajar.
+   */
+  readonly providerEnvironment?: ProviderEnvironment | undefined;
+  /**
+   * Id de la cuenta de la bóveda (`provider_accounts.id`) con que sale el adapter. `undefined` = no
+   * hay una cuenta de la bóveda detrás (credenciales de la plataforma) o el factory no lo dice.
+   *
+   * Existe para que la orden guarde con qué cuenta se reservó (`orders.provider_account_id`): el
+   * proveedor sólo reconoce una reserva con la cuenta que la creó, y la post-venta de una agencia
+   * que después cambió de cuenta tiene que seguir saliendo con la anterior (RF-29). Sólo se graba si
+   * el factory sabe operar con ella después ({@link TenantProviderFactory.resolveForOrder}).
+   */
+  readonly accountId?: string | undefined;
+  /**
+   * `provider_accounts.updated_at` de esa cuenta: la versión con la que se resolvió. El intent de la
+   * orden sólo se compromete si la cuenta sigue en esa versión (`ProviderAccountChangedError`).
+   */
+  readonly accountUpdatedAt?: Date | undefined;
+}
+
+/**
+ * Lo que el registry necesita de una orden YA hecha para resolver su post-venta: el proveedor y la
+ * cuenta con que se reservó.
+ */
+export interface OrderProviderRef {
+  readonly orderId: string;
+  /** `orders.provider`. */
+  readonly provider: string;
+  /** `orders.provider_account_id`; `null` en órdenes que no la guardaron. */
+  readonly providerAccountId: string | null;
 }
 
 /**
@@ -195,12 +298,27 @@ export interface TenantAdapter<TAdapter> {
  *
  * Existe porque el adapter de una cuenta heredada es el MISMO para el consolidador y para sus
  * agencias: el error no puede saber si la credencial rechazada es de quien lo ve o de su
- * consolidador, y el mensaje cambia de destinatario ("verificá tus credenciales" frente a
- * "avisale al consolidador").
+ * consolidador, y el mensaje cambia de destinatario ("verifica tus credenciales" frente a
+ * "avísale al consolidador").
  */
 export interface ProviderErrorContext {
   readonly credentialSource?: CredentialSource;
 }
+
+/**
+ * Quién paga lo que se reserva con la cuenta del proveedor.
+ *
+ * - `provider-direct`: el proveedor le cobra a la agencia o al cliente por su cuenta (LATAM cobra
+ *   la orden con su propio pago): la red no adelanta nada y la reserva no retiene cartera.
+ * - `network-wallet`: lo liquida el dueño de la cuenta (un tiquete emitido en CASH o a crédito que
+ *   paga por BSP). La reserva retiene la cartera del nodo que vende y la de cada nivel de su red
+ *   hasta ese dueño, como un hotel (docs/platform/12 §14; SAB-FD-2 A). Una cuenta de pruebas no
+ *   retiene: no factura.
+ */
+export type ProviderSettlement = 'network-wallet' | 'provider-direct';
+
+/** Lo que vale un factory que no lo declara: el proveedor cobra por su cuenta. */
+export const DEFAULT_PROVIDER_SETTLEMENT: ProviderSettlement = 'provider-direct';
 
 /**
  * Contrato que los factories por proveedor ya cumplían de facto, sin declararlo.
@@ -214,9 +332,25 @@ export interface TenantProviderFactory<TAdapter> {
   readonly vertical: ProviderVertical;
   readonly capabilities: ProviderCapabilities;
   readonly defaultCallPolicy: CallPolicy;
+  /**
+   * Quién liquida lo que se reserva con este proveedor ({@link ProviderSettlement}). Estático por
+   * proveedor. Ausente = `provider-direct`.
+   */
+  readonly settlement?: ProviderSettlement;
   /** Lanza `NotFoundException` si el tenant no resuelve credenciales y no hay fallback. */
   forTenant(tenantId: string): Promise<TAdapter>;
   resolveForTenant(tenantId: string): Promise<TenantAdapter<TAdapter>>;
+  /**
+   * El adapter con la cuenta con la que se hizo UNA orden (`orders.provider_account_id`), para su
+   * post-venta: no la vigente del tenant, que puede ser otra si la agencia cambió de cuenta (RF-29).
+   * La orden se lee con el tenant fijado y la cuenta tiene que seguir en su red.
+   *
+   * Opcional: un proveedor que no lo implementa no guarda la cuenta en sus órdenes, y su post-venta
+   * sale con la cuenta vigente, como siempre. El registry no inventa un reemplazo.
+   *
+   * Lanza `NotFoundException` si la cuenta de la orden ya no está disponible para el tenant.
+   */
+  resolveForOrder?(tenantId: string, orderId: string): Promise<TenantAdapter<TAdapter>>;
   /**
    * Traduce un error del proveedor a un mensaje para el vendedor. Vive en el factory —y no
    * en el servicio de búsqueda— para que el fan-out no tenga que conocer los tipos de error
@@ -231,6 +365,16 @@ export interface ResolvedProvider<TAdapter> {
   readonly credentialSource: CredentialSource;
   readonly capabilities: ProviderCapabilities;
   readonly callPolicy: CallPolicy;
+  /**
+   * Entorno de la cuenta resuelta, ya sin huecos: lo que declaró el factory o `live` si no dijo
+   * nada (ver {@link TenantAdapter.providerEnvironment}). Obligatorio a propósito: quien estampa
+   * ofertas u órdenes no puede olvidarse de mirarlo.
+   */
+  readonly environment: ProviderEnvironment;
+  /** La cuenta de la bóveda con que sale el adapter, si el factory la declara (ver `TenantAdapter`). */
+  readonly accountId?: string;
+  /** Su versión (`provider_accounts.updated_at`) al resolverla. */
+  readonly accountUpdatedAt?: Date;
 }
 
 /**
@@ -446,8 +590,8 @@ export class AllFlightProvidersFailedError extends BadGatewayException {
  *
  * Extiende `NotFoundException` porque el efecto es el mismo que no tener cuenta —el registry lo
  * traduce a "proveedor no habilitado" y la búsqueda sigue sin él—; existe como tipo propio para
- * que la ausencia llegue a la pantalla con el motivo CORRECTO. "Cargá tus credenciales" y
- * "completá las que cargaste" son dos acciones distintas para el vendedor, y adivinarlas a
+ * que la ausencia llegue a la pantalla con el motivo CORRECTO. "Carga tus credenciales" y
+ * "completa las que cargaste" son dos acciones distintas para el vendedor, y adivinarlas a
  * partir del texto de un mensaje es el `if` sobre strings que este paquete lleva rondas quitando.
  *
  * `missingFields` son NOMBRES de campo, nunca valores.
@@ -470,7 +614,7 @@ export class ProviderAccountIncompleteError extends NotFoundException {
  *
  * Extiende `NotFoundException` por lo mismo que {@link ProviderAccountIncompleteError}: el efecto
  * es el de no tener cuenta, y la búsqueda sigue sin el proveedor. Lleva `detail` porque la acción
- * del vendedor no es ninguna de las dos que el registry sabe decir ("cargá" o "completá"): una
+ * del vendedor no es ninguna de las dos que el registry sabe decir ("carga" o "completa"): una
  * cuenta que se acepta en la bóveda y se rechaza en silencio es una agencia creyendo que vende
  * con un proveedor que nunca se llama.
  *
@@ -493,7 +637,7 @@ export class ProviderAccountNotAllowedError extends NotFoundException {
 export class ProviderNotAvailableError extends BadRequestException {
   constructor(
     readonly providerCode: string,
-    message = `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisá Mi Red → Credenciales.`,
+    message = `El proveedor '${providerCode}' no está habilitado para esta agencia. Revisa Mi Red → Credenciales.`,
   ) {
     super(message);
     this.name = 'ProviderNotAvailableError';
@@ -506,19 +650,31 @@ export class ProviderNotAvailableError extends BadRequestException {
  * aquí.
  *
  * Es un {@link ProviderNotAvailableError} para que quien ya lo trata como "no habilitado" siga
- * igual, con otro mensaje: "revisá tus credenciales" mandaría al vendedor a un panel donde no hay
+ * igual, con otro mensaje: "revisa tus credenciales" mandaría al vendedor a un panel donde no hay
  * nada que arreglar.
  */
 export class ProviderDisabledByPlatformError extends ProviderNotAvailableError {
   readonly reason = 'PROVIDER_DISABLED_BY_PLATFORM';
 
-  constructor(providerCode: string) {
-    super(
-      providerCode,
-      `El proveedor '${providerCode}' está deshabilitado por la plataforma para esta agencia: no admite ventas nuevas. Lo ya vendido se sigue consultando y cancelando.`,
-    );
+  constructor(
+    providerCode: string,
+    message = `El proveedor '${providerCode}' está deshabilitado por la plataforma para esta agencia: no admite ventas nuevas. Lo ya vendido se sigue consultando y cancelando.`,
+  ) {
+    super(providerCode, message);
     this.name = 'ProviderDisabledByPlatformError';
   }
+}
+
+/**
+ * El apagado de emergencia (`PROVIDERS_DISABLED` o el del panel, 0077) frena una venta nueva que el
+ * circuit breaker no ve: la que sigue una oferta emitida antes del apagado. Mismo 400 y mismo motivo
+ * máquina que el apagado por agencia, con un mensaje que no habla de "esta agencia".
+ */
+export function killSwitchedSaleError(providerCode: string): ProviderDisabledByPlatformError {
+  return new ProviderDisabledByPlatformError(
+    providerCode,
+    `El proveedor '${providerCode}' está apagado temporalmente por la plataforma: no admite ventas nuevas por ahora.`,
+  );
 }
 
 /**
@@ -534,8 +690,50 @@ export class ProviderOrderAccountUnavailableError extends ConflictException {
 
   constructor(readonly providerCode: string) {
     super(
-      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pedile al administrador de tu red que la revise en Mi Red → Credenciales.',
+      'La cuenta del proveedor con la que se hizo esta reserva ya no está disponible para tu agencia, y es la única con la que se puede consultar o cancelar. Pídele al administrador de tu red que la revise en Mi Red → Credenciales.',
     );
     this.name = 'ProviderOrderAccountUnavailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando los tiquetes ya no se pueden anular sin costo. */
+export const TICKET_VOID_NOT_AVAILABLE_MESSAGE =
+  'La aerolínea ya no permite anular estos tiquetes. Revisa las condiciones de reembolso.';
+
+/**
+ * El proveedor no permite anular (VOID) los tiquetes de esta reserva: la ventana de la aerolínea se
+ * cerró, o la comprobación no lo garantiza. Se decide ANTES de mandar nada, con la comprobación en
+ * vivo del proveedor; la ventana se lee, nunca se calcula.
+ *
+ * 409 y no reintentable (`retryable: false`, falla de negocio): repetir la anulación no la vuelve
+ * posible, y el siguiente paso es el reembolso, que es otra operación con penalidad.
+ */
+export class TicketVoidNotAvailableError extends ConflictException {
+  readonly reason = 'TICKET_VOID_NOT_AVAILABLE';
+  readonly retryable = false;
+  readonly failure = { kind: 'BUSINESS', retry: 'NO_RETRY' } as const;
+
+  constructor() {
+    super(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    this.name = 'TicketVoidNotAvailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando el proveedor de la tarifa no deja elegir asiento desde aquí. */
+export const SEAT_SELECTION_NOT_AVAILABLE_MESSAGE =
+  'La elección de asiento no está disponible para esta tarifa. Puedes reservar sin asiento.';
+
+/**
+ * El proveedor de la oferta no ofrece la elección de asiento: no implementa el mapa
+ * (`SeatMapPort`) o la plataforma no la encendió (capacidad `seatMap`). Se decide antes de leer
+ * nada. 400 y no 501: no es un error del sistema, es una tarifa sin esta opción; se reserva sin
+ * asiento.
+ */
+export class SeatSelectionNotAvailableError extends BadRequestException {
+  readonly reason = 'SEAT_SELECTION_NOT_AVAILABLE';
+
+  constructor() {
+    super(SEAT_SELECTION_NOT_AVAILABLE_MESSAGE);
+    this.name = 'SeatSelectionNotAvailableError';
   }
 }

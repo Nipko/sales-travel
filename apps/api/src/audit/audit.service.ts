@@ -39,6 +39,13 @@ export interface AuditEntry {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Los eventos de las tareas automáticas (`system.*`, p. ej. cada corrida del barrido de post-venta,
+ * orders/post-sale-sweep-events.ts). Son latidos, no acciones de una persona: la actividad de la red
+ * los deja fuera y los lee Plataforma → Sistema › Procesos.
+ */
+export const SYSTEM_EVENT_PREFIX = 'system.';
+
 /** Una página del audit log, del evento más nuevo al más viejo. */
 export interface AuditPage {
   events: AuditEntry[];
@@ -72,6 +79,9 @@ const CATEGORY_FILTERS: Readonly<Record<AuditCategory, RawBuilder<boolean>>> = {
 };
 
 const ALL = sql<boolean>`true`;
+
+/** El patrón de los `system.*`, como literal: no corre los parámetros de la consulta. */
+const NOT_SYSTEM_EVENT = sql.lit(`${SYSTEM_EVENT_PREFIX}%`);
 
 /** Lo de antes del cursor, en el orden del historial: (occurred_at, id) descendente. */
 function beforeCursor(before: AuditCursor | undefined): RawBuilder<boolean> {
@@ -228,6 +238,9 @@ export class AuditService {
    * La Actividad de la red bajo `rootTenantId` (subárbol por path), con filtro opcional por
    * categoría y por quién lo hizo. Los eventos sin nodo no entran.
    *
+   * Tampoco los `system.*` ({@link SYSTEM_EVENT_PREFIX}), con o sin filtro: el barrido deja uno en
+   * la raíz `platform` cada 15 minutos y la actividad de la plataforma sólo mostraría eso.
+   *
    * Corre con `viewerUserId` en `app.current_user_id`: desde 0029, domain_events tiene RLS por
    * subárbol (domain_events_subtree_read) y sin ese contexto la consulta devolvería cero filas EN
    * SILENCIO en vez de fallar, así que pasarlo es obligatorio, no una optimización.
@@ -251,6 +264,7 @@ export class AuditService {
           FROM domain_events e
           JOIN tenants t ON t.id = e.tenant_id
          WHERE ${withinRoot('t.path', rootTenantId)}
+           AND e.event_type NOT LIKE ${NOT_SYSTEM_EVENT}
            AND ${category}
            AND ${actor}
            AND ${beforeCursor(opts.before)}

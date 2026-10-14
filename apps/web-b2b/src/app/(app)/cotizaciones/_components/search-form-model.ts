@@ -183,23 +183,23 @@ export function validateSearch(draft: SearchDraft, today: IsoDate): SearchProble
   const destination = draft.destination.toUpperCase().trim();
 
   if (!IATA_RE.test(origin)) {
-    return { field: 'origin', message: 'Elegí el aeropuerto de origen.' };
+    return { field: 'origin', message: 'Elige el aeropuerto de origen.' };
   }
   if (!IATA_RE.test(destination)) {
-    return { field: 'destination', message: 'Elegí el aeropuerto de destino.' };
+    return { field: 'destination', message: 'Elige el aeropuerto de destino.' };
   }
   if (origin === destination) {
     return { field: 'destination', message: 'El origen y el destino tienen que ser distintos.' };
   }
   if (!DATE_RE.test(draft.departureDate)) {
-    return { field: 'dates', message: 'Elegí la fecha de ida.' };
+    return { field: 'dates', message: 'Elige la fecha de ida.' };
   }
   if (draft.departureDate < today) {
-    return { field: 'dates', message: 'La fecha de ida ya pasó. Elegí otra.' };
+    return { field: 'dates', message: 'La fecha de ida ya pasó. Elige otra.' };
   }
   if (draft.mode === 'roundtrip') {
     if (!DATE_RE.test(draft.returnDate)) {
-      return { field: 'dates', message: 'Falta la fecha de vuelta, o cambiá el viaje a solo ida.' };
+      return { field: 'dates', message: 'Falta la fecha de vuelta, o cambia el viaje a solo ida.' };
     }
     if (draft.returnDate < draft.departureDate) {
       return { field: 'dates', message: 'La vuelta no puede ser anterior a la ida.' };

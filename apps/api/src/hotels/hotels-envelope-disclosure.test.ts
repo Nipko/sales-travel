@@ -9,6 +9,7 @@ import type { DespegarHotelReservationsService } from './despegar-hotel-reservat
 import type { HotelBookingService } from './hotel-booking.service.js';
 import type { BookingPermissionsService } from '../booking-permissions/booking-permissions.service.js';
 import type { HotelContentService } from './hotel-content.service.js';
+import type { HotelRoomContentService } from './hotel-room-content.service.js';
 import type { HotelPrebookService } from './hotel-prebook.service.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
 import { HotelsController } from './hotels.controller.js';
@@ -89,6 +90,7 @@ function controllerCon(
     {} as HotelBookingService,
     {} as HotelContentService,
     {} as BookingPermissionsService,
+    {} as HotelRoomContentService,
   );
   return { controller, searchAvailability };
 }

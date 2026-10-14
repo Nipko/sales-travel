@@ -2,6 +2,7 @@ import type { AgencyOption } from '../../lib/agencies';
 import { brandStyleSheet } from '../../lib/brand-tokens';
 import { ANONYMOUS_VIEWER, type Viewer } from '../../lib/viewer';
 import { AgencySwitcherProvider } from './agency-switcher';
+import { AnnouncementBanner } from './announcement-banner';
 import { SessionGuard } from './session-guard';
 import type { SessionSnapshot } from './session-guard-state';
 import { Sidebar } from './sidebar';
@@ -94,6 +95,9 @@ export function AppShell({
           logoUrl={branding?.logoUrl ?? undefined}
           role={role}
         />
+        {/* Los anuncios de la plataforma (0079). Con `key` por nodo: al cambiar de agencia se vuelven
+            a pedir, porque cada nodo ve los suyos. */}
+        <AnnouncementBanner key={tenantSlug ?? ''} />
         {/* `min-h-0` es obligatorio, no cosmético: un item de flex column arranca con
             `min-height: auto` y se niega a encoger por debajo de su contenido, con lo que
             `overflow-y-auto` nunca llega a desbordar y el scroll se escapa otra vez al padre. */}

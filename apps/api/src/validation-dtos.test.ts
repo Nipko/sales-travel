@@ -90,6 +90,41 @@ describe('CreateOrderSchema', () => {
     expect(parsed.passengers[0]).toMatchObject({ documentNumber: 'AB1' });
   });
 
+  it('SAB-16: acepta asientos en los ejes del mapa, con el avión 0 por defecto', () => {
+    const parsed = CreateOrderSchema.parse({
+      ...base,
+      seats: [{ passengerIndex: 0, segmentRef: 0, row: 12, column: 'C' }],
+    });
+    expect(parsed.seats).toEqual([
+      { passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' },
+    ]);
+  });
+
+  it('SAB-16: la oferta y el precio del asiento no vienen del navegador', () => {
+    const seat = { passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' };
+    for (const extra of [{ offerRef: 'x' }, { price: { amountMinor: 0, currency: 'COP' } }]) {
+      expect(CreateOrderSchema.safeParse({ ...base, seats: [{ ...seat, ...extra }] }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it('SAB-16: rechaza un asiento que no forma un número, y una lista vacía', () => {
+    const seat = { passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' };
+    for (const bad of [
+      { ...seat, column: 'c' },
+      { ...seat, column: 'CC' },
+      { ...seat, row: 0 },
+      { ...seat, row: 12.5 },
+      { ...seat, legIndex: 2 },
+      { ...seat, passengerIndex: 9 },
+      { ...seat, segmentRef: -1 },
+    ]) {
+      expect(CreateOrderSchema.safeParse({ ...base, seats: [bad] }).success).toBe(false);
+    }
+    expect(CreateOrderSchema.safeParse({ ...base, seats: [] }).success).toBe(false);
+  });
+
   it('rejects zero passengers and a non-object offer', () => {
     expect(CreateOrderSchema.safeParse({ ...base, passengers: [] }).success).toBe(false);
     expect(CreateOrderSchema.safeParse({ ...base, offer: 'oops' }).success).toBe(false);

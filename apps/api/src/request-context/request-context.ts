@@ -79,3 +79,16 @@ export function currentTenantId(): string | undefined {
 export function currentRole(): Role | undefined {
   return requestContextStorage.getStore()?.role;
 }
+
+/**
+ * Corre `fn` con el contexto del request pero con `tenantId` como tenant activo.
+ *
+ * Es para quien actúa sobre lo de OTRO nodo sin ser miembro: el superadmin, desde Reservas de la
+ * red, sobre la reserva de una agencia. Lo que cae al tenant del contexto cuando no se lo pasan
+ * —la auditoría (`AuditService`) y la bóveda de payloads de proveedor (`currentTenantId()`)— tiene
+ * que ir al nodo de la reserva, no al de la plataforma. El usuario, la sesión, la IP y el resto
+ * del contexto no cambian: sigue siendo quien actúa.
+ */
+export function runWithTenantContext<T>(tenantId: string, fn: () => T): T {
+  return requestContextStorage.run({ ...currentContext(), tenantId }, fn);
+}

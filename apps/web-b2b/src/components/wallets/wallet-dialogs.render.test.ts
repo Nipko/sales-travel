@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { DepositReport, Wallet } from '../../lib/wallets';
 import {
+  ApproveReportDialog,
   DepositReportDialog,
   EnableWalletDialog,
   EntryDialog,
@@ -165,6 +166,21 @@ describe('diálogos de quien financia', () => {
       }),
     );
     expect(html).toContain('También habilita, hasta su disponible, las reservas en esa moneda');
+  });
+
+  it('aprobar lo que financia otro nodo avisa, antes de confirmar, a qué cuenta llegó el dinero', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApproveReportDialog, {
+        report: REPORT,
+        nodeName: 'Agencia Sur',
+        otherFinancier: 'Consolidador Andino',
+        onSubmit: submit,
+        onClose: noop,
+      }),
+    );
+    expect(html).toContain('Verifica con Consolidador Andino que el dinero llegó a su cuenta.');
+    expect(html).toContain('no a la tuya. Apruébalo sólo si Consolidador Andino te confirmó');
+    expect(labelsOf(html)).toEqual(['Comentario (opcional)']);
   });
 
   it('rechazar un informe muestra monto y referencia y pide el motivo', () => {

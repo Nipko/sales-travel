@@ -15,12 +15,59 @@ import {
 } from '../providers/provider.types.js';
 import { EnvProviderFlags } from '../providers/providers.module.js';
 import { killLevel, type KillLevel } from '../search/circuit-breaker.service.js';
+import { KillSwitchStore, type PanelKillSwitch } from './kill-switch.store.js';
 import { effectiveEnablement, type EffectiveEnablement } from './provider-enablement.policy.js';
 import {
   ProviderEnablementStore,
   type EnablementValue,
   type ProviderEnablementRow,
 } from './provider-enablement.store.js';
+
+/** Un apagado de emergencia del panel (0077), tal como lo muestra el panel. */
+export interface PanelKillSwitchView {
+  readonly level: KillLevel;
+  readonly reason: string;
+  readonly setBy: string;
+  readonly setByEmail: string | null;
+  /** ISO 8601. */
+  readonly setAt: string;
+  /** ISO 8601; `null` = sin vencimiento. */
+  readonly expiresAt: string | null;
+}
+
+/**
+ * El apagado de emergencia de un proveedor y de dónde sale: la variable `PROVIDERS_DISABLED`
+ * (`env`), el panel (`panel`) o los dos. `effective` es el más amplio, el que aplica el breaker.
+ */
+export interface KillSwitchDetail {
+  readonly effective: KillLevel | null;
+  readonly env: KillLevel | null;
+  readonly panel: PanelKillSwitchView | null;
+}
+
+export function panelKillSwitchView(k: PanelKillSwitch): PanelKillSwitchView {
+  return {
+    level: k.level,
+    reason: k.reason,
+    setBy: k.setBy,
+    setByEmail: k.setByEmail,
+    setAt: k.setAt.toISOString(),
+    expiresAt: k.expiresAt === null ? null : k.expiresAt.toISOString(),
+  };
+}
+
+/** El apagado de `providerCode` con lo que el breaker de esta réplica aplica ahora. */
+export function killSwitchDetailOf(
+  providerCode: string,
+  killSwitches: Pick<KillSwitchStore, 'active'>,
+): KillSwitchDetail {
+  const panel = killSwitches.active(providerCode);
+  return {
+    effective: killLevel(providerCode, panel?.level) ?? null,
+    env: killLevel(providerCode) ?? null,
+    panel: panel === undefined ? null : panelKillSwitchView(panel),
+  };
+}
 
 /** Tipo del `domain_event` de cada cambio. Uno solo, con el antes y el después en el payload. */
 export const PROVIDER_ENABLEMENT_EVENT = 'platform.provider_enablement.updated';
@@ -52,8 +99,13 @@ interface ProviderBaseView {
   readonly callPolicy: CallPolicy;
   /** Sin ningún ajuste ni variable legado: `opt-in` apagado, el resto encendido. */
   readonly defaultEnabled: boolean;
-  /** Nivel en `PROVIDERS_DISABLED`, que le gana a todo; `null` si no está. */
+  /**
+   * El apagado de emergencia que le gana a todo, el más amplio entre `PROVIDERS_DISABLED` y el del
+   * panel; `null` si no hay. Se mantiene por compatibilidad (el Resumen lo lee); el detalle va en
+   * {@link killSwitchDetail}.
+   */
   readonly killSwitch: KillLevel | null;
+  readonly killSwitchDetail: KillSwitchDetail;
   /** Lo que la variable legado de la vertical enciende todavía. */
   readonly legacyEnv: LegacyOptIn;
 }
@@ -130,6 +182,7 @@ export class ProviderEnablementService {
     private readonly audit: AuditService,
     private readonly legacyFlights: EnvProviderFlags,
     private readonly legacyHotels: EnvHotelProviderFlags,
+    private readonly killSwitches: KillSwitchStore,
   ) {}
 
   /** Todos los proveedores de los registries, con su ajuste global y sus excepciones. */
@@ -154,13 +207,14 @@ export class ProviderEnablementService {
       .sort(byVerticalThenCode)
       .map((entry: ProviderEnablementEntry): TenantProviderView => {
         const own = rows.find((r) => r.providerCode === entry.code && r.tenantId === tenantId);
+        const base = this.baseView(entry);
         const effective = effectiveEnablement({
-          killSwitch: killLevel(entry.code),
+          killSwitch: base.killSwitch ?? undefined,
           decision: entry.decision,
           callPolicy: entry.callPolicy,
         });
         return {
-          ...this.baseView(entry),
+          ...base,
           own: own === undefined ? null : settingView(own),
           effective:
             effective.originTenantId === undefined
@@ -312,23 +366,27 @@ export class ProviderEnablementService {
 
   private baseView(provider: RegisteredProvider): ProviderBaseView {
     const legacy = provider.vertical === 'hotels' ? this.legacyHotels : this.legacyFlights;
+    const killSwitchDetail = killSwitchDetailOf(provider.code, this.killSwitches);
     return {
       code: provider.code,
       vertical: provider.vertical,
       callPolicy: provider.callPolicy,
       defaultEnabled: isProviderEnabled(undefined, provider.callPolicy),
-      killSwitch: killLevel(provider.code) ?? null,
+      killSwitch: killSwitchDetail.effective,
+      killSwitchDetail,
       legacyEnv: legacy.describe(provider.code),
     };
   }
 
-  private registered(): RegisteredProvider[] {
+  /** Los proveedores de los registries, por vertical y código. */
+  registered(): RegisteredProvider[] {
     return [...this.flights.registeredProviders(), ...this.hotels.registeredProviders()].sort(
       byVerticalThenCode,
     );
   }
 
-  private provider(providerCode: string): RegisteredProvider {
+  /** El proveedor registrado con ese código; 404 si no está en ningún registry. */
+  provider(providerCode: string): RegisteredProvider {
     const found = this.registered().find((p) => p.code === providerCode);
     if (found === undefined) throw new UnknownPlatformProviderError(providerCode);
     return found;

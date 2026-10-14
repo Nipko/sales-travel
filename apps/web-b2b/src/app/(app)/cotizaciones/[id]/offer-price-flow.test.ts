@@ -3,6 +3,7 @@ import type { Offer } from '../actions';
 import {
   canReserveAfterPriceCheck,
   displayedPriceChanged,
+  offersSeatSelection,
   readOfferPriceResponse,
   reservationGateMessage,
   withRevalidatedOffer,
@@ -100,6 +101,24 @@ describe('readOfferPriceResponse', () => {
   });
 });
 
+describe('offersSeatSelection (SAB-16)', () => {
+  it('sólo un `true` explícito del API ofrece elegir asientos', async () => {
+    for (const [seatSelection, esperado] of [
+      [true, true],
+      [false, false],
+      [undefined, false],
+      ['true', false],
+    ] as const) {
+      const out = await readOfferPriceResponse(
+        response({ offer: offer('x'), priceChanged: false, warnings: [], seatSelection }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(offersSeatSelection(out.data), String(seatSelection)).toBe(esperado);
+    }
+  });
+});
+
 describe('reemplazo y compuerta de reserva', () => {
   it('reemplaza íntegramente la seleccionada por la revalidada', () => {
     const original = Object.assign(offer('old'), { onlyOnOld: true });
@@ -170,6 +189,8 @@ describe('reemplazo y compuerta de reserva', () => {
     for (const state of states) expect(canReserveAfterPriceCheck(state, false)).toBe(false);
     expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, false)).toBe(true);
     expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, true)).toBe(false);
-    expect(reservationGateMessage(null, false)).toContain('Verificá');
+    expect(reservationGateMessage(null, false)).toBe(
+      'Verifica el precio para habilitar la reserva.',
+    );
   });
 });

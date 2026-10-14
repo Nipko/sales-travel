@@ -21,10 +21,12 @@ import type {
   CredentialSource,
   FlightProviderAdapter,
   ProviderCapabilities,
+  ProviderSettlement,
   ProviderVertical,
   TenantAdapter,
   TenantProviderFactory,
 } from '../provider.types.js';
+import type { ProviderEnvironment } from '../provider-environment.js';
 
 /**
  * Segundo proveedor de vuelos, ANÓNIMO y sólo para tests.
@@ -110,6 +112,14 @@ export interface StubFactoryOptions extends StubAdapterOptions {
   failResolveWith?: Error;
   /** Si `true`, `resolveForTenant` lanza `NotFoundException`: tenant sin credenciales. */
   failResolve?: boolean;
+  /** Entorno que declara la cuenta. Ausente = el factory no dice nada (se lee como `live`). */
+  providerEnvironment?: ProviderEnvironment;
+  /** Cuenta de la bóveda que declara `resolveForTenant` (`TenantAdapter.accountId`). */
+  accountId?: string;
+  /** Su versión (`TenantAdapter.accountUpdatedAt`). */
+  accountUpdatedAt?: Date;
+  /** Quién liquida lo reservado (`TenantProviderFactory.settlement`). Ausente = no lo declara. */
+  settlement?: ProviderSettlement;
 }
 
 export class StubProviderFactory implements TenantProviderFactory<FlightProviderAdapter> {
@@ -117,6 +127,7 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
   readonly vertical: ProviderVertical;
   readonly capabilities: ProviderCapabilities;
   readonly defaultCallPolicy: CallPolicy;
+  readonly settlement?: ProviderSettlement;
 
   /** Un adapter por tenant, para poder afirmar aislamiento sin montar credenciales reales. */
   private readonly adapters = new Map<string, StubFlightAdapter>();
@@ -128,6 +139,7 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
     this.vertical = opts.vertical ?? 'flights';
     this.capabilities = { ...CAPACIDADES_PLENAS, ...opts.capabilities };
     this.defaultCallPolicy = opts.callPolicy ?? 'always';
+    if (opts.settlement !== undefined) this.settlement = opts.settlement;
   }
 
   async forTenant(tenantId: string): Promise<FlightProviderAdapter> {
@@ -146,6 +158,13 @@ export class StubProviderFactory implements TenantProviderFactory<FlightProvider
     return Promise.resolve({
       adapter: this.adapterFor(tenantId),
       credentialSource: this.sourceFor(tenantId),
+      ...(this.opts.providerEnvironment === undefined
+        ? {}
+        : { providerEnvironment: this.opts.providerEnvironment }),
+      ...(this.opts.accountId === undefined ? {} : { accountId: this.opts.accountId }),
+      ...(this.opts.accountUpdatedAt === undefined
+        ? {}
+        : { accountUpdatedAt: this.opts.accountUpdatedAt }),
     });
   }
 

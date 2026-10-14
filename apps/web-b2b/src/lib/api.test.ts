@@ -25,6 +25,7 @@ import {
   apiWithStatus,
   clientOriginHeaders,
   estadoHttpValido,
+  loggablePath,
   readApiResponse,
   sendsTrustedDevice,
   SERVICIO_NO_DISPONIBLE,
@@ -229,6 +230,26 @@ describe('api() y apiWithStatus(): cabeceras de cada llamado', () => {
     expect(sent.get('x-internal-proxy')).toBe(SECRET);
     expect(sent.get('x-client-ip')).toBe('203.0.113.7');
     expect(sent.get('x-trusted-device')).toBeNull();
+  });
+
+  it('los registros llevan la ruta sin la query: la búsqueda puede ser el correo de un cliente', async () => {
+    const logged = vi.mocked(console.error);
+    const path = '/admin/orders?q=ana%40cliente.com&attention=true';
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await apiWithStatus(path);
+    fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 502 }));
+    await apiWithStatus(path);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await api(path);
+    fetchMock.mockResolvedValueOnce(new Response('{"message":"no"}', { status: 500 }));
+    await api(path);
+    const lines = logged.mock.calls.map((call) => String(call[0]));
+    expect(lines).toHaveLength(4);
+    for (const line of lines) {
+      expect(line).toContain('PATH: /admin/orders?…');
+      expect(line).not.toContain('cliente');
+    }
+    expect(loggablePath('/admin/orders')).toBe('/admin/orders');
   });
 });
 

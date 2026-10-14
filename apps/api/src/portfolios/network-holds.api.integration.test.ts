@@ -275,6 +275,24 @@ d('retención en cascada por la API (0060, como app_user)', () => {
     );
     expect(flightGroup).toHaveLength(0);
 
+    // El mismo vuelo con la cuenta de C grabada en la orden, como la guarda desde 0081 un proveedor
+    // que opera su post-venta por cuenta: eso sí prueba con qué se reservó, y queda exento.
+    const flightWithAccount = await seedOrder(admin, {
+      tenantId: id('C'),
+      userId: net.sellers.C,
+      provider: net.provider,
+      totalMinor: saleOf('C'),
+      currency: 'PEN',
+      accountId: net.accounts.C,
+      vertical: net.vertical,
+      pricing: { netMinor: NET_MINOR, currency: 'PEN' },
+      status: 'confirmed',
+    });
+    await expect(
+      portfolios.holdBooking(id('C'), flightWithAccount, net.sellers.C),
+    ).resolves.toEqual({ status: 'own-account' });
+    expect(await balance('C', 'PEN')).toBeUndefined();
+
     // Cartera B2B y la búsqueda lo saben: C reserva con su cuenta; S1 la hereda, no es suya.
     expect((await portfolios.overview(id('C'))).ownProviderAccounts).toEqual([net.provider]);
     expect((await portfolios.overview(id('S1'))).ownProviderAccounts).toEqual([]);
@@ -487,7 +505,7 @@ d('retención en cascada por la API (0060, como app_user)', () => {
       currency: 'COP',
       reason: 'PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED',
       message:
-        'Tu red todavía no opera en COP, así que no se puede retener saldo para esta reserva. Pedile a quien te financia que lo habilite.',
+        'Tu red todavía no opera en COP, así que no se puede retener saldo para esta reserva. Pídele a quien te financia que lo habilite.',
     });
 
     const err = await portfolios

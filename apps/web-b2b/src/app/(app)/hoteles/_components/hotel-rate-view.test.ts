@@ -235,6 +235,40 @@ describe('hotelRateRows — orden y contenido de cada fila', () => {
     expect(row?.sale.amountMinor).toBe(100_00);
   });
 
+  it('roomSlots: cada habitación del pack con su id, su clave de nombre, camas y ocupación', () => {
+    const [row] = hotelRateRows(
+      {
+        roompacks: [
+          tarifa('A', 100_00, 'tbo-hotels', {
+            rooms: [
+              {
+                name: ' Habitación Doble, Estándar ',
+                reference: 1,
+                roomTypeId: ' 3301 ',
+                bedOptions: ['  ', '1 cama king'],
+                occupancy: { adults: 2, childrenAges: [4] },
+              },
+              { name: 'Suite', reference: 2, roomTypeId: '  ', bedOptions: [] },
+            ],
+          }),
+        ],
+      },
+      false,
+    );
+    expect(row?.roomSlots).toEqual([
+      {
+        index: 0,
+        name: 'Habitación Doble, Estándar',
+        nameKey: 'habitacion doble estandar',
+        roomTypeId: '3301',
+        beds: '1 cama king',
+        occupancy: { adults: 2, childrenAges: [4] },
+      },
+      // Un id en blanco es "sin id": se agrupa por nombre.
+      { index: 1, name: 'Suite', nameKey: 'suite' },
+    ]);
+  });
+
   it('un hotel sin tarifas no tiene "desde"', () => {
     expect(hotelCardView({ roompacks: [] }, true).from).toBeUndefined();
   });

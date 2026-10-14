@@ -229,8 +229,18 @@ describe('AuditService.networkAudit', () => {
     const { audit, negocio } = banco();
     await audit.networkAudit(VIEWER, ROOT);
     const sql = plano(negocio()[0]);
-    expect(sql).not.toContain('LIKE');
+    expect(sql.replace(`e.event_type NOT LIKE 'system.%'`, '')).not.toContain('LIKE');
     expect(sql).not.toContain('e.actor_user_id =');
+  });
+
+  it('deja fuera los system.* siempre, con o sin filtro (el barrido escribe uno cada 15 min)', async () => {
+    for (const opts of [{}, { category: 'network' as const }, { actorUserId: ANA }]) {
+      const { audit, negocio } = banco();
+      await audit.networkAudit(VIEWER, ROOT, opts);
+      expect(plano(negocio()[0]), JSON.stringify(opts)).toContain(
+        `AND e.event_type NOT LIKE 'system.%'`,
+      );
+    }
   });
 
   it('el filtro por persona y el cursor llegan como parámetros, con desempate por id', async () => {

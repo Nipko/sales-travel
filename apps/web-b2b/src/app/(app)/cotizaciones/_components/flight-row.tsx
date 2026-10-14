@@ -6,6 +6,13 @@ import type { Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
 import { providerTagFor } from '../../../../lib/provider-disclosure';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import {
+  SOME_TEST_FARES_DESCRIPTION,
+  TEST_FARE_DESCRIPTION,
+  testFareShare,
+  type TestFareShare,
+} from '../../../../lib/test-content';
+import { TestContentBadge } from '../../../../components/test-content-badge';
 import { airlineName } from './airline-names';
 import { FareFamilyMatrix } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
@@ -107,9 +114,12 @@ function AirlineLogo({ carrier }: { carrier: string }) {
 function AirlineIdentity({
   itineraries,
   providerLabel,
+  testFares = 'none',
 }: {
   itineraries: ItineraryInput[];
   providerLabel?: string;
+  /** Tarifas del entorno de pruebas del proveedor en este vuelo: la fila lo dice siempre. */
+  testFares?: TestFareShare;
 }) {
   const { main, carriers, firstFlight } = summarizeCarriers(itineraries);
   const extraCarriers = carriers.length - 1;
@@ -136,6 +146,15 @@ function AirlineIdentity({
               {providerLabel}
             </span>
           ) : null}
+          {/* Aunque la pastilla del proveedor esté oculta: lo que se marca es que la tarifa no
+              es real, no de quién es. Con tarifas de los dos tipos, cada tarjeta dice cuál. */}
+          {testFares === 'none' ? null : (
+            <TestContentBadge
+              description={
+                testFares === 'all' ? TEST_FARE_DESCRIPTION : SOME_TEST_FARES_DESCRIPTION
+              }
+            />
+          )}
         </div>
       </div>
     </div>
@@ -349,6 +368,7 @@ export function FlightRow({
             <AirlineIdentity
               itineraries={itineraries}
               providerLabel={providerTagFor(cheapest.provider.name, showProvider)?.label}
+              testFares={testFareShare(group.offers)}
             />
             {itineraries.map((it, i) => (
               <ItineraryLeg

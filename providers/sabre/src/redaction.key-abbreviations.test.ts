@@ -39,6 +39,10 @@ import { REDACTED, redactMeta } from './redaction';
  * NO las salvan: `emailaddress`/`phonenumber` son fragmentos que la clave corta no contiene. Y
  * ninguna pasada por forma las ve —un email no tiene forma verificable y un teléfono de 12 dígitos
  * no llega al mínimo de `PAN_CANDIDATE`—. Aquí quedan fijadas.
+ *
+ * Y con ellas el PLURAL, que es el que usa el contrato de Booking Management (`emails[]`,
+ * `phones[]`): sin `emails`/`phones` en `PII_KEYS` y en las palabras de PII, el eco de la request
+ * de createBooking publicaba el contacto del pasajero aunque el singular estuviera cubierto.
  */
 
 const SHOP_PATH = '/v5/offers/shop';
@@ -258,7 +262,26 @@ const PII_CASES: ReadonlyArray<readonly [string, string]> = [
   ['contact_phone', '+51987654321'],
   ['emergencyEmail', 'emergencia@planetour.cloud'],
   ['travelerPhone', '+528112345678'],
+  // El PLURAL del contrato (`contactInfo.emails[]`, `travelers[].phones[]`). El Set compara exacto
+  // y las palabras también: `emails` no es `email`. Fuga MEDIDA: un rechazo de createBooking con
+  // eco de la request publicaba el correo y el teléfono del pasajero en `SabreApiError`.
+  ['emails', 'plural@planetour.cloud'],
+  ['phones', '+573004445566'],
+  ['emailAddresses', 'direcciones@planetour.cloud'],
+  ['travelerEmails', 'viajero@planetour.cloud'],
+  ['contactPhones', '+5491155554444'],
 ];
+
+/**
+ * La forma REAL del contrato: el valor de la clave plural es un ARRAY, de cadenas o de objetos con
+ * `number`. Ni `number` ni un teléfono de 12 dígitos son sensibles por sí solos, así que lo único que
+ * puede taparlos es la clave del array que los contiene.
+ */
+const PLURAL_CONTACT_BODY = {
+  contactInfo: { emails: ['arreglo@planetour.cloud'], phones: ['+573007778899'] },
+  travelers: [{ phones: [{ number: '+573001230000', label: 'MOBILE' }] }],
+};
+const PLURAL_CONTACT_VALUES = ['arreglo@planetour.cloud', '573007778899', '573001230000'];
 
 /** El otro lado: vocabulario legítimo que comparte letras con las palabras de PII. */
 const INNOCENT_CONTACT_KEYS: readonly string[] = [
@@ -280,6 +303,17 @@ describe('PII de contacto — `email` y `phone` quedan fijadas por la puerta pú
 
     expect(out, `«${key}» publicó PII de contacto`).not.toContain(value);
     expect(out).toContain(REDACTED);
+  });
+
+  it('las claves plurales tapan el ARRAY entero, por la puerta pública y por la meta de log', async () => {
+    const dump = await bodyThroughHttpClient(PLURAL_CONTACT_BODY);
+    const meta = JSON.stringify(redactMeta(PLURAL_CONTACT_BODY));
+
+    for (const value of PLURAL_CONTACT_VALUES) {
+      expect(dump, `postJson publicó ${value}`).not.toContain(value);
+      expect(meta, `redactMeta publicó ${value}`).not.toContain(value);
+    }
+    expect(dump).toContain(REDACTED);
   });
 
   it.each(INNOCENT_CONTACT_KEYS)('`%s` NO se tapa: no es un dato de contacto', (key) => {

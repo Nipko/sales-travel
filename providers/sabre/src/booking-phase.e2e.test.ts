@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import adultFixture from './__fixtures__/v5-roundtrip-adult-200.json';
 import multipaxFixture from './__fixtures__/price-multipax-2adt-200.json';
+import fulfillCashFixture from './__fixtures__/fulfill-atpco-cash-200.json';
 import type { SabreFetch, SabreTokenProvider } from './auth/token.service';
 import {
   SABRE_CANCEL_BOOKING_PATH,
@@ -35,7 +36,9 @@ import {
 } from './sabre-offer-price.adapter';
 import { SABRE_BOOKING_USE_CASES, SabreOrderCreateAdapter } from './sabre-order-create.adapter';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
+import { SabreTicketingAdapter } from './sabre-ticketing.adapter';
 import { mapSabreShopResponse } from './shop/response.mapper';
+import { SABRE_FULFILL_PATH } from './ticketing/fulfill.request.builder';
 
 /**
  * LA FASE DE RESERVA, EXTREMO A EXTREMO, POR LA PUERTA PÚBLICA.
@@ -159,6 +162,7 @@ interface Harness {
   readonly price: SabreOfferPriceAdapter;
   readonly create: SabreOrderCreateAdapter;
   readonly manage: SabreOrderManageAdapter;
+  readonly ticketing: SabreTicketingAdapter;
   /** La secuencia de rutas que el ACL tocó, en orden. */
   paths(): string[];
   /** El único cuerpo que se mandó a esa ruta. Lanza si hubo cero o más de uno. */
@@ -206,6 +210,7 @@ function wire(routes: Record<string, readonly Reply[]>, cfg: SabreConfig = confi
     price: new SabreOfferPriceAdapter(cfg, http, { logger, now: () => NOW_MS }),
     create: new SabreOrderCreateAdapter(cfg, http, { logger }),
     manage: new SabreOrderManageAdapter(cfg, http, { logger, now: () => NOW_MS }),
+    ticketing: new SabreTicketingAdapter(cfg, http, { logger, now: () => NOW_MS }),
     paths: () => calls.map((call) => call.path),
     bodyAt: (path) => {
       const matches = calls.filter((call) => call.path === path);
@@ -494,6 +499,29 @@ function ticketCheck(confirmationId: string = PNR): unknown {
   };
 }
 
+/**
+ * La emisión oficial con `CASH` (`help-documentation-fulfill-flight-tickets-examples.txt:178-230`)
+ * para los dos pasajeros de la reserva: el segundo tiquete es el primero con el número siguiente.
+ */
+function fulfilledForTwo(): unknown {
+  const body = structuredClone(fulfillCashFixture) as { tickets: Record<string, unknown>[] };
+  const [first] = body.tickets;
+  if (first === undefined) throw new Error('el fixture de emisión no trae tiquetes');
+  return { ...body, tickets: [first, { ...first, number: '0016802004061' }] };
+}
+
+/** La reserva emitida tal como la relee `getBooking`: un tiquete por pasajero, con su índice. */
+function bookingIssuedForTwo(): unknown {
+  return {
+    ...(bookingView({ lane: 'ATPCO', isTicketed: false }) as Record<string, unknown>),
+    isTicketed: true,
+    flightTickets: [
+      { number: '0016802004060', travelerIndex: 1, ticketStatusCode: 'TE' },
+      { number: '0016802004061', travelerIndex: 2, ticketStatusCode: 'TE' },
+    ],
+  };
+}
+
 /** Cancelación limpia: el fabricante declara éxito cuando `errors[]` no viene. */
 function cancelled(): unknown {
   return { timestamp: '2026-08-26T12:00:02' };
@@ -617,6 +645,13 @@ describe('la cadena completa: price → createBooking → getBooking → cancelB
     ]);
     for (const path of [SABRE_CHECK_FLIGHT_TICKETS_PATH, SABRE_CANCEL_BOOKING_PATH]) {
       expect(at(harness.bodyAt(path), 'confirmationId')).toBe(PNR);
+    }
+
+    // Los desenlaces LIMPIOS van en `info`: producción arranca Nest sin `debug`, y en `debug` la
+    // traza de una reserva confirmada, su lectura de cierre y su cancelación no llegaban nunca.
+    for (const message of ['sabre.createBooking', 'sabre.getBooking', 'sabre.cancelBooking']) {
+      const line = harness.logs.find((call) => call.message === message);
+      expect(line?.level, message).toBe('info');
     }
   });
 
@@ -1276,6 +1311,91 @@ describe('cancelar: el checkFlightTickets previo y el segundo intento del saga',
 });
 
 // ---------------------------------------------------------------------------------------------
+// 5 bis. La emisión encadenada a la reserva (SAB-07)
+// ---------------------------------------------------------------------------------------------
+
+describe('emitir lo que se reservó: createBooking → issueTickets → checkTickets → VOID', () => {
+  it('el PNR de la creación es el que se lee, se emite, se comprueba y se anula', async () => {
+    const harness = wire({
+      [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())],
+      [SABRE_GET_BOOKING_PATH]: [
+        ok(bookingView({ lane: 'ATPCO', isTicketed: false })),
+        ok(bookingIssuedForTwo()),
+      ],
+      [SABRE_FULFILL_PATH]: [ok(fulfilledForTwo())],
+      [SABRE_CHECK_FLIGHT_TICKETS_PATH]: [ok(ticketCheck()), ok(ticketCheck())],
+      [SABRE_CANCEL_BOOKING_PATH]: [ok(cancelled())],
+    });
+
+    const request = orderRequest(atpcoOffer());
+    const created = await harness.create.createBooking(request, CTX);
+    const pnr = created.result.pnr ?? '';
+    expect(pnr).toBe(PNR);
+
+    // 1. Emitir: lee antes, emite una vez, sin tarjeta y con el número de pasajeros de la reserva.
+    const issued = await harness.ticketing.issueTickets(pnr, CTX, {
+      travelerCount: request.passengers.length,
+    });
+    expect(issued.outcome).toBe('ISSUED');
+    expect(issued.documents.map((d) => d.number)).toEqual(['0016802004060', '0016802004061']);
+    const fulfill = harness.bodyAt(SABRE_FULFILL_PATH);
+    expect(fulfill['confirmationId']).toBe(PNR);
+    expect(fulfill['formsOfPayment']).toEqual([{ type: 'CASH' }]);
+    expect(fulfill['acceptPriceChanges']).toBe(false);
+
+    // 2. Las condiciones, leídas del proveedor.
+    const conditions = await harness.ticketing.checkTickets(pnr, CTX);
+    expect(conditions.tickets).toEqual([
+      { number: '0012345678901', voidable: 'yes', refundable: 'no' },
+    ]);
+
+    // 3. Anular: la reserva ya está emitida, así que hay que nombrar VOID; la relectura y la
+    //    comprobación van antes de la cancelación.
+    const voided = await harness.manage.cancelBooking(pnr, CTX, { ticketOperation: 'VOID' });
+    expect(voided.result.success).toBe(true);
+
+    expect(harness.paths()).toEqual([
+      SABRE_CREATE_BOOKING_PATH,
+      SABRE_GET_BOOKING_PATH,
+      SABRE_FULFILL_PATH,
+      SABRE_CHECK_FLIGHT_TICKETS_PATH,
+      SABRE_GET_BOOKING_PATH,
+      SABRE_CHECK_FLIGHT_TICKETS_PATH,
+      SABRE_CANCEL_BOOKING_PATH,
+    ]);
+    expect(harness.bodyAt(SABRE_CANCEL_BOOKING_PATH)['flightTicketOperation']).toBe('VOID');
+
+    // La emisión limpia va en `info`, como la creación y la cancelación.
+    expect(harness.logs.find((l) => l.message === 'sabre.fulfillFlightTickets')?.level).toBe(
+      'info',
+    );
+  });
+
+  it('la emisión no lleva tarjeta, PAN ni datos del pasajero, ni en el cuerpo ni en el log', async () => {
+    const harness = wire({
+      [SABRE_CREATE_BOOKING_PATH]: [ok(createConfirmed())],
+      [SABRE_GET_BOOKING_PATH]: [ok(bookingView({ lane: 'ATPCO', isTicketed: false }))],
+      [SABRE_FULFILL_PATH]: [ok(fulfilledForTwo())],
+    });
+    const request = orderRequest(atpcoOffer());
+    await harness.create.createBooking(request, CTX);
+    await harness.ticketing.issueTickets(PNR, CTX, { travelerCount: request.passengers.length });
+
+    const call = harness.calls.find((c) => c.path === SABRE_FULFILL_PATH);
+    if (call === undefined) throw new Error('la emisión no salió al cable');
+    expect(keysOf(call.body).filter((key) => CARD_KEY.test(key))).toEqual([]);
+    expect((call.raw.match(PAN_SHAPE) ?? []).filter(luhn)).toEqual([]);
+    for (const value of PII_VALUES) {
+      expect(call.raw, value).not.toContain(value);
+    }
+    const logs = JSON.stringify(harness.logs);
+    for (const value of [...PII_VALUES, 'DRAKE']) {
+      expect(logs, value).not.toContain(value);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
 // 6. PII: nada del cuerpo de reserva llega a un log ni al mensaje de un error
 // ---------------------------------------------------------------------------------------------
 
@@ -1329,9 +1449,14 @@ describe('PII: el cuerpo de reserva no sale por el log', () => {
     expect(at(outcome.providerRaw, 'issues.0.type')).toBe('UNABLE_TO_BOOK_SEAT');
   });
 
-  it('el eco del request dentro de un rechazo no saca nombres, fechas ni documentos', async () => {
+  it('el eco del request dentro de un rechazo no saca nombres, fechas, documentos ni contacto', async () => {
     // `CreateBookingResponse.request` es una copia íntegra del payload enviado (`:827`). Si el sobre
     // se rechaza, ese eco es lo que alimenta `SabreApiError`.
+    //
+    // El correo y el teléfono van con las claves PLURALES del contrato —`contactInfo.emails[]`,
+    // `travelers[].emails[]`, `travelers[].phones[].number`—, que son las que emite el builder.
+    // Hasta que `PII_KEYS` aprendió el plural, este mismo rechazo los publicaba en claro en
+    // `.message` y `.body`; quitar `emails`/`phones` de `redaction.ts` pone este test en rojo.
     const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoing()] });
 
     const error = await harness.create
@@ -1341,39 +1466,51 @@ describe('PII: el cuerpo de reserva no sale por el log', () => {
 
     expect(error).toBeInstanceOf(SabreApiError);
     const api = error as SabreApiError;
-    for (const value of [PII.givenName, PII.surname, PII.birthdate, PII.document]) {
+    for (const value of [
+      PII.givenName,
+      PII.surname,
+      PII.birthdate,
+      PII.document,
+      PII.email,
+      ECHOED_PHONE,
+    ]) {
       expect(api.message).not.toContain(value);
       expect(api.body).not.toContain(value);
     }
   });
 
-  it('HALLAZGO ABIERTO: las claves PLURALES del contrato (emails/phones) NO se redactan', async () => {
-    // ⚠️ Este test fija el comportamiento ACTUAL, que es un defecto REPORTADO, no un invariante que
-    // se quiera conservar. `redaction.ts` conoce `email`/`phone` en singular, pero los nombres que
-    // usa el contrato —y que este propio ACL construye— son `contactInfo.emails[]`,
-    // `travelers[].emails[]` y `travelers[].phones[].number`. Como `createBooking` y `getBooking`
-    // hacen eco de la request, un rechazo mete el correo y el teléfono del pasajero en
-    // `SabreApiError.message` y en `.body`.
-    //
-    // Cuando se cierre el hueco en `redaction.ts`, este test se pondrá rojo: hay que invertir las
-    // dos aserciones a `not.toContain` y moverlas al test de arriba, que es donde pertenecen.
-    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoing()] });
+  it('el contacto POR PASAJERO (`travelers[].emails[]`, `phones[].number`) tampoco sale', async () => {
+    // Cuerpo aparte, y corto, a propósito: el resumen del error tiene presupuesto de 300 caracteres
+    // y un pasajero de más al final del eco caería FUERA por truncado. Ahí el `not.toContain`
+    // pasaría por el corte, no por la redacción, y el test no probaría nada.
+    const harness = wire({ [SABRE_CREATE_BOOKING_PATH]: [rejectionEchoingTravelerContact()] });
 
     const error = await harness.create
       .createBooking(orderRequest(shopOffer()), CTX)
       .then(() => null)
       .catch((caught: unknown) => caught);
 
+    expect(error).toBeInstanceOf(SabreApiError);
     const api = error as SabreApiError;
-    expect(api.body).toContain(PII.email);
-    expect(api.body).toContain('+5115550142');
+    for (const value of [SECOND_EMAIL, SECOND_PHONE]) {
+      expect(api.message).not.toContain(value);
+      expect(api.body).not.toContain(value);
+    }
+    // Sanidad: lo que no es PII sigue en el resumen, así que el eco SÍ entró en la ventana.
+    expect(api.body).toContain('"passengerCode":"ADT"');
   });
 });
 
+/** Teléfono de contacto tal y como lo normaliza el builder (`^\+?[0-9]+$`): sin espacios ni guiones. */
+const ECHOED_PHONE = '+5115550142';
+/** Contacto del segundo pasajero, bajo `travelers[]` en vez de `contactInfo`. */
+const SECOND_EMAIL = 'jorge.mamani@example.com';
+const SECOND_PHONE = '+5119998877';
+
 /**
  * Un rechazo del proveedor que hace eco del cuerpo de reserva con los NOMBRES DE CAMPO DEL
- * CONTRATO. La forma importa: `emails`/`phones` en plural son las que emite el builder, y son
- * justamente las que el redactor no conoce.
+ * CONTRATO. La forma importa: `emails`/`phones` en plural son las que emite el builder, y fueron
+ * las que el redactor no conocía hasta esta ronda.
  */
 function rejectionEchoing(): Reply {
   return {
@@ -1381,13 +1518,32 @@ function rejectionEchoing(): Reply {
     body: {
       errors: [{ category: 'BAD_REQUEST', type: 'REQUIRED_FIELD_MISSING' }],
       request: {
-        contactInfo: { emails: [PII.email], phones: ['+5115550142'] },
+        contactInfo: { emails: [PII.email], phones: [ECHOED_PHONE] },
         travelers: [
           {
             givenName: PII.givenName,
             surname: PII.surname,
             birthDate: PII.birthdate,
             identityDocuments: [{ documentNumber: PII.document }],
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** El mismo eco, con el contacto colgando del pasajero: es donde lo pone `travelers[]` del contrato. */
+function rejectionEchoingTravelerContact(): Reply {
+  return {
+    status: 400,
+    body: {
+      errors: [{ category: 'BAD_REQUEST', type: 'REQUIRED_FIELD_MISSING' }],
+      request: {
+        travelers: [
+          {
+            passengerCode: 'ADT',
+            emails: [SECOND_EMAIL],
+            phones: [{ number: SECOND_PHONE, label: 'MOBILE' }],
           },
         ],
       },

@@ -29,7 +29,7 @@ export class HotelPrebookExpiredError extends ConflictException {
 
   constructor() {
     super(
-      'La revalidación de esta tarifa ya no está vigente. Volvé a revalidarla (o a buscar) para reservar.',
+      'La revalidación de esta tarifa ya no está vigente. Vuelve a revalidarla (o a buscar) para reservar.',
     );
     this.name = 'HotelPrebookExpiredError';
   }
@@ -43,7 +43,7 @@ export class HotelPackageOnlyRateError extends ConflictException {
   readonly reason = 'PACKAGE_ONLY_RATE';
 
   constructor() {
-    super('Esta tarifa sólo se vende en un paquete con aéreo. Elegí otra tarifa del hotel.');
+    super('Esta tarifa sólo se vende en un paquete con aéreo. Elige otra tarifa del hotel.');
     this.name = 'HotelPackageOnlyRateError';
   }
 }
@@ -54,7 +54,7 @@ export class HotelAtPropertyNotAcknowledgedError extends BadRequestException {
 
   constructor() {
     super(
-      'Esta tarifa tiene cargos que el huésped paga en el hotel. Confirmá que se los mostraste al cliente para reservar.',
+      'Esta tarifa tiene cargos que el huésped paga en el hotel. Confirma que se los mostraste al cliente para reservar.',
     );
     this.name = 'HotelAtPropertyNotAcknowledgedError';
   }
@@ -78,7 +78,7 @@ export class HotelNonRefundableBlockedError extends ForbiddenException {
   readonly reason = 'NON_REFUNDABLE_BLOCKED';
 
   constructor(
-    message = 'Tu agencia no puede reservar tarifas no reembolsables: quien la financia las tiene bloqueadas. Elegí una tarifa reembolsable del hotel o pedile a tu consolidador que las habilite.',
+    message = 'Tu agencia no puede reservar tarifas no reembolsables: quien la financia las tiene bloqueadas. Elige una tarifa reembolsable del hotel o pídele a tu consolidador que las habilite.',
   ) {
     super(message);
     this.name = 'HotelNonRefundableBlockedError';
@@ -91,7 +91,7 @@ export class HotelNonRefundableBlockedError extends ForbiddenException {
  * bloqueadas para la agencia, se rechaza entero en vez de dejar pasar una que lo sea.
  */
 export const DESPEGAR_DIRECT_FLOW_BLOCKED_MESSAGE =
-  'Tu agencia tiene bloqueadas las tarifas no reembolsables y la reserva directa de Despegar no informa la política de cancelación antes de reservar, así que no se puede usar. Pedile a quien financia a tu agencia que las habilite.';
+  'Tu agencia tiene bloqueadas las tarifas no reembolsables y la reserva directa de Despegar no informa la política de cancelación antes de reservar, así que no se puede usar. Pídele a quien financia a tu agencia que las habilite.';
 
 /**
  * La tarifa es no reembolsable (declarada, o con el 100 % ya vigente) y el vendedor no confirmó que
@@ -108,7 +108,7 @@ export class HotelNonRefundableNotAcknowledgedError extends BadRequestException 
 
   constructor(terms: HotelNonRefundableTerms) {
     super(
-      `Esta tarifa no es reembolsable: si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 % (${moneyText(terms.penalty)}). Confirmá que lo entendés para reservar.`,
+      `Esta tarifa no es reembolsable: si se cancela, se modifica o el pasajero no se presenta, se cobra el 100 % (${moneyText(terms.penalty)}). Confirma que lo entiendes para reservar.`,
     );
     this.name = 'HotelNonRefundableNotAcknowledgedError';
     this.publicDetails = {
@@ -128,7 +128,7 @@ export class HotelAcceptedTotalMismatchError extends ConflictException {
 
   constructor(currentTotal: Money) {
     super(
-      'El precio que aceptaste no es el de la revalidación vigente. Revisá el precio actualizado y confirmalo para reservar.',
+      'El precio que aceptaste no es el de la revalidación vigente. Revisa el precio actualizado y confírmalo para reservar.',
     );
     this.name = 'HotelAcceptedTotalMismatchError';
     this.publicDetails = { currentTotal: { ...currentTotal } };
@@ -142,11 +142,11 @@ export class HotelAcceptedTotalMismatchError extends ConflictException {
 const GUEST_ISSUE_MESSAGES: readonly (readonly [RegExp, string])[] = [
   [
     /:duplicate_guest$/,
-    'Hay dos huéspedes con el mismo nombre y apellido en la reserva. Agregá un segundo nombre o un sufijo para distinguirlos.',
+    'Hay dos huéspedes con el mismo nombre y apellido en la reserva. Agrega un segundo nombre o un sufijo para distinguirlos.',
   ],
   [
     /\.title:(required|not_allowed)$/,
-    'Elegí el título de cada huésped: Sr. (Mr), Sra. (Mrs) o Srta. (Ms).',
+    'Elige el título de cada huésped: Sr. (Mr), Sra. (Mrs) o Srta. (Ms).',
   ],
   [/:lead_not_adult$/, 'El primer huésped de cada habitación tiene que ser un adulto.'],
   [
@@ -162,7 +162,7 @@ const GUEST_ISSUE_MESSAGES: readonly (readonly [RegExp, string])[] = [
 ];
 
 const GUESTS_GENERIC =
-  'Revisá los datos de los huéspedes: no cumplen lo que el proveedor exige para reservar.';
+  'Revisa los datos de los huéspedes: no cumplen lo que el proveedor exige para reservar.';
 
 /** Los huéspedes no cumplen las reglas del proveedor contra la ocupación de la búsqueda (RF-18). */
 export class HotelGuestsInvalidError extends BadRequestException {
@@ -188,7 +188,7 @@ export class HotelAgencyContactMissingError extends UnprocessableEntityException
 
   constructor() {
     super(
-      'Para reservar hoteles, la agencia necesita un email y un teléfono de soporte en formato internacional (por ejemplo, +57 300 123 4567). Configuralos en Mi agencia → Marca, o pedíselos a tu consolidador.',
+      'Para reservar hoteles, la agencia necesita un email y un teléfono de soporte en formato internacional (por ejemplo, +57 300 123 4567). Configúralos en Mi agencia → Marca, o pídeselos a tu consolidador.',
     );
     this.name = 'HotelAgencyContactMissingError';
   }
@@ -208,11 +208,11 @@ export interface HotelBookRepricedDetails {
 
 const REPRICED_MESSAGES: Readonly<Record<HotelRepricedReason, string>> = {
   PRICE_INCREASED:
-    'El precio de la tarifa subió al revalidarla antes de reservar. Revisá el precio nuevo y confirmalo para continuar.',
+    'El precio de la tarifa subió al revalidarla antes de reservar. Revisa el precio nuevo y confírmalo para continuar.',
   CONDITIONS_CHANGED:
-    'Las condiciones de la tarifa cambiaron al revalidarla antes de reservar. Revisalas y confirmalas para continuar.',
+    'Las condiciones de la tarifa cambiaron al revalidarla antes de reservar. Revísalas y confírmalas para continuar.',
   PACKAGE_ONLY_RATE:
-    'Al revalidarla, la tarifa quedó como de venta sólo en paquete con aéreo. Elegí otra tarifa del hotel.',
+    'Al revalidarla, la tarifa quedó como de venta sólo en paquete con aéreo. Elige otra tarifa del hotel.',
 };
 
 /**
@@ -244,7 +244,7 @@ export class HotelBookIntentClosedError extends ConflictException {
       statusCode: 409,
       error: 'Conflict',
       message:
-        'La reserva ya no está abierta. Revisala en Mis Reservas antes de volver a intentar.',
+        'La reserva ya no está abierta. Revísala en Mis Reservas antes de volver a intentar.',
       orderId,
       retryForbidden: true,
       reconciliationRequired: true,

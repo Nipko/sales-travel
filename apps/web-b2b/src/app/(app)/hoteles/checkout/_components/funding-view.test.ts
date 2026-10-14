@@ -14,7 +14,7 @@ const NOT_ENABLED = {
   status: 'blocked',
   currency: 'USD',
   reason: 'PORTFOLIO_CURRENCY_NOT_ENABLED',
-  message: 'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+  message: 'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
 };
 
 describe('parseFunding — el aviso de cartera del PreBook', () => {

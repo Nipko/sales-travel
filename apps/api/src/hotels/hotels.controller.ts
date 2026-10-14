@@ -10,7 +10,6 @@ import {
   Res,
   UseFilters,
 } from '@nestjs/common';
-import type { HotelOffer } from '@sales-travel/canonical';
 import type { HotelDestinationSuggestion } from '@sales-travel/domain';
 import type {
   BookResult,
@@ -47,9 +46,13 @@ import {
   type HotelContentView,
 } from './hotel-content.service.js';
 import { HotelPrebookService, type HotelPrebookResponse } from './hotel-prebook.service.js';
+import {
+  HotelRoomContentService,
+  type HotelRoomContentView,
+} from './hotel-room-content.service.js';
 import type { HotelSearchCurrencyOptions } from './hotel-search-currency.js';
 import type { HotelSearchResponse } from './hotel-search.aggregate.js';
-import { HotelsService } from './hotels.service.js';
+import { HotelsService, type HotelDetailResponse } from './hotels.service.js';
 import {
   CancelBodySchema,
   HotelAvailabilityInputSchema,
@@ -112,6 +115,7 @@ export class HotelsController {
     private readonly bookings: HotelBookingService,
     private readonly hotelContent: HotelContentService,
     private readonly permissions: BookingPermissionsService,
+    private readonly roomContents: HotelRoomContentService,
   ) {}
 
   // ───────────────────────── Búsqueda ─────────────────────────
@@ -176,7 +180,7 @@ export class HotelsController {
   async detail(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(HotelDetailInputSchema)) body: HotelDetailInput,
-  ): Promise<HotelOffer> {
+  ): Promise<HotelDetailResponse> {
     const tenantId = await this.tenant(userId);
     return this.hotels.getHotelDetail(tenantId, body);
   }
@@ -194,6 +198,26 @@ export class HotelsController {
   ): Promise<HotelContentView> {
     const tenantId = await this.tenant(userId);
     return this.hotelContent.getContent(tenantId, { ...params, lang: query.lang });
+  }
+
+  /**
+   * Fotos, tamaño y descripción de cada habitación de un hotel de UN proveedor (docs/tbo/05
+   * §2.6.3): del catálogo o, vencido, del proveedor bajo demanda. Nunca es un error por falta de
+   * contenido: sale `none`, `pending` con `retryAfterMs` o `disabled` con el interruptor apagado.
+   *
+   * Como la ficha, no es una venta: es contenido estático sin precio. El tope por vendedor acota
+   * cuántas fichas por minuto pueden hacer salir al proveedor por el cupo de fondo de la cuenta; por
+   * vendedor y no por IP, porque web-b2b llama desde su servidor.
+   */
+  @SellerRateLimit({ bucket: 'hotels-room-content', limit: 60, ttlMs: 60_000 })
+  @Get('content/:providerCode/:hotelId/rooms')
+  async roomContent(
+    @CurrentUser() userId: string | undefined,
+    @Param(new ZodValidationPipe(HotelContentParamsSchema)) params: HotelContentParams,
+    @Query(new ZodValidationPipe(HotelContentQuerySchema)) query: HotelContentQuery,
+  ): Promise<HotelRoomContentView> {
+    const tenantId = await this.tenant(userId);
+    return this.roomContents.getRoomContent(tenantId, { ...params, lang: query.lang });
   }
 
   /**

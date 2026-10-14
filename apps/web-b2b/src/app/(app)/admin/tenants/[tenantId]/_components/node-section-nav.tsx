@@ -1,10 +1,11 @@
-import { Armchair, Plug, Users, Wallet } from 'lucide-react';
+import { Armchair, LayoutDashboard, Plug, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '../../../../../../lib/cn';
+import { nodeTabHref, type NodeTab } from '../../../../../../lib/platform-node-summary';
 import { teamHrefFor } from '../../../../../../lib/tenant-admin-team';
 
 /** Las secciones que se pintan con esta barra. Usuarios no: lleva a Equipo, abierto en el nodo. */
-export type NodeSection = 'providers' | 'wallets' | 'seats';
+export type NodeSection = NodeTab;
 
 const SECTIONS: readonly {
   readonly id: NodeSection | 'users';
@@ -12,20 +13,26 @@ const SECTIONS: readonly {
   readonly icon: typeof Plug;
   readonly href: (tenantId: string) => string;
 }[] = [
-  { id: 'providers', label: 'Proveedores', icon: Plug, href: (id) => `/admin/tenants/${id}` },
-  { id: 'wallets', label: 'Carteras', icon: Wallet, href: (id) => `/admin/tenants/${id}/carteras` },
+  {
+    id: 'summary',
+    label: 'Resumen',
+    icon: LayoutDashboard,
+    href: (id) => nodeTabHref(id, 'summary'),
+  },
+  { id: 'providers', label: 'Proveedores', icon: Plug, href: (id) => nodeTabHref(id, 'providers') },
+  { id: 'wallets', label: 'Carteras', icon: Wallet, href: (id) => nodeTabHref(id, 'wallets') },
   {
     id: 'seats',
     label: 'Puestos y sesión',
     icon: Armchair,
-    href: (id) => `/admin/tenants/${id}/puestos`,
+    href: (id) => nodeTabHref(id, 'seats'),
   },
   { id: 'users', label: 'Usuarios', icon: Users, href: teamHrefFor },
 ];
 
 /**
- * Las secciones de un nodo en Gestión de Agencias: proveedores, carteras, puestos y sesión, y sus
- * usuarios (en Equipo).
+ * Las secciones de un nodo en Gestión de Agencias: su resumen (la primera), proveedores, carteras,
+ * puestos y sesión, y sus usuarios (en Equipo).
  */
 export function NodeSectionNav({ tenantId, current }: { tenantId: string; current: NodeSection }) {
   return (

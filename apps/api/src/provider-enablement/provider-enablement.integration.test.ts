@@ -11,6 +11,7 @@ import { EnvHotelProviderFlags } from '../providers/hotel-providers.module.js';
 import { EnvProviderFlags } from '../providers/providers.module.js';
 import { StubHotelProviderFactory } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
+import { KillSwitchStore } from './kill-switch.store.js';
 import { PlatformProviderFlags } from './platform-provider-flags.js';
 import { platformDecision, type EnablementSetting } from './provider-enablement.policy.js';
 import {
@@ -183,6 +184,7 @@ d('provider_enablement (0048) contra Postgres', () => {
       new AuditService(database),
       legacyFlights,
       legacyHotels,
+      new KillSwitchStore(database, new AuditService(database)),
     );
     return { store, flights, hotels, service, vuelo, hotel };
   }

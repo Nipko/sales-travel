@@ -17,6 +17,73 @@ export interface AirlineLocator {
 }
 
 /**
+ * Qué documento es. Un tiquete (`TICKET`) paga el vuelo; un EMD (documento misceláneo
+ * electrónico) paga un servicio aparte: una maleta, un asiento, una penalidad.
+ */
+export const TICKET_DOCUMENT_KINDS = ['TICKET', 'EMD'] as const;
+export type TicketDocumentKind = (typeof TICKET_DOCUMENT_KINDS)[number];
+
+/**
+ * En qué quedó un documento según la última lectura del proveedor.
+ *
+ * `UNKNOWN` es "el proveedor mandó un estado que no sabemos traducir" (o no mandó ninguno), y no
+ * "no emitido": quien concilia una emisión no puede leer un `UNKNOWN` como fallo ni como éxito.
+ */
+export const TICKET_DOCUMENT_STATUSES = [
+  'ISSUED',
+  'VOIDED',
+  'REFUNDED',
+  'EXCHANGED',
+  'UNKNOWN',
+] as const;
+export type TicketDocumentStatus = (typeof TICKET_DOCUMENT_STATUSES)[number];
+
+/** Un tiquete o EMD emitido para la reserva. Sin datos de persona: el pasajero va por posición. */
+export interface TicketDocument {
+  /**
+   * Número del documento: sólo dígitos, de 10 a 16 (los tres del emisor y el serial). Un tiquete
+   * conjuntivo se identifica por su PRIMER número, que es el que usan la anulación y el reembolso.
+   */
+  number: string;
+  kind: TicketDocumentKind;
+  /**
+   * Posición del pasajero en la reserva, empezando en 0 (el orden con que se mandaron los
+   * pasajeros). Ausente si el proveedor no la dio o la dio fuera de rango.
+   */
+  travelerIndex?: number;
+  status: TicketDocumentStatus;
+  /** El código de estado del proveedor, tal cual, para revisar un `UNKNOWN`. Letras y dígitos. */
+  providerStatusCode?: string;
+}
+
+/**
+ * En qué reloj está el plazo de emisión.
+ *
+ * - `UTC`: la fecha y la hora son UTC y se pueden convertir a la hora de quien mira.
+ * - `PROVIDER_LOCAL`: la fecha y la hora son las de la oficina del proveedor, que no dice en qué
+ *   zona está. Se muestran tal cual y no se convierten con una zona inventada: sólo con la que
+ *   declara la cuenta de la reserva (`TicketingDeadline.timeZone`).
+ */
+export const TICKETING_DEADLINE_ZONES = ['UTC', 'PROVIDER_LOCAL'] as const;
+export type TicketingDeadlineZone = (typeof TICKETING_DEADLINE_ZONES)[number];
+
+/** Hasta cuándo se puede emitir la reserva antes de que la aerolínea la cancele. */
+export interface TicketingDeadline {
+  /** `YYYY-MM-DD`. */
+  date: string;
+  /** `HH:MM`, 24 h. Ausente si el proveedor sólo dio el día. */
+  time?: string;
+  zone: TicketingDeadlineZone;
+  /**
+   * Sólo con `PROVIDER_LOCAL`: la zona IANA de la oficina (`America/Bogota`), cuando la CUENTA con
+   * que se hizo la reserva la declara. El proveedor no la dice; la cuenta sí sabe dónde está su
+   * oficina. Con ella y con `time`, el plazo tiene instante y se puede avisar antes de que venza.
+   * Sin ella, la hora se muestra tal cual y nunca se convierte.
+   */
+  timeZone?: string;
+}
+
+/**
  * Vista de SÓLO LECTURA de una orden. Es lo que devuelve `retrieveForDisplay`.
  *
  * No tiene —ni puede tener— firma de concurrencia. No es una decisión de estilo: el
@@ -40,6 +107,15 @@ export interface OrderView {
    * silenciosa). El adapter que no lo sepa mapear devuelve `[]`, no lo omite.
    */
   airlineLocators: AirlineLocator[];
+  /**
+   * Los documentos que la lectura trajo, uno por número. Ausente = el adapter no sabe leer su
+   * estado, y quien guarda la reserva usa `ticketNumbers` con estado `UNKNOWN`. Presente, aunque
+   * sea vacía, manda sobre `ticketNumbers`. Un documento que no aparece en una lectura no se da
+   * por borrado: una lectura puede venir filtrada.
+   */
+  documents?: TicketDocument[];
+  /** Plazo de emisión que el proveedor tiene para la reserva, si lo informa. */
+  ticketingDeadline?: TicketingDeadline;
   warnings: string[];
 }
 

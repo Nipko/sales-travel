@@ -254,8 +254,8 @@ export function KillSwitchNotice({ level }: { level: EnablementKillLevel }) {
         className="mt-0.5 size-3.5 shrink-0 text-[var(--color-danger)]"
       />
       <span>
-        {killSwitchLabel(level)} Le gana a cualquier ajuste de este panel; los cambios que hagas acá
-        valen cuando operaciones lo levante.
+        {killSwitchLabel(level)} Le gana a cualquier ajuste de este panel; los cambios que hagas
+        aquí valen cuando se levante.
       </span>
     </p>
   );

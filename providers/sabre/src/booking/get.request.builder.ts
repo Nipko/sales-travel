@@ -98,6 +98,12 @@ const RETURN_ONLY_ORDER: ReadonlyMap<SabreReturnOnly, number> = new Map(
  * (`:1896-1902`)—, `TICKETS` para los números de billete, y `IS_CANCELABLE`/`IS_TICKETED` porque
  * son el estado agregado que decide si el botón "Cancelar" se pinta (05 §3.1).
  *
+ * `CREATION_DETAILS` trae, en NDC, hasta cuándo la aerolínea garantiza el precio
+ * (`creationDetails.purchaseDeadlineDate/Time`, `:1463-1474`), que es el plazo de emisión cuando no
+ * hay `futureTicketingPolicy`. Ésta no tiene sección propia en `ReturnOnlyEnum`: llega sólo si
+ * Sabre la incluye en la lectura filtrada, y eso se confirma en CERT. El resto del bloque (el sine
+ * y el PCC del agente que creó la reserva) no es de pasajeros y el mapper no lo copia.
+ *
  * **No incluye `TRAVELERS`**: los nombres y documentos de los pasajeros ya están en nuestra base
  * de datos y volver a traerlos de Sabre sólo multiplica las copias de PII. Quien de verdad
  * necesite el bloque de viajeros lo pide explícitamente.
@@ -108,6 +114,7 @@ export const SABRE_DISPLAY_SECTIONS_POST_SALE: readonly SabreReturnOnly[] = Obje
   'TICKETS',
   'IS_CANCELABLE',
   'IS_TICKETED',
+  'CREATION_DETAILS',
 ] as const satisfies readonly SabreReturnOnly[]);
 
 /** `BookingSourceEnum` — `booking-management-v1.yml:9041-9047`. Default del contrato: `SABRE`. */

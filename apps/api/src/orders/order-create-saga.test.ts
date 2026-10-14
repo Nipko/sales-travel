@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Offer } from '@sales-travel/canonical';
+import { PostgresQueryCompiler, type CompiledQuery, type RootOperationNode } from 'kysely';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { Offer, SeatMap } from '@sales-travel/canonical';
 import {
   OrderCreateNotSentError,
   type OrderCancelResult,
@@ -27,13 +33,24 @@ import type {
   TenantAdapter,
   TenantProviderFactory,
 } from '../providers/provider.types.js';
-import { ProviderDisabledByPlatformError } from '../providers/provider.types.js';
+import {
+  ProviderDisabledByPlatformError,
+  ProviderOrderAccountUnavailableError,
+  SeatSelectionNotAvailableError,
+} from '../providers/provider.types.js';
+import type { ProviderEnvironment } from '../providers/provider-environment.js';
 import { apagadoPara, providerFlags } from '../providers/__fixtures__/provider-flags.js';
 import type { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import type { PricingService } from '../pricing/pricing.service.js';
 import { RecordingQueueService } from '../queue/__fixtures__/recording-queue.service.js';
+import type {
+  FlightDocumentChanges,
+  FlightOrderRead,
+  FlightOrderTrackingStore,
+} from './flight-order-tracking.store.js';
+import { ProviderAccountChangedError } from './order-create-intent.store.js';
 import { ORDER_EVENTS } from './order-events.js';
-import { OrdersService, type CreateOrderDto } from './orders.service.js';
+import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
 import { runPostSaleJob, type PostSaleJobHandlers } from './post-sale.worker.js';
 
 /**
@@ -97,6 +114,10 @@ interface AdapterOptions {
   readonly cancelAudit?: Omit<OrderCancelAudit, 'result'>;
   readonly cancelResult?: OrderCancelResult;
   readonly cancelThrows?: Error;
+  /** Con un mapa, el adapter implementa `SeatMapPort` (SAB-16); sin él, no sabe pintarlo. */
+  readonly seatMap?: SeatMap;
+  /** La oferta que devuelve la revalidación. Por defecto, la misma que entra. */
+  readonly revalidated?: (offer: Offer) => Offer;
 }
 
 /**
@@ -128,10 +149,17 @@ class SagaAdapter implements FlightProviderAdapter {
     request: OrderCreateRequest,
     ctx: SearchContext,
   ) => Promise<OrderCreateAudit>;
+  readonly getSeatMap?: (
+    offer: Offer,
+    criteria: CreateOrderDto['searchCriteria'],
+    ctx: SearchContext,
+  ) => Promise<SeatMap>;
   /** Los ámbitos con los que se pidió cancelar, en orden. */
   readonly cancelScopes: (OrderCancelScope | undefined)[] = [];
 
   constructor(private readonly opts: AdapterOptions = {}) {
+    const seatMap = opts.seatMap;
+    if (seatMap !== undefined) this.getSeatMap = vi.fn(() => Promise.resolve(seatMap));
     if (opts.createAudit !== undefined) {
       this.createOrderAudited = vi.fn((request: OrderCreateRequest, ctx: SearchContext) =>
         this.createOrder(request, ctx).then((result) => ({
@@ -162,7 +190,11 @@ class SagaAdapter implements FlightProviderAdapter {
   // El resto del puerto no participa del saga de creación; existir con un rechazo explícito es
   // mejor que no existir: `undefined is not a function` sale como 500 genérico.
   priceOffer = vi.fn((offer: Offer) =>
-    Promise.resolve({ offer, priceChanged: false, warnings: [] }),
+    Promise.resolve({
+      offer: this.opts.revalidated === undefined ? offer : this.opts.revalidated(offer),
+      priceChanged: false,
+      warnings: [],
+    }),
   );
   cancelBnplOrder = vi.fn(() => Promise.reject(new Error('no usado en estos tests')));
   payOrder = vi.fn(() => Promise.reject(new Error('no usado en estos tests')));
@@ -180,6 +212,7 @@ class SagaFactory implements TenantProviderFactory<FlightProviderAdapter> {
   constructor(
     readonly adapter: SagaAdapter,
     capabilities: Partial<ProviderCapabilities> = {},
+    private readonly environment?: ProviderEnvironment,
   ) {
     this.capabilities = {
       retrieve: true,
@@ -196,7 +229,11 @@ class SagaFactory implements TenantProviderFactory<FlightProviderAdapter> {
   }
 
   resolveForTenant(): Promise<TenantAdapter<FlightProviderAdapter>> {
-    return Promise.resolve({ adapter: this.adapter, credentialSource: 'own' });
+    return Promise.resolve({
+      adapter: this.adapter,
+      credentialSource: 'own',
+      ...(this.environment === undefined ? {} : { providerEnvironment: this.environment }),
+    });
   }
 
   humanizeError(err: unknown): string {
@@ -210,6 +247,11 @@ interface FakeDbOptions {
   failOrderFinalize?: boolean;
   failCreateIntentInsert?: boolean;
   failCreateIntentSettlement?: boolean;
+  /**
+   * Cuentas de proveedor que `resolve_order_provider_account` (0045) resuelve para la orden que las
+   * guarda, con su versión (`updated_at`, ISO). La que no está aquí no se resuelve.
+   */
+  providerAccounts?: Readonly<Record<string, string>>;
 }
 
 /** Doble de la base: guarda por tabla y aplica los UPDATE, que es lo que el saga mira. */
@@ -220,6 +262,8 @@ function dbFalsa(
   db: DatabaseService;
   fila: () => Record<string, unknown> | undefined;
   operaciones: () => Record<string, unknown>[];
+  /** SQL crudo que se ejecutó, por función. */
+  consultas: () => readonly string[];
 } {
   const orders = new Map<string, unknown>(Object.entries(semilla ?? {}));
   const operaciones: Record<string, unknown>[] = [];
@@ -372,10 +416,32 @@ function dbFalsa(
     };
     return update;
   };
+  // Lo único que el saga ejecuta como SQL crudo: la versión de la cuenta que el intent guardó.
+  const compiler = new PostgresQueryCompiler();
+  const consultas: string[] = [];
+  const executor = {
+    transformQuery: (node: RootOperationNode) => node,
+    compileQuery: (node: RootOperationNode) => compiler.compileQuery(node),
+    withPlugins: () => executor,
+    executeQuery: (compiled: CompiledQuery) => {
+      if (!compiled.sql.includes('resolve_order_provider_account')) {
+        return Promise.reject(new Error(`SQL crudo inesperado: ${compiled.sql}`));
+      }
+      consultas.push('resolve_order_provider_account');
+      const cuenta = filaOrden()['provider_account_id'];
+      const version =
+        typeof cuenta === 'string' ? (options.providerAccounts ?? {})[cuenta] : undefined;
+      // Como la función de Postgres: sin cuenta que resolver, una fila de nulos.
+      return Promise.resolve({
+        rows: [{ updated_at: version === undefined ? null : new Date(version) }],
+      });
+    },
+  };
   const trx = {
     selectFrom: (tabla: string) => selectEn(tabla),
     insertInto: (tabla: string) => insertEn(tabla),
     updateTable: (tabla: string) => updateEn(tabla),
+    getExecutor: () => executor,
   };
 
   const db = {
@@ -397,6 +463,7 @@ function dbFalsa(
     db,
     fila: () => (orders.size === 0 ? undefined : filaOrden()),
     operaciones: () => operaciones,
+    consultas: () => consultas,
   };
 }
 
@@ -416,6 +483,7 @@ function banco(
   dbOptions: FakeDbOptions = {},
   flags: ProviderFlagsPort = { decisionFor: () => Promise.resolve(undefined) },
   holds?: BookingHoldLedger,
+  flightTracking?: FlightOrderTrackingStore,
 ): Banco {
   const adapter = new SagaAdapter(opts);
   const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps)], flags);
@@ -434,6 +502,7 @@ function banco(
       undefined,
       undefined,
       holds,
+      flightTracking,
     ),
     adapter,
     audit,
@@ -531,9 +600,22 @@ function parcial(): OrderCreateResult {
         message: 'The requested seat is no longer available',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO,
+        // El ACL lo atribuye al asiento: es lo que deja cerrar «el vuelo sí, el asiento no».
+        itemKind: 'seat',
       },
     ],
     compensation: { cancellableItemIds: ['12'] },
+  };
+}
+
+/** Un extra (no un asiento) caído con el vuelo dentro: la reserva se conserva y escala. */
+function extraCaido(): OrderCreateResult {
+  return {
+    ...parcial(),
+    items: [
+      { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+      { kind: 'ancillary', providerItemId: '13', status: 'FAILED', statusCode: 'UC' },
+    ],
   };
 }
 
@@ -677,6 +759,47 @@ describe('saga de creación — intent durable antes del proveedor', () => {
       uncertain: false,
       reason: 'rejected-before-send',
     });
+  });
+
+  it('una llamada cortada antes de salir (`sentToProvider: false`) libera la cotización', async () => {
+    // El cupo de concurrencia de la cuenta seguía lleno cuando venció la espera: el proveedor no
+    // recibió nada. Escalarla como incierta mandaba a buscar en el PCC un PNR que no existe.
+    const noSalio = Object.assign(new Error(`cola vencida para ${DOCUMENTO}`), {
+      sentToProvider: false,
+    });
+    noSalio.name = 'SabreApiError';
+    const b = banco({ createThrows: noSalio });
+
+    let thrown: unknown;
+    try {
+      await b.orders.createOrder(TENANT, USER, dto());
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HttpException);
+    expect((thrown as HttpException).getStatus()).toBe(429);
+    const response = (thrown as HttpException).getResponse();
+    expect(response).toMatchObject({ orderId: 'order-1', retryForbidden: false });
+    expect(JSON.stringify(response)).not.toContain('reconciliationRequired');
+    expect(JSON.stringify(response)).not.toContain(DOCUMENTO);
+    expect(b.fila()).toMatchObject({ status: 'failed', create_request_key: null });
+    expect(b.audit.first(ORDER_EVENTS.createFailed)?.payload).toMatchObject({
+      uncertain: false,
+      reason: 'not-dispatched',
+      errorName: 'SabreApiError',
+    });
+    expect(b.audit.dump()).not.toContain(DOCUMENTO);
+  });
+
+  it('`sentToProvider: true` sigue siendo incierta: sólo el `false` explícito libera', async () => {
+    const salio = Object.assign(new Error('timeout'), { sentToProvider: true });
+    const b = banco({ createThrows: salio });
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(b.fila()).toMatchObject({ status: 'pending' });
   });
 
   it('si el proveedor responde pero falla el CAS, devuelve intent + PNR y no intenta cerrar', async () => {
@@ -842,7 +965,7 @@ describe('saga de creación — la compensación es selectiva y va a la cola', (
   });
 
   it('un PARTIAL no se persiste como confirmado aunque haya PNR', async () => {
-    const b = banco({ created: parcial() });
+    const b = banco({ created: extraCaido() });
     await b.orders.createOrder(TENANT, USER, dto());
 
     expect(b.fila()?.['status']).toBe('pending');
@@ -872,11 +995,9 @@ describe('saga de creación — un accesorio caído no cancela el producto', () 
     const b = banco({ created: parcial() });
     const { saga } = await b.orders.createOrder(TENANT, USER, dto());
 
-    expect(saga).toEqual({
-      kind: 'escalate',
-      reason: 'partial-without-essential-failure',
-      status: 'pending',
-    });
+    // SAB-16: con todos los vuelos confirmados y sólo el asiento fuera, la reserva se cierra
+    // confirmada (el vendedor ve en la misma pantalla qué asiento no quedó).
+    expect(saga).toEqual({ kind: 'settled', status: 'confirmed' });
     // Las dos formas de perder el vuelo: cancelarlo aquí, o encolar una compensación que lo
     // cancele dentro de un minuto. Ninguna ocurre —y el proveedor había declarado el vuelo
     // cancelable, así que la protección no viene de que la lista llegara vacía.
@@ -884,19 +1005,62 @@ describe('saga de creación — un accesorio caído no cancela el producto', () 
     expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
   });
 
-  it('y el caso ESCALA: sin reintento automático, porque lo tiene que ver una persona', async () => {
-    // Un asiento no se recupera solo. Lo que hace falta es alguien que pida otro, o que pregunte
-    // al cliente si quiere la reserva así — decisiones que ninguna cola puede tomar.
+  it('el asiento caído queda dicho: OrderSeatsNotConfirmed con cuántos, sin reintento automático', async () => {
+    // Un asiento no se recupera solo, y la persona que tiene que decidir —pedir otro o preguntarle
+    // al cliente— es el vendedor que lo está mirando. Queda el evento, con el conteo y sin quién.
     const b = banco({ created: parcial() });
     await b.orders.createOrder(TENANT, USER, dto());
 
-    const escalado = b.audit.first(ORDER_EVENTS.escalated);
-    expect(escalado?.payload).toMatchObject({
+    expect(b.audit.first(ORDER_EVENTS.seatsNotConfirmed)?.payload).toEqual({
+      provider: PROVEEDOR,
+      seats: 1,
+    });
+    expect(b.audit.first(ORDER_EVENTS.escalated)).toBeUndefined();
+    expect(b.fila()?.['status']).toBe('confirmed');
+    expect(b.queue.verifications).toEqual([]);
+    expect(b.queue.compensations).toEqual([]);
+  });
+
+  it('un EXTRA caído (no un asiento) sí ESCALA: lo tiene que ver una persona', async () => {
+    const b = banco({ created: extraCaido() });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+    expect(b.audit.first(ORDER_EVENTS.escalated)?.payload).toMatchObject({
       reason: 'partial-without-essential-failure',
       outcome: 'PARTIAL',
       queued: false,
     });
-    expect(b.queue.verifications).toEqual([]);
+    expect(b.queue.compensations).toEqual([]);
+    expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('asiento caído MÁS un error que no es del asiento: escala, no se confirma', async () => {
+    // El atajo de SAB-16 no puede tapar lo que el proveedor dijo de otra cosa: el PNR pudo quedar
+    // sin precio guardado y se emitiría a otra tarifa. Queda `pending` y lo ve una persona.
+    const created: OrderCreateResult = {
+      ...parcial(),
+      issues: [
+        ...parcial().issues,
+        { severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'UNABLE_TO_PRICE_BOOKING' },
+      ],
+    };
+    const b = banco({ created });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+    expect(b.fila()?.['status']).toBe('pending');
+    expect(b.audit.first(ORDER_EVENTS.seatsNotConfirmed)).toBeUndefined();
+    expect(b.queue.compensations).toEqual([]);
+    expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
   });
 
   it('CONTRAPESO: si el que se cae es el vuelo, SÍ se compensa lo que quedó vivo', async () => {
@@ -1551,6 +1715,10 @@ describe('runPostSaleJob — el runner enruta, no decide', () => {
           runDaily: vi.fn(() => Promise.resolve({ accounts: 0, queued: 0, ran: 0, failed: 0 })),
         },
         sweeper: { run: vi.fn(() => Promise.reject(new Error('no se esperaba el barrido'))) },
+        ticketIssues: {
+          runIssueById: vi.fn(() => Promise.reject(new Error('no se esperaba una emisión'))),
+          runVerifyJob: vi.fn(() => Promise.resolve()),
+        },
       },
       runCancelById,
       verifyCreationById,
@@ -1671,7 +1839,12 @@ describe('habilitación de la plataforma — corta la venta nueva, no la post-ve
   it('una orden YA hecha se sigue leyendo, y su compensación selectiva sigue saliendo', async () => {
     const b = banco({ cancelAudit: auditoriaVerificada }, {}, ORDEN_EN_BASE, {}, APAGADO());
 
-    await b.orders.retrieveFromProvider(TENANT, PNR, PROVEEDOR);
+    await b.orders.retrieveFromProvider(TENANT, {
+      id: 'order-1',
+      provider: PROVEEDOR,
+      provider_order_id: PNR,
+      provider_account_id: null,
+    });
     await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
 
     expect(b.adapter.retrieveForDisplay).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
@@ -1695,5 +1868,606 @@ describe('habilitación de la plataforma — corta la venta nueva, no la post-ve
 
     expect(res.success).toBe(true);
     expect(b.adapter.payOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('post-venta con la cuenta de la reserva (RF-29)', () => {
+  const CUENTA_VIGENTE = 'acc-vigente';
+  const CUENTA_DE_LA_ORDEN = 'acc-de-la-orden';
+  const VERSION_VIGENTE = new Date('2026-05-01T10:00:00.000Z');
+  const ORDEN_CON_CUENTA = {
+    provider: PROVEEDOR,
+    provider_order_id: PNR,
+    status: 'confirmed',
+    user_id: USER,
+    provider_account_id: CUENTA_DE_LA_ORDEN,
+  };
+  const verificada: AdapterOptions = {
+    cancelAudit: {
+      audit: { audited: true, outcome: 'CANCELLED' },
+      idempotencyKey: 'sha256-de-la-peticion',
+      verified: true,
+    },
+  };
+
+  /** Vende con la cuenta vigente del tenant y dice cuál es, pero no sabe operar por cuenta. */
+  class SagaFactoryConCuenta extends SagaFactory {
+    /** Cuántas veces se pidió la cuenta vigente. */
+    vigentes = 0;
+
+    override resolveForTenant(): Promise<TenantAdapter<FlightProviderAdapter>> {
+      this.vigentes += 1;
+      return Promise.resolve({
+        adapter: this.adapter,
+        credentialSource: 'own',
+        accountId: CUENTA_VIGENTE,
+        accountUpdatedAt: VERSION_VIGENTE,
+      });
+    }
+  }
+
+  /** Además opera cada orden con la cuenta que guardó, con un adapter propio para ver cuál salió. */
+  class SagaFactoryPorCuenta extends SagaFactoryConCuenta {
+    disponible = true;
+    readonly resolveForOrder = vi.fn(
+      (_tenantId: string, _orderId: string): Promise<TenantAdapter<FlightProviderAdapter>> =>
+        this.disponible
+          ? Promise.resolve({
+              adapter: this.deLaOrden,
+              credentialSource: 'inherited',
+              accountId: CUENTA_DE_LA_ORDEN,
+              accountUpdatedAt: new Date('2026-03-01T10:00:00.000Z'),
+            })
+          : Promise.reject(new NotFoundException('fuera de la red')),
+    );
+
+    constructor(
+      adapter: SagaAdapter,
+      readonly deLaOrden: SagaAdapter,
+    ) {
+      super(adapter);
+    }
+  }
+
+  function montar(
+    factory: SagaFactory,
+    semilla?: Record<string, unknown>,
+    providerAccounts: Readonly<Record<string, string>> = {},
+  ) {
+    const { db, fila, operaciones, consultas } = dbFalsa(semilla, { providerAccounts });
+    const orders = new OrdersService(
+      db,
+      new FlightProviderRegistry([factory], { decisionFor: () => Promise.resolve(undefined) }),
+      new RecordingQueueService().asService(),
+      {} as unknown as AgentCarsProviderFactory,
+      new RecordingAuditService().asService(),
+      PRICING_SIN_REGLAS,
+    );
+    return { orders, fila, operaciones, consultas };
+  }
+
+  /** La fila tal como la leería el controlador. */
+  function filaDe(b: ReturnType<typeof montar>): OrderRow {
+    return b.fila() as unknown as OrderRow;
+  }
+
+  it('la venta de un proveedor que opera por cuenta la guarda, y el intent comprueba su versión', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, undefined, { [CUENTA_VIGENTE]: VERSION_VIGENTE.toISOString() });
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(b.fila()).toMatchObject({ provider_account_id: CUENTA_VIGENTE });
+    expect(b.consultas()).toEqual(['resolve_order_provider_account']);
+    expect(factory.adapter.createOrder).toHaveBeenCalledTimes(1);
+    // La venta y su cierre salen con la cuenta vigente: la orden se opera por cuenta después.
+    expect(factory.resolveForOrder).not.toHaveBeenCalled();
+    expect(factory.deLaOrden.retrieveForDisplay).not.toHaveBeenCalled();
+  });
+
+  it('si la cuenta cambió entre resolverla y abrir la orden, 409 y nada sale al proveedor', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, undefined, { [CUENTA_VIGENTE]: '2026-06-01T00:00:00.000Z' });
+
+    await expect(b.orders.createOrder(TENANT, USER, dto())).rejects.toBeInstanceOf(
+      ProviderAccountChangedError,
+    );
+
+    expect(b.fila()).toBeUndefined();
+    expect(factory.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(factory.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('un proveedor que no opera por cuenta no la guarda, aunque diga con cuál vende', async () => {
+    const factory = new SagaFactoryConCuenta(new SagaAdapter());
+    const b = montar(factory);
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(b.fila()?.['provider_account_id']).toBeUndefined();
+    expect(b.consultas()).toEqual([]);
+    expect(factory.adapter.createOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('consultar, verificar y cancelar una orden con cuenta salen con la de la orden', async () => {
+    const vigente = new SagaAdapter(verificada);
+    const factory = new SagaFactoryPorCuenta(vigente, new SagaAdapter(verificada));
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await b.orders.retrieveOrder(TENANT, filaDe(b));
+    await b.orders.verifyCreationById(TENANT, 'order-1');
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(factory.resolveForOrder).toHaveBeenCalledWith(TENANT, 'order-1');
+    expect(factory.deLaOrden.retrieveForDisplay).toHaveBeenCalledTimes(2);
+    expect(factory.deLaOrden.cancelOrder).toHaveBeenCalledWith(PNR, { tenantId: TENANT });
+    expect(b.fila()?.['status']).toBe('cancelled');
+    // La cuenta vigente del tenant no participa: con ella el proveedor no reconoce la reserva.
+    expect(factory.vigentes).toBe(0);
+    expect(vigente.retrieveForDisplay).not.toHaveBeenCalled();
+    expect(vigente.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('la compensación selectiva también sale con la cuenta de la orden', async () => {
+    const factory = new SagaFactoryPorCuenta(
+      new SagaAdapter(verificada),
+      new SagaAdapter(verificada),
+    );
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await b.orders.runCompensation(TENANT, 'order-1', ['12'], USER);
+
+    expect(factory.deLaOrden.cancelScopes).toEqual([{ itemIds: ['12'] }]);
+    expect(factory.adapter.cancelScopes).toEqual([]);
+    expect(factory.vigentes).toBe(0);
+  });
+
+  it('pagar, listar servicios y recotizar también salen con la cuenta de la orden', async () => {
+    const factory = new SagaFactoryPorCuenta(new SagaAdapter(), new SagaAdapter());
+    const b = montar(factory, ORDEN_CON_CUENTA);
+    const fila = filaDe(b);
+
+    await b.orders
+      .payOrder(TENANT, 'order-1', fila, { type: 'Cash', amount: 100, currency: 'USD' }, USER)
+      .catch(() => undefined);
+    await b.orders.listServices(TENANT, fila).catch(() => undefined);
+    await b.orders
+      .reshopOrder(TENANT, fila, {} as Parameters<OrdersService['reshopOrder']>[2], USER)
+      .catch(() => undefined);
+
+    expect(factory.deLaOrden.payOrder).toHaveBeenCalledTimes(1);
+    expect(factory.deLaOrden.listServices).toHaveBeenCalledTimes(1);
+    expect(factory.deLaOrden.reshopWithTickets).toHaveBeenCalledTimes(1);
+    expect(factory.adapter.payOrder).not.toHaveBeenCalled();
+    expect(factory.adapter.listServices).not.toHaveBeenCalled();
+    expect(factory.adapter.reshopWithTickets).not.toHaveBeenCalled();
+    expect(factory.vigentes).toBe(0);
+  });
+
+  it('con la cuenta de la orden fuera de la red: 409 al consultar y al cancelar, sin claim ni llamada', async () => {
+    const factory = new SagaFactoryPorCuenta(
+      new SagaAdapter(verificada),
+      new SagaAdapter(verificada),
+    );
+    factory.disponible = false;
+    const b = montar(factory, ORDEN_CON_CUENTA);
+
+    await expect(b.orders.retrieveOrder(TENANT, filaDe(b))).rejects.toBeInstanceOf(
+      ProviderOrderAccountUnavailableError,
+    );
+    await expect(b.orders.cancelOrder(TENANT, 'order-1', PNR, USER)).rejects.toBeInstanceOf(
+      ProviderOrderAccountUnavailableError,
+    );
+
+    // Nunca cae a la vigente, no deja una cancelación fallida en el historial y la orden sigue igual.
+    expect(factory.vigentes).toBe(0);
+    expect(factory.adapter.cancelOrder).not.toHaveBeenCalled();
+    expect(factory.deLaOrden.cancelOrder).not.toHaveBeenCalled();
+    expect(b.operaciones()).toEqual([]);
+    expect(b.fila()?.['status']).toBe('confirmed');
+  });
+
+  it('una orden SIN cuenta guardada (anterior, o de otro proveedor) sigue con la vigente', async () => {
+    const vigente = new SagaAdapter(verificada);
+    const factory = new SagaFactoryPorCuenta(vigente, new SagaAdapter(verificada));
+    const b = montar(factory, { ...ORDEN_CON_CUENTA, provider_account_id: null });
+
+    await b.orders.retrieveOrder(TENANT, filaDe(b));
+    await b.orders.cancelOrder(TENANT, 'order-1', PNR, USER);
+
+    expect(factory.resolveForOrder).not.toHaveBeenCalled();
+    expect(vigente.retrieveForDisplay).toHaveBeenCalledTimes(1);
+    expect(vigente.cancelOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Localizadores, documentos y plazo guardados en la reserva (0082)
+// ---------------------------------------------------------------------------------------------
+
+/** Doble del store: graba las lecturas, contesta con los cambios pedidos o falla. */
+class TrackingQueGraba {
+  readonly lecturas: { tenantId: string; orderId: string; read: FlightOrderRead }[] = [];
+  falla: Error | undefined;
+  cambios: FlightDocumentChanges = { added: 0, statusChanged: 0 };
+
+  readonly recordRead = vi.fn(
+    (tenantId: string, orderId: string, read: FlightOrderRead): Promise<FlightDocumentChanges> => {
+      if (this.falla !== undefined) return Promise.reject(this.falla);
+      this.lecturas.push({ tenantId, orderId, read });
+      return Promise.resolve(this.cambios);
+    },
+  );
+
+  asStore(): FlightOrderTrackingStore {
+    return this as unknown as FlightOrderTrackingStore;
+  }
+}
+
+const TIQUETE = '0457123456789';
+
+/** Lo que una lectura de cierre de un vuelo emitido trae: localizador, tiquete y plazo. */
+function vistaConSeguimiento(): OrderView {
+  return {
+    ...vistaViva(),
+    airlineLocators: [{ carrierCode: 'LA', locator: 'XKCD12' }],
+    ticketNumbers: [TIQUETE],
+    documents: [
+      {
+        number: TIQUETE,
+        kind: 'TICKET',
+        status: 'ISSUED',
+        travelerIndex: 0,
+        providerStatusCode: 'TE',
+      },
+    ],
+    ticketingDeadline: { date: '2026-09-08', time: '23:59', zone: 'PROVIDER_LOCAL' },
+  };
+}
+
+const ORDEN_GUARDADA = { status: 'confirmed', provider_order_id: PNR };
+
+/** `banco` con el store de seguimiento y nada más fuera de lo normal. */
+function bancoConSeguimiento(
+  opts: AdapterOptions,
+  tracking: TrackingQueGraba,
+  semilla?: Record<string, unknown>,
+): Banco {
+  return banco(opts, {}, semilla, {}, undefined, undefined, tracking.asStore());
+}
+
+describe('la reserva guarda localizadores, tiquetes y plazo de cada lectura (0082)', () => {
+  it('la lectura de cierre de la creación queda guardada, y el alta de un tiquete es un evento con conteos', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(tracking.lecturas[0]).toMatchObject({
+      tenantId: TENANT,
+      orderId: 'order-1',
+      read: {
+        airlineLocators: [{ carrierCode: 'LA', locator: 'XKCD12' }],
+        documents: [{ number: TIQUETE, kind: 'TICKET', status: 'ISSUED', travelerIndex: 0 }],
+        ticketingDeadline: { date: '2026-09-08', time: '23:59', zone: 'PROVIDER_LOCAL' },
+      },
+    });
+    const evento = b.audit.first(ORDER_EVENTS.flightDocumentsChanged);
+    expect(evento).toMatchObject({
+      tenantId: TENANT,
+      actorUserId: USER,
+      aggregateId: 'order-1',
+      payload: { provider: PROVEEDOR, source: 'verify', added: 1, statusChanged: 0 },
+    });
+    // Conteos, nunca números: el panel de red lo ve cualquier admin del subárbol.
+    expect(JSON.stringify(evento)).not.toContain(TIQUETE);
+  });
+
+  it('sin cambios en los documentos no hay evento', async () => {
+    const tracking = new TrackingQueGraba();
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)).toBeUndefined();
+  });
+
+  it('si guardar falla, la creación se cierra igual y confirmada', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+
+    const { order, saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+    expect(order.status).toBe('confirmed');
+    expect(b.audit.first(ORDER_EVENTS.verified)).toBeDefined();
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)).toBeUndefined();
+    expect(b.audit.first(ORDER_EVENTS.escalated)).toBeUndefined();
+  });
+
+  it('si el evento falla, la creación también se cierra', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking);
+    const emit = b.audit.emit.bind(b.audit);
+    vi.spyOn(b.audit, 'emit').mockImplementation((event) =>
+      event.eventType === ORDER_EVENTS.flightDocumentsChanged
+        ? Promise.reject(new Error('domain_events no disponible'))
+        : emit(event),
+    );
+
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toMatchObject({ kind: 'settled', status: 'confirmed' });
+  });
+
+  it('una lectura de cierre que falló o que no encontró la reserva no guarda nada', async () => {
+    const falla = new TrackingQueGraba();
+    await bancoConSeguimiento({ viewThrows: new Error('timeout') }, falla).orders.createOrder(
+      TENANT,
+      USER,
+      dto(),
+    );
+    expect(falla.recordRead).not.toHaveBeenCalled();
+
+    const noEsta = new TrackingQueGraba();
+    await bancoConSeguimiento(
+      { view: { found: false, airlineLocators: [], warnings: [] } },
+      noEsta,
+    ).orders.createOrder(TENANT, USER, dto());
+    expect(noEsta.recordRead).not.toHaveBeenCalled();
+  });
+
+  it('la verificación diferida guarda lo que leyó', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 0, statusChanged: 1 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+
+    await b.orders.verifyCreationById(TENANT, 'order-1', USER);
+
+    expect(tracking.lecturas.map((l) => l.orderId)).toEqual(['order-1']);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)?.payload).toEqual({
+      provider: PROVEEDOR,
+      source: 'verify',
+      added: 0,
+      statusChanged: 1,
+    });
+  });
+
+  it('si guardar falla, la verificación diferida sigue y deja su evento', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+
+    await expect(b.orders.verifyCreationById(TENANT, 'order-1', USER)).resolves.toBeUndefined();
+    expect(b.audit.first(ORDER_EVENTS.verified)).toBeDefined();
+  });
+
+  it('la consulta manual guarda y devuelve la misma lectura, aunque guardar falle', async () => {
+    const tracking = new TrackingQueGraba();
+    tracking.cambios = { added: 1, statusChanged: 0 };
+    const b = bancoConSeguimiento({ view: vistaConSeguimiento() }, tracking, ORDEN_GUARDADA);
+    const fila = b.fila() as unknown as OrderRow;
+
+    await expect(b.orders.retrieveOrder(TENANT, fila, USER)).resolves.toEqual(
+      vistaConSeguimiento(),
+    );
+    expect(tracking.lecturas).toHaveLength(1);
+    expect(b.audit.first(ORDER_EVENTS.flightDocumentsChanged)?.payload).toMatchObject({
+      source: 'retrieve',
+    });
+
+    tracking.falla = new Error('flight_order_tracking no disponible');
+    await expect(b.orders.retrieveOrder(TENANT, fila, USER)).resolves.toEqual(
+      vistaConSeguimiento(),
+    );
+  });
+
+  it('un proveedor sin estados de documento (sólo ticketNumbers) los guarda como tiquetes sin confirmar', async () => {
+    const tracking = new TrackingQueGraba();
+    const b = bancoConSeguimiento(
+      { view: { ...vistaViva(), ticketNumbers: [TIQUETE, 'NO-ES-UN-NUMERO'] } },
+      tracking,
+      ORDEN_GUARDADA,
+    );
+
+    await b.orders.retrieveOrder(TENANT, b.fila() as unknown as OrderRow, USER);
+
+    expect(tracking.lecturas[0]?.read.documents).toEqual([
+      { number: TIQUETE, kind: 'TICKET', status: 'UNKNOWN' },
+    ]);
+  });
+
+  it('sin store (los dobles de otras suites) la lectura sigue igual', async () => {
+    const b = banco({ view: vistaConSeguimiento() }, {}, ORDEN_GUARDADA);
+    await expect(
+      b.orders.retrieveOrder(TENANT, b.fila() as unknown as OrderRow, USER),
+    ).resolves.toEqual(vistaConSeguimiento());
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// SAB-16 — asientos al reservar, por la puerta del servicio
+// ---------------------------------------------------------------------------------------------
+
+/** Un tramo, cuatro asientos: 12A sin cargo, 12C sin cargo, 12D ocupado, 14B con cargo. */
+function mapaDeAsientos(): SeatMap {
+  const asiento = (column: string, amountMinor: number | null) => ({
+    column,
+    available: amountMinor !== null,
+    characteristics: [],
+    adultOnly: false,
+    infantAllowed: true,
+    offers:
+      amountMinor === null
+        ? []
+        : [
+            {
+              passengerIndex: 0,
+              price: { amountMinor, currency: 'USD' },
+              offerRef: `oferta-${column}-${String(amountMinor)}`,
+            },
+          ],
+  });
+  return {
+    segments: [
+      {
+        segmentRef: 0,
+        legIndex: 0,
+        changeOfGauge: false,
+        displayOnly: false,
+        cabins: [
+          {
+            cabin: 'economy',
+            columns: ['A', 'B', 'C', 'D'],
+            aisleAfter: ['B'],
+            rows: [
+              { number: 12, seats: [asiento('A', 0), asiento('C', 0), asiento('D', null)] },
+              { number: 14, seats: [asiento('B', 4_500)] },
+            ],
+          },
+        ],
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function dtoConAsiento(row = 12, column = 'C'): CreateOrderDto {
+  const base = dto();
+  return {
+    ...base,
+    passengers: [{ ...PASAJERO_ADULTO, requestedTravelerIndex: 0 }],
+    seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row, column }],
+  };
+}
+
+function bancoConAsientos(
+  opts: AdapterOptions,
+  caps: Partial<ProviderCapabilities>,
+  environment?: ProviderEnvironment,
+): Banco {
+  const adapter = new SagaAdapter(opts);
+  const registry = new FlightProviderRegistry([new SagaFactory(adapter, caps, environment)], {
+    decisionFor: () => Promise.resolve(undefined),
+  });
+  const { db, fila, operaciones } = dbFalsa();
+  const audit = new RecordingAuditService();
+  const queue = new RecordingQueueService();
+  return {
+    orders: new OrdersService(
+      db,
+      registry,
+      queue.asService(),
+      {} as unknown as AgentCarsProviderFactory,
+      audit.asService(),
+      PRICING_SIN_REGLAS,
+    ),
+    adapter,
+    audit,
+    queue,
+    fila,
+    operaciones,
+  };
+}
+
+describe('SAB-16 — asientos al reservar', () => {
+  it('sin la capacidad del proveedor: 400 antes de abrir la orden, sin tocar al proveedor', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, {});
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento())).rejects.toBeInstanceOf(
+      SeatSelectionNotAvailableError,
+    );
+    expect(b.fila()).toBeUndefined();
+    expect(b.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(b.adapter.getSeatMap).not.toHaveBeenCalled();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('con la capacidad pero un adapter que no pinta el mapa: tampoco', async () => {
+    const b = bancoConAsientos({}, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento())).rejects.toBeInstanceOf(
+      SeatSelectionNotAvailableError,
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('el mapa se lee UNA vez, con la oferta revalidada, y el asiento viaja con su oferta', async () => {
+    const b = bancoConAsientos(
+      {
+        seatMap: mapaDeAsientos(),
+        revalidated: (offer) => ({ ...offer, provider: { ...offer.provider, offerRef: 'REVAL' } }),
+      },
+      { seatMap: true },
+    );
+    await b.orders.createOrder(TENANT, USER, dtoConAsiento());
+
+    const getSeatMap = b.adapter.getSeatMap as ReturnType<typeof vi.fn>;
+    expect(getSeatMap).toHaveBeenCalledTimes(1);
+    const [ofertaDelMapa] = getSeatMap.mock.calls[0] as [Offer];
+    expect(ofertaDelMapa.provider.offerRef).toBe('REVAL');
+    // Revalidar, leer el mapa y reservar, en ese orden.
+    expect(b.adapter.priceOffer.mock.invocationCallOrder[0]).toBeLessThan(
+      getSeatMap.mock.invocationCallOrder[0]!,
+    );
+    expect(getSeatMap.mock.invocationCallOrder[0]).toBeLessThan(
+      b.adapter.createOrder.mock.invocationCallOrder[0]!,
+    );
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request.seats).toEqual([
+      {
+        passengerIndex: 0,
+        segmentRef: 0,
+        legIndex: 0,
+        row: 12,
+        column: 'C',
+        offerRef: 'oferta-C-0',
+      },
+    ]);
+    expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({ seats: 1 });
+  });
+
+  it('«El asiento 12D ya no está disponible»: 400, no sale nada y la cotización queda libre', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento(12, 'D'))).rejects.toThrow(
+      new BadRequestException('El asiento 12D ya no está disponible. Elige otro.'),
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+    expect(b.fila()?.['status']).toBe('failed');
+    // La clave de la cotización se libera: el vendedor elige otro asiento y vuelve a reservar.
+    expect(b.fila()?.['create_request_key']).toBeNull();
+    expect(b.audit.first(ORDER_EVENTS.createRequested)).toBeUndefined();
+  });
+
+  it('un asiento con cargo: 400 con el motivo, sin reservar', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true });
+    await expect(b.orders.createOrder(TENANT, USER, dtoConAsiento(14, 'B'))).rejects.toThrow(
+      'Los asientos con cargo todavía no se pueden reservar desde aquí.',
+    );
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('sin asientos nada cambia: ni la capacidad ni el mapa se consultan', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, {});
+    await b.orders.createOrder(TENANT, USER, dto());
+    expect(b.adapter.getSeatMap).not.toHaveBeenCalled();
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request).not.toHaveProperty('seats');
+  });
+
+  it('una reserva de prueba con asiento sigue marcada de prueba, como hoy', async () => {
+    const b = bancoConAsientos({ seatMap: mapaDeAsientos() }, { seatMap: true }, 'test');
+    await b.orders.createOrder(TENANT, USER, dtoConAsiento());
+
+    expect(b.audit.first(ORDER_EVENTS.createRequested)?.payload).toMatchObject({
+      environment: 'test',
+      seats: 1,
+    });
+    const [request] = b.adapter.createOrder.mock.calls[0]!;
+    expect(request.offer.provider.environment).toBe('test');
   });
 });

@@ -663,18 +663,21 @@ export function EntryDialog({
 export function ApproveReportDialog({
   report,
   nodeName,
+  otherFinancier,
   onSubmit,
   onClose,
 }: {
   report: DepositReport;
   nodeName: string;
+  /** Quien financia a la agencia, si no es quien aprueba (ver `approveReportSummary`). */
+  otherFinancier?: string;
   onSubmit: Submit<{ reason: string | null }>;
   onClose: () => void;
 }) {
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string | undefined>();
   const { busy, error, run } = useSaving();
-  const summary = approveReportSummary(report, nodeName);
+  const summary = approveReportSummary(report, nodeName, otherFinancier);
 
   function submit() {
     const checked = validateApproveNote(note);
@@ -751,7 +754,7 @@ export function RejectReportDialog({
         onChange={setReason}
         error={reasonError}
         label="Motivo del rechazo"
-        placeholder="Ej.: no encontramos esa referencia en el extracto; revisá el número."
+        placeholder="Ej.: no encontramos esa referencia en el extracto; revisa el número."
       />
     </FormDialog>
   );

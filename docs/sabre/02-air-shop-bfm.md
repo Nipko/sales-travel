@@ -284,6 +284,8 @@ Tres cosas que esto zanja:
 >
 > Omitir `MultipleSourcePerItinerary` no es "usar el default": es **pedirle a Sabre que nos oculte producto**. Debe ir en el builder como constante, no como opción de configuración.
 
+> **Actualización (SAB-18, 2026-10):** `NDC: "Enable"` ya **no** es el default. Mientras el mapper descarte las ofertas NDC (`ndc-content-skipped`), el builder manda `NDC: "Disable"` y sólo lo enciende la cuenta con `config.ndcContent: "true"` (campo «Contenido NDC (experimental)» del panel). `ATPCO: "Enable"`, `LCC: "Disable"`, `PreferNDCSourceOnTie` y `MultipleSourcePerItinerary` no cambian. Pendiente de verificar con las capturas de CERT si apagar NDC cambia qué alternativas ATPCO devuelve Sabre.
+
 `LCC: "Disable"` en Ola 1 se mantiene, y ahora por una razón más limpia que "no encaja": los 8 requests LCC de la colección **todos** llevan `VendorPref` con carrier concreto (`U2`, `FR`, `{{lcc_airline_code}}`) — **VERIFICADO**. No hay evidencia de búsqueda LCC abierta, y las low cost relevantes en LATAM (JetSMART, Sky, Gol) están sin confirmar en el agregador de Sabre. Es un `Enable` de una línea el día que se confirme cobertura.
 
 ### 4.3 Qué implica cada fuente para el ciclo de reserva

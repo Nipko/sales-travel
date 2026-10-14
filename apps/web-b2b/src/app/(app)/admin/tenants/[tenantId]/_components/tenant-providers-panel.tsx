@@ -77,7 +77,7 @@ export function TenantProvidersPanel({ tenantId }: { tenantId: string }) {
     // El PUT devuelve la vista del proveedor en la plataforma, no lo que ve ESTE tenant (que
     // depende de su red): se vuelve a pedir, sin tapar la pantalla con el esqueleto.
     if (!(await load(true))) {
-      toast.error('El cambio se guardó, pero no pudimos recargar el estado. Recargá la página.');
+      toast.error('El cambio se guardó, pero no pudimos recargar el estado. Recarga la página.');
     }
     return undefined;
   }

@@ -71,6 +71,28 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
     expect(typeof res.receivedAt).toBe('number');
   });
 
+  it('trae al navegador si a la agencia le falta el contacto de soporte que exige el Book', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREBOOK, bookingReadiness: { agencyContact: 'missing' } },
+    });
+    const res = await prebookRateAction(REFERENCE);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.prebook.bookingReadiness).toEqual({ agencyContact: 'missing' });
+  });
+
+  it('trae los servicios de la habitación del PreBook, una lista por habitación', async () => {
+    apiMock.mockResolvedValue({
+      ok: true,
+      data: { ...PREBOOK, roomAmenities: [['Free WiFi', 'Minibar']] },
+    });
+    const res = await prebookRateAction(REFERENCE);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.prebook.roomAmenities).toEqual([['Free WiFi', 'Minibar']]);
+  });
+
   it('una referencia que no es nuestra no llega al API', async () => {
     const res = await prebookRateAction({
       providerCode: 'tbo-hotels',
@@ -86,12 +108,12 @@ describe('prebookRateAction — el PreBook de la tarifa elegida (U-09)', () => {
       ok: false,
       error: {
         status: 409,
-        message: 'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda.',
+        message: 'Esta tarifa ya no está disponible. Elige otra de la misma búsqueda.',
       },
     });
     expect(await prebookRateAction(REFERENCE)).toEqual({
       ok: false,
-      error: 'Esta tarifa ya no está disponible. Elegí otra de la misma búsqueda.',
+      error: 'Esta tarifa ya no está disponible. Elige otra de la misma búsqueda.',
       retryable: false,
     });
   });

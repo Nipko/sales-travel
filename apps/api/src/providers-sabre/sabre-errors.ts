@@ -7,12 +7,16 @@ import {
   SabreConfigError,
   SabreCreateBookingError,
   SabreCreateBookingMapError,
+  SabreFulfillBuildError,
   SabreFlightCheckMappingError,
   SabreFlightCheckNoMatchedOfferError,
   SabreFlightCheckRejectedError,
   SabreFlightCheckRequestError,
   SabreFlightCheckTenantMismatchError,
   SabreGetBookingBuildError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreGetSeatsRequestError,
   SabreGetBookingMappingError,
   SabreIndexError,
   SabreOfferPriceEmptyError,
@@ -20,9 +24,14 @@ import {
   SabrePriceMappingError,
   SabrePriceRejectedError,
   SabrePriceRequestError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
   SabreShopMappingError,
+  SabreTicketingNotSentError,
   type SabreFailureKind,
+  type SabreTicketingRefusal,
 } from '@sales-travel/sabre';
+import { TICKET_VOID_NOT_AVAILABLE_MESSAGE } from '../providers/provider.types.js';
 
 /**
  * Traduce un error LANZADO por el ACL de Sabre a un mensaje en español para el vendedor.
@@ -39,27 +48,40 @@ import {
  * sola. Aquí el texto del proveedor sencillamente no entra.
  */
 const MENSAJE_POR_KIND: Readonly<Record<SabreFailureKind, string>> = {
-  TRANSPORT: 'No pudimos conectar con Sabre. Probá de nuevo en unos segundos.',
+  TRANSPORT: 'No pudimos conectar con Sabre. Prueba de nuevo en unos segundos.',
   CLIENT_BUG:
-    'La consulta a Sabre se armó mal de nuestro lado. Ya quedó registrado; probá con otra búsqueda.',
-  AUTH_EXPIRED: 'La sesión con Sabre expiró. Probá de nuevo en unos segundos.',
+    'La consulta a Sabre se armó mal de nuestro lado. Ya quedó registrado; prueba con otra búsqueda.',
+  AUTH_EXPIRED: 'La sesión con Sabre expiró. Prueba de nuevo en unos segundos.',
   AUTH_POOL:
-    'Sabre rechazó la autenticación o no hay tokens disponibles en este momento. Si se repite, verificá tus credenciales en Mi Red → Credenciales → Sabre.',
+    'Sabre rechazó la autenticación o no hay tokens disponibles en este momento. Si se repite, verifica tus credenciales en Mi Red → Credenciales → Sabre.',
   CREDENTIALS_INVALID:
-    'Las credenciales de Sabre (EPR, contraseña o PCC) son inválidas. Verificalas en Mi Red → Credenciales → Sabre.',
+    'Las credenciales de Sabre (EPR, contraseña o PCC) son inválidas. Verifícalas en Mi Red → Credenciales → Sabre.',
   ENTITLEMENT:
     'Tu PCC de Sabre no tiene habilitado este producto. Es un alta comercial pendiente con Sabre, no una caída del servicio.',
   NO_DATA: 'Sabre no devolvió vuelos para esta búsqueda.',
-  THROTTLED: 'Sabre está limitando nuestras consultas. Probá de nuevo en unos segundos.',
-  UPSTREAM: 'Sabre tuvo un problema interno. Probá de nuevo en unos minutos.',
-  BUSINESS: 'Sabre rechazó la operación. Revisá los datos e intentá nuevamente.',
-  SESSION: 'La sesión de Sabre se cerró. Probá de nuevo en unos segundos.',
+  THROTTLED: 'Sabre está limitando nuestras consultas. Prueba de nuevo en unos segundos.',
+  UPSTREAM: 'Sabre tuvo un problema interno. Prueba de nuevo en unos minutos.',
+  BUSINESS: 'Sabre rechazó la operación. Revisa los datos e intenta nuevamente.',
+  SESSION: 'La sesión de Sabre se cerró. Prueba de nuevo en unos segundos.',
   HUMAN_REVIEW:
     'Sabre devolvió un aviso que requiere revisión manual. Ya quedó registrado para el equipo.',
 };
 
 /** Fallback cuando el error no es ninguno de los tipados del ACL. */
-const MENSAJE_DESCONOCIDO = 'No pudimos procesar la solicitud con Sabre. Intentá nuevamente.';
+const MENSAJE_DESCONOCIDO = 'No pudimos procesar la solicitud con Sabre. Intenta nuevamente.';
+
+/**
+ * Una emisión que el ACL rechazó antes de mandarla. Lo único que se cita es nuestro código: el
+ * vendedor tiene que saber que no se emitió nada y qué hacer.
+ */
+const EMISION_NO_ENVIADA: Readonly<Record<SabreTicketingRefusal, string>> = {
+  BOOKING_CANCELLED:
+    'La reserva figura cancelada en Sabre: no hay nada que emitir. Consulta su estado antes de seguir.',
+  TARGET_PCC_NOT_ADDRESSABLE:
+    'La cuenta de Sabre tiene un PCC de emisión sin grupo (sabreGroup o sabreCurrentCity). Complétalo en Mi Red → Credenciales → Sabre.',
+  TRAVELER_COUNT_INVALID:
+    'La reserva no tiene pasajeros que se puedan emitir. Ya quedó registrado para el equipo.',
+};
 
 export function humanizeSabreError(err: unknown): string {
   // Sin `??` de rescate a propósito: `MENSAJE_POR_KIND` es un `Record` COMPLETO sobre
@@ -70,7 +92,7 @@ export function humanizeSabreError(err: unknown): string {
   // La configuración puede fallar en capas distintas y `Error.message` sigue siendo texto libre.
   // El panel ya expone por separado los nombres de campos faltantes; acá no se interpola nada.
   if (err instanceof SabreConfigError) {
-    return 'La configuración de Sabre de esta agencia es inválida. Revisala en Mi Red → Credenciales → Sabre.';
+    return 'La configuración de Sabre de esta agencia es inválida. Revísala en Mi Red → Credenciales → Sabre.';
   }
 
   // Respuesta fuera de contrato: el mensaje son rutas de campo + códigos de Zod, sin valores.
@@ -86,16 +108,16 @@ export function humanizeSabreError(err: unknown): string {
   // una regla que la novena clase de error se salta.
 
   if (err instanceof SabrePriceRejectedError) {
-    return 'Sabre rechazó revalidar el precio de esta oferta. Volvé a buscar: la tarifa pudo cambiar o expirar.';
+    return 'Sabre rechazó revalidar el precio de esta oferta. Vuelve a buscar: la tarifa pudo cambiar o expirar.';
   }
   if (err instanceof SabreOfferPriceEmptyError) {
-    return 'Sabre no devolvió ninguna tarifa vigente para esta oferta. Volvé a buscar.';
+    return 'Sabre no devolvió ninguna tarifa vigente para esta oferta. Vuelve a buscar.';
   }
   if (
     err instanceof SabreFlightCheckNoMatchedOfferError ||
     err instanceof SabreFlightCheckRejectedError
   ) {
-    return 'Sabre no pudo confirmar la misma tarifa y clase de reserva. Volvé a buscar o elegí explícitamente una alternativa.';
+    return 'Sabre no pudo confirmar la misma tarifa y clase de reserva. Vuelve a buscar o elige explícitamente una alternativa.';
   }
   if (err instanceof SabreCardBinPricingDeniedError) {
     return 'Tarificar con datos de tarjeta no está habilitado para esta agencia. La reserva se hace sin tarjeta y el cobro va por el checkout del medio de pago.';
@@ -109,9 +131,29 @@ export function humanizeSabreError(err: unknown): string {
     err instanceof SabreGetBookingBuildError ||
     err instanceof SabreIndexError
   ) {
-    return 'No pudimos armar la operación con los datos de esta oferta. Revalidá el precio y volvé a intentar; si se repite, ya quedó registrado para el equipo.';
+    return 'No pudimos armar la operación con los datos de esta oferta. Revalida el precio y vuelve a intentar; si se repite, ya quedó registrado para el equipo.';
+  }
+  // --- Mapa de asientos (SAB-16) ---------------------------------------------------------------
+  // Ninguno impide reservar: el asiento es opcional, y el mensaje lo dice.
+  if (err instanceof SabreGetSeatsRequestError || err instanceof SabreSeatMapTenantMismatchError) {
+    return 'No pudimos armar la consulta del mapa de asientos con esta oferta. Verifica el precio y vuelve a intentar; también puedes reservar sin asiento.';
+  }
+  if (err instanceof SabreGetSeatsRejectedError || err instanceof SabreSeatMapEmptyError) {
+    return 'Sabre no devolvió el mapa de asientos de este vuelo. Puedes reservar sin asiento.';
+  }
+
+  if (err instanceof SabreTicketingNotSentError) return EMISION_NO_ENVIADA[err.code];
+  if (err instanceof SabreFulfillBuildError) {
+    // Como la cancelación: la regla es nuestra y cerrada, y dice qué dato no permitió armarla.
+    return `No pudimos armar la emisión de esta reserva (${err.rule}). No se emitió nada; ya quedó registrado para el equipo.`;
   }
   if (err instanceof SabreCancelBookingBuildError) {
+    if (err.rule === 'VOID_NOT_AVAILABLE') return TICKET_VOID_NOT_AVAILABLE_MESSAGE;
+    if (err.rule.startsWith('TICKET_CHECK_')) {
+      // La comprobación de tiquetes también se lee sola, para mostrar sus condiciones: ahí no hay
+      // ninguna cancelación que armar.
+      return `No pudimos leer las condiciones de los tiquetes de esta reserva (${err.rule}). No se cambió nada; ya quedó registrado para el equipo.`;
+    }
     // `rule` es vocabulario NUESTRO y cerrado; es lo único que se cita, porque distingue
     // "falta el chequeo de billetes" de "esta reserva no se puede cancelar así".
     return `No pudimos armar la cancelación de esta reserva (${err.rule}). Ya quedó registrado para el equipo.`;
@@ -121,7 +163,8 @@ export function humanizeSabreError(err: unknown): string {
     err instanceof SabreFlightCheckMappingError ||
     err instanceof SabreCreateBookingMapError ||
     err instanceof SabreGetBookingMappingError ||
-    err instanceof SabreCancelMappingError
+    err instanceof SabreCancelMappingError ||
+    err instanceof SabreGetSeatsMappingError
   ) {
     return 'Sabre devolvió una respuesta que no pudimos interpretar. Ya quedó registrado para el equipo.';
   }
@@ -159,6 +202,11 @@ export const SABRE_THROWN_CLASSES = [
   SabreCancelBookingBuildError,
   SabreCancelMappingError,
   SabreIndexError,
+  SabreGetSeatsRequestError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
 ] as const;
 
 /**
@@ -185,7 +233,12 @@ export function sabreErrorStatus(err: unknown): number {
   ) {
     return HttpStatus.CONFLICT;
   }
-  if (err instanceof SabreFlightCheckTenantMismatchError) return HttpStatus.BAD_REQUEST;
+  if (
+    err instanceof SabreFlightCheckTenantMismatchError ||
+    err instanceof SabreSeatMapTenantMismatchError
+  ) {
+    return HttpStatus.BAD_REQUEST;
+  }
   return HttpStatus.BAD_GATEWAY;
 }
 
@@ -205,7 +258,7 @@ export function sabreErrorStatus(err: unknown): number {
 export class SabreOperationNotSupportedError extends NotImplementedException {
   constructor(readonly operation: string) {
     super(
-      `La operación '${operation}' no está disponible en Sabre. Elegí una oferta de otro proveedor para continuar.`,
+      `La operación '${operation}' no está disponible en Sabre. Elige una oferta de otro proveedor para continuar.`,
     );
     this.name = 'SabreOperationNotSupportedError';
   }

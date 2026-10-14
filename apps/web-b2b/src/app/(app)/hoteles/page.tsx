@@ -1,7 +1,15 @@
 'use client';
 
-import { Hotel, Info, RefreshCw, TriangleAlert } from 'lucide-react';
-import { startTransition, useActionState, useEffect, useId, useRef, useState } from 'react';
+import { ChevronDown, Hotel, Info, RefreshCw, TriangleAlert } from 'lucide-react';
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   DateRangePicker,
   EMPTY_RANGE,
@@ -25,7 +33,12 @@ import {
 import { CurrencyField } from './_components/currency-field';
 import { DestinationCombobox } from './_components/destination-combobox';
 import { emptyWithMoreView, type MoreState } from './_components/hotel-paging';
-import { degradedProviders, emptyResultsView } from './_components/hotel-provider-view';
+import {
+  degradedProviders,
+  disabledProvidersNote,
+  emptyResultsView,
+  testAccountView,
+} from './_components/hotel-provider-view';
 import { HotelResultSkeleton } from './_components/hotel-result-card';
 import { HotelResults } from './_components/hotel-results';
 import { ResultsPager } from './_components/hotel-results-pager';
@@ -134,10 +147,48 @@ function DegradedProvidersNotice({
   );
 }
 
+/**
+ * Los proveedores apagados para la agencia (TBO es `opt-in`): no son un faltante de esta búsqueda
+ * ni algo que el vendedor pueda cambiar, así que no es una alerta, sino una nota plegada debajo del
+ * aviso de resultados incompletos. Callarlo hacía creer que el proveedor no tenía hoteles.
+ */
+function DisabledProvidersNote({
+  providers,
+  showProvider,
+}: {
+  providers: HotelProviderOutcome[];
+  showProvider: boolean;
+}) {
+  const note = disabledProvidersNote(providers, showProvider);
+  if (note === undefined) return null;
+  return (
+    <details className="group rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] text-xs text-[var(--color-fg-muted)]">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 [&::-webkit-details-marker]:hidden">
+        <Info aria-hidden="true" className="size-3.5 shrink-0 text-[var(--color-fg-subtle)]" />
+        <span className="min-w-0 flex-1">{note.summary}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="size-3.5 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+        />
+      </summary>
+      <ul className="space-y-0.5 pb-2.5 pl-[2.125rem] pr-3">
+        {note.lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export default function HotelesPage() {
   const [state, formAction, isPending] = useActionState(searchHotelsAction, INITIAL);
   // Los tramos siguientes de la búsqueda ("Ver más hoteles"), sumados a lo que trajo el primero.
   const { more, hotels: allHotels, loadMore } = useMoreHotels(state);
+  // De la búsqueda y de cada tramo: la cuenta de prueba se avisa venga de donde venga la tarifa.
+  const testAccount = useMemo(
+    () => testAccountView([...state.providers, ...more.providers], state.showProviderInResults),
+    [state.providers, more.providers, state.showProviderInResults],
+  );
   // Entrada y salida en un solo calendario, como vuelos: primer clic la entrada, segundo la salida.
   const [dates, setDates] = useState<DateRange>(EMPTY_RANGE);
   const [datesProblem, setDatesProblem] = useState<string | null>(null);
@@ -540,6 +591,13 @@ export default function HotelesPage() {
         />
       ) : null}
 
+      {state.ok && !isPending ? (
+        <DisabledProvidersNote
+          providers={state.providers}
+          showProvider={state.showProviderInResults}
+        />
+      ) : null}
+
       {state.ok ? (
         hotelCount > 0 ? (
           <div hidden={isPending}>
@@ -556,6 +614,7 @@ export default function HotelesPage() {
               headingId={resultsHeadingId}
               more={more}
               onLoadMore={loadMore}
+              testAccount={testAccount}
             />
           </div>
         ) : isPending ? null : (

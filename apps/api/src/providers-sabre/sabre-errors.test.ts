@@ -1,18 +1,66 @@
 import { type ArgumentsHost, HttpStatus, Logger } from '@nestjs/common';
 import {
   SabreApiError,
+  SabreCancelBookingBuildError,
   SabreConfigError,
   SabreFlightCheckNoMatchedOfferError,
   SabreFlightCheckTenantMismatchError,
+  SabreOfferPriceEmptyError,
+  SabrePriceRejectedError,
+  SabrePriceRequestError,
+  SabreFulfillBuildError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreGetSeatsRequestError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
   SabreShopMappingError,
+  SabreTicketingNotSentError,
+  type SabreFailureKind,
 } from '@sales-travel/sabre';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SabreExceptionFilter } from './sabre-exception.filter.js';
 import {
+  SABRE_THROWN_CLASSES,
   SabreOperationNotSupportedError,
   humanizeSabreError,
   sabreErrorStatus,
 } from './sabre-errors.js';
+
+describe('humanizeSabreError — el mapa de asientos (SAB-16)', () => {
+  const errores = [
+    new SabreGetSeatsRequestError(['provider.raw.priceOfferId:required']),
+    new SabreGetSeatsMappingError(['response.seatMaps:invalid_type']),
+    new SabreGetSeatsRejectedError(2),
+    new SabreSeatMapEmptyError(1),
+    new SabreSeatMapTenantMismatchError(),
+  ];
+
+  it('cada error del mapa lo atrapa el filtro: ninguno sale como 500 genérico', () => {
+    for (const error of errores) {
+      expect(
+        SABRE_THROWN_CLASSES.some((clase) => error instanceof clase),
+        error.name,
+      ).toBe(true);
+    }
+  });
+
+  it('el vendedor lee que puede reservar sin asiento, y nunca rutas ni códigos del ACL', () => {
+    for (const error of [errores[0]!, errores[2]!, errores[3]!, errores[4]!]) {
+      const mensaje = humanizeSabreError(error);
+      expect(mensaje, error.name).toContain('sin asiento');
+      expect(mensaje).not.toContain('priceOfferId');
+      expect(mensaje).not.toMatch(/invalid_type|required/);
+    }
+    expect(humanizeSabreError(errores[1])).toContain('no pudimos interpretar');
+  });
+
+  it('un cruce de tenants es 400; el resto, el 502 de siempre', () => {
+    expect(sabreErrorStatus(new SabreSeatMapTenantMismatchError())).toBe(HttpStatus.BAD_REQUEST);
+    expect(sabreErrorStatus(new SabreSeatMapEmptyError(0))).toBe(HttpStatus.BAD_GATEWAY);
+    expect(sabreErrorStatus(new SabreGetSeatsRejectedError(1))).toBe(HttpStatus.BAD_GATEWAY);
+  });
+});
 
 describe('humanizeSabreError', () => {
   it('red caída / timeout → "no pudimos conectar"', () => {
@@ -89,6 +137,153 @@ describe('SabreOperationNotSupportedError', () => {
     const err = new SabreOperationNotSupportedError('crear la reserva');
     expect(err.getStatus()).toBe(501);
     expect(err.message).toContain('crear la reserva');
+  });
+});
+
+/**
+ * Los textos que lee el vendedor van en «tú» neutro, nunca en voseo. Se barre TODO lo que esta
+ * capa puede devolver —una clase de fallo por cada `SabreFailureKind`, cada error tipado del ACL
+ * que tiene mensaje propio, el desconocido y el 501— para que un texto nuevo no se cuele en voseo.
+ */
+describe('humanizeSabreError — tú neutro', () => {
+  /** `Record` completo: si el ACL suma una clase de fallo, esto deja de compilar hasta cubrirla. */
+  const KINDS = Object.keys({
+    TRANSPORT: true,
+    CLIENT_BUG: true,
+    AUTH_EXPIRED: true,
+    AUTH_POOL: true,
+    CREDENTIALS_INVALID: true,
+    ENTITLEMENT: true,
+    NO_DATA: true,
+    THROTTLED: true,
+    UPSTREAM: true,
+    BUSINESS: true,
+    SESSION: true,
+    HUMAN_REVIEW: true,
+  } satisfies Record<SabreFailureKind, true>) as SabreFailureKind[];
+
+  function apiError(kind: SabreFailureKind): SabreApiError {
+    return new SabreApiError(500, 'x', '/v5/offers/shop', {
+      failure: {
+        kind,
+        retry: 'NO_RETRY',
+        circuit: 'IGNORE',
+        disableAccount: false,
+        operatorAlert: false,
+        reason: 'test',
+      },
+    });
+  }
+
+  /** Formas de voseo que ya aparecieron en los textos de la plataforma, comparadas por PALABRA. */
+  const VOSEO = new Set([
+    'probá',
+    'verificá',
+    'verificalas',
+    'revisá',
+    'revisala',
+    'intentá',
+    'volvé',
+    'elegí',
+    'revalidá',
+    'ingresá',
+    'usá',
+    'cargá',
+    'seleccioná',
+    'contactá',
+    'esperá',
+    'reintentá',
+    'mandalo',
+    'tenés',
+    'podés',
+    'querés',
+  ]);
+
+  function voseoEn(mensaje: string): string[] {
+    return mensaje
+      .toLowerCase()
+      .split(/[^\p{L}]+/u)
+      .filter((palabra) => VOSEO.has(palabra));
+  }
+
+  const MENSAJES: ReadonlyArray<readonly [string, string]> = [
+    ...KINDS.map((kind) => [kind, humanizeSabreError(apiError(kind))] as const),
+    ['SabreConfigError', humanizeSabreError(new SabreConfigError('x'))],
+    ['SabrePriceRejectedError', humanizeSabreError(new SabrePriceRejectedError([]))],
+    ['SabreOfferPriceEmptyError', humanizeSabreError(new SabreOfferPriceEmptyError(0))],
+    [
+      'SabreFlightCheckNoMatchedOfferError',
+      humanizeSabreError(new SabreFlightCheckNoMatchedOfferError([], 0, [])),
+    ],
+    ['SabrePriceRequestError', humanizeSabreError(new SabrePriceRequestError('x'))],
+    [
+      'SabreCancelBookingBuildError',
+      humanizeSabreError(new SabreCancelBookingBuildError('TICKET_OPERATION_REQUIRED', 'x')),
+    ],
+    [
+      'SabreTicketingNotSentError',
+      humanizeSabreError(new SabreTicketingNotSentError('TARGET_PCC_NOT_ADDRESSABLE', 'x')),
+    ],
+    [
+      'SabreFulfillBuildError',
+      humanizeSabreError(new SabreFulfillBuildError('TARGET_PCC_INVALID', 'x')),
+    ],
+    ['desconocido', humanizeSabreError(new Error('x'))],
+    ['501', new SabreOperationNotSupportedError('pagar la reserva').message],
+  ];
+
+  it.each(MENSAJES)('%s: sin voseo', (_origen, mensaje) => {
+    expect(voseoEn(mensaje)).toEqual([]);
+  });
+
+  it('CONTROL: el detector sí ve el voseo que había', () => {
+    expect(voseoEn('Probá de nuevo. Verificalas en Mi Red; elegí otra.')).toEqual([
+      'probá',
+      'verificalas',
+      'elegí',
+    ]);
+  });
+
+  it('los textos corregidos dicen lo que dicen, en tú', () => {
+    expect(humanizeSabreError(apiError('TRANSPORT'))).toContain('Prueba de nuevo');
+    expect(humanizeSabreError(apiError('AUTH_POOL'))).toContain('verifica tus credenciales');
+    expect(humanizeSabreError(apiError('CREDENTIALS_INVALID'))).toContain('Verifícalas');
+    expect(humanizeSabreError(apiError('BUSINESS'))).toContain(
+      'Revisa los datos e intenta nuevamente',
+    );
+    expect(humanizeSabreError(new Error('x'))).toContain('Intenta nuevamente');
+    expect(humanizeSabreError(new SabreOfferPriceEmptyError(0))).toContain('Vuelve a buscar');
+    expect(humanizeSabreError(new SabreFlightCheckNoMatchedOfferError([], 0, []))).toContain(
+      'elige explícitamente',
+    );
+    expect(humanizeSabreError(new SabrePriceRequestError('x'))).toContain(
+      'Revalida el precio y vuelve a intentar',
+    );
+    expect(humanizeSabreError(new SabreConfigError('x'))).toContain('Revísala');
+    expect(new SabreOperationNotSupportedError('pagar').message).toContain(
+      'Elige una oferta de otro proveedor',
+    );
+  });
+});
+
+describe('humanizeSabreError — la emisión que no salió (SAB-08)', () => {
+  it.each([
+    ['BOOKING_CANCELLED', 'figura cancelada en Sabre'],
+    ['TARGET_PCC_NOT_ADDRESSABLE', 'Complétalo en Mi Red → Credenciales → Sabre'],
+    ['TRAVELER_COUNT_INVALID', 'no tiene pasajeros'],
+  ] as const)('%s dice qué pasó y no hace eco del mensaje interno', (code, esperado) => {
+    const mensaje = humanizeSabreError(new SabreTicketingNotSentError(code, 'DETALLE-INTERNO'));
+    expect(mensaje).toContain(esperado);
+    expect(mensaje).not.toContain('DETALLE-INTERNO');
+  });
+
+  it('una emisión que no se pudo armar cita sólo la regla y dice que no se emitió nada', () => {
+    const mensaje = humanizeSabreError(
+      new SabreFulfillBuildError('CONFIRMATION_ID_INVALID', 'DETALLE-INTERNO'),
+    );
+    expect(mensaje).toBe(
+      'No pudimos armar la emisión de esta reserva (CONFIRMATION_ID_INVALID). No se emitió nada; ya quedó registrado para el equipo.',
+    );
   });
 });
 

@@ -215,6 +215,12 @@ export type HotelProviderSkipReason =
   | 'guest-nationality-missing'
   | 'currency-mismatch';
 
+/**
+ * Contra qué entorno del proveedor salió la cuenta. Con `test`, sus tarifas no son habitaciones de
+ * verdad: se pueden reservar para probar el flujo, nunca para un cliente.
+ */
+export type HotelAccountEnvironment = 'test' | 'live';
+
 /** Qué pasó con cada proveedor en esta búsqueda. Espejo de `HotelProviderOutcome` en el API. */
 export interface HotelProviderOutcome {
   code: string;
@@ -230,6 +236,11 @@ export interface HotelProviderOutcome {
   droppedCurrencies?: string[];
   /** Respondió sólo una parte de sus hoteles: `reason` dice qué faltó. */
   partial?: true;
+  /**
+   * El entorno de la cuenta con que respondió, si el proveedor lo declara (sólo en `ok` y `empty`).
+   * Un API anterior no lo manda, y entonces no se avisa nada.
+   */
+  accountEnvironment?: HotelAccountEnvironment;
 }
 
 /** Lo que se buscó, para leer los resultados sin mirar el formulario, que el vendedor ya pudo cambiar. */

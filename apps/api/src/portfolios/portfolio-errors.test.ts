@@ -79,7 +79,7 @@ describe('walletNotEnabled', () => {
     expect(err.getStatus()).toBe(HttpStatus.CONFLICT);
     expect(err.reason).toBe('PORTFOLIO_CURRENCY_NOT_ENABLED');
     expect(err.message).toBe(
-      'La agencia no tiene cartera en USD: pedile a quien te financia que la habilite.',
+      'La agencia no tiene cartera en USD: pídele a quien te financia que la habilite.',
     );
   });
 });
@@ -113,7 +113,7 @@ describe('walletHoldHttpError: las retenciones de 0060', () => {
 
   it('sin la moneda (el filtro global) el texto sigue siendo de negocio', () => {
     expect(walletHoldHttpError(pgError('STW02', 'network_funds_unavailable'))?.message).toBe(
-      'Tu red no tiene cupo disponible en la moneda de la tarifa para esta reserva. Pedile a quien te financia que lo revise.',
+      'Tu red no tiene cupo disponible en la moneda de la tarifa para esta reserva. Pídele a quien te financia que lo revise.',
     );
   });
 

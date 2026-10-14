@@ -67,13 +67,39 @@ function row(label: string, value: string): string {
   </tr>`;
 }
 
+/**
+ * Asunto de un correo con contenido del entorno de pruebas del proveedor: la confirmación de una
+ * reserva de prueba que el vendedor decidió reenviar, o la cotización de una tarifa de pruebas.
+ */
+export const TEST_CONTENT_SUBJECT_PREFIX = '[PRUEBA] ';
+
+/** El aviso del cuerpo de una reserva de prueba, el mismo en HTML y en texto plano. */
+export const TEST_CONTENT_NOTICE = 'Reserva de prueba: no es un tiquete válido para viajar.';
+
+/** El aviso del cuerpo de una cotización con una tarifa de pruebas. */
+export const TEST_QUOTE_NOTICE =
+  'Cotización de prueba: esta tarifa no se puede reservar como un tiquete válido para viajar.';
+
+/** Ámbar con texto oscuro (#78350f sobre #fffbeb): contraste AA holgado en cualquier cliente. */
+function testContentBanner(notice: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;margin-bottom:18px">
+      <tr><td style="padding:12px 18px;font-size:13px;line-height:1.5;color:#78350f;font-weight:700">${esc(notice)}</td></tr>
+    </table>`;
+}
+
 export function quotationEmailHtml(input: {
   quoteNumber: number;
   customerName: string | null;
   searchCriteria: unknown;
   selectedOffer: unknown;
   brand?: EmailBrand | null;
+  /**
+   * `true` = la tarifa la cotizó una cuenta de pruebas del proveedor. Al cliente le llega marcada
+   * en el asunto y en el cuerpo: si respondiera para reservarla, no tendría un tiquete válido.
+   */
+  testContent?: boolean;
 }): { subject: string; html: string; text: string } {
+  const testContent = input.testContent === true;
   const sc = obj(input.searchCriteria);
   const offer = obj(input.selectedOffer);
   const total = obj(offer['total']);
@@ -90,6 +116,7 @@ export function quotationEmailHtml(input: {
   const hello = input.customerName ? `Hola ${esc(input.customerName)},` : 'Hola,';
 
   const body = `
+    ${testContent ? testContentBanner(TEST_QUOTE_NOTICE) : ''}
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${hello}<br>Te compartimos tu cotización de vuelo:</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #f4f4f5;border-bottom:1px solid #f4f4f5;margin-bottom:18px">
       ${row('Cotización', `#${input.quoteNumber}`)}
@@ -103,12 +130,12 @@ export function quotationEmailHtml(input: {
         <span style="font-size:24px;font-weight:800;color:#18181b">${esc(price)}</span>
       </td></tr>
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">La tarifa está sujeta a disponibilidad y puede cambiar. Respondé este correo para confirmar tu reserva.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">La tarifa está sujeta a disponibilidad y puede cambiar. Responde este correo para confirmar tu reserva.</p>`;
 
   return {
-    subject: `Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
+    subject: `${testContent ? TEST_CONTENT_SUBJECT_PREFIX : ''}Tu cotización de vuelo #${input.quoteNumber} · ${route}`,
     html: layout('Cotización de vuelo', body, input.brand),
-    text: `Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Respondé para reservar.`,
+    text: `${testContent ? `${TEST_QUOTE_NOTICE}\n\n` : ''}Cotización #${input.quoteNumber}\nRuta: ${route}\nFechas: ${dates}\nTarifa: ${fare}\nTotal: ${price}\n\nLa tarifa puede cambiar. Responde para reservar.`,
   };
 }
 
@@ -126,9 +153,16 @@ export function orderConfirmationEmailHtml(input: {
    * descubre rota en el mostrador.
    */
   ticketed?: boolean;
+  /**
+   * `true` = reserva de la cuenta de pruebas del proveedor. Sólo se manda si el vendedor la reenvía
+   * a mano, y va marcada en el asunto y en el cuerpo: un pasajero que la recibiera sin aviso
+   * llegaría al aeropuerto con un localizador que no le sirve para viajar.
+   */
+  testContent?: boolean;
 }): { subject: string; html: string; text: string } {
   const sc = obj(input.searchCriteria);
   const ticketed = input.ticketed === true;
+  const testContent = input.testContent === true;
   const intro = ticketed
     ? '¡Tu billete está emitido! Estos son los detalles:'
     : 'Tu reserva está hecha y el billete todavía no se emitió: la tarifa y los asientos se garantizan al emitir. Estos son los detalles:';
@@ -147,7 +181,10 @@ export function orderConfirmationEmailHtml(input: {
     .filter(Boolean)
     .join(', ');
 
+  const testBanner = testContent ? testContentBanner(TEST_CONTENT_NOTICE) : '';
+
   const body = `
+    ${testBanner}
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${intro}</p>
     ${
       input.pnr
@@ -166,12 +203,130 @@ export function orderConfirmationEmailHtml(input: {
       ${paxNames ? row('Pasajeros', paxNames) : ''}
       ${row('Total', price)}
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guardá este correo. Para cambios o consultas, respondé a tu agencia.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guarda este correo. Para cambios o consultas, responde a tu agencia.</p>`;
 
+  const prefix = testContent ? TEST_CONTENT_SUBJECT_PREFIX : '';
   return {
-    subject: `${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
+    subject: `${prefix}${titulo} #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}`,
     html: layout(titulo, body, input.brand),
-    text: `Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
+    text: `${testContent ? `${TEST_CONTENT_NOTICE}\n\n` : ''}Reserva #${input.orderNumber}${input.pnr ? ` · PNR ${input.pnr}` : ''}\nRuta: ${route}\nFechas: ${dates}\n${paxNames ? `Pasajeros: ${paxNames}\n` : ''}Total: ${price}`,
+  };
+}
+
+// ───────────────────────── Plazo de emisión por vencer ─────────────────────────
+
+/** Una hora del plazo, ya escrita: «jue 15 oct», «18:00», «GMT-5». */
+export interface DeadlineMailClockLine {
+  readonly day: string;
+  readonly time: string;
+  readonly offset: string;
+}
+
+/** El plazo como lo lee el aviso: la hora principal, de quién es, y la de la oficina si difiere. */
+export interface DeadlineMailClock extends DeadlineMailClockLine {
+  readonly source: 'agency' | 'office' | 'utc';
+  /** «hoy», «mañana» o «el jue 15 oct». */
+  readonly when: string;
+  readonly office?: DeadlineMailClockLine;
+}
+
+const CLOCK_SOURCE_LABEL: Readonly<Record<DeadlineMailClock['source'], string>> = {
+  agency: 'hora de tu agencia',
+  office: 'hora de la oficina emisora',
+  utc: 'UTC',
+};
+
+function clockText(line: DeadlineMailClockLine, label?: string): string {
+  return `${line.day}, ${line.time} (${label === undefined ? line.offset : `${line.offset}, ${label}`})`;
+}
+
+/**
+ * El aviso INTERNO al vendedor de que vence el plazo de emisión de una reserva de vuelo sin
+ * tiquete (SAB-14): a las 24 h y a las 2 h. No va al pasajero. Una reserva de prueba también avisa,
+ * marcada en el asunto y en el cuerpo. Si la reserva retiene saldo de la cartera, lo dice: vencida
+ * sin emitir, el saldo sigue retenido hasta que alguien la cancele.
+ *
+ * La hora principal es la de la agencia; la de la oficina emisora va aparte si es otra, porque es
+ * la que figura en la reserva.
+ */
+export function ticketingDeadlineAlertEmailHtml(input: {
+  orderNumber: number;
+  pnr: string | null;
+  threshold: '24h' | '2h';
+  route: string;
+  departureDate: string;
+  /** Sólo nombres de pila. */
+  firstNames: readonly string[];
+  clock: DeadlineMailClock;
+  /** `true` si la reserva tiene saldo retenido en la cartera (retenido o cobrado). */
+  walletHeld: boolean;
+  /** El enlace a la reserva en Reservas. */
+  link: string;
+  brand?: EmailBrand | null;
+  testContent?: boolean;
+}): { subject: string; html: string; text: string } {
+  const testContent = input.testContent === true;
+  const urgent = input.threshold === '2h';
+  const n = input.orderNumber;
+  const clock = input.clock;
+  const due = `${clock.when} a las ${clock.time}`;
+  const intro = `${urgent ? 'Quedan menos de 2 horas: la' : 'La'} reserva #${n} todavía no tiene tiquete y vence para emitir ${due}. Si no la emites antes, la aerolínea la cancela.`;
+  const holdText =
+    'Esta reserva tiene saldo retenido en la cartera. Si vence sin emitir, el saldo sigue retenido hasta que la canceles en Reservas.';
+  const footer =
+    'Te escribimos porque hiciste esta reserva. Aquí no se cancela sola: si vence, la aerolínea la cancela y la próxima consulta lo refleja.';
+  const names = input.firstNames.join(', ');
+  const deadline = clockText(clock, CLOCK_SOURCE_LABEL[clock.source]);
+  const office = clock.office === undefined ? '' : clockText(clock.office);
+  const reserva = `#${n}${input.pnr ? ` · PNR ${input.pnr}` : ''}`;
+
+  const body = `
+    ${testContent ? testContentBanner(TEST_CONTENT_NOTICE) : ''}
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3f3f46">${esc(intro)}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #f4f4f5;border-bottom:1px solid #f4f4f5;margin-bottom:18px">
+      ${row('Reserva', reserva)}
+      ${input.route ? row('Ruta', input.route) : ''}
+      ${input.departureDate ? row('Salida', input.departureDate) : ''}
+      ${names ? row('Pasajeros', names) : ''}
+      ${row('Vence', deadline)}
+      ${office ? row('En la oficina emisora', office) : ''}
+    </table>
+    ${
+      input.walletHeld
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;margin-bottom:18px">
+      <tr><td style="padding:14px 18px;font-size:13px;line-height:1.5;color:#78350f">${esc(holdText)}</td></tr>
+    </table>`
+        : ''
+    }
+    <p style="margin:0 0 18px"><a href="${esc(input.link)}" style="display:inline-block;background:#18181b;color:#fff;font-size:13px;font-weight:600;text-decoration:none;padding:10px 18px;border-radius:8px">Abrir en Reservas</a></p>
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#71717a">${esc(footer)}</p>`;
+
+  const lines = [
+    testContent ? TEST_CONTENT_NOTICE : '',
+    intro,
+    '',
+    `Reserva: ${reserva}`,
+    input.route ? `Ruta: ${input.route}` : '',
+    input.departureDate ? `Salida: ${input.departureDate}` : '',
+    names ? `Pasajeros: ${names}` : '',
+    `Vence: ${deadline}`,
+    office ? `En la oficina emisora: ${office}` : '',
+    input.walletHeld ? `\n${holdText}` : '',
+    '',
+    `Abrir en Reservas: ${input.link}`,
+    '',
+    footer,
+  ].filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== ''));
+
+  const prefix = testContent ? TEST_CONTENT_SUBJECT_PREFIX : '';
+  return {
+    subject: `${prefix}${urgent ? 'Urgente: la' : 'La'} reserva #${n} vence para emitir ${due}`,
+    html: layout(
+      urgent ? 'Plazo de emisión: menos de 2 horas' : 'Plazo de emisión por vencer',
+      body,
+      input.brand,
+    ),
+    text: lines.join('\n').trim(),
   };
 }
 
@@ -284,7 +439,7 @@ export function hotelOrderConfirmationEmailHtml(input: {
       ${row('Total', price)}
       ${row('Cancelación', nonRefundable ? 'No reembolsable' : 'Según la política de la reserva')}
     </table>
-    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guardá este correo. Para cambios o consultas, respondé a tu agencia.</p>`;
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa">Guarda este correo. Para cambios o consultas, responde a tu agencia.</p>`;
 
   const lines = [
     `Reserva de hotel #${input.orderNumber}${input.locator ? ` · Localizador ${input.locator}` : ''}`,

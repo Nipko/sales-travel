@@ -27,7 +27,7 @@ export type HotelDestination =
 const PROVIDER_CITY_CODE = /^[A-Za-z0-9._-]{1,64}$/;
 
 export const PROVIDER_DESTINATION_INVALID =
-  'Destino inválido: elegí una ciudad del autocompletado (formato proveedor:ciudad).';
+  'Destino inválido: elige una ciudad del autocompletado (formato proveedor:ciudad).';
 
 /** `tbo-hotels` + `150184` → `tbo-hotels:150184`. */
 export function providerDestinationId(

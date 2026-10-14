@@ -7,9 +7,11 @@ import {
   type TboContentLanguage,
   type TboHotelContent,
   type TboHotelDetailsMapping,
+  type TboHotelRoomContents,
 } from './content.types';
 import { readTboHotelRecord } from './hotel-record';
 import { TboStaticObserver, type TboStaticMapDeps } from './observer';
+import { readTboRoomDetails, type TboRoomDetailRead } from './room-detail.reader';
 import {
   TBO_HOTEL_FIELD_KEYS,
   TBO_STATIC_ROOT_KEYS,
@@ -25,9 +27,12 @@ import {
  * - `HotelRating` llega como número (`5`, p. 62), `Attractions` como objeto `{"1) ": …}` (p. 61) y
  *   `CheckInTime` como `"3:00 PM"` (p. 62): se normalizan a 1-5, un único HTML saneado y `HH:mm`.
  * - Las imágenes quedan sólo si son `https` (RNF-16).
- * - **El detalle por habitación queda APAGADO** (RF-32; 05 §2.6.3; Q-65): el builder no pide
- *   `IsRoomDetailRequired` y, si TBO igual manda un contenedor de habitaciones, sólo se registra el
- *   NOMBRE de su clave como desconocida. No hay fixture real que diga dónde viene.
+ * - **El detalle por habitación sólo se lee si se pidió** (`roomDetail`; RF-32; 05 §2.6.3; Q-65).
+ *   Sin pedirlo, un contenedor de habitaciones que TBO mande igual sólo se registra por el NOMBRE
+ *   de su clave como desconocida, y la salida es la de siempre con `roomContents` vacío. Pedido, cada
+ *   hotel mapeado pasa por `readTboRoomDetails`, que no sabe dónde viene el bloque y lo busca; las
+ *   claves que consumió dejan de ser desconocidas. Un fallo del lector nunca le quita al hotel su
+ *   contenido.
  * - Un código que no se pidió se descarta; uno pedido que no vuelve se informa en
  *   `missingHotelCodes`, porque no se sabe si un código inexistente tumba el lote (Q-62).
  * - El lote que TBO contesta con "No Hotels Found" (05 CE-23) no llega aquí: el cliente lo arma con
@@ -37,6 +42,8 @@ export interface TboHotelDetailsMapContext {
   readonly lang: TboContentLanguage;
   /** Los códigos del request, en su orden. */
   readonly hotelCodes: readonly string[];
+  /** Se pidió `IsRoomDetailRequired`: leer el bloque de habitaciones de cada hotel. */
+  readonly roomDetail?: boolean;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -66,18 +73,24 @@ export function mapTboHotelDetailsResponse(
 ): TboHotelDetailsMapping {
   const requested = readContext(context);
   const pending = new Set(requested);
+  const roomDetail = context.roomDetail === true;
   const observer = new TboStaticObserver('hotelDetails', deps);
   observer.assertSuccess(envelope.Status);
-  observer.collectUnknownKeys(envelope, TBO_STATIC_ROOT_KEYS.hotelDetails, '');
+  // Con el detalle por habitación, las claves de la raíz se miran al final: el lector puede haber
+  // consumido un contenedor de la raíz (`root`).
+  if (!roomDetail) observer.collectUnknownKeys(envelope, TBO_STATIC_ROOT_KEYS.hotelDetails, '');
 
   const contents: TboHotelContent[] = [];
   const hotels: TboCatalogHotel[] = [];
+  const roomContents: TboHotelRoomContents[] = [];
+  const consumedRootKeys = new Set<string>();
   const seen = new Set<string>();
   observer.container(envelope.HotelDetails, 'HotelDetails').forEach((raw, index) => {
     observer.received += 1;
-    observer.collectUnknownKeys(raw, TBO_HOTEL_FIELD_KEYS, 'HotelDetails[].');
+    if (!roomDetail) observer.collectUnknownKeys(raw, TBO_HOTEL_FIELD_KEYS, 'HotelDetails[].');
     const parsed = TboHotelItemSchema.safeParse(raw);
     if (!parsed.success || !isRecord(raw)) {
+      if (roomDetail) observer.collectUnknownKeys(raw, TBO_HOTEL_FIELD_KEYS, 'HotelDetails[].');
       observer.reject(
         'ITEM_SCHEMA',
         parsed.success
@@ -87,6 +100,9 @@ export function mapTboHotelDetailsResponse(
       return;
     }
     const hotelId = parsed.data.HotelCode;
+    if (roomDetail && (seen.has(hotelId) || !pending.has(hotelId))) {
+      observer.collectUnknownKeys(raw, TBO_HOTEL_FIELD_KEYS, 'HotelDetails[].');
+    }
     if (seen.has(hotelId)) {
       observer.reject('DUPLICATE', [`HotelDetails.${index}.HotelCode:duplicated`]);
       return;
@@ -108,7 +124,33 @@ export function mapTboHotelDetailsResponse(
     hotels.push(record.hotel);
     contents.push(record.content);
     observer.mapped += 1;
+
+    if (roomDetail) {
+      const rooms = readRooms(raw, envelope, {
+        observer,
+        at: `HotelDetails.${index}`,
+        hotelId,
+        soleHotel: requested.length === 1,
+      });
+      roomContents.push({ hotelId, rooms: rooms.rooms, shape: rooms.shape });
+      if (rooms.rootKey !== undefined) consumedRootKeys.add(rooms.rootKey.toLowerCase());
+      observer.collectUnknownKeys(
+        raw,
+        rooms.hotelKey === undefined
+          ? TBO_HOTEL_FIELD_KEYS
+          : [...TBO_HOTEL_FIELD_KEYS, rooms.hotelKey.toLowerCase()],
+        'HotelDetails[].',
+      );
+    }
   });
+
+  if (roomDetail) {
+    observer.collectUnknownKeys(
+      envelope,
+      [...TBO_STATIC_ROOT_KEYS.hotelDetails, ...consumedRootKeys],
+      '',
+    );
+  }
 
   return {
     lang: context.lang,
@@ -116,8 +158,26 @@ export function mapTboHotelDetailsResponse(
     contents,
     hotels,
     missingHotelCodes: requested.filter((code) => pending.has(code)),
+    roomContents,
     diagnostics: observer.finish(),
   };
+}
+
+/**
+ * El lector no lanza; esto es la última red: el contenido del hotel ya está guardado en
+ * `contents` y un caso que nadie previó lo deja sin habitaciones, nunca sin contenido.
+ */
+function readRooms(
+  raw: Readonly<Record<string, unknown>>,
+  envelope: TboHotelDetailsEnvelope,
+  scope: Parameters<typeof readTboRoomDetails>[2],
+): TboRoomDetailRead {
+  try {
+    return readTboRoomDetails(raw, envelope, scope);
+  } catch {
+    scope.observer.note('FIELD_INVALID', `${scope.at}:room_detail_unreadable`);
+    return { rooms: [], shape: 'unreadable' };
+  }
 }
 
 /**
@@ -137,6 +197,7 @@ export function emptyTboHotelDetailsMapping(
     contents: [],
     hotels: [],
     missingHotelCodes: requested,
+    roomContents: [],
     diagnostics: observer.finish(),
   };
 }

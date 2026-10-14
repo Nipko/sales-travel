@@ -112,6 +112,11 @@ export interface MoreState {
   readonly forSearch: HotelSearchResult;
   /** Los hoteles de los tramos siguientes al primero, en el orden en que llegaron. */
   readonly hotels: readonly HotelOffer[];
+  /**
+   * Las partes por proveedor de esos tramos, para saber de qué cuenta salió cada tarifa: un
+   * proveedor que en el primero falló y en otro respondió con su cuenta de prueba también se avisa.
+   */
+  readonly providers: readonly HotelProviderOutcome[];
   readonly paging?: HotelSearchPaging;
   /** Hoteles consultados en cada tramo cargado, para el medidor. */
   readonly segments: readonly number[];
@@ -131,6 +136,7 @@ export function moreStateFor(search: HotelSearchResult): MoreState {
   return {
     forSearch: search,
     hotels: [],
+    providers: [],
     ...(paging === undefined ? {} : { paging }),
     segments: paging !== undefined && paging.consulted > 0 ? [paging.consulted] : [],
     nextPage: (paging?.page ?? 0) + 1,
@@ -215,6 +221,7 @@ export function moreArrived(state: MoreState, res: MoreHotelsResult): MoreState 
   return {
     ...rest,
     hotels: added > 0 ? [...state.hotels, ...res.hotels] : state.hotels,
+    providers: res.providers.length > 0 ? [...state.providers, ...res.providers] : state.providers,
     ...(paging === undefined ? {} : { paging }),
     segments: asked > 0 ? [...state.segments, asked] : state.segments,
     nextPage: paging === undefined ? state.nextPage + 1 : paging.page + 1,

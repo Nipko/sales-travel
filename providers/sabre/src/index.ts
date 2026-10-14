@@ -147,3 +147,64 @@ export * from './sabre-offer-price.adapter';
 export * from './sabre-flight-check.adapter';
 export * from './sabre-order-create.adapter';
 export * from './sabre-order-manage.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Mapa de asientos — Get Seats v3, carril de agencia (SAB-15)
+//
+// Bloque propio y al final a propósito: los tres módulos se publican con `export *` y todos sus
+// nombres llevan el prefijo `SabreGetSeats`/`SABRE_GETSEATS_`/`SabreSeatMap`, así que no pueden
+// volver ambiguo ningún símbolo de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './seats/getseats.request.builder';
+export * from './seats/getseats.response.mapper';
+export * from './sabre-seat-map.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Ancillares ATPCO — Stateless Ancillaries 1.0 (SAB-19)
+//
+// Bloque propio y al final, como el de asientos: los siete módulos se publican con `export *` y
+// todos sus nombres llevan `SabreAncillar`, `SABRE_ANCILLAR` o `sabreAncillar`, así que
+// no pueden volver ambiguo ningún símbolo de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './ancillaries/shop.request.builder';
+export * from './ancillaries/shop.response.mapper';
+export * from './ancillaries/add.request.builder';
+export * from './ancillaries/add.response.mapper';
+export * from './ancillaries/remove.request.builder';
+export * from './ancillaries/remove.response.mapper';
+export * from './sabre-ancillary.adapter';
+
+// ---------------------------------------------------------------------------------------------
+// Estado de tiquetes y EMD (SAB-05)
+//
+// Bloque propio y al final, como los de arriba: sus nombres llevan `SABRE_TICKET_STATUS_`,
+// `SabreDocument` o `sabreDocument`/`classifySabreTicket`, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './ticketing/document-status';
+
+// ---------------------------------------------------------------------------------------------
+// Política de emisión al reservar (SAB-06)
+//
+// Bloque propio y al final: sus nombres llevan `SABRE_BOOKING_TICKETING_`, `SABRE_TICKETING_`,
+// `SabreTicketing*`, `planSabreTicketingPolicy` o `isSabrePccTimeZone`, distintos de los
+// `SABRE_TICKETING_POLICIES`/`SabreTicketingPolicy` del builder, así que no vuelven ambiguo nada.
+// ---------------------------------------------------------------------------------------------
+
+export * from './booking/ticketing-policy';
+
+// ---------------------------------------------------------------------------------------------
+// Emisión de tiquetes — fulfillFlightTickets sin tarjeta (SAB-07)
+//
+// Bloque propio y al final: los nombres llevan `SabreFulfill`, `SABRE_FULFILL_`, `sabreFulfill`,
+// `SabreTicketing*` distintos de los de la política de emisión (`SabreTicketingAdapter*`,
+// `SabreTicketingNotSentError`, `SabreTicketingRefusal`, `SabreTicketingDeps`), `sabreTicketCoverage`
+// o `sabreCanonicalJson`/`sabreBodyDigest`, así que no vuelven ambiguo nada de arriba.
+// ---------------------------------------------------------------------------------------------
+
+export * from './canonical-json';
+export * from './ticketing/fulfill.request.builder';
+export * from './ticketing/fulfill.response.mapper';
+export * from './sabre-ticketing.adapter';

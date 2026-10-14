@@ -1,4 +1,5 @@
 import type { Offer, Segment } from '@sales-travel/canonical';
+import { isTestOffer } from '../providers/provider-environment.js';
 
 /**
  * Deduplicación de ofertas de vuelo entre proveedores (RF-06).
@@ -7,7 +8,7 @@ import type { Offer, Segment } from '@sales-travel/canonical';
  * vendedor: una por el contrato directo con LATAM NDC y otra por el GDS. No es cosmética —el
  * vendedor no sabe cuál elegir, y las dos filas compiten por el mismo asiento.
  *
- * Las tres decisiones que gobiernan este fichero, y por qué:
+ * Las cuatro decisiones que gobiernan este fichero, y por qué:
  *
  * 1. **La clave es de PRODUCTO, no de itinerario.** El mismo avión con maleta y sin maleta son
  *    dos cosas distintas que se venden a precios distintos; colapsarlas le esconde al vendedor
@@ -18,6 +19,9 @@ import type { Offer, Segment } from '@sales-travel/canonical';
  * 3. **El desempate lo gana LATAM NDC directo** (RF-06 CA-5): sin fee de GDS, contrato propio,
  *    y con la post-venta que Sabre hoy no cubre para NDC. Es preferencia declarada, no precio:
  *    una copia más barata por Sabre que no se puede cancelar no es más barata.
+ * 4. **Una tarifa real nunca se descarta en favor de una de pruebas.** Antes que la preferencia y
+ *    que el precio: la de una cuenta de pruebas no emite un tiquete válido, así que no es "la
+ *    misma oferta más barata", es una que no se puede vender.
  */
 
 /** Uso del módulo en un orden que no puede funcionar. Es un bug de cableado, no de datos. */
@@ -471,6 +475,10 @@ function policiesToken(offer: Offer): string {
  * misma búsqueda daría resultados distintos cada vez.
  */
 function compareOffers(a: Offer, b: Offer, preference: readonly ProviderPreference[]): number {
+  // Regla 4, antes que todo lo demás: lo real gana a lo de pruebas.
+  const environment = environmentRank(a) - environmentRank(b);
+  if (environment !== 0) return environment;
+
   const rank = preferenceRank(a, preference) - preferenceRank(b, preference);
   if (rank !== 0) return rank;
 
@@ -484,6 +492,11 @@ function compareOffers(a: Offer, b: Offer, preference: readonly ProviderPreferen
     cmp(a.provider.offerRef, b.provider.offerRef) ||
     cmp(a.id, b.id)
   );
+}
+
+/** `0` = cuenta real, `1` = cuenta de pruebas. Sin marca es real (ver `stampProviderEnvironment`). */
+function environmentRank(offer: Offer): number {
+  return isTestOffer(offer) ? 1 : 0;
 }
 
 /** Posición en la preferencia declarada; `preference.length` = no está declarada. */

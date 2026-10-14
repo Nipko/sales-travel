@@ -76,9 +76,9 @@ describe('eventLabel', () => {
   });
 
   it('un tipo sin etiqueta sale con su código, marcado como crudo', () => {
-    expect(eventLabel('OrderCreated', {})).toEqual({ text: 'OrderCreated', raw: true });
-    expect(eventLabel('portfolio.deposit.recorded', {})).toEqual({
-      text: 'portfolio.deposit.recorded',
+    expect(eventLabel('SomethingNew', {})).toEqual({ text: 'SomethingNew', raw: true });
+    expect(eventLabel('portfolio.algo_nuevo', {})).toEqual({
+      text: 'portfolio.algo_nuevo',
       raw: true,
     });
   });

@@ -198,6 +198,22 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
     expect(res.nonRefundableBlocked).toBeUndefined();
   });
 
+  it('el entorno de la cuenta que dio las tarifas viaja en su parte; uno desconocido, no', async () => {
+    apiMock.mockImplementation(
+      conPermiso((_path: string, init: { body: string }) => {
+        const body = JSON.parse(init.body) as { provider: string; hotelId: string };
+        const accountEnvironment = body.provider === 'tbo-hotels' ? 'test' : 'sandbox';
+        return Promise.resolve({
+          ok: true,
+          data: { hotelId: body.hotelId, roompacks: [], accountEnvironment },
+        });
+      }),
+    );
+    const res = await hotelRatesAction(KEY, STAY);
+    expect(res.outcomes[1]?.accountEnvironment).toBe('test');
+    expect(res.outcomes[0]).not.toHaveProperty('accountEnvironment');
+  });
+
   it('una respuesta sin tarifas legibles no se pinta como oferta', async () => {
     apiMock.mockResolvedValue({ ok: true, data: { hotels: [] } });
     const res = await hotelRatesAction(KEY, STAY);

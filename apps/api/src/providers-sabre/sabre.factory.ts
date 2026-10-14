@@ -1,51 +1,71 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
-import type { Offer } from '@sales-travel/canonical';
-import type {
-  FlightSearchCriteria,
-  OfferPriceResult,
-  OrderCancelResult,
-  OrderCreateRequest,
-  OrderCreateResult,
-  OrderPayRequest,
-  OrderPayResult,
-  OrderReshopRequest,
-  OrderReshopResult,
-  OrderView,
-  SearchContext,
-  ServiceListRequest,
-  ServiceListResult,
+import type { Offer, ProviderEnvironment, SeatMap } from '@sales-travel/canonical';
+import {
+  OrderCreateNotSentError,
+  type FlightSearchCriteria,
+  type OfferPriceResult,
+  type OrderCancelResult,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type OrderPayRequest,
+  type OrderPayResult,
+  type OrderReshopRequest,
+  type OrderReshopResult,
+  type OrderView,
+  type SearchContext,
+  type SeatMapPort,
+  type ServiceListRequest,
+  type ServiceListResult,
+  type TicketCheckResult,
+  type TicketIssueOptions,
+  type TicketIssueResult,
+  type TicketingPort,
 } from '@sales-travel/domain';
 import {
   SABRE_HOSTS,
+  SABRE_PCC_PATTERN,
   SabreFlightCheckAdapter,
   SabreFlightSearchAdapter,
+  SabreCancelBookingBuildError,
   SabreHttpClient,
   SabreOfferPriceAdapter,
   SabreOrderCreateAdapter,
   SabreOrderManageAdapter,
+  SabreSeatMapAdapter,
   SabreShopOptionsSchema,
+  SabreTicketingAdapter,
+  SabreTicketingSettingsSchema,
   SabreTokenService,
   cancellableItemsOf,
+  isSabrePccTimeZone,
   missingSabreCredentials,
   parseSabreConfig,
   type SabreCancelOptions,
   type SabreCardBinPricingPolicy,
   type SabreConfig,
   type SabreEnvironment,
+  type SabreOrderCreateOptions,
   type SabreShopOptions,
+  type SabreTicketingSettings,
 } from '@sales-travel/sabre';
 import { z } from '@sales-travel/validation';
-import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import {
+  ProviderCredentialsService,
+  type ResolvedProviderAccount,
+} from '../provider-credentials/provider-credentials.service.js';
 import {
   CallPolicySchema,
   ProviderAccountIncompleteError,
+  TicketVoidNotAvailableError,
   type CallPolicy,
   type CredentialSource,
   type FlightProviderAdapter,
   type OrderCancelAudit,
+  type OrderCancelScope,
   type OrderCreateAudit,
   type ProviderCapabilities,
+  type ProviderSettlement,
   type ProviderVertical,
   type TenantAdapter,
   type TenantProviderFactory,
@@ -65,17 +85,20 @@ export const SABRE_PROVIDER_CODE = 'sabre';
 const SABRE_DEFAULT_ENVIRONMENT: SabreEnvironment = 'cert';
 
 /**
- * Las cuatro palancas comerciales de BFM que una cuenta puede declarar en su `config`.
+ * Las palancas comerciales de BFM que una cuenta puede declarar en su `config`.
  *
  * Se guardan planas porque el formulario BYOC trabaja con campos escalares. El objeto tipado que
  * consume el ACL se reconstruye acá, en el borde del factory, para que un POST directo no pueda
  * colar strings o valores fuera de rango hasta el request de Sabre.
+ *
+ * `ndcContent` es la quinta: pide contenido NDC a Sabre, que el ACL todavía descarta al mapear.
  */
 const SABRE_ACCOUNT_SHOP_OPTION_KEYS = [
   'brandedFares',
   'brandLadderRounds',
   'upsellLimit',
   'multipleFares',
+  'ndcContent',
 ] as const;
 
 export interface SabreAccountShopOptionsResult {
@@ -94,11 +117,36 @@ function integerConfigValue(value: unknown): unknown {
 }
 
 /**
+ * Convierte el texto de un `select` booleano. Sólo `"true"` y `"false"`, que son los valores que
+ * ofrece el formulario; un booleano de verdad (POST directo) pasa tal cual.
+ *
+ * No es `Boolean(value)`: `"false"` es una cadena no vacía y encendería lo que se pidió apagar.
+ * Cualquier otra cosa sigue de largo para que el esquema la rechace y caiga al conjunto
+ * conservador.
+ */
+function booleanConfigValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false') return false;
+  return value;
+}
+
+function shopOptionConfigValue(
+  key: (typeof SABRE_ACCOUNT_SHOP_OPTION_KEYS)[number],
+  value: unknown,
+): unknown {
+  if (key === 'brandLadderRounds' || key === 'upsellLimit') return integerConfigValue(value);
+  if (key === 'ndcContent') return booleanConfigValue(value);
+  return value;
+}
+
+/**
  * `provider_accounts.config` → opciones de shop validadas.
  *
- * Ante cualquier entrada inválida se vuelve al conjunto conservador del ACL (`single`, sin MFPI
- * y sin rondas pagadas) y se entregan sólo los nombres de campo para el log. No se hace coerción
- * permisiva: `2.5`, `-1` o una palabra desconocida no pueden cambiar la petición real.
+ * Ante cualquier entrada inválida se vuelve al conjunto conservador del ACL (`single`, sin MFPI,
+ * sin rondas pagadas y sin NDC) y se entregan sólo los nombres de campo para el log. No se hace
+ * coerción permisiva: `2.5`, `-1` o una palabra desconocida no pueden cambiar la petición real.
  */
 export function sabreShopOptionsFromAccountConfig(
   config: Readonly<Record<string, unknown>>,
@@ -107,8 +155,7 @@ export function sabreShopOptionsFromAccountConfig(
   for (const key of SABRE_ACCOUNT_SHOP_OPTION_KEYS) {
     const value = config[key];
     if (value === undefined) continue;
-    candidate[key] =
-      key === 'brandLadderRounds' || key === 'upsellLimit' ? integerConfigValue(value) : value;
+    candidate[key] = shopOptionConfigValue(key, value);
   }
 
   const parsed = SabreShopOptionsSchema.safeParse(candidate);
@@ -126,11 +173,118 @@ export function sabreShopOptionsFromAccountConfig(
 }
 
 /**
+ * Las operaciones de post-venta de Sabre que mueven dinero o cambian la reserva, y que la plataforma
+ * enciende una por una con `SABRE_OPERATIONS` (lista separada por comas). Vacía, o sin definir, no
+ * enciende ninguna: así nacen, y así se quedan hasta pasar su certificación en CERT (SAB-13 para
+ * `issue` y `void`; `refund` espera además la decisión D9).
+ */
+export const SABRE_OPERATIONS = ['issue', 'void', 'refund', 'seats', 'services', 'modify'] as const;
+export type SabreOperation = (typeof SABRE_OPERATIONS)[number];
+
+const SabreOperationsSchema = z.array(z.enum(SABRE_OPERATIONS));
+
+/** Una lista de `SABRE_OPERATIONS` que no se entiende. Tumba el arranque: no se adivina. */
+export class SabreOperationsConfigError extends Error {
+  constructor(readonly invalid: readonly string[]) {
+    super(
+      `SABRE_OPERATIONS tiene valores que no se reconocen: [${invalid.join(', ')}]. Se admiten: ${SABRE_OPERATIONS.join(', ')}.`,
+    );
+    this.name = 'SabreOperationsConfigError';
+  }
+}
+
+/**
+ * `SABRE_OPERATIONS` → las operaciones encendidas.
+ *
+ * Un valor que no está en {@link SABRE_OPERATIONS} LANZA, y lo hace al construir el factory: el
+ * arranque falla ruidoso. Ignorarlo convertiría una errata (`isue`) en una emisión que nadie sabe
+ * por qué no aparece, o al revés, en un despliegue que cree tenerla apagada. Distingue mayúsculas
+ * por lo mismo. Los valores repetidos y los espacios no importan.
+ */
+export function parseSabreOperations(raw: string | undefined): ReadonlySet<SabreOperation> {
+  const values = (raw ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const parsed = SabreOperationsSchema.safeParse(values);
+  if (!parsed.success) {
+    const known: readonly string[] = SABRE_OPERATIONS;
+    throw new SabreOperationsConfigError([
+      ...new Set(values.filter((value) => !known.includes(value))),
+    ]);
+  }
+  return new Set(parsed.data);
+}
+
+/**
+ * Quién firma el PNR (`createBooking.receivedFrom`, `booking-management-v1.yml:709`). Sin él, Sabre
+ * escribe «Create Booking» y el historial del PNR no dice desde qué plataforma se reservó.
+ */
+export const SABRE_RECEIVED_FROM = 'PLANETOUR';
+
+/**
+ * La política de emisión que una cuenta puede declarar en su `config`, con el nombre plano del
+ * formulario a la izquierda y el campo del ACL a la derecha.
+ */
+const SABRE_ACCOUNT_TICKETING_KEYS = {
+  ticketingPolicy: 'policy',
+  ticketingLeadHours: 'leadHours',
+  ticketingFormOfPayment: 'formOfPayment',
+  pccTimeZone: 'pccTimeZone',
+} as const satisfies Record<string, keyof SabreTicketingSettings>;
+
+export interface SabreAccountTicketingResult {
+  readonly settings: SabreTicketingSettings;
+  /** Claves de `config` inválidas, nunca sus valores. */
+  readonly invalidFields: readonly string[];
+}
+
+/**
+ * `provider_accounts.config` → política de emisión validada.
+ *
+ * Campo a campo y no en bloque, a diferencia de {@link sabreShopOptionsFromAccountConfig}: un margen
+ * mal escrito no puede devolver a «con plazo» a una cuenta que eligió bien la emisión futura. Cada
+ * valor inválido vuelve a SU default (con plazo, 2 h, CASH, America/Bogota) y sólo se informa el
+ * nombre del campo. Nunca se coerciona de más: `2.5`, `-1` o una forma de pago con tarjeta no
+ * pueden cambiar el PNR.
+ */
+export function sabreTicketingSettingsFromAccountConfig(
+  config: Readonly<Record<string, unknown>>,
+): SabreAccountTicketingResult {
+  const candidate: Record<string, unknown> = {};
+  const configKeyBySetting = new Map<string, string>();
+  for (const [configKey, settingKey] of Object.entries(SABRE_ACCOUNT_TICKETING_KEYS)) {
+    const value = config[configKey];
+    if (value === undefined || value === null) continue;
+    candidate[settingKey] = settingKey === 'leadHours' ? integerConfigValue(value) : value;
+    configKeyBySetting.set(settingKey, configKey);
+  }
+
+  const parsed = SabreTicketingSettingsSchema.safeParse(candidate);
+  if (parsed.success) return { settings: parsed.data, invalidFields: [] };
+
+  const invalid = new Set<string>();
+  for (const issue of parsed.error.issues) {
+    const settingKey = String(issue.path[0] ?? 'ticketing');
+    delete candidate[settingKey];
+    invalid.add(configKeyBySetting.get(settingKey) ?? settingKey);
+  }
+  const retried = SabreTicketingSettingsSchema.safeParse(candidate);
+  return {
+    settings: retried.success ? retried.data : SabreTicketingSettingsSchema.parse({}),
+    invalidFields: [...invalid].sort(),
+  };
+}
+
+/**
  * `config.allowCardBinPricing` sólo puede ser un booleano. `optional()` y no `default(false)`:
  * el default vive en {@link SabreProviderFactory.cardBinPolicy}, donde además se registra, y un
  * `default` aquí escondería que la cuenta no dijo nada.
  */
 const AllowCardBinPricingSchema = z.boolean().optional();
+
+/** Mismo dominio que `SabreConfigSchema.maxConcurrentRequests`: entero positivo. */
+const MaxConcurrentRequestsSchema = z.number().int().positive();
 
 /**
  * La postura de D1 escrita una sola vez: no se tarifica con datos de tarjeta.
@@ -152,6 +306,30 @@ interface SabreAdapterSet {
   readonly price: SabreOfferRevalidationRouter;
   readonly create: SabreOrderCreateAdapter;
   readonly manage: SabreOrderManageAdapter;
+  /** La política de emisión de la cuenta, ya validada: viaja en cada reserva. */
+  readonly ticketing: SabreTicketingSettings;
+  /**
+   * La emisión (`fulfillFlightTickets`) y las condiciones de los tiquetes, sobre el mismo cliente y
+   * la misma post-venta: la lectura previa a emitir comparte token y cupo con todo lo demás.
+   */
+  readonly issue: TicketingPort;
+  /** Las operaciones de `SABRE_OPERATIONS` encendidas en este despliegue. */
+  readonly operations: ReadonlySet<SabreOperation>;
+  /** El mapa de asientos antes de reservar (Get Seats v3, SAB-15), sobre el mismo cliente. */
+  readonly seats: SeatMapPort;
+}
+
+/**
+ * El plazo de emisión de una lectura con la zona de la oficina de la cuenta. Sólo un plazo en la
+ * hora de la oficina (`PROVIDER_LOCAL`) la recibe: uno en UTC ya tiene instante, y una lectura sin
+ * plazo no gana uno. Una zona que el motor no conoce no se pega: la cuenta la valida al leerse
+ * (`sabreTicketingSettingsFromAccountConfig`), y esto es la segunda puerta.
+ */
+export function withOfficeTimeZone(view: OrderView, pccTimeZone: string): OrderView {
+  const deadline = view.ticketingDeadline;
+  if (deadline === undefined || deadline.zone !== 'PROVIDER_LOCAL') return view;
+  if (!isSabrePccTimeZone(pccTimeZone)) return view;
+  return { ...view, ticketingDeadline: { ...deadline, timeZone: pccTimeZone } };
 }
 
 /**
@@ -201,12 +379,18 @@ export class SabreOfferRevalidationRouter {
  *
  *  - `payOrder`, `listServices`, `reshopWithTickets`, `cancelBnplOrder`: no son operaciones de
  *    este contrato. Fingirlas con un resultado plausible es lo que vende un asiento que no existe.
+ *  - `issueTickets` mientras `issue` no esté en `SABRE_OPERATIONS`: la emisión está escrita y
+ *    probada contra el contrato, pero no se enciende hasta certificarla (SAB-13).
+ *  - `getSeatMap` mientras `seats` no esté en `SABRE_OPERATIONS`: el mapa y la reserva de asientos
+ *    están escritos y probados contra el contrato, y se encienden al certificarlos (SAB-21).
  *
  * Lo que ya no hace falta gatear: el bloque de reserva contra una cuenta en modo simulado. Ese
  * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
  * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
-export class SabreFlightProviderAdapter implements FlightProviderAdapter {
+export class SabreFlightProviderAdapter
+  implements FlightProviderAdapter, TicketingPort, SeatMapPort
+{
   constructor(private readonly inner: SabreAdapterSet) {}
 
   get missingCredentials(): readonly string[] {
@@ -225,8 +409,33 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     return this.inner.price.priceOffer(offer, criteria, ctx);
   }
 
-  createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
-    return this.inner.create.createOrder(request, ctx);
+  /**
+   * Por `createBooking` y no por el `createOrder` del puerto: las dos entradas tienen que mandar la
+   * MISMA política de emisión y la misma firma, o una reserva quedaría sin plazo según el camino.
+   */
+  async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+    this.assertSeatsEnabled(request);
+    return (await this.inner.create.createBooking(request, ctx, this.bookingOptions())).result;
+  }
+
+  /**
+   * Tercera línea detrás de la capacidad `seatMap` y de {@link getSeatMap}: con `seats` apagado en
+   * este despliegue, una reserva con asientos no sale (SAB-16). Hoy no llega ninguna —sin mapa no
+   * hay asiento atado—, pero la reserva es la llamada que mueve dinero y no puede depender de que el
+   * servicio de arriba no cambie. `OrderCreateNotSentError`: el saga lo lee como «no salió», no como
+   * un resultado incierto.
+   */
+  private assertSeatsEnabled(request: OrderCreateRequest): void {
+    if ((request.seats?.length ?? 0) > 0 && !this.inner.operations.has('seats')) {
+      throw new OrderCreateNotSentError(
+        'la elección de asiento no está encendida para Sabre en este despliegue',
+      );
+    }
+  }
+
+  /** Lo que toda reserva de esta cuenta lleva además del pedido: su política de emisión y su firma. */
+  private bookingOptions(): SabreOrderCreateOptions {
+    return { ticketing: this.inner.ticketing, receivedFrom: SABRE_RECEIVED_FROM };
   }
 
   /**
@@ -240,7 +449,9 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
     request: OrderCreateRequest,
     ctx: SearchContext,
   ): Promise<OrderCreateAudit> {
-    const outcome = await this.inner.create.createBooking(request, ctx);
+    this.assertSeatsEnabled(request);
+    const outcome = await this.inner.create.createBooking(request, ctx, this.bookingOptions());
+    const ticketing = outcome.ticketing;
 
     return {
       result: outcome.result,
@@ -255,14 +466,36 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
         carriers: [...outcome.carriers],
         conversationId: outcome.conversationId,
         hasBookingSignature: outcome.hasBookingSignature,
+        // Con qué política de emisión quedó el PNR: es lo primero que se pregunta cuando una
+        // reserva vence sin emitir. Vocabulario cerrado; el PCC de emisión no entra.
+        ...(ticketing === undefined
+          ? {}
+          : {
+              ticketingPolicy: ticketing.policy,
+              ...(ticketing.fallback === undefined
+                ? {}
+                : { ticketingPolicyFallback: ticketing.fallback }),
+              ...(ticketing.deadline === undefined
+                ? {}
+                : { ticketingDeadlineSource: ticketing.deadline.source }),
+            }),
       },
       providerRaw: outcome.providerRaw,
       hasVersionStamp: outcome.hasBookingSignature,
     };
   }
 
-  retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
-    return this.inner.manage.retrieveForDisplay(orderId, ctx);
+  /**
+   * La lectura de la reserva, con la zona de la oficina en el plazo de emisión: Sabre da la fecha y
+   * la hora del PCC sin decir su zona (`futureTicketingPolicy`, docs/sabre/06 §5.3), y la cuenta sí
+   * la declara (`pccTimeZone`, la misma con que se pidió el plazo al reservar). Con ella la
+   * post-venta calcula el instante y avisa antes de que venza (SAB-14).
+   */
+  async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
+    return withOfficeTimeZone(
+      await this.inner.manage.retrieveForDisplay(orderId, ctx),
+      this.inner.ticketing.pccTimeZone,
+    );
   }
 
   cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
@@ -282,13 +515,30 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
    * Si NINGUNO de los ítems pedidos sigue vivo en la reserva, **no se cancela nada** y se
    * devuelve el hecho. Degradar a `scope: 'ALL'` porque el filtro salió vacío sería justo el
    * cancelAll ciego, escrito de una forma en la que no se ve.
+   *
+   * Con `scope.ticketOperation: 'VOID'` se cancela la reserva entera anulando sus tiquetes, y sólo
+   * si `void` está en `SABRE_OPERATIONS` (segunda defensa detrás de la capacidad). El ACL vuelve a
+   * comprobar los tiquetes justo antes y, si ya no se pueden anular, no manda nada: se traduce a
+   * {@link TicketVoidNotAvailableError}. Una anulación a medias (unos tiquetes sí, otros no) sale
+   * con `partial`, para que se concilie y nunca se reintente.
    */
   async cancelOrderAudited(
     orderId: string,
     ctx: SearchContext,
-    scope?: { readonly itemIds?: readonly string[] },
+    scope?: OrderCancelScope,
   ): Promise<OrderCancelAudit> {
     const itemIds = scope?.itemIds;
+    const ticketOperation = scope?.ticketOperation;
+    if (ticketOperation !== undefined) {
+      if (!this.inner.operations.has('void')) {
+        throw new SabreOperationNotSupportedError('anular tiquetes');
+      }
+      if (itemIds !== undefined && itemIds.length > 0) {
+        // La anulación se lleva la reserva entera: no hay "anular una parte" en este contrato.
+        throw new SabreOperationNotSupportedError('anular los tiquetes de una parte de la reserva');
+      }
+      return this.voidTickets(orderId, ctx);
+    }
     let items: SabreCancelOptions['items'];
 
     if (itemIds !== undefined && itemIds.length > 0) {
@@ -340,6 +590,87 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter {
       // `UNVERIFIED` es "el proveedor no dijo qué pasó": el saga NO puede reintentar a ciegas.
       verified: outcome.outcome !== 'UNVERIFIED',
     };
+  }
+
+  /**
+   * La anulación (VOID) de la reserva entera. `HALT_ON_ERROR`, como toda cancelación: la
+   * documentación de Sabre se contradice sobre si deshace los documentos ya anulados (docs/sabre/06
+   * §5.2), así que un fallo con tiquetes anulados en la respuesta se trata como lo que es, parcial.
+   */
+  private async voidTickets(orderId: string, ctx: SearchContext): Promise<OrderCancelAudit> {
+    let outcome: Awaited<ReturnType<SabreOrderManageAdapter['cancelBooking']>>;
+    try {
+      outcome = await this.inner.manage.cancelBooking(orderId, ctx, { ticketOperation: 'VOID' });
+    } catch (error) {
+      // La comprobación previa dijo que no: nada salió al cable. El rechazo es neutral para que la
+      // API le diga al vendedor qué hacer sin conocer el vocabulario de Sabre.
+      if (error instanceof SabreCancelBookingBuildError && error.rule === 'VOID_NOT_AVAILABLE') {
+        throw new TicketVoidNotAvailableError();
+      }
+      throw error;
+    }
+    const voided = outcome.detail.voidedTickets.length;
+    const partial =
+      outcome.outcome === 'PARTIALLY_CANCELLED' || (!outcome.result.success && voided > 0);
+    // `ALREADY_CANCELLED` es éxito para una cancelación (el estado final es el buscado), pero no
+    // para una anulación: la reserva ya estaba cancelada antes de esta llamada —desde otro canal— y
+    // nada dice qué pasó con sus tiquetes. Darla por anulada liberaría la cartera con tiquetes que
+    // pueden seguir emitidos y cobrados. No se sabe: se concilia.
+    const verified = outcome.outcome !== 'UNVERIFIED' && outcome.outcome !== 'ALREADY_CANCELLED';
+    return {
+      result: outcome.result,
+      audit: {
+        audited: true,
+        provider: SABRE_PROVIDER_CODE,
+        scope: 'ALL',
+        called: true,
+        ticketOperation: 'VOID',
+        outcome: outcome.outcome,
+        // Conteo, nunca los números: el evento lo ve cualquier admin del subárbol.
+        voidedTickets: voided,
+        errorHandlingPolicy: outcome.errorHandlingPolicy,
+        ticketCheckPerformed: outcome.ticketCheckPerformed,
+        conversationId: outcome.conversationId,
+        ...outcome.shape,
+      },
+      idempotencyKey: outcome.idempotencyKey,
+      verified,
+      ...(partial ? { partial: true } : {}),
+    };
+  }
+
+  /**
+   * Emite los tiquetes de la reserva sin tarjeta, con la forma de pago de la cuenta
+   * (`TicketingPort`). Segunda línea de defensa detrás de la capacidad `issue`: con la emisión
+   * apagada en este despliegue, rechaza antes de leer nada, aunque un job viejo llegue hasta aquí.
+   */
+  issueTickets(
+    orderId: string,
+    ctx: SearchContext,
+    options: TicketIssueOptions,
+  ): Promise<TicketIssueResult> {
+    if (!this.inner.operations.has('issue')) {
+      return Promise.reject(new SabreOperationNotSupportedError('emitir tiquetes'));
+    }
+    return this.inner.issue.issueTickets(orderId, ctx, options);
+  }
+
+  /** Las condiciones de los tiquetes emitidos (`checkFlightTickets`). Es una lectura. */
+  checkTickets(orderId: string, ctx: SearchContext): Promise<TicketCheckResult> {
+    return this.inner.issue.checkTickets(orderId, ctx);
+  }
+
+  /**
+   * El mapa de asientos de una oferta antes de reservarla (SAB-16). Segunda línea de defensa detrás
+   * de la capacidad `seatMap`: con `seats` apagado en este despliegue, rechaza sin consultar a
+   * Sabre (cada Get Seats es una llamada facturable). Los asientos elegidos viajan después con la
+   * reserva (`createBooking`), que los pide en el bloque que corresponda a la oferta.
+   */
+  getSeatMap(offer: Offer, criteria: FlightSearchCriteria, ctx: SearchContext): Promise<SeatMap> {
+    if (!this.inner.operations.has('seats')) {
+      return Promise.reject(new SabreOperationNotSupportedError('elegir asiento'));
+    }
+    return this.inner.seats.getSeatMap(offer, criteria, ctx);
   }
 
   cancelBnplOrder(_orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
@@ -395,6 +726,15 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   readonly defaultCallPolicy: CallPolicy = 'always';
 
   /**
+   * Lo que se reserva con Sabre lo liquida la red: el tiquete sale en CASH o a crédito (D1, nunca
+   * con tarjeta) y lo paga por BSP el dueño de la cuenta. Por eso la reserva retiene la cartera del
+   * nodo que vende y la de su red hasta ese dueño, como un hotel (SAB-FD-2 A; docs/platform/12
+   * §14). Una cuenta de pruebas (CERT) no retiene, y con la cuenta propia del nodo la base no
+   * retiene a nadie.
+   */
+  readonly settlement: ProviderSettlement = 'network-wallet';
+
+  /**
    * Lo que Sabre sabe hacer HOY, ni más ni menos.
    *
    * `retrieve` y `cancel` en `true` desde esta tanda: `getBooking` (las dos lecturas) y
@@ -405,19 +745,39 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * `pay`, `services` y `reshop` siguen en `false` y no es un olvido: no son operaciones de este
    * contrato. Es lo que hace que `OrdersController.assertSupports` las rechace con un mensaje
    * claro en vez de mandarlas a un adapter que no las implementa.
+   *
+   * `issue` sale de `SABRE_OPERATIONS`: la emisión está cableada, pero nace apagada y se enciende
+   * por despliegue, después de certificarla. `ticketCheck` y `void` van juntas detrás de `void`: las
+   * condiciones de los tiquetes sólo se ofrecen donde se puede actuar sobre ellas.
    */
-  readonly capabilities: ProviderCapabilities = {
-    retrieve: true,
-    cancel: true,
-    pay: false,
-    services: false,
-    reshop: false,
-  };
+  readonly capabilities: ProviderCapabilities;
 
   private readonly logger = new Logger('Sabre');
   private readonly cache = new Map<string, SabreFlightProviderAdapter>();
+  /** Lo encendido en `SABRE_OPERATIONS`, leído una vez: un valor inválido tumba el arranque. */
+  private readonly operations: ReadonlySet<SabreOperation>;
 
-  constructor(private readonly creds: ProviderCredentialsService) {}
+  constructor(private readonly creds: ProviderCredentialsService) {
+    this.operations = parseSabreOperations(process.env['SABRE_OPERATIONS']);
+    this.capabilities = {
+      retrieve: true,
+      cancel: true,
+      pay: false,
+      services: false,
+      reshop: false,
+      issue: this.operations.has('issue'),
+      ticketCheck: this.operations.has('void'),
+      void: this.operations.has('void'),
+      // El mapa y la reserva de asientos sin cargo (SAB-16), apagados hasta certificarlos en CERT.
+      seatMap: this.operations.has('seats'),
+    };
+    if (this.operations.size > 0) {
+      // Encender una operación que mueve dinero tiene que verse en el log de arranque.
+      this.logger.warn(
+        `operaciones de Sabre encendidas por SABRE_OPERATIONS: [${[...this.operations].sort().join(', ')}]`,
+      );
+    }
+  }
 
   async forTenant(tenantId: string): Promise<FlightProviderAdapter> {
     return (await this.resolveForTenant(tenantId)).adapter;
@@ -428,8 +788,38 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // heredable, o cuenta todavía en `status: 'sandbox'`— se propaga tal cual y el registry la
     // traduce a "proveedor no habilitado". Atraparla aquí para caer a env es exactamente lo
     // que este factory NO hace.
-    const resolved = await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE);
-    const cfg = this.toConfig(resolved.credentials, resolved.config);
+    return this.adapterFor(await this.creds.resolve(tenantId, SABRE_PROVIDER_CODE));
+  }
+
+  /**
+   * La post-venta de una orden sale con la cuenta (y el PCC) con que se creó la reserva (RF-29): un
+   * PNR sólo se lee, se cancela o se emite desde la oficina que lo creó, y una agencia que después
+   * cargó su propia cuenta seguiría viendo "no existe" en las reservas que hizo con la heredada. La
+   * bóveda resuelve la cuenta desde la orden, con el tenant fijado y sólo si sigue en su red.
+   *
+   * Pasa por la misma puerta de credenciales y la misma caché que la venta: con la misma cuenta, el
+   * mismo cliente, el mismo token y el mismo cupo de concurrencia. Sin `try/catch` por lo mismo que
+   * {@link resolveForTenant}: el registry traduce la `NotFoundException` a "la cuenta de la reserva
+   * ya no está disponible".
+   */
+  async resolveForOrder(
+    tenantId: string,
+    orderId: string,
+  ): Promise<TenantAdapter<FlightProviderAdapter>> {
+    const resolved = await this.creds.resolveForOrder(tenantId, orderId);
+    if (resolved.providerCode !== SABRE_PROVIDER_CODE) {
+      // La bóveda ya exige el proveedor de la orden; esto cubre un cableado equivocado del registry.
+      throw new NotFoundException('la cuenta de la orden no es de Sabre');
+    }
+    return this.adapterFor(resolved);
+  }
+
+  /**
+   * El adapter de UNA cuenta ya resuelta (la vigente del tenant o la de una orden), con lo que el
+   * registry necesita saber de ella: origen, política, entorno y cuál es.
+   */
+  private adapterFor(resolved: ResolvedProviderAccount): TenantAdapter<FlightProviderAdapter> {
+    const cfg = this.toConfig(resolved.credentials, resolved.config, resolved.ownerTenantId);
 
     // Puerta de credenciales, ANTES de construir nada. Hasta esta tanda esta comprobación
     // vivía después de instanciar el ACL y dejaba pasar un caso: la cuenta que declaraba
@@ -448,12 +838,28 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     // dos cuentas del mismo dueño con PCC distinto NO pueden compartir instancia ni token.
     // No es secreto —se imprime en el billete—, así que puede vivir en una clave de caché.
     // Ya no hace falta marcador de "sin PCC": la puerta de arriba garantiza que está.
-    const key = `byoc:${resolved.ownerTenantId}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
+    //
+    // El id de la cuenta también: la post-venta resuelve la cuenta de cada orden, y un dueño con
+    // dos cuentas de Sabre (dos `label`) no puede recibir el adapter de la otra ni ver cómo una
+    // desaloja a la otra en cada llamada —cada reconstrucción es un token y un cupo nuevos—.
+    const key = `byoc:${resolved.ownerTenantId}:${resolved.id}:${cfg.homePcc}:${resolved.updatedAt.getTime()}`;
     const credentialSource: CredentialSource = resolved.inherited ? 'inherited' : 'own';
-    const callPolicy = this.declaredCallPolicy(resolved.config, resolved.ownerTenantId);
+    // Sólo `prod` es real. CERT —y cualquier cuenta sin entorno legible, que `toConfig` ya manda a
+    // CERT— cotiza tarifas que no se emiten ni se facturan y crea PNR de prueba: la búsqueda las
+    // marca y la orden lo guarda para que nadie se las venda a un cliente como reales.
+    const providerEnvironment: ProviderEnvironment = cfg.environment === 'prod' ? 'live' : 'test';
+    const account: Omit<TenantAdapter<FlightProviderAdapter>, 'adapter'> = {
+      credentialSource,
+      callPolicy: this.declaredCallPolicy(resolved.config, resolved.ownerTenantId),
+      providerEnvironment,
+      // La orden la guarda para operar su post-venta con ESTA cuenta, y el intent comprueba que
+      // sigue en esta versión antes de comprometerse.
+      accountId: resolved.id,
+      accountUpdatedAt: resolved.updatedAt,
+    };
 
     const cached = this.cache.get(key);
-    if (cached) return { adapter: cached, credentialSource, callPolicy };
+    if (cached) return { adapter: cached, ...account };
 
     const adapter = new SabreFlightProviderAdapter(
       this.buildAdapters(cfg, resolved.ownerTenantId, resolved.config),
@@ -461,7 +867,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
 
     this.cache.set(key, adapter);
     this.evictStale(key);
-    return { adapter, credentialSource, callPolicy };
+    return { adapter, ...account };
   }
 
   /** Los errores del ACL ya tienen traducción propia, y NO hace eco del texto de Sabre. */
@@ -472,10 +878,11 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   /**
    * Construye los cuatro adapters del ACL sobre UN token y UN cliente HTTP.
    *
-   * `SabreFlightSearchAdapter` fabrica su propio cliente, pero acepta que le inyecten el proveedor
-   * de tokens; así los cuatro comparten el ATK, que es lo que importa: el TAM Pool es un límite
-   * **por contrato de agencia** y cuatro adapters autenticando por su cuenta lo agotan
-   * (docs/sabre/01 §7.1).
+   * Los cuatro comparten el ATK, que es lo que importa: el TAM Pool es un límite **por contrato de
+   * agencia** y cuatro adapters autenticando por su cuenta lo agotan (docs/sabre/01 §7.1). Y
+   * comparten el CLIENTE, búsqueda incluida, porque el semáforo de `maxConcurrentRequests` vive en
+   * él: con un cliente propio, la búsqueda tendría su cupo aparte y la cuenta podría tener el doble
+   * de llamadas en vuelo que su límite.
    */
   private buildAdapters(
     cfg: SabreConfig,
@@ -501,19 +908,52 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         `configuración de shop de Sabre inválida para ${ownerTenantId}: campos [${shopOptions.invalidFields.join(', ')}] — se aplican defaults conservadores`,
       );
     }
+    const ticketing = sabreTicketingSettingsFromAccountConfig(config);
+    if (ticketing.invalidFields.length > 0) {
+      this.logger.warn(
+        `configuración de emisión de Sabre inválida para ${ownerTenantId}: campos [${ticketing.invalidFields.join(', ')}] — se aplican los valores por defecto`,
+      );
+    }
     const ndcPrice = new SabreOfferPriceAdapter(cfg, http, { cardBinPricing });
     const atpcoPrice = new SabreFlightCheckAdapter(cfg, http, { logger });
+    const manage = new SabreOrderManageAdapter(cfg, http, { logger });
+    // La oficina de emisión sólo si la reserva quedó para ella: con la emisión futura y un PCC
+    // válido, como lo decide la creación. Sin eso emite la oficina propia.
+    const ticketingPcc =
+      ticketing.settings.policy === 'FUTURE_TICKETING'
+        ? cfg.ticketingPcc?.trim().toUpperCase()
+        : undefined;
+    const issue = new SabreTicketingAdapter(
+      cfg,
+      http,
+      { logger, orderManage: manage },
+      {
+        // D1: la forma de pago es la de la cuenta (CASH, ON_ACCOUNT o INVOICE), nunca tarjeta.
+        formOfPayment: ticketing.settings.formOfPayment,
+        ...(ticketingPcc !== undefined && SABRE_PCC_PATTERN.test(ticketingPcc)
+          ? { ticketingPcc }
+          : {}),
+      },
+    );
 
     return {
       search: new SabreFlightSearchAdapter(cfg, {
         cacheNamespace: ownerTenantId,
         tokens,
+        http,
         logger,
         shopOptions: shopOptions.options,
       }),
       price: new SabreOfferRevalidationRouter(ndcPrice, atpcoPrice),
-      create: new SabreOrderCreateAdapter(cfg, http),
-      manage: new SabreOrderManageAdapter(cfg, http),
+      // Con logger, como los demás: sin él `sabre.createBooking`, `sabre.getBooking` y
+      // `sabre.cancelBooking` no se emitían nunca, y son las únicas trazas de una reserva con su
+      // desenlace, la política pedida y los conteos. Llevan códigos y conteos, nunca PNR ni PII.
+      create: new SabreOrderCreateAdapter(cfg, http, { logger }),
+      manage,
+      ticketing: ticketing.settings,
+      issue,
+      operations: this.operations,
+      seats: new SabreSeatMapAdapter(cfg, http, { logger }),
     };
   }
 
@@ -602,11 +1042,14 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     return parsed.data;
   }
 
-  /** Conserva sólo la entrada vigente por owner: al rotar credenciales cambia el `updatedAt`. */
+  /**
+   * Conserva sólo la entrada vigente por cuenta: al rotar credenciales cambia el `updatedAt`, y al
+   * cambiar el PCC, también la clave. Las otras cuentas del mismo dueño no se tocan.
+   */
   private evictStale(currentKey: string): void {
-    const ownerPrefix = currentKey.split(':').slice(0, 2).join(':') + ':';
+    const accountPrefix = currentKey.split(':').slice(0, 3).join(':') + ':';
     for (const k of this.cache.keys()) {
-      if (k !== currentKey && k.startsWith(ownerPrefix)) this.cache.delete(k);
+      if (k !== currentKey && k.startsWith(accountPrefix)) this.cache.delete(k);
     }
   }
 
@@ -619,7 +1062,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   private toConfig(
     credentials: Record<string, unknown>,
     config: Record<string, unknown>,
+    ownerTenantId: string,
   ): SabreConfig {
+    const maxConcurrentRequests = this.maxConcurrentRequests(config, ownerTenantId);
     const c = credentials;
     const g = config;
     const environment = g['environment'] === 'prod' ? 'prod' : SABRE_DEFAULT_ENVIRONMENT;
@@ -639,9 +1084,35 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       agencyIata: str(g['agencyIata']),
       domain: str(g['domain']),
       applicationId: str(g['applicationId']),
-      sabreGroup: str(g['sabreGroup']),
-      sabreCurrentCity: str(g['sabreCurrentCity']),
+      // Las dos mitades, como `homePcc`: la spec de la bóveda los declara `encrypted-or-config`, y
+      // leerlos sólo de `config` dejaba sin cabecera de grupo a la cuenta que los guardó cifrados.
+      sabreGroup: str(c['sabreGroup']) ?? str(g['sabreGroup']),
+      sabreCurrentCity: str(c['sabreCurrentCity']) ?? str(g['sabreCurrentCity']),
+      ...(maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests }),
     });
+  }
+
+  /**
+   * `config.maxConcurrentRequests`: el cupo de concurrencia CONTRACTUAL de la cuenta (RNF-04,
+   * docs/sabre/01 §5.2). Lo fija el contrato con Sabre y no se conoce de antemano (P-02), así que
+   * tiene que poder ajustarse sin redesplegar: sin leerlo de aquí, toda cuenta quedaba en el
+   * default defensivo y una red entera heredando una credencial compartía cuatro huecos.
+   *
+   * Un valor inválido NO tumba la cuenta: se avisa con el nombre del campo y se usa el default.
+   * `parseSabreConfig` lanzaría, y una errata en un número dejaría a Sabre fuera de la búsqueda.
+   */
+  private maxConcurrentRequests(
+    config: Record<string, unknown>,
+    ownerTenantId: string,
+  ): number | undefined {
+    const raw = config['maxConcurrentRequests'];
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const parsed = MaxConcurrentRequestsSchema.safeParse(integerConfigValue(raw));
+    if (parsed.success) return parsed.data;
+    this.logger.warn(
+      `config.maxConcurrentRequests inválida en la cuenta de Sabre de ${ownerTenantId}: se ignora y se usa el cupo por defecto`,
+    );
+    return undefined;
   }
 }
 

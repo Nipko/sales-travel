@@ -255,6 +255,8 @@ Presentación por canal:
 - `Inclusion` es un string único; `RoomPromotion` es un texto por habitación; `WithTransfers` es booleano (p. 20–21) VERIFICADO-PDF.
 - `MealType` usa la enumeración de p. 70. La tabla de PreBook solo lista tres valores y el ejemplo usa `Room_Only`, que no está entre ellos (p. 21, 24, 70) VERIFICADO-PDF. Mapeo tolerante en [02](./02-search-y-oferta-canonica.md).
 
+**Postura sobre `Amenities` (TBO-12, 2026-10-13).** Viene UNA lista por elemento de `Rooms[]`, es decir, por unidad reservable y no por habitación. El ACL la lee sin repetidos (sin distinguir mayúsculas) y salta los ítems que no son texto; nunca invalida la tarifa. El adapter la entrega como `roomAmenities`, una lista por habitación del pack con la misma lista en cada una, **aparte del pack**: ni C1 ni C2 la comparan, así que un cambio de `Amenities` no mueve el repricing ni pide aceptación. `POST /hotels/prebook` la devuelve con el tope del contrato con la web (hasta 60 por habitación, 80 caracteres cada una, sin repetidos) y no entra en el snapshot del `Book` ni en `domain_events`. El checkout la muestra como etiquetas debajo de la tarifa, 8 a la vista y «Ver todos (n)»; si todas las habitaciones traen la misma lista, que es lo que pasa siempre con TBO, va un solo bloque que lo dice.
+
 ### 2.8 `CreditCardBillingOptions`: no aplica
 
 - "Applicable in case of mode of payment is Credit Card. Provides a list of supported currencies with equivalent Booking Amount and convenience charges" (p. 23) VERIFICADO-PDF.

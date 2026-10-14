@@ -1,7 +1,6 @@
 'use client';
 
 import { flightTime } from '../../../lib/flight-format';
-import { TicketingDeadlineBadge } from '../cotizaciones/_components/ticketing-deadline-badge';
 import {
   AlertTriangle,
   Car,
@@ -16,10 +15,12 @@ import {
   RefreshCw,
   Search,
   Ticket,
+  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
 import { useViewer } from '../../../components/layout/viewer-context';
 import { Button } from '../../../components/ui/button';
@@ -52,9 +53,18 @@ import {
 } from './order-capabilities';
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
+import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
+import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
+import { walletReleaseNote } from './wallet-hold-view';
+import { IssueTicketDialog } from './_components/issue-ticket-dialog';
+import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
+import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
+import { TestOrderTag } from './_components/test-order-tag';
+import { TicketConditions } from './_components/ticket-conditions';
+import { isTestOrder, TEST_ORDER_EMAIL_NOTICE } from '../../../lib/test-content';
 
 interface Segment {
   carrier: string;
@@ -116,8 +126,14 @@ interface Order {
   totalAmount: number;
   currency: string;
   errorMessage?: string | null;
+  /** `true` = se reservó con la cuenta de pruebas del proveedor: no es un tiquete válido. */
+  testContent?: boolean;
   /** Sólo en hoteles: subestado, estado del proveedor y HCN, sin PII (RF-26). */
   providerTracking?: unknown;
+  /** Sólo en vuelos: localizadores de la aerolínea, tiquetes y plazo guardados (0082). */
+  flightTracking?: unknown;
+  /** Saldo retenido en la cartera que cancelar libera (SAB-10); `null` si no hay nada que liberar. */
+  walletHold?: 'held' | 'captured' | null;
   createdAt: string;
 }
 
@@ -205,14 +221,35 @@ export default function ReservasPage() {
     retryOperationId?: string;
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** La reserva cuya emisión se está confirmando (SAB-08). */
+  const [issuing, setIssuing] = useState<Order | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
   const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'hotels' | 'cars'>('all');
+  /** «Por vencer» (SAB-14): vuelos confirmados cuyo plazo de emisión vence en menos de 24 h. */
+  const [dueSoonF, setDueSoonF] = useState(false);
+  // El reloj de la lista: «Por vencer» y los avisos de la fila cambian solos con el paso del tiempo.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dueSoonIds = useMemo(
+    () =>
+      new Set(
+        orders
+          .filter((o) => orderVerticalOf(o) === 'flights' && isDueSoonOrder(o, new Date(now)))
+          .map((o) => o.id),
+      ),
+    [orders, now],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
+      if (dueSoonF && !dueSoonIds.has(o.id)) return false;
       if (verticalF !== 'all' && orderVerticalOf(o) !== verticalF) return false;
       if (statusF === 'confirmed' && !(o.status === 'confirmed' || o.status === 'ticketed'))
         return false;
@@ -238,7 +275,7 @@ export default function ReservasPage() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query, statusF, verticalF]);
+  }, [orders, query, statusF, verticalF, dueSoonF, dueSoonIds]);
 
   /**
    * Relee la lista. Después de una cancelación de hotel el estado lo decide el servidor (puede ser
@@ -287,9 +324,35 @@ export default function ReservasPage() {
     });
   }, [loadOrders]);
 
+  /**
+   * El desenlace de una emisión que se seguía: el aviso y la fila. La lista se relee porque el
+   * estado lo decide el servidor (emitida, sin confirmar o fallida).
+   */
+  const onIssueSettled = useCallback(
+    (orderId: string, settlement: IssueSettlement) => {
+      const issued = settlement.kind === 'settled' && settlement.outcome.kind === 'issued';
+      const message =
+        settlement.kind === 'timeout' ? settlement.message : settlement.outcome.message;
+      if (issued) toast.success(message);
+      else if (settlement.kind === 'timeout') toast.message(message);
+      else toast.error(message);
+      setActionResult({ orderId, type: 'issue', success: issued, message });
+      void loadOrders(false);
+    },
+    [loadOrders],
+  );
+  const { tracked: issuesInFlight, track: trackIssue } = useIssueTracker(onIssueSettled);
+
   /** "Actualizar estado" de hotel: el seguimiento nuevo, sin releer toda la lista. */
   const applyTracking = useCallback((orderId: string, tracking: HotelOrderTracking) => {
     const patch = (o: Order) => (o.id === orderId ? { ...o, providerTracking: tracking } : o);
+    setOrders((prev) => prev.map(patch));
+    setDetailOrder((prev) => (prev ? patch(prev) : prev));
+  }, []);
+
+  /** "Consultar estado" de vuelo: lo guardado tras la lectura, sin releer toda la lista. */
+  const applyFlightTracking = useCallback((orderId: string, flightTracking: unknown) => {
+    const patch = (o: Order) => (o.id === orderId ? { ...o, flightTracking } : o);
     setOrders((prev) => prev.map(patch));
     setDetailOrder((prev) => (prev ? patch(prev) : prev));
   }, []);
@@ -302,24 +365,33 @@ export default function ReservasPage() {
       const res = await fetch(`/api/orders/${order.id}/retrieve`, { method: 'POST' });
       const data = (await res.json()) as {
         found?: boolean;
-        status?: string;
-        ticketNumbers?: string[];
+        status?: unknown;
+        flightTracking?: unknown;
         error?: string;
       };
       if (data.found) {
-        const tickets = data.ticketNumbers?.join(', ');
+        // Lo que la consulta trajo queda en la fila (localizadores, tiquetes y plazo), no en un
+        // aviso que se pierde al cerrarlo. `null` es "no se pudo leer lo guardado": la fila se
+        // queda con lo que ya mostraba en vez de vaciarse.
+        if (data.flightTracking === undefined) void loadOrders(false);
+        else if (data.flightTracking !== null) applyFlightTracking(order.id, data.flightTracking);
+        const notice = retrieveNotice(
+          parseFlightTracking(data.flightTracking),
+          data.status,
+          order.status,
+        );
         setActionResult({
           orderId: order.id,
           type: 'retrieve',
-          success: true,
-          message: `Estado: ${data.status}${tickets ? ` | Tickets: ${tickets}` : ''}`,
+          success: !notice.alert,
+          message: notice.message,
         });
       } else {
         setActionResult({
           orderId: order.id,
           type: 'retrieve',
           success: false,
-          message: humanizeOrderError(data.error ?? 'No se encontró la reserva en LATAM'),
+          message: humanizeOrderError(data.error ?? 'No encontramos la reserva en el proveedor.'),
         });
       }
     } catch {
@@ -611,6 +683,19 @@ export default function ReservasPage() {
             <FilterChip active={statusF === 'cancelled'} onClick={() => setStatusF('cancelled')}>
               Canceladas
             </FilterChip>
+            {dueSoonIds.size > 0 || dueSoonF ? (
+              <>
+                <span className="mx-1 h-4 w-px bg-[var(--color-border)]" aria-hidden />
+                <FilterChip
+                  active={dueSoonF}
+                  onClick={() => setDueSoonF((v) => !v)}
+                  title="Vuelos confirmados sin tiquete cuyo plazo de emisión vence en menos de 24 h o ya venció"
+                >
+                  <AlertTriangle aria-hidden="true" className="size-3" /> Por vencer
+                  <span className="tabular-nums">· {dueSoonIds.size}</span>
+                </FilterChip>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -706,6 +791,7 @@ export default function ReservasPage() {
                           {order.pnr}
                         </span>
                       )}
+                      <TestOrderTag order={order} />
                       {hotelNonRefundable ? (
                         <RefundTag
                           badge={{ tone: 'warning', label: 'No reembolsable' }}
@@ -717,13 +803,7 @@ export default function ReservasPage() {
                       {dateLabel && <span>{dateLabel}</span>}
                       {paxNames && <span className="truncate">· {paxNames}</span>}
                     </div>
-                    {showDeadline && (
-                      <TicketingDeadlineBadge
-                        raw={order.selectedOffer?.provider?.raw}
-                        fromOrder
-                        className="mt-1.5"
-                      />
-                    )}
+                    {showDeadline && <FlightDeadlineBadge order={order} className="mt-1.5" />}
                     {/* En el teléfono, "Cancelación en curso" al costado aplasta la fila: va abajo. */}
                     {hotelState ? (
                       <HotelOrderStatusChip state={hotelState} className="mt-1.5 sm:hidden" />
@@ -804,7 +884,7 @@ export default function ReservasPage() {
                     order.status !== 'failed' &&
                     (isCar ? (
                       // Autos: el backend de cancelación es provider-aware, mismo endpoint.
-                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing (todo eso es LATAM).
+                      // Sin Pagar/Emitir, Consultar estado, Servicios ni Repricing: son operaciones de vuelos.
                       supportsOrderCancellation(order.capabilities, order.status) ? (
                         <Button
                           variant="secondary"
@@ -818,6 +898,19 @@ export default function ReservasPage() {
                       ) : null
                     ) : (
                       <>
+                        {/* Emitir sin tarjeta, con la forma de pago de la cuenta (SAB-08). */}
+                        {canIssueTicket(order) && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={actionLoading === order.id || order.id in issuesInFlight}
+                            onClick={() => setIssuing(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Ticket aria-hidden="true" className="size-3.5" />
+                            {order.id in issuesInFlight ? 'Emitiendo…' : 'Emitir tiquete'}
+                          </Button>
+                        )}
                         {(order.status === 'pending' || order.status === 'confirmed') &&
                           supportsOrderCapability(order.capabilities, 'pay') && (
                             <Button
@@ -1073,6 +1166,9 @@ export default function ReservasPage() {
               setPaymentData(null);
               setDetailOrder(null);
             }}
+            issueInFlight={detailOrder.id in issuesInFlight}
+            onIssueRequest={() => setIssuing(detailOrder)}
+            onOrderChanged={() => void loadOrders(false)}
           />
         ))}
 
@@ -1091,6 +1187,26 @@ export default function ReservasPage() {
         />
       )}
 
+      {/* Emisión de tiquetes: confirmación, y el seguimiento sigue en la página (SAB-08). */}
+      {issuing && (
+        <IssueTicketDialog
+          key={issuing.id}
+          order={issuing}
+          onClose={() => setIssuing(null)}
+          onRequested={(operationId) => {
+            trackIssue(issuing.id, operationId);
+            toast.message(ISSUE_MESSAGES.started);
+            setActionResult({
+              orderId: issuing.id,
+              type: 'issue',
+              success: true,
+              message: ISSUE_MESSAGES.started,
+            });
+            setIssuing(null);
+          }}
+        />
+      )}
+
       {/* Confirmación de cancelación (evita cancelaciones por error) */}
       {confirmCancel && (
         <ConfirmDialog
@@ -1098,6 +1214,7 @@ export default function ReservasPage() {
           message={`¿Seguro que quieres cancelar esta reserva${
             confirmCancel.pnr ? ` (PNR ${confirmCancel.pnr})` : ''
           }? Esta acción no se puede deshacer.`}
+          note={walletReleaseNote(confirmCancel)}
           confirmLabel="Sí, cancelar reserva"
           danger
           loading={actionLoading === confirmCancel.id}
@@ -1118,11 +1235,19 @@ function OrderDetailModal({
   onClose,
   onCancelRequest,
   onPayRequest,
+  issueInFlight,
+  onIssueRequest,
+  onOrderChanged,
 }: {
   order: Order;
   onClose: () => void;
   onCancelRequest: () => void;
   onPayRequest: () => void;
+  /** Hay una emisión de esta reserva siguiéndose en la página. */
+  issueInFlight: boolean;
+  onIssueRequest: () => void;
+  /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
+  onOrderChanged: () => void;
 }) {
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const isCar = isCarOrder(order);
@@ -1133,12 +1258,14 @@ function OrderDetailModal({
     order.status !== 'cancelled' &&
     order.status !== 'failed' &&
     supportsOrderCancellation(order.capabilities, order.status);
-  // Pagar/Emitir es flujo LATAM; los autos se pagan en su propio checkout, nunca acá.
+  // Pagar/Emitir es de vuelos, y sólo si el proveedor lo declara; los autos se pagan en su
+  // propio checkout, nunca aquí.
   const canPay =
     !isCar &&
     !!order.pnr &&
     (order.status === 'pending' || order.status === 'confirmed') &&
     supportsOrderCapability(order.capabilities, 'pay');
+  const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -1275,6 +1402,7 @@ function OrderDetailModal({
             >
               {status.label}
             </span>
+            <TestOrderTag order={order} detail />
           </div>
           <button
             type="button"
@@ -1410,6 +1538,23 @@ function OrderDetailModal({
             </section>
           )}
 
+          {/* Vuelo: localizadores de la aerolínea, tiquetes y plazo guardados de la última lectura. */}
+          {!isCar && <FlightOrderTracking order={order} />}
+
+          {/* Vuelo emitido: condiciones de los tiquetes en vivo y su anulación (SAB-09). */}
+          {!isCar && (
+            <TicketConditions
+              order={order}
+              operations={operations}
+              opsLoading={opsLoading}
+              opsError={opsError !== null}
+              onVoidAttempted={() => {
+                void reloadOps();
+                onOrderChanged();
+              }}
+            />
+          )}
+
           <section>
             <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
               Pasajeros ({order.passengers.length})
@@ -1473,6 +1618,13 @@ function OrderDetailModal({
                   {sendMsg.text}
                 </span>
               )}
+              {/* A una reserva de prueba no se le manda la confirmación sola al crearla; si el
+                  vendedor la reenvía, sabe antes cómo le llega al pasajero. */}
+              {isTestOrder(order) && (
+                <p className="w-full text-xs text-[var(--color-fg-muted)]">
+                  {TEST_ORDER_EMAIL_NOTICE}
+                </p>
+              )}
             </section>
           )}
 
@@ -1515,14 +1667,14 @@ function OrderDetailModal({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-[var(--color-fg)]">
-                            {operationTypeLabel(op.type)}
+                            {operationTypeLabel(op.type, op.ticketOperation)}
                           </span>
                           <span
                             className={cn(
                               'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                              op.status === 'success'
+                              operationStatusView(op).tone === 'ok'
                                 ? 'bg-green-50 text-green-700'
-                                : op.status === 'failed'
+                                : operationStatusView(op).tone === 'failed'
                                   ? 'bg-red-50 text-red-700'
                                   : 'bg-amber-50 text-amber-700',
                             )}
@@ -1570,6 +1722,16 @@ function OrderDetailModal({
               <XCircle className="size-3.5" /> Cancelar reserva
             </Button>
           )}
+          {canIssue && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onIssueRequest}
+              className="gap-1.5 text-xs"
+            >
+              <Ticket aria-hidden="true" className="size-3.5" /> Emitir tiquete
+            </Button>
+          )}
           {canPay && (
             <Button variant="primary" size="sm" onClick={onPayRequest} className="gap-1.5 text-xs">
               <CreditCard className="size-3.5" /> Pagar / Emitir tiquete
@@ -1587,16 +1749,20 @@ function OrderDetailModal({
 function FilterChip({
   active,
   onClick,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
+      title={title}
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
         active
@@ -1612,6 +1778,7 @@ function FilterChip({
 function ConfirmDialog({
   title,
   message,
+  note,
   confirmLabel,
   danger,
   loading,
@@ -1620,6 +1787,8 @@ function ConfirmDialog({
 }: {
   title: string;
   message: string;
+  /** Un aviso aparte, debajo del mensaje (p. ej. el saldo retenido que se libera). */
+  note?: string | undefined;
   confirmLabel: string;
   danger?: boolean;
   loading?: boolean;
@@ -1643,6 +1812,12 @@ function ConfirmDialog({
           <h2 className="text-sm font-semibold text-[var(--color-fg)]">{title}</h2>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
+        {note ? (
+          <p className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-xs leading-relaxed text-[var(--color-fg)]">
+            <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{note}</span>
+          </p>
+        ) : null}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" disabled={loading} onClick={onClose}>
             No, volver

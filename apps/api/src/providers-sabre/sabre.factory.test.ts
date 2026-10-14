@@ -1,11 +1,17 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Logger, NotFoundException } from '@nestjs/common';
-import { OrderCreateNotSentError } from '@sales-travel/domain';
+import type { Offer } from '@sales-travel/canonical';
+import { OrderCreateNotSentError, type OrderCreateRequest } from '@sales-travel/domain';
 import {
+  REDACTED,
   SabreApiError,
+  SabreCancelBookingBuildError,
   SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
   SabreOrderCreateInputError,
+  SabreOrderManageAdapter,
   SabrePriceRequestError,
 } from '@sales-travel/sabre';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,17 +22,28 @@ import { ProviderCredentialsService } from '../provider-credentials/provider-cre
 import type { ResolvedProviderAccount } from '../provider-credentials/provider-credentials.service.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
+  ProviderOrderAccountUnavailableError,
+  TICKET_VOID_NOT_AVAILABLE_MESSAGE,
+  TicketVoidNotAvailableError,
   supportsAuditedCancel,
   supportsAuditedCreate,
+  supportsSeatMap,
+  supportsTicketing,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
 import { ENCENDIDO } from '../providers/__fixtures__/provider-flags.js';
-import { SabreOperationNotSupportedError } from './sabre-errors.js';
+import { SabreOperationNotSupportedError, humanizeSabreError } from './sabre-errors.js';
 import {
+  SABRE_OPERATIONS,
   SABRE_PROVIDER_CODE,
+  SABRE_RECEIVED_FROM,
   SabreOfferRevalidationRouter,
+  SabreOperationsConfigError,
   SabreProviderFactory,
+  parseSabreOperations,
   sabreShopOptionsFromAccountConfig,
+  sabreTicketingSettingsFromAccountConfig,
+  withOfficeTimeZone,
 } from './sabre.factory.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 
@@ -88,6 +105,148 @@ describe('SabreProviderFactory — resolución BYOC', () => {
   it('propaga los errores que NO son NotFound (bóveda caída, credencial corrupta)', async () => {
     const factory = factoryWith(() => Promise.reject(new Error('db down')));
     await expect(factory.forTenant('t1')).rejects.toThrow('db down');
+  });
+
+  it('declara la cuenta de la bóveda con que sale y su versión: la orden la guarda', async () => {
+    const updatedAt = new Date('2026-04-01T10:00:00Z');
+    const factory = factoryWith(() => Promise.resolve(resolved({ id: 'acc-vigente', updatedAt })));
+
+    expect(await factory.resolveForTenant('t1')).toMatchObject({
+      accountId: 'acc-vigente',
+      accountUpdatedAt: updatedAt,
+    });
+  });
+});
+
+/**
+ * La post-venta sale con la cuenta (y el PCC) con que se hizo la reserva, no con la vigente del
+ * tenant (RF-29): un PNR sólo existe para la oficina que lo creó.
+ */
+describe('SabreProviderFactory — la cuenta de una orden ya hecha', () => {
+  const ORDEN = 'order-1';
+
+  function factoryWithOrder(
+    resolve: ProviderCredentialsService['resolve'],
+    resolveForOrder: ProviderCredentialsService['resolveForOrder'],
+  ) {
+    const creds = { resolve: vi.fn(resolve), resolveForOrder: vi.fn(resolveForOrder) };
+    const factory = new SabreProviderFactory(creds as unknown as ProviderCredentialsService);
+    return { factory, creds };
+  }
+
+  it('resuelve la cuenta DESDE la orden, con el tenant, y nunca pide la vigente', async () => {
+    const updatedAt = new Date('2026-02-01T00:00:00Z');
+    const { factory, creds } = factoryWithOrder(
+      () => Promise.reject(new Error('la post-venta no puede pedir la cuenta vigente')),
+      () => Promise.resolve(resolved({ id: 'acc-heredada', inherited: true, updatedAt })),
+    );
+
+    const deLaOrden = await factory.resolveForOrder('t1', ORDEN);
+
+    expect(creds.resolveForOrder).toHaveBeenCalledWith('t1', ORDEN);
+    expect(creds.resolve).not.toHaveBeenCalled();
+    expect(deLaOrden).toMatchObject({
+      credentialSource: 'inherited',
+      providerEnvironment: 'test',
+      accountId: 'acc-heredada',
+      accountUpdatedAt: updatedAt,
+    });
+  });
+
+  it('la misma cuenta por la venta y por la orden comparte instancia: mismo token y mismo cupo', async () => {
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved()),
+    );
+
+    const venta = await factory.resolveForTenant('t1');
+    const postVenta = await factory.resolveForOrder('t1', ORDEN);
+
+    expect(postVenta.adapter).toBe(venta.adapter);
+  });
+
+  it('dos cuentas del mismo dueño, mismo PCC y misma versión: un adapter cada una, sin desalojarse', async () => {
+    // La agencia vende con su cuenta nueva y opera reservas viejas con la anterior. Con el dueño y
+    // el PCC solos en la clave, las dos compartían instancia (credenciales de una, reservas de la
+    // otra); con el desalojo por dueño, cada llamada reconstruía el adapter y pedía otro token.
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved({ id: 'acc-nueva' })),
+      () =>
+        Promise.resolve(
+          resolved({
+            id: 'acc-anterior',
+            credentials: { epr: 'OTRO-EPR', password: 'otra-clave', homePcc: HOME_PCC },
+          }),
+        ),
+    );
+
+    const venta = await factory.resolveForTenant('t1');
+    const postVenta = await factory.resolveForOrder('t1', ORDEN);
+    const ventaOtraVez = await factory.resolveForTenant('t1');
+
+    expect(postVenta.adapter).not.toBe(venta.adapter);
+    expect(ventaOtraVez.adapter).toBe(venta.adapter);
+    expect((await factory.resolveForOrder('t1', ORDEN)).adapter).toBe(postVenta.adapter);
+  });
+
+  it('al rotar la credencial de la cuenta de la orden, el adapter se reconstruye', async () => {
+    let updatedAt = new Date('2026-01-01T00:00:00Z');
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ updatedAt })),
+    );
+
+    const antes = await factory.resolveForOrder('t1', ORDEN);
+    updatedAt = new Date('2026-03-01T00:00:00Z');
+
+    expect((await factory.resolveForOrder('t1', ORDEN)).adapter).not.toBe(antes.adapter);
+  });
+
+  it('pasa por la misma puerta de credenciales: incompleta, sin adapter y sin eco del secreto', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ credentials: { epr: EPR, homePcc: HOME_PCC } })),
+    );
+
+    const err = await factory.resolveForOrder('t1', ORDEN).catch((e: unknown) => e);
+    warn.mockRestore();
+
+    // Incompleta es `NotFoundException`: para el registry, "la cuenta de la reserva no está".
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect((err as Error).message).toContain('password');
+    expect((err as Error).message).not.toContain(EPR);
+  });
+
+  it('una cuenta de otro proveedor no se usa, y el motivo no nombra ni la orden ni el tenant', async () => {
+    const { factory } = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.resolve(resolved({ providerCode: 'otro-proveedor' })),
+    );
+
+    const err = await factory.resolveForOrder('t1', ORDEN).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect((err as Error).message).not.toContain(ORDEN);
+    expect((err as Error).message).not.toContain('t1');
+  });
+
+  it('propaga la `NotFoundException` de la bóveda y cualquier otro fallo, sin caer a la vigente', async () => {
+    const fuera = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.reject(new NotFoundException('fuera de la red')),
+    );
+    const caida = factoryWithOrder(
+      () => Promise.resolve(resolved()),
+      () => Promise.reject(new Error('db down')),
+    );
+
+    await expect(fuera.factory.resolveForOrder('t1', ORDEN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(caida.factory.resolveForOrder('t1', ORDEN)).rejects.toThrow('db down');
+    expect(fuera.creds.resolve).not.toHaveBeenCalled();
+    expect(caida.creds.resolve).not.toHaveBeenCalled();
   });
 });
 
@@ -222,8 +381,48 @@ describe('SabreProviderFactory — entorno', () => {
   });
 });
 
+describe('SabreProviderFactory — la cuenta declara si es de pruebas', () => {
+  async function entornoDe(config: Record<string, unknown>): Promise<string | undefined> {
+    const factory = factoryWith(() => Promise.resolve(resolved({ config })));
+    return (await factory.resolveForTenant('t1')).providerEnvironment;
+  }
+
+  it('CERT (sin `environment`) es una cuenta de pruebas: sus tarifas salen marcadas', async () => {
+    expect(await entornoDe({})).toBe('test');
+  });
+
+  it('un `environment` desconocido, igual que CERT: de pruebas, nunca real', async () => {
+    expect(await entornoDe({ environment: 'produccion' })).toBe('test');
+    expect(await entornoDe({ environment: 'cert' })).toBe('test');
+  });
+
+  it('sólo `prod` explícito es una cuenta real', async () => {
+    expect(await entornoDe({ environment: 'prod' })).toBe('live');
+  });
+
+  it('el adapter cacheado sale con el mismo entorno que el recién construido', async () => {
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+
+    const primera = await factory.resolveForTenant('t1');
+    const segunda = await factory.resolveForTenant('t1');
+
+    expect(segunda.adapter).toBe(primera.adapter);
+    expect([primera.providerEnvironment, segunda.providerEnvironment]).toEqual(['test', 'test']);
+  });
+
+  it('el registry lo entrega a la búsqueda y a la venta', async () => {
+    const registry = new FlightProviderRegistry([factoryWith(() => Promise.resolve(resolved()))], {
+      decisionFor: () => Promise.resolve(ENCENDIDO),
+    });
+
+    const { active } = await registry.forTenant('t1');
+    expect(active.map((p) => p.environment)).toEqual(['test']);
+    expect((await registry.byCodeForOffer('t1', SABRE_PROVIDER_CODE)).environment).toBe('test');
+  });
+});
+
 describe('SabreProviderFactory — shopOptions por cuenta', () => {
-  it('sin configuración aplica single, cero rondas pagadas y MFPI apagado', () => {
+  it('sin configuración aplica single, cero rondas pagadas, MFPI apagado y sin NDC', () => {
     const parsed = sabreShopOptionsFromAccountConfig({});
     expect(parsed.invalidFields).toEqual([]);
     expect(parsed.options).toMatchObject({
@@ -231,15 +430,17 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 0,
       upsellLimit: 3,
       multipleFares: 'off',
+      ndcContent: false,
     });
   });
 
-  it('convierte los valores numéricos del formulario y conserva las cuatro palancas', () => {
+  it('convierte los valores del formulario y conserva las cinco palancas', () => {
     const parsed = sabreShopOptionsFromAccountConfig({
       brandedFares: 'upsell',
       brandLadderRounds: '2',
       upsellLimit: '5',
       multipleFares: 'with-baggage',
+      ndcContent: 'true',
     });
     expect(parsed.invalidFields).toEqual([]);
     expect(parsed.options).toMatchObject({
@@ -247,8 +448,31 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 2,
       upsellLimit: 5,
       multipleFares: 'with-baggage',
+      ndcContent: true,
     });
   });
+
+  it.each([
+    ['el texto "true" del select', 'true', true],
+    ['el texto "false" del select', 'false', false],
+    ['el texto con espacios del borde', ' true ', true],
+    ['un booleano de un POST directo', true, true],
+    ['un false de un POST directo', false, false],
+  ] as const)('ndcContent acepta %s', (_caso, valor, esperado) => {
+    const parsed = sabreShopOptionsFromAccountConfig({ ndcContent: valor });
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.options.ndcContent).toBe(esperado);
+  });
+
+  it.each([['TRUE'], ['1'], ['on'], ['sí'], [1], ['']])(
+    'ndcContent=%j no se adivina: cae al conjunto conservador, con NDC apagado',
+    (valor) => {
+      const parsed = sabreShopOptionsFromAccountConfig({ ndcContent: valor, brandedFares: 'off' });
+      expect(parsed.invalidFields).toEqual(['ndcContent']);
+      // Conservador ENTERO, no sólo NDC: también vuelve `brandedFares` a su default.
+      expect(parsed.options).toMatchObject({ ndcContent: false, brandedFares: 'single' });
+    },
+  );
 
   it('una entrada manipulada cae al conjunto conservador y sólo revela nombres de campo', () => {
     const parsed = sabreShopOptionsFromAccountConfig({
@@ -256,11 +480,13 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: '2.5',
       upsellLimit: '-1',
       multipleFares: 'todo',
+      ndcContent: 'encendidisimo',
     });
     expect(parsed.invalidFields).toEqual([
       'brandLadderRounds',
       'brandedFares',
       'multipleFares',
+      'ndcContent',
       'upsellLimit',
     ]);
     expect(parsed.options).toMatchObject({
@@ -268,11 +494,14 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
       brandLadderRounds: 0,
       upsellLimit: 3,
       multipleFares: 'off',
+      ndcContent: false,
     });
     expect(JSON.stringify(parsed)).not.toContain('todas-siempre');
+    expect(JSON.stringify(parsed)).not.toContain('encendidisimo');
   });
 
-  it('pasa las opciones parseadas al adapter que construye el request BFM', async () => {
+  /** Busca con la cuenta indicada y devuelve los cuerpos de shop que salieron por `fetch`. */
+  async function shopBodiesFor(config: Record<string, unknown>): Promise<string[]> {
     const shopBodies: string[] = [];
     vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
       if (String(input).includes('/v2/auth/token')) {
@@ -295,18 +524,7 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
     });
 
     try {
-      const factory = factoryWith(() =>
-        Promise.resolve(
-          resolved({
-            config: {
-              brandedFares: 'upsell',
-              brandLadderRounds: '2',
-              upsellLimit: '5',
-              multipleFares: 'with-baggage',
-            },
-          }),
-        ),
-      );
+      const factory = factoryWith(() => Promise.resolve(resolved({ config })));
       const adapter = await factory.forTenant('t1');
       await adapter.search(
         {
@@ -321,12 +539,41 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+    return shopBodies;
+  }
 
-    const firstRequest = shopBodies[0] ?? '';
+  it('pasa las opciones parseadas al adapter que construye el request BFM', async () => {
+    const [firstRequest = ''] = await shopBodiesFor({
+      brandedFares: 'upsell',
+      brandLadderRounds: '2',
+      upsellLimit: '5',
+      multipleFares: 'with-baggage',
+      ndcContent: 'true',
+    });
+
     expect(firstRequest).toContain('"SingleBrandedFare":true');
     expect(firstRequest).toContain('"MultipleBrandedFares":true');
     expect(firstRequest).toContain('"UpsellLimit":5');
     expect(firstRequest).toContain('"FlexibleFares"');
+    expect(firstRequest).toContain(
+      '"DataSources":{"NDC":"Enable","ATPCO":"Enable","LCC":"Disable"}',
+    );
+  });
+
+  it('una cuenta que no dice nada de NDC no lo pide a Sabre', async () => {
+    const bodies = await shopBodiesFor({});
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(body).toContain('"DataSources":{"NDC":"Disable","ATPCO":"Enable","LCC":"Disable"}');
+    }
+  });
+
+  it('el "false" del formulario apaga NDC: no lo enciende por ser una cadena no vacía', async () => {
+    const bodies = await shopBodiesFor({ ndcContent: 'false' });
+
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) expect(body).toContain('"NDC":"Disable"');
   });
 });
 
@@ -341,6 +588,13 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
       pay: false,
       services: false,
       reshop: false,
+      // La emisión está cableada, pero nace apagada: sin `SABRE_OPERATIONS` no se ofrece.
+      issue: false,
+      // Igual la anulación y la consulta de condiciones que la acompaña (SAB-09).
+      ticketCheck: false,
+      void: false,
+      // Y la elección de asiento al reservar (SAB-16), hasta certificarla en CERT (SAB-21).
+      seatMap: false,
     });
   });
 
@@ -464,6 +718,72 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
   });
 });
 
+/**
+ * El plazo de emisión de una lectura lleva la zona de la oficina de la cuenta (SAB-14): Sabre da la
+ * fecha y la hora del PCC sin zona, y sin ella la post-venta no puede avisar antes de que venza.
+ */
+describe('SabreFlightProviderAdapter — la zona de la oficina en el plazo de la lectura', () => {
+  const ctx = { tenantId: 't1' };
+  const lectura = (ticketingDeadline?: {
+    date: string;
+    time?: string;
+    zone: 'UTC' | 'PROVIDER_LOCAL';
+  }) => ({
+    found: true,
+    airlineLocators: [],
+    warnings: [],
+    ...(ticketingDeadline === undefined ? {} : { ticketingDeadline }),
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('withOfficeTimeZone pega la zona sólo a un plazo en la hora de la oficina', () => {
+    expect(
+      withOfficeTimeZone(
+        lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+        'America/Lima',
+      ).ticketingDeadline,
+    ).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+    // Un plazo UTC ya tiene instante; una lectura sin plazo no gana uno.
+    const utc = lectura({ date: '2026-10-20', time: '18:00', zone: 'UTC' });
+    expect(withOfficeTimeZone(utc, 'America/Lima')).toBe(utc);
+    const sinPlazo = lectura();
+    expect(withOfficeTimeZone(sinPlazo, 'America/Lima')).toBe(sinPlazo);
+    // Una zona que el motor no conoce no se pega.
+    const local = lectura({ date: '2026-10-20', zone: 'PROVIDER_LOCAL' });
+    expect(withOfficeTimeZone(local, 'Marte/Olympus')).toBe(local);
+  });
+
+  it('la lectura sale con la zona que declara la cuenta, o con la de por defecto', async () => {
+    vi.spyOn(SabreOrderManageAdapter.prototype, 'retrieveForDisplay').mockResolvedValue(
+      lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+    );
+
+    const lima = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { pccTimeZone: 'America/Lima' } })),
+    ).forTenant('t1');
+    expect((await lima.retrieveForDisplay('ABC123', ctx)).ticketingDeadline).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+
+    // Sin zona declarada, la de la cuenta por defecto: la misma con que se pidió el plazo.
+    const porDefecto = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    expect((await porDefecto.retrieveForDisplay('ABC123', ctx)).ticketingDeadline?.timeZone).toBe(
+      'America/Bogota',
+    );
+  });
+});
+
 describe('SabreOfferRevalidationRouter — carril por fuente', () => {
   const result = { offer: {} as never, priceChanged: false, warnings: [] };
   const criteria = {} as never;
@@ -568,6 +888,646 @@ describe('SabreProviderFactory — humanizeError no hace eco del proveedor', () 
   });
 });
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Lo que el factory INYECTA: logger, cliente compartido y las dos mitades de la cuenta
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Por el adapter que devuelve el factory y con `fetch` global interceptado: es exactamente lo que
+ * corre en producción. Sabre no se llama — cada ruta tiene su respuesta escrita en el test, con la
+ * forma del contrato.
+ */
+
+const PNR = 'QWERTY';
+const PII = {
+  givenName: 'MARIA',
+  surname: 'QUISPE',
+  birthdate: '1990-05-14',
+  document: 'AB1234567',
+  email: 'maria.quispe@example.com',
+  phone: '+51 (1) 555-0142',
+} as const;
+
+const RUTA_TOKEN = '/v2/auth/token';
+const RUTA_SHOP = '/v5/offers/shop';
+const RUTA_CREATE = '/v1/trip/orders/createBooking';
+const RUTA_GET = '/v1/trip/orders/getBooking';
+const RUTA_CANCEL = '/v1/trip/orders/cancelBooking';
+
+function respuesta(body: unknown, status = 200): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+}
+
+function tokenOk(): Promise<Response> {
+  return respuesta({ access_token: 'ATK-DE-PRUEBA', expires_in: 3600 });
+}
+
+/** Oferta ATPCO con itinerario: el carril que `createBooking` reconstruye como `flightDetails`. */
+function ofertaAtpco(): Offer {
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    tenantId: 't1',
+    products: ['flight'],
+    provider: { name: 'sabre', offerRef: 'shop-ref', source: 'ATPCO', raw: {} },
+    total: { amountMinor: 23780, currency: 'USD' },
+    baseFare: { amountMinor: 19348, currency: 'USD' },
+    taxes: { amountMinor: 4432, currency: 'USD' },
+    itineraries: [
+      {
+        segments: [
+          {
+            carrier: 'AA',
+            flightNumber: '76',
+            origin: 'JFK',
+            destination: 'SFO',
+            departureAt: '2026-12-11T06:00:00-05:00',
+            arrivalAt: '2026-12-11T09:43:00-08:00',
+            durationMinutes: 403,
+            cabin: 'economy',
+            bookingClass: 'B',
+          },
+        ],
+        totalDurationMinutes: 403,
+        stops: 0,
+      },
+    ],
+    fetchedAt: '2026-10-11T11:30:00.000Z',
+    expiresAt: '2026-10-11T11:31:30.000Z',
+    expiresAtSource: 'platform-policy',
+  };
+}
+
+function pedidoDeReserva(): OrderCreateRequest {
+  return {
+    offer: ofertaAtpco(),
+    criteria: {
+      origin: 'JFK',
+      destination: 'SFO',
+      departureDate: '2026-12-11',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+      currency: 'USD',
+    },
+    passengers: [
+      {
+        paxId: 'PAX-1',
+        requestedTravelerIndex: 0,
+        paxType: 'ADT',
+        title: 'Mrs',
+        givenName: PII.givenName,
+        surname: PII.surname,
+        birthdate: PII.birthdate,
+        gender: 'F',
+        citizenshipCountryCode: 'PE',
+        identityDoc: {
+          type: 'P',
+          number: PII.document,
+          issuingCountryCode: 'PE',
+          expiryDate: '2030-01-31',
+        },
+      },
+    ],
+    contactInfo: { email: PII.email, phone: PII.phone },
+  };
+}
+
+/**
+ * Las líneas que llegan al `Logger` de Nest, en el formato `mensaje {meta}` de `loggerPort`, en los
+ * niveles que PRODUCCIÓN conserva: `main.ts` arranca Nest con `['log', 'warn', 'error']`. `debug`
+ * se silencia sin capturarse, porque contarlo daba por emitida una traza que en producción se
+ * descarta (así pasó con el éxito de createBooking, getBooking y cancelBooking).
+ */
+function capturarLog(): string[] {
+  const lineas: string[] = [];
+  const capturar = (...args: unknown[]): void => {
+    lineas.push(String(args[0]));
+  };
+  vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+  vi.spyOn(Logger.prototype, 'log').mockImplementation(capturar);
+  vi.spyOn(Logger.prototype, 'warn').mockImplementation(capturar);
+  vi.spyOn(Logger.prototype, 'error').mockImplementation(capturar);
+  return lineas;
+}
+
+function metaDe(lineas: readonly string[], mensaje: string): Record<string, unknown> {
+  const linea = lineas.find((l) => l.startsWith(`${mensaje} `));
+  if (linea === undefined) throw new Error(`no se emitió ${mensaje}: [${lineas.join(' | ')}]`);
+  return JSON.parse(linea.slice(mensaje.length + 1)) as Record<string, unknown>;
+}
+
+/**
+ * «Sólo códigos y conteos», como propiedad y no como lista de claves: números, booleanos y
+ * cadenas de vocabulario cerrado (sin espacios, sin `@`, sin `+`), a cualquier profundidad. Un
+ * nombre, un correo o un teléfono no caben en esa forma. La marca de redacción se admite: es lo que
+ * `redactMeta` deja donde una clave lo manda tapar (`withTargetPcc` cae por el fragmento `pcc`).
+ */
+function soloCodigosYConteos(valor: unknown, ruta = 'meta'): string[] {
+  if (valor === null || valor === undefined) return [];
+  if (typeof valor === 'number' || typeof valor === 'boolean') return [];
+  if (typeof valor === 'string') {
+    return valor === REDACTED || /^[A-Za-z0-9_.:/-]{0,80}$/.test(valor) ? [] : [`${ruta}=${valor}`];
+  }
+  if (Array.isArray(valor)) return valor.flatMap((v, i) => soloCodigosYConteos(v, `${ruta}.${i}`));
+  if (typeof valor === 'object') {
+    return Object.entries(valor as Record<string, unknown>).flatMap(([k, v]) =>
+      soloCodigosYConteos(v, `${ruta}.${k}`),
+    );
+  }
+  return [`${ruta}: tipo ${typeof valor}`];
+}
+
+describe('SabreProviderFactory — las trazas de una reserva llegan al log de producción', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function rutasDeReserva(): void {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const ruta = new URL(String(input)).pathname;
+      switch (ruta) {
+        case RUTA_TOKEN:
+          return tokenOk();
+        case RUTA_CREATE:
+          return respuesta({
+            timestamp: '2026-10-11T12:00:00',
+            confirmationId: PNR,
+            booking: {
+              bookingId: PNR,
+              flights: [{ itemId: '1', flightStatusCode: 'HK', flightStatusName: 'Confirmed' }],
+            },
+          });
+        case RUTA_GET:
+          return respuesta({
+            bookingId: PNR,
+            isCancelable: true,
+            isTicketed: false,
+            flights: [
+              {
+                itemId: '1',
+                confirmationId: 'AB123',
+                airlineCode: 'AA',
+                sourceType: 'ATPCO',
+                flightStatusCode: 'HK',
+                flightStatusName: 'Confirmed',
+              },
+            ],
+            travelers: [{ givenName: PII.givenName, surname: PII.surname }],
+          });
+        case RUTA_CANCEL:
+          return respuesta({ timestamp: '2026-10-11T12:00:02' });
+        default:
+          throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+      }
+    });
+  }
+
+  it('createBooking, getBooking y cancelBooking se emiten, y sólo con códigos y conteos', async () => {
+    rutasDeReserva();
+    const lineas = capturarLog();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter) || !supportsAuditedCancel(adapter)) {
+      throw new Error('el adapter de Sabre perdió los puertos auditados');
+    }
+    const ctx = { tenantId: 't1', requestId: 'req-traza' };
+
+    await adapter.createOrderAudited(pedidoDeReserva(), ctx);
+    await adapter.cancelOrderAudited(PNR, ctx);
+
+    const creacion = metaDe(lineas, 'sabre.createBooking');
+    expect(creacion).toMatchObject({
+      provider: 'sabre',
+      outcome: 'CONFIRMED',
+      items: 1,
+      issues: 0,
+    });
+    const lectura = metaDe(lineas, 'sabre.getBooking');
+    expect(lectura).toMatchObject({ provider: 'sabre', withSurnameCheck: false, items: 1 });
+    const cancelacion = metaDe(lineas, 'sabre.cancelBooking');
+    expect(cancelacion).toMatchObject({
+      provider: 'sabre',
+      cancelAll: true,
+      ticketCheckPerformed: false,
+      outcome: expect.any(String) as unknown,
+    });
+
+    for (const meta of [creacion, lectura, cancelacion]) {
+      expect(soloCodigosYConteos(meta)).toEqual([]);
+    }
+    // Y barrido sobre TODO lo que llegó al log, no sólo esas tres líneas.
+    const volcado = lineas.join('\n');
+    for (const prohibido of [
+      PNR,
+      ...Object.values(PII),
+      EPR,
+      PASSWORD,
+      HOME_PCC,
+      'ATK-DE-PRUEBA',
+    ]) {
+      expect(volcado, `el log publicó ${prohibido}`).not.toContain(prohibido);
+    }
+  });
+});
+
+describe('SabreProviderFactory — política de emisión por cuenta', () => {
+  it('sin configuración: con plazo, 2 h de margen, CASH y la hora de Bogotá', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({});
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.settings).toEqual({
+      policy: 'TICKETING_TIME_LIMIT',
+      leadHours: 2,
+      formOfPayment: 'CASH',
+      pccTimeZone: 'America/Bogota',
+    });
+  });
+
+  it('convierte los valores del formulario a la configuración del ACL', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '6',
+      ticketingFormOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    });
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.settings).toEqual({
+      policy: 'FUTURE_TICKETING',
+      leadHours: 6,
+      formOfPayment: 'ON_ACCOUNT',
+      pccTimeZone: 'America/Lima',
+    });
+  });
+
+  it('cada valor inválido vuelve a SU default y sólo se nombra el campo', () => {
+    const parsed = sabreTicketingSettingsFromAccountConfig({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      ticketingLeadHours: '2.5',
+      ticketingFormOfPayment: 'PAYMENTCARD',
+      pccTimeZone: 'Marte/Base_Alfa',
+    });
+    expect(parsed.invalidFields).toEqual([
+      'pccTimeZone',
+      'ticketingFormOfPayment',
+      'ticketingLeadHours',
+    ]);
+    // La política válida se conserva: un margen mal escrito no devuelve la cuenta a «con plazo».
+    expect(parsed.settings).toEqual({
+      policy: 'FUTURE_TICKETING',
+      leadHours: 2,
+      formOfPayment: 'CASH',
+      pccTimeZone: 'America/Bogota',
+    });
+    expect(JSON.stringify(parsed)).not.toContain('PAYMENTCARD');
+    expect(JSON.stringify(parsed)).not.toContain('Marte');
+  });
+
+  it.each([['-1'], ['73'], ['dos'], [''], [2.5], [true]])(
+    'ticketingLeadHours=%j no se adivina: vuelve a 2 h',
+    (valor) => {
+      const parsed = sabreTicketingSettingsFromAccountConfig({ ticketingLeadHours: valor });
+      expect(parsed.invalidFields).toEqual(['ticketingLeadHours']);
+      expect(parsed.settings.leadHours).toBe(2);
+    },
+  );
+
+  it.each([['TODAY'], ['ALREADY_TICKETED'], ['future_ticketing']])(
+    'ticketingPolicy=%j no es una política que la cuenta pueda elegir',
+    (valor) => {
+      const parsed = sabreTicketingSettingsFromAccountConfig({ ticketingPolicy: valor });
+      expect(parsed.invalidFields).toEqual(['ticketingPolicy']);
+      expect(parsed.settings.policy).toBe('TICKETING_TIME_LIMIT');
+    },
+  );
+
+  /** Reserva por el adapter del factory y devuelve el body de `createBooking` que salió. */
+  async function bookingBodyFor(
+    account: Partial<ResolvedProviderAccount>,
+    audited: boolean,
+  ): Promise<{ body: Record<string, unknown>; audit?: Readonly<Record<string, unknown>> }> {
+    const bodies: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta !== RUTA_CREATE) throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+      if (typeof init?.body === 'string') bodies.push(init.body);
+      return respuesta({
+        confirmationId: PNR,
+        booking: {
+          bookingId: PNR,
+          flights: [{ itemId: '1', flightStatusCode: 'HK', flightStatusName: 'Confirmed' }],
+        },
+      });
+    });
+
+    const pedido = pedidoDeReserva();
+    // Un plazo de Flight Check lejano, para que el cálculo no dependa del día en que corre el test.
+    const conPlazo: OrderCreateRequest = {
+      ...pedido,
+      offer: {
+        ...pedido.offer,
+        provider: {
+          ...pedido.offer.provider,
+          raw: { flightCheckPaymentTimeLimit: '2030-01-01T05:00:00.000Z' },
+        },
+      },
+    };
+    try {
+      const adapter = await factoryWith(() => Promise.resolve(resolved(account))).forTenant('t1');
+      const ctx = { tenantId: 't1', requestId: 'req-emision' };
+      let audit: Readonly<Record<string, unknown>> | undefined;
+      if (audited) {
+        if (!supportsAuditedCreate(adapter)) throw new Error('sin creación auditada');
+        audit = (await adapter.createOrderAudited(conPlazo, ctx)).audit;
+      } else {
+        await adapter.createOrder(conPlazo, ctx);
+      }
+      const [body] = bodies;
+      if (body === undefined) throw new Error('createBooking no salió');
+      return {
+        body: JSON.parse(body) as Record<string, unknown>,
+        ...(audit === undefined ? {} : { audit }),
+      };
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it.each([
+    ['la creación auditada', true],
+    ['la creación del puerto', false],
+  ] as const)(
+    '%s sale con la política de la cuenta y firmada por la plataforma',
+    async (_c, auditada) => {
+      const { body } = await bookingBodyFor({}, auditada);
+
+      expect(body['receivedFrom']).toBe(SABRE_RECEIVED_FROM);
+      expect(body['agency']).toEqual({
+        ticketingPolicy: 'TICKETING_TIME_LIMIT',
+        // 05:00 UTC menos 2 h = 03:00 UTC = 22:00 del 31 de diciembre en Bogotá.
+        ticketingTimeLimitPolicy: {
+          airlineCode: 'AA',
+          ticketingDate: '2029-12-31',
+          ticketingTime: '22:00',
+        },
+      });
+      // D1: la reserva sigue con CASH, nunca con tarjeta.
+      expect(body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+    },
+  );
+
+  it('el margen y la zona de la cuenta llegan al plazo, y el evento cita la política', async () => {
+    const { body, audit } = await bookingBodyFor(
+      { config: { ticketingLeadHours: '0', pccTimeZone: 'America/Sao_Paulo' } },
+      true,
+    );
+
+    expect(body['agency']).toMatchObject({
+      ticketingTimeLimitPolicy: { ticketingDate: '2030-01-01', ticketingTime: '02:00' },
+    });
+    expect(audit).toMatchObject({
+      ticketingPolicy: 'TICKETING_TIME_LIMIT',
+      ticketingDeadlineSource: 'PROVIDER',
+    });
+  });
+
+  it('emisión futura con PCC de emisión en la cuenta: la reserva queda para esa oficina', async () => {
+    const { body, audit } = await bookingBodyFor(
+      {
+        config: { ticketingPolicy: 'FUTURE_TICKETING' },
+        credentials: { epr: EPR, password: PASSWORD, homePcc: HOME_PCC, ticketingPcc: 'T1CK' },
+      },
+      true,
+    );
+
+    expect(body['agency']).toEqual({
+      ticketingPolicy: 'FUTURE_TICKETING',
+      futureTicketingPolicy: { ticketingPcc: 'T1CK' },
+    });
+    expect(audit).toMatchObject({ ticketingPolicy: 'FUTURE_TICKETING' });
+    // El evento no nombra oficinas.
+    expect(JSON.stringify(audit)).not.toContain('T1CK');
+  });
+
+  it('una configuración inválida reserva con los defaults y lo avisa sin el valor', async () => {
+    const lineas = capturarLog();
+    try {
+      const { body } = await bookingBodyFor(
+        { config: { ticketingLeadHours: '999', ticketingFormOfPayment: 'PAYMENTCARD' } },
+        false,
+      );
+      expect(body['agency']).toMatchObject({ ticketingPolicy: 'TICKETING_TIME_LIMIT' });
+      expect(body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+
+      const aviso = lineas.find((l) => l.startsWith('configuración de emisión de Sabre inválida'));
+      expect(aviso).toContain('ticketingFormOfPayment');
+      expect(aviso).toContain('ticketingLeadHours');
+      expect(aviso).not.toContain('999');
+      expect(aviso).not.toContain('PAYMENTCARD');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('SabreProviderFactory — el cupo de concurrencia es de la CUENTA, búsqueda incluida', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** `fetch` global que deja colgadas shop y createBooking hasta que el test las suelta. */
+  function colgarRutas(): {
+    abiertas: (pcc?: string) => string[];
+    soltar: (ruta: string) => void;
+    soltarTodo: () => void;
+  } {
+    const pendientes: Array<{ ruta: string; pcc: string; soltar: () => void }> = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      const pcc = (init?.body as string | undefined)?.includes('"B2C3"') ? 'B2C3' : HOME_PCC;
+      return new Promise<Response>((resolve) => {
+        pendientes.push({
+          ruta,
+          pcc,
+          // Un 400 cierra la llamada sin reintentos ni segunda búsqueda: lo único que se mide
+          // aquí es cuántas hay abiertas a la vez.
+          soltar: () => resolve(new Response('{"error":"invalid_request"}', { status: 400 })),
+        });
+      });
+    });
+    return {
+      abiertas: (pcc) =>
+        pendientes.filter((p) => pcc === undefined || p.pcc === pcc).map((p) => p.ruta),
+      soltar: (ruta) => {
+        const i = pendientes.findIndex((p) => p.ruta === ruta);
+        const [p] = pendientes.splice(i, 1);
+        p?.soltar();
+      },
+      soltarTodo: () => {
+        for (const p of pendientes.splice(0)) p.soltar();
+      },
+    };
+  }
+
+  async function asentar(): Promise<void> {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  const criterios = {
+    origin: 'BOG',
+    destination: 'LIM',
+    departureDate: '2026-12-01',
+    paxCount: { adults: 1, children: 0, infants: 0 },
+    currency: 'USD',
+  };
+
+  it('cuatro búsquedas salen a la vez, la reserva espera su hueco y otra cuenta no espera', async () => {
+    capturarLog();
+    const cable = colgarRutas();
+    const factory = factoryWith((tenantId) =>
+      Promise.resolve(
+        tenantId === 't2'
+          ? resolved({
+              id: 'acc-sabre-2',
+              ownerTenantId: 'owner-2',
+              credentials: { epr: EPR, password: PASSWORD, homePcc: 'B2C3' },
+            })
+          : resolved(),
+      ),
+    );
+    const cuenta = await factory.forTenant('t1');
+    const otraCuenta = await factory.forTenant('t2');
+    const ctx = { tenantId: 't1' };
+
+    const busquedas = [1, 2, 3, 4].map(() => cuenta.search(criterios, ctx).catch(() => undefined));
+    await asentar();
+    // El fan-out no se serializa: las cuatro del cupo por defecto están en el cable.
+    expect(cable.abiertas(HOME_PCC)).toEqual([RUTA_SHOP, RUTA_SHOP, RUTA_SHOP, RUTA_SHOP]);
+
+    // La reserva usa el MISMO cliente: con un cliente propio de la búsqueda saldría ya.
+    const reserva = cuenta.createOrder(pedidoDeReserva(), ctx).catch(() => undefined);
+    await asentar();
+    expect(cable.abiertas(HOME_PCC)).not.toContain(RUTA_CREATE);
+
+    // Otra cuenta tiene su propio cupo.
+    const ajena = otraCuenta.search(criterios, { tenantId: 't2' }).catch(() => undefined);
+    await asentar();
+    expect(cable.abiertas('B2C3')).toEqual([RUTA_SHOP]);
+
+    cable.soltar(RUTA_SHOP);
+    await asentar();
+    expect(cable.abiertas(HOME_PCC)).toContain(RUTA_CREATE);
+    expect(cable.abiertas(HOME_PCC)).toHaveLength(4);
+
+    cable.soltarTodo();
+    await Promise.all([...busquedas, reserva, ajena]);
+  });
+
+  it('el cupo CONTRACTUAL de la cuenta sale de `config.maxConcurrentRequests`, también como texto', async () => {
+    capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: '2' } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    // Dos, no el default de cuatro: el número del contrato manda.
+    expect(cable.abiertas()).toEqual([RUTA_SHOP, RUTA_SHOP]);
+
+    cable.soltar(RUTA_SHOP);
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(2);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
+  });
+
+  it('un `maxConcurrentRequests` inválido se avisa y deja el default, sin tumbar la cuenta', async () => {
+    const lineas = capturarLog();
+    const cable = colgarRutas();
+    const cuenta = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { maxConcurrentRequests: 0 } })),
+    ).forTenant('t1');
+
+    const busquedas = [1, 2, 3, 4, 5].map(() =>
+      cuenta.search(criterios, { tenantId: 't1' }).catch(() => undefined),
+    );
+    await asentar();
+    expect(cable.abiertas()).toHaveLength(4);
+    expect(lineas.some((l) => l.includes('config.maxConcurrentRequests inválida'))).toBe(true);
+
+    cable.soltarTodo();
+    await asentar();
+    cable.soltarTodo();
+    await Promise.all(busquedas);
+  });
+});
+
+describe('SabreProviderFactory — cabeceras de grupo desde las dos mitades de la cuenta', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function cabecerasDeShop(
+    credentials: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): Promise<Record<string, string>> {
+    let cabeceras: Record<string, string> = {};
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === RUTA_TOKEN) return tokenOk();
+      cabeceras = (init?.headers ?? {}) as Record<string, string>;
+      return respuesta({ error: 'invalid_request' }, 400);
+    });
+    const adapter = await factoryWith(() =>
+      Promise.resolve(resolved({ credentials, config })),
+    ).forTenant('t1');
+    await adapter
+      .search(
+        {
+          origin: 'BOG',
+          destination: 'LIM',
+          departureDate: '2026-12-01',
+          paxCount: { adults: 1, children: 0, infants: 0 },
+          currency: 'USD',
+        },
+        { tenantId: 't1' },
+      )
+      .catch(() => undefined);
+    return cabeceras;
+  }
+
+  it('guardadas en el blob CIFRADO también salen: la spec las declara `encrypted-or-config`', async () => {
+    const cabeceras = await cabecerasDeShop(
+      {
+        epr: EPR,
+        password: PASSWORD,
+        homePcc: HOME_PCC,
+        sabreGroup: 'W0H3',
+        sabreCurrentCity: 'BOG',
+      },
+      {},
+    );
+    expect(cabeceras['X-Sabre-Group']).toBe('W0H3');
+    expect(cabeceras['X-Sabre-Current-City']).toBe('BOG');
+  });
+
+  it('desde `config` siguen saliendo como hasta hoy', async () => {
+    const cabeceras = await cabecerasDeShop(
+      { epr: EPR, password: PASSWORD, homePcc: HOME_PCC },
+      { sabreGroup: 'W0H3', sabreCurrentCity: 'LIM' },
+    );
+    expect(cabeceras['X-Sabre-Group']).toBe('W0H3');
+    expect(cabeceras['X-Sabre-Current-City']).toBe('LIM');
+  });
+});
+
 /**
  * Puerta pública: el registry es quien decide si Sabre entra en una búsqueda. Probar el factory
  * aislado no demuestra que un tenant sin cuenta no vea ofertas de Sabre.
@@ -660,6 +1620,79 @@ describe('FlightProviderRegistry + Sabre', () => {
     // factory devolviera un adapter de plataforma, el registry lo dejaría fuera.
     const registry = registryWith(() => Promise.reject(new NotFoundException('none')));
     expect(await registry.codesForTenant('t1')).toEqual([]);
+  });
+
+  describe('post-venta con la cuenta de la reserva', () => {
+    function registryConOrden(resolveForOrder: ProviderCredentialsService['resolveForOrder']) {
+      const creds = {
+        resolve: vi.fn(() => Promise.resolve(resolved({ id: 'acc-vigente' }))),
+        resolveForOrder: vi.fn(resolveForOrder),
+      };
+      const registry = new FlightProviderRegistry(
+        [new SabreProviderFactory(creds as unknown as ProviderCredentialsService)],
+        { decisionFor: () => Promise.resolve(ENCENDIDO) },
+      );
+      return { registry, creds };
+    }
+
+    it('las órdenes de Sabre guardan la cuenta: su factory sabe volver a operar con ella', () => {
+      const { registry } = registryConOrden(() => Promise.resolve(resolved()));
+      expect(registry.recordsOrderAccount(SABRE_PROVIDER_CODE)).toBe(true);
+    });
+
+    it('lo que se reserva con Sabre lo liquida la red: retiene la cartera como un hotel (SAB-10)', () => {
+      const { registry } = registryConOrden(() => Promise.resolve(resolved()));
+      expect(registry.settlementOf(SABRE_PROVIDER_CODE)).toBe('network-wallet');
+    });
+
+    it('una orden con cuenta sale con ESA cuenta aunque el tenant tenga otra vigente', async () => {
+      const { registry, creds } = registryConOrden(() =>
+        Promise.resolve(resolved({ id: 'acc-de-la-orden', inherited: true })),
+      );
+
+      const p = await registry.forOrder('t1', {
+        orderId: 'order-1',
+        provider: SABRE_PROVIDER_CODE,
+        providerAccountId: 'acc-de-la-orden',
+      });
+
+      expect(creds.resolveForOrder).toHaveBeenCalledWith('t1', 'order-1');
+      expect(creds.resolve).not.toHaveBeenCalled();
+      expect(p).toMatchObject({
+        code: SABRE_PROVIDER_CODE,
+        accountId: 'acc-de-la-orden',
+        credentialSource: 'inherited',
+        environment: 'test',
+      });
+    });
+
+    it('si la cuenta de la orden ya no está en la red, 409 y nunca la vigente', async () => {
+      const { registry, creds } = registryConOrden(() =>
+        Promise.reject(new NotFoundException('fuera de la red')),
+      );
+
+      await expect(
+        registry.forOrder('t1', {
+          orderId: 'order-1',
+          provider: SABRE_PROVIDER_CODE,
+          providerAccountId: 'acc-de-la-orden',
+        }),
+      ).rejects.toBeInstanceOf(ProviderOrderAccountUnavailableError);
+      expect(creds.resolve).not.toHaveBeenCalled();
+    });
+
+    it('una orden vieja, sin cuenta guardada, sigue con la vigente como antes', async () => {
+      const { registry, creds } = registryConOrden(() => Promise.resolve(resolved()));
+
+      const p = await registry.forOrder('t1', {
+        orderId: 'order-1',
+        provider: SABRE_PROVIDER_CODE,
+        providerAccountId: null,
+      });
+
+      expect(creds.resolveForOrder).not.toHaveBeenCalled();
+      expect(p.accountId).toBe('acc-vigente');
+    });
   });
 });
 
@@ -763,5 +1796,525 @@ d('SabreProviderFactory — jerarquía consolidador → agencia → sub-agencia'
     }
     await db.onModuleDestroy();
     await pool.end();
+  });
+});
+
+/**
+ * La emisión de tiquetes (SAB-08) y `SABRE_OPERATIONS`. Por la puerta pública del factory, con
+ * `fetch` interceptado: lo que sale es lo que saldría en producción. Sabre no se llama.
+ */
+describe('SabreProviderFactory — SABRE_OPERATIONS', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('vacía o sin definir no enciende nada', () => {
+    expect([...parseSabreOperations(undefined)]).toEqual([]);
+    expect([...parseSabreOperations('')]).toEqual([]);
+    expect([...parseSabreOperations(' , ')]).toEqual([]);
+  });
+
+  it('lee la lista separada por comas, sin importar espacios ni repetidos', () => {
+    expect([...parseSabreOperations(' issue, void ,issue')].sort()).toEqual(['issue', 'void']);
+    expect([...parseSabreOperations(SABRE_OPERATIONS.join(','))].sort()).toEqual(
+      [...SABRE_OPERATIONS].sort(),
+    );
+  });
+
+  it.each([['isue'], ['Issue'], ['issue,refound'], ['todo']])(
+    '%j no se adivina: lanza nombrando lo que no reconoce',
+    (raw) => {
+      let error: unknown;
+      try {
+        parseSabreOperations(raw);
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(SabreOperationsConfigError);
+      const invalid = (error as SabreOperationsConfigError).invalid;
+      expect(invalid.length).toBeGreaterThan(0);
+      expect(invalid).not.toContain('issue');
+    },
+  );
+
+  it('un valor inválido tumba la construcción del factory: el arranque falla ruidoso', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue,anular');
+    expect(() => factoryWith(() => Promise.resolve(resolved()))).toThrow(
+      SabreOperationsConfigError,
+    );
+  });
+
+  it('con `issue` encendida, la capacidad `issue` sale en true y el adapter sabe emitir', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue');
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities.issue).toBe(true);
+    expect(supportsTicketing(await factory.forTenant('t1'))).toBe(true);
+  });
+
+  it('`void` sola no enciende la emisión', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'void');
+    expect(factoryWith(() => Promise.resolve(resolved())).capabilities.issue).toBe(false);
+  });
+});
+
+describe('SabreProviderFactory — la emisión está CABLEADA al ACL, sin tarjeta', () => {
+  const RUTA_FULFILL = '/v1/trip/orders/fulfillFlightTickets';
+  const EMISION = JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'providers',
+        'sabre',
+        'src',
+        '__fixtures__',
+        'fulfill-atpco-cash-200.json',
+      ),
+      'utf8',
+    ),
+  ) as Record<string, unknown>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  /** Emite por el adapter del factory y devuelve lo que salió al cable. */
+  async function emitir(account: Partial<ResolvedProviderAccount> = {}, operations = 'issue') {
+    vi.stubEnv('SABRE_OPERATIONS', operations);
+    const rutas: string[] = [];
+    const emisiones: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_GET) {
+        return respuesta({
+          bookingId: PNR,
+          isCancelable: true,
+          flights: [
+            {
+              itemId: '1',
+              confirmationId: 'AB123',
+              airlineCode: 'AV',
+              sourceType: 'ATPCO',
+              flightStatusCode: 'HK',
+              flightStatusName: 'Confirmed',
+            },
+          ],
+        });
+      }
+      if (ruta === RUTA_FULFILL) {
+        if (typeof init?.body === 'string') {
+          emisiones.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return respuesta(EMISION);
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved(account))).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+    const result = await adapter
+      .issueTickets(PNR, { tenantId: 't1', requestId: 'req-emision' }, { travelerCount: 1 })
+      .catch((error: unknown) => error);
+    return { result, rutas, emisiones };
+  }
+
+  it('lee la reserva, emite UNA vez con CASH y devuelve el desenlace del puerto', async () => {
+    const { result, rutas, emisiones } = await emitir();
+
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_FULFILL]);
+    expect(emisiones).toHaveLength(1);
+    const cuerpo = emisiones[0]!;
+    expect(cuerpo).toMatchObject({
+      confirmationId: PNR,
+      formsOfPayment: [{ type: 'CASH' }],
+      acceptPriceChanges: false,
+    });
+    expect(cuerpo).not.toHaveProperty('targetPcc');
+    // D1: ninguna forma de tarjeta sale por la emisión.
+    expect(JSON.stringify(cuerpo)).not.toMatch(/card|PAYMENTCARD|cvv|payer/i);
+    expect(result).toMatchObject({ formOfPaymentType: 'CASH' });
+    expect((result as { idempotencyKey?: unknown }).idempotencyKey).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('la forma de pago es la de la cuenta (ON_ACCOUNT), nunca la del llamador', async () => {
+    const { emisiones, result } = await emitir({
+      config: { ticketingFormOfPayment: 'ON_ACCOUNT' },
+    });
+
+    expect(emisiones[0]).toMatchObject({ formsOfPayment: [{ type: 'ON_ACCOUNT' }] });
+    expect(result).toMatchObject({ formOfPaymentType: 'ON_ACCOUNT' });
+  });
+
+  it('una forma de pago con tarjeta en la cuenta no llega: cae a CASH', async () => {
+    const { emisiones } = await emitir({ config: { ticketingFormOfPayment: 'PAYMENTCARD' } });
+    expect(emisiones[0]).toMatchObject({ formsOfPayment: [{ type: 'CASH' }] });
+  });
+
+  it('la oficina de emisión sólo con la emisión futura: entonces emite el PCC de emisión', async () => {
+    const credenciales = {
+      epr: EPR,
+      password: PASSWORD,
+      homePcc: HOME_PCC,
+      ticketingPcc: 't1ck',
+      sabreGroup: 'GRP1',
+    };
+
+    const conPlazo = await emitir({ credentials: credenciales });
+    expect(conPlazo.emisiones[0]).not.toHaveProperty('targetPcc');
+
+    const futura = await emitir({
+      credentials: credenciales,
+      config: { ticketingPolicy: 'FUTURE_TICKETING' },
+    });
+    expect(futura.emisiones[0]).toMatchObject({ targetPcc: 'T1CK' });
+  });
+
+  it('con `issue` fuera de SABRE_OPERATIONS rechaza antes de tocar la red', async () => {
+    const { result, rutas } = await emitir({}, 'void');
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('las condiciones de los tiquetes salen por checkFlightTickets aun con la emisión apagada', async () => {
+    const rutas: string[] = [];
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      return respuesta({ timestamp: '2026-10-13T12:00:00', tickets: [] });
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+
+    const condiciones = await adapter.checkTickets(PNR, { tenantId: 't1' });
+
+    expect(rutas).toEqual([RUTA_TOKEN, '/v1/trip/orders/checkFlightTickets']);
+    expect(condiciones).toMatchObject({ tickets: [], cancelOffers: [] });
+  });
+});
+
+/**
+ * La anulación (VOID) de una reserva emitida (SAB-09), por la puerta pública del factory: el ámbito
+ * neutral `ticketOperation: 'VOID'` se traduce al VOID del ACL, sólo con `void` encendida, y lo que
+ * el ACL rechaza antes del cable sale como el error neutral de la API. Sabre no se llama.
+ */
+describe('SabreProviderFactory — anular tiquetes (VOID)', () => {
+  const RUTA_CHECK = '/v1/trip/orders/checkFlightTickets';
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function reservaEmitida(): unknown {
+    return {
+      bookingId: PNR,
+      isCancelable: true,
+      isTicketed: true,
+      flights: [
+        {
+          itemId: '1',
+          confirmationId: 'AB123',
+          airlineCode: 'AV',
+          sourceType: 'ATPCO',
+          flightStatusCode: 'HK',
+          flightStatusName: 'Confirmed',
+        },
+      ],
+      flightTickets: [{ number: '0016802004060', travelerIndex: 1, ticketStatusCode: 'TE' }],
+    };
+  }
+
+  /** Anula por el adapter del factory y devuelve lo que salió al cable. */
+  async function anular(
+    o: {
+      operations?: string;
+      isVoidable?: boolean;
+      cancel?: unknown;
+      scope?: { itemIds?: readonly string[] };
+    } = {},
+  ) {
+    vi.stubEnv('SABRE_OPERATIONS', o.operations ?? 'void');
+    const rutas: string[] = [];
+    const cancelaciones: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_GET) return respuesta(reservaEmitida());
+      if (ruta === RUTA_CHECK) {
+        return respuesta({
+          request: { confirmationId: PNR },
+          tickets: [
+            { number: '0016802004060', isVoidable: o.isVoidable ?? true, isRefundable: true },
+          ],
+        });
+      }
+      if (ruta === RUTA_CANCEL) {
+        if (typeof init?.body === 'string') {
+          cancelaciones.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return respuesta(
+          o.cancel ?? { timestamp: '2026-10-13T15:00:02', voidedTickets: ['0016802004060'] },
+        );
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCancel(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const result = await adapter
+      .cancelOrderAudited(
+        PNR,
+        { tenantId: 't1', requestId: 'req-void' },
+        { ticketOperation: 'VOID', ...o.scope },
+      )
+      .catch((error: unknown) => error);
+    return { result, rutas, cancelaciones };
+  }
+
+  it('con `void` encendida, las capacidades `ticketCheck` y `void` salen en true; `issue` no', () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'void');
+    expect(factoryWith(() => Promise.resolve(resolved())).capabilities).toMatchObject({
+      issue: false,
+      ticketCheck: true,
+      void: true,
+    });
+  });
+
+  it('VOID se traduce a flightTicketOperation VOID, después de leer y comprobar', async () => {
+    const { result, rutas, cancelaciones } = await anular();
+
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_CHECK, RUTA_CANCEL]);
+    expect(cancelaciones).toHaveLength(1);
+    expect(cancelaciones[0]).toMatchObject({
+      confirmationId: PNR,
+      cancelAll: true,
+      flightTicketOperation: 'VOID',
+      errorHandlingPolicy: 'HALT_ON_ERROR',
+    });
+    expect(result).toMatchObject({
+      result: { success: true },
+      verified: true,
+      audit: {
+        provider: 'sabre',
+        ticketOperation: 'VOID',
+        outcome: 'CANCELLED',
+        voidedTickets: 1,
+        ticketCheckPerformed: true,
+        flightTicketOperation: 'VOID',
+      },
+    });
+    expect(result).not.toHaveProperty('partial');
+    // Conteos, nunca el número del tiquete ni el PNR en lo que va al evento.
+    expect(JSON.stringify((result as { audit: unknown }).audit)).not.toMatch(
+      /0016802004060|QWERTY/,
+    );
+  });
+
+  it('con `void` fuera de SABRE_OPERATIONS rechaza antes de tocar la red', async () => {
+    const { result, rutas } = await anular({ operations: 'issue' });
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('una anulación de una parte de la reserva no existe: se rechaza sin tocar la red', async () => {
+    const { result, rutas } = await anular({ scope: { itemIds: ['1'] } });
+
+    expect(result).toBeInstanceOf(SabreOperationNotSupportedError);
+    expect(rutas).toEqual([]);
+  });
+
+  it('si la comprobación dice que ya no se puede, sale el error neutral y la cancelación no sale', async () => {
+    const { result, rutas, cancelaciones } = await anular({ isVoidable: false });
+
+    expect(result).toBeInstanceOf(TicketVoidNotAvailableError);
+    expect((result as Error).message).toBe(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    expect(rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_CHECK]);
+    expect(cancelaciones).toEqual([]);
+  });
+
+  it('un rechazo con tiquetes anulados en la respuesta es una anulación a medias (`partial`)', async () => {
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        voidedTickets: ['0016802004060'],
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'UNABLE_TO_VOID_TICKET' }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      result: { success: false },
+      verified: true,
+      partial: true,
+      audit: { outcome: 'FAILED', voidedTickets: 1 },
+    });
+  });
+
+  it('un rechazo limpio no es parcial: la API relee la reserva antes de decidir', async () => {
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'UNABLE_TO_VOID_TICKET' }],
+      },
+    });
+
+    expect(result).toMatchObject({ result: { success: false }, verified: true });
+    expect(result).not.toHaveProperty('partial');
+  });
+
+  it('una reserva que ya estaba cancelada (desde otro canal) no prueba la anulación: sin verificar', async () => {
+    // Para una cancelación `BOOKING_ALREADY_CANCELED` es éxito; para una anulación, no dice qué
+    // pasó con los tiquetes. Darla por anulada liberaría la cartera con tiquetes quizá cobrados.
+    const { result } = await anular({
+      cancel: {
+        timestamp: '2026-10-13T15:00:02',
+        errors: [{ category: 'CANCELLATION_ERROR', type: 'BOOKING_ALREADY_CANCELED' }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      verified: false,
+      audit: { outcome: 'ALREADY_CANCELLED', voidedTickets: 0 },
+    });
+  });
+
+  it('el traductor de errores dice qué hacer cuando la anulación ya no está disponible', () => {
+    expect(
+      humanizeSabreError(new SabreCancelBookingBuildError('VOID_NOT_AVAILABLE', 'detalle')),
+    ).toBe(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
+    expect(
+      humanizeSabreError(new SabreCancelBookingBuildError('TICKET_CHECK_MALFORMED', 'detalle')),
+    ).toMatch(
+      /^No pudimos leer las condiciones de los tiquetes de esta reserva \(TICKET_CHECK_MALFORMED\)/,
+    );
+  });
+});
+
+describe('SabreProviderFactory — asientos al reservar (SAB-16)', () => {
+  const RUTA_SEATS = '/v3/offers/getseats/byReservationPayload';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** El `fetch` del ACL: token, Get Seats y createBooking, con lo que salió por cada ruta. */
+  function cable(): { rutas: string[]; cuerpos: Map<string, string> } {
+    const rutas: string[] = [];
+    const cuerpos = new Map<string, string>();
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (typeof init?.body === 'string') cuerpos.set(ruta, init.body);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_SEATS) return respuesta({ response: { segments: [], seatMaps: [] } });
+      if (ruta === RUTA_CREATE) {
+        return respuesta({
+          confirmationId: PNR,
+          booking: {
+            bookingId: PNR,
+            flights: [
+              {
+                itemId: '1',
+                flightStatusCode: 'HK',
+                flightStatusName: 'Confirmed',
+                seats: [{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    return { rutas, cuerpos };
+  }
+
+  const criterios = (): OrderCreateRequest['criteria'] => pedidoDeReserva().criteria;
+
+  it('sin `seats` en SABRE_OPERATIONS: la capacidad apagada y el mapa no se consulta', async () => {
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities.seatMap).toBe(false);
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    const error = await adapter
+      .getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SabreOperationNotSupportedError);
+    // Ni siquiera el token: cada Get Seats es una llamada facturable.
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `seats` encendida: capacidad en true y Get Seats v3 por el cliente de la cuenta', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ seatMap: true, issue: false, void: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    // La respuesta no trae ningún mapa: el ACL lo dice en vez de pintar «no quedan asientos».
+    await expect(
+      adapter.getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' }),
+    ).rejects.toThrow();
+    expect(red.rutas).toEqual([RUTA_TOKEN, RUTA_SEATS]);
+    // Sin nombres ni documentos en la consulta del mapa.
+    expect(red.cuerpos.get(RUTA_SEATS)).not.toContain(PII.surname);
+  });
+
+  it('la reserva con asiento sale con FLIGHT_WITH_EXTRAS y el asiento en su vuelo', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+
+    const creada = await adapter.createOrderAudited(
+      {
+        ...pedidoDeReserva(),
+        seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+      },
+      { tenantId: 't1', requestId: 'req-asiento' },
+    );
+
+    const body = JSON.parse(red.cuerpos.get(RUTA_CREATE) ?? '{}') as Record<string, unknown>;
+    expect(body['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+    const vuelos = (body['flightDetails'] as { flights: Array<Record<string, unknown>> }).flights;
+    expect(vuelos[0]?.['seats']).toEqual([{ number: '12C', travelerIndex: 1 }]);
+    expect(creada.result.outcome).toBe('CONFIRMED');
+    expect(creada.result.items).toContainEqual(
+      expect.objectContaining({ kind: 'seat', status: 'CONFIRMED', seatNumber: '12C' }),
+    );
+    expect(creada.audit['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+  });
+
+  it('sin `seats` encendida, una reserva con asientos no sale por ninguna de las dos entradas', async () => {
+    // Hoy no llega ninguna —sin mapa no hay asiento atado—, pero la reserva es la llamada que mueve
+    // dinero: no depende de que el servicio de arriba siga mirando la capacidad.
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const conAsiento: OrderCreateRequest = {
+      ...pedidoDeReserva(),
+      seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+    };
+    const ctx = { tenantId: 't1', requestId: 'req-asiento-apagado' };
+
+    await expect(adapter.createOrderAudited(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    await expect(adapter.createOrder(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    expect(red.rutas).toEqual([]);
   });
 });

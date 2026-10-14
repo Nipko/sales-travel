@@ -138,6 +138,15 @@ export const TBO_LOG_FIELDS: ReadonlySet<string> = new Set([
   // El idioma pedido a HotelDetails (`es`, `pt`, `en`): lo lleva la línea del lote sin contenido
   // (05 CE-23), con el conteo de códigos en `hotelCodeCount`.
   'lang',
+  // Detalle por habitación de HotelDetails (Q-65): la FORMA de lo que llegó, nunca valores.
+  // `hotelKeyShapes` son pares `Clave:tipoJSON` de las claves de un hotel sin bloque de habitaciones
+  // reconocible; `roomShape`, la forma leída; `roomContainerKey`, el NOMBRE de la clave que el lector
+  // adivinó. Las rachas de rechazo del `IsRoomDetailRequired` son enteros.
+  'hotelKeyShapes',
+  'roomShape',
+  'roomContainerKey',
+  'consecutiveRejections',
+  'rejectionLimit',
   // Resultado de una búsqueda del adapter: nuestro `searchId` y conteos. Nunca los códigos de hotel,
   // las fechas ni la ocupación, y menos la nacionalidad del huésped (02 §5.3 punto 7).
   'searchId',
@@ -170,12 +179,18 @@ export type TboLogMeta = Readonly<Record<string, TboLogValue>>;
 const MAX_LOG_TEXT = 200;
 const MAX_LOG_LIST = 20;
 
-function logValue(value: unknown): TboLogValue | undefined {
+/**
+ * Listas con un techo propio. `hotelKeyShapes` describe TODAS las claves de un hotel (19 conocidas
+ * más las que agregue TBO): con 20 se perdería justo la clave nueva que se quiere ver.
+ */
+const MAX_LOG_LIST_BY_FIELD: Readonly<Record<string, number>> = { hotelKeyShapes: 40 };
+
+function logValue(value: unknown, maxList: number): TboLogValue | undefined {
   if (typeof value === 'string') return value.slice(0, MAX_LOG_TEXT);
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'boolean') return value;
   if (Array.isArray(value) && value.every((item): item is string => typeof item === 'string')) {
-    return value.slice(0, MAX_LOG_LIST).map((item) => item.slice(0, MAX_LOG_TEXT));
+    return value.slice(0, maxList).map((item) => item.slice(0, MAX_LOG_TEXT));
   }
   return undefined;
 }
@@ -189,7 +204,7 @@ export function pickTboLogMeta(meta: Readonly<Record<string, unknown>>): TboLogM
   const out: Record<string, TboLogValue> = {};
   for (const [key, value] of Object.entries(meta)) {
     if (!TBO_LOG_FIELDS.has(key)) continue;
-    const safe = logValue(value);
+    const safe = logValue(value, MAX_LOG_LIST_BY_FIELD[key] ?? MAX_LOG_LIST);
     if (safe !== undefined) out[key] = safe;
   }
   return out;

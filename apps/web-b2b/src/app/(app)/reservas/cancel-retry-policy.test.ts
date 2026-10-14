@@ -59,3 +59,20 @@ describe('directCancellationBlock', () => {
     ).toBeNull();
   });
 });
+
+describe('una anulación de tiquetes en el historial (SAB-09)', () => {
+  it('no se reintenta ni se escala: se vuelve a pedir con una consulta nueva', () => {
+    const anulacion = operation({ ticketOperation: 'VOID', retryable: false });
+    expect(canRetryCancelOperation(anulacion)).toBe(false);
+    expect(directCancellationBlock([anulacion])).toMatch(/consulta antes las condiciones/);
+    expect(directCancellationBlock([anulacion])).not.toMatch(/soporte/);
+  });
+
+  it('una anulación en duda sigue mandando a conciliar', () => {
+    expect(
+      directCancellationBlock([
+        operation({ ticketOperation: 'VOID', outcome: 'UNVERIFIED', reconciliationRequired: true }),
+      ]),
+    ).toMatch(/conciliar/i);
+  });
+});

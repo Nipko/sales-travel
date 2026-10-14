@@ -5,6 +5,7 @@ import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { TicketingDeadlineBadge } from '../_components/ticketing-deadline-badge';
 import { flightDate, flightTime, formatMoney } from '../../../../lib/flight-format';
 import {
+  Armchair,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
@@ -26,14 +27,16 @@ import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
 import { PassengerForm } from './passenger-form';
-import type { PaymentData } from './payment-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
+import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
+import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
 import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
 import {
   canReserveAfterPriceCheck,
   displayedPriceChanged,
   displayedTotal,
+  offersSeatSelection,
   readOfferPriceResponse,
   reservationGateMessage,
   withRevalidatedOffer,
@@ -50,6 +53,19 @@ import {
   type CreateOrderProviderResult,
   type CreateOrderResponseBody,
 } from './create-order-reconciliation';
+import { createOrderFundingView } from './create-order-funding';
+import { SeatMapSheet } from './seat-map-sheet';
+import {
+  seatOutcomeMessages,
+  seatPassengers,
+  seatSummary,
+  type SeatChoice,
+  type SeatTab,
+} from './seat-map-view';
+import {
+  PORTFOLIOS_HREF,
+  PORTFOLIOS_LINK_LABEL,
+} from '../../hoteles/checkout/_components/funding-view';
 
 interface Quotation {
   id: string;
@@ -185,6 +201,13 @@ export default function QuotationDetailPage() {
   const [verifying, setVerifying] = useState(false);
   const [priceStatus, setPriceStatus] = useState<PriceVerificationState | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingOutcomeView | null>(null);
+  // SAB-16: elegir asientos. Sólo se ofrece si la revalidación dice que el proveedor lo permite, y
+  // se descarta cada vez que se revalida: los asientos cuelgan de la oferta que se va a reservar.
+  const [seatSelection, setSeatSelection] = useState(false);
+  const [seatChoices, setSeatChoices] = useState<SeatChoice[]>([]);
+  const [seatTabsSeen, setSeatTabsSeen] = useState<SeatTab[]>([]);
+  const [seatSheetOpen, setSeatSheetOpen] = useState(false);
+  const [passengerNames, setPassengerNames] = useState<readonly string[]>([]);
 
   useEffect(() => {
     fetch(`/api/quotations/${params.id}`)
@@ -276,7 +299,7 @@ export default function QuotationDetailPage() {
           ? { ok: true, text: `Cotización enviada a ${data.to ?? customerEmail}` }
           : {
               ok: false,
-              text: 'No hay correo configurado para enviar. Configurá el email de la agencia (Mi Red → Email) o el del sistema.',
+              text: 'No hay correo configurado para enviar. Configura el email de la agencia (Mi Red → Email) o el del sistema.',
             },
       );
     } catch {
@@ -312,7 +335,6 @@ export default function QuotationDetailPage() {
       countryDialingCode: string;
       areaCode: string;
     },
-    payment?: PaymentData,
   ) {
     if (!quotation) return;
     if (!canReserveAfterPriceCheck(priceStatus, verifying)) {
@@ -324,16 +346,16 @@ export default function QuotationDetailPage() {
       });
       return;
     }
-    const body: Record<string, unknown> = {
+    // Nunca lleva `payment`: createOrder no cobra y el API rechaza el campo (D1). Los asientos van
+    // sin precio ni oferta: el servidor vuelve a leer el mapa y sólo reserva los sin cargo.
+    const body = {
       offer: quotation.selectedOffer,
       searchCriteria: quotation.searchCriteria,
       passengers,
       contactInfo,
       quotationId: quotation.id,
+      ...(seatSelection && seatChoices.length > 0 ? { seats: seatChoices } : {}),
     };
-    if (payment) {
-      body.payment = payment;
-    }
     let res: Response;
     try {
       res = await fetch('/api/orders', {
@@ -369,10 +391,17 @@ export default function QuotationDetailPage() {
       return;
     }
     if (!res.ok) {
-      setBookingResult({
-        outcome: 'FAILED',
-        error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
-      });
+      // La cartera de la agencia o de su red no cubre la reserva: no salió nada hacia la aerolínea
+      // y se puede volver a reservar una vez resuelto. El texto ya viene del API.
+      const funding = createOrderFundingView(res.status, data);
+      setBookingResult(
+        funding === undefined
+          ? {
+              outcome: 'FAILED',
+              error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
+            }
+          : { outcome: 'FAILED', funding },
+      );
       return;
     }
     const outcome = data.providerResult?.outcome;
@@ -383,17 +412,20 @@ export default function QuotationDetailPage() {
       });
       return;
     }
+    // El vuelo quedó y algún asiento no: se dice cuál, en vez de los códigos del proveedor.
+    const seatNotices = seatOutcomeMessages(data.providerResult?.items, data.saga);
     setBookingResult({
       outcome,
       pnr: data.providerResult?.pnr,
       error:
-        outcome === 'CONFIRMED'
+        outcome === 'CONFIRMED' || seatNotices.length > 0
           ? undefined
           : humanizeBookingError(
               describeIssues(data.providerResult?.issues) ??
                 createOrderErrorMessage(data) ??
                 ERROR_DESCONOCIDO,
             ),
+      ...(seatNotices.length > 0 ? { seatNotices } : {}),
     });
   }
 
@@ -402,6 +434,9 @@ export default function QuotationDetailPage() {
     const selectedBeforeRequest = quotation.selectedOffer;
     setVerifying(true);
     setPriceStatus(null);
+    setSeatSelection(false);
+    setSeatChoices([]);
+    setSeatTabsSeen([]);
     try {
       const res = await fetch('/api/search/offer-price', {
         method: 'POST',
@@ -429,6 +464,7 @@ export default function QuotationDetailPage() {
       setQuotation((current) =>
         current === null ? current : withRevalidatedOffer(current, read.data.offer),
       );
+      setSeatSelection(offersSeatSelection(read.data));
       setBookingResult(null);
       setPriceStatus(
         changed
@@ -441,7 +477,7 @@ export default function QuotationDetailPage() {
     } catch {
       setPriceStatus({
         kind: 'error',
-        message: 'No se pudo conectar para revalidar la tarifa. Intentá de nuevo.',
+        message: 'No se pudo conectar para revalidar la tarifa. Inténtalo de nuevo.',
       });
     } finally {
       setVerifying(false);
@@ -488,8 +524,14 @@ export default function QuotationDetailPage() {
   const fareComponents = fareComponentsForDisplay(selectedOffer);
   const fareSummary = fareFamilySummary(selectedOffer);
   const venta = saleBreakdown(selectedOffer);
+  // La oferta guardada, o la revalidada por el API si ya se verificó el precio: la marca de la
+  // revalidada sale de la cuenta que la cotizó, no de lo que guardó el navegador.
+  const testFare = isTestFare(selectedOffer);
   const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
   const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
+  const seatHolders = seatPassengers(searchCriteria.paxCount, passengerNames);
+  const seatLine = seatSummary(seatChoices, seatHolders, seatTabsSeen);
+  const offerSeats = seatSelection && reservationEnabled && seatHolders.length > 0;
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8">
@@ -537,6 +579,7 @@ export default function QuotationDetailPage() {
                     {selectedOffer.fareFamily.name}
                   </span>
                 )}
+                {testFare ? <TestContentBadge /> : null}
               </div>
 
               <div className="space-y-4">
@@ -1053,6 +1096,32 @@ export default function QuotationDetailPage() {
                 {bookingResult.error}
               </p>
             )}
+            {bookingResult.seatNotices?.map((notice) => (
+              <p
+                key={notice}
+                className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+              >
+                {notice}
+              </p>
+            ))}
+            {bookingResult.funding && (
+              <div
+                role="alert"
+                className={`space-y-1 text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+              >
+                <p className="font-medium">{bookingResult.funding.title}</p>
+                <p>{bookingResult.funding.detail}</p>
+                <p>No se hizo ninguna reserva con la aerolínea ni se retuvo saldo.</p>
+                {bookingResult.funding.action === 'portfolios' && (
+                  <Link
+                    href={PORTFOLIOS_HREF}
+                    className="inline-flex font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                  >
+                    {PORTFOLIOS_LINK_LABEL}
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1064,19 +1133,80 @@ export default function QuotationDetailPage() {
       */}
       {shouldShowBookingForm(bookingResult) && (
         <div className="mt-5">
+          {/* Se puede reservar igual —sirve para probar el flujo—, pero quien lo hace lo sabe
+              antes de cargar a un pasajero real. */}
+          {testFare ? (
+            <TestContentNotice className="mb-3">{TEST_BOOKING_NOTICE}</TestContentNotice>
+          ) : null}
+          {offerSeats ? (
+            <Card className="mb-3">
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <Armchair
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0 text-[var(--color-primary)]"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-fg)]">
+                      {seatLine ?? 'Sin asientos elegidos'}
+                    </p>
+                    <p className="text-xs text-[var(--color-fg-muted)]">
+                      Opcional. Sólo asientos sin cargo; se confirman al reservar.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {seatChoices.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-10 flex-1 sm:h-9 sm:flex-none"
+                      onClick={() => setSeatChoices([])}
+                    >
+                      Quitar asientos
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-10 flex-1 gap-2 sm:h-9 sm:flex-none"
+                    onClick={() => setSeatSheetOpen(true)}
+                  >
+                    <Armchair aria-hidden="true" className="size-4" />
+                    {seatChoices.length > 0 ? 'Cambiar asientos' : 'Elegir asientos (opcional)'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
           <PassengerForm
             paxCount={searchCriteria.paxCount}
-            totalAmountMinor={selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor}
-            currency={selectedOffer.total.currency}
             customerName={customerName || undefined}
             contactEmail={customerEmail || undefined}
             contactPhone={customerPhone || undefined}
             disabled={!reservationEnabled}
             disabledReason={reservationDisabledReason}
             onSubmit={handleCreateOrder}
+            onGivenNamesChange={setPassengerNames}
           />
         </div>
       )}
+      {seatSheetOpen ? (
+        <SeatMapSheet
+          offer={quotation.selectedOffer}
+          searchCriteria={quotation.searchCriteria}
+          passengers={seatHolders}
+          initialChoices={seatChoices}
+          onClose={() => setSeatSheetOpen(false)}
+          onSave={(choices, tabs) => {
+            setSeatChoices(choices);
+            setSeatTabsSeen(tabs);
+            setSeatSheetOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

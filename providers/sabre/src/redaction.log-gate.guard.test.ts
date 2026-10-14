@@ -276,11 +276,17 @@ describe('capa 1 — sólo un sitio del paquete llama al LoggerPort', () => {
       'src/auth/token.service.ts',
       'src/http/sabre-http.client.ts',
       'src/redaction.ts',
+      'src/sabre-ancillary.adapter.ts',
       'src/sabre-flight-check.adapter.ts',
       'src/sabre-flight-search.adapter.ts',
       'src/sabre-offer-price.adapter.ts',
       'src/sabre-order-create.adapter.ts',
       'src/sabre-order-manage.adapter.ts',
+      'src/sabre-seat-map.adapter.ts',
+      // La emisión (SAB-07): como los demás, se lo pasa a `logRedacted` y al adapter de post-venta
+      // que compone. Su puerta pública la ejercita `sabre-ticketing.adapter.test.ts`, que busca en
+      // el log los nombres del pasajero y el texto libre de los avisos del proveedor.
+      'src/sabre-ticketing.adapter.ts',
     ]);
     // Los tres adapters de price/create/manage entraron con el cableado de la Fase 2.b/3. La
     // capa 1 —que es la defensa— los cubre sin tocar nada: no llaman al logger, se lo pasan a

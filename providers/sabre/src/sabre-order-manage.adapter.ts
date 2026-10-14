@@ -11,12 +11,14 @@ import {
   SABRE_CHECK_FLIGHT_TICKETS_PATH,
   SABRE_CANCEL_DEFAULT_POLICY,
   buildSabreCancelBookingRequest,
+  cancelOfferExpiryMs,
   describeSabreCancelRequest,
   readSabreTicketCheck,
   requiresTicketCheck,
   sabreCancelIdempotencyKey,
   type SabreCancelBookingOptions,
   type SabreCancelBookingRequest,
+  type SabreCancelContentContext,
   type SabreCancelErrorPolicy,
   type SabreCancelScope,
   type SabreFlightTicketOperation,
@@ -115,7 +117,14 @@ export interface SabreCancelOptions extends SabreOrderManageOptions {
   /** `true` ⇒ la respuesta trae lo que quedó vivo. Cuesta latencia; lo vale tras un parcial. */
   readonly retrieveBooking?: boolean;
   readonly receivedFrom?: string;
-  /** Obligatorio para una reserva ATPCO/LCC emitida: VOID o REFUND no son equivalentes. */
+  /**
+   * Obligatorio para una reserva emitida: VOID o REFUND no son equivalentes.
+   *
+   * `VOID` sin `offerItemId` lo resuelve el adapter con la comprobación previa, que entonces se hace
+   * SIEMPRE: en ATPCO viaja como `flightTicketOperation` sólo si cada tiquete es `isVoidable`; en NDC
+   * se cambia por la oferta `VOID` vigente ({@link cancelOfferFor}). Si no se puede anular, lanza
+   * `VOID_NOT_AVAILABLE` antes del cable.
+   */
   readonly ticketOperation?: SabreFlightTicketOperation;
   /** Oferta de cancelación elegida en el check previo de una orden NDC emitida. */
   readonly offerItemId?: string;
@@ -172,7 +181,8 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
     });
 
     const snapshot = mapSabreGetBookingForDisplay(result.data);
-    this.log('debug', 'sabre.getBooking', {
+    // `info`: es la lectura con la que el saga CIERRA una creación, y producción descarta `debug`.
+    this.log('info', 'sabre.getBooking', {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,
@@ -271,22 +281,32 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
       );
     }
 
-    const needsCheck = requiresTicketCheck({
+    const content: SabreCancelContentContext = {
       items: snapshot.items,
       ...(snapshot.isTicketed === undefined ? {} : { isTicketed: snapshot.isTicketed }),
-    });
+    };
+    // Anular sin oferta elegida: la comprobación de tiquetes decide si se puede, y cómo, aunque la
+    // lectura no diga que la reserva está emitida. Sin ella, un VOID sale a ciegas.
+    const voiding = options.ticketOperation === 'VOID' && options.offerItemId === undefined;
+    const needsCheck = voiding || requiresTicketCheck(content);
     const ticketCheck = needsCheck ? await this.checkFlightTickets(orderId, ctx) : undefined;
+    const now = new Date((this.deps.now ?? Date.now)()).toISOString();
+
+    let ticketOperation = options.ticketOperation;
+    let offerItemId = options.offerItemId;
+    if (voiding && ticketCheck !== undefined) {
+      const selection = voidSelectionFor(content, ticketCheck, now);
+      ticketOperation = selection.ticketOperation;
+      offerItemId = selection.offerItemId;
+    }
 
     const policy = options.errorHandlingPolicy ?? SABRE_CANCEL_DEFAULT_POLICY;
     const request: SabreCancelBookingRequest = buildSabreCancelBookingRequest({
       confirmationId: orderId,
       scope: options.scope ?? 'ALL',
-      content: {
-        items: snapshot.items,
-        ...(snapshot.isTicketed === undefined ? {} : { isTicketed: snapshot.isTicketed }),
-      },
+      content,
       errorHandlingPolicy: policy,
-      now: new Date((this.deps.now ?? Date.now)()).toISOString(),
+      now,
       ...(ticketCheck === undefined ? {} : { ticketCheck }),
       ...(options.items === undefined ? {} : { items: options.items }),
       ...(options.segments === undefined ? {} : { segments: options.segments }),
@@ -295,10 +315,8 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
         : { retrieveBooking: options.retrieveBooking }),
       ...(options.receivedFrom === undefined ? {} : { receivedFrom: options.receivedFrom }),
       ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
-      ...(options.ticketOperation === undefined
-        ? {}
-        : { ticketOperation: options.ticketOperation }),
-      ...(options.offerItemId === undefined ? {} : { offerItemId: options.offerItemId }),
+      ...(ticketOperation === undefined ? {} : { ticketOperation }),
+      ...(offerItemId === undefined ? {} : { offerItemId }),
       ...(options.voidNonElectronicTickets === undefined
         ? {}
         : { voidNonElectronicTickets: options.voidNonElectronicTickets }),
@@ -318,7 +336,9 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
 
     const detail = mapSabreCancelResponse(result.data, { requestedPolicy: policy });
 
-    this.log(detail.success ? 'debug' : 'warn', 'sabre.cancelBooking', {
+    // `info` en el éxito por lo mismo que createBooking: una cancelación limpia también es una
+    // escritura con dinero detrás, y en `debug` no llegaba al log de producción.
+    this.log(detail.success ? 'info' : 'warn', 'sabre.cancelBooking', {
       tenantId: ctx.tenantId,
       conversationId: result.conversationId,
       durationMs: result.durationMs,
@@ -387,6 +407,70 @@ export class SabreOrderManageAdapter implements OrderModificationReadPort {
   private log(level: SabreLogLevel, message: string, meta: Record<string, unknown>): void {
     logRedacted(this.deps.logger, level, message, meta);
   }
+}
+
+/**
+ * La oferta de cancelación NDC con la que se anula (`cancelBooking.offerItemId`), elegida entre las
+ * que devolvió `checkFlightTickets`, que es su única fuente (`booking-management-v1.yml:415-420`).
+ *
+ * En NDC la ventana de anulación no se calcula: se lee. Mientras se puede anular sin costo el
+ * proveedor ofrece una oferta `VOID` con su caducidad en UTC; pasada la ventana, ofrece `REFUND` en
+ * su lugar (`help-documentation-check-flight-tickets-examples.txt`, use case 4; docs/sabre/06 §4.3).
+ * Se toma la primera `VOID` vigente con la misma regla de caducidad que vuelve a aplicar el builder.
+ *
+ * Sin una, lanza `VOID_NOT_AVAILABLE` antes del cable: cancelar igual es cancelar sin saber qué
+ * pasa con los tiquetes.
+ */
+export function cancelOfferFor(
+  kind: 'VOID',
+  evidence: SabreTicketCheckEvidence,
+  now: string,
+): string {
+  const at = Date.parse(now);
+  for (const offer of evidence.cancelOffers) {
+    if (offer.offerType !== kind) continue;
+    const expiry = cancelOfferExpiryMs(offer);
+    if (expiry !== undefined && !Number.isNaN(at) && at > expiry) continue;
+    return offer.offerItemId;
+  }
+  throw new SabreCancelBookingBuildError(
+    'VOID_NOT_AVAILABLE',
+    'checkFlightTickets no ofrece una anulación (VOID) vigente para esta reserva',
+  );
+}
+
+/** Cómo viaja una anulación: el VOID de ATPCO, o la oferta VOID de NDC. Nunca los dos. */
+type SabreVoidSelection =
+  | { readonly ticketOperation: 'VOID'; readonly offerItemId?: undefined }
+  | { readonly ticketOperation?: undefined; readonly offerItemId: string };
+
+/**
+ * Decide, con la comprobación en la mano, si una anulación puede salir y cómo.
+ *
+ * - **Con algún vuelo NDC**: por la oferta `VOID` vigente ({@link cancelOfferFor}). En NDC
+ *   `isVoidable` no existe (_«Not supported for NDC»_), así que no se mira.
+ * - **El resto** (ATPCO, LCC, o vuelos sin carril declarado): `flightTicketOperation: VOID` sólo si
+ *   la comprobación trae tiquetes y CADA uno es `isVoidable: true`. Sabre calcula la ventana con la
+ *   regla de la aerolínea y del BSP y la expone en ese booleano (docs/sabre/06 §5.3); un tiquete que
+ *   no lo dice, o que dice que no, no se manda a anular. Fail-closed: con un vuelo sin carril, un
+ *   NDC no trae `isVoidable` y cae aquí en `VOID_NOT_AVAILABLE`, nunca en una anulación a ciegas.
+ */
+function voidSelectionFor(
+  content: SabreCancelContentContext,
+  evidence: SabreTicketCheckEvidence,
+  now: string,
+): SabreVoidSelection {
+  const ndc = content.items.some((item) => item.kind === 'FLIGHT' && item.lane === 'NDC');
+  if (ndc) return { offerItemId: cancelOfferFor('VOID', evidence, now) };
+  const voidable =
+    evidence.tickets.length > 0 && evidence.tickets.every((ticket) => ticket.isVoidable === true);
+  if (!voidable) {
+    throw new SabreCancelBookingBuildError(
+      'VOID_NOT_AVAILABLE',
+      'checkFlightTickets no declara anulables todos los tiquetes de la reserva',
+    );
+  }
+  return { ticketOperation: 'VOID' };
 }
 
 /**

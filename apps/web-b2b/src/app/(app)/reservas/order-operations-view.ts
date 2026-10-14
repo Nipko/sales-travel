@@ -14,10 +14,15 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
   'hcn-check': 'Consulta del número de confirmación del hotel',
   'hcn-ticket': 'Tarea de operaciones: conseguir el número de confirmación del hotel',
   reconcile: 'Conciliación con el proveedor',
+  issue: 'Emisión',
 };
 
-/** Un tipo que esta versión no conoce sale por su código: al menos es diagnosticable. */
-export function operationTypeLabel(type: string): string {
+/**
+ * Un tipo que esta versión no conoce sale por su código: al menos es diagnosticable. Una cancelación
+ * que anuló los tiquetes de la reserva (`ticketOperation: 'VOID'`, SAB-09) se nombra por lo que hizo.
+ */
+export function operationTypeLabel(type: string, ticketOperation?: string): string {
+  if (type === 'cancel' && ticketOperation === 'VOID') return 'Anulación de tiquetes';
   return TYPE_LABELS[type] ?? type;
 }
 
@@ -39,8 +44,27 @@ function toneOf(status: string): OperationTone {
 export function operationStatusView(op: {
   readonly type: string;
   readonly status: string;
+  readonly reconciliationRequired?: boolean;
+  readonly ticketOperation?: string;
 }): OperationStatusView {
   const tone = toneOf(op.status);
+  if (op.type === 'cancel' && op.ticketOperation === 'VOID') {
+    // Una anulación en duda no "falló": puede haber tiquetes anulados. Se revisa, no se repite.
+    if (tone === 'failed' && op.reconciliationRequired === true) {
+      return { tone: 'pending', label: 'Sin confirmar' };
+    }
+    return {
+      tone,
+      label: tone === 'ok' ? 'Anulada' : tone === 'failed' ? 'No se anuló' : 'En curso',
+    };
+  }
+  if (op.type === 'issue') {
+    // Una emisión en duda no "falló": puede haber tiquetes. Se revisa, no se vuelve a pedir.
+    if (tone === 'failed' && op.reconciliationRequired === true) {
+      return { tone: 'pending', label: 'Sin confirmar' };
+    }
+    return { tone, label: tone === 'ok' ? 'Emitida' : tone === 'failed' ? 'Falló' : 'En curso' };
+  }
   if (op.type === 'hcn-ticket') {
     return { tone, label: tone === 'ok' ? 'Resuelta' : tone === 'failed' ? 'Falló' : 'Abierta' };
   }

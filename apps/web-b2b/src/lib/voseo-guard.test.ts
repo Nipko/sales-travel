@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { VOSEO_WORDS, voseoIn } from './voseo';
 
 /*
- * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y la
- * seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
+ * El acceso (login, contraseña, invitación, verificación), Equipo, Plataforma → Usuarios y Reservas
+ * de la red y la seguridad de la cuenta van en "tú" neutro (decisión del founder). Este guarda falla con
  * archivo:línea si vuelve a entrar un voseo, en un texto o en un comentario que lo cite. Los tests
  * quedan afuera.
  */
@@ -42,6 +42,50 @@ const SCANNED = [
   'lib/platform-invitations.ts',
   // La ficha de un usuario, desde Equipo y desde el directorio.
   'lib/member-detail.ts',
+  // Plataforma → Reservas de la red: la consola, su ficha y la post-venta del superadmin.
+  'app/(app)/admin/plataforma/reservas',
+  'app/api/admin/orders',
+  'lib/platform-orders.ts',
+  'lib/platform-orders-client.ts',
+  'lib/platform-orders-proxy.ts',
+  'lib/platform-order-actions.ts',
+  // Plataforma → Agencias: la lista con sus números, crear, mover, suspender o reactivar un nodo, y
+  // la ficha de cada nodo con todas sus pestañas (Resumen, Proveedores, Carteras, Puestos).
+  'app/(app)/admin/tenants',
+  'app/api/admin/tenants',
+  'lib/platform-node-stats.ts',
+  'lib/platform-node-summary.ts',
+  'lib/tenant-network.ts',
+  // Inicio y Reportes de la agencia.
+  'app/(app)/page.tsx',
+  'app/(app)/reportes',
+  'lib/sales-reports.ts',
+  // Plataforma → Proveedores: la habilitación, la salud y el apagado de emergencia.
+  'app/(app)/admin/plataforma/proveedores',
+  'app/(app)/admin/_components/provider-enablement-ui.tsx',
+  'app/api/admin/providers',
+  'lib/provider-enablement.ts',
+  'lib/provider-enablement-client.ts',
+  'lib/provider-enablement-proxy.ts',
+  'lib/provider-health.ts',
+  // Plataforma → Sistema: los procesos automáticos.
+  'app/(app)/admin/plataforma/sistema',
+  'app/api/admin/system',
+  'lib/platform-system.ts',
+  'lib/platform-system-client.ts',
+  // Plataforma → Sistema › Anuncios y la franja de avisos del panel (la carpeta de Sistema ya está).
+  'app/api/admin/announcements',
+  'app/api/announcements',
+  'components/layout/announcement-banner.tsx',
+  'lib/announcements.ts',
+  'lib/announcements-client.ts',
+  // Plataforma → Actividad: los eventos de toda la plataforma, su detalle y la exportación.
+  'app/(app)/admin/plataforma/actividad',
+  'app/api/admin/audit',
+  'lib/platform-audit.ts',
+  'lib/platform-audit-client.ts',
+  'lib/platform-audit-proxy.ts',
+  'lib/audit-format.ts',
 ];
 
 /** Además, todo `lib/tenant-admin-*.ts`. */
@@ -87,6 +131,10 @@ describe('los textos del acceso, Equipo, Plataforma → Usuarios y la seguridad 
     expect(rels).toContain('lib/tenant-admin-team.ts');
     expect(rels).toContain(
       'app/(app)/admin/plataforma/usuarios/_components/platform-users-panel.tsx',
+    );
+    expect(rels).toContain('app/(app)/admin/tenants/[tenantId]/page.tsx');
+    expect(rels).toContain(
+      'app/(app)/admin/tenants/[tenantId]/_components/tenant-providers-panel.tsx',
     );
     expect(rels.some((f) => f.endsWith('.test.ts'))).toBe(false);
   });

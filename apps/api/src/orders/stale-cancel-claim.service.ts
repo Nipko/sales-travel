@@ -5,6 +5,7 @@ import { HotelOrderCancellationService } from './hotel-order-cancellation.servic
 import type { HotelCancelTrackingWrite } from './hotel-order-cancellation.store.js';
 import { ORDER_EVENTS } from './order-events.js';
 import { StaleCancelClaimStore, type StaleCancelClaim } from './stale-cancel-claim.store.js';
+import { VOID_UNVERIFIED_LAST_ERROR } from './ticket-void.plan.js';
 
 /**
  * Los claims de cancelación que un proceso dejó en vuelo al morir (HARD-1).
@@ -102,14 +103,25 @@ export class StaleCancelClaimService {
       ? this.hotels.thrownTracking(CANCEL_UNVERIFIED_POLICY, now)
       : undefined;
     const vertical = hotel ? { vertical: 'hotels', verifyScheduled: true } : {};
+    // Una anulación de tiquetes (SAB-09) que quedó en vuelo sigue siéndolo al vencer: pudo anular
+    // tiquetes. Perder la marca la dejaba en el historial y en la escalada como una cancelación
+    // cualquiera, y a quien concilia sin saber que tiene que mirar los tiquetes.
+    const voiding =
+      claim.ticketOperation === undefined
+        ? {}
+        : { ticketOperation: claim.ticketOperation, voidOutcome: 'UNVERIFIED' as const };
     const expired = await this.store.expire(
       tenantId,
       claim,
       {
         claimedBefore,
-        lastError: CANCEL_UNVERIFIED_MESSAGE,
+        lastError:
+          claim.ticketOperation === undefined
+            ? CANCEL_UNVERIFIED_MESSAGE
+            : VOID_UNVERIFIED_LAST_ERROR,
         result: {
           ...vertical,
+          ...voiding,
           staleClaim: true,
           status: 'failed',
           ...CANCEL_UNVERIFIED_POLICY,
@@ -123,7 +135,12 @@ export class StaleCancelClaimService {
     if (!expired) return false;
 
     const actorUserId = claim.actorUserId ?? claim.userId;
-    const base = { provider: claim.provider, ...vertical, staleClaim: true };
+    const base = {
+      provider: claim.provider,
+      ...vertical,
+      ...(claim.ticketOperation === undefined ? {} : { ticketOperation: claim.ticketOperation }),
+      staleClaim: true,
+    };
     await this.audit.emit({
       eventType: ORDER_EVENTS.cancelled,
       tenantId,

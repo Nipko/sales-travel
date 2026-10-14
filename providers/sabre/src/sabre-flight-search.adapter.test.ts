@@ -1108,4 +1108,183 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     }).search(CRITERIA, CTX);
     expect(spy.calls).toHaveLength(1);
   });
+
+  it.each([
+    ['apagado por defecto', {}, 'Disable'],
+    ['encendido por cuenta', { ndcContent: true }, 'Enable'],
+  ] as const)(
+    'cada ronda hereda la decisión de NDC de la cuenta (%s)',
+    async (_caso, ndc, esperado) => {
+      const spy = spyFetch((n) =>
+        n === 1 ? conMarca('MAIN', 'MAIN CABIN') : conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'),
+      );
+
+      await adapter(config(), {
+        fetch: spy.fetch,
+        shopOptions: { brandLadderRounds: 1, ...ndc },
+      }).search(CRITERIA, CTX);
+
+      expect(spy.calls).toHaveLength(2);
+      expect(spy.calls.map((c) => fuentesPedidas(c.init).NDC)).toEqual([esperado, esperado]);
+    },
+  );
+});
+
+/** `DataSources` tal como salió por el cable, leído del cuerpo serializado. */
+function fuentesPedidas(init: RequestInit): Record<string, unknown> {
+  const body = JSON.parse(cuerpo(init)) as {
+    OTA_AirLowFareSearchRQ?: {
+      TravelPreferences?: { TPA_Extensions?: { DataSources?: Record<string, unknown> } };
+    };
+  };
+  const fuentes = body.OTA_AirLowFareSearchRQ?.TravelPreferences?.TPA_Extensions?.DataSources;
+  if (fuentes === undefined) throw new Error('la petición a Sabre no lleva DataSources');
+  return fuentes;
+}
+
+/** El ejemplo oficial de adulto con su primera tarifa marcada como contenido NDC. */
+function conTarifaNdc(): Response {
+  const payload = structuredClone(adultFixture) as unknown as {
+    groupedItineraryResponse: {
+      itineraryGroups: Array<{
+        itineraries: Array<{ pricingInformation: Array<Record<string, unknown>> }>;
+      }>;
+    };
+  };
+  const pricing =
+    payload.groupedItineraryResponse.itineraryGroups[0]?.itineraries[0]?.pricingInformation[0];
+  if (pricing === undefined) throw new Error('fixture inválida: sin pricingInformation');
+  pricing['distributionModel'] = 'NDC';
+  pricing['offer'] = { offerId: 'oferta-ndc-de-prueba', source: 'NDC', timeToLive: 1255 };
+  return json(payload);
+}
+
+describe('contenido NDC: sólo si la cuenta lo habilita', () => {
+  it('sin opciones NO pide NDC: el mapper lo descartaría y se paga en latencia y payload', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+
+    expect(fuentesPedidas(spy.calls[0]!.init)).toEqual({
+      NDC: 'Disable',
+      ATPCO: 'Enable',
+      LCC: 'Disable',
+    });
+  });
+
+  it('la cuenta lo enciende con ndcContent y ATPCO sigue en la misma llamada', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch, shopOptions: { ndcContent: true } }).search(
+      CRITERIA,
+      CTX,
+    );
+
+    expect(spy.calls).toHaveLength(1);
+    expect(fuentesPedidas(spy.calls[0]!.init)).toEqual({
+      NDC: 'Enable',
+      ATPCO: 'Enable',
+      LCC: 'Disable',
+    });
+  });
+
+  it.each([
+    ['apagado por defecto', {}, 'Disable'],
+    ['encendido por cuenta', { ndcContent: true }, 'Enable'],
+  ] as const)(
+    'la degradación de marcas no toca la decisión de NDC (%s)',
+    async (_caso, ndc, esperado) => {
+      const rechazo = json({
+        groupedItineraryResponse: {
+          version: '5',
+          messages: [{ severity: 'Error', type: 'MIP', code: 'PROCESS' }],
+        },
+      });
+      const spy = spyFetch((n) => (n === 1 ? rechazo : json(adultFixture)));
+
+      await adapter(config(), {
+        fetch: spy.fetch,
+        shopOptions: { brandedFares: 'upsell', ...ndc },
+      }).search(CRITERIA, CTX);
+
+      expect(spy.calls).toHaveLength(2);
+      expect(cuerpo(spy.calls[1]!.init)).not.toContain('MultipleBrandedFares');
+      expect(spy.calls.map((c) => fuentesPedidas(c.init).NDC)).toEqual([esperado, esperado]);
+    },
+  );
+
+  it.each([
+    ['apagado por defecto', {}, 'Disable'],
+    ['encendido por cuenta', { ndcContent: true }, 'Enable'],
+  ] as const)(
+    'el reintento sin marcas tras una respuesta vacía tampoco la toca (%s)',
+    async (_caso, ndc, esperado) => {
+      const vacio = json({
+        groupedItineraryResponse: { version: '5', messages: [], itineraryGroups: [] },
+      });
+      const spy = spyFetch((n) => (n === 1 ? vacio : json(adultFixture)));
+
+      await adapter(config(), { fetch: spy.fetch, shopOptions: { ...ndc } }).search(CRITERIA, CTX);
+
+      expect(spy.calls).toHaveLength(2);
+      expect(cuerpo(spy.calls[1]!.init)).not.toContain('BrandedFareIndicators');
+      expect(spy.calls.map((c) => fuentesPedidas(c.init).NDC)).toEqual([esperado, esperado]);
+    },
+  );
+
+  it.each([
+    ['adulto', adultFixture, 'USD'],
+    ['menor con equipaje', childFixture, 'EUR'],
+    ['familia', familyFixture, 'EUR'],
+  ] as const)(
+    'con NDC apagado, el ejemplo oficial "%s" mapea sin el aviso ndc-content-skipped',
+    async (_name, fixture, currency) => {
+      const { logger, calls } = spyLogger();
+      const spy = spyFetch(() => json(fixture));
+      const offers = await adapter(config(), { fetch: spy.fetch, logger }).search(
+        { ...CRITERIA, currency },
+        CTX,
+      );
+
+      expect(offers.length).toBeGreaterThan(0);
+      expect(fuentesPedidas(spy.calls[0]!.init).NDC).toBe('Disable');
+      expect(JSON.stringify(calls)).not.toContain('ndc-content-skipped');
+    },
+  );
+
+  it('el log dice si se pidió NDC, para leer bien un ndc-content-skipped', async () => {
+    const apagado = spyLogger();
+    await adapter(config(), {
+      fetch: spyFetch(() => json(adultFixture)).fetch,
+      logger: apagado.logger,
+    }).search(CRITERIA, CTX);
+    const encendido = spyLogger();
+    await adapter(config(), {
+      fetch: spyFetch(() => json(adultFixture)).fetch,
+      logger: encendido.logger,
+      shopOptions: { ndcContent: true },
+    }).search(CRITERIA, CTX);
+
+    const resumen = (calls: LogCall[]): LogCall | undefined =>
+      calls.find((c) => c.message === 'sabre.shop.ok' || c.message === 'sabre.shop.warnings');
+    expect(resumen(apagado.calls)?.meta?.['pidioNdc']).toBe(false);
+    expect(resumen(encendido.calls)?.meta?.['pidioNdc']).toBe(true);
+  });
+
+  it('NDC devuelto SIN pedirlo se sigue descartando, y el log lo distingue del mapper pendiente', async () => {
+    // Sabre podría ignorar `NDC: Disable`. El mapper no cambia de criterio por eso: la tarifa NDC
+    // no se convierte con reglas de ATPCO. Lo que cambia es el diagnóstico: `pidioNdc: false`
+    // junto al conteo dice «Sabre mandó una fuente apagada», no «falta el mapper NDC».
+    const { logger, calls } = spyLogger();
+    const offers = await adapter(config(), {
+      fetch: spyFetch(() => conTarifaNdc()).fetch,
+      logger,
+    }).search(CRITERIA, CTX);
+
+    expect(offers.every((offer) => offer.provider.source !== 'NDC')).toBe(true);
+    const aviso = calls.find((call) => call.message === 'sabre.shop.warnings');
+    expect(aviso?.meta).toMatchObject({
+      pidioNdc: false,
+      warnings: expect.objectContaining({ 'ndc-content-skipped': 1 }) as unknown,
+    });
+    expect(JSON.stringify(calls)).not.toContain('oferta-ndc-de-prueba');
+  });
 });

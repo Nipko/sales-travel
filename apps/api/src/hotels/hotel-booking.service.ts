@@ -222,7 +222,7 @@ function policyForEvent(roompack: HotelRoompack): Record<string, unknown> {
 const OPERATION = 'la reserva con órdenes (se reserva con su flujo propio)';
 
 const PENDING_MESSAGE =
-  'La reserva sigue en curso con el proveedor. Consultá su estado en Mis Reservas y no la repitas.';
+  'La reserva sigue en curso con el proveedor. Consulta su estado en Mis Reservas y no la repitas.';
 
 const UNCERTAIN_MESSAGE =
   'No recibimos la confirmación del proveedor. Estamos verificando si la reserva quedó hecha; no la repitas.';
@@ -231,7 +231,7 @@ const PERSISTENCE_MESSAGE =
   'El proveedor respondió, pero no pudimos registrar el resultado en la reserva. Ya quedó para conciliarla; no la repitas.';
 
 const NOT_DISPATCHED_UNCLOSED_MESSAGE =
-  'La reserva no llegó a enviarse al proveedor, pero no pudimos cerrarla en el sistema. Ya quedó para revisarla; consultá su estado en Mis Reservas antes de volver a intentar.';
+  'La reserva no llegó a enviarse al proveedor, pero no pudimos cerrarla en el sistema. Ya quedó para revisarla; consulta su estado en Mis Reservas antes de volver a intentar.';
 
 const CLOSING_MESSAGES = {
   'verification-unavailable':

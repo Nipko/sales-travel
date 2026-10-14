@@ -86,7 +86,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
       (s) => s.label,
     );
 
-  it('un vendedor: sin Administración ni Super Admin', () => {
+  it('un vendedor: sin Administración ni Plataforma', () => {
     expect(labels('vendedor')).toEqual(['Operaciones', 'Gestión', 'Mi cuenta']);
   });
 
@@ -112,11 +112,79 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     ]);
   });
 
-  it('el superadmin ve todo, pero sin las pantallas de venta', () => {
+  it('el superadmin: Plataforma después de Operaciones, sin Gestión ni las pantallas de venta', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
-    expect(sections.map((s) => s.label)).toContain('Super Admin');
+    // Gestión mostraría los datos del tenant de la plataforma, que no vende.
+    expect(sections.map((s) => s.label)).toEqual([
+      'Operaciones',
+      'Plataforma',
+      'Administración',
+      'Mi cuenta',
+    ]);
     const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
     expect(operations).not.toContain('/hoteles');
+    // El tenant de la plataforma no tiene reservas: las de la red van en Plataforma → Reservas.
+    expect(operations).not.toContain('/reservas');
+    expect(operations).toContain('/');
+  });
+
+  it('un superadmin que opera una sucursal como vendedor sí ve Mis Reservas', () => {
+    const sections = navSections('vendedor', { platformUser: true, superadmin: true });
+    const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
     expect(operations).toContain('/reservas');
+    expect(sections.map((s) => s.label)).not.toContain('Plataforma');
+  });
+
+  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Usuarios, Actividad y Sistema', () => {
+    const sections = navSections('superadmin', { platformUser: true, superadmin: true });
+    const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
+    expect(platform.map((i) => [i.label, i.href])).toEqual([
+      ['Resumen', '/admin/plataforma/resumen'],
+      ['Agencias', '/admin/tenants'],
+      ['Reservas', '/admin/plataforma/reservas'],
+      ['Carteras', '/admin/plataforma/carteras'],
+      ['Proveedores', '/admin/plataforma/proveedores'],
+      ['Usuarios', '/admin/plataforma/usuarios'],
+      ['Actividad', '/admin/plataforma/actividad'],
+      ['Sistema', '/admin/plataforma/sistema'],
+    ]);
+  });
+
+  it('en la paleta del superadmin, "actividad" lleva a la de toda la plataforma', () => {
+    const items = commandItems({
+      canSwitch: false,
+      currentAgencyName: null,
+      sections: navSections('superadmin', { platformUser: true, superadmin: true }),
+    });
+    expect(filterCommands(items, 'actividad')).toEqual([
+      expect.objectContaining({ label: 'Actividad', href: '/admin/plataforma/actividad' }),
+    ]);
+  });
+
+  it('en la paleta del superadmin, "sistema" lleva a Sistema', () => {
+    const items = commandItems({
+      canSwitch: false,
+      currentAgencyName: null,
+      sections: navSections('superadmin', { platformUser: true, superadmin: true }),
+    });
+    expect(filterCommands(items, 'sistema')).toEqual([
+      expect.objectContaining({ label: 'Sistema', href: '/admin/plataforma/sistema' }),
+    ]);
+  });
+
+  it('en la paleta del superadmin, "reservas" lleva a las de la red y no a Mis Reservas', () => {
+    const items = commandItems({
+      canSwitch: false,
+      currentAgencyName: null,
+      sections: navSections('superadmin', { platformUser: true, superadmin: true }),
+    });
+    expect(filterCommands(items, 'reservas')).toEqual([
+      expect.objectContaining({ label: 'Reservas', href: '/admin/plataforma/reservas' }),
+    ]);
+  });
+
+  it('un platform_admin (retirado) no ve Plataforma: sus pantallas son del superadmin', () => {
+    expect(labels('platform_admin', true)).not.toContain('Plataforma');
+    expect(labels('platform_admin', true)).toContain('Gestión');
   });
 });

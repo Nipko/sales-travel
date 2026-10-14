@@ -2,7 +2,7 @@
 
 import { api } from '../../../../lib/api';
 import { hotelImageProxyUrl } from '../../../../lib/hotel-image-proxy';
-import type { HotelOffer } from '../actions';
+import type { HotelAccountEnvironment, HotelOffer } from '../actions';
 import { decodeHotelKey, type HotelProviderHotelRef } from '../_components/hotel-key';
 import { parseStay } from '../_components/hotel-search-handoff';
 import {
@@ -40,6 +40,8 @@ export interface HotelContentResult {
 export interface HotelRatesOutcome {
   readonly ref: HotelProviderHotelRef;
   readonly offer?: HotelOffer;
+  /** El entorno de la cuenta que dio las tarifas, si el proveedor lo declara. */
+  readonly accountEnvironment?: HotelAccountEnvironment;
   readonly error?: string;
 }
 
@@ -82,6 +84,15 @@ export async function hotelContentAction(hotelKey: string): Promise<HotelContent
     }),
   );
   return { ok: outcomes.some((o) => o.content !== undefined), outcomes };
+}
+
+/**
+ * El entorno que el API pone junto a la oferta del detalle. Sólo los dos valores conocidos: otro
+ * texto no avisa nada, que es mejor que avisar mal.
+ */
+function accountEnvironmentOf(offer: HotelOffer): HotelAccountEnvironment | undefined {
+  const value = (offer as { accountEnvironment?: unknown }).accountEnvironment;
+  return value === 'test' || value === 'live' ? value : undefined;
 }
 
 function isOffer(value: unknown): value is HotelOffer {
@@ -128,9 +139,11 @@ export async function hotelRatesAction(
         body: JSON.stringify(body),
       });
       if (!res.ok) return { ref, error: res.error.message };
-      return isOffer(res.data)
+      if (!isOffer(res.data)) return { ref, error: 'La respuesta del proveedor llegó incompleta.' };
+      const environment = accountEnvironmentOf(res.data);
+      return environment === undefined
         ? { ref, offer: res.data }
-        : { ref, error: 'La respuesta del proveedor llegó incompleta.' };
+        : { ref, offer: res.data, accountEnvironment: environment };
     }),
   );
   const blocked = nonRefundableBlockedOf(await permission);

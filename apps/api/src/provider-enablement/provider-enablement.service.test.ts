@@ -8,6 +8,7 @@ import { EnvHotelProviderFlags } from '../providers/hotel-providers.module.js';
 import { EnvProviderFlags } from '../providers/providers.module.js';
 import { StubHotelProviderFactory } from '../providers/__fixtures__/stub-hotel-provider.factory.js';
 import { StubProviderFactory } from '../providers/__fixtures__/stub-provider.factory.js';
+import type { KillSwitchStore, PanelKillSwitch } from './kill-switch.store.js';
 import { PlatformProviderFlags } from './platform-provider-flags.js';
 import type { EnablementSetting } from './provider-enablement.policy.js';
 import {
@@ -160,7 +161,13 @@ function baseFalsa(): {
   return { db, contextos };
 }
 
-function banco() {
+/** Los apagados de emergencia del panel que ve el breaker de esta réplica. */
+function apagadosEnMemoria(apagados: readonly PanelKillSwitch[] = []): KillSwitchStore {
+  const porCodigo = new Map(apagados.map((a) => [a.providerCode, a]));
+  return { active: (code: string) => porCodigo.get(code) } as unknown as KillSwitchStore;
+}
+
+function banco(apagados: readonly PanelKillSwitch[] = []) {
   const almacen = new AlmacenEnMemoria();
   const audit = new RecordingAuditService();
   const { db, contextos } = baseFalsa();
@@ -184,6 +191,7 @@ function banco() {
     audit.asService(),
     legacyFlights,
     legacyHotels,
+    apagadosEnMemoria(apagados),
   );
   return { service, almacen, audit, contextos, flights, hotels, alfaAir, tbo };
 }
@@ -373,6 +381,69 @@ describe('ProviderEnablementService', () => {
         origin: 'kill-switch',
         killSwitch: 'sales',
       });
+    });
+
+    it('el apagado del panel (0077) también le gana a todo, con su detalle', async () => {
+      const b = banco([
+        {
+          providerCode: 'tbo-hotels',
+          level: 'sales',
+          reason: 'TBO cobra de más',
+          setBy: SUPERADMIN,
+          setByEmail: 'root@plataforma.test',
+          setAt: new Date('2026-10-13T12:00:00Z'),
+          expiresAt: new Date('2026-10-13T13:00:00Z'),
+        },
+      ]);
+      await b.service.setTenant(SUPERADMIN, 'tbo-hotels', AGENCIA, { enabled: true, reason: null });
+
+      const tbo = (await b.service.forTenant(AGENCIA)).providers.find(
+        (p) => p.code === 'tbo-hotels',
+      );
+      expect(tbo?.killSwitch).toBe('sales');
+      expect(tbo?.killSwitchDetail).toEqual({
+        effective: 'sales',
+        env: null,
+        panel: {
+          level: 'sales',
+          reason: 'TBO cobra de más',
+          setBy: SUPERADMIN,
+          setByEmail: 'root@plataforma.test',
+          setAt: '2026-10-13T12:00:00.000Z',
+          expiresAt: '2026-10-13T13:00:00.000Z',
+        },
+      });
+      expect(tbo?.effective).toEqual({
+        enabled: false,
+        origin: 'kill-switch',
+        killSwitch: 'sales',
+      });
+    });
+
+    it('la variable y el panel a la vez: el detalle dice los dos y `killSwitch` es el más amplio', async () => {
+      vi.stubEnv('PROVIDERS_DISABLED', 'alfa-air:ventas');
+      const b = banco([
+        {
+          providerCode: 'alfa-air',
+          level: 'all',
+          reason: 'Responde basura',
+          setBy: SUPERADMIN,
+          setByEmail: null,
+          setAt: new Date('2026-10-13T12:00:00Z'),
+          expiresAt: null,
+        },
+      ]);
+
+      const alfa = (await b.service.list()).find((p) => p.code === 'alfa-air');
+      expect(alfa?.killSwitch).toBe('all');
+      expect(alfa?.killSwitchDetail).toMatchObject({
+        effective: 'all',
+        env: 'sales',
+        panel: { level: 'all', expiresAt: null },
+      });
+      expect(alfa?.baseline).toEqual({ enabled: false, origin: 'kill-switch', killSwitch: 'all' });
+      const despegar = (await b.service.list()).find((p) => p.code === 'despegar-hotels');
+      expect(despegar?.killSwitchDetail).toEqual({ effective: null, env: null, panel: null });
     });
 
     it('sin nada decidido, la política: `opt-in` apagado y `always` encendido', async () => {

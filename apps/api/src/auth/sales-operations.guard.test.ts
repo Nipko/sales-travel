@@ -58,7 +58,12 @@ function noVenta(motivo: string, ...rutas: string[]): [string, Clase][] {
 
 const ENTRADAS: [string, Clase][] = [
   // ───────────────────────── Ventas ─────────────────────────
-  ...venta('búsqueda y revalidación de vuelos', 'POST /search/flights', 'POST /search/offer-price'),
+  ...venta(
+    'búsqueda y revalidación de vuelos, y el mapa de asientos de la oferta que se va a reservar',
+    'POST /search/flights',
+    'POST /search/offer-price',
+    'POST /search/seat-map',
+  ),
   ...venta(
     'búsqueda de hoteles con precio, también el tramo siguiente de una búsqueda por destino',
     'POST /hotels/availability',
@@ -87,6 +92,7 @@ const ENTRADAS: [string, Clase][] = [
     'órdenes: crear, pagar o emitir, recotizar y vender servicios adicionales',
     'POST /orders',
     'POST /orders/:id/pay',
+    'POST /orders/:id/issue',
     'POST /orders/:id/reshop',
     'POST /orders/:id/services',
   ),
@@ -193,7 +199,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /mail/test',
   ),
   ...noVenta(
-    'administración de proveedores: credenciales, habilitación, visibilidad, conciliación y payloads',
+    'administración de proveedores: credenciales, habilitación, salud, apagado de emergencia, visibilidad, conciliación y payloads',
     'POST /provider-accounts',
     'GET /provider-accounts',
     'GET /provider-accounts/resolve',
@@ -205,10 +211,18 @@ const ENTRADAS: [string, Clase][] = [
     'DELETE /admin/providers/:code/global',
     'PUT /admin/providers/:code/tenants/:tenantId',
     'DELETE /admin/providers/:code/tenants/:tenantId',
+    'GET /admin/providers/health',
+    'PUT /admin/providers/:code/kill-switch',
+    'POST /admin/providers/:code/kill-switch/clear',
+    'POST /admin/providers/:code/circuit/reset',
     'GET /provider-disclosure',
     'PATCH /provider-disclosure',
     'GET /provider-payloads/requests/:requestId',
     'GET /provider-payloads/orders/:orderId',
+  ),
+  ...noVenta(
+    'diagnóstico de la plataforma: qué le falta a cada sucursal para probar una reserva de hotel, sin precio',
+    'GET /admin/hotels/readiness',
   ),
   ...noVenta(
     'reglas de precio y su simulador: configuración, no venta',
@@ -258,6 +272,10 @@ const ENTRADAS: [string, Clase][] = [
     'GET /hotels/content/:providerCode/:hotelId',
   ),
   ...noVenta(
+    'fotos, tamaño y descripción de las habitaciones de un hotel: contenido estático sin precio',
+    'GET /hotels/content/:providerCode/:hotelId/rooms',
+  ),
+  ...noVenta(
     'fotos de los resultados por lote: contenido estático sin precio, por el cupo de fondo',
     'POST /hotels/content/batch',
   ),
@@ -268,6 +286,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/retrieve',
     'GET /orders/:id/cancellation-estimate',
     'GET /orders/:id/operations',
+    'GET /orders/:id/ticket-check',
     'GET /hotels/reservations/:id',
     'POST /cars/reservation',
     'GET /cars/daily-report',
@@ -285,8 +304,9 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/send-confirmation',
   ),
   ...noVenta(
-    'corrección: cancelar lo vendido, reintentar una cancelación o rechazar un hold',
+    'corrección: cancelar lo vendido (también anulando sus tiquetes), reintentar una cancelación o rechazar un hold',
     'POST /orders/:id/cancel',
+    'POST /orders/:id/void',
     'POST /orders/:id/operations/:opId/retry',
     'POST /hotels/reservations/:id/cancel',
     'POST /cars/reservations/cancel',
@@ -313,6 +333,51 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:tenantId/portfolios/deposit-reports/:reportId/reject',
   ),
   ...noVenta(
+    'el superadmin ve en una cola los depósitos informados de toda la red (sólo lectura)',
+    'GET /admin/deposit-reports',
+    'GET /admin/deposit-reports/pending-count',
+  ),
+  ...noVenta(
+    'el Resumen de la plataforma: agregados de toda la red para el superadmin (sólo lectura)',
+    'GET /admin/overview',
+  ),
+  ...noVenta(
+    'Sistema › Procesos: si el barrido, la conciliación y los catálogos están corriendo (sólo lectura)',
+    'GET /admin/system/jobs',
+  ),
+  ...noVenta(
+    'Actividad de la plataforma: quién hizo qué en toda la red, y su exportación auditada (sólo lectura)',
+    'GET /admin/audit',
+    'GET /admin/audit/export',
+  ),
+  ...noVenta(
+    'Sistema › Anuncios: los avisos de texto que el superadmin publica para la red, y la franja que los muestra',
+    'GET /announcements/active',
+    'GET /admin/announcements',
+    'POST /admin/announcements',
+    'PATCH /admin/announcements/:id',
+    'POST /admin/announcements/:id/archive',
+  ),
+  ...noVenta(
+    'Agencias en números: puestos, ventas y pendientes de cada nodo, el impacto de suspender uno y la pestaña Resumen de cada nodo (sólo lectura)',
+    'GET /admin/tenants/stats',
+    'GET /admin/tenants/:id/impact',
+    'GET /admin/tenants/:id/summary',
+  ),
+  ...noVenta(
+    'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',
+    'GET /admin/orders',
+    'GET /admin/orders/:id',
+  ),
+  ...noVenta(
+    'Reservas de la red: la post-venta del superadmin sobre lo ya vendido (FD-1 C): reenviar, consultar, reintentar y cancelar',
+    'POST /admin/orders/:id/send-confirmation',
+    'POST /admin/orders/:id/retrieve',
+    'POST /admin/orders/:id/operations/:opId/retry',
+    'GET /admin/orders/:id/cancellation-estimate',
+    'POST /admin/orders/:id/cancel',
+  ),
+  ...noVenta(
     'quien financia a un nodo decide si puede reservar tarifas no reembolsables',
     'GET /tenants/:tenantId/booking-permissions',
     'PUT /tenants/:tenantId/booking-permissions',
@@ -326,6 +391,7 @@ const ENTRADAS: [string, Clase][] = [
 const VENTAS_DEL_MODELO = [
   'POST /search/flights',
   'POST /search/offer-price',
+  'POST /search/seat-map',
   'POST /hotels/availability',
   'POST /hotels/availability/more',
   'POST /hotels/prebook',
@@ -334,6 +400,7 @@ const VENTAS_DEL_MODELO = [
   'POST /cars/book',
   'POST /orders',
   'POST /orders/:id/pay',
+  'POST /orders/:id/issue',
   'POST /quotations',
   'PATCH /quotations/:id/status',
   'POST /quotations/:id/send-email',

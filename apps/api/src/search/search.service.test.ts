@@ -609,6 +609,23 @@ describe('SearchService.searchFlights', () => {
       expect(res.offers).toHaveLength(2);
     });
 
+    it("las tarifas de una cuenta de pruebas no cuentan para saltarse el 'fallback'", async () => {
+      // Cinco tarifas de pruebas en la primera ola no son cinco tarifas vendibles: el respaldo
+      // real tiene que salir igual, o el vendedor sólo vería lo que no emite un tiquete válido.
+      const muchas = [1, 2, 3, 4, 5].map((n) => offer({ id: `offer-${n}` }));
+      const b = banco({
+        providers: [
+          { code: PRINCIPAL, offers: muchas, providerEnvironment: 'test' },
+          { code: 'alfa-air', callPolicy: 'fallback' },
+        ],
+      });
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(b.llamadas('alfa-air')).toBe(1);
+      expect(res.offers.some((o) => o.provider.name === 'alfa-air')).toBe(true);
+    });
+
     it('si la ola de fallback también falla, el error queda visible en `providers`', async () => {
       const b = banco({
         providers: [
@@ -735,6 +752,99 @@ describe('SearchService.searchFlights', () => {
       expect(b.getApplicableRules).toHaveBeenCalledWith(TENANT, 'flights');
     });
   });
+
+  describe('entorno de la cuenta del proveedor', () => {
+    it('las tarifas de una cuenta de pruebas salen marcadas `test`; las de una real, sin marca', async () => {
+      const b = banco({
+        providers: [
+          { code: PRINCIPAL, providerEnvironment: 'live' },
+          { code: 'alfa-air', providerEnvironment: 'test' },
+        ],
+      });
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      const deAlfa = res.offers.find((o) => o.provider.name === 'alfa-air');
+      const dePrincipal = res.offers.find((o) => o.provider.name === PRINCIPAL);
+      expect(deAlfa?.provider.environment).toBe('test');
+      expect(dePrincipal?.provider).not.toHaveProperty('environment');
+    });
+
+    it('un factory que no declara entorno se lee como real: sin marca', async () => {
+      const b = banco();
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(res.offers[0]?.provider).not.toHaveProperty('environment');
+    });
+
+    it('lo que diga el ACL no cuenta: la marca sale de la cuenta resuelta', async () => {
+      // Un ACL no sabe con qué cuenta lo construyeron. Si escribiera el campo, se ignora en los
+      // dos sentidos: ni puede desmarcar una tarifa de pruebas ni marcar una real.
+      const b = banco({
+        providers: [
+          {
+            code: PRINCIPAL,
+            providerEnvironment: 'live',
+            offers: [
+              offer({
+                provider: { name: PRINCIPAL, offerRef: 'P-1', environment: 'test' },
+              }),
+            ],
+          },
+          {
+            code: 'alfa-air',
+            providerEnvironment: 'test',
+            offers: [
+              offerDe('alfa-air', {
+                id: '44444444-4444-4444-8444-444444444444',
+                provider: { name: 'alfa-air', offerRef: 'A-1', environment: 'live' },
+              }),
+            ],
+          },
+        ],
+      });
+
+      const res = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(res.offers.find((o) => o.provider.name === PRINCIPAL)?.provider).not.toHaveProperty(
+        'environment',
+      );
+      expect(res.offers.find((o) => o.provider.name === 'alfa-air')?.provider.environment).toBe(
+        'test',
+      );
+    });
+
+    it('la marca viaja en la respuesta cacheada', async () => {
+      const b = banco({ providers: [{ code: PRINCIPAL, providerEnvironment: 'test' }] });
+
+      await b.service.searchFlights(criteria(), TENANT);
+      const segunda = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(b.llamadas()).toBe(1);
+      expect(segunda.offers[0]?.provider.environment).toBe('test');
+    });
+
+    it('si la cuenta cambia de entorno dentro del TTL, la caché no sirve la marca de la otra', async () => {
+      const b = banco({ providers: [{ code: PRINCIPAL, providerEnvironment: 'test' }] });
+      const factory = b.factories.get(PRINCIPAL)!;
+
+      const deprueba = await b.service.searchFlights(criteria(), TENANT);
+      // La misma cuenta, ya en producción: el factory la resuelve `live`.
+      vi.spyOn(factory, 'resolveForTenant').mockImplementation((tenantId: string) =>
+        Promise.resolve({
+          adapter: factory.adapterFor(tenantId),
+          credentialSource: 'own',
+          providerEnvironment: 'live',
+        }),
+      );
+      const real = await b.service.searchFlights(criteria(), TENANT);
+
+      expect(b.llamadas()).toBe(2);
+      expect(deprueba.offers[0]?.provider.environment).toBe('test');
+      expect(real.offers[0]?.provider).not.toHaveProperty('environment');
+    });
+  });
 });
 
 describe('SearchService.priceOffer', () => {
@@ -792,6 +902,34 @@ describe('SearchService.priceOffer', () => {
     const res = await b.service.priceOffer(offer(), criteria(), TENANT);
 
     expect(res.offer.pricing).toBeUndefined();
+  });
+
+  it('la oferta revalidada de una cuenta de pruebas sale marcada aunque el navegador la desmarque', async () => {
+    const b = banco({ providers: [{ code: PRINCIPAL, providerEnvironment: 'test' }] });
+
+    // Lo que manda el navegador: la oferta sin la marca (o con `live`). El stub la devuelve tal
+    // cual, como haría un ACL que construye la respuesta sobre la oferta de entrada.
+    const res = await b.service.priceOffer(
+      offer({ provider: { name: PRINCIPAL, offerRef: 'OFFER-1', environment: 'live' } }),
+      criteria(),
+      TENANT,
+    );
+
+    expect(res.offer.provider.environment).toBe('test');
+  });
+
+  it('la oferta revalidada de una cuenta real no lleva marca, la mande quien la mande', async () => {
+    const b = banco({ rules: [regla(1_000)] });
+
+    const res = await b.service.priceOffer(
+      offer({ provider: { name: PRINCIPAL, offerRef: 'OFFER-1', environment: 'test' } }),
+      criteria(),
+      TENANT,
+    );
+
+    expect(res.offer.provider).not.toHaveProperty('environment');
+    // La marca se resuelve ANTES del waterfall: el precio de venta sigue saliendo.
+    expect(res.offer.pricing?.finalMinor).toBe(110_000);
   });
 
   it('NO pasa por cuota, por caché ni por el circuito (comportamiento actual)', async () => {

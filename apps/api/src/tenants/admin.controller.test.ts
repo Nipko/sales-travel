@@ -1502,12 +1502,69 @@ describe('Zod en los bordes', () => {
 
     it('acepta estado, sucursal y tipo', () => {
       expect(
-        cambio.transform({ status: 'suspended', isBranch: false, tenantType: 'consolidator' }),
-      ).toEqual({ status: 'suspended', isBranch: false, tenantType: 'consolidator' });
+        cambio.transform({
+          status: 'suspended',
+          isBranch: false,
+          tenantType: 'consolidator',
+          reason: 'Falta de pago',
+        }),
+      ).toEqual({
+        status: 'suspended',
+        isBranch: false,
+        tenantType: 'consolidator',
+        reason: 'Falta de pago',
+      });
+    });
+
+    it('suspender exige el motivo (5 a 500 caracteres, recortado); reactivar lo admite sin exigirlo', () => {
+      expect(cambio.transform({ status: 'suspended', reason: '  Deuda vencida  ' })).toEqual({
+        status: 'suspended',
+        reason: 'Deuda vencida',
+      });
+      expect(cambio.transform({ status: 'active' })).toEqual({ status: 'active' });
+      expect(cambio.transform({ status: 'active', reason: 'Pagó la deuda' })).toEqual({
+        status: 'active',
+        reason: 'Pagó la deuda',
+      });
+
+      const sinMotivo = (() => {
+        try {
+          cambio.transform({ status: 'suspended' });
+        } catch (err) {
+          return (err as BadRequestException).getResponse();
+        }
+        return undefined;
+      })();
+      expect(sinMotivo).toMatchObject({
+        fields: [
+          { field: 'reason', message: 'Indica el motivo de la suspensión (5 a 500 caracteres).' },
+        ],
+      });
+    });
+
+    it('lo vacío pide qué cambiar, en tú', () => {
+      const vacio = (() => {
+        try {
+          cambio.transform({});
+        } catch (err) {
+          return (err as BadRequestException).getResponse();
+        }
+        return undefined;
+      })();
+      expect(vacio).toMatchObject({
+        fields: [{ message: 'Indica qué cambiar: status, isBranch o tenantType' }],
+      });
     });
 
     it.each([
       ['vacío', {}],
+      ['sólo el motivo', { reason: 'Falta de pago' }],
+      ['suspender sin motivo', { status: 'suspended' }],
+      ['suspender con un motivo de espacios', { status: 'suspended', reason: '         ' }],
+      ['un motivo corto', { status: 'suspended', reason: 'no' }],
+      ['un motivo de más de 500', { status: 'suspended', reason: 'x'.repeat(501) }],
+      ['un motivo con NUL', { status: 'suspended', reason: 'Falta\u0000 de pago' }],
+      ['un motivo que no es texto', { status: 'suspended', reason: 12345 }],
       ['la plataforma', { tenantType: 'platform' }],
       ['archivar', { status: 'archived' }],
       ['cambiar el padre (eso es mover)', { parentTenantId: PADRE }],

@@ -2,16 +2,20 @@ import {
   BarChart3,
   Building2,
   Calendar,
+  CalendarCheck,
   Car,
   FileText,
+  History,
   Home,
   Hotel,
   KeyRound,
+  LayoutDashboard,
   Lock,
   MapPin,
   Network,
   Plug,
   Settings,
+  Settings2,
   Shield,
   Ticket,
   UserCog,
@@ -27,7 +31,12 @@ export interface NavItem {
   label: string;
   href: Route;
   icon: LucideIcon;
+  /** Un contador al lado (lo que espera acción); el menú lo lee con `useNavBadges`. */
+  badge?: NavBadge;
 }
+
+/** Los contadores que sabe pintar el menú. */
+export type NavBadge = 'pendingDeposits';
 
 export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
@@ -62,12 +71,29 @@ export const accountNav: NavItem[] = [
   { label: 'Seguridad', href: '/configuracion/seguridad', icon: Lock },
 ];
 
+/**
+ * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
+ * se sumen se agregan a este mismo arreglo.
+ */
 export const superAdminNav: NavItem[] = [
-  { label: 'Gestión de Agencias', href: '/admin/tenants', icon: Building2 },
+  { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
+  { label: 'Agencias', href: '/admin/tenants', icon: Building2 },
+  // Las reservas de toda la red. Mis Reservas no: la plataforma no vende y no tiene reservas propias.
+  { label: 'Reservas', href: '/admin/plataforma/reservas', icon: CalendarCheck },
+  {
+    label: 'Carteras',
+    href: '/admin/plataforma/carteras',
+    icon: Wallet,
+    badge: 'pendingDeposits',
+  },
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
-  { label: 'Proveedores de la plataforma', href: '/admin/plataforma/proveedores', icon: Plug },
-  { label: 'Usuarios de la plataforma', href: '/admin/plataforma/usuarios', icon: UserCog },
+  { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
+  { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
+  // Quién hizo qué, dónde y cuándo, en toda la plataforma.
+  { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },
+  // Lo que corre solo: el barrido de post-venta, la conciliación y los catálogos.
+  { label: 'Sistema', href: '/admin/plataforma/sistema', icon: Settings2 },
 ];
 
 /** Roles que ven la sección Administración. */
@@ -85,6 +111,9 @@ export function seesAdministration(role: string | undefined): boolean {
   return ADMIN_NAV_ROLES.includes(role ?? '');
 }
 
+/** Mis Reservas: las reservas del tenant activo. */
+const MY_ORDERS_HREF = '/reservas';
+
 export interface NavSection {
   label: string;
   items: NavItem[];
@@ -95,16 +124,24 @@ export interface NavSection {
  * el sidebar y para la paleta de comandos (⌘K): si no, una ofrecía pantallas que la otra no.
  */
 export function navSections(role: string | undefined, viewer: Viewer): NavSection[] {
+  const platform = role === 'superadmin';
+  // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts). Con la plataforma
+  // activa tampoco Mis Reservas: su tenant no tiene reservas, las de la red están en Plataforma.
+  const operations = navForViewer(operationsNav, viewer).filter(
+    (item) => !platform || item.href !== MY_ORDERS_HREF,
+  );
   const sections: NavSection[] = [
-    // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts).
-    { label: 'Operaciones', items: navForViewer(operationsNav, viewer) },
-    { label: 'Gestión', items: managementNav },
+    { label: 'Operaciones', items: operations },
+    // La plataforma va primero entre lo suyo; Gestión (Clientes, Cartera B2B, Reportes) mostraría
+    // los datos del tenant de la plataforma, que no vende: vacíos.
+    ...(platform
+      ? [{ label: 'Plataforma', items: superAdminNav }]
+      : [{ label: 'Gestión', items: managementNav }]),
   ];
   if (seesAdministration(role)) {
     sections.push({ label: 'Administración', items: adminNav });
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.
   sections.push({ label: 'Mi cuenta', items: accountNav });
-  if (role === 'superadmin') sections.push({ label: 'Super Admin', items: superAdminNav });
   return sections;
 }

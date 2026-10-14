@@ -719,14 +719,17 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 
 ```
 /admin/tenants                   -- lista tenants
-/admin/tenants/:id               -- detalle, métricas, suspender
+/admin/tenants/:id/resumen       -- la ficha de cada nodo, primera pestaña (ventas 30 d por moneda, atención,
+                                 -- puestos, personas, carteras, proveedores y actividad reciente; ADM-13)
+/admin/tenants/:id               -- Proveedores del nodo (se queda en la raíz para no romper enlaces);
+                                 -- /carteras y /puestos son las otras pestañas; Usuarios abre Equipo
 /admin/tenants/new               -- creación manual de tenant (Ola 1)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
 /admin/incidents                 -- monitoreo + status page
 /admin/plataforma/usuarios       -- directorio de personas de toda la red, filtros y suspensión global (doc 15; el alta es por invitación, ver 14)
 /admin/feature-flags             -- Unleash UI embed
-/admin/audit                     -- log global
+/admin/plataforma/actividad      -- quién hizo qué, dónde y cuándo en toda la plataforma: filtros, detalle y CSV auditado (0078)
 /admin/reports                   -- métricas de plataforma
 ```
 
@@ -914,6 +917,15 @@ GET    /tenants/:tenantId/portfolios/transactions?currency
 GET    /tenants/:tenantId/portfolios/network-holds?currency&status
 GET    /tenants/:tenantId/portfolios/deposit-reports
 POST   /tenants/:tenantId/portfolios/deposit-reports/:reportId/approve · /reject
+
+-- El superadmin, sobre toda la red (Plataforma → Carteras, /admin/plataforma/carteras
+-- ?estado&alcance&moneda&nodo). Sólo lectura: se aprueba y se rechaza con las dos rutas de arriba,
+-- en el nodo dueño del informe, y desde la cola sólo lo que financia Planetour (lo que financia
+-- otro nodo llegó a su cuenta: "Lo aprueba {nodo}").
+GET    /admin/deposit-reports?status&financedBy&currency&tenantId&q&cursor&limit
+                                                -- la cola: pendientes del más viejo al más nuevo (o el historial),
+                                                --   con nodo, financiador y totales por moneda; financedBy=platform|network
+GET    /admin/deposit-reports/pending-count     -- { total, platform, network }: el contador del menú
 ```
 
 `network-holds` responde `{ items: [{ levelId, currency, amountMinor, status, originTenantId, originTenantName, orderNumber, createdAt, updatedAt }], totals: [{ currency, heldMinor, chargedMinor }] }`, con hasta 200 reservas. `heldMinor` es lo abierto; `chargedMinor` es el acumulado histórico de lo cobrado al costo del nivel, pagado o no, así que no es la deuda viva. La respuesta nunca trae quién vendió, los pasajeros ni el precio de venta. Eso vale para `network-holds`, no para toda la plataforma: la actividad de la red (`GET /tenants/network/audit`) sí les muestra a los ancestros la retención del nivel 0 del que vende (12 §14.7). Los rechazos de una retención son 409 con `reason`. Los de la cartera propia son `PORTFOLIO_CURRENCY_NOT_ENABLED`, `PORTFOLIO_INACTIVE` y `PORTFOLIO_FUNDS_INSUFFICIENT`. Los de la red son `PORTFOLIO_NETWORK_CURRENCY_NOT_ENABLED`, `PORTFOLIO_NETWORK_FUNDS_UNAVAILABLE` y `PORTFOLIO_NETWORK_COST_UNAVAILABLE`. Los demás son `PORTFOLIO_HOLD_ACCOUNT_CHANGED`, `PORTFOLIO_HOLD_BUSY` y `PORTFOLIO_RELEASE_BUSY`.
@@ -955,11 +967,250 @@ POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ### Admin (superadmin)
 
 ```
+GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
+                                         -- 30 días por defecto, hasta 366. tenantId = el subárbol de
+                                         -- ese nodo. Ventas por moneda/vertical/proveedor (nunca suma
+                                         -- monedas), tendencia de 12 meses, top 10 nodos por reservas
+                                         -- confirmadas, red (nodos, personas, sesiones vivas),
+                                         -- carteras (cupo, deuda, exposición de Planetour), lo que
+                                         -- espera a una persona (depósitos, post-venta fallida o
+                                         -- trabada, hoteles sin verificar, retenciones en conflicto,
+                                         -- conciliación, invitaciones), las reservas con problemas
+                                         -- (admin_order_attention: total, por motivo y muestra de 10),
+                                         -- puestos al 90 %, corridas de conciliación de 7 días,
+                                         -- frescura de los catálogos de hoteles, si el barrido de
+                                         -- post-venta dejó de correr (attention.jobs: sin corrida
+                                         -- correcta en 45 min) y señales de
+                                         -- proveedores. Sólo lee; las funciones platform_overview_* y
+                                         -- admin_* exigen en la base is_platform_superadmin() (42501
+                                         -- admin_superadmin_required → 403 SUPERADMIN_REQUIRED con
+                                         -- rethrowAdminDbError). En el panel: /admin/plataforma/resumen,
+                                         -- adonde entra el superadmin al abrir `/` (BFF
+                                         -- /api/admin/overview?period=today|7d|30d|month, traducido
+                                         -- a días de Bogotá).
+GET    /admin/system/jobs                -- Plataforma → Sistema › Procesos (implementado, sin
+                                         -- migración): lo que corre solo, sin leer los logs.
+                                         -- postSaleSweep {lastRunAt, lastOk, lastOkAt, durationMs,
+                                         -- tenantsFailed, runs24h, failures24h, stale} del rastro del
+                                         -- barrido: cada corrida de PostSaleSweeper deja
+                                         -- system.post_sale_sweep.completed {durationMs, tenants,
+                                         -- tenantsFailed, examined, adopted, staleCancelClaims,
+                                         -- cancellations, hcn, reconciliation, ticketIssues} o
+                                         -- .failed {errorClass}
+                                         -- (también AllTenantsFailed {durationMs, tenants,
+                                         -- tenantsFailed} si no pudo revisar ningún nodo: no cuenta
+                                         -- como correcta) en domain_events, en la raíz platform y
+                                         -- sin actor (sólo conteos y códigos; ~35.000 filas al
+                                         -- año). Se lee con la RLS de siempre
+                                         -- (domain_events_subtree_read): la red no lo ve. stale = sin
+                                         -- corrida correcta en 45 min (corre cada 15).
+                                         -- reconciliation = admin_reconciliation_health(7 días) por
+                                         -- proveedor, con stale a las 36 h sin terminar una corrida;
+                                         -- catalogs = hotel_provider_city por proveedor (hoy sólo
+                                         -- TBO: el sync de Despegar reemplaza hotel_inventory y no
+                                         -- escribe ciudades), stale a las 36 h; airports {count};
+                                         -- schedules = el barrido, la conciliación (04:30 UTC) y los
+                                         -- crones de sync-airports.yml, sync-hotel-inventory.yml y
+                                         -- sync-tbo-hotel-inventory.yml (un test los compara con los
+                                         -- workflows). La actividad de la red (networkAudit) deja
+                                         -- fuera los eventos system.*, con cualquier filtro de
+                                         -- categoría o de persona. En el panel:
+                                         -- /admin/plataforma/sistema (BFF /api/admin/system/jobs).
+-- Anuncios de la plataforma (implementado, 0079): avisos de texto plano para toda la red o para un
+-- nodo y su subárbol, opcionalmente sólo para administradores (ADMIN_ROLES en el nodo activo o en
+-- un ancestro), de severity info|warning|critical, vigentes de starts_at a ends_at (31 días como
+-- mucho; CHECK system_announcements_window). Tabla system_announcements con RLS FORCE: la leen y
+-- escriben sólo is_platform_superadmin() (INSERT a su nombre, sin DELETE: archivar es un UPDATE);
+-- un trigger conserva created_by/created_at. Nada de esto vende.
+GET    /announcements/active             -- La franja de avisos del panel, para cualquier usuario con
+                                         -- sesión (sin @Roles). { announcements: [{id, severity,
+                                         -- title, body, startsAt, endsAt}] }: una sola llamada a
+                                         -- active_announcements() (SECURITY DEFINER, sin parámetros:
+                                         -- toma app.current_user_id y app.current_tenant_id, exige
+                                         -- una membership activa en el nodo o un ancestro), hasta 3,
+                                         -- los más graves y después los más nuevos. Sin nodo activo,
+                                         -- []. Nunca dice a quién iba ni quién lo escribió. En el
+                                         -- panel: components/layout/announcement-banner.tsx, en el
+                                         -- AppShell bajo la barra superior (no en la pantalla de
+                                         -- enrolamiento del 2FA); pregunta al abrir y cada 5 min
+                                         -- (no con la pestaña oculta) con x-session-ping: passive,
+                                         -- así que no cuenta como actividad ni impide que la sesión
+                                         -- venza por inactividad. Pinta texto (sin HTML ni enlaces,
+                                         -- saltos de línea respetados) y deja ocultar info y
+                                         -- warning (localStorage st.announcements.dismissed, por id
+                                         -- y una huella de gravedad, título y mensaje: si se corrige
+                                         -- el texto, vuelve a verse); critical no se oculta. Si
+                                         -- falla, no pinta nada.
+GET    /admin/announcements              -- Plataforma → Sistema › Anuncios (sólo superadmin): los
+                                         -- últimos 50 con status scheduled|active|expired|archived
+                                         -- (con la hora de la base) y el público {rootTenantId,
+                                         -- rootTenantName, adminsOnly}.
+POST   /admin/announcements              -- Publicar. Zod estricto: severity, title 3..120, body
+                                         -- 0..600 (texto plano: sin controles ni invisibles, saltos
+                                         -- de línea en el mensaje), audience {rootTenantId|null,
+                                         -- adminsOnly}, startsAt opcional (ahora), endsAt hasta 31
+                                         -- días después y en el futuro (400
+                                         -- ANNOUNCEMENT_WINDOW_INVALID); nodo inexistente → 404
+                                         -- ANNOUNCEMENT_AUDIENCE_NOT_FOUND.
+PATCH  /admin/announcements/:id          -- Corregir: los mismos campos, cualquiera; la vigencia se
+                                         -- revisa con lo que ya tiene. Archivado → 409
+                                         -- ANNOUNCEMENT_ARCHIVED. Sin cambios, no escribe.
+POST   /admin/announcements/:id/archive  -- Deja de mostrarse en el acto (409 si ya lo estaba).
+                                         -- Cada escritura deja, en la misma transacción y en la raíz
+                                         -- platform, platform.announcement.published | .updated
+                                         -- (con `changed`: los nombres de los campos) | .archived
+                                         -- con {announcementId, severity, audience}: nunca el título
+                                         -- ni el mensaje. En el panel:
+                                         -- /admin/plataforma/sistema/anuncios (BFF
+                                         -- /api/admin/announcements, escrituras sólo del mismo
+                                         -- origen; /api/announcements/active para la franja).
+GET    /admin/orders?tenantId&subtree&vertical&provider&status&from&to&q&attention&cursor&limit
+                                         -- Plataforma → Reservas de la red (implementado, 0076):
+                                         -- admin_search_orders. tenantId con su red (subtree=false,
+                                         -- sólo ese nodo); status = lista separada por comas; días de
+                                         -- Bogotá, ambos incluidos; q = PNR (sin distinguir
+                                         -- mayúsculas), nuestra referencia, n.º de orden, correo
+                                         -- EXACTO del cliente o id; attention=true = sólo las que
+                                         -- necesitan a una persona, cada fila con su motivo más grave.
+                                         -- De la más nueva a la más vieja, paginada por cursor
+                                         -- (created_at con microsegundos + id), hasta 100 por página.
+                                         -- Sin pasajeros ni contacto: el correo que sale es el del
+                                         -- vendedor.
+GET    /admin/orders/:id                 -- la ficha: admin_order_tenant dice de qué nodo es y se lee
+                                         -- con las lecturas de Reservas de ese nodo (withTenant, RLS
+                                         -- de cada tabla): orden (pasajeros sólo con nombre y tipo,
+                                         -- contacto sólo con correo y teléfono), nodo y su camino,
+                                         -- vendedor, operaciones, seguimiento del hotel, retención,
+                                         -- conciliación, motivos de atención y los últimos 50 eventos
+                                         -- (payload sin claves sensibles, redactPayload). Cada ficha
+                                         -- abierta deja platform.order.viewed en el nodo de la
+                                         -- reserva (lo ve su administrador). 404 ORDER_NOT_FOUND.
+                                         -- `capabilities: { retrieve, cancel }` (OrderCapabilities-
+                                         -- Service; lo de vender no sale).
+-- Post-venta del superadmin desde la ficha (FD-1 C, 2026-10-13; implementado). Nunca venden
+-- (sin @SalesOperation): pagar, emitir, servicios y recotizar no existen aquí. Cuerpo Zod
+-- estricto `{ reason }` (5..500, recortado; queda en la auditoría). Cada una resuelve el nodo con
+-- admin_order_tenant, lee la orden con ese tenant y corre en su contexto (runWithTenantContext):
+-- los servicios de Reservas de la agencia, con sus reglas y el superadmin como actor. Deja
+-- `platform.order.action` {action, orderId, operationId?, reason, outcome ok|error,
+-- errorReason?, result?} en el nodo de la reserva: lo ven la agencia y la plataforma. Una
+-- cancelación respondida que no canceló dice por qué con el intento del historial:
+-- PROVIDER_REJECTED (la reserva sigue), PROVIDER_UNVERIFIED (hay que conciliar) o
+-- PROVIDER_NOT_CANCELLED (no se pudo leer).
+POST   /admin/orders/:id/send-confirmation -- reenvía la confirmación con la marca y el correo del
+                                         -- nodo (confirmada o emitida, 409; sin correo, 404).
+                                         -- → { sent, to }
+POST   /admin/orders/:id/retrieve        -- consulta al proveedor (capacidad retrieve).
+                                         -- → { reading (sin pasajeros), detail (la ficha releída) }
+POST   /admin/orders/:id/operations/:opId/retry
+                                         -- reintenta una cancelación fallida y reintentable con el
+                                         -- mismo claim (OrdersService.retryOperation).
+GET    /admin/orders/:id/cancellation-estimate
+                                         -- la penalidad estimada (sólo hoteles), sin evento.
+POST   /admin/orders/:id/cancel          -- `{ reason, orderNumber }`: cancela en nombre de la
+                                         -- agencia; el número escrito tiene que ser el de la orden
+                                         -- (400 ORDER_NUMBER_MISMATCH). Mismas reglas que la agencia
+                                         -- (emitida no; intento fallido → reintento). La retención de
+                                         -- cartera se libera como en una cancelación de la agencia.
+-- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
+-- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants
+GET    /admin/tenants/stats              -- Agencias en números (implementado, sin migración):
+                                         -- admin_node_stats() (0075) por nodo + las ventas de 30
+                                         -- días de admin_sales_summary (confirmadas o emitidas).
+GET    /admin/tenants/:id/impact         -- Qué arrastraría suspender el nodo con su red: nodos,
+                                         -- personas distintas, sesiones, reservas vigentes, lo
+                                         -- retenido por moneda, depósitos e invitaciones.
+GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (implementado, sin
+                                         -- migración; ADM-13). { generatedAt, tenant {id, name, slug,
+                                         -- tenantType, isBranch, status, parent {id, name} | null,
+                                         -- countryCode, defaultCurrency, createdAt}, own (su fila de
+                                         -- admin_node_stats; sales30d = sus confirmadas), subtree
+                                         -- (su red sumada, él incluido, como el impacto: personas
+                                         -- distintas con membership y usuario activos), sales {days:
+                                         -- 30, own, subtree} (admin_sales_summary del subárbol por
+                                         -- moneda con cuántas, confirmadas y su monto, canceladas,
+                                         -- fallidas y lo confirmado por vertical; nunca suma
+                                         -- monedas), attention {total, byReason}
+                                         -- (admin_order_attention del subárbol, sin muestra) }. El
+                                         -- nodo se lee primero (404 TENANT_NOT_FOUND); después las
+                                         -- tres secciones (network, sales, attention) a la vez, cada
+                                         -- una en su transacción: si una falla llega en null y queda
+                                         -- un warn admin.node-summary.section-unavailable con el
+                                         -- código del error. Los permisos no se tapan así: el
+                                         -- 42501 admin_superadmin_required es el 403 de siempre y
+                                         -- cualquier otro 42501 o error HTTP sale tal cual. Sólo
+                                         -- lee, no audita. En el panel:
+                                         -- /admin/tenants/:id/resumen (BFF
+                                         -- /api/admin/tenants/:id/summary), que además lee aparte
+                                         -- las carteras (GET /tenants/:id/portfolios), los
+                                         -- proveedores (GET /admin/providers/tenants/:id) y los
+                                         -- últimos 10 eventos de 30 días de su red (GET
+                                         -- /admin/audit?tenantId&limit=10): cada sección falla por
+                                         -- su lado. Enlaza a Reservas de la red
+                                         -- (?nodo&atencion=1, ?nodo&estado=pendiente,confirmada,
+                                         -- emitida), Plataforma → Carteras (?nodo), Actividad
+                                         -- (?nodo&desde&hasta) y a cada pestaña. El nombre de cada
+                                         -- nodo en Agencias y en "Nodos con más ventas" del
+                                         -- Resumen lleva a esta pestaña.
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status
 GET    /admin/incidents
-GET    /admin/audit
+GET    /admin/audit?from&to&category&eventType&actorEmail&tenantId&includePlatform&aggregateType&aggregateId&cursor&limit
+                                         -- Plataforma → Actividad (implementado, 0078): quién hizo
+                                         -- qué, dónde y cuándo, en toda la plataforma.
+                                         -- admin_audit_events (SECURITY DEFINER, exige
+                                         -- is_platform_superadmin(): 42501 → 403
+                                         -- SUPERADMIN_REQUIRED). Días de Bogotá, 7 por defecto,
+                                         -- hasta 92 (400 AUDIT_PERIOD_INVALID; la base corta a los
+                                         -- 93). category = access (auth.) | team (User, Membership,
+                                         -- users.) | network (tenant., Tenant, booking., Markup,
+                                         -- mail.; sin tenant.provider_disclosure) | wallets
+                                         -- (portfolio., portfolios., wallet_hold.) | providers
+                                         -- (platform.provider, Provider,
+                                         -- tenant.provider_disclosure) | orders (Order, Hotel,
+                                         -- CarReservation, platform.order.) | system (system.,
+                                         -- platform.announcement, platform.audit, platform.orders):
+                                         -- prefijos de event_type, sin solaparse
+                                         -- (apps/api/src/audit/audit-categories.ts; la web los
+                                         -- espeja en lib/platform-audit). Sin category ("Todo")
+                                         -- quedan fuera los system.* (los latidos del barrido),
+                                         -- salvo eventType = uno de ellos. eventType exacto;
+                                         -- actorEmail exacto (users, CITEXT; uno que no es de nadie
+                                         -- da [] sin leer); tenantId = el nodo y su subárbol (404
+                                         -- PLATFORM_CONSOLE_SCOPE_NOT_FOUND); includePlatform = los
+                                         -- eventos sin nodo (por defecto sí sin tenantId, no con
+                                         -- él); aggregateType/aggregateId exactos. Del más nuevo al
+                                         -- más viejo, cursor (occurred_at con microsegundos + id),
+                                         -- 50 por página, hasta 200 (idx_domain_events_time).
+                                         -- { events: [{id, occurredAt, eventType, tenantId,
+                                         -- tenantName, actorEmail, targetEmail, aggregateType,
+                                         -- aggregateId, payload (redactPayload), meta {ip,
+                                         -- userAgent, requestId}}], nextCursor }: el id de la
+                                         -- sesión no sale de la base.
+GET    /admin/audit/export?<los mismos filtros>
+                                         -- La vista en CSV (text/csv, UTF-8 con BOM, CRLF): fecha
+                                         -- (Bogotá con desfase), evento, nodo, actor, entidad,
+                                         -- id_entidad, ip; ni payload ni navegador. Hasta 5.000 (los
+                                         -- más nuevos; X-Export-Rows, X-Export-Truncated). Celdas
+                                         -- con = + - @ llevan apóstrofo y las que tienen , ; tab o
+                                         -- salto de línea van entre comillas (Excel en es-CO/pt-BR
+                                         -- separa por ;) (admin-console/csv.ts, que reusa ADM-14).
+                                         -- El índice de 0078 bloquea las escrituras de
+                                         -- domain_events mientras se arma (~0,3 s por millón de
+                                         -- filas): ver su encabezado antes de desplegar.
+                                         -- @RequireRecentMfa (2FA de los últimos 10
+                                         -- min, USR-13). Escribe platform.audit.exported {filters
+                                         -- (el actor por su id; actorNotFound si el correo no era de
+                                         -- nadie), rows, truncated} en la raíz platform, en la misma
+                                         -- transacción que la lectura: sin rastro no hay archivo. En
+                                         -- el panel: /admin/plataforma/actividad (BFF
+                                         -- /api/admin/audit y /api/admin/audit/export, éste sólo
+                                         -- desde el mismo origen y con withStepUp). Los filtros van
+                                         -- en la URL (?categoria&desde&hasta&nodo&tipo&entidad&id)
+                                         -- salvo el correo; la ficha de una reserva enlaza con
+                                         -- ?entidad=order&id= y usa los mismos nombres de evento
+                                         -- (lib/audit-format).
 GET    /admin/feature-flags
 PATCH  /admin/feature-flags/:key
 ```

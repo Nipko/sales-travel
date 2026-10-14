@@ -17,7 +17,9 @@ import { baggageState } from '../../../../lib/baggage';
 import { policyBadge, policyState, type PolicyState } from '../../../../lib/fare-policy';
 import { cn } from '../../../../lib/cn';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import { isTestFare } from '../../../../lib/test-content';
 import { Button } from '../../../../components/ui/button';
+import { TestContentBadge } from '../../../../components/test-content-badge';
 import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
 import { TicketingDeadlineBadge } from './ticketing-deadline-badge';
 
@@ -243,7 +245,12 @@ function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
 
   const encabezado = (
     <div className="mb-4">
-      <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-fg)]">{name}</p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-fg)]">{name}</p>
+        {/* Cada tarjeta dice si ESA tarifa es de pruebas: un mismo vuelo puede traer una real por
+            un proveedor y otra de pruebas por otro. Se puede cotizar igual, para probar el flujo. */}
+        {isTestFare(fare) ? <TestContentBadge /> : null}
+      </div>
       {fare.fareFamily?.cabin && fare.fareFamily.cabin !== 'economy' && (
         <span className="mt-1.5 inline-block rounded-md border border-[var(--color-navy)]/10 bg-[var(--color-navy)]/8 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-navy)]">
           {fare.fareFamily.cabin.replace('_', ' ')}

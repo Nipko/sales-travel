@@ -10,6 +10,7 @@ import {
   fallbackProviderRaw,
   locatorOf,
   planVerification,
+  seatsNotConfirmed,
   verificationSummary,
 } from './order-create.saga.js';
 
@@ -192,13 +193,102 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
   it('un PARTIAL con sólo un ACCESORIO caído NO compensa: conserva la reserva y escala', () => {
     // La regla del fundador. El proveedor declara el vuelo cancelable —y lo es—, así que lo único
     // que impide cancelarlo es esta puerta: sin ella, el pasajero pierde el vuelo que ya tenía
-    // por culpa de un asiento que no había, y la tarifa puede no volver a existir.
-    const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista() });
+    // por culpa de un extra que no había, y la tarifa puede no volver a existir.
+    const extraCaido = resultado({
+      outcome: 'PARTIAL',
+      items: [
+        { kind: 'flight', providerItemId: '12', status: 'CONFIRMED', statusCode: 'HK' },
+        { kind: 'ancillary', providerItemId: '13', status: 'FAILED', statusCode: 'UC' },
+      ],
+      compensation: { cancellableItemIds: ['12'] },
+    });
+    const d = decideAfterVerify({ created: extraCaido, view: vista() });
     expect(d).toEqual({
       kind: 'escalate',
       reason: 'partial-without-essential-failure',
       status: 'pending',
     });
+  });
+
+  it('SAB-16: vuelos confirmados y sólo el ASIENTO fuera: tampoco compensa, y se cierra confirmada', () => {
+    // El asiento lo eligió el vendedor, que en la misma pantalla lee que no quedó. La reserva vale:
+    // se cierra para poder emitirse, y el asiento caído queda en el resultado y en su evento.
+    const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista() });
+    expect(d).toEqual({ kind: 'settled', status: 'confirmed' });
+    expect(seatsNotConfirmed(vueloSiAsientoNo())).toBe(1);
+
+    // El caso real trae el rechazo del asiento como `ERROR`; atribuido al asiento, no cambia nada.
+    // Un `WARNING` sin atribuir tampoco: no corta nada.
+    const conSuError = resultado({
+      ...vueloSiAsientoNo(),
+      issues: [
+        {
+          severity: 'ERROR',
+          category: 'APPLICATION_ERROR',
+          type: 'SEATS_NOT_AVAILABLE',
+          itemKind: 'seat',
+        },
+        { severity: 'WARNING', category: 'WARNING', type: 'RESOURCE_UNAVAILABLE' },
+      ],
+    });
+    expect(seatsNotConfirmed(conSuError)).toBe(1);
+    expect(decideAfterVerify({ created: conSuError, view: vista() })).toEqual({
+      kind: 'settled',
+      status: 'confirmed',
+    });
+  });
+
+  it('SAB-16: el atajo del asiento no vale si algo más no quedó confirmado', () => {
+    const conVueloEnEspera = resultado({
+      outcome: 'PARTIAL',
+      items: [
+        { kind: 'flight', providerItemId: '12', status: 'UNCONFIRMED', statusCode: 'NN' },
+        { kind: 'seat', status: 'FAILED', statusCode: 'UC' },
+      ],
+    });
+    const sinVuelos = resultado({
+      outcome: 'PARTIAL',
+      items: [{ kind: 'seat', status: 'FAILED', statusCode: 'UC' }],
+    });
+    const conErrorSinAsientoCaido = resultado({
+      outcome: 'PARTIAL',
+      items: [
+        { kind: 'flight', providerItemId: '12', status: 'CONFIRMED' },
+        { kind: 'seat', status: 'CONFIRMED' },
+      ],
+      issues: [{ severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'REMARK_NOT_ADDED' }],
+    });
+    // El asiento cayó, pero el proveedor dice además algo que NO es de un asiento: el PNR pudo
+    // quedar sin precio guardado o sin forma de pago. Que también cayera un asiento no lo vuelve
+    // accesorio: escala, como escalaría sin asientos.
+    const conAsientoCaidoYOtroError = resultado({
+      ...vueloSiAsientoNo(),
+      issues: [
+        {
+          severity: 'ERROR',
+          category: 'APPLICATION_ERROR',
+          type: 'SEATS_NOT_AVAILABLE',
+          itemKind: 'seat',
+        },
+        { severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'UNABLE_TO_PRICE_BOOKING' },
+      ],
+    });
+    for (const created of [
+      conVueloEnEspera,
+      sinVuelos,
+      conErrorSinAsientoCaido,
+      conAsientoCaidoYOtroError,
+    ]) {
+      expect(seatsNotConfirmed(created)).toBe(0);
+      expect(decideAfterVerify({ created, view: vista() })).toMatchObject({ kind: 'escalate' });
+    }
+    // Y un asiento caído sobre una reserva que el proveedor ya da por muerta no la revive.
+    expect(
+      decideAfterVerify({ created: vueloSiAsientoNo(), view: vista({ status: 'CANCELLED' }) }),
+    ).toMatchObject({ kind: 'compensate', reason: 'verified-cancelled-upstream' });
+    expect(
+      decideAfterVerify({ created: vueloSiAsientoNo(), view: vista({ found: false }) }),
+    ).toMatchObject({ kind: 'escalate', reason: 'verified-not-found' });
   });
 
   it('un PARTIAL esencial sin NADA que cancelar escala: no degrada a cancelar la reserva entera', () => {

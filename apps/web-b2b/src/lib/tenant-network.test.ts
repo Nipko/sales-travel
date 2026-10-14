@@ -347,15 +347,18 @@ describe('statusChange: suspender y reactivar', () => {
     expect(change?.label).toBe('Suspender');
     expect(change?.destructive).toBe(true);
     expect(change?.description).toMatch(/^Consolidador Andes y 2 nodos de su red dejan de operar/);
+    expect(change?.description).toContain('Puedes reactivarlo');
   });
 
   it('un nodo sin red, en singular', () => {
     expect(statusChange(RED, norteSur)?.description).toMatch(/^Norte Sur deja de operar/);
   });
 
-  it('activar un suspendido', () => {
+  it('reactivar un suspendido', () => {
     const change = statusChange(RED, { ...libreHija, status: 'suspended' });
     expect(change?.next).toBe('active');
+    expect(change?.label).toBe('Reactivar');
+    expect(change?.suspendedAncestorName).toBeNull();
     expect(change?.destructive).toBe(false);
     expect(change?.description).toBe(
       'Libre Hija vuelve a operar: sus usuarios recuperan el acceso.',
@@ -366,6 +369,7 @@ describe('statusChange: suspender y reactivar', () => {
     const red = RED.map((n) => (n.id === 'l' ? { ...n, status: 'suspended' } : n));
     const hija = { ...libreHija, status: 'suspended' };
     expect(statusChange(red, hija)?.description).toMatch(/mientras Agencia Libre siga suspendido/);
+    expect(statusChange(red, hija)?.suspendedAncestorName).toBe('Agencia Libre');
   });
 
   it('un archivado no se toca desde acá', () => {

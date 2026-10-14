@@ -78,6 +78,7 @@ function fakeTbo(world: World): { fetch: TboDetailsFetch<string>; calls: Call[] 
       contents: [],
       hotels: [],
       missingHotelCodes: [...codes],
+      roomContents: [],
       diagnostics: DIAGNOSTICS,
     });
     if (codes.some((code) => world.poison?.includes(code))) {
@@ -102,6 +103,7 @@ function fakeTbo(world: World): { fetch: TboDetailsFetch<string>; calls: Call[] 
           cityCode: null,
         })),
         missingHotelCodes: codes.filter((code) => !found.includes(code)),
+        roomContents: [],
         diagnostics: { ...DIAGNOSTICS, unknownKeys: [`HotelDetails[].Extra${lang}`] },
       },
     });
@@ -437,6 +439,7 @@ describe('fallos y lo ya conocido', () => {
                 contents: [],
                 hotels: [],
                 missingHotelCodes: [...asked],
+                roomContents: [],
                 diagnostics: DIAGNOSTICS,
               }
             : {
@@ -445,6 +448,7 @@ describe('fallos y lo ya conocido', () => {
                 contents: [content(a, 'en')],
                 hotels: [],
                 missingHotelCodes: [x],
+                roomContents: [],
                 diagnostics: {
                   ...DIAGNOSTICS,
                   received: 2,

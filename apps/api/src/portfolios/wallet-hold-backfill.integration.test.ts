@@ -67,6 +67,51 @@ d('retenciones anteriores a 0060 → grupos legacy', () => {
       return rows[0]!.id;
     }
 
+    /**
+     * La función convierte las retenciones sin grupo de TODA la base, y la base es compartida: los
+     * demás tests borran los grupos de sus órdenes antes que las órdenes (clearWalletHolds, las
+     * consolas del superadmin) y, en ese hueco, sus retenciones parecen de antes de 0060. Si la
+     * función convertía una que su test borraba a la vez, el INSERT del grupo fallaba por la FK
+     * (23503) y este test caía de vez en cuando en la corrida completa en paralelo.
+     *
+     * Antes de llamarla se congela lo que va a ver: nadie crea, cambia ni borra grupos ni asientos
+     * hasta el ROLLBACK (SHARE: no aparece ni se va ninguna retención "sin grupo") y las órdenes y
+     * carteras ajenas que va a convertir quedan trabadas (FOR KEY SHARE: no se borran a mitad). Todo
+     * con NOWAIT: si algo está tomado, se suelta lo pedido, se espera un poco y se reintenta. Nunca
+     * se espera un candado ajeno teniendo los propios, así que no hay abrazo mortal con otro test.
+     */
+    async function freezeLegacyHolds(): Promise<void> {
+      for (let attempt = 1; ; attempt++) {
+        await c.query('SAVEPOINT legacy_freeze');
+        try {
+          await c.query(
+            'LOCK TABLE wallet_hold_groups, portfolio_transactions IN SHARE MODE NOWAIT',
+          );
+          await c.query(
+            `SELECT 1
+               FROM portfolio_transactions pt
+               JOIN agency_portfolios ap ON ap.id = pt.portfolio_id
+               JOIN orders o
+                 ON o.id = CASE
+                             WHEN pt.reference_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                             THEN pt.reference_id::uuid
+                           END
+                AND o.tenant_id = ap.tenant_id
+              WHERE pt.transaction_type = 'BOOKING_HOLD'
+                AND pt.amount_minor < 0
+                AND NOT EXISTS (SELECT 1 FROM wallet_hold_groups g WHERE g.order_id = o.id)
+                FOR KEY SHARE OF ap, o NOWAIT`,
+          );
+          await c.query('RELEASE SAVEPOINT legacy_freeze');
+          return;
+        } catch (err) {
+          await c.query('ROLLBACK TO SAVEPOINT legacy_freeze');
+          if ((err as PgFailure).code !== '55P03' || attempt >= 400) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+    }
+
     try {
       await c.query('BEGIN');
       const platform = await platformRootId(c);
@@ -111,6 +156,7 @@ d('retenciones anteriores a 0060 → grupos legacy', () => {
       const release = await entry(wAgency, 'BOOKING_RELEASED', released, seller);
       await c.query('UPDATE agency_portfolios SET balance_minor = -20000 WHERE id = $1', [wAgency]);
 
+      await freezeLegacyHolds();
       const { n: first } = (
         await q<{ n: number }>('SELECT wallet_hold_backfill_legacy() AS n')
       )[0]!;
@@ -228,5 +274,6 @@ d('retenciones anteriores a 0060 → grupos legacy', () => {
       await c.query('ROLLBACK');
       c.release();
     }
-  });
+    // Puede esperar a que otro test suelte sus grupos (freezeLegacyHolds).
+  }, 30_000);
 });
