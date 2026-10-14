@@ -64,6 +64,8 @@ export const ISSUE_CLAIM_MESSAGES: Readonly<Record<IssueClaimRefusal, string>> =
     'Hay un cambio de servicios adicionales en curso en esta reserva. Espera a que termine antes de emitir.',
   'services-unverified':
     'Un cambio de servicios adicionales quedó sin confirmar. Antes de emitir lo revisamos con la aerolínea.',
+  'total-changed':
+    'El total cambió desde que abriste la reserva. Vuelve a consultarla antes de emitir.',
 };
 
 export const ISSUE_QUEUE_UNAVAILABLE_MESSAGE =
@@ -162,7 +164,13 @@ export class FlightTicketIssueService {
 
     const testContent = isTestContentOrder(order);
     const requested = requestedIssueResult({ at: new Date(), testContent });
-    const claim = await this.store.claim(tenantId, order.id, actorUserId, requested);
+    const claim = await this.store.claim(
+      tenantId,
+      order.id,
+      actorUserId,
+      requested,
+      Number(order.total_amount),
+    );
     if (!claim.claimed) {
       const message = ISSUE_CLAIM_MESSAGES[claim.refusal];
       throw claim.refusal === 'not-found'
@@ -293,6 +301,26 @@ export class FlightTicketIssueService {
       return;
     }
 
+    // Lo vendido como servicios adicionales (SAB-20), que la red tiene retenido: el proveedor cobra
+    // exactamente eso con la emisión, o no emite. Sólo en la moneda de la reserva.
+    const charges = await this.store.servicesCharge(tenantId, order.id);
+    const orderCurrency = order.currency.trim().toUpperCase();
+    const ancillaryCharge = charges[0];
+    if (
+      charges.length > 1 ||
+      (ancillaryCharge !== undefined && ancillaryCharge.currency !== orderCurrency)
+    ) {
+      await this.abandon(
+        tenantId,
+        order.id,
+        order.provider,
+        op,
+        ISSUE_NOT_SENT_REASONS.servicesCurrency,
+        actor,
+      );
+      return;
+    }
+
     // Write-ahead: desde aquí la emisión pudo ocurrir. Sólo una ejecución lo gana.
     const sent: IssueOperationResult = {
       ...op.result,
@@ -306,7 +334,10 @@ export class FlightTicketIssueService {
       result = await adapter.issueTickets(
         order.provider_order_id,
         { tenantId, requestId: op.id },
-        { travelerCount: travelerCountOf(order.passengers) },
+        {
+          travelerCount: travelerCountOf(order.passengers),
+          ...(ancillaryCharge === undefined ? {} : { ancillaryCharge }),
+        },
       );
     } catch (error) {
       // El contrato del puerto: si lanza, no se emitió nada. Se puede volver a pedir.

@@ -86,6 +86,10 @@ const EMISION_NO_ENVIADA: Readonly<Record<SabreTicketingRefusal, string>> = {
     'La cuenta de Sabre tiene un PCC de emisión sin grupo (sabreGroup o sabreCurrentCity). Complétalo en Mi Red → Credenciales → Sabre.',
   TRAVELER_COUNT_INVALID:
     'La reserva no tiene pasajeros que se puedan emitir. Ya quedó registrado para el equipo.',
+  ANCILLARY_CHARGE_MISMATCH:
+    'Los servicios adicionales que Sabre tiene por cobrar en la reserva no son los que se agregaron en la plataforma, así que no se emitió nada. Revisa los servicios de la reserva; ya quedó registrado para el equipo.',
+  ANCILLARY_CHARGE_UNAVAILABLE:
+    'La reserva tiene servicios adicionales y su cobro con Sabre está apagado, así que no se emitió nada. Ya quedó registrado para el equipo.',
 };
 
 export function humanizeSabreError(err: unknown): string {

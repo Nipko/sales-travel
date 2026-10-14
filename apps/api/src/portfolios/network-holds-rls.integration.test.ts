@@ -76,7 +76,7 @@ const ENTRY_POINTS = [
   'wallet_hold_report_block(uuid)',
   'wallet_hold_report_preview_block(text,uuid,text,text,bigint,bigint)',
   // 0086: el ajuste por servicios adicionales de una orden confirmada.
-  'wallet_hold_adjust(uuid,uuid,uuid)',
+  'wallet_hold_adjust(uuid,uuid,uuid,bigint)',
 ];
 
 d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
@@ -387,7 +387,7 @@ d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
     expect(
       await rule(
         as({ tenantId: net.ids.S1 }, (c) =>
-          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid)', [
+          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid, 0)', [
             orderS1,
             net.sellers.S1,
             '00000000-0000-4000-8000-000000000000',
@@ -399,7 +399,7 @@ d('retenciones de red bajo RLS y guardas (0060, como app_user)', () => {
     expect(
       await rule(
         as({ tenantId: net.ids.S1 }, (c) =>
-          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid)', [
+          c.query('SELECT * FROM wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid, 0)', [
             orderS2,
             net.sellers.S1,
             '00000000-0000-4000-8000-000000000000',

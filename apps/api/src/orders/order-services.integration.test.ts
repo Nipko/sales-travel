@@ -43,7 +43,7 @@ import { SERVICES_MESSAGES } from './order-services.plan.js';
 import { FlightServicesService, SERVICES_STALE_AFTER_MS } from './order-services.service.js';
 import { OrderServicesStore } from './order-services.store.js';
 import { OrdersService, type CreateOrderDto } from './orders.service.js';
-import { FlightTicketIssueService } from './ticket-issue.service.js';
+import { FlightTicketIssueService, ISSUE_CLAIM_MESSAGES } from './ticket-issue.service.js';
 import { TicketIssueStore } from './ticket-issue.store.js';
 
 /**
@@ -327,7 +327,55 @@ d('servicios adicionales antes de emitir (SAB-20) contra Postgres', () => {
       listAncillaries,
       addAncillaries,
       removeAncillaries,
+      issueTickets,
     };
+  }
+
+  /** `código/regla` del error de Postgres con que falla `p`, u `ok`. */
+  async function regla(p: Promise<unknown>): Promise<string> {
+    try {
+      await p;
+    } catch (err) {
+      const e = err as { code?: string; constraint?: string };
+      return `${e.code ?? '?'}/${e.constraint ?? '?'}`;
+    }
+    return 'ok';
+  }
+
+  /**
+   * Lo que podría hacer quien tome la API (`app_user` con el tenant del que vende): abrir una
+   * operación de servicios pendiente, reescribir el total de la orden y pedir el ajuste con una
+   * diferencia declarada. Todo en una transacción: si la base rechaza, no queda nada.
+   */
+  function ajusteDirecto(
+    orderId: string,
+    tipo: 'add-services' | 'remove-services',
+    delta: number,
+    declarada: number,
+  ): Promise<unknown> {
+    return database.withTenant(id('S1'), async (trx) => {
+      const op = await trx
+        .insertInto('order_operations')
+        .values({
+          tenant_id: id('S1'),
+          order_id: orderId,
+          type: tipo,
+          status: 'pending',
+          last_error: null,
+          result: JSON.stringify({}),
+          actor_user_id: net.sellers.S1,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await trx
+        .updateTable('orders')
+        .set({ total_amount: sql<number>`total_amount + ${delta}` })
+        .where('id', '=', orderId)
+        .execute();
+      return sql`SELECT * FROM wallet_hold_adjust(${orderId}::uuid, ${net.sellers.S1}::uuid, ${op.id}::uuid, ${declarada}::bigint)`.execute(
+        trx,
+      );
+    });
   }
 
   async function total(orderId: string): Promise<number> {
@@ -785,5 +833,184 @@ d('servicios adicionales antes de emitir (SAB-20) contra Postgres', () => {
     soltar();
     expect((await pedido).outcome).toBe('UNVERIFIED');
     expect(await lineas(s.order.id)).toEqual([['BAG-1', 'unverified']]);
+  });
+
+  it('un fallo tardío del puerto no devuelve lo que el barrido ya pasó a conciliación', async () => {
+    const s = await montar();
+    const reservada = await saldos();
+    const base = await total(s.order.id);
+    s.addAncillaries.mockImplementationOnce(async () => {
+      // El proceso se colgó con la llamada en vuelo: el barrido la concilia y DESPUÉS el puerto lanza.
+      await s.services.sweepTenant(id('S1'), Date.now() + SERVICES_STALE_AFTER_MS + 5 * 60_000);
+      throw new Error('no salió');
+    });
+
+    await expect(
+      s.services.requestAdd(id('S1'), await s.fila(), net.sellers.S1, agregar(['BAG-1'], MALETA)),
+    ).rejects.toThrow('no salió');
+
+    // Las líneas en duda cuentan, y el total y la retención las tienen: nada se devolvió.
+    expect(await operaciones(s.order.id)).toEqual([['add-services', 'failed']]);
+    expect(await lineas(s.order.id)).toEqual([['BAG-1', 'unverified']]);
+    expect(await total(s.order.id)).toBe(base + MALETA);
+    expect(await saldos()).toEqual(reservada.map((b) => b - MALETA));
+    expect(
+      s.audit.ofType(ORDER_EVENTS.servicesChangeFailed).map((e) => e.payload?.['outcome']),
+    ).toEqual(['UNVERIFIED']);
+  });
+
+  it('el ajuste nunca libera la retención de la reserva ni absorbe un total que no se declaró (0086)', async () => {
+    const s = await montar();
+    const reservada = await saldos();
+    const base = await total(s.order.id);
+
+    // Liberar por el ajuste lo que retuvo la reserva: ni declarándolo.
+    expect(await regla(ajusteDirecto(s.order.id, 'remove-services', -50_000, -50_000))).toBe(
+      'STW01/hold_amount_invalid',
+    );
+    // Una diferencia que no es la declarada no mueve nada, en ningún sentido.
+    expect(await regla(ajusteDirecto(s.order.id, 'add-services', 7_000, 4_500))).toBe(
+      'STW01/hold_amount_invalid',
+    );
+    // Una baja no retiene.
+    expect(await regla(ajusteDirecto(s.order.id, 'remove-services', 1_000, 1_000))).toBe(
+      'STW01/hold_order_not_holdable',
+    );
+    expect(await total(s.order.id)).toBe(base);
+    expect(await saldos()).toEqual(reservada);
+
+    // Con una maleta agregada, una baja libera hasta la maleta y ni un centavo más.
+    await s.services.requestAdd(
+      id('S1'),
+      await s.fila(),
+      net.sellers.S1,
+      agregar(['BAG-1'], MALETA),
+    );
+    expect(
+      await regla(ajusteDirecto(s.order.id, 'remove-services', -(MALETA + 1), -(MALETA + 1))),
+    ).toBe('STW01/hold_amount_invalid');
+    expect(await saldos()).toEqual(reservada.map((b) => b - MALETA));
+    await s.orders.cancelOrder(id('S1'), s.order.id, s.order.provider_order_id!, net.sellers.S1);
+  });
+
+  it('las líneas de servicios son del nodo que vende: otro nodo no las ve, no las cuelga ni las borra', async () => {
+    const s = await montar();
+    await s.services.requestAdd(
+      id('S1'),
+      await s.fila(),
+      net.sellers.S1,
+      agregar(['BAG-1'], MALETA),
+    );
+    const linea = {
+      service_offer_item_id: 'BAG-1',
+      passenger_index: 0,
+      category: 'BAGGAGE',
+      service_code: '0C3',
+      airline_code: 'AV',
+      name: 'Maleta',
+      amount_minor: 1,
+      currency: 'USD',
+      status: 'active',
+      segments: '[]',
+      provider_item_ids_shared: false,
+    } as const;
+    const estado = async (p: Promise<unknown>): Promise<string> => {
+      try {
+        await p;
+        return 'ok';
+      } catch (err) {
+        return (err as { code?: string }).code ?? '?';
+      }
+    };
+
+    // Una hermana (S2) no ve las líneas de S1, aunque conozca el id de la orden.
+    const ajenas = await database.withTenant(id('S2'), (trx) =>
+      trx
+        .selectFrom('order_ancillary_lines')
+        .select('id')
+        .where('order_id', '=', s.order.id)
+        .execute(),
+    );
+    expect(ajenas).toEqual([]);
+    // No puede colgarle una línea con su tenant (FK compuesta) ni con el de S1 (RLS).
+    for (const tenant of [id('S2'), id('S1')]) {
+      expect(
+        await estado(
+          database.withTenant(id('S2'), (trx) =>
+            trx
+              .insertInto('order_ancillary_lines')
+              .values({
+                ...linea,
+                provider_item_ids: ['X1'],
+                tenant_id: tenant,
+                order_id: s.order.id,
+                added_operation_id: randomUUID(),
+              })
+              .execute(),
+          ),
+        ),
+      ).toMatch(/^(23503|42501)$/);
+    }
+    // Y ni el propio nodo borra: lo agregado y lo quitado quedan como historia.
+    expect(
+      await estado(
+        database.withTenant(id('S1'), (trx) =>
+          trx.deleteFrom('order_ancillary_lines').where('order_id', '=', s.order.id).execute(),
+        ),
+      ),
+    ).toBe('42501');
+    expect(await lineas(s.order.id)).toEqual([['BAG-1', 'active']]);
+    await s.orders.cancelOrder(id('S1'), s.order.id, s.order.provider_order_id!, net.sellers.S1);
+  });
+
+  it('emitir con la reserva leída antes de agregar servicios: 409 en el claim, nada sale', async () => {
+    const s = await montar();
+    // El vendedor confirmó la emisión con este total; mientras, otro agregó una maleta.
+    const vista = await s.fila();
+    await s.services.requestAdd(
+      id('S1'),
+      await s.fila(),
+      net.sellers.S1,
+      agregar(['BAG-1'], MALETA),
+    );
+
+    await expect(s.issues.requestIssue(id('S1'), vista, net.sellers.S1)).rejects.toThrow(
+      new ConflictException(ISSUE_CLAIM_MESSAGES['total-changed']),
+    );
+    expect(s.issueTickets).not.toHaveBeenCalled();
+    const { rows } = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM order_operations WHERE order_id = $1 AND type = 'issue'`,
+      [s.order.id],
+    );
+    expect(rows[0]?.n).toBe('0');
+    await s.orders.cancelOrder(id('S1'), s.order.id, s.order.provider_order_id!, net.sellers.S1);
+  });
+
+  it('la emisión le dice al proveedor cuánto se vendió en servicios: lo que la red retiene', async () => {
+    const s = await montar();
+    s.addAncillaries.mockResolvedValueOnce({
+      outcome: 'PARTIAL',
+      added: [agregada('BAG-1')],
+      failed: [{ serviceOfferItemId: 'MEAL-1', passengerIndex: 0, reason: 'PRICE_CHANGED' }],
+      unverified: [],
+      issues: [],
+    });
+    await s.services.requestAdd(
+      id('S1'),
+      await s.fila(),
+      net.sellers.S1,
+      agregar(['BAG-1', 'MEAL-1'], MALETA + COMIDA),
+    );
+
+    const fila = await s.fila();
+    const { operationId } = await s.issues.requestIssue(id('S1'), fila, net.sellers.S1);
+    await s.issues.runIssueById(id('S1'), s.order.id, operationId, net.sellers.S1);
+
+    // Sólo lo que quedó (la comida se rechazó): lo que el proveedor tiene que cobrar como EMD.
+    expect(s.issueTickets).toHaveBeenCalledWith(
+      fila.provider_order_id,
+      expect.objectContaining({ tenantId: id('S1') }),
+      { travelerCount: 1, ancillaryCharge: { amountMinor: MALETA, currency: 'USD' } },
+    );
   });
 });

@@ -384,6 +384,17 @@ export function planRemoval<T extends StoredServiceLine>(
     }
   }
   const ids = [...new Set(chosen.flatMap((line) => line.providerItemIds))];
+  // Un id que también nombra a una línea que sigue en la reserva y no se eligió (de otra alta, o
+  // un proveedor que repite ids) la quitaría en la aerolínea mientras acá sigue contando: no se
+  // manda nada.
+  const sending = new Set(ids);
+  const collateral = stored.some(
+    (other) =>
+      !wanted.has(other.id) &&
+      other.status !== 'removed' &&
+      other.providerItemIds.some((id) => sending.has(id)),
+  );
+  if (collateral) return { ok: false, message: SERVICES_MESSAGES.sharedGroup };
   const total = chosen.reduce((sum, line) => sum + line.amountMinor, 0);
   return { ok: true, lines: chosen, providerItemIds: ids, totalMinor: total };
 }

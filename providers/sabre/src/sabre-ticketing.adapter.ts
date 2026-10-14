@@ -33,7 +33,7 @@ import { SabreApiError, type SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import { SabreOrderManageAdapter } from './sabre-order-manage.adapter';
-import { pendingSabreAncillaryEmds } from './ticketing/ancillary-emd';
+import { pendingSabreAncillaryEmds, sabreAncillaryChargeVerdict } from './ticketing/ancillary-emd';
 import { mergeSabreTicketDocuments, sabrePrimaryDocumentNumber } from './ticketing/document-status';
 import {
   SABRE_FULFILL_PATH,
@@ -121,7 +121,11 @@ export interface SabreTicketingDeps {
 export type SabreTicketingRefusal =
   | 'TRAVELER_COUNT_INVALID'
   | 'TARGET_PCC_NOT_ADDRESSABLE'
-  | 'BOOKING_CANCELLED';
+  | 'BOOKING_CANCELLED'
+  /** Lo cobrable de la reserva como EMD no es lo que la plataforma vendió (SAB-20). */
+  | 'ANCILLARY_CHARGE_MISMATCH'
+  /** Hay servicios vendidos y la emisión de EMD está apagada en este despliegue (SAB-20). */
+  | 'ANCILLARY_CHARGE_UNAVAILABLE';
 
 /** La emisión no salió: la decisión se tomó antes del cable. */
 export class SabreTicketingNotSentError extends Error {
@@ -180,28 +184,51 @@ export class SabreTicketingAdapter implements TicketingPort {
     let request = this.buildRequest(orderId, options, []);
     const formOfPaymentType = this.formOfPayment();
     const withEmds = this.settings.issueAncillaryEmds === true;
+    const sold = options.ancillaryCharge;
+    if (!withEmds && sold !== undefined && sold.amountMinor !== 0) {
+      // Lo vendido no se puede cobrar con los servicios apagados: emitir sólo los tiquetes dejaría
+      // retenido en la red lo que la aerolínea nunca cobró ni dio.
+      throw new SabreTicketingNotSentError(
+        'ANCILLARY_CHARGE_UNAVAILABLE',
+        'la reserva tiene servicios adicionales vendidos y la emisión de EMD está apagada',
+      );
+    }
 
     const before = withEmds
       ? await this.manage.snapshotForDisplay(orderId, ctx, { sections: SECTIONS_WITH_ANCILLARIES })
       : await this.manage.snapshotForDisplay(orderId, ctx);
-    // Los servicios confirmados y sin cobrar salen como EMD en la misma emisión, con la misma
-    // forma de pago. Se deciden con la lectura, nunca con lo que diga quien llama.
-    const emds = withEmds ? pendingSabreAncillaryEmds(before) : undefined;
-    if (emds !== undefined && emds.itemIds.length > 0) {
-      request = this.buildRequest(orderId, options, emds.itemIds);
-    }
-    const idempotencyKey = sabreFulfillIdempotencyKey(request);
-    const shape = {
-      ...describeSabreFulfillRequest(request),
-      ...(emds === undefined ? {} : { ancillariesSkipped: emds.skipped }),
-    };
-
     if (before.status === 'CANCELLED') {
       throw new SabreTicketingNotSentError(
         'BOOKING_CANCELLED',
         'la reserva figura cancelada en el proveedor: no hay nada que emitir',
       );
     }
+    // Los servicios confirmados y sin cobrar salen como EMD en la misma emisión, con la misma
+    // forma de pago, si son EXACTAMENTE lo que la plataforma vendió (y la red retiene). Se deciden
+    // con la lectura; quien llama sólo dice cuánto vendió.
+    const emds = withEmds ? pendingSabreAncillaryEmds(before) : undefined;
+    const verdict = emds === undefined ? undefined : sabreAncillaryChargeVerdict(emds, sold);
+    if (verdict === 'mismatch') {
+      throw new SabreTicketingNotSentError(
+        'ANCILLARY_CHARGE_MISMATCH',
+        'los servicios cobrables de la reserva no son los que vendió la plataforma',
+      );
+    }
+    if (emds !== undefined && verdict === 'charge') {
+      request = this.buildRequest(orderId, options, emds.itemIds);
+    }
+    const idempotencyKey = sabreFulfillIdempotencyKey(request);
+    const shape = {
+      ...describeSabreFulfillRequest(request),
+      ...(emds === undefined
+        ? {}
+        : {
+            ancillariesSkipped:
+              verdict === 'not-sold'
+                ? { ...emds.skipped, 'not-sold': emds.itemIds.length }
+                : emds.skipped,
+          }),
+    };
     const preflight = preflightOf(before, travelerCount);
     if (preflight !== undefined) {
       return this.finish(ctx, preflight, [], {

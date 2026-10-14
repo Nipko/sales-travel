@@ -342,7 +342,8 @@ export class WalletHoldStore {
   /**
    * Ajusta la retención abierta de la orden a su total de ahora (`wallet_hold_adjust`, 0086), en
    * todos sus niveles y con lo registrado, por la operación de servicios `operationId` (pendiente,
-   * de esa orden). La diferencia la decide la base desde la orden: quien llama sólo cambia el total.
+   * de esa orden). La diferencia la decide la base desde la orden; `expectedDeltaMinor` es la que
+   * quien llama acaba de escribir en el total, y si la orden dice otra cosa no se mueve nada (STW01).
    * Todo o nada: un nivel que no cubre lo que se retiene lanza STW02 y no deja nada.
    */
   async adjust(
@@ -350,11 +351,15 @@ export class WalletHoldStore {
     orderId: string,
     actorId: string,
     operationId: string,
+    expectedDeltaMinor: number,
   ): Promise<WalletHoldAdjusted> {
+    if (!Number.isSafeInteger(expectedDeltaMinor)) {
+      throw new WalletHoldContractError('wallet_hold_adjust');
+    }
     const { rows } = await trx.executeQuery<unknown>(
       CompiledQuery.raw(
-        'SELECT outcome, delta_minor, levels FROM public.wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid)',
-        [orderId, actorId, operationId],
+        'SELECT outcome, delta_minor, levels FROM public.wallet_hold_adjust($1::uuid, $2::uuid, $3::uuid, $4::bigint)',
+        [orderId, actorId, operationId, expectedDeltaMinor],
       ),
     );
     const parsed = AdjustRowSchema.safeParse(rows[0]);

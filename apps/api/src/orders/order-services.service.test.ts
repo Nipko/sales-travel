@@ -317,7 +317,7 @@ describe('requestAdd — el desenlace', () => {
       unverified: 0,
     });
     expect(b.store.addToTotalWithin).toHaveBeenCalledWith({}, ORDER, 4500);
-    expect(b.adjust).toHaveBeenCalledWith(USER, 'op-1');
+    expect(b.adjust).toHaveBeenCalledWith(USER, 'op-1', 4500);
     expect(b.addAncillaries).toHaveBeenCalledWith(
       { orderId: 'ABC123', contentSource: 'ATPCO', passengers: [{ paxType: 'ADT' }] },
       ALTA.selections,
@@ -361,6 +361,34 @@ describe('requestAdd — el desenlace', () => {
     });
   });
 
+  it('si el puerto lanza, devuelve total y retención con la diferencia exacta y cierra NOT_SENT', async () => {
+    const b = banco();
+    const caida = new Error('no salió');
+    b.addAncillaries.mockRejectedValueOnce(caida);
+
+    await expect(b.service.requestAdd(TENANT, fila(), USER, ALTA)).rejects.toBe(caida);
+
+    expect(b.store.addToTotalWithin).toHaveBeenLastCalledWith({}, ORDER, -4500);
+    expect(b.adjust).toHaveBeenLastCalledWith(USER, 'op-1', -4500);
+    expect(b.audit.first(ORDER_EVENTS.servicesChangeFailed)?.payload).toMatchObject({
+      outcome: 'NOT_SENT',
+      retryable: true,
+    });
+  });
+
+  it('si el barrido ya la cerró cuando el puerto lanza, la devolución se deshace y no se dice NOT_SENT', async () => {
+    const b = banco();
+    const caida = new Error('no salió');
+    b.addAncillaries.mockRejectedValueOnce(caida);
+    b.store.settleWithin.mockResolvedValueOnce(false);
+
+    await expect(b.service.requestAdd(TENANT, fila(), USER, ALTA)).rejects.toBe(caida);
+
+    // La transacción de la devolución lanzó (en la base, se deshace entera).
+    await expect(b.holds.adjustOrderHold.mock.results.at(-1)?.value).rejects.toThrow();
+    expect(b.audit.ofType(ORDER_EVENTS.servicesChangeFailed)).toEqual([]);
+  });
+
   it('si el proveedor contestó y no se pudo guardar, se escala y se responde en duda', async () => {
     const b = banco();
     b.store.insertLinesWithin.mockRejectedValueOnce(new Error('base caída'));
@@ -393,7 +421,7 @@ describe('requestRemove', () => {
       { tenantId: TENANT, requestId: 'op-1' },
     );
     expect(b.store.addToTotalWithin).toHaveBeenCalledWith({}, ORDER, -4500);
-    expect(b.adjust).toHaveBeenCalledWith(USER, 'op-1');
+    expect(b.adjust).toHaveBeenCalledWith(USER, 'op-1', -4500);
     expect(b.audit.first(ORDER_EVENTS.servicesRemoved)?.payload).toMatchObject({
       count: 1,
       totalMinor: 4500,

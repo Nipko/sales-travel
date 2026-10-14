@@ -287,6 +287,31 @@ describe('qué se quita', () => {
     });
   });
 
+  it('un id que también nombra a otra línea viva (de otra alta) no sale: la quitaría sin verse', () => {
+    const compartida = { providerItemIds: ['9'], providerItemIdsShared: true };
+    const lines = [
+      linea('adulto', compartida),
+      linea('nino', { ...compartida, addedOperationId: 'op-2' }),
+    ];
+    // Grupos distintos (otra alta), pero el mismo id en la aerolínea.
+    expect(removalGroupOf(lines[0]!)).not.toBe(removalGroupOf(lines[1]!));
+    expect(planRemoval(lines, ['adulto'])).toEqual({
+      ok: false,
+      message: SERVICES_MESSAGES.sharedGroup,
+    });
+    // Una en duda también cuenta: puede seguir en la reserva.
+    expect(
+      planRemoval(
+        [linea('a'), linea('b', { providerItemIds: ['Xa'], status: 'unverified' })],
+        ['a'],
+      ),
+    ).toMatchObject({ ok: false });
+    // Una ya quitada no.
+    expect(
+      planRemoval([linea('a'), linea('b', { providerItemIds: ['Xa'], status: 'removed' })], ['a']),
+    ).toMatchObject({ ok: true, providerItemIds: ['Xa'] });
+  });
+
   it('quitada es la que tiene todas sus ids confirmadas; el resto queda en duda', () => {
     const lines = [linea('a'), linea('b')];
     const { removed, pending } = removedLinesOf(lines, {

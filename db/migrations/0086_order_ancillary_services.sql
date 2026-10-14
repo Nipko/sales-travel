@@ -208,10 +208,19 @@ GRANT SELECT ON wallet_hold_adjustments TO app_user;
 -- nivel de la red. Si algún día llevan markup, el costo de cada nivel deja de ser la venta y esta
 -- función tiene que recibir el neto.
 --
+-- Quien llama declara la diferencia que espera (p_expected_delta: lo que la operación agregó o
+-- quitó del total en esta misma transacción), y tiene que ser la de la orden. Sin eso, cualquier
+-- desfase entre el total y lo retenido que no venga de servicios (una retención legacy, un total
+-- reescrito por otro camino) se retendría o liberaría en TODOS los niveles como si costara lo mismo
+-- en cada uno.
+--
 --   > 0  retiene la diferencia: cada nivel la tiene que cubrir con las reglas de siempre (cartera
---        activa, saldo más cupo). El primer rechazo lanza STW02 y no queda nada.
---   < 0  libera la diferencia. No exige la cartera activa: devolver no es operar. Ningún nivel
---        queda en cero: eso sería liberar la reserva, y eso lo hace wallet_hold_settle.
+--        activa, saldo más cupo). El primer rechazo lanza STW02 y no queda nada. Sólo un alta
+--        (add-services) retiene.
+--   < 0  libera la diferencia. No exige la cartera activa: devolver no es operar. Nunca más de lo
+--        que los ajustes retuvieron en ese nivel (retenido − liberado): un ajuste no toca la
+--        retención de la reserva, que sólo libera wallet_hold_settle. Así, ni con el total de la
+--        orden reescrito se libera por esta vía lo que retuvo wallet_hold_retain.
 --
 -- Devuelve:
 --   adjusted   retuvo o liberó `delta_minor` en `levels` niveles;
@@ -221,8 +230,15 @@ GRANT SELECT ON wallet_hold_adjustments TO app_user;
 --   exempt     se reservó con la cuenta propia del nodo: no retiene nada.
 --
 -- STW01 hold_order_not_holdable si la orden no está confirmada, la operación no es una pendiente de
--- servicios de esa orden, o la retención ya se cerró o está en conflicto.
-CREATE FUNCTION wallet_hold_adjust(p_order_id UUID, p_actor UUID, p_operation_id UUID)
+-- servicios de esa orden (o una baja quiere retener), o la retención ya se cerró o está en conflicto.
+-- STW01 hold_amount_invalid si la diferencia no es la declarada, o una liberación excede lo que los
+-- ajustes retuvieron en un nivel.
+CREATE FUNCTION wallet_hold_adjust(
+  p_order_id        UUID,
+  p_actor           UUID,
+  p_operation_id    UUID,
+  p_expected_delta  BIGINT
+)
 RETURNS TABLE (
   outcome      TEXT,
   delta_minor  BIGINT,
@@ -244,12 +260,19 @@ DECLARE
   v_delta     BIGINT;
   v_decision  TEXT;
   v_type      TEXT;
+  v_op_type   TEXT;
+  v_net       NUMERIC;
   v_tx        UUID;
   v_written   SMALLINT := 0;
   v_open      SMALLINT := 0;
 BEGIN
   me := public.wallet_hold_current_tenant();
   PERFORM public.wallet_hold_assert_actor(p_actor, me);
+  IF p_expected_delta IS NULL
+     OR p_expected_delta NOT BETWEEN -9007199254740991 AND 9007199254740991 THEN
+    PERFORM public.raise_wallet_hold_violation(
+      'hold_amount_invalid', format('order=%s tenant=%s diferencia declarada inválida', p_order_id, me));
+  END IF;
 
   SELECT o.id, o.status, o.total_amount, o.currency, o.order_number
     INTO ord
@@ -268,15 +291,14 @@ BEGIN
 
   -- Sólo una operación de servicios en curso de ESA orden ajusta: el asiento la cita, y sin una
   -- operación viva el ajuste no tiene quién lo explique.
-  IF NOT EXISTS (
-    SELECT 1
-      FROM public.order_operations op
-     WHERE op.id = p_operation_id
-       AND op.order_id = ord.id
-       AND op.tenant_id = me
-       AND op.type IN ('add-services', 'remove-services')
-       AND op.status = 'pending'
-  ) THEN
+  SELECT op.type INTO v_op_type
+    FROM public.order_operations op
+   WHERE op.id = p_operation_id
+     AND op.order_id = ord.id
+     AND op.tenant_id = me
+     AND op.type IN ('add-services', 'remove-services')
+     AND op.status = 'pending';
+  IF NOT FOUND THEN
     PERFORM public.raise_wallet_hold_violation(
       'hold_order_not_holdable',
       format('order=%s tenant=%s operation=%s no es una operación de servicios pendiente',
@@ -318,6 +340,18 @@ BEGIN
    WHERE wl.group_id = g.id AND wl.status IN ('held', 'captured');
 
   v_delta := ord.total_amount - g.sale_amount_minor;
+  IF v_delta <> p_expected_delta THEN
+    PERFORM public.raise_wallet_hold_violation(
+      'hold_amount_invalid',
+      format('order=%s tenant=%s operation=%s la diferencia de la orden no es la declarada',
+             ord.id, me, p_operation_id));
+  END IF;
+  IF v_delta > 0 AND v_op_type <> 'add-services' THEN
+    PERFORM public.raise_wallet_hold_violation(
+      'hold_order_not_holdable',
+      format('order=%s tenant=%s operation=%s una baja de servicios no retiene',
+             ord.id, me, p_operation_id));
+  END IF;
   IF v_delta = 0 THEN
     outcome := 'unchanged';
     delta_minor := 0;
@@ -355,11 +389,20 @@ BEGIN
           format('order=%s depth=%s tenant=%s portfolio=%s',
                  ord.id, lvl.depth, lvl.tenant_id, lvl.portfolio_id));
       END IF;
-    ELSIF lvl.amount_minor + v_delta < 1 THEN
-      PERFORM public.raise_wallet_hold_violation(
-        'hold_amount_invalid',
-        format('order=%s depth=%s tenant=%s portfolio=%s la liberación dejaría el nivel sin monto',
-               ord.id, lvl.depth, lvl.tenant_id, lvl.portfolio_id));
+    ELSE
+      -- Lo que los ajustes retuvieron y todavía no liberaron en este nivel: el techo de cualquier
+      -- liberación. La retención de la reserva no se toca por acá.
+      SELECT COALESCE(sum(CASE WHEN wa.direction = 'hold' THEN wa.amount_minor
+                               ELSE -wa.amount_minor END), 0)
+        INTO v_net
+        FROM public.wallet_hold_adjustments wa
+       WHERE wa.level_id = lvl.id;
+      IF v_net + v_delta < 0 OR lvl.amount_minor + v_delta < 1 THEN
+        PERFORM public.raise_wallet_hold_violation(
+          'hold_amount_invalid',
+          format('order=%s depth=%s tenant=%s portfolio=%s la liberación excede lo retenido por servicios',
+                 ord.id, lvl.depth, lvl.tenant_id, lvl.portfolio_id));
+      END IF;
     END IF;
   END LOOP;
 
@@ -456,8 +499,8 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid) IS
-  'Ajusta la retención abierta de la orden confirmada p_order_id del nodo app.current_tenant_id a su total de ahora (orders.total_amount − sale_amount_minor), en todos sus niveles y con lo registrado, por la operación de servicios pendiente p_operation_id: retiene la diferencia (cada nivel la cubre o STW02) o la libera. Asiento BOOKING_* o NETWORK_* con referencia a la operación, fila en wallet_hold_adjustments y portfolio.hold.adjusted por nivel. Devuelve adjusted | unchanged | no-hold | exempt. Ver db/migrations/0086.';
+COMMENT ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid, bigint) IS
+  'Ajusta la retención abierta de la orden confirmada p_order_id del nodo app.current_tenant_id a su total de ahora (orders.total_amount − sale_amount_minor, que tiene que ser p_expected_delta), en todos sus niveles y con lo registrado, por la operación de servicios pendiente p_operation_id: retiene la diferencia (sólo un alta; cada nivel la cubre o STW02) o la libera (nunca más de lo que los ajustes retuvieron en cada nivel). Asiento BOOKING_* o NETWORK_* con referencia a la operación, fila en wallet_hold_adjustments y portfolio.hold.adjusted por nivel. Devuelve adjusted | unchanged | no-hold | exempt. Ver db/migrations/0086.';
 
-REVOKE ALL ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid) TO app_user;
+REVOKE ALL ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid, bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION wallet_hold_adjust(uuid, uuid, uuid, bigint) TO app_user;

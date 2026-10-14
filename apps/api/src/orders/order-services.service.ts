@@ -314,7 +314,7 @@ export class FlightServicesService {
           if (priced.totalMinor > 0) {
             await this.store.addToTotalWithin(trx, order.id, priced.totalMinor);
           }
-          const hold = await adjust(actorUserId, operationId);
+          const hold = await adjust(actorUserId, operationId, priced.totalMinor);
           return { operationId, hold };
         },
       );
@@ -504,7 +504,7 @@ export class FlightServicesService {
           // Lo que no quedó no se cobra: sale del total y de la retención en la misma transacción.
           if (failedMinor > 0) {
             await this.store.addToTotalWithin(trx, order.id, -failedMinor);
-            await adjust(context.actorUserId, operationId);
+            await adjust(context.actorUserId, operationId, -failedMinor);
           }
           const closed = await this.store.settleWithin(
             trx,
@@ -653,7 +653,7 @@ export class FlightServicesService {
           );
           if (removedMinor > 0) {
             await this.store.addToTotalWithin(trx, order.id, -removedMinor);
-            hold = await adjust(context.actorUserId, operationId);
+            hold = await adjust(context.actorUserId, operationId, -removedMinor);
           }
           const closed = await this.store.settleWithin(
             trx,
@@ -769,19 +769,23 @@ export class FlightServicesService {
         async (trx, adjust) => {
           if (requested.totalMinor > 0) {
             await this.store.addToTotalWithin(trx, order.id, -requested.totalMinor);
-            await adjust(actorUserId, operationId);
+            await adjust(actorUserId, operationId, -requested.totalMinor);
           }
-          await this.store.settleWithin(
+          const closed = await this.store.settleWithin(
             trx,
             operationId,
             'failed',
             this.notSent(requested),
             this.reasonOf(order.provider, error),
           );
+          // El barrido la cerró antes (en duda, con sus líneas contando): devolver acá dejaría el
+          // total y la retención sin lo que esas líneas dicen. Se deshace todo.
+          if (!closed) throw new ServicesOperationTakenError();
         },
       );
     } catch (closeError) {
-      // Nada salió, pero no se pudo devolver: la operación queda pendiente y el barrido la concilia.
+      // Nada salió, pero no se pudo devolver: la operación queda pendiente y el barrido la concilia
+      // (o ya la concilió).
       this.logger.warn(
         `flights.services.not_sent_unsaved order=${order.id} op=${operationId} error=${errorName(closeError)}`,
       );

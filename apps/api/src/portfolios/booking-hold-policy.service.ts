@@ -63,10 +63,15 @@ const NOT_ADJUSTABLE =
 
 /**
  * El ajuste de la retención de UNA orden dentro de la transacción que cambia su total
- * ({@link BookingHoldPolicyService.adjustOrderHold}): `wallet_hold_adjust` con el actor y la operación
- * de servicios que lo explica.
+ * ({@link BookingHoldPolicyService.adjustOrderHold}): `wallet_hold_adjust` con el actor, la operación
+ * de servicios que lo explica y la diferencia que esa operación acaba de escribir en el total (la
+ * base la compara con la de la orden y, si no es esa, no mueve nada).
  */
-export type HoldAdjuster = (actorId: string, operationId: string) => Promise<WalletHoldAdjusted>;
+export type HoldAdjuster = (
+  actorId: string,
+  operationId: string,
+  expectedDeltaMinor: number,
+) => Promise<WalletHoldAdjusted>;
 
 function normalizeCurrency(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -296,8 +301,8 @@ export class BookingHoldPolicyService {
     work: (trx: Transaction<DB>, adjust: HoldAdjuster) => Promise<T>,
   ): Promise<T> {
     const run = (trx: Transaction<DB>): Promise<T> =>
-      work(trx, (actorId, operationId) =>
-        this.walletHolds.adjust(trx, order.id, actorId, operationId),
+      work(trx, (actorId, operationId, expectedDeltaMinor) =>
+        this.walletHolds.adjust(trx, order.id, actorId, operationId, expectedDeltaMinor),
       );
     try {
       return direction === 'retain'

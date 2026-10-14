@@ -10,6 +10,7 @@ import { SABRE_HOSTS, type SabreConfig } from './config';
 import { SabreHttpClient } from './http/sabre-http.client';
 import {
   SabreTicketingAdapter,
+  SabreTicketingNotSentError,
   type SabreTicketingAdapterSettings,
 } from './sabre-ticketing.adapter';
 import { pendingSabreAncillaryEmds } from './ticketing/ancillary-emd';
@@ -154,7 +155,11 @@ describe('la emisión cobra como EMD los servicios confirmados y sin cobrar (SAB
       { issueAncillaryEmds: true },
     );
 
-    await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+    // Lo vendido por la plataforma: 45.00 + 20.00, lo mismo que la reserva tiene por cobrar.
+    await h.adapter.issueTickets(PNR, CTX, {
+      travelerCount: 1,
+      ancillaryCharge: { amountMinor: 6500, currency: 'USD' },
+    });
 
     expect(h.bodyAt(SABRE_GET_BOOKING_PATH)['returnOnly']).toContain('ANCILLARIES');
     // Sin TRAVELERS: los nombres no se piden.
@@ -187,6 +192,62 @@ describe('la emisión cobra como EMD los servicios confirmados y sin cobrar (SAB
     expect(h.bodyAt(SABRE_FULFILL_PATH)['fulfillments']).toEqual([
       { payment: { primaryFormOfPayment: 1 } },
     ]);
+  });
+
+  it('la plataforma no vendió servicios: lo cobrable agregado por fuera no se cobra', async () => {
+    const h = wire(booking([ancillary('7', { total: '45.00' })]), { issueAncillaryEmds: true });
+
+    await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+
+    expect(h.bodyAt(SABRE_FULFILL_PATH)['fulfillments']).toEqual([
+      { payment: { primaryFormOfPayment: 1 } },
+    ]);
+    const line = h.logs.find((l) => l.message === 'sabre.fulfillFlightTickets');
+    expect(line?.meta).toMatchObject({ ancillariesSkipped: { 'not-sold': 1 } });
+  });
+
+  it('lo cobrable no es lo vendido (monto, moneda o nada): no se emite nada, ni el tiquete', async () => {
+    const casos: {
+      readonly ancillaries: readonly Json[];
+      readonly sold: { amountMinor: number; currency: string };
+    }[] = [
+      // De más: un servicio agregado por fuera además del nuestro.
+      {
+        ancillaries: [ancillary('7', { total: '45.00' }), ancillary('8', { total: '30.00' })],
+        sold: { amountMinor: 4500, currency: 'USD' },
+      },
+      // De menos: el nuestro todavía no está confirmado.
+      {
+        ancillaries: [ancillary('7', { total: '45.00', status: 'Pending' })],
+        sold: { amountMinor: 4500, currency: 'USD' },
+      },
+      // Otra moneda.
+      {
+        ancillaries: [ancillary('7', { total: '45.00' })],
+        sold: { amountMinor: 4500, currency: 'COP' },
+      },
+    ];
+    for (const caso of casos) {
+      const h = wire(booking(caso.ancillaries), { issueAncillaryEmds: true });
+      const error = await h.adapter
+        .issueTickets(PNR, CTX, { travelerCount: 1, ancillaryCharge: caso.sold })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SabreTicketingNotSentError);
+      expect((error as SabreTicketingNotSentError).code).toBe('ANCILLARY_CHARGE_MISMATCH');
+      expect(h.calls.map((c) => c.path)).toEqual([SABRE_GET_BOOKING_PATH]);
+    }
+  });
+
+  it('con servicios vendidos y la emisión de EMD apagada: no sale nada, ni la lectura', async () => {
+    const h = wire(booking([ancillary('7', { total: '45.00' })]));
+    const error = await h.adapter
+      .issueTickets(PNR, CTX, {
+        travelerCount: 1,
+        ancillaryCharge: { amountMinor: 4500, currency: 'USD' },
+      })
+      .catch((e: unknown) => e);
+    expect((error as SabreTicketingNotSentError).code).toBe('ANCILLARY_CHARGE_UNAVAILABLE');
+    expect(h.calls).toEqual([]);
   });
 
   it('con la opción y nada que cobrar: una sola entrada, como siempre', async () => {
