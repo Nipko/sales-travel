@@ -17,6 +17,8 @@ interface TenantBranding {
 interface AppShellProps {
   children: React.ReactNode;
   userEmail?: string;
+  /** El nombre visible de la persona; sin él, la barra muestra el correo. */
+  userName?: string;
   tenantName?: string;
   tenantSlug?: string;
   role?: string;
@@ -50,6 +52,7 @@ export function BrandStyle({ branding }: { branding?: TenantBranding }) {
 export function AppShell({
   children,
   userEmail,
+  userName,
   tenantName,
   tenantSlug,
   role,
@@ -85,6 +88,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           userEmail={userEmail}
+          userName={userName}
           tenantName={tenantName}
           tenantSlug={tenantSlug}
           logoUrl={branding?.logoUrl ?? undefined}
