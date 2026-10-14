@@ -31,6 +31,7 @@ import {
   LoginSchema,
   LogoutSchema,
   MfaCodeSchema,
+  MfaConfirmSchema,
   MfaDisableSchema,
   MfaEnrollSchema,
   MfaVerifySchema,
@@ -45,6 +46,7 @@ import {
   type LoginDto,
   type LogoutDto,
   type MfaCodeDto,
+  type MfaConfirmDto,
   type MfaDisableDto,
   type MfaEnrollDto,
   type MfaVerifyDto,
@@ -281,17 +283,26 @@ export class AuthController {
     });
   }
 
-  /** Paso 2: confirma con el primer código y entrega los códigos de recuperación. */
+  /**
+   * Paso 2: confirma con el primer código y entrega los códigos de recuperación. La primera
+   * activación pide además la contraseña (USR-13b): sin ella 400 MFA_PASSWORD_REQUIRED; mala, 400
+   * MFA_PASSWORD_INVALID y suma al bloqueo de la cuenta (429 MFA_ACCOUNT_LOCKED al llegar al tope).
+   */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @AllowWithoutMfa()
   @Post('mfa/confirm')
   @HttpCode(200)
   confirmMfa(
     @CurrentUser() userId: string | undefined,
-    @Body(new ZodValidationPipe(MfaCodeSchema)) dto: MfaCodeDto,
+    @Body(new ZodValidationPipe(MfaConfirmSchema)) dto: MfaConfirmDto,
   ): Promise<{ recoveryCodes: string[] }> {
     if (!userId) throw new UnauthorizedException();
-    return this.mfa.confirmEnrollment(userId, currentContext()?.sessionId, dto.code);
+    return this.mfa.confirmEnrollment(
+      userId,
+      currentContext()?.sessionId,
+      dto.code,
+      dto.currentPassword,
+    );
   }
 
   /** Códigos de recuperación nuevos (los anteriores dejan de servir). Pide un TOTP vigente. */

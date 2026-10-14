@@ -48,6 +48,7 @@ describe('eventLabel', () => {
       'auth.mfa.enabled': '2FA activado',
       'auth.mfa.disabled': '2FA desactivado',
       'auth.mfa.step_up': 'Reconfirmó su 2FA para una acción de alto impacto',
+      'auth.mfa.reauth_failed': 'Verificación fallida dentro de su sesión',
       'users.exported': 'Exportó la lista de usuarios',
       TenantCreated: 'Nodo creado',
       ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',
@@ -149,6 +150,16 @@ describe('eventDetail', () => {
     expect(eventDetail(entry('auth.login.password_reset_required', { linkSent: true }))).toBe(
       'Se le reenvió el enlace',
     );
+  });
+
+  it('verificación fallida dentro de la sesión: qué intentaba y si bloqueó la cuenta', () => {
+    expect(eventDetail(entry('auth.mfa.reauth_failed', { action: 'enroll', locked: false }))).toBe(
+      'Contraseña incorrecta al activar el 2FA',
+    );
+    expect(eventDetail(entry('auth.mfa.reauth_failed', { action: 'step_up', locked: true }))).toBe(
+      'Al reconfirmar el 2FA · Cuenta bloqueada por intentos',
+    );
+    expect(eventDetail(entry('auth.mfa.reauth_failed', { action: 'otra' }))).toBe('');
   });
 
   it('credenciales, precios y nodos', () => {

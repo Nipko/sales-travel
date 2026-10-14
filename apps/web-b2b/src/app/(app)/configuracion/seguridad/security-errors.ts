@@ -72,6 +72,10 @@ const PASSWORD_INVALID = 'La contraseña actual no es correcta.';
 const BY_REASON: Record<string, string> = {
   MFA_CODE_INVALID: CODE_INVALID,
   MFA_REAUTH_INVALID: 'La contraseña o el código no son correctos.',
+  MFA_PASSWORD_INVALID: 'La contraseña no es correcta. Revísala e inténtalo de nuevo.',
+  // El panel la pide antes de llamar al API: esto sólo llega si el formulario no tenía el campo.
+  MFA_PASSWORD_REQUIRED:
+    'Para activar la verificación en dos pasos ahora también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo.',
   MFA_ALREADY_ENABLED: 'La verificación en dos pasos ya está activa. Recarga la página.',
   MFA_REQUIRED_BY_ROLE:
     'Tu rol exige la verificación en dos pasos, así que no se puede desactivar.',
@@ -113,6 +117,17 @@ export function failureMessage(failure: ApiFailure, context: FailureContext): st
       : 'No pudimos completar la operación. Inténtalo de nuevo en unos minutos.';
   }
   return failure.message || 'No pudimos completar la operación. Inténtalo de nuevo.';
+}
+
+/** Motivos que hablan de la contraseña y no del código: el error va junto a ese campo. */
+const PASSWORD_REASONS: ReadonlySet<string> = new Set([
+  'MFA_PASSWORD_INVALID',
+  'MFA_PASSWORD_REQUIRED',
+]);
+
+/** ¿El error es de la contraseña (y no del código)? Para marcar ese campo y llevarle el foco. */
+export function isPasswordFailure(failure: ApiFailure): boolean {
+  return failure.reason !== undefined && PASSWORD_REASONS.has(failure.reason);
 }
 
 /** Intentos que le quedan al código, si el API los informa (`details.attemptsLeft`). */

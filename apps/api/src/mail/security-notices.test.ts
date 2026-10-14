@@ -3,6 +3,7 @@ import { voseoIn } from '../__fixtures__/voseo.js';
 import {
   SECURITY_NOTICE_CLOSING,
   SECURITY_NOTICE_KINDS,
+  noticeTime,
   securityNoticeEmail,
   type SecurityNoticeKind,
 } from './security-notices.js';
@@ -14,6 +15,18 @@ const ESPERADO: Record<SecurityNoticeKind, { subject: string; body: string }> = 
   mfa_reset: {
     subject: 'Restablecimos tu verificación en dos pasos · PlaneTour',
     body: 'Un administrador de Viajes Sur restableció tu verificación en dos pasos. Al próximo ingreso puedes configurarla de nuevo.',
+  },
+  mfa_enabled: {
+    subject: 'Activaste la verificación en dos pasos · PlaneTour',
+    body: 'Activaste la verificación en dos pasos en tu cuenta de PlaneTour.',
+  },
+  mfa_changed: {
+    subject: 'Cambiaste tu app de autenticación · PlaneTour',
+    body: 'Cambiaste la app de autenticación de tu cuenta de PlaneTour.',
+  },
+  mfa_disabled: {
+    subject: 'Desactivaste la verificación en dos pasos · PlaneTour',
+    body: 'Desde ahora, para ingresar basta con tu contraseña.',
   },
   sessions_revoked: {
     subject: 'Cerramos tus sesiones abiertas · PlaneTour',
@@ -121,8 +134,77 @@ describe('avisos de seguridad: qué dice cada uno', () => {
 
   it('la contraseña cambiada dice qué hacer si no fue la persona, sin nombrar un nodo', () => {
     const { text } = aviso('password_changed');
-    expect(text).toContain('Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»');
+    // El texto del enlace tal como lo muestra la pantalla de ingreso (credentials-step.tsx).
+    expect(text).toContain('Si no fuiste tú, elige una nueva desde «¿Olvidaste tu contraseña?»');
     expect(text).not.toContain(NODO);
+  });
+
+  it('activar el 2FA: cuándo, en la zona del país de su correo y con el desfase, y qué hacer si no fue', () => {
+    const at = new Date('2026-10-13T15:42:10Z');
+    const co = securityNoticeEmail('mfa_enabled', {
+      personName: 'Ana',
+      nodeName: NODO,
+      at,
+      countryCode: 'CO',
+    });
+    expect(co.text).toContain(
+      'Activaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a las 10:42 (GMT-5).',
+    );
+    expect(co.html).toContain('el 13 de octubre de 2026 a las 10:42 (GMT-5).');
+    expect(co.text).toContain(
+      'Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «¿Olvidaste tu contraseña?»',
+    );
+    expect(co.text).toContain('pídele a tu administrador que restablezca tu verificación');
+    expect(co.text).toContain('Si tenías sesiones abiertas en otros equipos, las cerramos.');
+    // Lo hizo la persona, no un admin: no nombra ningún nodo.
+    expect(co.text).not.toContain('Un administrador');
+    expect(co.text).not.toContain(NODO);
+
+    expect(securityNoticeEmail('mfa_enabled', { at, countryCode: 'br' }).text).toContain(
+      'a las 12:42 (GMT-3).',
+    );
+    // Sin país conocido, la hora de Bogotá, pero siempre con el desfase.
+    for (const countryCode of [null, 'ZZ']) {
+      expect(securityNoticeEmail('mfa_enabled', { at, countryCode }).text).toContain(
+        'a las 10:42 (GMT-5).',
+      );
+    }
+  });
+
+  it('cambiar de app y desactivar el 2FA: cuándo, qué dejó de servir y qué hacer si no fue', () => {
+    const at = new Date('2026-10-13T15:42:10Z');
+    const changed = securityNoticeEmail('mfa_changed', {
+      personName: 'Ana',
+      nodeName: NODO,
+      at,
+      countryCode: 'PE',
+    });
+    expect(changed.text).toContain(
+      'Cambiaste la app de autenticación de tu cuenta de PlaneTour el 13 de octubre de 2026 a las 10:42 (GMT-5).',
+    );
+    expect(changed.text).toContain('La app anterior ya no sirve para ingresar');
+    expect(changed.text).toContain('pídele a tu administrador que restablezca tu verificación');
+
+    const disabled = securityNoticeEmail('mfa_disabled', { at, countryCode: 'BR' });
+    expect(disabled.text).toContain(
+      'Desactivaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a las 12:42 (GMT-3).',
+    );
+    expect(disabled.text).toContain(
+      'elige una nueva desde «¿Olvidaste tu contraseña?» en la pantalla de ingreso y vuelve a activarla en Mi cuenta → Seguridad.',
+    );
+    for (const { text } of [changed, disabled]) {
+      // Lo hizo la persona, no un admin: no nombra ningún nodo.
+      expect(text).not.toContain('Un administrador');
+      expect(text).not.toContain(NODO);
+      expect(voseoIn(text)).toEqual([]);
+    }
+  });
+
+  it('noticeTime: el día que cambia con la zona', () => {
+    const at = new Date('2026-10-14T02:30:00Z');
+    expect(noticeTime(at, 'PE')).toBe('13 de octubre de 2026 a las 21:30 (GMT-5)');
+    expect(noticeTime(at, 'BR')).toBe('13 de octubre de 2026 a las 23:30 (GMT-3)');
+    expect(noticeTime(at, 'MX')).toBe('13 de octubre de 2026 a las 20:30 (GMT-6)');
   });
 
   it('suspender el acceso a un nodo aclara que los demás nodos siguen igual', () => {

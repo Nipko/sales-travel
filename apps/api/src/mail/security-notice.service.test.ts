@@ -17,7 +17,7 @@ interface Banco {
   user?: { email: string; name: string | null } | undefined;
   tenant?: { name: string } | undefined;
   /** Su membership activa más antigua (el nodo de su correo). */
-  mailNode?: { tenantId: string; name: string } | undefined;
+  mailNode?: { tenantId: string; name: string; countryCode?: string } | undefined;
   /** Lo que contesta el correo, o el error con que falla. */
   mail?: boolean | Error;
   /** La base falla en cualquier consulta. */
@@ -135,6 +135,30 @@ describe('SecurityNoticeService.send', () => {
     const [tenantId, msg] = mailer.sendToTenant.mock.calls[0]!;
     expect(tenantId).toBe(SU_NODO);
     // El nodo del correo no se nombra: no fue un admin de ese nodo.
+    expect(msg.text).not.toContain('Agencia de Ana');
+  });
+
+  it('un aviso con la hora la dice en la zona del país del nodo de su correo, sin nombrarlo', async () => {
+    const { service, mailer, k } = banco({
+      mailNode: { tenantId: SU_NODO, name: 'Agencia de Ana', countryCode: 'BR' },
+    });
+
+    expect(
+      await service.send('mfa_enabled', {
+        userId: USER,
+        tenantId: null,
+        at: new Date('2026-10-13T15:42:00Z'),
+      }),
+    ).toBe(true);
+
+    expect(k.queries.find((q) => q.sql.includes('from "memberships"'))?.sql).toContain(
+      '"tenants"."country_code" as "countryCode"',
+    );
+    const [tenantId, msg] = mailer.sendToTenant.mock.calls[0]!;
+    expect(tenantId).toBe(SU_NODO);
+    expect(msg.to).toBe(EMAIL);
+    expect(msg.subject).toBe('Activaste la verificación en dos pasos · PlaneTour');
+    expect(msg.text).toContain('el 13 de octubre de 2026 a las 12:42 (GMT-3).');
     expect(msg.text).not.toContain('Agencia de Ana');
   });
 

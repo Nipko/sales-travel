@@ -85,6 +85,18 @@ export const MfaVerifySchema = z.object({
 });
 export type MfaVerifyDto = z.infer<typeof MfaVerifySchema>;
 
+/**
+ * POST /auth/mfa/confirm. La contraseña es obligatoria al activar el 2FA por primera vez (también
+ * después de que un admin lo restableció): sin ella, una sesión robada lo activaba con su propio
+ * teléfono (USR-13b). Al cambiar de teléfono ya se pidió en el paso 1 y acá se ignora. Si hace falta
+ * lo decide MfaService.confirmEnrollment: el esquema no sabe si la cuenta ya tiene el 2FA.
+ */
+export const MfaConfirmSchema = z.object({
+  code: MfaCode,
+  currentPassword: z.string().min(1).max(128).optional(),
+});
+export type MfaConfirmDto = z.infer<typeof MfaConfirmSchema>;
+
 /** Con MFA activo, enrolar es "cambiar de teléfono" y exige la contraseña y un código vigente. */
 export const MfaEnrollSchema = z
   .object({

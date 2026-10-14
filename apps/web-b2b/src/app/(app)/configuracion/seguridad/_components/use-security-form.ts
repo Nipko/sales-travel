@@ -12,6 +12,8 @@ export interface SecurityFormState {
    * para limpiarse después de un error, aun cuando el texto del error es el mismo que el anterior.
    */
   failureKey: number;
+  /** El campo del último error, si la acción lo dijo (`ActionResult.field`); si no, el del código. */
+  errorField: ActionResult['field'];
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -30,7 +32,11 @@ export function useSecurityForm<R extends ActionResult>(
   onSuccess: (result: R, form: HTMLFormElement) => void,
 ): SecurityFormState {
   const [pending, startTransition] = useTransition();
-  const [failure, setFailure] = useState<{ message: string; key: number } | null>(null);
+  const [failure, setFailure] = useState<{
+    message: string;
+    key: number;
+    field?: ActionResult['field'];
+  } | null>(null);
   // El auto-envío puede volver a disparar antes de que `pending` llegue al render.
   const inFlight = useRef(false);
 
@@ -47,7 +53,8 @@ export function useSecurityForm<R extends ActionResult>(
         if (!result) return;
         if (result.error) {
           const message = result.error;
-          setFailure((prev) => ({ message, key: (prev?.key ?? 0) + 1 }));
+          const field = result.field;
+          setFailure((prev) => ({ message, key: (prev?.key ?? 0) + 1, field }));
           return;
         }
         setFailure(null);
@@ -62,5 +69,11 @@ export function useSecurityForm<R extends ActionResult>(
     });
   }
 
-  return { pending, error: failure?.message, failureKey: failure?.key ?? 0, onSubmit };
+  return {
+    pending,
+    error: failure?.message,
+    failureKey: failure?.key ?? 0,
+    errorField: failure?.field,
+    onSubmit,
+  };
 }
