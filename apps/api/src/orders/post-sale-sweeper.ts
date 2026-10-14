@@ -42,6 +42,7 @@ import {
 } from './flight-deadline-alert.service.js';
 import { FlightTicketIssueService, type TicketIssueSweepReport } from './ticket-issue.service.js';
 import { FlightServicesService, type ServicesSweepReport } from './order-services.service.js';
+import { FlightTravelersService, type TravelersSweepReport } from './order-travelers.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -105,6 +106,8 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   deadlineAlerts: DeadlineAlertSweepReport;
   /** Los cambios de servicios adicionales que quedaron pendientes: a conciliación (SAB-20). */
   serviceChanges: ServicesSweepReport;
+  /** Los cambios de datos de pasajeros que quedaron pendientes: a revisión (SAB-25). */
+  travelerChanges: TravelersSweepReport;
 };
 
 @Injectable()
@@ -133,6 +136,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     @Optional() private readonly deadlineAlerts?: FlightDeadlineAlertService,
     /** Los cambios de servicios pendientes (SAB-20). Opcional para los dobles de las suites. */
     @Optional() private readonly serviceChanges?: FlightServicesService,
+    /** Los cambios de datos de pasajeros pendientes (SAB-25). Opcional por lo mismo. */
+    @Optional() private readonly travelerChanges?: FlightTravelersService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -208,6 +213,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       ticketIssues: { ...report.ticketIssues },
       deadlineAlerts: { ...report.deadlineAlerts },
       serviceChanges: { ...report.serviceChanges },
+      travelerChanges: { ...report.travelerChanges },
     });
     return report;
   }
@@ -296,6 +302,7 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       ticketIssues: { examined: 0, abandoned: 0, reconciling: 0, skipped: 0 },
       deadlineAlerts: emptyDeadlineAlertReport(),
       serviceChanges: { examined: 0, reconciling: 0, skipped: 0 },
+      travelerChanges: { examined: 0, escalated: 0, skipped: 0 },
     };
 
     for (const { id } of tenants) {
@@ -377,6 +384,20 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
           failed = true;
           this.logger.warn(
             `post_sale.sweep.service_changes.tenant_failed tenant=${id} error=${errorName(err)}`,
+          );
+        }
+      }
+      // Los cambios de datos de pasajeros que quedaron pendientes (SAB-25): a revisión, sin reenviar.
+      if (this.travelerChanges !== undefined) {
+        try {
+          const changes = await this.travelerChanges.sweepTenant(id, now);
+          for (const key of Object.keys(changes) as (keyof TravelersSweepReport)[]) {
+            report.travelerChanges[key] += changes[key];
+          }
+        } catch (err) {
+          failed = true;
+          this.logger.warn(
+            `post_sale.sweep.traveler_changes.tenant_failed tenant=${id} error=${errorName(err)}`,
           );
         }
       }

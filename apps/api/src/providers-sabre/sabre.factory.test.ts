@@ -31,6 +31,7 @@ import {
   supportsAuditedCancel,
   supportsAncillaries,
   supportsAuditedCreate,
+  supportsOrderModify,
   supportsSeatMap,
   supportsTicketing,
   type ProviderFlagsPort,
@@ -740,6 +741,8 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
       void: false,
       // Y la elección de asiento al reservar (SAB-16), hasta certificarla en CERT (SAB-21).
       seatMap: false,
+      // Y corregir los datos de los pasajeros (SAB-25), hasta certificar modifyBooking en CERT.
+      modify: false,
     });
   });
 
@@ -2587,5 +2590,96 @@ describe('SabreProviderFactory — maletas y servicios antes de emitir (SAB-20)'
       .issueTickets(PNR, { tenantId: 't1', requestId: 'req-emd' }, { travelerCount: 1 })
       .catch(() => undefined);
     expect(red.cuerpos.get(RUTA_GET)).not.toContain('ANCILLARIES');
+  });
+});
+
+describe('SabreProviderFactory — datos de los pasajeros por modifyBooking (SAB-25)', () => {
+  const RUTA_MODIFY = '/v1/trip/orders/modifyBooking';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  function cable(): { rutas: string[]; cuerpos: Map<string, string> } {
+    const rutas: string[] = [];
+    const cuerpos = new Map<string, string>();
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (typeof init?.body === 'string' && !cuerpos.has(ruta)) cuerpos.set(ruta, init.body);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_GET) {
+        return respuesta({
+          bookingId: PNR,
+          bookingSignature: 'FIRMA-DE-LA-LECTURA',
+          travelers: [
+            {
+              givenName: 'ANA',
+              surname: 'PEREZ',
+              passengerCode: 'ADT',
+              birthDate: '1990-01-01',
+              identityDocuments: [],
+            },
+          ],
+          flights: [{ itemId: '1', sourceType: 'ATPCO', flightStatusName: 'Confirmed' }],
+        });
+      }
+      if (ruta === RUTA_MODIFY) return respuesta({ timestamp: '2026-10-14T12:00:00Z' });
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    return { rutas, cuerpos };
+  }
+
+  const reserva = {
+    orderId: PNR,
+    contentSource: 'ATPCO',
+    passengers: [{ paxType: 'ADT' as const, surname: 'Pérez', gender: 'F' as const }],
+  };
+  const cambio = [{ index: 0, specialServices: ['WCHR' as const] }];
+
+  it('sin `modify` en SABRE_OPERATIONS: la capacidad apagada y ni la lectura sale', async () => {
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ modify: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsOrderModify(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    expect(adapter.supportedModifications()).toEqual([
+      'identityDocuments',
+      'loyalty',
+      'specialServices',
+    ]);
+    const ctx = { tenantId: 't1' };
+    for (const llamada of [
+      () => adapter.readTravelers(reserva, ctx),
+      () => adapter.modifyTravelers(reserva, cambio, ctx),
+    ]) {
+      expect(await llamada().catch((e: unknown) => e)).toBeInstanceOf(
+        SabreOperationNotSupportedError,
+      );
+    }
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `modify`: lee sin returnOnly y escribe firmado por la plataforma, con la firma leída', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'modify');
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ modify: true, issue: false, services: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsOrderModify(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const result = await adapter.modifyTravelers(reserva, cambio, {
+      tenantId: 't1',
+      requestId: 'op-1',
+    });
+    // La respuesta no trae la reserva y la relectura tampoco muestra el SSR: no se da por hecho.
+    expect(result.outcome).toBe('UNVERIFIED');
+    expect(red.rutas).toEqual([RUTA_TOKEN, RUTA_GET, RUTA_MODIFY, RUTA_GET]);
+    expect(red.cuerpos.get(RUTA_GET)).not.toContain('returnOnly');
+    const enviado = JSON.parse(red.cuerpos.get(RUTA_MODIFY) ?? '{}') as Record<string, unknown>;
+    expect(enviado['bookingSignature']).toBe('FIRMA-DE-LA-LECTURA');
+    expect(enviado['receivedFrom']).toBe('PLANETOUR');
   });
 });

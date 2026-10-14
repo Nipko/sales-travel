@@ -5,6 +5,7 @@ import type { ActiveTenantService } from '../../request-context/active-tenant.se
 import type { FlightOrderTrackingStore } from '../flight-order-tracking.store.js';
 import type { FlightTicketIssueService } from '../ticket-issue.service.js';
 import type { FlightServicesService } from '../order-services.service.js';
+import type { FlightTravelersService } from '../order-travelers.service.js';
 import type { BookingHoldLedger } from '../../portfolios/booking-hold.ledger.js';
 import type { HotelOrderReadsService } from '../hotel-order-reads.service.js';
 import { OrderCapabilitiesService } from '../order-capabilities.service.js';
@@ -28,6 +29,7 @@ export function ordersController(deps: {
   readonly ticketIssues?: FlightTicketIssueService;
   readonly walletHolds?: BookingHoldLedger;
   readonly services?: FlightServicesService;
+  readonly travelers?: FlightTravelersService;
 }): OrdersController {
   return new OrdersController(
     deps.orders,
@@ -39,5 +41,6 @@ export function ordersController(deps: {
     deps.ticketIssues,
     deps.walletHolds,
     deps.services,
+    deps.travelers,
   );
 }

@@ -81,6 +81,26 @@ export const ORDER_EVENTS = {
    */
   servicesChangeFailed: 'OrderServicesChangeFailed',
 
+  // Datos de los pasajeros de una reserva hecha: documento, viajero frecuente y servicios especiales
+  // (SAB-25). Sólo NOMBRES de campo (`identityDocuments`, `loyalty`, `specialServices`) y conteos:
+  // nunca el número de un documento ni cuál servicio especial (son datos de salud y religión).
+
+  /**
+   * Un vendedor pidió corregir datos de pasajeros: la operación `modify` quedó pendiente. Se emite
+   * ANTES de llamar al proveedor. `{ operationId, fields, travelers, testContent }`.
+   */
+  travelersModifyRequested: 'OrderTravelersModifyRequested',
+  /**
+   * La reserva muestra todo lo pedido. `{ operationId, fields, travelers, unchanged, attempts,
+   * testContent }`; `unchanged`: ya lo tenía y no se mandó nada.
+   */
+  travelersModified: 'OrderTravelersModified',
+  /**
+   * No quedó como se pidió: rechazado (`FAILED`, `retryable`), sin salir (`NOT_SENT`) o en duda
+   * (`UNVERIFIED`, `reconciliationRequired`, con los campos que sí quedaron y los que no).
+   */
+  travelersModifyFailed: 'OrderTravelersModifyFailed',
+
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
 
@@ -162,6 +182,17 @@ export const SERVICES_ESCALATION_REASONS = [
   'services-settle-failed',
 ] as const;
 export type ServicesEscalationReason = (typeof SERVICES_ESCALATION_REASONS)[number];
+
+/** Motivos de `OrderEscalated` de los datos de los pasajeros (SAB-25). Vocabulario cerrado. */
+export const TRAVELERS_ESCALATION_REASONS = [
+  /** El proveedor no confirmó el cambio, o confirmó sólo una parte: alguien mira la reserva. */
+  'travelers-unverified',
+  /** El cambio quedó pendiente más de lo razonable (el proceso murió con la llamada en vuelo). */
+  'travelers-stale',
+  /** El proveedor contestó y no se pudo guardar el desenlace. */
+  'travelers-settle-failed',
+] as const;
+export type TravelersEscalationReason = (typeof TRAVELERS_ESCALATION_REASONS)[number];
 
 /** Clasificación de una divergencia con el proveedor (04 §9.4). */
 export const RECONCILIATION_DISCREPANCY_KINDS = [

@@ -63,6 +63,9 @@ describe('eventLabel', () => {
       OrderServicesRemoved: 'Servicios adicionales quitados de una reserva',
       OrderServicesChangeFailed: 'Cambio de servicios adicionales sin completar',
       'portfolio.hold.adjusted': 'Retención de cartera ajustada por servicios adicionales',
+      OrderTravelersModifyRequested: 'Pidió corregir datos de pasajeros',
+      OrderTravelersModified: 'Datos de pasajeros corregidos en una reserva',
+      OrderTravelersModifyFailed: 'Corrección de datos de pasajeros sin completar',
     };
     for (const [type, text] of Object.entries(expected)) {
       expect(eventLabel(type, {}), type).toEqual({ text, raw: false });

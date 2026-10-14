@@ -45,6 +45,14 @@ describe('buildCertPlan — qué corre y en qué orden', () => {
     expect(plan.pnrs).toBe(2);
   });
 
+  it('sab-25 corrige los datos de los pasajeros con `modify` encendido y sin mover dinero', () => {
+    const plan = buildCertPlan({ ...BASE, scenarios: ['sab-25'] });
+    expect(plan.scenarios.map((s) => s.id)).toEqual(['book-modify']);
+    expect(plan.operations).toEqual(['modify']);
+    expect(plan.pnrs).toBe(1);
+    expect(plan.allowMoney).toBe(false);
+  });
+
   it('la ruta de reservas puede ser otra que la primera de búsqueda', () => {
     const plan = buildCertPlan({ ...BASE, bookRoute: 'lim-gru' });
     expect(plan.bookRoute).toEqual({ origin: 'LIM', destination: 'GRU' });

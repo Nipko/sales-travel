@@ -228,6 +228,7 @@ d('Sistema › Procesos (rastro del barrido y lecturas de 0075 como app_user)', 
         'staleCancelClaims',
         'tenants',
         'tenantsFailed',
+        'travelerChanges',
         'ticketIssues',
       ].sort(),
     );

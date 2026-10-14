@@ -579,6 +579,72 @@ verify`, con reintento del `retrieve` ante `UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNA
 7. **Riesgo de fuga de PII.** `before`/`after` llevan `identityDocuments[]` completos y
    `payments.formsOfPayment[].cardNumber`. Redacción obligatoria antes de cualquier log o span.
 
+### 5.6 Implementado (SAB-25): documento, viajero frecuente y servicios especiales
+
+> **2026-10.** El vendedor corrige o completa el pasaporte (o la cédula), el viajero frecuente y los servicios
+> especiales de una reserva confirmada **o emitida**, sin cancelarla. Detrás de `modify` en `SABRE_OPERATIONS`
+> (capacidad `modify` del factory), apagado hasta certificarlo en CERT (escenario `book-modify`, atajo `sab-25`).
+
+- **Puerto.** `OrderModifyPort` (`packages/domain/src/ports/order-modify.port.ts`), aparte de `OrderManagePort` (RF-17
+  CA-6): `supportedModifications()` declara `identityDocuments`, `loyalty` y `specialServices`; `readTravelers` lee
+  la reserva **enmascarada**; `modifyTravelers` aplica en bloque. Si lanza, no se escribió nada; lo que pasa después
+  de mandar vuelve como `MODIFIED`, `FAILED` o `UNVERIFIED`.
+- **Read-modify-write (`SabreOrderManageAdapter.modifyTravelers`).** `getBooking` **sin** `returnOnly` (con el
+  perfil de `SABRE_EXTRA_FEATURES`) → `buildSabreModifyBookingRequest` → `modifyBooking` con `retrieveBooking: true`
+  y las tres banderas de `CommonExtraFeatures` con los valores de la lectura. Ante
+  `UNABLE_TO_MODIFY_BOOKING_WRONG_SIGNATURE` (o `UNABLE_TO_RETRIEVE_BOOKING_SIGNATURE`), que no aplican nada, se
+  vuelve a leer y a armar: tres escrituras como mucho (dos reintentos) y después `FAILED` con `CONCURRENT_CHANGE`.
+  Cada pedido lee su propia firma: un segundo cambio vuelve a leer (§5.1, regla 4).
+- **`before`/`after`.** Las dos mitades salen de la MISMA lectura: `before` es la copia de `travelers[]` y
+  `specialServices[]` tal como vinieron (todos los pasajeros, todos los SSR, todos sus campos) y `after`, esa copia
+  con el cambio. Sólo viajan esas dos propiedades de `BookingToModify`; las demás (vuelos, pagos, tarifas…) no van
+  en ninguna mitad y por eso no tienen diferencia, como en el ejemplo oficial de pasaporte. Nunca `contactInfo` ni
+  `travelersGroup`. Sin diferencia —la reserva ya tiene lo pedido— no se manda nada (sería `NO_CHANGES_FOUND`).
+  - **Documento:** reemplaza al de ese tipo (`PASSPORT` o `NATIONAL_ID_CARD`) conservando lo que la reserva sabía
+    de él; el titular es siempre el pasajero de la reserva (su nombre no se teclea); un número nuevo no hereda la
+    fecha de emisión. Sin uno de ese tipo, se agrega con la forma de la creación. El `DOCS` lo regenera Sabre.
+  - **Viajero frecuente:** reemplaza el número del programa de esa aerolínea (sin el `tierLevel` viejo) o agrega uno.
+  - **Servicios especiales:** lista CERRADA (`WCHR`, `WCHS`, `VGML`, `MOML`, `DBML`), nunca texto libre. El
+    conjunto pedido reemplaza a los de la lista para ese pasajero; los demás SSR no se tocan. Se piden asociados al
+    pasajero y sin vuelo, como el ejemplo oficial ATPCO. Uno de la lista compartido por varios pasajeros no se quita
+    para uno solo (se rechaza antes de salir). **Sólo ATPCO:** el contrato no lista SSR entre lo que `modifyBooking`
+    cambia en NDC, y sin carril conocido tampoco se ofrece.
+  - **Antes del cable** se rechaza (`OrderModifyRejectedError`): datos fuera de forma, pasajeros de la orden que no
+    casan con los de la reserva (cantidad, infante, apellido sin tildes y nombre de pila por prefijo —el tratamiento
+    pegado o un nombre recortado no son otra persona, dos hermanos con el mismo apellido en otro orden sí—), infante
+    con viajero frecuente o SSR.
+- **Verificación.** El desenlace se lee en la reserva: la de la respuesta o, si no vino o no lo muestra todo, una
+  lectura de display (`TRAVELERS`, `SPECIAL_SERVICES`). Un rechazo de validación (`BAD_REQUEST`, 4xx) es `FAILED`
+  sin otra lectura; un error de negocio (`APPLICATION_ERROR`) con la reserva sin nada de lo pedido es `FAILED`, y
+  con una parte, `UNVERIFIED`; un corte o un error que no dice si quedó (`TIMEOUT`, `DOWNLINE_SERVICE_*`,
+  `UNABLE_TO_CONFIRM_MODIFICATION_STATUS`…) nunca es `FAILED`: si la reserva no lo muestra, `UNVERIFIED`.
+- **API.** `GET /orders/:id/travelers` (la reserva enmascarada: el documento y el viajero frecuente por sus últimos
+  caracteres, nunca más de la mitad) y `PATCH /orders/:id/travelers` (Zod estricto: tipo, número, país ISO 3166-1
+  de la lista oficial, vencimiento posterior a hoy, código IATA, SSR de la lista). Corre en el request con el claim
+  `modify` del índice de 0083 —el lock de la reserva: una escritura pendiente por orden, compartida con emitir y los
+  servicios— y no es venta (sin `@SalesOperation`): es una corrección de la post-venta, con los roles que venden.
+  Confirmada o emitida: los datos del pasajero no son la tarifa, y el contrato no limita su cambio a reservas sin
+  tiquete. Sin migración nueva: `modify` ya estaba en el índice de 0083.
+- **En duda, nunca dado por hecho.** `UNVERIFIED` cierra la operación `failed` con `reconciliationRequired` y se
+  escala (`OrderEscalated`, `travelers-unverified`). A diferencia de los servicios, no frena otro cambio: pedirlo
+  de nuevo es seguro, porque cada intento parte de una lectura nueva y sólo manda lo que falta. Lo que quedó
+  pendiente porque el proceso murió con la llamada en vuelo lo cierra el barrido de post-venta a los 10 minutos
+  (`travelers-stale`).
+- **PII.** Lo pedido viaja sólo al puerto: ni la operación, ni el rastro, ni el log, ni la respuesta llevan un número
+  o el código de un servicio especial (son datos de salud y religión). Los eventos —`OrderTravelersModifyRequested`,
+  `OrderTravelersModified`, `OrderTravelersModifyFailed`— nombran campos y cuentan pasajeros. La orden guarda lo
+  corregido **enmascarado** (`identityDoc.numberLast4`, `loyaltyProgramAccount.accountNumberLast4`) y el número
+  viejo se va con el cambio; los SSR no se guardan. La redacción del ACL suma `programNumber` a las claves de PII:
+  la evidencia del arnés tampoco lleva el viajero frecuente. `GET /orders`, `GET /orders/:id` y `POST /orders`
+  publican los pasajeros con el documento y el viajero frecuente enmascarados (`publicOrderPassengers`), también
+  los de las órdenes nunca corregidas: lo que habla con el proveedor lee el número de la base en el servidor, nunca
+  del navegador. La lectura de pasajeros, la lista y el detalle salen con `Cache-Control: no-store` (API y BFF).
+- **Por certificar en CERT (`book-modify`).** Que la aerolínea acepte `WCHR` y las comidas sin asociación a un
+  vuelo (o si pide `flights`: `UNABLE_TO_MODIFY_BOOKING_SPECIAL_SERVICE_FLIGHT_ASSOCIATION_REQUIRED`); que la
+  lectura de display con `TRAVELERS` traiga `identityDocuments` y `loyaltyPrograms` completos para verificar; que
+  `retrieveBooking: true` devuelva la reserva cambiada; el `supplierCode` sin `receiverCode` del viajero frecuente;
+  y el mismo cambio con la reserva emitida.
+
 ---
 
 ## 6. Qué familias exigen sesión ATH — y por qué la respuesta es "ninguna"

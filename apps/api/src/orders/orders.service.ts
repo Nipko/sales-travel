@@ -87,6 +87,7 @@ import { ORDER_EVENTS, createdSummary, type TicketVoidEscalationReason } from '.
 import { issueOperationPolicy } from './ticket-issue.plan.js';
 import { FlightServicesService } from './order-services.service.js';
 import { servicesOperationPolicy, type PublicServicesCatalog } from './order-services.plan.js';
+import { travelersOperationPolicy } from './order-travelers.plan.js';
 import {
   TICKET_VOID_MESSAGES,
   VOID_REJECTED_LAST_ERROR,
@@ -1585,7 +1586,7 @@ export class OrdersService {
       .executeTakeFirst();
     if (pending) {
       throw new ConflictException(
-        'Hay una emisión o un cambio de servicios en curso para esta reserva. Espera a que termine antes de cancelarla.',
+        'Hay una emisión o un cambio de servicios o de datos de pasajeros en curso para esta reserva. Espera a que termine antes de cancelarla.',
       );
     }
   }
@@ -2731,6 +2732,15 @@ export class OrdersService {
           return {
             ...base,
             ...servicesOperationPolicy(row.status, row.result),
+            outcome: null,
+          } as unknown as OrderOperationRow;
+        }
+        if (row.type === 'modify') {
+          // Datos de pasajeros (SAB-25): no se reintenta desde el historial —se vuelve a pedir desde
+          // la reserva, con una lectura nueva—. En duda, alguien mira la reserva.
+          return {
+            ...base,
+            ...travelersOperationPolicy(row.status, row.result),
             outcome: null,
           } as unknown as OrderOperationRow;
         }

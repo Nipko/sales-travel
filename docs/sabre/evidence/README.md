@@ -89,6 +89,7 @@ gh workflow run sabre-cert-run.yml -f scenarios=sab-13 -f allow_money=true
 | `ancillaries`       | sab-21 | Una maleta con precio, emisión con EMD y VOID                          | 1   | sí     |
 | `shop-ndc`          | sab-22 | Búsqueda con NDC pedido sólo para la corrida (captura para el mapper)  | 0   | no     |
 | `book-issue-refund` | sab-24 | Emisión, estimado de checkFlightTickets y REFUND (sigue apagado en producto, D9) | 1 | sí |
+| `book-modify`       | sab-25 | Pasaporte con WCHR y viajero frecuente por modifyBooking (dos pedidos, cada uno con su lectura) y cancelación | 1 | no |
 
 ### Las puertas
 

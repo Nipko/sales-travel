@@ -4,7 +4,7 @@ import type { SabreOperation } from '../sabre.factory.js';
  * Qué puede correr el arnés de certificación contra CERT y cómo se arma una corrida, sin red ni base.
  *
  * Cada escenario es la evidencia que pide un paquete posterior del frente de Sabre (SAB-12, 13, 21,
- * 22 y 24). Los que mueven dinero —emitir, anular, reembolsar, cobrar un servicio como EMD— sólo
+ * 22, 24 y 25). Los que mueven dinero —emitir, anular, reembolsar, cobrar un servicio como EMD— sólo
  * entran con `--allow-money`, y la corrida entera crea como mucho {@link CERT_RUN_MAX_PNRS} PNR.
  */
 
@@ -18,6 +18,7 @@ export const CERT_SCENARIO_IDS = [
   'ancillaries',
   'shop-ndc',
   'book-issue-refund',
+  'book-modify',
 ] as const;
 export type CertScenarioId = (typeof CERT_SCENARIO_IDS)[number];
 
@@ -160,6 +161,27 @@ export const CERT_SCENARIOS: Readonly<Record<CertScenarioId, CertScenarioSpec>> 
       'getBooking',
     ],
   },
+  'book-modify': {
+    id: 'book-modify',
+    forPackage: 'SAB-25',
+    summary:
+      'Reserva ATPCO, corrección del pasaporte con silla de ruedas y del viajero frecuente (modifyBooking), y cancelación',
+    pnrs: 1,
+    // Cambia la reserva, pero no cobra ni emite: no necesita --allow-money.
+    money: false,
+    operations: ['modify'],
+    steps: [
+      'shop',
+      'flightCheck',
+      'createBooking',
+      'getBooking',
+      'datos de pasajeros',
+      'modifyBooking pasaporte + WCHR',
+      'modifyBooking viajero frecuente',
+      'datos de pasajeros',
+      'cancelBooking',
+    ],
+  },
 };
 
 /** Atajos por paquete: `--scenarios sab-13` es lo que SAB-13 necesita. */
@@ -169,6 +191,7 @@ export const CERT_SCENARIO_PRESETS: Readonly<Record<string, readonly CertScenari
   'sab-21': ['seatmap', 'book-with-seat', 'ancillaries'],
   'sab-22': ['shop-ndc'],
   'sab-24': ['book-issue-refund'],
+  'sab-25': ['book-modify'],
 };
 
 export interface CertPax {

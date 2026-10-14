@@ -292,6 +292,7 @@ const ENTRADAS: [string, Clase][] = [
     'GET /orders/:id/cancellation-estimate',
     'GET /orders/:id/operations',
     'GET /orders/:id/ticket-check',
+    'GET /orders/:id/travelers',
     'GET /hotels/reservations/:id',
     'POST /cars/reservation',
     'GET /cars/daily-report',
@@ -317,6 +318,10 @@ const ENTRADAS: [string, Clase][] = [
     'POST /hotels/reservations/:id/cancel',
     'POST /cars/reservations/cancel',
     'POST /portfolios/orders/:orderId/reject',
+  ),
+  ...noVenta(
+    'corrección: los datos de los pasajeros de una reserva hecha (documento, viajero frecuente, servicios especiales); no da precio ni cobra',
+    'PATCH /orders/:id/travelers',
   ),
   ...noVenta(
     'la agencia y su cartera: informa depósitos; las rutas viejas de movimientos responden 403',

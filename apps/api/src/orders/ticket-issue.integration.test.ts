@@ -471,7 +471,7 @@ d('emisión de tiquetes (0083) contra Postgres', () => {
         s.orders.cancelOrder(agenciaA, o, fila.provider_order_id, usuario),
       ).rejects.toThrow(
         new ConflictException(
-          'Hay una emisión o un cambio de servicios en curso para esta reserva. Espera a que termine antes de cancelarla.',
+          'Hay una emisión o un cambio de servicios o de datos de pasajeros en curso para esta reserva. Espera a que termine antes de cancelarla.',
         ),
       );
       expect(await estadoDeOrden(o)).toBe('confirmed');

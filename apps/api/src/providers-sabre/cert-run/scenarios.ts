@@ -9,12 +9,16 @@ import {
   type OfferPriceResult,
   type OrderCancelResult,
   type OrderCreateRequest,
+  type OrderModifyRef,
+  type OrderModifyResult,
+  type OrderTravelersView,
   type OrderView,
   type SearchContext,
   type SeatSelection,
   type TicketCheckResult,
   type TicketIssueOptions,
   type TicketIssueResult,
+  type TravelerChange,
 } from '@sales-travel/domain';
 import { SabreApiError, SabreCancelBookingBuildError, redactText } from '@sales-travel/sabre';
 import type {
@@ -84,6 +88,12 @@ export interface CertFlightPort {
     providerItemIds: readonly string[],
     ctx: SearchContext,
   ): Promise<AncillaryRemoveResult>;
+  readTravelers(order: OrderModifyRef, ctx: SearchContext): Promise<OrderTravelersView>;
+  modifyTravelers(
+    order: OrderModifyRef,
+    changes: readonly TravelerChange[],
+    ctx: SearchContext,
+  ): Promise<OrderModifyResult>;
 }
 
 /**
@@ -414,6 +424,9 @@ class CertRun {
       }
       case 'ancillaries':
         await this.ancillaries(spec.id, report);
+        return;
+      case 'book-modify':
+        await this.modifyTravelers(spec.id, report);
         return;
       case 'book-issue-refund': {
         const booking = await this.reserve(spec.id, report);
@@ -766,6 +779,97 @@ class CertRun {
   }
 
   /**
+   * Corrige los datos del primer pasajero sobre una reserva recién hecha (SAB-25), en dos pedidos
+   * —el segundo vuelve a leer la reserva, que es lo que el contrato exige—: el pasaporte con una
+   * silla de ruedas, y el viajero frecuente de la aerolínea del vuelo. Todo de prueba a la vista:
+   * números `TEST…` y el pasajero `TEST`. La evidencia lleva campos y desenlaces, nunca números: la
+   * lectura de los pasajeros ya sale enmascarada del ACL.
+   */
+  private async modifyTravelers(
+    scenario: CertScenarioId,
+    report: CertScenarioReport,
+  ): Promise<void> {
+    const booking = await this.reserve(scenario, report);
+    const order: OrderModifyRef = {
+      orderId: booking.pnr,
+      contentSource: booking.offer.provider.source ?? 'ATPCO',
+      passengers: booking.passengers.map((p) => ({
+        paxType: p.paxType,
+        givenName: p.givenName,
+        surname: p.surname,
+        gender: p.gender,
+      })),
+    };
+    await this.readTravelers(scenario, order);
+
+    const documento = await this.step(
+      scenario,
+      'modifyBooking pasaporte + WCHR',
+      () =>
+        this.deps.flights.modifyTravelers(
+          order,
+          [
+            {
+              index: 0,
+              identityDocument: {
+                type: 'PASSPORT',
+                number: CERT_MODIFY_PASSPORT,
+                issuingCountry: 'CO',
+                nationality: 'CO',
+                expiryDate: CERT_MODIFY_EXPIRY,
+              },
+              specialServices: ['WCHR'],
+            },
+          ],
+          this.deps.ctx,
+        ),
+      modifyResultView,
+    );
+    if (documento.outcome !== 'MODIFIED') {
+      report.notes.push(`el cambio de pasaporte y WCHR terminó en ${documento.outcome}`);
+    }
+
+    const carrier = booking.offer.itineraries?.[0]?.segments[0]?.carrier;
+    if (carrier === undefined || !/^[A-Z0-9]{2}$/.test(carrier)) {
+      report.notes.push(
+        'la oferta no dice la aerolínea del primer vuelo: no se prueba el viajero frecuente',
+      );
+    } else {
+      const viajero = await this.step(
+        scenario,
+        'modifyBooking viajero frecuente',
+        () =>
+          this.deps.flights.modifyTravelers(
+            order,
+            [{ index: 0, loyalty: { carrierCode: carrier, number: CERT_MODIFY_LOYALTY } }],
+            this.deps.ctx,
+          ),
+        modifyResultView,
+      );
+      if (viajero.outcome !== 'MODIFIED') {
+        report.notes.push(
+          `el viajero frecuente de ${carrier} terminó en ${viajero.outcome}${viajero.issues.length > 0 ? ` (${viajero.issues.map((i) => i.type).join(', ')})` : ''}`,
+        );
+      }
+    }
+
+    await this.readTravelers(scenario, order);
+    await this.cancel(scenario, booking.pnr);
+  }
+
+  private readTravelers(
+    scenario: CertScenarioId,
+    order: OrderModifyRef,
+  ): Promise<OrderTravelersView> {
+    return this.step(
+      scenario,
+      'datos de pasajeros',
+      () => this.deps.flights.readTravelers(order, this.deps.ctx),
+      (view) => view,
+    );
+  }
+
+  /**
    * Deja cada PNR del escenario como estaba antes de la corrida: cancelado si sólo estaba reservado,
    * anulado si se emitió (o pudo emitirse). Lo que no se puede cerrar queda en `leftovers`.
    */
@@ -854,6 +958,29 @@ class CertRun {
       };
     }
   }
+}
+
+/** Pasaporte de prueba a la vista: el formato del contrato, `TEST` delante. */
+export const CERT_MODIFY_PASSPORT = 'TEST000999';
+export const CERT_MODIFY_EXPIRY = '2036-12-31';
+/** Número de viajero frecuente de prueba: la aerolínea puede rechazarlo, y eso también es evidencia. */
+export const CERT_MODIFY_LOYALTY = 'TEST0099887';
+
+/** El desenlace de un `modifyTravelers` para la evidencia: campos y códigos, nunca valores. */
+function modifyResultView(result: OrderModifyResult): Record<string, unknown> {
+  return {
+    outcome: result.outcome,
+    unchanged: result.unchanged,
+    attempts: result.attempts,
+    applied: result.applied,
+    pending: result.pending,
+    ...(result.failureReason === undefined ? {} : { failureReason: result.failureReason }),
+    issues: result.issues.map((issue) => ({
+      severity: issue.severity,
+      category: issue.category,
+      type: issue.type,
+    })),
+  };
 }
 
 function cheapest(offers: readonly Offer[]): Offer {
