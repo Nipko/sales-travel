@@ -51,6 +51,9 @@ export type BookingWithHold = HeldBooking & { readonly hold: BookingHoldRow };
 /** Qué pasó al pedir que se libere la retención de una reserva. */
 export type BookingHoldRelease = 'released' | 'already-released' | 'no-hold';
 
+/** Una retención abierta: retenida antes del desenlace, o cobrada con la reserva confirmada. */
+export type OpenWalletHold = 'held' | 'captured';
+
 /** El nivel 0 de una retención abierta, como lo guarda 0060. */
 const OwnLevelSchema = z.object({
   hold_transaction_id: z.string().uuid(),
@@ -151,6 +154,32 @@ export class BookingHoldLedger {
         },
       };
     });
+  }
+
+  /**
+   * Las órdenes del tenant con la retención abierta (retenida o cobrada), en una sola lectura: la
+   * pantalla de Reservas avisa con eso que cancelar o anular libera el saldo retenido. Una exenta
+   * (la cuenta propia del nodo), liberada o en conflicto no cuenta: no hay nada que liberar al
+   * cancelar. Sólo el grupo, que la RLS de 0060 deja ver al nodo que vende; nunca los niveles de su
+   * red.
+   */
+  async openHoldsOf(
+    tenantId: string,
+    orderIds: readonly string[],
+  ): Promise<Map<string, OpenWalletHold>> {
+    if (orderIds.length === 0) return new Map();
+    const rows = await this.db.withTenant(tenantId, (trx) =>
+      trx
+        .selectFrom('wallet_hold_groups')
+        .select(['order_id', 'status'])
+        .where('order_id', 'in', [...orderIds])
+        .where('origin_tenant_id', '=', tenantId)
+        .where('status', 'in', ['held', 'captured'])
+        .execute(),
+    );
+    return new Map(
+      rows.map((row) => [row.order_id, row.status === 'held' ? 'held' : 'captured'] as const),
+    );
   }
 
   /**

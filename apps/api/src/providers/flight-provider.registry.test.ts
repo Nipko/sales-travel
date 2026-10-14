@@ -382,6 +382,17 @@ describe('FlightProviderRegistry', () => {
       expect(r.recordsOrderAccount('no-existe')).toBe(false);
     });
 
+    it('`settlementOf`: lo que declara el factory; sin declararlo, o sin factory, cobra el proveedor', () => {
+      const r = registry([
+        new StubProviderFactory({ code: 'alfa-air', settlement: 'network-wallet' }),
+        new StubProviderFactory({ code: 'beta-air' }),
+      ]);
+
+      expect(r.settlementOf('alfa-air')).toBe('network-wallet');
+      expect(r.settlementOf('beta-air')).toBe('provider-direct');
+      expect(r.settlementOf('no-existe')).toBe('provider-direct');
+    });
+
     it('`byCode` y la búsqueda entregan la cuenta que declaró el factory; sin ella, nada', async () => {
       const r = registry([porCuenta().factory, new StubProviderFactory({ code: 'beta-air' })]);
 

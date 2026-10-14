@@ -4,6 +4,7 @@ import { KillSwitchStore } from '../provider-enablement/kill-switch.store.js';
 import { killLevel } from '../search/circuit-breaker.service.js';
 import {
   CallPolicySchema,
+  DEFAULT_PROVIDER_SETTLEMENT,
   FLIGHT_PROVIDER_FACTORIES,
   FLIGHT_PROVIDER_FLAGS,
   PLATFORM_DISABLED_TEXT,
@@ -21,6 +22,7 @@ import {
   type ProviderCapabilities,
   type ProviderEnablementEntry,
   type ProviderFlagsPort,
+  type ProviderSettlement,
   type RegisteredProvider,
   type ResolvedProvider,
   type SkippedProvider,
@@ -236,6 +238,15 @@ export class FlightProviderRegistry {
    */
   recordsOrderAccount(code: string): boolean {
     return this.factories.find((f) => f.code === code)?.resolveForOrder !== undefined;
+  }
+
+  /**
+   * Quién liquida lo que se reserva con este proveedor: con `network-wallet` la reserva retiene la
+   * cartera de la red como un hotel. Un proveedor que no lo declara, o que no existe, cobra por su
+   * cuenta y no retiene nada.
+   */
+  settlementOf(code: string): ProviderSettlement {
+    return this.factories.find((f) => f.code === code)?.settlement ?? DEFAULT_PROVIDER_SETTLEMENT;
   }
 
   /**

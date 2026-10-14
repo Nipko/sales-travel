@@ -51,6 +51,11 @@ import {
   type CreateOrderProviderResult,
   type CreateOrderResponseBody,
 } from './create-order-reconciliation';
+import { createOrderFundingView } from './create-order-funding';
+import {
+  PORTFOLIOS_HREF,
+  PORTFOLIOS_LINK_LABEL,
+} from '../../hoteles/checkout/_components/funding-view';
 
 interface Quotation {
   id: string;
@@ -367,10 +372,17 @@ export default function QuotationDetailPage() {
       return;
     }
     if (!res.ok) {
-      setBookingResult({
-        outcome: 'FAILED',
-        error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
-      });
+      // La cartera de la agencia o de su red no cubre la reserva: no salió nada hacia la aerolínea
+      // y se puede volver a reservar una vez resuelto. El texto ya viene del API.
+      const funding = createOrderFundingView(res.status, data);
+      setBookingResult(
+        funding === undefined
+          ? {
+              outcome: 'FAILED',
+              error: humanizeBookingError(createOrderErrorMessage(data) ?? ERROR_DESCONOCIDO),
+            }
+          : { outcome: 'FAILED', funding },
+      );
       return;
     }
     const outcome = data.providerResult?.outcome;
@@ -1054,6 +1066,24 @@ export default function QuotationDetailPage() {
               <p className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}>
                 {bookingResult.error}
               </p>
+            )}
+            {bookingResult.funding && (
+              <div
+                role="alert"
+                className={`space-y-1 text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+              >
+                <p className="font-medium">{bookingResult.funding.title}</p>
+                <p>{bookingResult.funding.detail}</p>
+                <p>No se hizo ninguna reserva con la aerolínea ni se retuvo saldo.</p>
+                {bookingResult.funding.action === 'portfolios' && (
+                  <Link
+                    href={PORTFOLIOS_HREF}
+                    className="inline-flex font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                  >
+                    {PORTFOLIOS_LINK_LABEL}
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         </div>

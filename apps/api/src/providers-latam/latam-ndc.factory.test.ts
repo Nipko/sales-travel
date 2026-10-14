@@ -1,6 +1,10 @@
 import { Logger, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProviderAccountIncompleteError } from '../providers/provider.types.js';
+import {
+  DEFAULT_PROVIDER_SETTLEMENT,
+  ProviderAccountIncompleteError,
+  type TenantProviderFactory,
+} from '../providers/provider.types.js';
 import type {
   ProviderCredentialsService,
   ResolvedProviderAccount,
@@ -50,6 +54,11 @@ describe('LatamNdcProviderFactory', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+  });
+
+  it('LATAM cobra la orden por su cuenta: no declara `network-wallet` ni retiene cartera (SAB-10)', () => {
+    const factory: TenantProviderFactory<unknown> = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.settlement ?? DEFAULT_PROVIDER_SETTLEMENT).toBe('provider-direct');
   });
 
   it('reuses the same adapter instance for identical resolved credentials (token cache)', async () => {

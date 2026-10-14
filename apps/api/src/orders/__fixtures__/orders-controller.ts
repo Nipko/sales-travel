@@ -4,6 +4,7 @@ import type { FlightProviderRegistry } from '../../providers/flight-provider.reg
 import type { ActiveTenantService } from '../../request-context/active-tenant.service.js';
 import type { FlightOrderTrackingStore } from '../flight-order-tracking.store.js';
 import type { FlightTicketIssueService } from '../ticket-issue.service.js';
+import type { BookingHoldLedger } from '../../portfolios/booking-hold.ledger.js';
 import type { HotelOrderReadsService } from '../hotel-order-reads.service.js';
 import { OrderCapabilitiesService } from '../order-capabilities.service.js';
 import { OrderConfirmationService } from '../order-confirmation.service.js';
@@ -24,6 +25,7 @@ export function ordersController(deps: {
   readonly hotelReads: HotelOrderReadsService;
   readonly flightTracking?: FlightOrderTrackingStore;
   readonly ticketIssues?: FlightTicketIssueService;
+  readonly walletHolds?: BookingHoldLedger;
 }): OrdersController {
   return new OrdersController(
     deps.orders,
@@ -33,5 +35,6 @@ export function ordersController(deps: {
     new OrderCapabilitiesService(deps.registry, deps.hotelReads),
     deps.flightTracking,
     deps.ticketIssues,
+    deps.walletHolds,
   );
 }

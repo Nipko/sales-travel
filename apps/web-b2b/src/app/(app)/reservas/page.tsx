@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Ticket,
+  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
@@ -55,6 +56,7 @@ import { pendingOrderReconciliationMessage } from './pending-order-reconciliatio
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
 import { parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
+import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
 import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
 import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
@@ -130,6 +132,8 @@ interface Order {
   providerTracking?: unknown;
   /** Sólo en vuelos: localizadores de la aerolínea, tiquetes y plazo guardados (0082). */
   flightTracking?: unknown;
+  /** Saldo retenido en la cartera que cancelar libera (SAB-10); `null` si no hay nada que liberar. */
+  walletHold?: 'held' | 'captured' | null;
   createdAt: string;
 }
 
@@ -1178,6 +1182,7 @@ export default function ReservasPage() {
           message={`¿Seguro que quieres cancelar esta reserva${
             confirmCancel.pnr ? ` (PNR ${confirmCancel.pnr})` : ''
           }? Esta acción no se puede deshacer.`}
+          note={walletReleaseNote(confirmCancel)}
           confirmLabel="Sí, cancelar reserva"
           danger
           loading={actionLoading === confirmCancel.id}
@@ -1737,6 +1742,7 @@ function FilterChip({
 function ConfirmDialog({
   title,
   message,
+  note,
   confirmLabel,
   danger,
   loading,
@@ -1745,6 +1751,8 @@ function ConfirmDialog({
 }: {
   title: string;
   message: string;
+  /** Un aviso aparte, debajo del mensaje (p. ej. el saldo retenido que se libera). */
+  note?: string | undefined;
   confirmLabel: string;
   danger?: boolean;
   loading?: boolean;
@@ -1768,6 +1776,12 @@ function ConfirmDialog({
           <h2 className="text-sm font-semibold text-[var(--color-fg)]">{title}</h2>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
+        {note ? (
+          <p className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-xs leading-relaxed text-[var(--color-fg)]">
+            <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{note}</span>
+          </p>
+        ) : null}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" disabled={loading} onClick={onClose}>
             No, volver

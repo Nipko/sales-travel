@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TICKET_CONDITIONS_MESSAGES as M, parseTicketCheck } from '../ticket-conditions-view';
+import { WALLET_RELEASE_NOTE } from '../wallet-hold-view';
 import {
   TicketCheckDetails,
   TicketConditions,
@@ -183,6 +184,14 @@ describe('la confirmación', () => {
 
   it('una reserva de prueba se puede anular, y lo dice', () => {
     expect(confirmacion({ order: orden({ testContent: true }) })).toContain(M.testNote);
+  });
+
+  it('con saldo retenido en la cartera avisa que anular libera el 100 %; sin él, nada (SAB-10)', () => {
+    expect(confirmacion({ order: orden({ walletHold: 'captured' }) })).toContain(
+      WALLET_RELEASE_NOTE,
+    );
+    expect(confirmacion({ order: orden({ walletHold: null }) })).not.toContain('cartera');
+    expect(confirmacion()).not.toContain('cartera');
   });
 
   it('con el pedido en vuelo los dos botones quedan quietos y se avisa que no se cierre', () => {
