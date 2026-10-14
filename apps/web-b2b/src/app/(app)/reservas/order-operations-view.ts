@@ -15,6 +15,8 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
   'hcn-ticket': 'Tarea de operaciones: conseguir el número de confirmación del hotel',
   reconcile: 'Conciliación con el proveedor',
   issue: 'Emisión',
+  'add-services': 'Servicios adicionales',
+  'remove-services': 'Quitar servicios adicionales',
 };
 
 /**
@@ -64,6 +66,13 @@ export function operationStatusView(op: {
       return { tone: 'pending', label: 'Sin confirmar' };
     }
     return { tone, label: tone === 'ok' ? 'Emitida' : tone === 'failed' ? 'Falló' : 'En curso' };
+  }
+  if (op.type === 'add-services' || op.type === 'remove-services') {
+    // Un cambio de servicios en duda no «falló»: la aerolínea pudo hacerlo. Se revisa, no se repite.
+    if (tone === 'failed' && op.reconciliationRequired === true) {
+      return { tone: 'pending', label: 'Sin confirmar' };
+    }
+    return { tone, label: tone === 'ok' ? 'Hecho' : tone === 'failed' ? 'No se hizo' : 'En curso' };
   }
   if (op.type === 'hcn-ticket') {
     return { tone, label: tone === 'ok' ? 'Resuelta' : tone === 'failed' ? 'Falló' : 'Abierta' };

@@ -132,6 +132,12 @@ const LABELS: Readonly<Record<string, string>> = {
   ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',
   MarkupRuleCreated: 'Regla de markup creada',
   MarkupRuleDeleted: 'Regla de markup eliminada',
+  // Maletas y servicios adicionales de una reserva, antes de emitir (SAB-20).
+  OrderServicesRequested: 'Pidió un cambio de servicios adicionales',
+  OrderServicesAdded: 'Servicios adicionales agregados a una reserva',
+  OrderServicesRemoved: 'Servicios adicionales quitados de una reserva',
+  OrderServicesChangeFailed: 'Cambio de servicios adicionales sin completar',
+  'portfolio.hold.adjusted': 'Retención de cartera ajustada por servicios adicionales',
 };
 
 export interface EventLabel {
