@@ -32,6 +32,7 @@ import {
   loadPlatformOverview,
 } from '../../../../../../lib/platform-overview-client';
 import { statusLabel } from '../../../../../../lib/tenant-network';
+import { nodeTabHref } from '../../../../../../lib/platform-node-summary';
 import { currencyName, formatMinor } from '../../../../../../lib/wallets';
 import { AttentionList } from './attention-list';
 import { TrendStrip } from './trend-strip';
@@ -489,7 +490,7 @@ function TopNodesTable({ nodes }: { nodes: readonly TopNode[] }) {
                 <tr key={node.tenantId}>
                   <td className={cn(TD, 'pr-3')}>
                     <Link
-                      href={`/admin/tenants/${node.tenantId}`}
+                      href={nodeTabHref(node.tenantId, 'summary')}
                       className="font-medium text-[var(--color-fg)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
                     >
                       {node.name}

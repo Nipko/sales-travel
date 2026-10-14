@@ -9,12 +9,13 @@ import {
   AdminTenantsService,
   type NodeImpactView,
   type NodeStatsView,
+  type NodeSummaryView,
 } from './admin-tenants.service.js';
 
 /**
- * Plataforma → Agencias en números: puestos, ventas y pendientes de cada nodo, y qué arrastraría
- * suspender uno. La lista de la red y sus correcciones siguen en AdminController (`/admin/tenants`,
- * `PATCH /admin/tenants/:id`); acá sólo se lee.
+ * Plataforma → Agencias en números: puestos, ventas y pendientes de cada nodo, qué arrastraría
+ * suspender uno y la ficha de cada nodo (su pestaña Resumen). La lista de la red y sus correcciones
+ * siguen en AdminController (`/admin/tenants`, `PATCH /admin/tenants/:id`); acá sólo se lee.
  *
  * Sólo el superadmin, como el resto del panel de la plataforma: `@Roles` deja fuera a los roles de
  * nodo y {@link SuperadminGuard} a `platform_admin`. No hay `GET /admin/tenants/:id`: `stats` no
@@ -37,5 +38,14 @@ export class AdminTenantsController {
     @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
   ): Promise<NodeImpactView> {
     return this.tenants.impact(userId, tenantId);
+  }
+
+  /** La pestaña Resumen de un nodo: cada sección que no se pudo leer llega en `null`. */
+  @Get(':id/summary')
+  async summary(
+    @CurrentUser() userId: string,
+    @Param('id', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
+  ): Promise<NodeSummaryView> {
+    return this.tenants.summary(userId, tenantId);
   }
 }

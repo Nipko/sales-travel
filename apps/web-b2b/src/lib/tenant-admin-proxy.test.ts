@@ -22,6 +22,7 @@ import {
   tenantImpactTarget,
   tenantMovePlan,
   tenantStatsTarget,
+  tenantSummaryTarget,
   tenantUpdatePlan,
   userAuditQuery,
 } from './tenant-admin-proxy';
@@ -111,6 +112,15 @@ describe('Agencias en números: rutas del API', () => {
     });
     expect(tenantImpactTarget('stats')).toEqual({ ok: false, error: 'Nodo inválido.' });
     expect(tenantImpactTarget('../users').ok).toBe(false);
+  });
+
+  it('GET /admin/tenants/:id/summary con el id en minúsculas; otro segmento no compone otra ruta', () => {
+    expect(tenantSummaryTarget(ID)).toEqual({
+      ok: true,
+      path: `/admin/tenants/${ID.toLowerCase()}/summary`,
+    });
+    expect(tenantSummaryTarget('stats')).toEqual({ ok: false, error: 'Nodo inválido.' });
+    expect(tenantSummaryTarget('../users').ok).toBe(false);
   });
 });
 

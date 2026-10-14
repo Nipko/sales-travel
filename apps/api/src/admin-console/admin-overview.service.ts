@@ -88,6 +88,27 @@ interface Bounds {
 const DAY_MS = 86_400_000;
 
 /**
+ * Las reservas que necesitan a una persona (`admin_order_attention()`, 0075 §7), una fila por
+ * (orden, motivo), del subárbol de `root` (él incluido) o, con `null`, de toda la red. La función
+ * devuelve toda la red con el tenant de cada fila: se acota acá. La comparten el Resumen y la ficha
+ * de cada nodo.
+ */
+export async function readOrderAttention(
+  trx: Transaction<DB>,
+  root: string | null,
+): Promise<OverviewOrderAttentionRow[]> {
+  const { rows } = await sql<OverviewOrderAttentionRow>`
+    SELECT a.*
+      FROM admin_order_attention() a
+     WHERE ${root}::uuid IS NULL
+        OR a.tenant_id IN (
+             SELECT t.id FROM tenants t
+              WHERE t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${root}::uuid))
+  `.execute(trx);
+  return rows;
+}
+
+/**
  * Cómo va la plataforma, para el superadmin: ventas del período por moneda, vertical y proveedor, la
  * tendencia de 12 meses, los nodos que más venden, la red (nodos, personas, sesiones), la exposición
  * de las carteras, lo que espera a una persona (también si el barrido de post-venta dejó de correr) y
@@ -146,15 +167,7 @@ export class AdminOverviewService {
         const attention = await sql<OverviewAttentionRow>`
           SELECT * FROM platform_overview_attention(${root}::uuid, ${since}::timestamptz)
         `.execute(trx);
-        // admin_* (0075 §7-§10) devuelven toda la red con el tenant de cada fila: se acota acá.
-        const orderAttention = await sql<OverviewOrderAttentionRow>`
-          SELECT a.*
-            FROM admin_order_attention() a
-           WHERE ${root}::uuid IS NULL
-              OR a.tenant_id IN (
-                   SELECT t.id FROM tenants t
-                    WHERE t.path OPERATOR(public.<@) (SELECT r.path FROM tenants r WHERE r.id = ${root}::uuid))
-        `.execute(trx);
+        const orderAttention = await readOrderAttention(trx, root);
         const seats = await sql<OverviewSeatsRow>`
           SELECT s.tenant_id, t.name AS tenant_name, s.seat_limit, s.seats_used
             FROM admin_node_stats() s
@@ -182,7 +195,7 @@ export class AdminOverviewService {
           network: foldNetwork(network.rows[0]),
           wallets: foldWallets(wallets.rows),
           attention: foldAttention(attention.rows[0], postSale.rows, OVERVIEW_RECENT_DAYS, {
-            orders: foldOrderAttention(orderAttention.rows),
+            orders: foldOrderAttention(orderAttention),
             seats: { saturated: foldSaturatedSeats(seats.rows) },
             reconciliationRuns: foldReconciliationRuns(runs.rows, OVERVIEW_RECONCILIATION_RUN_DAYS),
             jobs: { postSaleSweepStale: sweep.stale, lastOkAt: sweep.lastOkAt },

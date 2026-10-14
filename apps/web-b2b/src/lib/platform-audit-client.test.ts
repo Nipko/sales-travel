@@ -59,6 +59,14 @@ describe('loadPlatformActivity', () => {
     );
   });
 
+  it('con un tamaño, pide una página más corta (la actividad reciente de un nodo)', async () => {
+    fetchMock.mockResolvedValue(json(200, { events: [], nextCursor: null }));
+    await loadPlatformActivity(DEFAULT_ACTIVITY_FILTERS, NOW, null, 10);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/admin/audit?from=2026-10-07&to=2026-10-13&limit=10',
+    );
+  });
+
   it('un 403 dice que es sólo del superadmin; sin red, que no se pudo conectar', async () => {
     fetchMock.mockResolvedValueOnce(json(403, { error: 'x' }));
     expect(await loadPlatformActivity(DEFAULT_ACTIVITY_FILTERS, NOW)).toEqual({

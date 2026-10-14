@@ -4,6 +4,7 @@ import {
   type NodeImpact,
   type NodeStats,
 } from './platform-node-stats';
+import { parseNodeSummary, type NodeSummary } from './platform-node-summary';
 import type { Loaded } from './provider-enablement-client';
 import { readJson } from './read-json';
 import { isTenantType, type NetworkNode } from './tenant-network';
@@ -229,6 +230,14 @@ export function loadNodeStats(): Promise<Loaded<ReadonlyMap<string, NodeStats>>>
 /** Qué arrastraría suspender el nodo con su red (`GET /admin/tenants/:id/impact`). */
 export function loadNodeImpact(tenantId: string): Promise<Loaded<NodeImpact>> {
   return call(`/api/admin/tenants/${encodeURIComponent(tenantId)}/impact`, {}, parseNodeImpact);
+}
+
+/**
+ * La pestaña Resumen de un nodo (`GET /admin/tenants/:id/summary`). Una sección que el API no pudo
+ * leer llega en `null`; sin el nodo, es un error.
+ */
+export function loadNodeSummary(tenantId: string): Promise<Loaded<NodeSummary>> {
+  return call(`/api/admin/tenants/${encodeURIComponent(tenantId)}/summary`, {}, parseNodeSummary);
 }
 
 /**

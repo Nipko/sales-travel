@@ -287,6 +287,12 @@ describe('los filtros y la URL', () => {
       `from=2026-10-07&to=2026-10-13&category=system&tenantId=${NODO}&actorEmail=ana%40agencia.com&cursor=abc_-1`,
     );
     expect(activitySearch(filters({ actorEmail: 'ana@' }), NOW)).not.toContain('actorEmail');
+    // La actividad reciente de la ficha de un nodo pide menos; un tamaño que no es un entero, nada.
+    expect(activitySearch(filters({ tenantId: NODO }), NOW, null, 10)).toBe(
+      `from=2026-10-07&to=2026-10-13&tenantId=${NODO}&limit=10`,
+    );
+    expect(activitySearch(DEFAULT_ACTIVITY_FILTERS, NOW, null, 0)).not.toContain('limit');
+    expect(activitySearch(DEFAULT_ACTIVITY_FILTERS, NOW, null, 2.5)).not.toContain('limit');
     expect(actorEmailTerm('ana@agencia')).toBeNull();
     expect(actorEmailTerm('ana@agencia.com')).toBe('ana@agencia.com');
   });

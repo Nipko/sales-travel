@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { busySummaryPayload, NODE_NORTE } from './platform-node-summary.fixture';
 import {
   loadNodeImpact,
   loadNodeStats,
+  loadNodeSummary,
   parseAdminNodes,
   parseCreatedNode,
   tenantAdminErrorMessage,
@@ -219,6 +221,21 @@ describe('Agencias: suspender con motivo y los números de cada nodo', () => {
     });
     expect(fetch).toHaveBeenCalledWith(`/api/admin/tenants/${NODE}/impact`, {
       cache: 'no-store',
+    });
+  });
+
+  it('loadNodeSummary pide la pestaña Resumen del nodo y la lee; sin el nodo, no se puede leer', async () => {
+    const fetch = mockFetch(reply(200, busySummaryPayload()));
+    const res = await loadNodeSummary(NODE_NORTE);
+    expect(fetch).toHaveBeenCalledWith(`/api/admin/tenants/${NODE_NORTE}/summary`, {
+      cache: 'no-store',
+    });
+    expect(res.ok && res.data.tenant.name).toBe('Consolidador Norte');
+
+    mockFetch(reply(200, { own: null }));
+    expect(await loadNodeSummary(NODE_NORTE)).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/no pudimos leer/),
     });
   });
 });

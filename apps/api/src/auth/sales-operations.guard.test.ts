@@ -358,9 +358,10 @@ const ENTRADAS: [string, Clase][] = [
     'POST /admin/announcements/:id/archive',
   ),
   ...noVenta(
-    'Agencias en números: puestos, ventas y pendientes de cada nodo, y el impacto de suspender uno (sólo lectura)',
+    'Agencias en números: puestos, ventas y pendientes de cada nodo, el impacto de suspender uno y la pestaña Resumen de cada nodo (sólo lectura)',
     'GET /admin/tenants/stats',
     'GET /admin/tenants/:id/impact',
+    'GET /admin/tenants/:id/summary',
   ),
   ...noVenta(
     'Reservas de la red: el superadmin busca y abre reservas de cualquier nodo (sólo lectura)',

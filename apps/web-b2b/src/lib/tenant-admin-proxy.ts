@@ -87,6 +87,12 @@ export function tenantImpactTarget(tenantId: string): TenantAdminProxyTarget {
   return { ok: true, path: `/admin/tenants/${tenantId.toLowerCase()}/impact` };
 }
 
+/** `GET /admin/tenants/:id/summary`: la pestaña Resumen del nodo. */
+export function tenantSummaryTarget(tenantId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  return { ok: true, path: `/admin/tenants/${tenantId.toLowerCase()}/summary` };
+}
+
 /** `POST /admin/tenants/:id/move`: el nodo con su subárbol bajo otro padre (D6 A). */
 export function tenantMovePlan(tenantId: string, raw: unknown): TenantAdminProxyPlan {
   if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };

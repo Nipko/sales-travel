@@ -24,6 +24,7 @@ import { useConfirm } from '../../../../../components/ui/dialog';
 import { TextInput } from '../../../../../components/ui/field';
 import { cn } from '../../../../../lib/cn';
 import { statusDoneToast, type NodeStats } from '../../../../../lib/platform-node-stats';
+import { nodeTabHref } from '../../../../../lib/platform-node-summary';
 import {
   loadAdminNetwork,
   loadNodeStats,
@@ -494,7 +495,12 @@ function NodeRow({
         <LevelGuides level={level} />
         <div className="min-w-0 py-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="truncate text-sm font-medium text-[var(--color-fg)]">{node.name}</span>
+            <Link
+              href={nodeTabHref(node.id, 'summary')}
+              className="truncate rounded text-sm font-medium text-[var(--color-fg)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            >
+              {node.name}
+            </Link>
             <NodeKindBadge node={node} />
             <span
               className={cn(

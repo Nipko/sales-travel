@@ -49,12 +49,12 @@ const SCANNED = [
   'lib/platform-orders-client.ts',
   'lib/platform-orders-proxy.ts',
   'lib/platform-order-actions.ts',
-  // Plataforma → Agencias: la lista con sus números y suspender o reactivar un nodo.
-  'app/(app)/admin/tenants/_components/network-admin-panel.tsx',
-  'app/(app)/admin/tenants/_components/node-stats.tsx',
-  'app/(app)/admin/tenants/_components/suspend-node-dialog.tsx',
+  // Plataforma → Agencias: la lista con sus números, crear, mover, suspender o reactivar un nodo, y
+  // la ficha de cada nodo con todas sus pestañas (Resumen, Proveedores, Carteras, Puestos).
+  'app/(app)/admin/tenants',
   'app/api/admin/tenants',
   'lib/platform-node-stats.ts',
+  'lib/platform-node-summary.ts',
   'lib/tenant-network.ts',
   // Inicio y Reportes de la agencia.
   'app/(app)/page.tsx',
@@ -131,6 +131,10 @@ describe('los textos del acceso, Equipo, Plataforma → Usuarios y la seguridad 
     expect(rels).toContain('lib/tenant-admin-team.ts');
     expect(rels).toContain(
       'app/(app)/admin/plataforma/usuarios/_components/platform-users-panel.tsx',
+    );
+    expect(rels).toContain('app/(app)/admin/tenants/[tenantId]/page.tsx');
+    expect(rels).toContain(
+      'app/(app)/admin/tenants/[tenantId]/_components/tenant-providers-panel.tsx',
     );
     expect(rels.some((f) => f.endsWith('.test.ts'))).toBe(false);
   });

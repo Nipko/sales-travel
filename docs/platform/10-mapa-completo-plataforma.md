@@ -719,7 +719,10 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 
 ```
 /admin/tenants                   -- lista tenants
-/admin/tenants/:id               -- detalle, métricas, suspender
+/admin/tenants/:id/resumen       -- la ficha de cada nodo, primera pestaña (ventas 30 d por moneda, atención,
+                                 -- puestos, personas, carteras, proveedores y actividad reciente; ADM-13)
+/admin/tenants/:id               -- Proveedores del nodo (se queda en la raíz para no romper enlaces);
+                                 -- /carteras y /puestos son las otras pestañas; Usuarios abre Equipo
 /admin/tenants/new               -- creación manual de tenant (Ola 1)
 /admin/billing                   -- facturación a tenants
 /admin/providers                 -- gestión global de proveedores
@@ -1111,6 +1114,44 @@ POST   /admin/orders/:id/cancel          -- `{ reason, orderNumber }`: cancela e
 -- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
 -- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
 GET    /admin/tenants
+GET    /admin/tenants/stats              -- Agencias en números (implementado, sin migración):
+                                         -- admin_node_stats() (0075) por nodo + las ventas de 30
+                                         -- días de admin_sales_summary (confirmadas o emitidas).
+GET    /admin/tenants/:id/impact         -- Qué arrastraría suspender el nodo con su red: nodos,
+                                         -- personas distintas, sesiones, reservas vigentes, lo
+                                         -- retenido por moneda, depósitos e invitaciones.
+GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (implementado, sin
+                                         -- migración; ADM-13). { generatedAt, tenant {id, name, slug,
+                                         -- tenantType, isBranch, status, parent {id, name} | null,
+                                         -- countryCode, defaultCurrency, createdAt}, own (su fila de
+                                         -- admin_node_stats; sales30d = sus confirmadas), subtree
+                                         -- (su red sumada, él incluido, como el impacto: personas
+                                         -- distintas con membership y usuario activos), sales {days:
+                                         -- 30, own, subtree} (admin_sales_summary del subárbol por
+                                         -- moneda con cuántas, confirmadas y su monto, canceladas,
+                                         -- fallidas y lo confirmado por vertical; nunca suma
+                                         -- monedas), attention {total, byReason}
+                                         -- (admin_order_attention del subárbol, sin muestra) }. El
+                                         -- nodo se lee primero (404 TENANT_NOT_FOUND); después las
+                                         -- tres secciones (network, sales, attention) a la vez, cada
+                                         -- una en su transacción: si una falla llega en null y queda
+                                         -- un warn admin.node-summary.section-unavailable con el
+                                         -- código del error. Los permisos no se tapan así: el
+                                         -- 42501 admin_superadmin_required es el 403 de siempre y
+                                         -- cualquier otro 42501 o error HTTP sale tal cual. Sólo
+                                         -- lee, no audita. En el panel:
+                                         -- /admin/tenants/:id/resumen (BFF
+                                         -- /api/admin/tenants/:id/summary), que además lee aparte
+                                         -- las carteras (GET /tenants/:id/portfolios), los
+                                         -- proveedores (GET /admin/providers/tenants/:id) y los
+                                         -- últimos 10 eventos de 30 días de su red (GET
+                                         -- /admin/audit?tenantId&limit=10): cada sección falla por
+                                         -- su lado. Enlaza a Reservas de la red
+                                         -- (?nodo&atencion=1, ?nodo&estado=pendiente,confirmada,
+                                         -- emitida), Plataforma → Carteras (?nodo), Actividad
+                                         -- (?nodo&desde&hasta) y a cada pestaña. El nombre de cada
+                                         -- nodo en Agencias y en "Nodos con más ventas" del
+                                         -- Resumen lleva a esta pestaña.
 POST   /admin/tenants                    -- creación manual
 PATCH  /admin/tenants/:id/status
 GET    /admin/incidents

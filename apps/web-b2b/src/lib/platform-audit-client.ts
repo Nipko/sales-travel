@@ -29,15 +29,19 @@ function errorOf(body: unknown): string | undefined {
   return typeof error === 'string' ? error : undefined;
 }
 
-/** Una página de la actividad con estos filtros; `cursor` para la siguiente. */
+/**
+ * Una página de la actividad con estos filtros; `cursor` para la siguiente. `limit` acorta la página
+ * (la actividad reciente de la ficha de un nodo); sin él, la del API.
+ */
 export async function loadPlatformActivity(
   filters: ActivityFilters,
   now: Date,
   cursor?: string | null,
+  limit?: number,
 ): Promise<ActivityResult<ActivityPage>> {
   let res: Response;
   try {
-    res = await fetch(`/api/admin/audit?${activitySearch(filters, now, cursor)}`, {
+    res = await fetch(`/api/admin/audit?${activitySearch(filters, now, cursor, limit)}`, {
       cache: 'no-store',
     });
   } catch {

@@ -24,7 +24,7 @@ function UnknownTenant() {
         />
         <h1 className="text-sm font-medium text-[var(--color-fg)]">No reconocemos ese tenant.</h1>
         <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-          El enlace está incompleto. Abrilo desde la lista de agencias.
+          El enlace está incompleto. Ábrelo desde la lista de agencias.
         </p>
         <Link
           href="/admin/tenants"

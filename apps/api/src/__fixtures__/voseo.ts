@@ -58,6 +58,7 @@ export const VOSEO_WORDS: readonly string[] = [
   'copialos',
   'descargalos',
   'abrí',
+  'abrilo',
   'tocá',
   'apuntá',
   'guardá',
