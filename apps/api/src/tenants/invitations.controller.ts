@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -17,10 +18,12 @@ import { NetworkService } from '../network/network.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   AcceptInvitationSchema,
+  InvitationTokenBodySchema,
   InviteUserSchema,
   TenantIdParamSchema,
   UuidParamSchema,
   type AcceptInvitationDto,
+  type InvitationTokenBodyDto,
   type InviteUserDto,
 } from './dto.js';
 import { InvitationsService } from './invitations.service.js';
@@ -121,13 +124,31 @@ export class InvitationsController {
   }
 
   /**
-   * Canje de la invitación: el invitado elige su propia contraseña. Público por
-   * definición —todavía no tiene cuenta— y con throttle, porque acepta un token.
+   * Canje con cuenta nueva: el invitado elige su propia contraseña. Público por definición —todavía
+   * no tiene cuenta— y con throttle, porque acepta un token. Si el correo ya tiene cuenta, 409
+   * `INVITATION_SIGN_IN_REQUIRED`: se acepta con la sesión, en `join`.
    */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Public()
   @Post('accept')
   accept(@Body(new ZodValidationPipe(AcceptInvitationSchema)) body: AcceptInvitationDto) {
     return this.invitations.accept(body);
+  }
+
+  /**
+   * Canje con la sesión abierta (USR-17): quien ya tiene cuenta ingresó con la suya y acepta sin
+   * elegir otra contraseña. Sólo la cuenta dueña del correo invitado (403
+   * `INVITATION_ACCOUNT_MISMATCH` si no). Sin rol: cualquier cuenta puede recibir una invitación. El
+   * 2FA obligatorio de su rol vale como en el resto de la API (MfaEnforcementGuard).
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post('join')
+  @HttpCode(200)
+  join(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(InvitationTokenBodySchema)) body: InvitationTokenBodyDto,
+  ) {
+    if (!userId) throw new UnauthorizedException();
+    return this.invitations.acceptSignedIn({ token: body.token, userId });
   }
 }

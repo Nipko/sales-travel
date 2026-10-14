@@ -26,12 +26,23 @@ export const InviteUserSchema = z.object({
 });
 export type InviteUserDto = z.infer<typeof InviteUserSchema>;
 
+/** El token de la invitación, tal como llega en el enlace del correo. */
+const InvitationTokenSchema = z.string().min(10).max(512);
+
+/** Canje con cuenta nueva: quien no tiene cuenta elige su nombre y su contraseña. */
 export const AcceptInvitationSchema = z.object({
-  token: z.string().min(10).max(512),
+  token: InvitationTokenSchema,
   name: z.string().min(1).max(120),
   password: z.string().min(12).max(128),
 });
 export type AcceptInvitationDto = z.infer<typeof AcceptInvitationSchema>;
+
+/**
+ * Vista previa (`POST /invitations/preview`) y canje con la sesión abierta (`POST /invitations/join`,
+ * USR-17): sólo el token. Va en el cuerpo y no en la URL, para que no quede en los logs de acceso.
+ */
+export const InvitationTokenBodySchema = z.object({ token: InvitationTokenSchema }).strict();
+export type InvitationTokenBodyDto = z.infer<typeof InvitationTokenBodySchema>;
 
 export const SetMembershipStatusSchema = z.object({
   userId: z.string().uuid(),

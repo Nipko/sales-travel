@@ -47,10 +47,11 @@ describe('correo de invitación: el nombre del nodo no inyecta HTML', () => {
     );
   });
 
-  it('va en tú: aceptar, elegir la contraseña e ignorar si no se esperaba', () => {
+  it('va en tú: aceptar (con la contraseña de siempre o una nueva) e ignorar si no se esperaba', () => {
     const html = invitationEmailHtml(LINK, 'Viajes Sur', 7);
+    // A quien ya tiene cuenta no se le pide otra contraseña (USR-17).
     expect(html).toContain(
-      'Acepta la invitación y elige tu contraseña. El enlace vence en 7 días.',
+      'Acepta la invitación: si ya tienes cuenta, ingresas con tu contraseña de siempre; si no, eliges una. El enlace vence en 7 días.',
     );
     expect(html).toContain('Si no esperabas esta invitación, ignora este correo.');
     expect(voseoIn(html)).toEqual([]);
@@ -333,5 +334,175 @@ describe('InvitationsService.revoke', () => {
     );
     expect(k.indexOf('update "user_invitations"')).toBe(-1);
     expect(audit.emitWithin).not.toHaveBeenCalled();
+  });
+});
+
+const CUENTA = '55555555-5555-4555-8555-555555555555';
+const OTRA_CUENTA = '66666666-6666-4666-8666-666666666666';
+
+interface Canje {
+  /** La cuenta dueña del correo invitado, si la hay. */
+  owner?: string;
+  /** El error del insert del usuario nuevo (la carrera contra la UNIQUE del correo). */
+  userInsertError?: Error;
+}
+
+/**
+ * Los dos canjes (USR-17) con la base guionada: qué se consulta, en qué orden y qué se audita. Los
+ * casos contra Postgres están en invitation-preview.integration.test.ts.
+ */
+function canje(opts: Canje = {}) {
+  const k = scriptedKysely((q) => {
+    if (q.sql.includes('claim_pending_invitation')) {
+      return [{ id: PENDIENTE, tenant_id: NODO, email: CORREO, role: 'vendedor' }];
+    }
+    if (q.sql.startsWith('select "id" from "users"')) {
+      return opts.owner === undefined ? [] : [{ id: opts.owner }];
+    }
+    if (q.sql.includes('invitation_backing')) {
+      return [
+        {
+          invitation_id: PENDIENTE,
+          tenant_id: NODO,
+          role: 'vendedor',
+          invited_by: ACTOR,
+          inviter_active: true,
+          tenant_active: true,
+          inviter_roles: ['tenant_admin'],
+        },
+      ];
+    }
+    if (q.sql.startsWith('insert into "users"')) {
+      if (opts.userInsertError !== undefined) throw opts.userInsertError;
+      return [{ id: NUEVA }];
+    }
+    if (q.sql.includes('set_config')) return [];
+    if (q.sql.startsWith('insert into "memberships"')) return [{ rejoined: false }];
+    throw new Error(`consulta no prevista: ${q.sql}`);
+  });
+  const db = {
+    db: k.db,
+    withRequestContext: vi.fn(<T>(_ctx: unknown, fn: (trx: Transaction<DB>) => Promise<T>) =>
+      k.db.transaction().execute(fn),
+    ),
+  };
+  const audit = { emit: vi.fn(() => Promise.resolve()), emitWithin: vi.fn() };
+  const password = { hash: vi.fn(() => Promise.resolve('hash-nuevo')) };
+  const service = new InvitationsService(
+    db as unknown as DatabaseService,
+    password as unknown as PasswordService,
+    {} as MailerService,
+    audit as unknown as AuditService,
+  );
+  return { service, db, audit, password, k };
+}
+
+const CLAVE = 'una-clave-larga-123';
+
+describe('InvitationsService.accept: sólo cuenta nueva (USR-17)', () => {
+  it('si el correo ya tiene cuenta: 409 sin hashear, sin escribir y sin evento de aceptada', async () => {
+    const { service, audit, password, k } = canje({ owner: CUENTA });
+
+    const err = await rechazo(service.accept({ token: 'tok', name: 'Beto', password: CLAVE }));
+
+    expect(`${err.getStatus()}/${err.reason}`).toBe('409/INVITATION_SIGN_IN_REQUIRED');
+    expect(password.hash).not.toHaveBeenCalled();
+    expect(k.indexOf('insert into')).toBe(-1);
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('crea la cuenta y la membership, sin sesión de por medio', async () => {
+    const { service, db, audit, password, k } = canje();
+
+    expect(await service.accept({ token: 'tok', name: 'Beto', password: CLAVE })).toEqual({
+      userId: NUEVA,
+      tenantId: NODO,
+    });
+    expect(password.hash).toHaveBeenCalledWith(CLAVE);
+    expect(k.indexOf('insert into "users"')).toBeLessThan(k.indexOf('insert into "memberships"'));
+    expect(db.withRequestContext).not.toHaveBeenCalled();
+    expect(audit.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'UserInvitationAccepted',
+        payload: { email: CORREO, role: 'vendedor' },
+      }),
+    );
+  });
+
+  it('otra aceptación creó la cuenta en el medio: el mismo 409, no un 500', async () => {
+    const duplicate = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'users_email_key',
+    });
+    const { service } = canje({ userInsertError: duplicate });
+
+    const err = await rechazo(service.accept({ token: 'tok', name: 'Beto', password: CLAVE }));
+
+    expect(`${err.getStatus()}/${err.reason}`).toBe('409/INVITATION_SIGN_IN_REQUIRED');
+  });
+
+  it('otra violación de unicidad no se disfraza', async () => {
+    const other = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'otra',
+    });
+    const { service } = canje({ userInsertError: other });
+
+    await expect(service.accept({ token: 'tok', name: 'Beto', password: CLAVE })).rejects.toBe(
+      other,
+    );
+  });
+});
+
+describe('InvitationsService.acceptSignedIn (USR-17)', () => {
+  it('con la cuenta dueña del correo: la membership de esa cuenta, sin crear otra', async () => {
+    const { service, db, audit, password, k } = canje({ owner: CUENTA });
+
+    expect(await service.acceptSignedIn({ token: 'tok', userId: CUENTA })).toEqual({
+      userId: CUENTA,
+      tenantId: NODO,
+    });
+
+    expect(db.withRequestContext).toHaveBeenCalledWith({ userId: CUENTA }, expect.any(Function));
+    expect(password.hash).not.toHaveBeenCalled();
+    expect(k.indexOf('insert into "users"')).toBe(-1);
+    const membership = k.queries[k.indexOf('insert into "memberships"')];
+    expect(membership?.parameters).toContain(CUENTA);
+    expect(audit.emit).toHaveBeenCalledWith({
+      eventType: 'UserInvitationAccepted',
+      tenantId: NODO,
+      actorUserId: CUENTA,
+      aggregateType: 'invitation',
+      aggregateId: PENDIENTE,
+      payload: { email: CORREO, role: 'vendedor', existingAccount: true },
+    });
+  });
+
+  it('con otra cuenta: 403 antes de revalidar al invitador, sin escribir y con el intento auditado sin correos', async () => {
+    const { service, audit, k } = canje({ owner: CUENTA });
+
+    const err = await rechazo(service.acceptSignedIn({ token: 'tok', userId: OTRA_CUENTA }));
+
+    expect(`${err.getStatus()}/${err.reason}`).toBe('403/INVITATION_ACCOUNT_MISMATCH');
+    expect(k.indexOf('invitation_backing')).toBe(-1);
+    expect(k.indexOf('insert into')).toBe(-1);
+    expect(audit.emit).toHaveBeenCalledTimes(1);
+    expect(audit.emit).toHaveBeenCalledWith({
+      eventType: 'UserInvitationAccountMismatch',
+      tenantId: NODO,
+      actorUserId: OTRA_CUENTA,
+      aggregateType: 'invitation',
+      aggregateId: PENDIENTE,
+      payload: {},
+    });
+  });
+
+  it('si el correo invitado no tiene cuenta, ninguna sesión es la dueña', async () => {
+    const { service, k } = canje();
+
+    const err = await rechazo(service.acceptSignedIn({ token: 'tok', userId: OTRA_CUENTA }));
+
+    expect(`${err.getStatus()}/${err.reason}`).toBe('403/INVITATION_ACCOUNT_MISMATCH');
+    expect(k.indexOf('insert into')).toBe(-1);
   });
 });

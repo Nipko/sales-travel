@@ -122,10 +122,11 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/mfa/verify',
     'POST /auth/seats/release',
     'POST /auth/verify-email',
+    'POST /invitations/preview',
     'POST /invitations/accept',
   ),
   ...noVenta(
-    'la cuenta propia: sesión, dispositivos, contraseña y MFA',
+    'la cuenta propia: sesión, dispositivos, contraseña, MFA y aceptar una invitación con ella',
     'POST /auth/switch-tenant',
     'GET /auth/session',
     'POST /auth/logout',
@@ -145,6 +146,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/resend-verification',
     'GET /me',
     'GET /me/memberships',
+    'POST /invitations/join',
   ),
   ...noVenta(
     'administración de la red: nodos, usuarios, invitaciones, marca y configuración',

@@ -22,9 +22,9 @@ import { TenantsService } from './tenants.service.js';
  *
  * Lo que cerraba la brecha y el doble no puede probar: que el alta de un nodo no crea cuentas ni
  * memberships (sólo una invitación pendiente), que un email de otra red recibe la misma respuesta que
- * uno nuevo, que aceptar vincula sin tocar la contraseña de quien ya tenía cuenta y que reenviar deja
- * sin valor el enlace anterior. Que suspender a alguien en una red no lo desloguee de otra lo prueba
- * membership-revocation.integration.test.ts (0056).
+ * uno nuevo, que quien ya tenía cuenta acepta con su sesión sin que se le toque la contraseña y que
+ * reenviar deja sin valor el enlace anterior. Que suspender a alguien en una red no lo desloguee de
+ * otra lo prueba membership-revocation.integration.test.ts (0056).
  *
  * Lo que la API ejecuta corre como `app_user` (NOBYPASSRLS); el superusuario sólo siembra y mira.
  * Cuelga todo de la raíz `platform` compartida. Se SALTA sin PGHOST.
@@ -295,17 +295,28 @@ d('alta sólo por invitación, contra Postgres', () => {
       expect(rows).toEqual([{ payload: { invitationId: pending[0]!.id, via: 'invite' } }]);
     });
 
-    it('aceptar vincula a quien ya tenía cuenta sin cambiarle la contraseña ni el nombre', async () => {
+    it('quien ya tenía cuenta acepta con su sesión, sin cambiarle la contraseña ni el nombre', async () => {
       const ajeno = email('cons-admin-a');
       const res = await tenants.create(
         consAdminB,
         alta('acepta', { parentTenantId: consB, adminEmail: ajeno }),
       );
 
-      const accepted = await invitations.accept({
+      // El formulario de cuenta nueva no la canjea (USR-17): la invitación queda pendiente.
+      expect(
+        await rejection(
+          invitations.accept({
+            token: lastToken(ajeno),
+            name: 'Otro nombre',
+            password: 'una-clave-que-no-debe-usarse',
+          }),
+        ),
+      ).toBe('409/INVITATION_SIGN_IN_REQUIRED');
+      expect(await pendingInvitations(res.tenant.id, ajeno)).toHaveLength(1);
+
+      const accepted = await invitations.acceptSignedIn({
         token: lastToken(ajeno),
-        name: 'Otro nombre',
-        password: 'una-clave-que-no-debe-usarse',
+        userId: consAdminA,
       });
 
       expect(accepted).toEqual({ userId: consAdminA, tenantId: res.tenant.id });

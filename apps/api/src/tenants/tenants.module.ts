@@ -4,6 +4,8 @@ import { ProviderEnablementModule } from '../provider-enablement/provider-enable
 import { AdminInvitationsController } from './admin-invitations.controller.js';
 import { AdminInvitationsService } from './admin-invitations.service.js';
 import { AdminController } from './admin.controller.js';
+import { InvitationPreviewController } from './invitation-preview.controller.js';
+import { InvitationPreviewService } from './invitation-preview.service.js';
 import { InvitationsController } from './invitations.controller.js';
 import { InvitationsService } from './invitations.service.js';
 import { MemberDetailController } from './member-detail.controller.js';
@@ -22,6 +24,7 @@ import { TenantsService } from './tenants.service.js';
     TenantsController,
     AdminController,
     InvitationsController,
+    InvitationPreviewController,
     SeatsController,
     MemberSupportController,
     MemberDetailController,
@@ -29,6 +32,7 @@ import { TenantsService } from './tenants.service.js';
   ],
   providers: [
     InvitationsService,
+    InvitationPreviewService,
     TenantsService,
     SeatsService,
     MemberSupportService,

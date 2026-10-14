@@ -7,7 +7,8 @@ Cada paquete actualiza su fila al cerrarse: **hecho** con el PR, o **pendiente**
 
 - **Sólo invitación** (doc 14): nadie elige la contraseña de otra persona, tampoco el superadmin.
   Todo restablecimiento es un enlace de un solo uso que llega al buzón de la persona; el admin no ve
-  el enlace, el token ni la contraseña, y la respuesta del API no los trae.
+  el enlace, el token ni la contraseña, y la respuesta del API no los trae. Quien ya tiene cuenta
+  acepta una invitación con su propia sesión, y sólo si es la cuenta del correo invitado (USR-17).
 - **Puestos = sesiones simultáneas.** El superadmin fija el cupo de cada nodo.
 - **2FA obligatorio** para `tenant_admin` y superiores.
 - **Suspender una membership corta sólo ese nodo** (y cierra las sesiones de ese subárbol); suspender
@@ -29,6 +30,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Acción                                                                         | Dónde                                     | Quién puede                                                                               | Estado                                                                    |
 | ------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | Invitar a alguien a un nodo (una pendiente por correo y nodo)                  | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                                      | **Hecho (doc 14, USR-8)**                                                 |
+| Aceptar una invitación: crear la cuenta, o con la propia si ya existe          | /invitacion                               | Quien recibió el enlace; con cuenta, sólo con la sesión de la cuenta invitada             | **Hecho (USR-17)**: dice nodo y rol; con cuenta, no pide contraseña       |
 | Reenviar una invitación (token nuevo, 7 días)                                  | Equipo → Invitaciones / Invitar (409)     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (doc 14, USR-8)**: avisa si el correo falla                       |
 | Revocar una invitación                                                         | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (USR-8)**                                                         |
 | Cambiar el rol en un nodo                                                      | Equipo → fila                             | Admin del nodo que supere el rol actual y el nuevo; superadmin. Nunca el propio           | Hecho                                                                     |
@@ -1160,3 +1162,135 @@ a ella. Para volver, sólo una invitación nueva.
   pero tampoco lo escribe, y `user_admin_overview` conserva sus columnas.
 - API y panel juntos: el panel viejo no ofrece quitar; si el panel sale antes, la ruta del BFF
   responde el 404 del API viejo y la fila muestra el error.
+
+## La página de la invitación (USR-17)
+
+`/invitacion` era un formulario ciego: no decía a qué nodo ni con qué rol invitaban, y a quien ya
+tenía cuenta le pedía una "contraseña nueva" que el canje ignoraba en silencio, sumándole la
+membership sin que esa cuenta se autenticara (alcanzaba con el enlace). Ahora la página lee la
+invitación primero y dice **"Te invitaron a {nodo} como {rol}"**, quién la mandó y cuándo vence. Si el
+correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre; si ya la tiene,
+**ingresa con la suya** (contraseña y 2FA si lo tiene) y acepta con un botón, sin elegir otra.
+
+### Base
+
+- `db/migrations/0068_invitation_preview.sql`: `preview_pending_invitation(p_token_hash)`, SECURITY
+  DEFINER y STABLE (sólo lee: mirarla no la gasta), como `find_pending_invitation` y
+  `claim_pending_invitation`. Resuelve como máximo una invitación vigente (ni aceptada, ni revocada,
+  ni vencida) por hash de token: el nombre del nodo, el rol, el nombre de quien invitó (sin espacios;
+  `null` si no tiene), el vencimiento, el id de la invitación y el de la cuenta dueña del correo
+  invitado (CITEXT: sin distinguir mayúsculas). Los ids son para la API; no salen de ella.
+  `REVOKE ALL FROM PUBLIC`, `EXECUTE` a `app_user`.
+
+### API
+
+- **`POST /invitations/preview` `{ token }`** (público, throttle de 20 por minuto por IP, Zod
+  estricto; el token va en el cuerpo para que no quede en los logs de acceso) →
+  `200 { valid: true, tenantName, role, inviterName, expiresAt, existingAccount, viewer }` o
+  `200 { valid: false }`. Neutral: un token que no existe, ya se usó, se revocó o venció, uno con un
+  rol que no se asigna y una invitación que su invitador ya no respalda o cuyo nodo no opera (la
+  misma revalidación del canje, `invitation_backing`) dan exactamente `{ valid: false }`. Nunca salen
+  ids, el correo invitado, el de quien invitó ni nadie más del nodo. `existingAccount` lo sabe igual
+  quien controla ese buzón, que es lo que prueba el token. `viewer` sale de la sesión con que llega el
+  pedido, si llega con una: `anonymous`, `invitee` (la cuenta dueña del correo) u `other`.
+- **`POST /invitations/accept`** queda para crear la cuenta (nombre y contraseña, como antes). Si el
+  correo ya tiene cuenta: **409 `INVITATION_SIGN_IN_REQUIRED`** ("Ya tienes una cuenta con este
+  correo: ingresa con ella para aceptar la invitación."), sin hashear la contraseña y con la
+  invitación pendiente. Sale sólo con un token vigente, así que no es un oráculo de cuentas más allá
+  de lo que la vista previa ya le dice al dueño del buzón. Si otra aceptación crea la misma cuenta en
+  el medio, la UNIQUE del correo sale como el mismo 409 (antes, un 500).
+- **`POST /invitations/join` `{ token }`** (con sesión, sin rol; throttle de 10 por minuto): acepta
+  con la cuenta de la sesión, nunca con una que venga en el cuerpo. En una transacción: canjea con
+  `claim_pending_invitation`, y **antes que nada** comprueba que la cuenta dueña del correo invitado
+  (CITEXT) sea la de la sesión; si no, **403 `INVITATION_ACCOUNT_MISMATCH`** ("Esta invitación es
+  para otra cuenta: ingresa con el correo al que te llegó."), la invitación queda pendiente para su
+  dueño y queda **`UserInvitationAccountMismatch`** (actor = la sesión, payload vacío: ni correos ni
+  ids). Después, la misma revalidación del invitador que el otro canje (400
+  `INVITATION_NO_LONGER_VALID`, con `UserInvitationRejected` y ahora con el actor) y la misma
+  membership: nueva, o la quitada (USR-11) reactivada en la misma fila; vigente, 409
+  `ALREADY_MEMBER`. Token vencido, revocado o usado: 400. `UserInvitationAccepted` suma
+  `existingAccount: true`. El 2FA obligatorio del rol de la cuenta vale como en el resto de la API
+  (`MfaEnforcementGuard`): sin 2FA activo, 403 `MFA_ENROLLMENT_REQUIRED`. Un rol invitado que exige
+  2FA (p. ej. `tenant_admin`) no se le niega a quien todavía no lo tiene: como con una cuenta nueva,
+  se suma y desde el pedido siguiente el API le exige enrolarse (la sesión mira el rol de todas sus
+  memberships activas), y el panel le muestra el enrolamiento antes que cualquier pantalla.
+- El correo de la invitación dice "Acepta la invitación: si ya tienes cuenta, ingresas con tu
+  contraseña de siempre; si no, eliges una."
+- `InvitationsService.accept` y `acceptSignedIn` comparten `redeem` (canje, revalidación, rastro de
+  los rechazos fuera de la transacción deshecha); el servicio de la vista previa es
+  `invitation-preview.service.ts`, con su controller aparte.
+
+### Panel
+
+- `/invitacion` es un Server Component: valida la forma del token (`invitationTokenFrom`), pide la
+  vista previa con la sesión si la hay y elige la pantalla (`invitation-view.ts`, sin I/O):
+  - **inválida** (o enlace sin token): "Esta invitación ya no es válida. Pídele a quien te invitó que
+    te la reenvíe.", sin formulario. Sin servidor, con 429 o con cualquier error que no sea un 400
+    (un 404 del API de antes, mientras se despliega), un aviso con **Reintentar** (no dice que la
+    invitación no vale);
+  - **sin cuenta**: título "Te invitaron a {nodo} como {rol}", "Te invitó {nombre}. La invitación
+    vence en N días." y el formulario de siempre (nombre, contraseña, repetirla) con **Crear cuenta y
+    aceptar**. Si el navegador tiene abierta la sesión de otra cuenta, lo avisa, y al terminar ofrece
+    **Salir e ingresar con tu cuenta nueva** en vez de un login que devolvería a ese panel. Si el API
+    responde `INVITATION_SIGN_IN_REQUIRED` (la cuenta se creó mientras tanto), el botón pasa a ser
+    **Ingresar con mi cuenta**;
+  - **con cuenta y sin sesión**: "Ya tienes una cuenta con este correo. Ingresa con tu contraseña de
+    siempre para aceptar la invitación." y **Ingresar para aceptar**, que va a
+    `/login?next=/invitacion?token=…`. `next` pasa por `safeNextPath` como siempre (sólo rutas del
+    panel): no hay redirect abierto. El login muestra "Ingresa con la cuenta del correo al que te
+    llegó la invitación…" y, al entrar (con el 2FA si lo tiene), vuelve a la invitación. Si el
+    navegador trae una cookie de sesión que el API ya no acepta, el enlace pasa por
+    `/api/session/end?motivo=expirada&next=…`, que la borra: si no, el middleware devolvía del login a
+    la invitación;
+  - **con la sesión de la cuenta invitada**: "Acepta para sumar {nodo} a tus agencias." y un solo
+    botón, **Aceptar invitación** (`POST /invitations/join`). Al aceptar: "Ya formas parte de {nodo}"
+    con **Ir al panel** (se elige en el selector de agencia). Los rechazos se leen por estado y motivo:
+    otra cuenta → **Salir e ingresar con la cuenta invitada**; sesión que ya no sirve (401) →
+    **Ingresar de nuevo** por `/api/session/end` con su motivo y la vuelta; ya es miembro, sin 2FA,
+    vencida o revocada, cada una con su mensaje;
+  - **con la sesión de otra cuenta**: "Esta invitación es para otra cuenta. Sal de esta sesión e
+    ingresa con el correo al que te llegó." y **Salir e ingresar con la cuenta invitada**
+    (`switchAccountAction`: revoca la sesión en el API, borra las cookies y va al login que vuelve a
+    la invitación).
+- Nadie con cuenta ve un campo de contraseña en `/invitacion`.
+- La Actividad de la red y el historial nombran el intento de otra cuenta: "Invitación rechazada
+  (otra cuenta intentó aceptarla)".
+
+### Tests
+
+- `apps/api/src/tenants/invitation-preview.service.test.ts`: la forma de la respuesta sin ids, que se
+  busca por el hash del token y sólo lee, `viewer` en los tres casos, la respuesta neutral para cada
+  motivo (sin fila, rol no asignable, sin respaldo, invitador inexistente, suspendido o sin rango,
+  nodo que no opera); el controller público con su throttle, el borde Zod; `join` con sesión, 401 sin
+  ella y la cuenta siempre de la sesión.
+- `apps/api/src/tenants/invitations.service.test.ts`: `accept` con cuenta existente (409 sin hashear
+  ni escribir), la carrera de la UNIQUE del correo; `acceptSignedIn` con la cuenta dueña, con otra
+  (403 antes de revalidar al invitador, sin escribir, auditado sin correos) y sin cuenta.
+- `apps/api/src/tenants/invitation-preview.integration.test.ts` (Postgres, todo como `app_user`): la
+  vista previa (nodo, rol, nombre de quien invitó, vencimiento, sin ids ni correos, no gasta la
+  invitación), con cuenta y la sesión invitada u otra, sin nombre de invitador, neutral para
+  inexistente, vencida, revocada, usada y sin respaldo; el formulario de cuenta nueva con una cuenta
+  existente (409, pendiente, contraseña intacta); aceptar con la sesión (membership, evento, token
+  gastado); correo con otras mayúsculas; otra cuenta (403, pendiente, auditado, y la dueña acepta
+  después); vencida, revocada o usada (400, sin membership); invitador sin respaldo (400 con rastro
+  y actor); una membership quitada que vuelve en la misma fila; y las carreras de verdad: dos
+  invitaciones al mismo correo aceptadas a la vez (una cuenta con la contraseña de quien ganó, la otra
+  409 y pendiente, que después se acepta con la sesión) y el mismo enlace aceptado dos veces a la vez
+  con la sesión (los dos esperan en la fila de la invitación: uno acepta, el otro 400).
+- `onboarding-invitation.integration.test.ts` y `membership-removal.integration.test.ts`: quien ya
+  tenía cuenta acepta con `acceptSignedIn`; por el formulario de cuenta nueva, 409.
+- Web: `invitation-view.test.ts` (token, vista previa, qué pantalla, vuelta por el login que pasa
+  `safeNextPath`, la cookie muerta, los rechazos de `join`, textos en tú),
+  `invitation-screen.render.test.ts` (cada pantalla, qué viaja en cada formulario y que nadie con
+  cuenta ve una contraseña), `actions.test.ts`, `errors.test.ts` y `audit-format.test.ts`.
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero). La API vieja no usa la función.
+- API y panel juntos: con el panel viejo y la API nueva, quien ya tiene cuenta y llena el formulario
+  ve el mensaje del 409 ("Ya tienes una cuenta…"); con el panel nuevo y la API vieja, la vista previa
+  responde 404 y la página muestra "No pudimos conectar con el servidor" con **Reintentar**: sólo un
+  400 dice que la invitación no vale, para no hacer pedir un reenvío (que deja sin efecto el enlace)
+  por un despliegue a medias.
+- Si alguien con cuenta olvidó su contraseña, el login ofrece restablecerla; después tiene que volver
+  a abrir el enlace de la invitación (el restablecimiento no conserva la vuelta).

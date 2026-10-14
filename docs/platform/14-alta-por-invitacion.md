@@ -5,8 +5,9 @@
 **Sólo invitación.** Nadie fija la contraseña de otro, tampoco el superadmin: no hay onboarding
 asistido con clave. Toda cuenta nueva y todo admin inicial de un nodo reciben el correo "Te invitaron
 a …", eligen su contraseña y aceptar demuestra el control del buzón (vale como verificación de email).
-Una cuenta existente sólo entra a otro nodo **aceptando** la invitación. Si el correo no llega, se
-reenvía (enlace nuevo, 7 días más).
+Una cuenta existente sólo entra a otro nodo **aceptando** la invitación, con su propia sesión: ingresa
+con su contraseña (y su 2FA) y acepta sin elegir otra; la sesión tiene que ser la de la cuenta del
+correo invitado (USR-17, doc 15). Si el correo no llega, se reenvía (enlace nuevo, 7 días más).
 
 ## Las dos brechas (auditoría 2026-09-29)
 
@@ -61,7 +62,8 @@ propio cambio: `0056_membership_scoped_revocation`, `revoke_user_sessions_for_te
   `adminPassword`, `adminName` descartado, `resend` 401/403 sin llegar al servicio y Zod en su borde.
 - `apps/api/src/tenants/onboarding-invitation.integration.test.ts` (se salta sin `PGHOST`): el alta no
   crea `users` ni `memberships`, sólo la invitación; la respuesta tiene las mismas claves para un email
-  nuevo y uno de otra red; aceptar vincula sin tocar contraseña ni nombre de quien ya tenía cuenta;
+  nuevo y uno de otra red; quien ya tenía cuenta acepta con su sesión (desde USR-17; por el
+  formulario de cuenta nueva, 409) sin que se toquen su contraseña ni su nombre;
   reenviar invalida el enlace viejo, pasa `invited_by` a quien reenvió y audita; 403 por rango y 404
   fuera de estado.
 - `tenants-admin.integration.test.ts`: los casos de admin inicial esperan invitación, nunca cuenta.
