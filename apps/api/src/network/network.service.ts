@@ -1,8 +1,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { AGENCY_ADMIN_ROLES, highestRole } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
-import type { Role } from '../database/database.types.js';
+import type { DB, Role } from '../database/database.types.js';
 
 export interface NetworkTenant {
   id: string;
@@ -54,6 +54,66 @@ interface UserOverviewRow {
   locked_until: Date | null;
   active_sessions: number | string;
   password_reset_required: boolean;
+}
+
+/**
+ * El equipo de un nodo como lo muestra Equipo: sus memberships (sin las quitadas, USR-11) en orden de
+ * alta, con lo que el admin necesita para dar soporte. Corre en la transacción de quien llama, que ya
+ * puso el contexto `{ userId, tenantId }` (la RLS de memberships devuelve sólo las del nodo) y ya
+ * comprobó que el actor administra el nodo. `limit`: como mucho tantas; sin él, todas.
+ *
+ * Lo comparten la lista de Equipo y su exportación a CSV (USR-16): el archivo nunca trae a alguien
+ * que la pantalla no muestra.
+ */
+export async function readTenantUsers(
+  trx: Transaction<DB>,
+  tenantId: string,
+  limit?: number,
+): Promise<NetworkUser[]> {
+  const rows = await trx
+    .selectFrom('memberships')
+    .innerJoin('users', 'users.id', 'memberships.user_id')
+    .select([
+      'users.id as userId',
+      'users.email as email',
+      'users.name as name',
+      'users.status as userStatus',
+      'memberships.role as role',
+      'memberships.status as membershipStatus',
+      'memberships.created_at as createdAt',
+    ])
+    .where('memberships.tenant_id', '=', tenantId)
+    // Quien se quitó del nodo (USR-11) ya no es del equipo: la fila queda sólo por su historial.
+    .where('memberships.status', '!=', 'removed')
+    .orderBy('memberships.created_at')
+    .$if(limit !== undefined, (qb) => qb.limit(limit ?? 0))
+    .execute();
+
+  const overview = await sql<UserOverviewRow>`
+    SELECT user_id, last_login_at, mfa_enabled, locked_until, active_sessions,
+           password_reset_required
+    FROM user_admin_overview(${tenantId}::uuid)
+  `.execute(trx);
+  const byUser = new Map(overview.rows.map((o) => [o.user_id, o]));
+
+  return rows.map((r) => {
+    const o = byUser.get(r.userId);
+    return {
+      userId: r.userId,
+      email: r.email,
+      name: r.name,
+      userStatus: r.userStatus,
+      role: r.role,
+      membershipStatus: r.membershipStatus,
+      // pg devuelve Date para timestamptz; el tipo Kysely es ColumnType (Timestamp).
+      createdAt: r.createdAt as unknown as Date,
+      lastLoginAt: o?.last_login_at ?? null,
+      mfaEnabled: o?.mfa_enabled === true,
+      lockedUntil: o?.locked_until ?? null,
+      activeSessions: Number(o?.active_sessions ?? 0),
+      passwordResetRequired: o?.password_reset_required === true,
+    };
+  });
 }
 
 interface NetworkRow {
@@ -287,49 +347,9 @@ export class NetworkService {
     if (!(await this.canManageTenant(userId, tenantId))) {
       throw new ForbiddenException('not authorized to manage this tenant');
     }
-    return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
-      const rows = await trx
-        .selectFrom('memberships')
-        .innerJoin('users', 'users.id', 'memberships.user_id')
-        .select([
-          'users.id as userId',
-          'users.email as email',
-          'users.name as name',
-          'users.status as userStatus',
-          'memberships.role as role',
-          'memberships.status as membershipStatus',
-          'memberships.created_at as createdAt',
-        ])
-        .where('memberships.tenant_id', '=', tenantId)
-        .orderBy('memberships.created_at')
-        .execute();
-
-      const overview = await sql<UserOverviewRow>`
-        SELECT user_id, last_login_at, mfa_enabled, locked_until, active_sessions,
-               password_reset_required
-        FROM user_admin_overview(${tenantId}::uuid)
-      `.execute(trx);
-      const byUser = new Map(overview.rows.map((o) => [o.user_id, o]));
-
-      return rows.map((r) => {
-        const o = byUser.get(r.userId);
-        return {
-          userId: r.userId,
-          email: r.email,
-          name: r.name,
-          userStatus: r.userStatus,
-          role: r.role,
-          membershipStatus: r.membershipStatus,
-          // pg devuelve Date para timestamptz; el tipo Kysely es ColumnType (Timestamp).
-          createdAt: r.createdAt as unknown as Date,
-          lastLoginAt: o?.last_login_at ?? null,
-          mfaEnabled: o?.mfa_enabled === true,
-          lockedUntil: o?.locked_until ?? null,
-          activeSessions: Number(o?.active_sessions ?? 0),
-          passwordResetRequired: o?.password_reset_required === true,
-        };
-      });
-    });
+    return this.db.withRequestContext({ userId, tenantId }, (trx) =>
+      readTenantUsers(trx, tenantId),
+    );
   }
 
   /** Subárbol de tenants que el usuario administra (su red). Superadmin ve todos. */

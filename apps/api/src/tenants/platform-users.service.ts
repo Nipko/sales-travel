@@ -83,11 +83,18 @@ function iso(value: Date | string | null | undefined): string | null {
  *
  * El instante del cursor sale de Postgres en texto con microsegundos: un `Date` de JavaScript los
  * trunca a milisegundos y la comparación con la fila siguiente podía saltarla.
+ *
+ * `limit`: cuántas personas se quieren (se pide una más); sin él, el tamaño de página de la query. La
+ * exportación a CSV (USR-16) usa ESTA consulta con su tope, para que el archivo nunca traiga a
+ * alguien que la pantalla, con los mismos filtros, no mostraría.
  */
-export function directoryQuery(db: Kysely<DB>, query: ListPlatformUsersQuery) {
+export function directoryQuery(
+  db: Kysely<DB>,
+  query: ListPlatformUsersQuery,
+  limit: number = pageSize(query),
+) {
   const { q, status, role, tenantId, mfa, locked, neverLoggedIn } = query;
   const cursor = query.cursor === undefined ? undefined : decodePlatformUsersCursor(query.cursor);
-  const limit = pageSize(query);
   return db
     .selectFrom('users as u')
     .select([
@@ -120,6 +127,7 @@ export function directoryQuery(db: Kysely<DB>, query: ListPlatformUsersQuery) {
             .innerJoin('tenants as t', 't.id', 'm.tenant_id')
             .select(sql<number>`1`.as('one'))
             .whereRef('m.user_id', '=', 'u.id')
+            .where('m.status', '!=', 'removed')
             .$if(role !== undefined, (sub) => sub.where('m.role', '=', role as Role))
             .$if(tenantId !== undefined, (sub) =>
               sub.where(
@@ -147,6 +155,54 @@ interface SessionStats {
   user_id: string;
   last_seen_at: Date | null;
   active_sessions: number | string;
+}
+
+/**
+ * Los nodos de cada persona, como los muestra el directorio: sin los nodos de los que la quitaron
+ * (USR-11; su historial lo cuenta), primero los accesos activos y los nodos más altos (el primero es
+ * el que abre "Ver en Equipo"). Una persona sin nodos no aparece en el mapa.
+ *
+ * Los ids van como un solo arreglo (`= ANY`): la exportación pide los nodos de hasta 10.000 personas
+ * y una lista de parámetros de ese largo pesa en el armado de la consulta.
+ */
+export async function directoryMemberships(
+  db: Kysely<DB>,
+  userIds: readonly string[],
+): Promise<Map<string, PlatformUserMembership[]>> {
+  const nodesOf = new Map<string, PlatformUserMembership[]>();
+  if (userIds.length === 0) return nodesOf;
+  const memberships = await db
+    .selectFrom('memberships as m')
+    .innerJoin('tenants as t', 't.id', 'm.tenant_id')
+    .select([
+      'm.user_id',
+      'm.tenant_id',
+      't.name as tenant_name',
+      't.tenant_type',
+      't.is_branch',
+      'm.role',
+      'm.status',
+    ])
+    .where(sql<boolean>`m.user_id = ANY(${[...userIds]}::uuid[])`)
+    .where('m.status', '!=', 'removed')
+    .orderBy(sql`(m.status = 'active')`, 'desc')
+    .orderBy(sql`nlevel(t.path)`)
+    .orderBy('t.name')
+    .orderBy('m.tenant_id')
+    .execute();
+  for (const m of memberships) {
+    const list = nodesOf.get(m.user_id) ?? [];
+    list.push({
+      tenantId: m.tenant_id,
+      tenantName: m.tenant_name,
+      tenantType: m.tenant_type,
+      isBranch: m.is_branch,
+      role: m.role,
+      status: m.status,
+    });
+    nodesOf.set(m.user_id, list);
+  }
+  return nodesOf;
 }
 
 function sessionStats(db: Kysely<DB>, userIds: readonly string[]) {
@@ -186,41 +242,8 @@ export class PlatformUsersService {
       if (page.length === 0) return { users: [], nextCursor };
 
       const ids = page.map((r) => r.id);
-      const memberships = await trx
-        .selectFrom('memberships as m')
-        .innerJoin('tenants as t', 't.id', 'm.tenant_id')
-        .select([
-          'm.user_id',
-          'm.tenant_id',
-          't.name as tenant_name',
-          't.tenant_type',
-          't.is_branch',
-          'm.role',
-          'm.status',
-        ])
-        .where('m.user_id', 'in', ids)
-        // Primero los accesos activos y los nodos más altos: el primero es el que abre "Ver en
-        // Equipo".
-        .orderBy(sql`(m.status = 'active')`, 'desc')
-        .orderBy(sql`nlevel(t.path)`)
-        .orderBy('t.name')
-        .orderBy('m.tenant_id')
-        .execute();
+      const nodesOf = await directoryMemberships(trx, ids);
       const stats = await sessionStats(trx, ids);
-
-      const nodesOf = new Map<string, PlatformUserMembership[]>();
-      for (const m of memberships) {
-        const list = nodesOf.get(m.user_id) ?? [];
-        list.push({
-          tenantId: m.tenant_id,
-          tenantName: m.tenant_name,
-          tenantType: m.tenant_type,
-          isBranch: m.is_branch,
-          role: m.role,
-          status: m.status,
-        });
-        nodesOf.set(m.user_id, list);
-      }
       const statsOf = new Map(stats.rows.map((s) => [s.user_id, s]));
 
       return {

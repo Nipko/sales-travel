@@ -218,6 +218,8 @@ export const ISSUE_NOT_SENT_REASONS = {
   staleRequest:
     'la emisión no llegó a empezar. No se emitió nada y puedes volver a pedirla desde Reservas',
   queueUnavailable: 'la cola de post-venta no estaba disponible y no se emitió nada',
+  servicesCurrency:
+    'los servicios adicionales de la reserva no están en la moneda de la reserva y no se emitió nada',
 } as const;
 
 /** Cuántos pasajeros tiene la reserva: cada uno lleva su tiquete, infantes incluidos. */

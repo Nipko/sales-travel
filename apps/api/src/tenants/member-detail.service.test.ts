@@ -213,7 +213,9 @@ describe('MemberDetailService.detail: el orden de la autorización', () => {
     expect(contexts).toEqual([{ userId: ACTOR }]);
     const [check] = ran('enSubarbol');
     expect(check?.sql).toContain('OPERATOR(public.<@)');
-    expect(check?.parameters).toEqual([TARGET, NODO, 1]);
+    // Una membership quitada del nodo (USR-11) no cuenta: ya no es del equipo.
+    expect(check?.sql).toContain('"m"."status" != $3');
+    expect(check?.parameters).toEqual([TARGET, NODO, 'removed', 1]);
     // Nada más: ni la cuenta, ni su seguridad, ni sus sesiones.
     expect(k.queries).toHaveLength(1);
   });

@@ -3,6 +3,7 @@ import {
   attemptsLeftOf,
   failureFrom,
   failureMessage,
+  isPasswordFailure,
   sessionEndMotivo,
   UNREACHABLE_MESSAGE,
   type ApiFailure,
@@ -118,6 +119,46 @@ describe('failureMessage', () => {
       'No existe la sesión',
     );
     expect(failureMessage({ status: 404, message: '' }, 'other')).toMatch(/No pudimos completar/);
+  });
+});
+
+describe('la contraseña de la primera activación del 2FA (USR-13b)', () => {
+  it('cada motivo con su texto en tú', () => {
+    expect(
+      failureMessage(
+        { status: 400, message: 'x', reason: 'MFA_PASSWORD_INVALID' },
+        'password-and-code',
+      ),
+    ).toBe('La contraseña no es correcta. Revísala e inténtalo de nuevo.');
+    expect(
+      failureMessage(
+        { status: 400, message: 'x', reason: 'MFA_PASSWORD_REQUIRED' },
+        'password-and-code',
+      ),
+    ).toBe(
+      'Para activar la verificación en dos pasos ahora también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo.',
+    );
+    // Al llegar al tope, el mismo bloqueo del resto de la pantalla.
+    expect(
+      failureMessage(
+        { status: 429, message: 'x', reason: 'MFA_ACCOUNT_LOCKED' },
+        'password-and-code',
+      ),
+    ).toMatch(/pausamos la verificación 15 minutos/);
+  });
+
+  it('isPasswordFailure: sólo los motivos de la contraseña', () => {
+    expect(isPasswordFailure({ status: 400, message: '', reason: 'MFA_PASSWORD_INVALID' })).toBe(
+      true,
+    );
+    expect(isPasswordFailure({ status: 400, message: '', reason: 'MFA_PASSWORD_REQUIRED' })).toBe(
+      true,
+    );
+    expect(isPasswordFailure({ status: 400, message: '', reason: 'MFA_CODE_INVALID' })).toBe(false);
+    expect(isPasswordFailure({ status: 429, message: '', reason: 'MFA_ACCOUNT_LOCKED' })).toBe(
+      false,
+    );
+    expect(isPasswordFailure({ status: 400, message: '' })).toBe(false);
   });
 });
 

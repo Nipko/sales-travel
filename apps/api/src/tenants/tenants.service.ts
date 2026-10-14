@@ -510,6 +510,7 @@ export class TenantsService {
               .select(['tenant_id'])
               .select((eb) => eb.fn.countAll<number>().as('count'))
               .where('tenant_id', 'in', ids)
+              .where('status', '!=', 'removed')
               .groupBy('tenant_id')
               .execute(),
           );

@@ -11,6 +11,7 @@ import {
   memberDetailTarget,
   memberSessionRevokeTarget,
   membershipImpactTarget,
+  membershipRemovePlan,
   membershipRolePlan,
   membershipStatusPlan,
   networkAuditTarget,
@@ -216,6 +217,13 @@ describe('membershipImpactTarget: GET /admin/memberships/impact', () => {
     expect(membershipImpactTarget(query({ tenantId: ID, userId: MEMBER, role: 'admin' }))).toEqual({
       ok: true,
       path: `/admin/memberships/impact?userId=${MEMBER}&tenantId=${ID.toLowerCase()}&role=admin`,
+    });
+    // Quitar del nodo (USR-11) también se pregunta antes.
+    expect(
+      membershipImpactTarget(query({ tenantId: ID, userId: MEMBER, status: 'removed' })),
+    ).toEqual({
+      ok: true,
+      path: `/admin/memberships/impact?userId=${MEMBER}&tenantId=${ID.toLowerCase()}&status=removed`,
     });
   });
 
@@ -458,6 +466,28 @@ describe('memberships: rol y estado', () => {
     });
   });
 
+  it('membershipRemovePlan: sólo el miembro y el nodo, en minúsculas', () => {
+    expect(
+      membershipRemovePlan({ userId: MEMBER.toUpperCase(), tenantId: ID, status: 'removed' }),
+    ).toEqual({
+      ok: true,
+      path: '/admin/memberships/remove',
+      body: { userId: MEMBER, tenantId: ID.toLowerCase() },
+    });
+    expect(membershipRemovePlan(undefined)).toEqual({
+      ok: false,
+      error: 'El cambio no se pudo leer.',
+    });
+    expect(membershipRemovePlan({ userId: MEMBER, tenantId: '../tenants' })).toEqual({
+      ok: false,
+      error: 'Nodo inválido.',
+    });
+    expect(membershipRemovePlan({ userId: 'me', tenantId: ID })).toEqual({
+      ok: false,
+      error: 'Miembro inválido.',
+    });
+  });
+
   it('membershipStatusPlan sólo admite activo o suspendido', () => {
     expect(membershipStatusPlan({ userId: MEMBER, tenantId: ID, status: 'suspended' })).toEqual({
       ok: true,
@@ -465,6 +495,11 @@ describe('memberships: rol y estado', () => {
       body: { userId: MEMBER, tenantId: ID.toLowerCase(), status: 'suspended' },
     });
     expect(membershipStatusPlan({ userId: MEMBER, tenantId: ID, status: 'invited' })).toEqual({
+      ok: false,
+      error: 'El estado tiene que ser activo o suspendido.',
+    });
+    // Quitar del nodo va por su propia ruta, no como un estado más.
+    expect(membershipStatusPlan({ userId: MEMBER, tenantId: ID, status: 'removed' })).toEqual({
       ok: false,
       error: 'El estado tiene que ser activo o suspendido.',
     });

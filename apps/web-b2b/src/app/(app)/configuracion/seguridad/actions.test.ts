@@ -184,6 +184,61 @@ describe('confirmMfaAction', () => {
   });
 });
 
+describe('confirmMfaAction: la contraseña de la primera activación (USR-13b)', () => {
+  it('con el campo, manda la contraseña junto al código', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(json(200, { recoveryCodes: CODES }));
+    const res = await confirmMfaAction(form({ [CAMPO.actual]: ACTUAL_LARGA, code: '654321' }));
+    expect(res).toEqual({ ok: true, recoveryCodes: CODES });
+    expect(sentBody()).toEqual({ code: '654321', [CAMPO.actual]: ACTUAL_LARGA });
+  });
+
+  it('el campo vacío no llega al API y marca la contraseña', async () => {
+    const res = await confirmMfaAction(form({ [CAMPO.actual]: '', code: '654321' }));
+    expect(res).toEqual({ error: 'Ingresa tu contraseña actual.', field: CAMPO.actual });
+    expect(mocks.apiWithStatus).not.toHaveBeenCalled();
+  });
+
+  it('contraseña incorrecta: el texto en tú, marcando la contraseña, sin cerrar la sesión', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(
+      json(400, { message: 'x', reason: 'MFA_PASSWORD_INVALID' }),
+    );
+    const res = await confirmMfaAction(form({ [CAMPO.actual]: VIEJA, code: '654321' }));
+    expect(res).toEqual({
+      error: 'La contraseña no es correcta. Revísala e inténtalo de nuevo.',
+      field: CAMPO.actual,
+    });
+    expect(mocks.clearSession).not.toHaveBeenCalled();
+  });
+
+  it('un código malo con la contraseña escrita sigue siendo error del código', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(
+      json(400, { message: 'x', reason: 'MFA_CODE_INVALID' }),
+    );
+    const res = await confirmMfaAction(form({ [CAMPO.actual]: ACTUAL_LARGA, code: '000000' }));
+    expect(res.error).toMatch(/El código no es válido/);
+    expect(res.field).toBeUndefined();
+  });
+
+  it('sin el campo (pestaña de antes del despliegue): pide recargar, en el código y sin marcar un campo que no está', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(
+      json(400, { message: 'x', reason: 'MFA_PASSWORD_REQUIRED' }),
+    );
+    const res = await confirmMfaAction(form({ code: '654321' }));
+    expect(sentBody()).toEqual({ code: '654321' });
+    expect(res.error).toMatch(/Recarga la página/);
+    expect(res.field).toBeUndefined();
+  });
+
+  it('cuenta bloqueada por intentos: lo dice, sin marcar un campo', async () => {
+    mocks.apiWithStatus.mockResolvedValueOnce(
+      json(429, { message: 'x', reason: 'MFA_ACCOUNT_LOCKED' }),
+    );
+    const res = await confirmMfaAction(form({ [CAMPO.actual]: VIEJA, code: '654321' }));
+    expect(res.error).toMatch(/Demasiados intentos fallidos/);
+    expect(res.field).toBeUndefined();
+  });
+});
+
 describe('regenerateRecoveryCodesAction', () => {
   it('pide un código TOTP y devuelve los códigos nuevos sin revalidar', async () => {
     mocks.apiWithStatus.mockResolvedValueOnce(json(200, { recoveryCodes: CODES }));

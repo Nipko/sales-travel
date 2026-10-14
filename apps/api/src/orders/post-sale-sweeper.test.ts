@@ -26,6 +26,11 @@ import type {
   StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
 import type { FlightTicketIssueService, TicketIssueSweepReport } from './ticket-issue.service.js';
+import type { FlightServicesService, ServicesSweepReport } from './order-services.service.js';
+import type {
+  DeadlineAlertSweepReport,
+  FlightDeadlineAlertService,
+} from './flight-deadline-alert.service.js';
 
 /**
  * El barrido de post-venta (docs/tbo/09 PR-4.7; 08 RNF-10): recorre los tenants uno por uno —la API
@@ -107,6 +112,25 @@ function informeDeEmisiones(parcial: Partial<TicketIssueSweepReport> = {}): Tick
   return { examined: 0, abandoned: 0, reconciling: 0, skipped: 0, ...parcial };
 }
 
+function informeDeServicios(parcial: Partial<ServicesSweepReport> = {}): ServicesSweepReport {
+  return { examined: 0, reconciling: 0, skipped: 0, ...parcial };
+}
+
+function informeDeAvisos(
+  parcial: Partial<DeadlineAlertSweepReport> = {},
+): DeadlineAlertSweepReport {
+  return {
+    examined: 0,
+    claimed: 0,
+    mailed: 0,
+    unmailed: 0,
+    retrying: 0,
+    skipped: 0,
+    failed: 0,
+    ...parcial,
+  };
+}
+
 /** La raíz `platform` de la base de mentira. */
 const PLATAFORMA = '00000000-0000-4000-8000-0000000000aa';
 
@@ -169,6 +193,12 @@ function banco(tenants: string[], redis = true) {
   const sweepTicketIssues = vi.fn<FlightTicketIssueService['sweepTenant']>(() =>
     Promise.resolve(informeDeEmisiones()),
   );
+  const sweepDeadlineAlerts = vi.fn<FlightDeadlineAlertService['sweepTenant']>(() =>
+    Promise.resolve(informeDeAvisos()),
+  );
+  const sweepServiceChanges = vi.fn<FlightServicesService['sweepTenant']>(() =>
+    Promise.resolve(informeDeServicios()),
+  );
   const queue = new RecordingQueueService(redis);
   const work = new InflightWorkRegistry();
   const sweeper = new PostSaleSweeper(
@@ -182,6 +212,8 @@ function banco(tenants: string[], redis = true) {
     { sweepTenant: sweepStaleClaims } as unknown as StaleCancelClaimService,
     { emit } as unknown as AuditService,
     { sweepTenant: sweepTicketIssues } as unknown as FlightTicketIssueService,
+    { sweepTenant: sweepDeadlineAlerts } as unknown as FlightDeadlineAlertService,
+    { sweepTenant: sweepServiceChanges } as unknown as FlightServicesService,
   );
   return {
     sweeper,
@@ -191,6 +223,8 @@ function banco(tenants: string[], redis = true) {
     sweepReconciliation,
     sweepStaleClaims,
     sweepTicketIssues,
+    sweepDeadlineAlerts,
+    sweepServiceChanges,
     queue,
     consulta,
     work,
@@ -343,6 +377,8 @@ describe('PostSaleSweeper — la corrida', () => {
     ]);
     expect(report).toEqual({
       ticketIssues: informeDeEmisiones(),
+      deadlineAlerts: informeDeAvisos(),
+      serviceChanges: informeDeServicios(),
       tenants: 2,
       tenantsFailed: 0,
       ...informe({ examined: 3, advanced: 1, consolidated: 1, adopted: 1, 'not-found': 1 }),
@@ -487,6 +523,36 @@ describe('PostSaleSweeper — la corrida', () => {
     expect(report.tenantsFailed).toBe(1);
   });
 
+  it('avisa del plazo de emisión por vencer, tenant por tenant y después de las emisiones (SAB-14)', async () => {
+    const b = banco([A, B]);
+    const orden: string[] = [];
+    b.sweepTicketIssues.mockImplementation((tenantId) => {
+      orden.push(`emisiones ${tenantId}`);
+      return Promise.resolve(informeDeEmisiones());
+    });
+    b.sweepDeadlineAlerts.mockImplementation((tenantId) => {
+      orden.push(`avisos ${tenantId}`);
+      return tenantId === A
+        ? Promise.reject(new Error('base caída'))
+        : Promise.resolve(
+            informeDeAvisos({ examined: 3, claimed: 2, mailed: 1, retrying: 1, skipped: 1 }),
+          );
+    });
+
+    const report = await b.sweeper.run(1_000);
+
+    expect(b.sweepDeadlineAlerts.mock.calls).toEqual([
+      [A, 1_000],
+      [B, 1_000],
+    ]);
+    // Una emisión que la cola perdió se cierra antes: la orden recupera su aviso en la misma corrida.
+    expect(orden).toEqual(['emisiones ' + A, 'avisos ' + A, 'emisiones ' + B, 'avisos ' + B]);
+    expect(report.deadlineAlerts).toEqual(
+      informeDeAvisos({ examined: 3, claimed: 2, mailed: 1, retrying: 1, skipped: 1 }),
+    );
+    expect(report.tenantsFailed).toBe(1);
+  });
+
   it('una conciliación que falla en un tenant no frena al resto del barrido', async () => {
     const b = banco([A, B]);
     b.sweepReconciliation.mockImplementation((tenantId) =>
@@ -558,6 +624,8 @@ describe('PostSaleSweeper — la corrida', () => {
     const b = banco([A]);
     expect(await b.sweeper.run()).toEqual({
       ticketIssues: informeDeEmisiones(),
+      deadlineAlerts: informeDeAvisos(),
+      serviceChanges: informeDeServicios(),
       tenants: 1,
       tenantsFailed: 0,
       ...informe(),
@@ -590,6 +658,10 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
     b.sweepStaleClaims.mockResolvedValue(informeDeClaims({ examined: 1, expired: 1 }));
     b.sweepCancellations.mockResolvedValue(informeDeCancelaciones({ examined: 1, closed: 1 }));
     b.sweepTicketIssues.mockResolvedValue(informeDeEmisiones({ examined: 1, abandoned: 1 }));
+    b.sweepDeadlineAlerts.mockResolvedValue(
+      informeDeAvisos({ examined: 1, claimed: 1, mailed: 1 }),
+    );
+    b.sweepServiceChanges.mockResolvedValue(informeDeServicios({ examined: 1, reconciling: 1 }));
 
     const report = await b.sweeper.run(1_000);
 
@@ -611,6 +683,8 @@ describe('PostSaleSweeper — el rastro de cada corrida (Sistema › Procesos)',
         hcn: informeHcn({ examined: 2, received: 2 }),
         reconciliation: informeConciliacion({ accounts: 1, queued: 1 }),
         ticketIssues: informeDeEmisiones({ examined: 2, abandoned: 2 }),
+        deadlineAlerts: informeDeAvisos({ examined: 2, claimed: 2, mailed: 2 }),
+        serviceChanges: informeDeServicios({ examined: 2, reconciling: 2 }),
       },
     });
     // El informe que devuelve no cambia por dejar el rastro.

@@ -118,6 +118,10 @@ export async function settleAsSuperuser(
 /** Borra las retenciones registradas de esas órdenes (niveles y grupos), para poder borrarlas. */
 export async function clearWalletHolds(db: Queryable, orderIds: readonly string[]): Promise<void> {
   if (orderIds.length === 0) return;
+  // Los ajustes de 0086 apuntan a sus niveles (ON DELETE RESTRICT): van primero.
+  await db.query('DELETE FROM wallet_hold_adjustments WHERE order_id = ANY($1::uuid[])', [
+    orderIds,
+  ]);
   await db.query('DELETE FROM wallet_hold_levels WHERE order_id = ANY($1::uuid[])', [orderIds]);
   await db.query('DELETE FROM wallet_hold_groups WHERE order_id = ANY($1::uuid[])', [orderIds]);
 }

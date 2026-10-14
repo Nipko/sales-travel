@@ -4,6 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   CircleAlert,
   CirclePlay,
+  Download,
   MoreHorizontal,
   RefreshCw,
   Search,
@@ -25,6 +26,11 @@ import {
   useTabsId,
 } from '../../../../../../components/wallets/section-tabs';
 import { cn } from '../../../../../../lib/cn';
+import {
+  legacyCalloutText,
+  loadLegacyAccounts,
+  type LegacyAccountsList,
+} from '../../../../../../lib/legacy-passwords';
 import {
   ACTION_CANCELLED,
   ACTION_DONE,
@@ -58,6 +64,7 @@ import {
   type DirectoryFilters,
   type PlatformUser,
 } from '../../../../../../lib/platform-users';
+import { saveFile } from '../../../../../../lib/platform-audit-client';
 import { DIRECTORY_ROLES } from '../../../../../../lib/platform-users-proxy';
 import { isStepUpCancelled } from '../../../../../../lib/step-up';
 import { exactTime } from '../../../../../../lib/tenant-admin-format';
@@ -69,11 +76,17 @@ import {
   type NetworkMember,
 } from '../../../../../../lib/tenant-admin-team';
 import type { NetworkNode } from '../../../../../../lib/tenant-network';
+import {
+  exportPlatformUsers,
+  PLATFORM_EXPORT_NOTE,
+  usersExportDoneMessage,
+} from '../../../../../../lib/user-export';
 import { SupportActionGroups } from '../../../usuarios/_components/member-list';
 import { MemberNameButton, MemberSheet } from '../../../usuarios/_components/member-sheet';
 import { roleLabel } from '../../../usuarios/_components/roles';
 import { useNow } from '../../../usuarios/_components/seats-ui';
 import { supportMember } from '../../../usuarios/_components/support-action';
+import { LegacyPasswordsCallout, LegacyPasswordsDialog } from './legacy-passwords-dialog';
 import { PlatformInvitations, SEARCH_DEBOUNCE_MS, useDebounced } from './platform-invitations';
 
 /** Las pestañas de la pantalla: las personas, o las invitaciones que nadie aceptó todavía. */
@@ -145,6 +158,9 @@ function CellLabel({ children }: { children: React.ReactNode }) {
  * Las dos pestañas quedan montadas al cambiar: cada una conserva sus filtros y lo que cargó. La de
  * invitaciones se monta recién la primera vez que se abre; hasta entonces su contador sale de un
  * pedido aparte, que se repite cada vez que una invitación cambia.
+ *
+ * Arriba del directorio, si quedan cuentas que nacieron con una contraseña que eligió un admin, el
+ * aviso para revisarlas y forzarles el cambio (USR-14, legacy-passwords-dialog.tsx).
  */
 export function PlatformUsersPanel({
   viewerId,
@@ -172,6 +188,10 @@ export function PlatformUsersPanel({
   const [rowError, setRowError] = useState<RowError | null>(null);
   // La persona cuya ficha está abierta.
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  // Cuentas heredadas con una contraseña de un admin (USR-14): el aviso y la lista que se revisa.
+  const [legacy, setLegacy] = useState<LegacyAccountsList | null>(null);
+  const [reviewing, setReviewing] = useState<LegacyAccountsList | null>(null);
 
   const query = useMemo<DirectoryFilters>(() => ({ ...filters, q }), [filters, q]);
   // Una respuesta de filtros viejos (la persona siguió escribiendo) no pinta encima de la nueva.
@@ -218,6 +238,18 @@ export function PlatformUsersPanel({
   useEffect(() => {
     void loadPendingCount();
   }, [loadPendingCount]);
+
+  // Si no carga, no hay aviso: es un atajo, el directorio sigue igual.
+  const loadLegacy = useCallback(async () => {
+    const res = await loadLegacyAccounts();
+    if (res.ok) setLegacy(res.data);
+  }, []);
+
+  useEffect(() => {
+    void loadLegacy();
+  }, [loadLegacy]);
+
+  const legacyText = legacy === null ? null : legacyCalloutText(legacy);
 
   function selectTab(next: PanelTab) {
     setTab(next);
@@ -324,6 +356,24 @@ export function PlatformUsersPanel({
     );
   }
 
+  /**
+   * Exportar a CSV (USR-16) con los filtros de la lista que se ve: la misma consulta, sin paginar. Es
+   * de alto impacto: puede pedir el código del 2FA en el medio y repetirse (USR-13).
+   */
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    const res = await exportPlatformUsers(query);
+    setExporting(false);
+    if (isStepUpCancelled(res)) return;
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    saveFile(res.data);
+    toast.success(usersExportDoneMessage(res.data, 'platform'));
+  }
+
   const filtered = hasFilters({ ...filters, q: '' }) || q.trim() !== '';
   const sheetUser =
     state.status === 'ready' ? state.users.find((u) => u.id === sheetId) : undefined;
@@ -332,13 +382,18 @@ export function PlatformUsersPanel({
   return (
     <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-5 sm:py-8">
       {confirmDialog}
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
-          Usuarios de la plataforma
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-          Todas las personas de la red, en todos los nodos.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-fg)]">
+            Usuarios de la plataforma
+          </h1>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+            Todas las personas de la red, en todos los nodos.
+          </p>
+        </div>
+        {tab === 'users' ? (
+          <ExportUsersButton exporting={exporting} onExport={() => void exportCsv()} />
+        ) : null}
       </header>
 
       <div>
@@ -360,6 +415,9 @@ export function PlatformUsersPanel({
 
         <SectionTabPanel id="users" idPrefix={tabsId} hidden={tab !== 'users'} keepMounted>
           <div className="space-y-5">
+            {legacy !== null && legacyText !== null ? (
+              <LegacyPasswordsCallout text={legacyText} onReview={() => setReviewing(legacy)} />
+            ) : null}
             <DirectoryFiltersBar
               search={search}
               filters={filters}
@@ -413,6 +471,14 @@ export function PlatformUsersPanel({
         </SectionTabPanel>
       </div>
 
+      {reviewing !== null ? (
+        <LegacyPasswordsDialog
+          list={reviewing}
+          onClose={() => setReviewing(null)}
+          onFinished={() => void loadLegacy()}
+        />
+      ) : null}
+
       {sheetId !== null ? (
         <MemberSheet
           key={sheetId}
@@ -448,6 +514,41 @@ export function PlatformUsersPanel({
           onClose={() => setSheetId(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Exportar CSV" del directorio, con la nota de qué sale. Aparte para pintarlo en un test. Mientras
+ * exporta, el botón espera (y lo dice) en vez de desaparecer.
+ */
+export function ExportUsersButton({
+  exporting,
+  onExport,
+}: {
+  exporting: boolean;
+  onExport: () => void;
+}) {
+  const noteId = useId();
+  return (
+    <div className="flex flex-col items-start gap-1.5 sm:items-end">
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={exporting}
+        aria-describedby={noteId}
+        onClick={onExport}
+      >
+        {exporting ? (
+          <RefreshCw aria-hidden="true" className="animate-spin" />
+        ) : (
+          <Download aria-hidden="true" />
+        )}
+        {exporting ? 'Exportando…' : 'Exportar CSV'}
+      </Button>
+      <p id={noteId} className="text-xs text-[var(--color-fg-muted)] sm:text-right">
+        {PLATFORM_EXPORT_NOTE}
+      </p>
     </div>
   );
 }

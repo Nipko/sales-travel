@@ -15,6 +15,7 @@ import {
 import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
 import { PendingInvitationNotice } from './invite-dialog';
+import { MemberFilters } from './member-filters';
 import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
 import { invitableRolesIn } from './roles';
 import { SeatsCard, type SeatsState } from './seats-ui';
@@ -301,8 +302,11 @@ describe('MemberList', () => {
   });
 });
 
-/** El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). */
-function actionsMenu(member: NetworkMember): string {
+/**
+ * El menú de acciones de un miembro, abierto (sin el portal, que no pinta en el servidor). Con
+ * `withRemove`, como lo arma Equipo: con "Quitar de este nodo".
+ */
+function actionsMenu(member: NetworkMember, withRemove = false): string {
   return renderToStaticMarkup(
     createElement(
       DropdownMenu.Root,
@@ -316,6 +320,7 @@ function actionsMenu(member: NetworkMember): string {
           now: Date.now(),
           onPick: (run: () => void) => run,
           onSetStatus: () => {},
+          ...(withRemove ? { onRemove: () => {} } : {}),
           onAction: () => {},
         }),
       ),
@@ -375,6 +380,37 @@ describe('MemberActionItems: el menú de acciones de un miembro', () => {
     expect(sendItem(actionsMenu(parsedMember()))).not.toContain('aria-disabled');
     expect(actionsMenu(parsedMember())).not.toContain('(acceso suspendido)');
     expect(actionsMenu(parsedMember({ membershipStatus: 'suspended' }))).toContain('Reactivar');
+  });
+});
+
+describe('MemberActionItems: quitar de este nodo (USR-11)', () => {
+  /** El ítem del menú que dice `label`. */
+  function item(html: string, label: string): string {
+    return html.split('<div role="menuitem"').find((i) => i.includes(label)) ?? '';
+  }
+
+  it('va último en Membresía, en rojo y con su ícono, después de suspender', () => {
+    const html = actionsMenu(parsedMember(), true);
+    const remove = html.indexOf('Quitar de este nodo');
+    expect(remove).toBeGreaterThan(html.indexOf('Suspender'));
+    expect(remove).toBeGreaterThan(html.indexOf('Membresía'));
+    const quitar = item(html, 'Quitar de este nodo');
+    expect(quitar).toContain('text-[var(--color-danger)]');
+    expect(quitar).toContain('lucide-user-x');
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('también a un suspendido, junto a "Reactivar"', () => {
+    const html = actionsMenu(parsedMember({ membershipStatus: 'suspended' }), true);
+    expect(html).toContain('Reactivar');
+    expect(html.indexOf('Quitar de este nodo')).toBeGreaterThan(html.indexOf('Reactivar'));
+  });
+
+  it('sin la acción, o con una membresía que no está activa ni suspendida, no se ofrece', () => {
+    expect(actionsMenu(parsedMember())).not.toContain('Quitar de este nodo');
+    expect(actionsMenu(parsedMember({ membershipStatus: 'invited' }), true)).not.toContain(
+      'Quitar de este nodo',
+    );
   });
 });
 
@@ -700,5 +736,46 @@ describe('MemberList: filtros del equipo y columna Alta', () => {
     for (const html of [members([]), members('loading'), members('error')]) {
       expect(html).not.toContain('Filtrar miembros');
     }
+  });
+});
+
+describe('MemberFilters: exportar el equipo (USR-16)', () => {
+  function bar(props: { onExport?: () => void; exporting?: boolean } = {}): string {
+    return renderToStaticMarkup(
+      createElement(MemberFilters, {
+        filters: DEFAULT_TEAM_FILTERS,
+        counts: { 'mfa-pending': 0, locked: 0, 'never-logged-in': 0, 'reset-pending': 0 },
+        roles: ['vendedor'],
+        suspendedCount: 0,
+        onChange: () => {},
+        onClear: () => {},
+        ...props,
+      }),
+    );
+  }
+
+  it('el botón dice que baja el equipo entero, sin los filtros, a quien lo enfoca o lo toca', () => {
+    const html = bar({ onExport: () => {} });
+    const button = /<button[^>]*aria-describedby="([^"]+)"[^>]*>(.*?)<\/button>/.exec(html);
+    expect(button?.[2]).toContain('Exportar equipo');
+    expect(button?.[0]).toContain(
+      'title="Descarga un CSV con todo el equipo de este nodo, sin los filtros."',
+    );
+    expect(button?.[0]).not.toContain('disabled=""');
+    // La descripción existe y es la que nombra el botón.
+    expect(html).toContain(
+      `<span id="${button?.[1]}" class="sr-only">Descarga un CSV con todo el equipo de este nodo, sin los filtros.</span>`,
+    );
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('mientras exporta, el botón espera y lo dice', () => {
+    const html = bar({ onExport: () => {}, exporting: true });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Exportando…<\/button>/);
+    expect(html).not.toContain('Exportar equipo');
+  });
+
+  it('sin la acción, la barra no lo ofrece', () => {
+    expect(bar()).not.toContain('Exportar');
   });
 });

@@ -100,7 +100,7 @@ d('forzar el cambio de contraseña, contra Postgres como app_user', () => {
     audit,
     mailer as unknown as MailerService,
     sessions,
-    new MfaService(database, new TotpService(), password, audit, attempts),
+    new MfaService(database, new TotpService(), password, audit, attempts, notices),
     seats,
     new MfaChallengeService(database, attempts),
     new TrustedDeviceService(database),

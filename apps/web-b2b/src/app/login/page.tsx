@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { Compass, Globe, Sparkles } from 'lucide-react';
+import { Compass, Globe, MailOpen, Sparkles } from 'lucide-react';
+import { isInvitationReturn } from '../invitacion/invitation-view';
 import { cn } from '../../lib/cn';
 import { safeNextPath } from '../../lib/safe-next';
 import { parseIdleMinutes, parseMotivo } from '../../lib/session-reasons';
@@ -88,6 +89,8 @@ export default async function LoginPage({
             </div>
           </div>
 
+          {isInvitationReturn(next) ? <InvitationReturnNotice /> : null}
+
           <LoginFlow next={next} motivo={motivo} idleMinutes={idleMinutes} />
 
           <p className="text-sm text-[var(--color-fg-muted)]">
@@ -96,5 +99,27 @@ export default async function LoginPage({
         </div>
       </section>
     </main>
+  );
+}
+
+/**
+ * Viene de una invitación para alguien que ya tiene cuenta (USR-17): después de ingresar vuelve a
+ * ella y la acepta con un botón. Que sepa con qué cuenta ingresar: la del correo invitado.
+ */
+function InvitationReturnNotice() {
+  return (
+    <div
+      role="status"
+      className="flex gap-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-sm leading-snug text-[var(--color-fg)]"
+    >
+      <MailOpen
+        className="mt-0.5 size-4 shrink-0 text-[var(--color-fg-muted)]"
+        aria-hidden="true"
+      />
+      <p>
+        Ingresa con la cuenta del correo al que te llegó la invitación. Al terminar, vuelves a ella
+        para aceptarla.
+      </p>
+    </div>
   );
 }

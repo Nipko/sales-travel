@@ -1,4 +1,4 @@
-import { z } from '@sales-travel/validation';
+import { PersonNameSchema, z } from '@sales-travel/validation';
 import { ASSIGNABLE_ROLES } from '../auth/roles.js';
 import { ADMIN_PASSWORD_RETIRED_MESSAGE } from './onboarding.errors.js';
 import { CREATABLE_TENANT_TYPES } from './tenant-admin.policy.js';
@@ -26,12 +26,28 @@ export const InviteUserSchema = z.object({
 });
 export type InviteUserDto = z.infer<typeof InviteUserSchema>;
 
+/** El token de la invitación, tal como llega en el enlace del correo. */
+const InvitationTokenSchema = z.string().min(10).max(512);
+
+/**
+ * Canje con cuenta nueva: quien no tiene cuenta elige su nombre y su contraseña. El nombre pasa por
+ * las mismas reglas que al editarlo en Mi cuenta → Perfil (PersonNameSchema, USR-18): si no, un
+ * control de dirección o un nombre de puros invisibles entraba al sumarse aunque el perfil lo
+ * rechace después.
+ */
 export const AcceptInvitationSchema = z.object({
-  token: z.string().min(10).max(512),
-  name: z.string().min(1).max(120),
+  token: InvitationTokenSchema,
+  name: PersonNameSchema,
   password: z.string().min(12).max(128),
 });
 export type AcceptInvitationDto = z.infer<typeof AcceptInvitationSchema>;
+
+/**
+ * Vista previa (`POST /invitations/preview`) y canje con la sesión abierta (`POST /invitations/join`,
+ * USR-17): sólo el token. Va en el cuerpo y no en la URL, para que no quede en los logs de acceso.
+ */
+export const InvitationTokenBodySchema = z.object({ token: InvitationTokenSchema }).strict();
+export type InvitationTokenBodyDto = z.infer<typeof InvitationTokenBodySchema>;
 
 export const SetMembershipStatusSchema = z.object({
   userId: z.string().uuid(),
@@ -39,6 +55,25 @@ export const SetMembershipStatusSchema = z.object({
   status: z.enum(['active', 'suspended']),
 });
 export type SetMembershipStatusDto = z.infer<typeof SetMembershipStatusSchema>;
+
+/**
+ * Quitar a una persona de un nodo (POST /admin/memberships/remove, USR-11): baja blanda, la
+ * membership queda como `removed`. Ids en minúsculas, como los devuelve Postgres: si no, el chequeo
+ * de "uno mismo" no lo veía.
+ */
+export const RemoveMembershipSchema = z
+  .object({
+    userId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+    tenantId: z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+  })
+  .strict();
+export type RemoveMembershipDto = z.infer<typeof RemoveMembershipSchema>;
 
 export const SetUserStatusSchema = z.object({
   // En minúsculas, como lo devuelve Postgres: si no, el chequeo de "tu propio usuario" no lo veía.
@@ -177,6 +212,17 @@ export const ListPlatformUsersQuerySchema = z
 export type ListPlatformUsersQuery = z.infer<typeof ListPlatformUsersQuerySchema>;
 
 /**
+ * La exportación del directorio a CSV (GET /admin/exports/users, USR-16): los MISMOS filtros que la
+ * lista, sin paginar (sin `cursor` ni `limit`; el tope lo pone el servicio). Sigue siendo estricta:
+ * un `cursor` es 400, no una página que se ignora.
+ */
+export const PlatformUsersExportQuerySchema = ListPlatformUsersQuerySchema.omit({
+  cursor: true,
+  limit: true,
+});
+export type PlatformUsersExportQuery = z.infer<typeof PlatformUsersExportQuerySchema>;
+
+/**
  * Qué invitaciones sin aceptar ni revocar lista la plataforma: las que todavía sirven (`pending`), las
  * vencidas (`expired`) o las dos (`all`).
  */
@@ -216,15 +262,42 @@ export const ListPlatformInvitationsQuerySchema = z
 export type ListPlatformInvitationsQuery = z.infer<typeof ListPlatformInvitationsQuerySchema>;
 
 /**
+ * Cuántas cuentas heredadas se fuerzan por pedido (USR-14). El panel parte una selección más grande
+ * en lotes de este tamaño: cada correo se espera para decir si salió, y un pedido largo lo corta el
+ * borde (Cloudflare, 100 s).
+ */
+export const LEGACY_RESET_BATCH_MAX = 50;
+
+/**
+ * Forzar el cambio de contraseña a cuentas heredadas (POST /admin/legacy-passwords/require-reset):
+ * de 1 a {@link LEGACY_RESET_BATCH_MAX} ids, en minúsculas como los devuelve Postgres (si no, "uno
+ * mismo" no se veía). Un id repetido cuenta una vez: lo resuelve el servicio.
+ */
+export const RequireLegacyResetSchema = z
+  .object({
+    userIds: z
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((v) => v.toLowerCase()),
+      )
+      .min(1, 'elige al menos una cuenta')
+      .max(LEGACY_RESET_BATCH_MAX, `como mucho ${LEGACY_RESET_BATCH_MAX} cuentas por pedido`),
+  })
+  .strict();
+export type RequireLegacyResetDto = z.infer<typeof RequireLegacyResetSchema>;
+
+/**
  * Qué arrastraría un cambio sobre una membership, antes de confirmarlo (GET
- * /admin/memberships/impact): suspenderla o darle otro rol. Uno de los dos: la pantalla pregunta por
- * el cambio que está por confirmar.
+ * /admin/memberships/impact): suspenderla, quitarla del nodo (`removed`) o darle otro rol. Uno de los
+ * dos: la pantalla pregunta por el cambio que está por confirmar.
  */
 export const MembershipImpactQuerySchema = z
   .object({
     userId: z.string().uuid(),
     tenantId: z.string().uuid(),
-    status: z.enum(['active', 'suspended']).optional(),
+    status: z.enum(['active', 'suspended', 'removed']).optional(),
     role: AssignableRoleSchema.optional(),
   })
   .strict()

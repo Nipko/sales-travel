@@ -5,9 +5,12 @@ import type { MailMessage } from '../mail/mailer.service.js';
  * Quién originó el enlace y para qué: la propia persona desde "Olvidé mi contraseña", un admin desde
  * Equipo que se lo envía (la contraseña actual sigue valiendo) o un admin que la obliga a elegir una
  * nueva antes de volver a ingresar (`required`, también el que se reenvía al intentar entrar). El
- * texto cambia porque quien no lo pidió tiene que saber de dónde salió y qué hacer.
+ * superadmin también la obliga, en bloque, a las cuentas que nacieron con una contraseña que eligió
+ * un admin antes del alta por invitación (`legacy`, USR-14): el correo dice por qué, para que no
+ * parezca un aviso falso. El texto cambia porque quien no lo pidió tiene que saber de dónde salió y
+ * qué hacer.
  */
-export type ResetEmailVariant = 'self' | 'admin' | 'required';
+export type ResetEmailVariant = 'self' | 'admin' | 'required' | 'legacy';
 
 const BUTTON = 'Elegir contraseña nueva';
 
@@ -22,6 +25,14 @@ const RESET_HEADING = 'Restablece tu contraseña';
 const REQUIRED_HEADING = 'Elige una contraseña nueva';
 
 function copyFor(variant: ResetEmailVariant, ttlMinutes: number, nodeName: string): ResetEmailCopy {
+  if (variant === 'legacy') {
+    return {
+      subject: `${REQUIRED_HEADING} · PlaneTour`,
+      heading: REQUIRED_HEADING,
+      body: `Tu cuenta en ${nodeName} se creó con una contraseña que eligió un administrador. Para que sólo tú la conozcas, elige una nueva. Hasta que lo hagas no vas a poder ingresar. El enlace vence en ${ttlMinutes} minutos; si vence, al intentar ingresar te llega otro.`,
+      footer: 'Si crees que es un error, avísale a tu administrador.',
+    };
+  }
   if (variant === 'required') {
     return {
       subject: `${REQUIRED_HEADING} · PlaneTour`,

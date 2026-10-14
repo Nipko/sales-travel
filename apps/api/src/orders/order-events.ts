@@ -25,6 +25,11 @@ export const ORDER_EVENTS = {
   compensationScheduled: 'OrderCompensationScheduled',
   /** Necesita una persona. Es la rama que impide que un desenlace desconocido pase por bueno. */
   escalated: 'OrderEscalated',
+  /**
+   * La reserva quedó confirmada con todos sus vuelos, pero la aerolínea no confirmó uno o más de los
+   * asientos elegidos (SAB-16). `{ provider, seats }`: cuántos, nunca cuáles ni de quién.
+   */
+  seatsNotConfirmed: 'OrderSeatsNotConfirmed',
   /** Cancelación ejecutada contra el proveedor (exitosa o rechazada). */
   cancelled: 'OrderCancellationAttempted',
 
@@ -47,6 +52,34 @@ export const ORDER_EVENTS = {
    * Conteos, nunca los números.
    */
   ticketsVoided: 'OrderTicketsVoided',
+  /**
+   * El plazo de emisión de una reserva confirmada y sin tiquete vence pronto, y el barrido cerró el
+   * aviso al vendedor (SAB-14). `threshold` es `24h` o `2h`; uno por orden, umbral e instante del
+   * plazo: sale cuando el aviso tomado (`deadline_alerted_*`, 0084) se cierra, no en cada intento.
+   * `outcome`: `mailed`, `no-recipient` (el vendedor ya no está activo) o `mail-failed` (se agotaron
+   * los intentos, 0085), con `attempts`. Lleva el instante, la zona del plazo, si es de prueba y si
+   * retiene cartera; nunca a quién se escribió.
+   */
+  ticketingDeadlineApproaching: 'OrderTicketingDeadlineApproaching',
+
+  // Maletas y servicios adicionales antes de emitir (SAB-20). Conteos, montos en unidades menores de
+  // la moneda de la orden y vocabulario cerrado: nunca ids del proveedor ni datos del pasajero.
+
+  /**
+   * Un vendedor pidió agregar (`kind: 'add'`) o quitar (`'remove'`) servicios: la operación quedó
+   * pendiente y el total (y la retención, `hold`) ya reflejan lo pedido si es un alta. Se emite
+   * ANTES de llamar al proveedor, para que un pedido sin respuesta deje rastro.
+   */
+  servicesRequested: 'OrderServicesRequested',
+  /** Quedaron servicios en la reserva: `{ count, totalMinor, failed }`. Se emiten con el tiquete. */
+  servicesAdded: 'OrderServicesAdded',
+  /** Se quitaron servicios de la reserva y se liberó su parte de la retención. */
+  servicesRemoved: 'OrderServicesRemoved',
+  /**
+   * El cambio no terminó como se pidió: rechazado sin cambiar nada (`retryable`), o en duda
+   * (`reconciliationRequired`), que se concilia con la aerolínea y nunca se repite a ciegas.
+   */
+  servicesChangeFailed: 'OrderServicesChangeFailed',
 
   // Post-venta de una reserva leída al proveedor (docs/tbo/04 §6.5). Los emite quien observa: la
   // consulta manual, la verificación, el seguimiento del HCN o la conciliación, con su `source`.
@@ -118,6 +151,17 @@ export const TICKET_VOID_ESCALATION_REASONS = [
   'void-unverified',
 ] as const;
 export type TicketVoidEscalationReason = (typeof TICKET_VOID_ESCALATION_REASONS)[number];
+
+/** Motivos de `OrderEscalated` de los servicios adicionales (SAB-20). Vocabulario cerrado. */
+export const SERVICES_ESCALATION_REASONS = [
+  /** El proveedor no confirmó si agregó o quitó lo pedido. */
+  'services-unverified',
+  /** El cambio quedó pendiente más de lo razonable (el proceso murió con la llamada en vuelo). */
+  'services-stale',
+  /** El proveedor contestó y no se pudo guardar el desenlace. */
+  'services-settle-failed',
+] as const;
+export type ServicesEscalationReason = (typeof SERVICES_ESCALATION_REASONS)[number];
 
 /** Clasificación de una divergencia con el proveedor (04 §9.4). */
 export const RECONCILIATION_DISCREPANCY_KINDS = [

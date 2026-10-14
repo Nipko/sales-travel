@@ -27,11 +27,20 @@ vi.mock('./actions', () => {
 
 import { DisableMfaForm, SecurityClient, type SecurityClientProps } from './SecurityClient';
 import { MfaEnrollmentGate, GATE_TITLE } from './_components/mfa-enrollment-gate';
-import { MfaSetupStep, QR_LABEL, SCAN_TITLE } from './_components/mfa-enrollment';
+import {
+  ENROLL_PASSWORD_HINT,
+  ENROLL_PASSWORD_LABEL,
+  EnrollPasswordField,
+  MfaSetupStep,
+  QR_LABEL,
+  SCAN_TITLE,
+} from './_components/mfa-enrollment';
 import { RecoveryCodeField } from './_components/recovery-code-field';
 import { RecoveryCodes } from './_components/recovery-codes';
 import { SessionsList } from './_components/sessions-list';
 import { TrustedDevices } from './_components/trusted-devices';
+import { voseoIn } from '../../../../lib/voseo';
+import { failureMessage } from './security-errors';
 import type { SessionRow, TrustedDeviceRow } from './security-model';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
@@ -167,6 +176,75 @@ describe('MfaSetupStep', () => {
     expect(html).toMatch(/<input type="hidden" name="code"/);
     expect(html).toContain('Dígito 1 de 6');
     expect(buttons(html)).toContain('Activar');
+  });
+
+  it('al cambiar de teléfono no pide la contraseña: ya la pidió antes del QR', () => {
+    expect(html).not.toContain('name="currentPassword"');
+    expect(html).toContain('Se envía solo al completar el sexto dígito.');
+  });
+});
+
+describe('MfaSetupStep en la primera activación (USR-13b)', () => {
+  const html = renderToStaticMarkup(
+    createElement(MfaSetupStep, {
+      enrollment: {
+        secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        otpauthUri:
+          'otpauth://totp/Planetour:ana%40agencia.co?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      },
+      onConfirmed: () => {},
+      requirePassword: true,
+    }),
+  );
+  const passwordInput = html.match(/<input[^>]*name="currentPassword"[^>]*>/)?.[0] ?? '';
+
+  it('pide la contraseña antes del código, obligatoria y para el gestor de contraseñas', () => {
+    expect(passwordInput).toContain('type="password"');
+    expect(passwordInput).toContain('autoComplete="current-password"');
+    expect(passwordInput).toContain('required=""');
+    expect(html).toContain(`>${ENROLL_PASSWORD_LABEL}</label>`);
+    expect(html.indexOf('name="currentPassword"')).toBeLessThan(html.indexOf('name="code"'));
+    expect(html).toContain(
+      'Con tu contraseña escrita, se envía solo al completar el sexto dígito.',
+    );
+  });
+
+  it('en tú, también los errores de la contraseña', () => {
+    const errores = ['MFA_PASSWORD_INVALID', 'MFA_PASSWORD_REQUIRED'].map((reason) =>
+      failureMessage({ status: 400, message: '', reason }, 'password-and-code'),
+    );
+    expect(voseoIn([html, ...errores].join(' '))).toEqual([]);
+  });
+
+  it('la ayuda está asociada al campo y, sin error, no lo marca', () => {
+    expect(passwordInput).toMatch(/aria-describedby="[^"]+-pass-hint"/);
+    expect(passwordInput).not.toContain('aria-invalid');
+    expect(html).toContain(ENROLL_PASSWORD_HINT);
+  });
+});
+
+describe('EnrollPasswordField', () => {
+  it('con error: el campo marcado, el error anunciado y asociado', () => {
+    const html = renderToStaticMarkup(
+      createElement(EnrollPasswordField, {
+        id: 'pw',
+        error: 'La contraseña no es correcta. Revísala e inténtalo de nuevo.',
+        pending: false,
+      }),
+    );
+    expect(html).toMatch(/<label for="pw"[^>]*>Tu contraseña<\/label>/);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-describedby="pw-hint pw-error"');
+    expect(html).toContain(
+      'id="pw-error" role="alert" class="text-sm font-medium text-[var(--color-danger)]">La contraseña no es correcta. Revísala e inténtalo de nuevo.</p>',
+    );
+  });
+
+  it('mientras verifica queda deshabilitado', () => {
+    const html = renderToStaticMarkup(
+      createElement(EnrollPasswordField, { id: 'pw', pending: true }),
+    );
+    expect(html.match(/<input[^>]*name="currentPassword"[^>]*>/)?.[0]).toContain('disabled=""');
   });
 });
 

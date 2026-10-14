@@ -109,12 +109,12 @@ describe('directoryQuery: filtros, orden y una fila de más', () => {
     expect(c.parameters.slice(0, 2)).toEqual(['%50\\%\\_%', '%50\\%\\_%']);
   });
 
-  it('rol y nodo en una sola membership del subárbol del nodo', () => {
+  it('rol y nodo en una sola membership del subárbol del nodo, sin las quitadas', () => {
     const c = compiled({ role: 'vendedor', tenantId: NODO });
     expect(c.sql).toContain('exists (select 1 as "one" from "memberships" as "m"');
-    expect(c.sql).toContain('"m"."role" = $1');
+    expect(c.sql).toContain('"m"."status" != $1 and "m"."role" = $2');
     expect(c.sql).toContain('t.path OPERATOR(public.<@) (SELECT root.path FROM tenants root');
-    expect(c.parameters.slice(0, 2)).toEqual(['vendedor', NODO]);
+    expect(c.parameters.slice(0, 3)).toEqual(['removed', 'vendedor', NODO]);
   });
 
   it('estado, 2FA, bloqueo, nunca ingresaron y el cursor', () => {
@@ -231,7 +231,10 @@ describe('PlatformUsersService.list', () => {
 
     // Los nodos y las sesiones se piden sólo para los de la página.
     const nodos = k.queries[k.indexOf('from "memberships" as "m"')]!;
-    expect(nodos.parameters).toEqual([ANA, BETO]);
+    // Sin los nodos de los que la quitaron (USR-11). Los ids van en un solo arreglo.
+    expect(nodos.sql).toContain('m.user_id = ANY($1::uuid[])');
+    expect(nodos.sql).toContain('"m"."status" != $2');
+    expect(nodos.parameters).toEqual([[ANA, BETO], 'removed']);
     const sesiones = k.queries[k.indexOf('platform_user_session_stats')]!;
     expect(sesiones.parameters).toEqual([[ANA, BETO]]);
   });

@@ -1,28 +1,41 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
-import type { Offer, ProviderEnvironment } from '@sales-travel/canonical';
 import type {
-  FlightSearchCriteria,
-  OfferPriceResult,
-  OrderCancelResult,
-  OrderCreateRequest,
-  OrderCreateResult,
-  OrderPayRequest,
-  OrderPayResult,
-  OrderReshopRequest,
-  OrderReshopResult,
-  OrderView,
-  SearchContext,
-  ServiceListRequest,
-  ServiceListResult,
-  TicketCheckResult,
-  TicketIssueOptions,
-  TicketIssueResult,
-  TicketingPort,
+  AncillaryCatalog,
+  Offer,
+  ProviderEnvironment,
+  SeatMap,
+} from '@sales-travel/canonical';
+import {
+  OrderCreateNotSentError,
+  type AncillaryAddResult,
+  type AncillaryOrderRef,
+  type AncillaryPort,
+  type AncillaryRemoveResult,
+  type AncillarySelection,
+  type FlightSearchCriteria,
+  type OfferPriceResult,
+  type OrderCancelResult,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type OrderPayRequest,
+  type OrderPayResult,
+  type OrderReshopRequest,
+  type OrderReshopResult,
+  type OrderView,
+  type SearchContext,
+  type SeatMapPort,
+  type ServiceListRequest,
+  type ServiceListResult,
+  type TicketCheckResult,
+  type TicketIssueOptions,
+  type TicketIssueResult,
+  type TicketingPort,
 } from '@sales-travel/domain';
 import {
   SABRE_HOSTS,
   SABRE_PCC_PATTERN,
+  SabreAncillaryAdapter,
   SabreFlightCheckAdapter,
   SabreFlightSearchAdapter,
   SabreCancelBookingBuildError,
@@ -30,11 +43,13 @@ import {
   SabreOfferPriceAdapter,
   SabreOrderCreateAdapter,
   SabreOrderManageAdapter,
+  SabreSeatMapAdapter,
   SabreShopOptionsSchema,
   SabreTicketingAdapter,
   SabreTicketingSettingsSchema,
   SabreTokenService,
   cancellableItemsOf,
+  isSabrePccTimeZone,
   missingSabreCredentials,
   parseSabreConfig,
   type SabreCancelOptions,
@@ -61,6 +76,7 @@ import {
   type OrderCancelScope,
   type OrderCreateAudit,
   type ProviderCapabilities,
+  type ProviderSettlement,
   type ProviderVertical,
   type TenantAdapter,
   type TenantProviderFactory,
@@ -310,6 +326,26 @@ interface SabreAdapterSet {
   readonly issue: TicketingPort;
   /** Las operaciones de `SABRE_OPERATIONS` encendidas en este despliegue. */
   readonly operations: ReadonlySet<SabreOperation>;
+  /** El mapa de asientos antes de reservar (Get Seats v3, SAB-15), sobre el mismo cliente. */
+  readonly seats: SeatMapPort;
+  /**
+   * Maletas y servicios sobre una reserva ATPCO hecha (Stateless Ancillaries, SAB-19), sobre el
+   * mismo cliente: el alta vuelve a consultar el catálogo y comparte token y cupo.
+   */
+  readonly ancillaries: AncillaryPort;
+}
+
+/**
+ * El plazo de emisión de una lectura con la zona de la oficina de la cuenta. Sólo un plazo en la
+ * hora de la oficina (`PROVIDER_LOCAL`) la recibe: uno en UTC ya tiene instante, y una lectura sin
+ * plazo no gana uno. Una zona que el motor no conoce no se pega: la cuenta la valida al leerse
+ * (`sabreTicketingSettingsFromAccountConfig`), y esto es la segunda puerta.
+ */
+export function withOfficeTimeZone(view: OrderView, pccTimeZone: string): OrderView {
+  const deadline = view.ticketingDeadline;
+  if (deadline === undefined || deadline.zone !== 'PROVIDER_LOCAL') return view;
+  if (!isSabrePccTimeZone(pccTimeZone)) return view;
+  return { ...view, ticketingDeadline: { ...deadline, timeZone: pccTimeZone } };
 }
 
 /**
@@ -361,12 +397,18 @@ export class SabreOfferRevalidationRouter {
  *    este contrato. Fingirlas con un resultado plausible es lo que vende un asiento que no existe.
  *  - `issueTickets` mientras `issue` no esté en `SABRE_OPERATIONS`: la emisión está escrita y
  *    probada contra el contrato, pero no se enciende hasta certificarla (SAB-13).
+ *  - `getSeatMap` mientras `seats` no esté en `SABRE_OPERATIONS`: el mapa y la reserva de asientos
+ *    están escritos y probados contra el contrato, y se encienden al certificarlos (SAB-21).
+ *  - `listAncillaries`, `addAncillaries` y `removeAncillaries` mientras `services` no esté en
+ *    `SABRE_OPERATIONS` (SAB-20): lo mismo, hasta certificar Stateless Ancillaries en CERT.
  *
  * Lo que ya no hace falta gatear: el bloque de reserva contra una cuenta en modo simulado. Ese
  * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
  * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
-export class SabreFlightProviderAdapter implements FlightProviderAdapter, TicketingPort {
+export class SabreFlightProviderAdapter
+  implements FlightProviderAdapter, TicketingPort, SeatMapPort, AncillaryPort
+{
   constructor(private readonly inner: SabreAdapterSet) {}
 
   get missingCredentials(): readonly string[] {
@@ -390,7 +432,23 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
    * MISMA política de emisión y la misma firma, o una reserva quedaría sin plazo según el camino.
    */
   async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+    this.assertSeatsEnabled(request);
     return (await this.inner.create.createBooking(request, ctx, this.bookingOptions())).result;
+  }
+
+  /**
+   * Tercera línea detrás de la capacidad `seatMap` y de {@link getSeatMap}: con `seats` apagado en
+   * este despliegue, una reserva con asientos no sale (SAB-16). Hoy no llega ninguna —sin mapa no
+   * hay asiento atado—, pero la reserva es la llamada que mueve dinero y no puede depender de que el
+   * servicio de arriba no cambie. `OrderCreateNotSentError`: el saga lo lee como «no salió», no como
+   * un resultado incierto.
+   */
+  private assertSeatsEnabled(request: OrderCreateRequest): void {
+    if ((request.seats?.length ?? 0) > 0 && !this.inner.operations.has('seats')) {
+      throw new OrderCreateNotSentError(
+        'la elección de asiento no está encendida para Sabre en este despliegue',
+      );
+    }
   }
 
   /** Lo que toda reserva de esta cuenta lleva además del pedido: su política de emisión y su firma. */
@@ -409,6 +467,7 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     request: OrderCreateRequest,
     ctx: SearchContext,
   ): Promise<OrderCreateAudit> {
+    this.assertSeatsEnabled(request);
     const outcome = await this.inner.create.createBooking(request, ctx, this.bookingOptions());
     const ticketing = outcome.ticketing;
 
@@ -444,8 +503,17 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     };
   }
 
-  retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
-    return this.inner.manage.retrieveForDisplay(orderId, ctx);
+  /**
+   * La lectura de la reserva, con la zona de la oficina en el plazo de emisión: Sabre da la fecha y
+   * la hora del PCC sin decir su zona (`futureTicketingPolicy`, docs/sabre/06 §5.3), y la cuenta sí
+   * la declara (`pccTimeZone`, la misma con que se pidió el plazo al reservar). Con ella la
+   * post-venta calcula el instante y avisa antes de que venza (SAB-14).
+   */
+  async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
+    return withOfficeTimeZone(
+      await this.inner.manage.retrieveForDisplay(orderId, ctx),
+      this.inner.ticketing.pccTimeZone,
+    );
   }
 
   cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
@@ -610,6 +678,55 @@ export class SabreFlightProviderAdapter implements FlightProviderAdapter, Ticket
     return this.inner.issue.checkTickets(orderId, ctx);
   }
 
+  /**
+   * El mapa de asientos de una oferta antes de reservarla (SAB-16). Segunda línea de defensa detrás
+   * de la capacidad `seatMap`: con `seats` apagado en este despliegue, rechaza sin consultar a
+   * Sabre (cada Get Seats es una llamada facturable). Los asientos elegidos viajan después con la
+   * reserva (`createBooking`), que los pide en el bloque que corresponda a la oferta.
+   */
+  getSeatMap(offer: Offer, criteria: FlightSearchCriteria, ctx: SearchContext): Promise<SeatMap> {
+    if (!this.inner.operations.has('seats')) {
+      return Promise.reject(new SabreOperationNotSupportedError('elegir asiento'));
+    }
+    return this.inner.seats.getSeatMap(offer, criteria, ctx);
+  }
+
+  /**
+   * El catálogo de maletas y servicios de una reserva hecha (SAB-20). Segunda línea de defensa
+   * detrás de la capacidad `addServices`: con `services` apagado en este despliegue, rechaza sin
+   * consultar a Sabre, aunque un pedido viejo llegue hasta aquí.
+   */
+  listAncillaries(order: AncillaryOrderRef, ctx: SearchContext): Promise<AncillaryCatalog> {
+    if (!this.inner.operations.has('services')) {
+      return Promise.reject(new SabreOperationNotSupportedError('servicios adicionales'));
+    }
+    return this.inner.ancillaries.listAncillaries(order, ctx);
+  }
+
+  /** Agrega lo elegido a la reserva. Mueve dinero: la misma compuerta que el catálogo. */
+  addAncillaries(
+    order: AncillaryOrderRef,
+    selections: readonly AncillarySelection[],
+    ctx: SearchContext,
+  ): Promise<AncillaryAddResult> {
+    if (!this.inner.operations.has('services')) {
+      return Promise.reject(new SabreOperationNotSupportedError('servicios adicionales'));
+    }
+    return this.inner.ancillaries.addAncillaries(order, selections, ctx);
+  }
+
+  /** Quita servicios agregados, por los ids que devolvió el alta. La misma compuerta. */
+  removeAncillaries(
+    order: AncillaryOrderRef,
+    providerItemIds: readonly string[],
+    ctx: SearchContext,
+  ): Promise<AncillaryRemoveResult> {
+    if (!this.inner.operations.has('services')) {
+      return Promise.reject(new SabreOperationNotSupportedError('servicios adicionales'));
+    }
+    return this.inner.ancillaries.removeAncillaries(order, providerItemIds, ctx);
+  }
+
   cancelBnplOrder(_orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
     return Promise.reject(new SabreOperationNotSupportedError('cancelar la reserva diferida'));
   }
@@ -663,6 +780,15 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
   readonly defaultCallPolicy: CallPolicy = 'always';
 
   /**
+   * Lo que se reserva con Sabre lo liquida la red: el tiquete sale en CASH o a crédito (D1, nunca
+   * con tarjeta) y lo paga por BSP el dueño de la cuenta. Por eso la reserva retiene la cartera del
+   * nodo que vende y la de su red hasta ese dueño, como un hotel (SAB-FD-2 A; docs/platform/12
+   * §14). Una cuenta de pruebas (CERT) no retiene, y con la cuenta propia del nodo la base no
+   * retiene a nadie.
+   */
+  readonly settlement: ProviderSettlement = 'network-wallet';
+
+  /**
    * Lo que Sabre sabe hacer HOY, ni más ni menos.
    *
    * `retrieve` y `cancel` en `true` desde esta tanda: `getBooking` (las dos lecturas) y
@@ -670,9 +796,13 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * pantalla — es lo que el saga de creación consulta para saber si puede CERRAR una reserva
    * verificándola; con `retrieve: false` toda creación de Sabre acabaría escalada.
    *
-   * `pay`, `services` y `reshop` siguen en `false` y no es un olvido: no son operaciones de este
-   * contrato. Es lo que hace que `OrdersController.assertSupports` las rechace con un mensaje
-   * claro en vez de mandarlas a un adapter que no las implementa.
+   * `pay` y `reshop` siguen en `false` y no es un olvido: no son operaciones de este contrato. Es lo
+   * que hace que `OrdersController.assertSupports` las rechace con un mensaje claro en vez de
+   * mandarlas a un adapter que no las implementa.
+   *
+   * `services` (ver el catálogo) y `addServices` (agregar y quitar antes de emitir, SAB-20) salen de
+   * `services` en `SABRE_OPERATIONS`: los servicios se cobran como EMD al emitir, así que mueven
+   * dinero y nacen apagados hasta certificarlos en CERT (SAB-21).
    *
    * `issue` sale de `SABRE_OPERATIONS`: la emisión está cableada, pero nace apagada y se enciende
    * por despliegue, después de certificarla. `ticketCheck` y `void` van juntas detrás de `void`: las
@@ -691,11 +821,15 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       retrieve: true,
       cancel: true,
       pay: false,
-      services: false,
+      services: this.operations.has('services'),
       reshop: false,
       issue: this.operations.has('issue'),
       ticketCheck: this.operations.has('void'),
       void: this.operations.has('void'),
+      // El mapa y la reserva de asientos sin cargo (SAB-16), apagados hasta certificarlos en CERT.
+      seatMap: this.operations.has('seats'),
+      // Maletas y servicios antes de emitir (SAB-20), apagados hasta certificarlos en CERT.
+      addServices: this.operations.has('services'),
     };
     if (this.operations.size > 0) {
       // Encender una operación que mueve dinero tiene que verse en el log de arranque.
@@ -859,6 +993,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         ...(ticketingPcc !== undefined && SABRE_PCC_PATTERN.test(ticketingPcc)
           ? { ticketingPcc }
           : {}),
+        // Lo agregado antes de emitir sale como EMD en la misma emisión (SAB-20). Sin `services`
+        // la emisión sigue siendo sólo de tiquetes, como antes.
+        issueAncillaryEmds: this.operations.has('services'),
       },
     );
 
@@ -879,6 +1016,8 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       ticketing: ticketing.settings,
       issue,
       operations: this.operations,
+      seats: new SabreSeatMapAdapter(cfg, http, { logger }),
+      ancillaries: new SabreAncillaryAdapter(cfg, http, { logger }),
     };
   }
 

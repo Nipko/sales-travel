@@ -168,15 +168,23 @@ export class PasswordResetService {
    * deja sin efecto sus enlaces pendientes y emite uno nuevo, y lo audita. Todo en `trx`, la
    * transacción del llamador: la marca sin su rastro, o sin las sesiones cerradas, no debe existir.
    *
-   * No autoriza ni envía el correo: el llamador decide quién puede (MemberSupportService) y envía el
-   * enlace después del commit con la variante `required`. El token en claro sólo sirve para ese
-   * correo.
+   * No autoriza ni envía el correo: el llamador decide quién puede (MemberSupportService, o
+   * LegacyPasswordsService para las cuentas heredadas) y envía el enlace después del commit. El
+   * token en claro sólo sirve para ese correo.
+   *
+   * `batchId`: lo forzó el superadmin en bloque (USR-14). El evento lo dice (`bulk: true`) y lleva el
+   * lote, el mismo de `auth.password_reset.required_bulk`.
    */
   async requireReset(
     trx: Transaction<DB>,
-    params: { actorUserId: string; targetUserId: string; tenantId: string | null },
+    params: {
+      actorUserId: string;
+      targetUserId: string;
+      tenantId: string | null;
+      batchId?: string;
+    },
   ): Promise<RequiredReset> {
-    const { actorUserId, targetUserId, tenantId } = params;
+    const { actorUserId, targetUserId, tenantId, batchId } = params;
     await trx
       .updateTable('users')
       .set({ password_reset_required_at: sql<Date>`COALESCE(password_reset_required_at, now())` })
@@ -198,7 +206,11 @@ export class PasswordResetService {
       actorUserId,
       aggregateType: 'user',
       aggregateId: targetUserId,
-      payload: { targetUserId, revokedSessions },
+      payload: {
+        targetUserId,
+        revokedSessions,
+        ...(batchId === undefined ? {} : { bulk: true, batchId }),
+      },
     });
     return { token, expiresAt, revokedSessions };
   }

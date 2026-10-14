@@ -118,6 +118,17 @@ export function platformUsersListTarget(query: URLSearchParams): TenantAdminProx
   return { ok: true, path: qs === '' ? '/admin/users' : `/admin/users?${qs}` };
 }
 
+/**
+ * `GET /admin/exports/users?…`: el directorio con estos filtros, en CSV (USR-16). Los mismos
+ * parámetros que la lista, validados igual, sin `cursor` ni `limit`: el archivo no es una página.
+ */
+export function platformUsersExportTarget(query: URLSearchParams): TenantAdminProxyTarget {
+  if (query.has('cursor') || query.has('limit')) return { ok: false, error: INVALID };
+  const list = platformUsersListTarget(query);
+  if (!list.ok) return list;
+  return { ok: true, path: list.path.replace(/^\/admin\/users/, '/admin/exports/users') };
+}
+
 /** `GET /admin/users/:userId/impact`: qué arrastraría suspender la cuenta en toda la plataforma. */
 export function platformUserImpactTarget(userId: string): TenantAdminProxyTarget {
   if (!isUuid(userId)) return { ok: false, error: 'Usuario inválido.' };
@@ -161,4 +172,37 @@ export function platformUserStatusPlan(raw: unknown): TenantAdminProxyPlan {
     path: '/admin/users/status',
     body: { userId: userId.toLowerCase(), status },
   };
+}
+
+/** Cuántas cuentas heredadas van por pedido. Espejo de LEGACY_RESET_BATCH_MAX del API. */
+const LEGACY_BATCH_MAX = 50;
+
+/** `GET /admin/legacy-passwords`: las cuentas heredadas (USR-14). No lleva parámetros. */
+export function legacyPasswordsTarget(query: URLSearchParams): TenantAdminProxyTarget {
+  if ([...query.keys()].length > 0) {
+    return { ok: false, error: 'La consulta no es válida. Recarga la página.' };
+  }
+  return { ok: true, path: '/admin/legacy-passwords' };
+}
+
+/**
+ * `POST /admin/legacy-passwords/require-reset`: forzar el cambio a las cuentas heredadas elegidas.
+ * El cuerpo se reconstruye: sólo `userIds`, de 1 a 50 ids sin repetir y en minúsculas.
+ */
+export function legacyResetPlan(raw: unknown): TenantAdminProxyPlan {
+  const input =
+    typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : undefined;
+  const ids = input?.['userIds'];
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { ok: false, error: 'Elige al menos una cuenta.' };
+  }
+  if (ids.length > LEGACY_BATCH_MAX) {
+    return { ok: false, error: `Como mucho ${LEGACY_BATCH_MAX} cuentas por pedido.` };
+  }
+  const valid = ids.filter((id): id is string => isUuid(id));
+  if (valid.length !== ids.length) return { ok: false, error: 'Usuario inválido.' };
+  const userIds = [...new Set(valid.map((id) => id.toLowerCase()))];
+  return { ok: true, path: '/admin/legacy-passwords/require-reset', body: { userIds } };
 }

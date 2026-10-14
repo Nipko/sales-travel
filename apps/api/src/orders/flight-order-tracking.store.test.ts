@@ -27,6 +27,7 @@ import {
 } from '../database/database.types.js';
 import {
   FlightOrderTrackingStore,
+  deadlineInstant,
   flightReadOf,
   nextFlightDocumentState,
   publicFlightOrderTracking,
@@ -278,6 +279,111 @@ describe('publicFlightOrderTracking — lo que sale por la API', () => {
   });
 });
 
+describe('la zona de la oficina en el plazo (0084)', () => {
+  it('flightReadOf la conserva sólo con la hora de la oficina y si es una zona IANA conocida', () => {
+    const plazo = (ticketingDeadline: OrderView['ticketingDeadline']) =>
+      flightReadOf(vista({ ticketingDeadline }), AHORA).ticketingDeadline;
+    expect(
+      plazo({
+        date: '2026-10-20',
+        time: '18:00',
+        zone: 'PROVIDER_LOCAL',
+        timeZone: 'America/Lima',
+      }),
+    ).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+    // Una zona que no existe o con forma rara se pierde sola; el plazo sigue valiendo.
+    for (const timeZone of ['Marte/Olympus', 'America/Bogota; DROP', '', 'x'.repeat(65)]) {
+      expect(
+        plazo({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL', timeZone }),
+      ).toEqual({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' });
+    }
+    // Un plazo UTC no lleva zona de oficina.
+    expect(
+      plazo({ date: '2026-10-20', time: '18:00', zone: 'UTC', timeZone: 'America/Lima' }),
+    ).toEqual({ date: '2026-10-20', time: '18:00', zone: 'UTC' });
+  });
+
+  it('deadlineInstant: UTC tal cual, la oficina con su zona, y sin hora o sin zona no hay instante', () => {
+    expect(deadlineInstant({ date: '2026-10-20', time: '18:00', zone: 'UTC' })).toEqual(
+      new Date('2026-10-20T18:00:00.000Z'),
+    );
+    expect(
+      deadlineInstant({
+        date: '2026-10-20',
+        time: '18:00',
+        zone: 'PROVIDER_LOCAL',
+        timeZone: 'America/Sao_Paulo',
+      }),
+    ).toEqual(new Date('2026-10-20T21:00:00.000Z'));
+    expect(deadlineInstant({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' })).toBe(
+      null,
+    );
+    expect(
+      deadlineInstant({ date: '2026-10-20', zone: 'PROVIDER_LOCAL', timeZone: 'America/Lima' }),
+    ).toBe(null);
+    expect(deadlineInstant({ date: '2026-10-20', zone: 'UTC' })).toBe(null);
+  });
+
+  it('la vista pública lleva la zona de la oficina y el instante', () => {
+    const at = new Date('2026-10-20T23:00:00.000Z');
+    expect(
+      publicFlightOrderTracking({
+        orderId: ORDEN,
+        airlineLocators: [],
+        documents: [],
+        ticketingDeadline: {
+          date: '2026-10-20',
+          time: '18:00',
+          zone: 'PROVIDER_LOCAL',
+          timeZone: 'America/Bogota',
+          at,
+        },
+        lastReadAt: null,
+      }).ticketingDeadline,
+    ).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Bogota',
+      at: '2026-10-20T23:00:00.000Z',
+    });
+  });
+
+  it('listTracking devuelve la zona guardada', async () => {
+    const at = new Date('2026-10-20T23:00:00.000Z');
+    const b = banco((q) =>
+      q.sql.includes('from "flight_order_tracking"')
+        ? {
+            rows: [
+              {
+                order_id: ORDEN,
+                airline_locators: [],
+                ticketing_deadline_date: '2026-10-20',
+                ticketing_deadline_time: '18:00',
+                ticketing_deadline_zone: 'PROVIDER_LOCAL',
+                ticketing_deadline_time_zone: 'America/Bogota',
+                ticketing_deadline_at: at,
+                last_read_at: null,
+              },
+            ],
+          }
+        : {},
+    );
+    expect((await b.store.listTracking(TENANT, [ORDEN])).get(ORDEN)?.ticketingDeadline).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Bogota',
+      at,
+    });
+  });
+});
+
 describe('0082 — el vocabulario de la app es el de los CHECK y el del dominio', () => {
   const MIGRACION = join(
     __dirname,
@@ -424,16 +530,72 @@ describe('FlightOrderTrackingStore.recordRead', () => {
     );
     const upsert = b.negocio()[0];
     expect(upsert?.sql).toContain(
-      'do update set "last_read_at" = $9, "airline_locators" = $10, "ticketing_deadline_date" = $11, "ticketing_deadline_time" = $12, "ticketing_deadline_zone" = $13, "ticketing_deadline_at" = $14',
+      'do update set "last_read_at" = $10, "airline_locators" = $11, "ticketing_deadline_date" = $12, "ticketing_deadline_time" = $13, "ticketing_deadline_zone" = $14, "ticketing_deadline_time_zone" = $15, "ticketing_deadline_at" = $16',
     );
-    expect(upsert?.parameters.slice(2, 7)).toEqual([
+    expect(upsert?.parameters.slice(2, 8)).toEqual([
       AHORA,
       JSON.stringify([{ carrierCode: 'LA', locator: 'XKCD12' }]),
       '2026-10-20',
       '20:00',
       'UTC',
+      null,
     ]);
-    expect(upsert?.parameters[7]).toEqual(new Date('2026-10-20T20:00:00.000Z'));
+    expect(upsert?.parameters[8]).toEqual(new Date('2026-10-20T20:00:00.000Z'));
+  });
+
+  it('una lectura con plazo vuelve a NULL los avisos sólo si cambia el instante (0084)', async () => {
+    const b = banco();
+    await b.store.recordRead(
+      TENANT,
+      ORDEN,
+      flightReadOf(
+        vista({ ticketingDeadline: { date: '2026-10-20', time: '20:00', zone: 'UTC' } }),
+        AHORA,
+      ),
+    );
+    const sql = b.negocio()[0]?.sql ?? '';
+    for (const columna of ['deadline_alerted_24h_at', 'deadline_alerted_2h_at']) {
+      expect(sql).toContain(
+        `"${columna}" = CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.${columna} END`,
+      );
+    }
+    // Y los intentos fallidos del aviso anterior vuelven a cero (0085).
+    for (const columna of ['deadline_alert_24h_failures', 'deadline_alert_2h_failures']) {
+      expect(sql).toContain(
+        `"${columna}" = CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.${columna} ELSE 0 END`,
+      );
+    }
+    // Y sin plazo en la lectura, los avisos no se tocan.
+    const sinPlazo = banco();
+    await sinPlazo.store.recordRead(TENANT, ORDEN, flightReadOf(vista(), AHORA));
+    expect(sinPlazo.negocio()[0]?.sql).not.toContain('deadline_alert');
+  });
+
+  it('con la hora de la oficina y la zona de la cuenta, el instante sale de esa zona (0084)', async () => {
+    const b = banco();
+    await b.store.recordRead(
+      TENANT,
+      ORDEN,
+      flightReadOf(
+        vista({
+          ticketingDeadline: {
+            date: '2026-10-20',
+            time: '18:00',
+            zone: 'PROVIDER_LOCAL',
+            timeZone: 'America/Bogota',
+          },
+        }),
+        AHORA,
+      ),
+    );
+    expect(b.negocio()[0]?.parameters.slice(2, 8)).toEqual([
+      AHORA,
+      '2026-10-20',
+      '18:00',
+      'PROVIDER_LOCAL',
+      'America/Bogota',
+      new Date('2026-10-20T23:00:00.000Z'),
+    ]);
   });
 
   it('con la hora de la oficina no hay instante, y sin hora la columna queda NULL', async () => {
@@ -607,7 +769,7 @@ describe('FlightOrderTrackingStore.listTracking', () => {
 
     const [tracking, documentos] = b.negocio();
     expect(tracking?.sql).toBe(
-      'select "order_id", "airline_locators", to_char(ticketing_deadline_date, \'YYYY-MM-DD\') as "ticketing_deadline_date", "ticketing_deadline_time", "ticketing_deadline_zone", "ticketing_deadline_at", "last_read_at" from "flight_order_tracking" where "tenant_id" = $1 and "order_id" in ($2, $3)',
+      'select "order_id", "airline_locators", to_char(ticketing_deadline_date, \'YYYY-MM-DD\') as "ticketing_deadline_date", "ticketing_deadline_time", "ticketing_deadline_zone", "ticketing_deadline_time_zone", "ticketing_deadline_at", "last_read_at" from "flight_order_tracking" where "tenant_id" = $1 and "order_id" in ($2, $3)',
     );
     expect(documentos?.sql).toContain('where "tenant_id" = $1 and "order_id" in ($2, $3)');
     expect(result.get(ORDEN)).toEqual({

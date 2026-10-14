@@ -1,12 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { Offer } from '@sales-travel/canonical';
+import type { Offer, SeatMap } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
   AllFlightProvidersFailedError,
   ProviderCallError,
   SIMULATED_RESIDUE,
+  SeatSelectionNotAvailableError,
+  supportsSeatMap,
   type FlightProviderAdapter,
   type ProviderOutcome,
   type ResolvedProvider,
@@ -54,6 +56,25 @@ export interface FlightSearchResponse {
    */
   simulated: boolean;
   providers: ProviderOutcome[];
+}
+
+/**
+ * El mapa de asientos de una oferta tal como sale por HTTP (SAB-16).
+ *
+ * Además del mapa dice dos cosas que la pantalla no puede adivinar:
+ *
+ * - `prices: 'provider'`: los precios de los asientos son los del proveedor, SIN el markup de la
+ *   agencia (P-16, v1). No se reservan desde aquí, así que no hay venta que marcar todavía.
+ * - `paidSeatsBookable: false`: sólo los asientos sin cargo se reservan con el vuelo. Uno con precio
+ *   se cobra con un EMD al emitir, con la misma forma de pago que la tarifa y nunca con tarjeta
+ *   (D1), y ese camino no existe todavía: se ven, no se eligen.
+ */
+export interface SeatMapResponse {
+  seatMap: SeatMap;
+  prices: 'provider';
+  paidSeatsBookable: false;
+  /** La cuenta con que se consultó es de pruebas: el mapa no es el de un vuelo que se venda. */
+  testContent: boolean;
 }
 
 /**
@@ -485,6 +506,44 @@ export class SearchService {
     // agencia terminaba vendiendo al costo. Es el mismo tratamiento que la búsqueda.
     const [priced] = await this.withPricing([revalidated], tenantId, 'flights');
     return { ...result, offer: priced ?? revalidated };
+  }
+
+  /**
+   * El mapa de asientos de una oferta que el vendedor está por cerrar (SAB-16).
+   *
+   * Es venta: enruta por el proveedor QUE EMITIÓ la oferta y corta si la plataforma lo apagó
+   * (`byCodeForOffer`), como la revalidación. Sin la capacidad `seatMap` —o con un adapter que no
+   * sabe pintar el mapa— no se consulta a nadie: el vendedor reserva sin asiento.
+   */
+  async seatMap(
+    offer: Offer,
+    criteria: FlightSearchCriteria,
+    tenantId: string,
+  ): Promise<SeatMapResponse> {
+    if (offer.tenantId !== tenantId) {
+      throw new BadRequestException('La oferta no pertenece a la agencia activa.');
+    }
+    const provider = await this.registry.byCodeForOffer(tenantId, offer.provider.name);
+    if (provider.capabilities.seatMap !== true || !supportsSeatMap(provider.adapter)) {
+      throw new SeatSelectionNotAvailableError();
+    }
+    // El entorno sale de la cuenta resuelta, no de lo que mandó el navegador.
+    const stamped = stampProviderEnvironment(offer, provider.environment);
+    const seatMap = await provider.adapter.getSeatMap(stamped, criteria, { tenantId });
+    return {
+      seatMap,
+      prices: 'provider',
+      paidSeatsBookable: false,
+      testContent: isTestOffer(stamped),
+    };
+  }
+
+  /**
+   * ¿Se puede elegir asiento con las ofertas de este proveedor? Estático por proveedor: no toca
+   * credenciales. Lo usa la revalidación para que la pantalla ofrezca el botón sólo donde sirve.
+   */
+  seatSelectionAvailable(providerCode: string): boolean {
+    return this.registry.capabilitiesOf(providerCode)?.seatMap === true;
   }
 
   /**

@@ -9,6 +9,11 @@ import {
   SabrePriceRejectedError,
   SabrePriceRequestError,
   SabreFulfillBuildError,
+  SabreGetSeatsMappingError,
+  SabreGetSeatsRejectedError,
+  SabreGetSeatsRequestError,
+  SabreSeatMapEmptyError,
+  SabreSeatMapTenantMismatchError,
   SabreShopMappingError,
   SabreTicketingNotSentError,
   type SabreFailureKind,
@@ -16,10 +21,46 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SabreExceptionFilter } from './sabre-exception.filter.js';
 import {
+  SABRE_THROWN_CLASSES,
   SabreOperationNotSupportedError,
   humanizeSabreError,
   sabreErrorStatus,
 } from './sabre-errors.js';
+
+describe('humanizeSabreError — el mapa de asientos (SAB-16)', () => {
+  const errores = [
+    new SabreGetSeatsRequestError(['provider.raw.priceOfferId:required']),
+    new SabreGetSeatsMappingError(['response.seatMaps:invalid_type']),
+    new SabreGetSeatsRejectedError(2),
+    new SabreSeatMapEmptyError(1),
+    new SabreSeatMapTenantMismatchError(),
+  ];
+
+  it('cada error del mapa lo atrapa el filtro: ninguno sale como 500 genérico', () => {
+    for (const error of errores) {
+      expect(
+        SABRE_THROWN_CLASSES.some((clase) => error instanceof clase),
+        error.name,
+      ).toBe(true);
+    }
+  });
+
+  it('el vendedor lee que puede reservar sin asiento, y nunca rutas ni códigos del ACL', () => {
+    for (const error of [errores[0]!, errores[2]!, errores[3]!, errores[4]!]) {
+      const mensaje = humanizeSabreError(error);
+      expect(mensaje, error.name).toContain('sin asiento');
+      expect(mensaje).not.toContain('priceOfferId');
+      expect(mensaje).not.toMatch(/invalid_type|required/);
+    }
+    expect(humanizeSabreError(errores[1])).toContain('no pudimos interpretar');
+  });
+
+  it('un cruce de tenants es 400; el resto, el 502 de siempre', () => {
+    expect(sabreErrorStatus(new SabreSeatMapTenantMismatchError())).toBe(HttpStatus.BAD_REQUEST);
+    expect(sabreErrorStatus(new SabreSeatMapEmptyError(0))).toBe(HttpStatus.BAD_GATEWAY);
+    expect(sabreErrorStatus(new SabreGetSeatsRejectedError(1))).toBe(HttpStatus.BAD_GATEWAY);
+  });
+});
 
 describe('humanizeSabreError', () => {
   it('red caída / timeout → "no pudimos conectar"', () => {

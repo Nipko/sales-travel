@@ -195,6 +195,8 @@ export class MemberDetailService {
         .select('m.id')
         .where('m.user_id', '=', targetUserId)
         .where(withinRoot('t.path', tenantId))
+        // Quitada de ese subárbol (USR-11): ya no es del equipo y su ficha no se abre desde ahí.
+        .where('m.status', '!=', 'removed')
         .limit(1)
         .executeTakeFirst();
       if (!member) throw new MemberNotFoundError();
@@ -395,6 +397,7 @@ export class MemberDetailService {
         sql<Date>`m.created_at`.as('created_at'),
       ])
       .where('m.user_id', '=', targetUserId)
+      .where('m.status', '!=', 'removed')
       // Primero los accesos activos y los nodos más altos, como el directorio.
       .orderBy(sql`(m.status = 'active')`, 'desc')
       .orderBy(sql`nlevel(t.path)`)

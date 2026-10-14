@@ -7,11 +7,15 @@ Cada paquete actualiza su fila al cerrarse: **hecho** con el PR, o **pendiente**
 
 - **Sólo invitación** (doc 14): nadie elige la contraseña de otra persona, tampoco el superadmin.
   Todo restablecimiento es un enlace de un solo uso que llega al buzón de la persona; el admin no ve
-  el enlace, el token ni la contraseña, y la respuesta del API no los trae.
+  el enlace, el token ni la contraseña, y la respuesta del API no los trae. Quien ya tiene cuenta
+  acepta una invitación con su propia sesión, y sólo si es la cuenta del correo invitado (USR-17).
 - **Puestos = sesiones simultáneas.** El superadmin fija el cupo de cada nodo.
 - **2FA obligatorio** para `tenant_admin` y superiores.
 - **Suspender una membership corta sólo ese nodo** (y cierra las sesiones de ese subárbol); suspender
   la cuenta es de toda la plataforma y sólo lo hace el superadmin.
+- **Quitar a alguien de un nodo es una baja blanda** (D2 = A): la membership queda como `removed`,
+  sale de Equipo y deja de dar acceso, pero su historial y sus reservas quedan. La única vuelta es
+  una invitación nueva.
 - **Soporte a un miembro** (restablecer 2FA, cerrar sesiones, enviar el enlace, forzar el cambio de
   contraseña, desbloquear): tocan la identidad global, así que el actor tiene que administrar
   **todos** los nodos donde la persona tiene membership activa y superarla en rango en cada uno, o
@@ -26,6 +30,7 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Acción                                                                         | Dónde                                     | Quién puede                                                                               | Estado                                                                    |
 | ------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | Invitar a alguien a un nodo (una pendiente por correo y nodo)                  | Equipo → Invitar                          | Admin del nodo, con un rol menor al suyo; superadmin                                      | **Hecho (doc 14, USR-8)**                                                 |
+| Aceptar una invitación: crear la cuenta, o con la propia si ya existe          | /invitacion                               | Quien recibió el enlace; con cuenta, sólo con la sesión de la cuenta invitada             | **Hecho (USR-17)**: dice nodo y rol; con cuenta, no pide contraseña       |
 | Reenviar una invitación (token nuevo, 7 días)                                  | Equipo → Invitaciones / Invitar (409)     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (doc 14, USR-8)**: avisa si el correo falla                       |
 | Revocar una invitación                                                         | Equipo → Invitaciones                     | Admin del nodo que supere el rol invitado; superadmin                                     | **Hecho (USR-8)**                                                         |
 | Cambiar el rol en un nodo                                                      | Equipo → fila                             | Admin del nodo que supere el rol actual y el nuevo; superadmin. Nunca el propio           | Hecho                                                                     |
@@ -45,13 +50,14 @@ ancestro (`AGENCY_ADMIN_ROLES`). "Supera en rango" = rol estrictamente mayor (`R
 | Invitar o promover a un admin de consolidador                                  | Equipo, en un nodo consolidador           | Superadmin                                                                                | **Hecho (USR-9)**: no se ofrece en la raíz ni en agencias                 |
 | Ir a los usuarios de un nodo                                                   | Gestión de Agencias → fila / Usuarios     | Superadmin                                                                                | **Hecho (USR-9)**: abre Equipo en ese nodo                                |
 | Filtrar el equipo (2FA pendiente, bloqueados, nunca ingresaron, rol)           | Equipo                                    | Admin del nodo; superadmin                                                                | **Hecho (USR-10)**: en la URL, con orden por último acceso y columna Alta |
-| Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones                         | —                                                                                         | Pendiente (USR-11; founder D2 = A)                                        |
+| Quitar a una persona de un nodo (baja blanda)                                  | Equipo → acciones → Membresía / ficha     | Admin del nodo que supere su rol; superadmin. Nunca el propio ni el último admin activo   | **Hecho (USR-11; D2 = A)**: vuelve sólo con una invitación nueva          |
 | Avisarle por correo cada cambio de seguridad (de un admin o de su contraseña)  | Automático, a su buzón                    | —                                                                                         | **Hecho (USR-12)**: después del commit, sin enlaces                       |
 | Reconfirmar el 2FA antes de las acciones de alto impacto                       | Automático                                | —                                                                                         | **Hecho (USR-13; D1 = C)**: pide el código si pasaron 10 minutos          |
-| Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma                                | Superadmin                                                                                | Pendiente (USR-14; founder D3 = B)                                        |
+| Activar el 2FA por primera vez (o tras un restablecimiento) pide la contraseña | Seguridad / pantalla de 2FA obligatoria   | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-13b)**: suma al bloqueo y avisa por correo                   |
+| Forzar cambio de contraseña en bloque a cuentas heredadas                      | Plataforma → Usuarios → aviso             | Superadmin. Nunca la propia                                                               | **Hecho (USR-14; D3 = B)**: lista para revisar, resultado por cuenta      |
 | Ver invitaciones pendientes y vencidas de toda la red                          | Plataforma → Usuarios → Invitaciones      | Superadmin                                                                                | **Hecho (USR-15)**: reenviar y revocar desde la lista                     |
-| Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | Pendiente (USR-16)                                                        |
-| Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | Pendiente (USR-18)                                                        |
+| Exportar usuarios a CSV                                                        | Plataforma → Usuarios / Equipo            | Superadmin (toda la red); admin del nodo (su equipo). Auditado                            | **Hecho (USR-16)**: lo mismo que la pantalla; pide el 2FA y queda rastro  |
+| Editar el propio nombre                                                        | Mi cuenta → Perfil                        | Cada usuario, sobre sí mismo                                                              | **Hecho (USR-18)**: con historial; sólo la propia cuenta (0069)           |
 
 ## Enviar el enlace y desbloquear (USR-2)
 
@@ -753,7 +759,10 @@ Sin cambios en la base ni en el panel.
 | `membership_suspended` / `membership_reactivated` | Suspender o reactivar su acceso a un nodo, si cambió                | Tu acceso a {nodo} fue suspendido / reactivado · PlaneTour |
 | `account_suspended` / `account_reactivated`       | Suspender o reactivar su cuenta en toda la plataforma, si cambió    | Tu cuenta de PlaneTour fue suspendida / reactivada         |
 | `password_changed`                                | Canjear un enlace de restablecimiento o cambiarla desde Mi cuenta   | Tu contraseña cambió · PlaneTour                           |
-| `membership_removed`                              | Quitarla de un nodo: la plantilla está, la llamada llega con USR-11 | Ya no formas parte de {nodo} · PlaneTour                   |
+| `membership_removed`                              | Quitarla de un nodo (USR-11)                                        | Ya no formas parte de {nodo} · PlaneTour                   |
+| `mfa_enabled`                                     | Activar su 2FA por primera vez o tras un restablecimiento (USR-13b) | Activaste la verificación en dos pasos · PlaneTour         |
+| `mfa_changed`                                     | Cambiar de teléfono (otra app de autenticación) (USR-13b)           | Cambiaste tu app de autenticación · PlaneTour              |
+| `mfa_disabled`                                    | Desactivar su propio 2FA (USR-13b)                                  | Desactivaste la verificación en dos pasos · PlaneTour      |
 
 - Enviarle el enlace y forzar el cambio de contraseña no suman un aviso: el correo del enlace ya lo
   es. Liberar un puesto (Equipo → Puestos) tampoco avisa: es operativo, de todos los días, y el panel
@@ -767,8 +776,9 @@ Sin cambios en la base ni en el panel.
 - `SecurityNoticeService` (`apps/api/src/mail/security-notice.service.ts`, exportado por
   `MailerModule`, global): `notify(kind, { userId, tenantId, nodeName?, role? })`. Lo llaman
   `MemberSupportService` (`resetMfa`, `revokeSessions`, `unlock`), `MemberDetailService.revokeSession`,
-  `AdminController` (`changeRole`, `setMembershipStatus`, `setUserStatus`) y `PasswordResetService`
-  (`reset`, `change`), siempre después del commit: un aviso de algo que se deshizo sería falso. Si la
+  `AdminController` (`changeRole`, `setMembershipStatus`, `removeMembership`, `setUserStatus`),
+  `PasswordResetService` (`reset`, `change`) y `MfaService` (`confirmEnrollment`, `disable`;
+  USR-13b), siempre después del commit: un aviso de algo que se deshizo sería falso. Si la
   transacción falla, no hay aviso.
 - La respuesta al admin no lo espera: el envío queda en `InflightWorkRegistry` (`security-notice`)
   para que un apagado ordenado lo deje salir. `send()` es el envío en sí: devuelve si salió y nunca
@@ -794,9 +804,10 @@ Sin cambios en la base ni en el panel.
 
 - `apps/api/src/mail/security-notices.ts`: en tú, "Hola, {nombre}:" (o "Hola:"), lo que pasó y, al
   final de todas, "Si no lo esperabas, avísale a tu administrador de inmediato.". La contraseña
-  cambiada suma "Si no fuiste tú, elige una nueva desde «Olvidé mi contraseña»…"; restablecer el 2FA
-  cuenta que los códigos de recuperación y los equipos de confianza ya no sirven (sin 2FA no queda
-  un segundo paso que saltar); suspender el acceso a un nodo aclara que los demás no cambian.
+  cambiada suma "Si no fuiste tú, elige una nueva desde «¿Olvidaste tu contraseña?»…" (el texto del
+  enlace de la pantalla de ingreso); restablecer el 2FA cuenta que los códigos de recuperación y los
+  equipos de confianza ya no sirven (sin 2FA no queda un segundo paso que saltar); suspender el
+  acceso a un nodo aclara que los demás no cambian.
 - El rol va con el nombre con que Equipo lo ofrece (_Admin de agencia_, _Manager_, _Vendedor_…) y,
   si exige 2FA, lo dice.
 - Nunca llevan enlaces ni tokens (el pie lo aclara: "no trae enlaces ni te pide datos"): un aviso de
@@ -830,14 +841,16 @@ de otra cuenta ni para golpear a toda la plataforma. Antes de esas acciones se p
 2FA si la sesión no lo pasó en los últimos **10 minutos**; el soporte de todos los días no lo pide.
 Sin cambios en la base: la ventana se mide con `sessions.mfa_verified_at`, que ya existía.
 
-| Acción                                                    | Pide el código                         |
-| --------------------------------------------------------- | -------------------------------------- |
-| Suspender o reactivar una cuenta en toda la plataforma    | Siempre                                |
-| Restablecer el 2FA de otra persona                        | Siempre                                |
-| Forzar el cambio de contraseña                            | Siempre                                |
-| Enviarle el enlace para restablecer la contraseña         | Si tiene un rol de admin en algún nodo |
-| Exportar a CSV y forzar el cambio en bloque (USR-16, -14) | Siempre, cuando existan                |
-| Desbloquear, cerrar sus sesiones, cerrar una sesión       | No                                     |
+| Acción                                                     | Pide el código                         |
+| ---------------------------------------------------------- | -------------------------------------- |
+| Suspender o reactivar una cuenta en toda la plataforma     | Siempre                                |
+| Restablecer el 2FA de otra persona                         | Siempre                                |
+| Forzar el cambio de contraseña                             | Siempre                                |
+| Enviarle el enlace para restablecer la contraseña          | Si tiene un rol de admin en algún nodo |
+| Quitarla de un nodo (USR-11)                               | Si su rol en ese nodo es de admin      |
+| Exportar a CSV (la Actividad, ADM-8; los usuarios, USR-16) | Siempre                                |
+| Forzar el cambio de contraseña en bloque (USR-14)          | Siempre                                |
+| Desbloquear, cerrar sus sesiones, cerrar una sesión        | No                                     |
 
 "Rol de admin" = `ADMIN_ROLES` (de `admin` para arriba, incluidos los de plataforma), en cualquiera
 de sus nodos, no sólo en el de la ruta.
@@ -848,10 +861,12 @@ de sus nodos, no sólo en el de la ruta.
   `@RequireRecentMfa()` (o `@RequireRecentMfa(minutos)`), siempre en el handler; `RecentMfaGuard` es
   el último guard global (después de `MfaEnforcementGuard` y `RolesGuard`) y sólo opina en las rutas
   marcadas. Cuando la exigencia depende de los datos, el servicio llama a `assertRecentMfa()`
-  después de autorizar (así lo hace `MemberSupportService.sendPasswordReset`): a quien no podía
-  hacerlo igual no se le pide el código. Hoy llevan la marca `PATCH /admin/users/status`,
-  `POST /tenants/:id/members/:userId/reset-mfa` y `.../require-password-reset`; un test fija esa
-  lista contra la metadata real de `AppModule`.
+  después de autorizar (así lo hacen `MemberSupportService.sendPasswordReset` y
+  `AdminController.removeMembership`): a quien no podía hacerlo igual no se le pide el código. Hoy
+  llevan la marca `PATCH /admin/users/status`, `POST /tenants/:id/members/:userId/reset-mfa`,
+  `.../require-password-reset`, `GET /admin/audit/export` (ADM-8), `GET /admin/exports/users`,
+  `GET /tenants/:id/members-export` (USR-16) y `POST /admin/legacy-passwords/require-reset` (USR-14);
+  un test fija esa lista contra la metadata real de `AppModule`.
 - Sin el 2FA reciente: **403 `MFA_RECENT_REQUIRED`** ("Confirma con tu código de verificación en
   dos pasos para seguir."). 403 y no 401: la sesión sigue viva. Quien no tiene el 2FA activo (los
   roles que no lo exigen: `agency_admin`, `admin`) recibe **403 `MFA_REQUIRED_FOR_ACTION`** ("Para
@@ -882,7 +897,9 @@ de sus nodos, no sólo en el de la ruta.
   Si se cierra el diálogo devuelve `StepUpCancelled` (`isStepUpCancelled`): la acción no se hizo y
   no hay error que mostrar. Dos acciones a la vez comparten un solo código. La llamada envuelta
   tiene que devolver el `reason` del API en el fallo (`StepUpAware<T>`): hoy `runMemberAction`
-  (todas las acciones de soporte de Equipo y de la ficha) y `setPlatformUserStatus`.
+  (todas las acciones de soporte de Equipo y de la ficha), `removeMembership` (quitar del nodo),
+  `setPlatformUserStatus`, las exportaciones `exportPlatformUsers` y `exportTeam` (USR-16) y cada
+  lote de `requireLegacyResets` (USR-14).
 - `StepUpProvider` (`apps/web-b2b/src/components/step-up-dialog.tsx`), montado una vez en el layout
   del panel: **"Confirma que eres tú"**, "Escribe el código de 6 dígitos de tu app de
   autenticación.", seis casillas (`inputMode="numeric"`, `autocomplete="one-time-code"`); se envía
@@ -934,9 +951,739 @@ de sus nodos, no sólo en el de la ruta.
   enlace a un admin: recibe 403 `MFA_REQUIRED_FOR_ACTION` hasta que active el 2FA en Seguridad. Lo
   demás del soporte (enviar el enlace a un vendedor, desbloquear, cerrar sesiones) sigue igual. El
   superadmin y los roles que exigen el 2FA no cambian, salvo el código cada 10 minutos.
-- **Lo que no cubre**: en una cuenta SIN 2FA, una sesión robada puede activarlo con su propio
-  teléfono (el primer enrolamiento no pide la contraseña) y quedar reconfirmada en el acto. Activarlo
-  así cierra las demás sesiones de la persona (se nota: queda afuera y sin su código), pero no lo
-  impide, y hoy activarlo no manda aviso por correo. Cerrar ese hueco es pedir la contraseña en el
-  primer enrolamiento o exigir el 2FA a los admins de agencia: queda para una decisión aparte.
-  Tampoco lo piden, por D1, suspender en un solo nodo, cambiar un rol ni invitar.
+- **Lo que no cubre**: suspender en un solo nodo, cambiar un rol ni invitar no piden el código, por
+  D1. El hueco de la revisión adversarial (en una cuenta SIN 2FA, una sesión robada lo activaba con
+  su propio teléfono, sin la contraseña, y quedaba reconfirmada en el acto, cerraba las sesiones de
+  la persona y no salía ningún aviso) lo cierra USR-13b: ver abajo.
+
+### Pedir la contraseña al activar el 2FA por primera vez (USR-13b)
+
+Activar el 2FA por primera vez, también después de que un admin lo restableció, pide la contraseña
+de la cuenta, como Google, GitHub o Stripe antes de cambiar un factor de ingreso. Sin ella, una
+sesión robada de una cuenta sin 2FA lo activaba con el teléfono del atacante: la sesión contaba
+como recién verificada para las acciones de alto impacto, las demás sesiones de la persona se
+cerraban y no le llegaba nada. Con ella, hace falta además la contraseña, y la persona se entera
+por correo. Sin cambios en la base.
+
+- **API**: `POST /auth/mfa/confirm` acepta `{ code, currentPassword? }` (`MfaConfirmSchema`).
+  `MfaService.confirmEnrollment` decide con `users.mfa_enabled_at`: si la cuenta no tiene el 2FA
+  activo, la contraseña es obligatoria. Sin ella, **400 `MFA_PASSWORD_REQUIRED`** ("Escribe tu
+  contraseña para activar la verificación en dos pasos."), sin probar ni contar nada. Se prueba
+  antes que el código y como en el login: un `bcrypt.compare` aunque la cuenta no tenga contraseña
+  guardada (contra un hash de relleno, para que el tiempo no lo delate), dentro de `withLockout`
+  (acción `enroll`): el intento se reserva contra el mismo contador de fallos y bloqueo del login
+  antes de verificar, un acierto lo limpia, y cada fallo se audita como `auth.mfa.reauth_failed`.
+  Mala: **400 `MFA_PASSWORD_INVALID`** ("La contraseña no es correcta."); la quinta, o con la cuenta
+  ya bloqueada, **429 `MFA_ACCOUNT_LOCKED`**, que bloquea también el login 15 minutos. Un código con
+  otra forma se rechaza antes de probar la contraseña.
+- El `UPDATE` que activa el secreto exige además que la cuenta siga como se leyó
+  (`(mfa_enabled_at IS NOT NULL) = rotación`): si entre la lectura y la escritura pasó a tener (o
+  dejó de tener) el 2FA, 400 `MFA_CODE_INVALID` y no se activa nada.
+- El paso 1 (`beginEnrollment`) escribe el secreto pendiente con la misma condición: sin 2FA, sólo
+  si la cuenta sigue sin 2FA (si no, 409 `MFA_ALREADY_ENABLED`); al cambiar de teléfono, sólo si lo
+  sigue teniendo (si no, 409 `MFA_NOT_ENABLED`). Sin eso, una sesión robada pedía el paso 1 (que sin
+  2FA no pide nada) mientras la persona confirmaba el suyo: leía la cuenta sin 2FA, escribía después
+  del commit de la persona y dejaba su propio secreto pendiente sobre una cuenta CON 2FA, que el
+  paso 2 activaba como un cambio de teléfono, sin la contraseña ni un código de la app de la
+  persona. Lo reproduce `mfa.integration.test.ts` con la fila tomada por la confirmación.
+- **Aviso**: después del commit, `SecurityNoticeService.notify('mfa_enabled', { userId, tenantId:
+null, at })` con el `mfa_enabled_at` que devolvió el `UPDATE`. Sale por el correo de su membership
+  activa más antigua (`mail-node.ts`, que ahora trae también el país del nodo), sin nombrar ningún
+  nodo: "Activaste la verificación en dos pasos en tu cuenta de PlaneTour el 13 de octubre de 2026 a
+  las 10:42 (GMT-5).", que desde ahora le pediremos el código, que cerramos las sesiones de otros
+  equipos y "Si no fuiste tú, alguien conoce tu contraseña: elige una nueva desde «¿Olvidaste tu
+  contraseña?»… y pídele a tu administrador que restablezca tu verificación en dos pasos.". La hora
+  va en la zona del país de ese nodo (`noticeTime`, `security-notices.ts`; Bogotá si no se conoce) y
+  siempre con su desfase. Auditoría: el `auth.mfa.enabled` de siempre (`rotation: false`).
+- **También avisan** (agregado en la revisión): cambiar de teléfono (`mfa_changed`, "Cambiaste tu
+  app de autenticación", con la hora, que la app anterior, los códigos de recuperación anteriores y
+  los equipos de confianza ya no sirven, y qué hacer si no fue la persona) y desactivar el propio
+  2FA (`mfa_disabled`, "Desactivaste la verificación en dos pasos": que ahora basta la contraseña y
+  cómo volver a activarlo). Piden la contraseña y un código, pero quien tiene las dos cosas deja a
+  la persona afuera de su cuenta o se la deja con la contraseña sola: que se entere.
+- **Lo que no cambia**: cambiar de teléfono (ya tiene 2FA) sigue pidiendo la contraseña y un código
+  de la app actual en el paso 1, y no la vuelve a pedir al confirmar (sí avisa: `mfa_changed`). El
+  login y quien ya tiene el 2FA activo, igual. El paso 1 (`POST /auth/mfa/enroll`) sigue sin pedir
+  nada la primera vez (sólo deja un secreto pendiente que no abre nada), pero ya no escribe si la
+  cuenta cambió desde la lectura (ver arriba). El enrolamiento obligatorio de los roles que lo
+  exigen no se afloja: también pide la contraseña.
+- **Panel**: en el paso 3 de la activación (Seguridad y la pantalla de 2FA obligatoria), "Tu
+  contraseña" va antes del código, con `autocomplete="current-password"` y la ayuda "La misma con la
+  que ingresas. Así confirmamos que eres tú quien activa la verificación." asociada al campo. El
+  sexto dígito sigue enviando solo, pero sólo con la contraseña escrita. Una contraseña mala marca
+  ese campo (`aria-invalid`, el error con `role="alert"` y asociado), le lleva el foco con el texto
+  seleccionado y no borra el código, que no se llegó a usar. Al cambiar de teléfono el paso 3 no la
+  pide (`MfaSetupStep` con `requirePassword` sólo en la primera activación).
+- El historial de la persona muestra `auth.mfa.reauth_failed` como "Verificación fallida dentro de
+  su sesión", con qué intentaba ("Contraseña incorrecta al activar el 2FA", "Al reconfirmar el
+  2FA"…) y si bloqueó la cuenta.
+- **Despliegue**: API y panel juntos (`docker compose up -d` los cambia a la vez). En los segundos
+  con el API nuevo y el panel viejo, la primera activación responde 400 `MFA_PASSWORD_REQUIRED` y el
+  panel viejo lo muestra como código inválido (todo 400 sin un motivo que conozca lo es en ese
+  formulario); quien ya tiene el 2FA no nota nada. El panel nuevo pide la contraseña antes de llamar
+  al API, así que `MFA_PASSWORD_REQUIRED` sólo le llega de un formulario sin el campo (una pestaña
+  de antes del despliegue, o una cuenta que perdió el 2FA a mitad de un cambio de teléfono): lo
+  muestra en el código y pide recargar la página ("Para activar la verificación en dos pasos ahora
+  también te pedimos tu contraseña. Recarga la página e inténtalo de nuevo."). Antes marcaba el
+  campo de la contraseña aunque no estuviera, y el error no se veía.
+- **Tests**: `mfa.service.test.ts` (sin contraseña, 400 sin contar; mala, cuenta y la quinta
+  bloquea sin probar el código; sin contraseña guardada igual corre un bcrypt; código con otra forma
+  antes que la contraseña; buena, limpia el contador, audita y avisa con la hora; la cuenta cambió
+  en el medio, sin aviso; cambiar de teléfono no la pide y avisa `mfa_changed`),
+  `mfa.integration.test.ts` (Postgres, como `app_user`: la sesión robada sin la contraseña no activa
+  nada ni queda reconfirmada y la de la persona sigue abierta; la mala suma al mismo bloqueo del
+  login; la buena activa y el aviso sale por el correo de su nodo con la hora; después de
+  `admin_reset_user_mfa` también la pide; cambiar de teléfono confirma sin ella y avisa; desactivar
+  avisa; el paso 1 que pierde la carrera con la confirmación de la persona no deja su secreto),
+  `security-notices.test.ts`, `security-notice.service.test.ts`, `dto.test.ts`; en el panel
+  `actions.test.ts` (también: sin el campo, pide recargar en el código), `security-errors.test.ts`,
+  `security.render.test.ts` (campo, orden, ayuda, error asociado, en tú) y `audit-format.test.ts`.
+  Los helpers que enrolan en los tests de integración reintentan si el paso TOTP cambia mientras se
+  prueba la contraseña: el bcrypt va antes que el código y, con el paso anterior, ~1 de cada 100
+  enrolamientos caía fuera de la ventana.
+
+## Quitar a una persona de un nodo (USR-11)
+
+Founder D2 = A. Para que alguien dejara de trabajar en un nodo sólo había _Suspender_, y los
+suspendidos se apilaban en Equipo para siempre. Ahora _Quitar de este nodo_ termina la membership
+como baja blanda: la persona sale de Equipo y pierde el acceso a ese nodo en el acto, pero la fila
+queda, así que sus reservas, sus movimientos de cartera y su rastro en la auditoría siguen apuntando
+a ella. Para volver, sólo una invitación nueva.
+
+### Base
+
+- `db/migrations/0067_membership_removed.sql`: el CHECK de `memberships.status` suma `'removed'` (el de
+  0001 no tenía nombre: se busca en `pg_constraint` y se reemplaza por `memberships_status_check`);
+  columnas `removed_at` y `removed_by` (FK a `users`, `ON DELETE SET NULL`), atadas al estado por
+  `memberships_removed_consistent` (`status = 'removed'` si y sólo si hay `removed_at`).
+- Por qué alcanza con un estado más: todo lo que da acceso o potestad mira `status = 'active'` (las
+  RLS y sus funciones, `revoke_user_sessions_for_tenant`, `invitation_backing`, las funciones de
+  0063-0065, `SessionService.validate`, `NetworkService`). Se revisaron todos los predicados de la
+  base y de la API: ninguno usaba `<> 'suspended'`, que habría dejado pasar a un quitado.
+- Lo que miraba memberships sin filtrar el estado ahora descarta las quitadas:
+  `user_admin_overview` (el equipo del subárbol) y `admin_user_security` (sólo le responde a quien
+  administra un nodo donde la persona sigue estando).
+
+### API
+
+- **`POST /admin/memberships/remove` `{ userId, tenantId }`** (Zod estricto, ids en minúsculas):
+  responde `{ id, status: 'removed', revokedSessions, revokedInvitations }`. Las reglas de suspender:
+  nunca uno mismo (403); administrar el nodo (403 "No administras este nodo.") y superar su rol en él
+  (`ROLE_NOT_GRANTABLE`), o ser superadmin; nunca el último admin activo del nodo (403 "…asigna otro
+  antes de quitarlo."; un admin suspendido no cuenta entre los activos, así que quitarlo no pasa por
+  esta guarda). Ya quitada: **409 `MEMBERSHIP_REMOVED`** ("Esta persona ya no forma parte de este
+  nodo: para que vuelva, invítala de nuevo.").
+- **Un rol de plataforma no se quita**: **403 `PLATFORM_ROLE_NOT_REMOVABLE`** ("Un rol de plataforma
+  no se quita de un nodo: ninguna invitación lo devuelve. Si hace falta, suspende su acceso."). La
+  vuelta de una baja es una invitación, y ninguna concede `superadmin` (D7 B, 0025): quitarle la
+  membership de la plataforma a otro superadmin lo dejaba afuera para siempre, salvo una operación
+  manual en la base. Suspenderla sí se deshace. El panel no ofrece el ítem a esos roles.
+- **Las reglas valen con el nodo en fila**: las lecturas de arriba son sin tomar nada, así que dos
+  admins de arriba que quitaban a la vez a los dos últimos admins de un nodo pasaban los dos la
+  guarda y el nodo quedaba sin ninguno; y una membership ascendida a admin entre la lectura y el
+  cambio se quitaba sin el rango, la guarda ni el 2FA de su rol nuevo. Ahora la transacción toma
+  primero `pg_advisory_xact_lock(hashtextextended('node-admins:' || nodo, 0))` (la misma clave para
+  quitar, suspender y cambiar el rol en ese nodo), después la fila, y con la fila tomada vuelve a
+  mirar el rango, el rol de plataforma, el último admin activo (contado dentro de la transacción) y
+  el 2FA. La lectura de afuera sigue: responde antes, sin pedir el código a quien igual no podía.
+  Suspender y degradar a un admin pasan por el mismo candado y el mismo conteo (degradar dice
+  "…asigna otro antes de cambiarle el rol.").
+- **2FA reciente (D1)**: quitar a alguien es el trabajo de todos los días y no lo pide, **salvo que su
+  rol en ese nodo sea de admin** (`ADMIN_ROLES`): sacarle el gobierno del nodo a un admin pesa como
+  enviarle el enlace a uno, y con una sesión robada alcanzaría para ir sacando a los demás admins.
+  `assertRecentMfa()` va después de autorizar y de la guarda del último admin.
+- En una transacción, con la fila tomada (`FOR NO KEY UPDATE`): `status = 'removed'`, `removed_at`,
+  `removed_by`; `revokeForTenant(…, 'membership_removed')` (sus sesiones del subárbol del nodo que no
+  respalda otra membership activa suya, como al suspender: si también trabaja en otra agencia, ahí
+  sigue); `revokeOrphaned` con la causa `membership_removed` (lo que emitió y ya no podría emitir);
+  y el evento **`MembershipRemoved`** (`targetUserId`, `role`, `previousStatus`, `revokedSessions`,
+  `revokedInvitations`). Si algo falla, no queda nada. Después del commit, el aviso
+  `membership_removed` a su correo (USR-12).
+- `GET /admin/memberships/impact?status=removed`: cuántas invitaciones revocaría, simulado en una
+  transacción que se deshace, como para suspender.
+- Una membership quitada no se reactiva ni cambia de rol: `PATCH /admin/memberships/status` y
+  `PATCH /admin/memberships/role` responden 409 `MEMBERSHIP_REMOVED` (también si otro admin la quitó
+  entre la lectura y el cambio: se mira la fila tomada).
+- **Volver**: invitar ya no cuenta como miembro a quien fue quitado (sí a un activo o suspendido: 409
+  "Ese correo ya es miembro de este nodo."). Al aceptar, el alta de la membership es un
+  `ON CONFLICT (tenant_id, user_id) DO UPDATE` sólo sobre una fila `removed`: reactiva la MISMA fila
+  con el rol de la invitación y limpia `removed_at` y `removed_by`; `UserInvitationAccepted` suma
+  `rejoined: true`. Una invitación de alguien que ya tiene una membership vigente en el nodo (una de
+  antes de la regla de invitar) es 409 `ALREADY_MEMBER` y queda pendiente (antes era un 500 por la
+  UNIQUE).
+- Dónde ya no aparece una membership quitada: Equipo (`listTenantUsers`), el selector de agencia
+  (`GET /me/memberships`, ni deshabilitada), la ficha desde ese nodo (404 `MEMBER_NOT_FOUND` si no
+  le queda otra membership en su subárbol), el soporte sobre ese nodo (404), los nodos de cada
+  persona y los filtros por rol o nodo del directorio de la plataforma, y el conteo de usuarios de
+  Gestión de Agencias. Sí sigue en la historia: la Actividad de la red y el historial de la persona
+  la nombran, y sus reservas y movimientos siguen a su nombre.
+
+### Panel
+
+- Equipo → acciones → **Membresía**: después de _Suspender_ / _Reactivar_, en rojo y último,
+  **Quitar de este nodo** (ícono `UserX`), para miembros activos o suspendidos que no tengan un rol
+  de plataforma; también en el menú de su ficha. Primero pregunta el impacto; después la confirmación destructiva **"Quitar a {nombre}
+  de {nodo}"**: "Deja de pertenecer a este nodo y se cierran sus sesiones en él.{ Se revocarán N
+  invitaciones que envió.} Su historial y sus reservas quedan como están. Si después quieres que
+  vuelva, tienes que invitarlo de nuevo." con **Quitar del nodo**. Al salir bien: "Quitamos a
+  {nombre} de {nodo}." (con las invitaciones revocadas, si las hubo), la lista y los puestos se
+  recargan, la ficha (si estaba abierta) se cierra y el foco va al título _Miembros_: la fila desde
+  la que se actuó ya no está. Un error va en su fila (o en la ficha).
+- Si es admin y pasaron más de 10 minutos del 2FA, `removeMembership` (`withStepUp`) abre "Confirma
+  que eres tú" y repite una vez; cerrar el diálogo no hace nada.
+- BFF `POST /api/admin/memberships/remove`: mismo origen, cuerpo reconstruido
+  (`membershipRemovePlan`: sólo el miembro y el nodo), estado y motivo del API en el error.
+  `membershipImpactTarget` admite `status=removed`. La Actividad de la red ya traía la frase "Quitado
+  del nodo"; la revocación de una invitación dice "al quitar del nodo a quien la envió".
+
+### Tests
+
+- `apps/api/src/tenants/admin.controller.test.ts`: el orden (candado del nodo, fila, cambio, sesiones,
+  evento, commit, aviso), quién y cuándo, la causa de las invitaciones y el evento; uno mismo, fuera
+  de la red, sin rango, el último admin, ya quitada (también en una carrera), el 2FA sólo para un
+  admin y después de autorizar, sin aviso si la transacción falla; un rol de plataforma no se quita;
+  con la fila tomada, el último admin contado adentro y el rango y el 2FA de un rol ascendido en el
+  medio (también al suspender y degradar); reactivar, suspender, cambiar el rol o preguntar el
+  impacto de una quitada: 409; el borde Zod.
+- `apps/api/src/tenants/membership-removal.integration.test.ts` (Postgres, todo como `app_user`,
+  también el canje): sale de Equipo, de `user_admin_overview` y de su selector; sus sesiones del nodo
+  se cierran y las de otra agencia siguen; el evento en la transacción (si no entra, no queda nada);
+  las invitaciones que ya no respalda; 409 al reactivarla; la invitación nueva reactiva la misma fila
+  con el rol nuevo; `ALREADY_MEMBER` deja la invitación pendiente; el CHECK; las reglas; la ficha,
+  el soporte y su seguridad dejan de abrirse desde el nodo, y la ficha desde arriba y el conteo de
+  Gestión de Agencias ya no la cuentan en ese nodo; dos admins de arriba que quitan a la vez a los dos
+  últimos admins del nodo (gana uno); un ascenso entre la lectura y la fila; y un superadmin que
+  intenta quitar a otro.
+- `member-detail.service.test.ts` y `platform-users.service.test.ts`: las consultas descartan las
+  quitadas.
+- Panel: `tenant-admin-team.test.ts` (textos, en tú), `tenant-admin-proxy.test.ts`,
+  `tenant-admin-proxy-route.test.ts`, `tenant-admin-seats-client.test.ts` (el reintento con el 2FA),
+  `audit-format.test.ts` y `team.render.test.ts` (dónde va el ítem y a quién se le ofrece).
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero): la API vieja no conoce `'removed'`,
+  pero tampoco lo escribe, y `user_admin_overview` conserva sus columnas.
+- API y panel juntos: el panel viejo no ofrece quitar; si el panel sale antes, la ruta del BFF
+  responde el 404 del API viejo y la fila muestra el error.
+
+## La página de la invitación (USR-17)
+
+`/invitacion` era un formulario ciego: no decía a qué nodo ni con qué rol invitaban, y a quien ya
+tenía cuenta le pedía una "contraseña nueva" que el canje ignoraba en silencio, sumándole la
+membership sin que esa cuenta se autenticara (alcanzaba con el enlace). Ahora la página lee la
+invitación primero y dice **"Te invitaron a {nodo} como {rol}"**, quién la mandó y cuándo vence. Si el
+correo no tiene cuenta, la persona elige su nombre y su contraseña como siempre; si ya la tiene,
+**ingresa con la suya** (contraseña y 2FA si lo tiene) y acepta con un botón, sin elegir otra.
+
+### Base
+
+- `db/migrations/0068_invitation_preview.sql`: `preview_pending_invitation(p_token_hash)`, SECURITY
+  DEFINER y STABLE (sólo lee: mirarla no la gasta), como `find_pending_invitation` y
+  `claim_pending_invitation`. Resuelve como máximo una invitación vigente (ni aceptada, ni revocada,
+  ni vencida) por hash de token: el nombre del nodo, el rol, el nombre de quien invitó (sin espacios;
+  `null` si no tiene), el vencimiento, el id de la invitación y el de la cuenta dueña del correo
+  invitado (CITEXT: sin distinguir mayúsculas). Los ids son para la API; no salen de ella.
+  `REVOKE ALL FROM PUBLIC`, `EXECUTE` a `app_user`.
+
+### API
+
+- **`POST /invitations/preview` `{ token }`** (público, throttle de 20 por minuto por IP, Zod
+  estricto; el token va en el cuerpo para que no quede en los logs de acceso) →
+  `200 { valid: true, tenantName, role, inviterName, expiresAt, existingAccount, viewer }` o
+  `200 { valid: false }`. Neutral: un token que no existe, ya se usó, se revocó o venció, uno con un
+  rol que no se asigna y una invitación que su invitador ya no respalda o cuyo nodo no opera (la
+  misma revalidación del canje, `invitation_backing`) dan exactamente `{ valid: false }`. Nunca salen
+  ids, el correo invitado, el de quien invitó ni nadie más del nodo. `existingAccount` lo sabe igual
+  quien controla ese buzón, que es lo que prueba el token. `viewer` sale de la sesión con que llega el
+  pedido, si llega con una: `anonymous`, `invitee` (la cuenta dueña del correo) u `other`.
+- **`POST /invitations/accept`** queda para crear la cuenta (nombre y contraseña, como antes). Si el
+  correo ya tiene cuenta: **409 `INVITATION_SIGN_IN_REQUIRED`** ("Ya tienes una cuenta con este
+  correo: ingresa con ella para aceptar la invitación."), sin hashear la contraseña y con la
+  invitación pendiente. Sale sólo con un token vigente, así que no es un oráculo de cuentas más allá
+  de lo que la vista previa ya le dice al dueño del buzón. Si otra aceptación crea la misma cuenta en
+  el medio, la UNIQUE del correo sale como el mismo 409 (antes, un 500).
+- **`POST /invitations/join` `{ token }`** (con sesión, sin rol; throttle de 10 por minuto): acepta
+  con la cuenta de la sesión, nunca con una que venga en el cuerpo. En una transacción: canjea con
+  `claim_pending_invitation`, y **antes que nada** comprueba que la cuenta dueña del correo invitado
+  (CITEXT) sea la de la sesión; si no, **403 `INVITATION_ACCOUNT_MISMATCH`** ("Esta invitación es
+  para otra cuenta: ingresa con el correo al que te llegó."), la invitación queda pendiente para su
+  dueño y queda **`UserInvitationAccountMismatch`** (actor = la sesión, payload vacío: ni correos ni
+  ids). Después, la misma revalidación del invitador que el otro canje (400
+  `INVITATION_NO_LONGER_VALID`, con `UserInvitationRejected` y ahora con el actor) y la misma
+  membership: nueva, o la quitada (USR-11) reactivada en la misma fila; vigente, 409
+  `ALREADY_MEMBER`. Token vencido, revocado o usado: 400. `UserInvitationAccepted` suma
+  `existingAccount: true`. El 2FA obligatorio del rol de la cuenta vale como en el resto de la API
+  (`MfaEnforcementGuard`): sin 2FA activo, 403 `MFA_ENROLLMENT_REQUIRED`. Un rol invitado que exige
+  2FA (p. ej. `tenant_admin`) no se le niega a quien todavía no lo tiene: como con una cuenta nueva,
+  se suma y desde el pedido siguiente el API le exige enrolarse (la sesión mira el rol de todas sus
+  memberships activas), y el panel le muestra el enrolamiento antes que cualquier pantalla.
+- El correo de la invitación dice "Acepta la invitación: si ya tienes cuenta, ingresas con tu
+  contraseña de siempre; si no, eliges una."
+- `InvitationsService.accept` y `acceptSignedIn` comparten `redeem` (canje, revalidación, rastro de
+  los rechazos fuera de la transacción deshecha); el servicio de la vista previa es
+  `invitation-preview.service.ts`, con su controller aparte.
+
+### Panel
+
+- `/invitacion` es un Server Component: valida la forma del token (`invitationTokenFrom`), pide la
+  vista previa con la sesión si la hay y elige la pantalla (`invitation-view.ts`, sin I/O):
+  - **inválida** (o enlace sin token): "Esta invitación ya no es válida. Pídele a quien te invitó que
+    te la reenvíe.", sin formulario. Sin servidor, con 429 o con cualquier error que no sea un 400
+    (un 404 del API de antes, mientras se despliega), un aviso con **Reintentar** (no dice que la
+    invitación no vale);
+  - **sin cuenta**: título "Te invitaron a {nodo} como {rol}", "Te invitó {nombre}. La invitación
+    vence en N días." y el formulario de siempre (nombre, contraseña, repetirla) con **Crear cuenta y
+    aceptar**. Si el navegador tiene abierta la sesión de otra cuenta, lo avisa, y al terminar ofrece
+    **Salir e ingresar con tu cuenta nueva** en vez de un login que devolvería a ese panel. Si el API
+    responde `INVITATION_SIGN_IN_REQUIRED` (la cuenta se creó mientras tanto), el botón pasa a ser
+    **Ingresar con mi cuenta**;
+  - **con cuenta y sin sesión**: "Ya tienes una cuenta con este correo. Ingresa con tu contraseña de
+    siempre para aceptar la invitación." y **Ingresar para aceptar**, que va a
+    `/login?next=/invitacion?token=…`. `next` pasa por `safeNextPath` como siempre (sólo rutas del
+    panel): no hay redirect abierto. El login muestra "Ingresa con la cuenta del correo al que te
+    llegó la invitación…" y, al entrar (con el 2FA si lo tiene), vuelve a la invitación. Si el
+    navegador trae una cookie de sesión que el API ya no acepta, el enlace pasa por
+    `/api/session/end?motivo=expirada&next=…`, que la borra: si no, el middleware devolvía del login a
+    la invitación;
+  - **con la sesión de la cuenta invitada**: "Acepta para sumar {nodo} a tus agencias." y un solo
+    botón, **Aceptar invitación** (`POST /invitations/join`). Al aceptar: "Ya formas parte de {nodo}"
+    con **Ir al panel** (se elige en el selector de agencia). Los rechazos se leen por estado y motivo:
+    otra cuenta → **Salir e ingresar con la cuenta invitada**; sesión que ya no sirve (401) →
+    **Ingresar de nuevo** por `/api/session/end` con su motivo y la vuelta; ya es miembro, sin 2FA,
+    vencida o revocada, cada una con su mensaje;
+  - **con la sesión de otra cuenta**: "Esta invitación es para otra cuenta. Sal de esta sesión e
+    ingresa con el correo al que te llegó." y **Salir e ingresar con la cuenta invitada**
+    (`switchAccountAction`: revoca la sesión en el API, borra las cookies y va al login que vuelve a
+    la invitación).
+- Nadie con cuenta ve un campo de contraseña en `/invitacion`.
+- La Actividad de la red y el historial nombran el intento de otra cuenta: "Invitación rechazada
+  (otra cuenta intentó aceptarla)".
+
+### Tests
+
+- `apps/api/src/tenants/invitation-preview.service.test.ts`: la forma de la respuesta sin ids, que se
+  busca por el hash del token y sólo lee, `viewer` en los tres casos, la respuesta neutral para cada
+  motivo (sin fila, rol no asignable, sin respaldo, invitador inexistente, suspendido o sin rango,
+  nodo que no opera); el controller público con su throttle, el borde Zod; `join` con sesión, 401 sin
+  ella y la cuenta siempre de la sesión.
+- `apps/api/src/tenants/invitations.service.test.ts`: `accept` con cuenta existente (409 sin hashear
+  ni escribir), la carrera de la UNIQUE del correo; `acceptSignedIn` con la cuenta dueña, con otra
+  (403 antes de revalidar al invitador, sin escribir, auditado sin correos) y sin cuenta.
+- `apps/api/src/tenants/invitation-preview.integration.test.ts` (Postgres, todo como `app_user`): la
+  vista previa (nodo, rol, nombre de quien invitó, vencimiento, sin ids ni correos, no gasta la
+  invitación), con cuenta y la sesión invitada u otra, sin nombre de invitador, neutral para
+  inexistente, vencida, revocada, usada y sin respaldo; el formulario de cuenta nueva con una cuenta
+  existente (409, pendiente, contraseña intacta); aceptar con la sesión (membership, evento, token
+  gastado); correo con otras mayúsculas; otra cuenta (403, pendiente, auditado, y la dueña acepta
+  después); vencida, revocada o usada (400, sin membership); invitador sin respaldo (400 con rastro
+  y actor); una membership quitada que vuelve en la misma fila; y las carreras de verdad: dos
+  invitaciones al mismo correo aceptadas a la vez (una cuenta con la contraseña de quien ganó, la otra
+  409 y pendiente, que después se acepta con la sesión) y el mismo enlace aceptado dos veces a la vez
+  con la sesión (los dos esperan en la fila de la invitación: uno acepta, el otro 400).
+- `onboarding-invitation.integration.test.ts` y `membership-removal.integration.test.ts`: quien ya
+  tenía cuenta acepta con `acceptSignedIn`; por el formulario de cuenta nueva, 409.
+- Web: `invitation-view.test.ts` (token, vista previa, qué pantalla, vuelta por el login que pasa
+  `safeNextPath`, la cookie muerta, los rechazos de `join`, textos en tú),
+  `invitation-screen.render.test.ts` (cada pantalla, qué viaja en cada formulario y que nadie con
+  cuenta ve una contraseña), `actions.test.ts`, `errors.test.ts` y `audit-format.test.ts`.
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero). La API vieja no usa la función.
+- API y panel juntos: con el panel viejo y la API nueva, quien ya tiene cuenta y llena el formulario
+  ve el mensaje del 409 ("Ya tienes una cuenta…"); con el panel nuevo y la API vieja, la vista previa
+  responde 404 y la página muestra "No pudimos conectar con el servidor" con **Reintentar**: sólo un
+  400 dice que la invitación no vale, para no hacer pedir un reenvío (que deja sin efecto el enlace)
+  por un despliegue a medias.
+- Si alguien con cuenta olvidó su contraseña, el login ofrece restablecerla; después tiene que volver
+  a abrir el enlace de la invitación (el restablecimiento no conserva la vuelta).
+
+## Editar tu nombre (USR-18)
+
+Hasta ahora nadie podía corregir su nombre: sólo existía `GET /me`, y el nombre quedaba como se
+escribió al aceptar la invitación. Ahora cada persona lo cambia desde **Mi cuenta → Perfil**, sólo el
+suyo. El correo se muestra y no se cambia: eso espera un flujo que verifique el buzón nuevo.
+
+### Base
+
+- `db/migrations/0069_users_name_self_only.sql`: `users` no tiene RLS (identidad global: el login la
+  lee por correo sin contexto) y `app_user` puede actualizar cualquier fila, así que la regla va en un
+  trigger, como 0025 y 0055: **`users_name_self_only`**, `BEFORE UPDATE OF name`, sólo cuando el valor
+  cambia. Si quien ejecuta no se salta la RLS (`app_user`), la fila tiene que ser la de
+  `app.current_user_id`; sin contexto, con uno que no es un UUID o con el de otra cuenta, **42501
+  `users_name_self_only`**. Un UPDATE de varias filas que incluye la propia falla entero. El resto de
+  las columnas de `users` (bloqueo, 2FA, contraseña, suspensión) las siguen tocando el login y el
+  soporte de un admin sobre otra cuenta, como antes. Migraciones y la consola del operador (roles que
+  se saltan la RLS) no se frenan. `app_user` no puede apagar el trigger (no es dueño de la tabla ni
+  puede cambiar `session_replication_role`).
+- La base no valida la forma del nombre: las cuentas ya creadas pueden tener nombres que hoy no
+  pasarían, y un CHECK las dejaría sin poder tocarse. Esa regla es del borde del API.
+
+### API
+
+- **`PATCH /me` `{ name }`** (con sesión, cualquier rol, con el 2FA obligatorio de siempre; tope de 10
+  por minuto por IP) → `200 { name }`, el nombre como quedó guardado. La cuenta es siempre la de la
+  sesión (`CurrentUser`): la ruta no lleva id y el cuerpo es estricto, así que un `email` o un
+  `userId` es **400** "Desde tu perfil sólo puedes cambiar tu nombre.", no algo que se ignora.
+- El nombre pasa por **`PersonNameSchema`** (`packages/validation/src/person-name.ts`; desde la revisión
+  de USR-18 también lo usa el canje de la invitación, `AcceptInvitationSchema`): NFC; cualquier espacio de Unicode, tabulador o
+  salto de línea seguidos pasan a un solo espacio; sin espacios en los bordes; de 1 a 120 (el tope del
+  canje de la invitación, en unidades UTF-16, contado después de normalizar); **sin caracteres de
+  control ni de formato** (los de dirección como U+202E, los de ancho cero, el guion blando), ni
+  sustitutos sueltos, uso privado o sin asignar (todo `\p{C}`), ni los rellenos que se pintan vacíos
+  (Hangul U+115F, U+1160, U+3164, U+FFA0 y el braille en blanco U+2800); y con al menos una letra. Lo
+  que no pasa se rechaza, no se limpia en silencio. Los mensajes van en tú ("Escribe tu nombre.", "Tu
+  nombre tiene caracteres invisibles o de control. Escríbelo de nuevo a mano.").
+- `ProfileService.updateName` corre con la cuenta en el contexto (`withRequestContext`, lo exige el
+  trigger), toma la fila `FOR NO KEY UPDATE` (como el resto de las escrituras sobre `users`: `FOR
+UPDATE` frenaba las inserciones que apuntan a la cuenta) y, si el nombre cambia, lo escribe y deja **`UserProfileUpdated`**
+  en la misma transacción (si el evento no entra, el cambio tampoco): actor y agregado = la cuenta,
+  payload `{ changed: ['name'], before: { name }, after: { name } }`, la forma de `tenant.updated`. Es
+  el nombre de la propia persona, el mismo que su equipo ya ve, y deja ver en el historial que alguien
+  se puso el nombre de otro. Con el mismo nombre no escribe ni audita.
+
+### Panel
+
+- **Mi cuenta → Perfil** (`/configuracion/perfil`), antes de Seguridad en el menú y en ⌘K, para
+  cualquier rol. Una tarjeta "Datos de tu cuenta" con **Tu nombre** (campo con etiqueta, ayuda "Es el
+  que ven tu equipo y las personas a las que invitas.", obligatorio) y **Tu correo** sólo para leer,
+  con "Para cambiar tu correo, pídeselo al equipo de soporte." (sin la marca de la plataforma: el
+  panel es white-label). Botón **Guardar**; al terminar, el toast "Guardamos tu nombre.".
+- El panel valida con las mismas reglas antes de llamar (`lib/person-name.ts`, espejo del esquema:
+  su test lee las declaraciones de `packages/validation` como texto y falla si se apartan); el error sale bajo el campo (`role="alert"`,
+  `aria-invalid`, `aria-describedby`) y el foco vuelve al campo. Se envía desde `onSubmit` y no con
+  `<form action>`, para que un error no borre lo escrito (como Seguridad). Un 400 del API muestra el
+  mensaje del campo si es uno conocido; 429, "Hiciste muchos cambios seguidos…"; sin sesión, al login
+  con el motivo y la vuelta al perfil.
+- Dónde se ve el nombre y por qué queda al día: la barra de arriba ahora muestra **el nombre** (con el
+  correo debajo en el menú, que suma **Tu perfil**; sin nombre, el correo como antes) y lo lee de
+  `GET /me` en cada render del layout; la acción revalida desde el layout, así que cambia al guardar.
+  Equipo, la ficha, el directorio de la plataforma y la vista previa de la invitación ("Te invitó…")
+  piden el nombre al API cada vez, y el saludo de los avisos por correo lo lee al enviarse (sin
+  controles en el texto y escapado en el HTML, USR-12). El correo de la invitación no lleva el nombre
+  de quien invita, y el remitente de los correos es el de la plataforma o el nodo. El historial y la
+  Actividad de la red nombran a las personas por correo, no por nombre; el cambio sale como **"Cambió
+  su nombre · de «Ana Ruiz» a «Ana María Ruiz»"** (filtro Usuarios). El nombre se pinta siempre como
+  texto.
+
+### Tests
+
+- `apps/api/src/me/me.dto.test.ts`: el esquema (recorte, espacios, NFC, alfabetos, tope de 120
+  después de normalizar, controles, los de dirección, invisibles y rellenos, sustituto suelto, al
+  menos una letra) y el cuerpo estricto.
+- `me.controller.test.ts`: `PATCH /me` sin id, con sesión, sin exención del 2FA ni roles, con su
+  tope; la cuenta de la sesión; 401 sin ella; el borde Zod (normaliza, 400 con `email` o `userId`,
+  400 en `name` con un control de dirección).
+- `profile.service.test.ts`: contexto de la sesión, `FOR NO KEY UPDATE`, el UPDATE por id, el evento con el
+  antes y el después (también desde `null`), nada con el mismo nombre, 401 sin cuenta, y que un evento
+  que no entra hace fallar el cambio.
+- `profile.integration.test.ts` (Postgres, todo como `app_user`): cambia sólo la propia cuenta y deja
+  el evento; el mismo nombre no escribe; el trigger rechaza el nombre de otra cuenta, sin contexto,
+  con uno que no es un UUID y en un UPDATE de varias filas; el propio sí; las demás columnas de otra
+  cuenta sí; `app_user` no puede apagar el trigger; el superusuario cambia cualquiera.
+- `apps/api/src/tenants/dto.test.ts`: el canje de la invitación normaliza y rechaza el nombre como el
+  perfil, y el 400 de `ZodValidationPipe` nombra `name: <mensaje>` (lo que lee el panel).
+- Web: `lib/person-name.test.ts` (los mismos casos que el API y la paridad, declaración por
+  declaración, con `packages/validation`), `invitacion/actions.test.ts` y `invitacion/errors.test.ts`
+  (el nombre del canje con las mismas reglas y su 400 con el mensaje del campo), `perfil/actions.test.ts` (qué viaja,
+  la revalidación del layout, que un nombre inválido no llega al API, cada error, el 401 al login),
+  `perfil/profile.render.test.ts` (etiqueta, ayuda y campo enlazados, el correo para leer, un botón,
+  el nombre como texto, sin `GET /me`, en tú), `components/layout/account-display.test.ts`,
+  `lib/command-menu.test.ts` (Perfil antes que Seguridad) y `lib/audit-format.test.ts`.
+
+### Despliegue
+
+- La migración va antes que la API (deploy.yml migra primero). La API vieja no cambia nombres, así
+  que el trigger no la afecta.
+- Con el panel nuevo y la API vieja, `PATCH /me` responde 404 y el formulario dice "No pudimos guardar
+  tu nombre. Inténtalo de nuevo.".
+- El canje de la invitación (`POST /invitations/accept`) valida el nombre con `PersonNameSchema` y lo
+  guarda normalizado. El panel nuevo lo valida antes y, si el API lo rechaza, muestra el mensaje del
+  nombre (lo lee del resumen del 400, `app/invitacion/errors.ts`). Con el panel viejo y la API nueva,
+  un nombre que la API rechaza (controles, invisibles, sin letras) sale como "enlace usado o vencido":
+  raro y sólo mientras dura el despliegue. Las cuentas creadas antes pueden tener nombres que hoy no
+  pasarían; se ven como antes y su dueño los corrige desde Perfil.
+
+## Exportar la lista de usuarios a CSV (USR-16)
+
+Para las revisiones de cumplimiento y de puestos: el superadmin baja el directorio de la plataforma
+con los filtros que tiene puestos, y quien administra un nodo baja su equipo. Lo que sale es lo que la
+pantalla muestra, nada más, y cada exportación queda en la auditoría.
+
+### Base
+
+- Sin migración. El directorio y Equipo ya tenían todo lo que el archivo lleva.
+
+### API
+
+- **`GET /admin/exports/users?<los filtros del directorio>`**: sólo el superadmin (la misma puerta que
+  `GET /admin/users`: `@Roles(AGENCY_ADMIN_ROLES)` y `NetworkService.isSuperadmin`; si no, 403
+  `SUPERADMIN_REQUIRED`). `PlatformUsersExportQuerySchema` es `ListPlatformUsersQuerySchema` sin
+  `cursor` ni `limit` y sigue estricto: un `cursor` es 400, no una página que se ignora.
+- **`GET /tenants/:id/members-export`**: quien administra el nodo (`canManageTenant`, como Equipo: su
+  nodo o un descendiente; el superadmin, cualquiera); si no, 403 `TENANT_NOT_MANAGED`. Es el equipo
+  entero del nodo, como lo trae la lista de Equipo antes de sus filtros (que corren en el navegador).
+- Las rutas no terminan en `.csv` (un borde que guarda en caché por extensión no se queda con una
+  lista de personas) ni cuelgan de `/admin/users/:userId` o `/tenants/:id/members/:userId`, que son
+  la ficha de una persona. Las dos piden el **2FA de los últimos 10 minutos** (`@RequireRecentMfa`,
+  están en la lista del test del guard) y como mucho **5 por minuto** (`@Throttle`, 429). Responden
+  `text/csv; charset=utf-8`, `Cache-Control: no-store`, `Content-Disposition` con
+  `usuarios-AAAA-MM-DD.csv` o `equipo-<slug del nodo>-AAAA-MM-DD.csv` (el día de Bogotá) y las
+  cabeceras `X-Export-Users` (personas), `X-Export-Rows` (filas) y `X-Export-Truncated`.
+- **Lo mismo que la pantalla**: las personas salen de la MISMA consulta, no de una copia.
+  `directoryQuery` (el directorio) acepta el tope como parámetro y la exportación la usa sin cursor;
+  los nodos de cada persona salen de `directoryMemberships`, que ahora usa también la lista (los ids
+  van en un solo arreglo, `= ANY`). El equipo sale de `readTenantUsers` (`network.service.ts`), que
+  usa `listTenantUsers`. En los dos, sin los nodos de los que se quitó a alguien (USR-11): una persona
+  cuyo único nodo se quitó sale en el directorio con "Sin nodos", como en pantalla.
+- **Tope**: 10.000 personas por archivo (`USER_EXPORT_MAX_USERS`); se pide una de más para saber si
+  había más. El directorio se corta en las altas más recientes (su orden); Equipo, en las primeras en
+  sumarse al nodo. El panel lo dice al terminar.
+- **Columnas** (una fila por persona y nodo): `Correo`, `Nombre`, `Nodo`, `Rol` (el nombre que ve la
+  persona, `roleName` de `security-notices.ts`), `Estado en el nodo` (Activo/Suspendido),
+  `Estado de la cuenta` (Activa/Suspendida), `2FA` (Sí/No), `Último ingreso (hora de Bogotá UTC-5)` y
+  `Alta de la cuenta (…)` en el directorio o `Alta en el nodo (…)` en Equipo (su columna Alta). Las
+  fechas van `AAAA-MM-DD HH:MM` en hora de Bogotá y la zona en el encabezado. Nunca IPs, hashes,
+  secretos del 2FA, tokens, sesiones ni bloqueos. Una membership vieja en estado `invited` (lo admite
+  el esquema original, 0001) sale "Invitado", como en Equipo. Las invitaciones sin aceptar no salen:
+  no son cuentas todavía (están en Plataforma → Usuarios → Invitaciones y en la lista de Equipo).
+- **El archivo**: lo escribe `apps/api/src/admin-console/csv.ts` (el de la Actividad, ADM-8): UTF-8
+  con BOM, CRLF, comillas cuando hacen falta (también con `;` y tabulación) y un apóstrofo delante de
+  una celda que empieza con `=`, `+`, `-`, `@`, tabulación o retorno de carro (CSV injection).
+- **El rastro**: `users.exported` con `{ scope: 'platform' | 'node', filters, users, rows, truncated }`,
+  en la raíz `platform` (el directorio, como ADM-8) o en el nodo (Equipo: lo ve su Actividad de la red,
+  filtro Usuarios). Va con `emitWithin` en la MISMA transacción que leyó las filas: si no se escribe,
+  la transacción se deshace y no sale el archivo. Nunca lleva correos: la búsqueda queda sólo como
+  `search: true` (puede ser un correo); los demás filtros, como se aplicaron.
+
+### Panel
+
+- **Plataforma → Usuarios**: **Exportar CSV** en el encabezado (sólo en la pestaña Usuarios), con la
+  nota "Se exportan hasta 10.000 personas con estos filtros, una fila por cada nodo." enlazada con
+  `aria-describedby`. Exporta con la consulta de la lista que se ve (la búsqueda ya esperada y los
+  filtros), sin paginar. Mientras exporta el botón espera ("Exportando…").
+- **Equipo**: **Exportar equipo** al final de la barra de filtros (`member-filters.tsx`), con la
+  descripción "Descarga un CSV con todo el equipo de este nodo, sin los filtros." (como `title` y para
+  el lector de pantalla): los filtros de Equipo corren en el navegador y el archivo es el equipo
+  entero.
+- `apps/web-b2b/src/lib/user-export.ts`: `exportPlatformUsers` y `exportTeam`, envueltas en
+  `withStepUp` (si pasaron 10 minutos, el diálogo del código y un reintento; si se cierra, no pasa
+  nada), y los textos: "Exportamos 12 personas.", "Exportamos el equipo: 3 personas.", el tope ("…las
+  altas más recientes. Acota los filtros para ver el resto."), 429 ("Exportaste varias veces
+  seguidas…") y los 403 con el motivo del API. El archivo se guarda con `saveFile` (el de ADM-8).
+- BFF: `GET /api/admin/exports/users` (`platformUsersExportTarget`: los parámetros del directorio
+  rearmados uno por uno; `cursor`, `limit` o uno desconocido o repetido es 400) y
+  `GET /api/tenants/[tenantId]/members-export` (`teamExportTarget`: sólo un UUID). Las dos por
+  `forwardUsersExport` (`lib/csv-export-route.ts`): sólo desde el panel (mismo origen, si no 403), el
+  CSV en bytes con `no-store` y las cabeceras de la exportación; los errores con el estado y el
+  `reason` del API (así `withStepUp` ve el `MFA_RECENT_REQUIRED`).
+- La Actividad dice **"Exportó la lista de usuarios · Toda la plataforma · 1.234 personas"** (o "El
+  equipo del nodo", y "(hasta el tope)" si se cortó). `platform-audit.test.ts` lee
+  `USERS_EXPORTED_EVENT` del API y falla si no tiene nombre legible.
+
+### Tests
+
+- `apps/api/src/tenants/user-export.service.test.ts`: encabezados con la zona, fechas de Bogotá
+  (también cuando en UTC ya es otro día), nombre del archivo y slug limpio, una fila por persona y
+  nodo, "Sin nodos", nombres de rol y estados, que no sale nada sensible, CSV injection (`=`, `+`, `-`,
+  `@`, tabulación, retorno de carro; comillas, comas, `;` y saltos de línea), que la consulta de
+  personas es la del directorio con los mismos filtros (mismo SQL y parámetros salvo el tope), el
+  tope en los dos alcances (una persona de más se corta y lo dice; justo el tope, no), el rastro
+  después de leer y sin correos, y que un rastro que falla no deja salir el archivo.
+- `user-export.controller.test.ts`: rutas, roles, el 2FA de 10 minutos en las dos (y sin 2FA activo,
+  `MFA_REQUIRED_FOR_ACTION`), el 429 a la sexta en el minuto con el guard de la app, 403 sin leer nada
+  (no superadmin, nodo ajeno), 401 y las cabeceras.
+- `user-export.integration.test.ts` (Postgres, como `app_user`): para cada filtro del directorio, las
+  mismas personas en el mismo orden y con los mismos nodos que `PlatformUsersService.list`; sin los
+  nodos quitados; el equipo igual a `listTenantUsers`; 403 sin rastro para quien no es superadmin y
+  para un nodo fuera del subárbol; nombres y nodos hostiles neutralizados; el rastro con su payload;
+  un rastro que falla deshace todo; y el 2FA con el reloj de la base (código de hace 30 minutos, se
+  pide; de hace 2, pasa).
+- `recent-mfa.guard.test.ts`: la lista de rutas marcadas suma las dos.
+- Web: `lib/user-export.test.ts` (la consulta, el reintento con el código, cancelar, los mensajes y el
+  nombre del archivo, en tú), `app/api/admin/exports/users/users-export.route.test.ts` (las dos rutas
+  del panel y sus targets), `audit-format.test.ts`, `platform-audit.test.ts`,
+  `platform-users.render.test.ts` y `team.render.test.ts` (los botones, su descripción y la espera).
+
+### Despliegue
+
+- Sin migración. API y panel van juntos: con el panel nuevo y la API vieja, exportar responde 404 y
+  el aviso dice "No pudimos exportar la lista. Inténtalo de nuevo en unos segundos.".
+- Quien exporta necesita el 2FA activo: un `agency_admin` o un `admin` sin 2FA (esos roles no lo
+  exigen) recibe 403 `MFA_REQUIRED_FOR_ACTION` hasta activarlo en Seguridad.
+- Como en la Actividad (ADM-8), el 2FA se pide antes de saber si quien pide puede: un admin que
+  intenta exportar un nodo ajeno escribe el código y después recibe el 403. El panel sólo le ofrece
+  los nodos de su red.
+
+## Forzar el cambio de contraseña a las cuentas heredadas (USR-14)
+
+Founder D3 = B. Hasta el alta sólo por invitación (2026-09-30, doc 14), `POST /admin/users` con un
+correo nuevo y `POST /admin/tenants` con `adminPassword` creaban la cuenta con la contraseña que
+escribía el admin, y esas cuentas la conservan hasta que la persona la cambie. Ahora el superadmin
+las ve en una lista, elige cuáles y les fuerza el cambio en una sola acción: a cada una le pasa lo
+mismo que con _Forzar cambio de contraseña_ de Equipo (USR-3), y nadie elige la contraseña por ella.
+
+### Base
+
+- Sin migración. El criterio sale de columnas que ya existían.
+
+### El criterio: qué es una cuenta heredada
+
+Sale de los datos, no de los eventos. Una cuenta aparece si:
+
+1. **Nació con una membership que le dio otra cuenta, en la misma transacción**: una membership con
+   `invited_by` no nulo y distinto de ella y `memberships.created_at = users.created_at` (`now()` es
+   el inicio de la transacción, así que son el mismo instante). Sólo los dos caminos retirados
+   hacían eso. Aceptar una invitación (desde 1e09bd6), el alta pública y los seeds
+   (`seed-superadmin`, `seed-tbo-cert-tenant`) nunca ponen `invited_by` en la membership, y vincular
+   una cuenta que ya existía (`existingUserLinked`) crea la membership en otra transacción.
+2. **Conserva la contraseña con que nació**: `password_hash` no nulo y `password_changed_at` nulo. El
+   canje de un enlace y Mi cuenta → Seguridad lo fijan; antes de 0026 no había ninguna forma de
+   cambiarla (0026 agregó la columna sin rellenarla).
+3. **Está activa y sin un cambio forzado pendiente** (`status = 'active'`,
+   `password_reset_required_at` nulo), y no es quien mira.
+4. **Nació antes del tope** `LEGACY_CREATED_BEFORE` (2026-10-14 00:00 UTC). Los caminos retirados
+   salieron de producción el 2026-09-30; el tope va dos semanas después para no perder ninguna aunque
+   ese despliegue se hubiera demorado. Es una red de seguridad: la cuenta de quien acepta una
+   invitación nace en la misma transacción que su membership, así que si algún día el canje anota
+   `invited_by` en ella, sin el tope cada cuenta nueva pasaría a ser "heredada" y el panel ofrecería
+   forzarle el cambio (todas elegidas) a gente que eligió su propia contraseña. El test de
+   integración lo prueba con el canje de verdad y con `invited_by` puesto a mano.
+
+La membership de origen cuenta aunque hoy esté quitada (USR-11) o suspendida: quien perdió todos sus
+accesos sigue en la lista con "Sin accesos activos", porque si vuelve con una invitación acepta
+ingresando con la contraseña que eligió el admin.
+
+Los eventos dicen lo mismo, pero no alcanzan: `UserCreated` existe desde 2026-08-06 y `TenantCreated`
+con `admin: 'created'` desde 2026-09-28, y los dos caminos existen desde 2026-05-05. El test de
+integración siembra cuentas con y sin evento.
+
+**Lo que no se reconoce** (falsos negativos): una cuenta cuyo admin creador ya no existe
+(`invited_by` pasa a `NULL` al borrarlo) o cuya membership original se borró con su nodo. Esas se
+fuerzan de a una desde Equipo (USR-3). No hay falsos positivos conocidos. Igual la lista dice dónde
+nació cada cuenta y quién eligió la contraseña, para que el superadmin la revise antes de forzar.
+
+### API
+
+- **`GET /admin/legacy-passwords`** → `{ users, truncated }`: cada cuenta con `id`, `email`, `name`,
+  `createdAt`, `lastLoginAt`, `activeNodes` (sus accesos activos hoy; con cero igual aparece, porque
+  puede volver con una invitación y su contraseña de siempre) y `origin`
+  (`{ tenantId, tenantName, createdByEmail }`; `createdByEmail` es `null` si esa cuenta ya no
+  existe). Las más recientes primero, hasta 500 (`truncated` si había más). No pide el 2FA: sólo lee.
+- **`POST /admin/legacy-passwords/require-reset`** `{ userIds }` (Zod estricto: de 1 a 50 UUID, en
+  minúsculas; uno repetido cuenta una vez) → `200 { results, counts }`. Pide el **2FA de los últimos
+  10 minutos** (`@RequireRecentMfa`, en la lista del test del guard) y como mucho **12 lotes por
+  minuto** (`@Throttle`, 429): los 10 de una lista llena (500 / 50) y dos de margen, porque el
+  pedido que frena el 2FA (y el panel repite tras el código) también suma; con 10 justos, el último
+  lote de una lista llena salía 429.
+  - Primero los cambios, uno por cuenta y cada uno en su transacción: toma la fila del usuario
+    (`FOR NO KEY UPDATE`, el mismo orden usuario → enlaces de USR-3), vuelve a mirar el criterio
+    (la lista pudo quedar vieja, y un id que no está en la lista no se fuerza: `not_candidate`) y
+    `PasswordResetService.requireReset` la marca, cierra todas sus sesiones, deja sin efecto sus
+    enlaces y emite uno nuevo. Una cuenta que falla queda `failed` (su transacción se deshace y no
+    se le escribe) y no frena a las demás. Dos lotes a la vez sobre la misma cuenta se ordenan en
+    esa fila: el segundo la ve con el cambio pendiente y la omite (`already_required`).
+  - Después los correos, hasta 5 a la vez, por el correo de su nodo activo más antiguo (el mismo que
+    usan los avisos de USR-12, `mail/mail-node.ts`) o, sin accesos activos, por el del sistema
+    ("Tu cuenta en la plataforma…"), con la variante nueva `legacy`: "Tu cuenta en {nodo} se creó
+    con una contraseña que eligió un administrador. Para que sólo tú la conozcas, elige una
+    nueva…". Sale después del commit. Si no sale, `email_failed`: el cambio igual quedó y al
+    intentar ingresar le llega otro enlace (USR-3).
+  - Cada resultado: `sent` o `email_failed` (con `revokedSessions`), `skipped` con `reason`
+    (`self`, `suspended`, `already_required`, `password_changed`, `not_candidate`) o `failed`.
+    `counts = { sent, emailFailed, skipped, failed }`.
+  - Lotes de 50 porque cada correo se espera para decir si salió, y un pedido largo lo corta el
+    borde (Cloudflare, 100 s). El panel parte una selección más grande.
+- **Idempotente**: quien ya tiene el cambio pendiente deja de ser candidato. Volver a correr el lote
+  lo omite (`already_required`) sin escribirle otra vez ni tocar su enlace.
+- **Sólo el superadmin**, en el servicio (`LegacyPasswordsService`) antes de leer nada: 403
+  `SUPERADMIN_REQUIRED` a cualquier otro. Como en las exportaciones, el 2FA se pide antes: un admin
+  de nodo con 2FA viejo escribe el código y después recibe el 403. El panel no le ofrece la acción.
+- **El rastro**: cada cuenta deja `auth.password_reset.required_by_admin` en su transacción, en su
+  nodo (lo ve la Actividad de ese nodo y el historial de la persona; sin accesos activos, en el nodo
+  donde nació, para que no quede en un evento sin nodo que ninguna Actividad muestra), con
+  `{ targetUserId, revokedSessions, bulk: true, batchId }`. Un correo que no sale deja
+  `auth.password_reset.email_failed` (`{ targetUserId, via: 'legacy', batchId }`). Al final, el
+  lote deja `auth.password_reset.required_bulk` en la raíz `platform`, con
+  `{ batchId, requested, sent, emailFailed, skipped, failed }`: nunca correos. Si ese último no se
+  escribe, se avisa en el log y la respuesta sale igual (los cambios ya están hechos y auditados).
+- El log nunca lleva el correo ni el mensaje de la base: el id de la cuenta, el lote y la clase del
+  error.
+
+### Panel
+
+- **Plataforma → Usuarios**, pestaña _Usuarios_: si hay cuentas, el aviso "Hay {n} cuentas con una
+  contraseña que eligió un admin antes del alta por invitación." ("Hay más de 500…" si la lista se
+  cortó) con **Revisarlas**. Si la lista no carga, no hay aviso: el directorio sigue igual.
+- **El diálogo** "Contraseñas elegidas por un admin": por qué están ahí, y una casilla por cuenta,
+  todas elegidas al abrir, con **Seleccionar todas** (mixta si hay algunas) y "{k} de {n} elegidas".
+  Cada fila: nombre y correo, "Creada por {admin} en {nodo} · {fecha}" (o "Creada en {nodo}" si el
+  admin ya no existe), "Último ingreso: …" o "Nunca ingresó" y sus nodos activos. La fila entera es
+  la etiqueta de su casilla.
+- **Forzar el cambio a {k} cuentas** (destructivo) confirma "Forzar el cambio de contraseña a {k}
+  cuentas" / "Se cierran sus sesiones y cada persona recibe un enlace para elegir una contraseña
+  nueva. No pueden ingresar hasta hacerlo.". Si el 2FA no es de los últimos 10 minutos, el diálogo
+  del código (`withStepUp`); cerrarlo no hace nada.
+- **En lotes de 50**, uno después del otro (`requireLegacyResets`, `lib/legacy-passwords.ts`); el
+  botón dice "Forzando el cambio… {x} de {k}" y el diálogo no se cierra mientras corre. Si el API
+  rechaza el primer lote, no se hizo nada y el error queda arriba de la lista. Si un lote no tiene
+  respuesta (sin conexión, 5xx o el corte del borde a los 100 s; también el primero, porque el
+  servidor sigue aunque el borde corte), la corrida se detiene y las cuentas de ese lote quedan
+  **Sin confirmar** (el resumen dice cuántas, nunca "ninguna"), y el aviso se vuelve a contar para
+  que la lista nueva diga cuáles quedaron forzadas. Si el API rechaza uno posterior (429, 403), ése
+  y los siguientes quedan **Sin procesar**. Al terminar, el foco pasa a **Cerrar**.
+- **El resultado por cuenta**, con el resumen arriba (también como aviso): "Listo: {a} cuentas tienen
+  que elegir una contraseña nueva. {s} se omitieron. A {f} no les llegó el correo: al intentar
+  ingresar les llega otro.". Cada fila: _Enlace enviado_, _Cambio forzado, pero el correo no salió_
+  (con qué hacer), _Omitida: ya tenía el cambio pendiente_ / _ya eligió su propia contraseña_ / _la
+  cuenta está suspendida_ / _es tu cuenta_ / _ya no es una cuenta heredada_, _No pudimos forzar el
+  cambio_, _Sin confirmar_ o _Sin procesar_. Al terminar, el aviso de arriba se vuelve a contar.
+- La Actividad: **"Forzó el cambio de contraseña a cuentas heredadas · 6 cuentas obligadas · 2
+  omitidas · 1 correo sin enviar"** para el lote, y **"Cambio de contraseña forzado · a {correo} ·
+  En bloque: cuenta heredada"** para cada cuenta. `platform-audit.test.ts` lee
+  `LEGACY_RESET_BATCH_EVENT` del API.
+- BFF: `GET /api/admin/legacy-passwords` (sin parámetros: uno de más es 400) y
+  `POST /api/admin/legacy-passwords/require-reset` (mismo origen; el cuerpo se reconstruye: sólo
+  `userIds`, de 1 a 50 UUID sin repetir y en minúsculas), con el estado y el `reason` del API.
+
+### Tests
+
+- `apps/api/src/tenants/legacy-passwords.service.test.ts`: el criterio en SQL (cada condición, sin
+  quien mira, una fila de más), cómo sale cada cuenta y el tope; por qué se omite cada una y en qué
+  orden; un resultado por cuenta en el orden pedido; el lote y el nodo en el cambio; el correo
+  `legacy` después del commit y por el nodo de la persona; un correo que falla (auditado sin la
+  dirección) o una transacción que falla no frenan a las demás; sin accesos activos, el correo del
+  sistema y el rastro en el nodo de origen; ids repetidos; el rastro del lote y su fallo; como
+  mucho 5 correos a la vez; 403 sin leer ni escribir nada.
+- `legacy-passwords.controller.test.ts`: rutas, roles, 401, el 2FA de 10 minutos sólo al forzar (y
+  sin 2FA activo, `MFA_REQUIRED_FOR_ACTION`), el 429 al decimotercer lote en el minuto con el guard
+  de la app y el esquema del cuerpo.
+- `legacy-passwords.integration.test.ts` (Postgres, como `app_user`; las cuentas nacen con fechas de
+  antes del tope): aparecen las cuentas creadas como lo hacían los caminos retirados, con y sin
+  `UserCreated`, el admin inicial con `TenantCreated` y la que quitaron de todos sus nodos; no
+  aparecen la que aceptó una invitación (ni la del canje de verdad de `InvitationsService`, tampoco
+  con `invited_by` puesto a mano), la que se registró sola, la vinculada ya existiendo, la del seed,
+  la nacida en el tope, la que cambió su contraseña, la que ya tiene el cambio pendiente, la
+  suspendida, la de un creador que ya no existe ni quien mira (otro superadmin sí la ve); 403 a un
+  admin de red sin cambiar nada; forzar con resultados por cuenta, sesiones cerradas, un solo enlace
+  (el del correo), el rastro de cada cuenta con el lote y el del lote; un correo que no sale dicho y
+  auditado; volver a correrlo no escribe a nadie; dos lotes a la vez sobre la misma cuenta (con la
+  fila tomada por un tercero hasta que los dos esperan) la fuerzan una sola vez; con el enlace la
+  persona elige la suya y deja de ser heredada; el 2FA con el reloj de la base.
+- `password-reset.service.test.ts`: la variante `legacy` del correo (en tú, escapada) y el evento
+  con `bulk` y el lote. `recent-mfa.guard.test.ts` y `sales-operations.guard.test.ts` suman las rutas.
+- Web: `lib/legacy-passwords.test.ts` (lo que trae el API, los textos en tú, los lotes de 50, el
+  reintento con el código, cancelar, un lote (también el primero) que no responde, uno posterior
+  que el API rechaza, una cuenta que no volvió), `app/api/admin/legacy-passwords/legacy-passwords.route.test.ts`,
+  `legacy-passwords.render.test.ts` (el aviso, la lista elegida, el resultado y la alerta),
+  `audit-format.test.ts` y `platform-audit.test.ts`.
+
+### Despliegue
+
+- Sin migración. API y panel van juntos: con el panel nuevo y la API vieja, la lista responde 404 y
+  no hay aviso.
+- **Cuándo correrlo**: cada persona queda afuera hasta que elige su contraseña con el enlace. Conviene
+  avisarles antes a los nodos y no correrlo en medio de la jornada de ventas; la lista dice el último
+  ingreso de cada una para elegir. A quien no le llegue el correo le llega otro al intentar ingresar,
+  y "¿Olvidaste tu contraseña?" también le sirve.

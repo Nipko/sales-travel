@@ -90,6 +90,19 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(labels('vendedor')).toEqual(['Operaciones', 'Gestión', 'Mi cuenta']);
   });
 
+  it('Mi cuenta, para cualquier rol: Perfil antes que Seguridad (USR-18)', () => {
+    for (const role of ['vendedor', 'agency_admin', 'superadmin', undefined]) {
+      const account = navSections(role, ANONYMOUS_VIEWER).find((s) => s.label === 'Mi cuenta');
+      expect(
+        account?.items.map((i) => [i.label, i.href]),
+        String(role),
+      ).toEqual([
+        ['Perfil', '/configuracion/perfil'],
+        ['Seguridad', '/configuracion/seguridad'],
+      ]);
+    }
+  });
+
   it('un admin de agencia ve Administración', () => {
     expect(labels('agency_admin')).toEqual([
       'Operaciones',

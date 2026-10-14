@@ -35,7 +35,13 @@ import {
   StaleCancelClaimService,
   type StaleCancelClaimSweepReport,
 } from './stale-cancel-claim.service.js';
+import {
+  FlightDeadlineAlertService,
+  emptyDeadlineAlertReport,
+  type DeadlineAlertSweepReport,
+} from './flight-deadline-alert.service.js';
 import { FlightTicketIssueService, type TicketIssueSweepReport } from './ticket-issue.service.js';
+import { FlightServicesService, type ServicesSweepReport } from './order-services.service.js';
 
 /** Sin Redis: la primera corrida poco después de arrancar, para adoptar lo que dejó un despliegue. */
 export const POST_SALE_SWEEP_FIRST_RUN_MS = 60_000;
@@ -60,7 +66,8 @@ export const POST_SALE_SWEEP_SCHEDULE_WAIT_MS = 30_000;
  * quedaron sin plan; y las cuentas propias del tenant que se quedaron sin conciliación del día
  * (PR-5.5), que sin Redis es la única vía por la que se concilian. Y las emisiones de tiquetes que la
  * cola perdió (SAB-08): las pedidas que nunca salieron se abandonan sin emitir nada, y las ya
- * mandadas sin desenlace pasan a conciliación; ninguna se reenvía.
+ * mandadas sin desenlace pasan a conciliación; ninguna se reenvía. Y el aviso de que vence el plazo
+ * de emisión de una reserva de vuelo sin tiquete, a las 24 h y a las 2 h (SAB-14).
  *
  * `orders`, `order_operations` y `hotel_order_tracking` tienen RLS forzada y la API corre como
  * `app_user`, sin rol de mantenimiento ni función que la salte: el barrido recorre los tenants uno
@@ -94,6 +101,10 @@ export type PostSaleSweepReport = HotelVerificationSweepReport & {
   reconciliation: ReconciliationDispatchReport;
   /** Las emisiones de tiquetes pendientes que la cola perdió. */
   ticketIssues: TicketIssueSweepReport;
+  /** Los avisos de plazo de emisión por vencer. */
+  deadlineAlerts: DeadlineAlertSweepReport;
+  /** Los cambios de servicios adicionales que quedaron pendientes: a conciliación (SAB-20). */
+  serviceChanges: ServicesSweepReport;
 };
 
 @Injectable()
@@ -118,6 +129,10 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly audit: AuditService,
     /** La emisión de tiquetes (SAB-08). Opcional sólo para los dobles: en la app siempre está. */
     @Optional() private readonly ticketIssues?: FlightTicketIssueService,
+    /** El aviso de plazo de emisión por vencer (SAB-14). Opcional por lo mismo. */
+    @Optional() private readonly deadlineAlerts?: FlightDeadlineAlertService,
+    /** Los cambios de servicios pendientes (SAB-20). Opcional para los dobles de las suites. */
+    @Optional() private readonly serviceChanges?: FlightServicesService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -191,6 +206,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       hcn: { ...report.hcn },
       reconciliation: { ...report.reconciliation },
       ticketIssues: { ...report.ticketIssues },
+      deadlineAlerts: { ...report.deadlineAlerts },
+      serviceChanges: { ...report.serviceChanges },
     });
     return report;
   }
@@ -277,6 +294,8 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
       },
       reconciliation: { accounts: 0, queued: 0, ran: 0, failed: 0 },
       ticketIssues: { examined: 0, abandoned: 0, reconciling: 0, skipped: 0 },
+      deadlineAlerts: emptyDeadlineAlertReport(),
+      serviceChanges: { examined: 0, reconciling: 0, skipped: 0 },
     };
 
     for (const { id } of tenants) {
@@ -347,6 +366,35 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
           );
         }
       }
+      // Los cambios de servicios que quedaron pendientes (SAB-20): a conciliación, sin reenviar nada.
+      if (this.serviceChanges !== undefined) {
+        try {
+          const changes = await this.serviceChanges.sweepTenant(id, now);
+          for (const key of Object.keys(changes) as (keyof ServicesSweepReport)[]) {
+            report.serviceChanges[key] += changes[key];
+          }
+        } catch (err) {
+          failed = true;
+          this.logger.warn(
+            `post_sale.sweep.service_changes.tenant_failed tenant=${id} error=${errorName(err)}`,
+          );
+        }
+      }
+      // Después de las emisiones: una que la cola perdió y el barrido cerró ya no está en curso, y
+      // la orden recupera su aviso en esta misma corrida.
+      if (this.deadlineAlerts !== undefined) {
+        try {
+          const alerts = await this.deadlineAlerts.sweepTenant(id, now);
+          for (const key of Object.keys(alerts) as (keyof DeadlineAlertSweepReport)[]) {
+            report.deadlineAlerts[key] += alerts[key];
+          }
+        } catch (err) {
+          failed = true;
+          this.logger.warn(
+            `post_sale.sweep.deadline_alerts.tenant_failed tenant=${id} error=${errorName(err)}`,
+          );
+        }
+      }
       if (failed) report.tenantsFailed += 1;
     }
 
@@ -377,6 +425,12 @@ export class PostSaleSweeper implements OnApplicationBootstrap, OnModuleDestroy 
     if (r.accounts > 0) {
       this.logger.log(
         `post_sale.sweep.reconciliation accounts=${r.accounts} queued=${r.queued} ran=${r.ran} failed=${r.failed}`,
+      );
+    }
+    const a = report.deadlineAlerts;
+    if (a.examined > 0) {
+      this.logger.log(
+        `post_sale.sweep.deadline_alerts examined=${a.examined} claimed=${a.claimed} mailed=${a.mailed} unmailed=${a.unmailed} retrying=${a.retrying} skipped=${a.skipped} failed=${a.failed}`,
       );
     }
     return report;

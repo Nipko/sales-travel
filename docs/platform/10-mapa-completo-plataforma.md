@@ -793,6 +793,7 @@ POST   /auth/mfa/verify                  -- { mfaToken, code, rememberDevice? }
 POST   /auth/seats/release               -- { releaseToken, sessionId } libera un puesto y completa el login
 POST   /auth/switch-tenant               -- { tenantId } reemplaza la sesión · 409 SEATS_FULL · 403 TENANT_SUSPENDED
 GET    /me/memberships                   -- agencias del usuario: logo, operable y motivo, isDefault (la del próximo login)
+PATCH  /me                              -- { name } tu nombre visible (USR-18): la cuenta de la sesión, nada más; 400 si trae otra clave
 GET    /auth/session                     -- inactividad, vencimiento y estado 2FA de la sesión (ping pasivo: x-session-ping)
 POST   /auth/logout                      -- { reason?: 'idle' }
 GET    /auth/sessions · POST /auth/sessions/:id/revoke · POST /auth/logout-all
@@ -818,8 +819,12 @@ PATCH  /admin/users/status               -- suspender cierra todas sus sesiones 
 GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
 GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
 GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
+GET    /admin/exports/users              -- el directorio en CSV con sus mismos filtros (sin cursor ni limit), hasta 10.000 personas · 2FA de 10 min · 5/min · users.exported (doc 15, USR-16)
+GET    /tenants/:id/members-export       -- el equipo del nodo en CSV (canManageTenant) · 2FA de 10 min · 5/min · users.exported (doc 15, USR-16)
 GET    /admin/memberships/impact         -- ?userId&tenantId&(status|role): invitaciones que revocaría el cambio (se simula y se deshace)
-POST   /invitations/accept               -- 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera
+POST   /invitations/accept               -- sólo cuenta nueva · 400 INVITATION_NO_LONGER_VALID si quien invitó ya no podría invitar o el nodo no opera · 409 INVITATION_SIGN_IN_REQUIRED si el correo ya tiene cuenta (0068, doc 15)
+POST   /invitations/preview              -- público: { token } → { valid: true, tenantName, role, inviterName, expiresAt, existingAccount, viewer } o { valid: false } (0068, doc 15)
+POST   /invitations/join                 -- con sesión: { token } → acepta con la cuenta de la sesión · 403 INVITATION_ACCOUNT_MISMATCH · 409 ALREADY_MEMBER (0068, doc 15)
 POST   /invitations                      -- { id, expiresAt, emailSent } · 409 INVITATION_ALREADY_PENDING con details.invitationId (0066, doc 15)
 POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace nuevo y 7 días más
 POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING

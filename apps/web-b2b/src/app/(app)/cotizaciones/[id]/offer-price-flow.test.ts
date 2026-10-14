@@ -3,6 +3,7 @@ import type { Offer } from '../actions';
 import {
   canReserveAfterPriceCheck,
   displayedPriceChanged,
+  offersSeatSelection,
   readOfferPriceResponse,
   reservationGateMessage,
   withRevalidatedOffer,
@@ -97,6 +98,24 @@ describe('readOfferPriceResponse', () => {
   ])('rechaza un 200 con forma incompleta', async (body) => {
     const out = await readOfferPriceResponse(response(body));
     expect(out.ok).toBe(false);
+  });
+});
+
+describe('offersSeatSelection (SAB-16)', () => {
+  it('sólo un `true` explícito del API ofrece elegir asientos', async () => {
+    for (const [seatSelection, esperado] of [
+      [true, true],
+      [false, false],
+      [undefined, false],
+      ['true', false],
+    ] as const) {
+      const out = await readOfferPriceResponse(
+        response({ offer: offer('x'), priceChanged: false, warnings: [], seatSelection }),
+      );
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(offersSeatSelection(out.data), String(seatSelection)).toBe(esperado);
+    }
   });
 });
 

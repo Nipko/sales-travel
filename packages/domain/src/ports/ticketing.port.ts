@@ -117,6 +117,19 @@ export interface TicketIssueOptions {
   readonly travelerCount: number;
   /** Comisión a reclamar, en porcentaje: de 0 a 99,99 con dos decimales como mucho. */
   readonly commissionPercentage?: number;
+  /**
+   * Lo que la plataforma vendió como servicios adicionales de la reserva y todavía no cobró
+   * (maletas, comidas: SAB-20), en unidades menores y en la moneda de la reserva. Es lo que la
+   * cartera de la red tiene retenido por ellos.
+   *
+   * Un proveedor que cobra esos servicios en la misma emisión (Sabre: EMD) tiene que cobrar
+   * EXACTAMENTE esto: si lo que su reserva tiene por cobrar suma otra cosa o viene en otra moneda,
+   * o si no sabe cobrarlos, no emite nada y lanza (lo que se cobra de más lo paga la cuenta sin
+   * nada retenido; lo que se cobra de menos queda retenido y sin servicio). Ausente o cero = la
+   * plataforma no vendió servicios: la emisión no cobra ninguno, aunque la reserva tenga alguno
+   * agregado por fuera.
+   */
+  readonly ancillaryCharge?: { readonly amountMinor: number; readonly currency: string };
 }
 
 export interface TicketIssueResult {

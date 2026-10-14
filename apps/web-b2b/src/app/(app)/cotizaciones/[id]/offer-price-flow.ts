@@ -5,6 +5,16 @@ export interface OfferPriceEnvelope {
   readonly offer: Offer;
   readonly priceChanged: boolean;
   readonly warnings: readonly string[];
+  /**
+   * El proveedor de la oferta deja elegir asiento al reservar (SAB-16). Ausente o cualquier otra
+   * cosa que no sea `true` = no: el botón no se ofrece.
+   */
+  readonly seatSelection?: boolean;
+}
+
+/** ¿Se ofrece «Elegir asientos»? Sólo con un `true` explícito del API. */
+export function offersSeatSelection(envelope: OfferPriceEnvelope): boolean {
+  return envelope.seatSelection === true;
 }
 
 export type OfferPriceRead =

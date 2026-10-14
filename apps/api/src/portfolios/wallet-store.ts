@@ -296,6 +296,16 @@ export async function listMovements(
           eb.or([
             eb('l.hold_transaction_id', '=', eb.ref('t.id')),
             eb('l.release_transaction_id', '=', eb.ref('t.id')),
+            // Un ajuste por servicios adicionales (0086) es de un nivel ya registrado: el asiento
+            // dice de qué reserva de la red viene, como la retención original.
+            eb(
+              'l.id',
+              '=',
+              eb
+                .selectFrom('wallet_hold_adjustments as wa')
+                .select('wa.level_id')
+                .whereRef('wa.transaction_id', '=', 't.id'),
+            ),
           ]),
         )
         .on('l.depth', '>', 0),

@@ -184,6 +184,25 @@ describe('settleTicketVoid', () => {
     ).toEqual({ outcome: 'VOIDED' });
   });
 
+  it('confirmada con un EMD de servicios todavía emitido: PARTIAL, la retención no se libera (SAB-20)', () => {
+    const conEmd = (status: 'ISSUED' | 'VOIDED'): OrderView => {
+      const base = vista(['VOIDED']);
+      return {
+        ...base,
+        documents: [
+          ...(base.documents ?? []),
+          { number: '0458800112233', kind: 'EMD' as const, status },
+        ],
+      };
+    };
+    expect(
+      settleTicketVoid({ success: true, verified: true, partial: false, read: conEmd('ISSUED') }),
+    ).toMatchObject({ outcome: 'PARTIAL', voidedTickets: 1 });
+    expect(
+      settleTicketVoid({ success: true, verified: true, partial: false, read: conEmd('VOIDED') }),
+    ).toMatchObject({ outcome: 'VOIDED' });
+  });
+
   it('declarada a medias: PARTIAL', () => {
     expect(
       settleTicketVoid({ success: false, verified: true, partial: true, read: undefined }),

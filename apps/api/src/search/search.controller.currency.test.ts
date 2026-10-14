@@ -1,9 +1,14 @@
 import { Logger } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import {
+  SELLER_RATE_LIMIT_KEY,
+  SellerRateLimitGuard,
+} from '../throttler/seller-rate-limit.guard.js';
 import { SearchController } from './search.controller.js';
 import type { FlightSearchResponse, SearchService } from './search.service.js';
 
@@ -47,8 +52,17 @@ function banco(defaultCurrency: unknown): Banco {
     },
     priceOffer: (_offer: unknown, c: FlightSearchCriteria) => {
       visto = c;
-      return Promise.resolve({ offer: {}, priceChanged: false, warnings: [] });
+      return Promise.resolve({
+        offer: { provider: { name: 'air' } },
+        priceChanged: false,
+        warnings: [],
+      });
     },
+    seatMap: (_offer: unknown, c: FlightSearchCriteria) => {
+      visto = c;
+      return Promise.resolve({ seatMap: { segments: [], warnings: [] } });
+    },
+    seatSelectionAvailable: () => false,
   } as unknown as SearchService;
 
   const db = {
@@ -125,6 +139,34 @@ describe('moneda del tenant → criterio de búsqueda', () => {
       offer: {} as never,
       searchCriteria: criteria(),
     });
+
+    expect(b.visto()?.currency).toBe('COP');
+  });
+
+  it('la revalidación dice si el proveedor deja elegir asiento (SAB-16), sin consultar a nadie', async () => {
+    const b = banco('COP');
+    const priced = await b.controller.offerPrice('u1', {
+      offer: {} as never,
+      searchCriteria: criteria(),
+    });
+
+    expect(priced.seatSelection).toBe(false);
+  });
+
+  it('el mapa de asientos tiene tope por vendedor: cada consulta la factura el proveedor (SAB-16)', () => {
+    const handler = Object.getOwnPropertyDescriptor(SearchController.prototype, 'seatMap')
+      ?.value as () => unknown;
+    expect(Reflect.getMetadata(SELLER_RATE_LIMIT_KEY, handler)).toEqual({
+      bucket: 'flights-seat-map',
+      limit: 30,
+      ttlMs: 60_000,
+    });
+    expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toContain(SellerRateLimitGuard);
+  });
+
+  it('el mapa de asientos también pide la moneda de la agencia (SAB-16)', async () => {
+    const b = banco(' cop ');
+    await b.controller.seatMap('u1', { offer: {} as never, searchCriteria: criteria() });
 
     expect(b.visto()?.currency).toBe('COP');
   });

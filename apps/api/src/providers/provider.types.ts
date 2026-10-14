@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  AncillaryPort,
   FlightSearchPort,
   OfferPricePort,
   OrderCancelResult,
@@ -13,6 +14,7 @@ import type {
   OrderCreateResult,
   OrderManagePort,
   SearchContext,
+  SeatMapPort,
   TicketingPort,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
@@ -152,6 +154,33 @@ export function supportsTicketing<T extends object>(adapter: T): adapter is T & 
 }
 
 /**
+ * ¿Este adapter sabe pintar el mapa de asientos de una oferta (`SeatMapPort`)? Por presencia del
+ * método, como {@link supportsTicketing}. Que sepa pintarlo no quiere decir que la elección de
+ * asiento esté encendida: eso lo dice la capacidad `seatMap` del factory.
+ */
+export function supportsSeatMap<T extends object>(adapter: T): adapter is T & SeatMapPort {
+  return typeof (adapter as { getSeatMap?: unknown }).getSeatMap === 'function';
+}
+
+/**
+ * ¿Este adapter sabe vender servicios adicionales sobre una reserva hecha (`AncillaryPort`)? Por
+ * presencia de los tres métodos, como {@link supportsTicketing}. Que sepa no quiere decir que esté
+ * encendido: eso lo dice la capacidad `addServices` del factory.
+ */
+export function supportsAncillaries<T extends object>(adapter: T): adapter is T & AncillaryPort {
+  const port = adapter as {
+    listAncillaries?: unknown;
+    addAncillaries?: unknown;
+    removeAncillaries?: unknown;
+  };
+  return (
+    typeof port.listAncillaries === 'function' &&
+    typeof port.addAncillaries === 'function' &&
+    typeof port.removeAncillaries === 'function'
+  );
+}
+
+/**
  * Qué sabe hacer un proveedor. Existe para que la post-venta se gatee por capacidad y no
  * por `if (provider === '<uno concreto>')`: ese `if` hay que tocarlo cada vez que entra un
  * proveedor nuevo y es exactamente lo que rompe cuando alguien se olvida.
@@ -181,6 +210,18 @@ export interface ProviderCapabilities {
    * emitida, y un proveedor nuevo no la hereda por olvido.
    */
   readonly void?: boolean;
+  /**
+   * Elegir asiento al reservar (SAB-16): pintar el mapa de una oferta (`SeatMapPort`) y reservar
+   * los asientos SIN CARGO junto con el vuelo. Ausente = `false`: la reserva de un asiento se
+   * certifica por proveedor antes de ofrecerla, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly seatMap?: boolean;
+  /**
+   * Agregar y quitar maletas y servicios a una reserva confirmada, antes de emitir (SAB-20), por el
+   * `AncillaryPort` del adapter. Se cobran con el tiquete, como EMD, con la forma de pago de la
+   * cuenta. Ausente = `false`: mueve dinero, y un proveedor nuevo no la hereda por olvido.
+   */
+  readonly addServices?: boolean;
 }
 
 export type ProviderCapability = keyof ProviderCapabilities;
@@ -290,6 +331,21 @@ export interface ProviderErrorContext {
 }
 
 /**
+ * Quién paga lo que se reserva con la cuenta del proveedor.
+ *
+ * - `provider-direct`: el proveedor le cobra a la agencia o al cliente por su cuenta (LATAM cobra
+ *   la orden con su propio pago): la red no adelanta nada y la reserva no retiene cartera.
+ * - `network-wallet`: lo liquida el dueño de la cuenta (un tiquete emitido en CASH o a crédito que
+ *   paga por BSP). La reserva retiene la cartera del nodo que vende y la de cada nivel de su red
+ *   hasta ese dueño, como un hotel (docs/platform/12 §14; SAB-FD-2 A). Una cuenta de pruebas no
+ *   retiene: no factura.
+ */
+export type ProviderSettlement = 'network-wallet' | 'provider-direct';
+
+/** Lo que vale un factory que no lo declara: el proveedor cobra por su cuenta. */
+export const DEFAULT_PROVIDER_SETTLEMENT: ProviderSettlement = 'provider-direct';
+
+/**
  * Contrato que los factories por proveedor ya cumplían de facto, sin declararlo.
  *
  * `forTenant` se conserva porque es la firma que usaba el resto de la app; `resolveForTenant`
@@ -301,6 +357,11 @@ export interface TenantProviderFactory<TAdapter> {
   readonly vertical: ProviderVertical;
   readonly capabilities: ProviderCapabilities;
   readonly defaultCallPolicy: CallPolicy;
+  /**
+   * Quién liquida lo que se reserva con este proveedor ({@link ProviderSettlement}). Estático por
+   * proveedor. Ausente = `provider-direct`.
+   */
+  readonly settlement?: ProviderSettlement;
   /** Lanza `NotFoundException` si el tenant no resuelve credenciales y no hay fallback. */
   forTenant(tenantId: string): Promise<TAdapter>;
   resolveForTenant(tenantId: string): Promise<TenantAdapter<TAdapter>>;
@@ -680,5 +741,24 @@ export class TicketVoidNotAvailableError extends ConflictException {
   constructor() {
     super(TICKET_VOID_NOT_AVAILABLE_MESSAGE);
     this.name = 'TicketVoidNotAvailableError';
+  }
+}
+
+/** Lo que lee el vendedor cuando el proveedor de la tarifa no deja elegir asiento desde aquí. */
+export const SEAT_SELECTION_NOT_AVAILABLE_MESSAGE =
+  'La elección de asiento no está disponible para esta tarifa. Puedes reservar sin asiento.';
+
+/**
+ * El proveedor de la oferta no ofrece la elección de asiento: no implementa el mapa
+ * (`SeatMapPort`) o la plataforma no la encendió (capacidad `seatMap`). Se decide antes de leer
+ * nada. 400 y no 501: no es un error del sistema, es una tarifa sin esta opción; se reserva sin
+ * asiento.
+ */
+export class SeatSelectionNotAvailableError extends BadRequestException {
+  readonly reason = 'SEAT_SELECTION_NOT_AVAILABLE';
+
+  constructor() {
+    super(SEAT_SELECTION_NOT_AVAILABLE_MESSAGE);
+    this.name = 'SeatSelectionNotAvailableError';
   }
 }

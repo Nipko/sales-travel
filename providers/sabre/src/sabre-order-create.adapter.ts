@@ -7,8 +7,10 @@ import {
   type OrderCreateRequest,
   type OrderCreateResult,
   type OrderItemKind,
+  type OrderItemResult,
   type Passenger,
   type SearchContext,
+  type SeatSelection,
 } from '@sales-travel/domain';
 import {
   SABRE_CREATE_BOOKING_PATH,
@@ -23,6 +25,7 @@ import {
   type SabreGender,
   type SabrePartialFailureDomain,
   type SabrePricingInput,
+  type SabreSeatInput,
   type SabreTitle,
   type SabreIdentityDocumentInput,
   type SabreTravelerInput,
@@ -30,6 +33,7 @@ import {
 import type { MissingAirlineRequirement } from './booking/airline-requirements';
 import {
   mapSabreCreateBookingResponse,
+  type SabreAssignedSeat,
   type SabreCreateBookingMapped,
 } from './booking/create.response.mapper';
 import {
@@ -155,8 +159,9 @@ const ACCESSORY_ITEM_KIND_BY_TOLERANCE = {
 
 export interface SabreOrderCreateOptions {
   /**
-   * Qué se está vendiendo. **Default `FLIGHT_ONLY`**: sin decirlo, nada es accesorio y la política
-   * es `HALT_ON_ERROR`, que es el default del contrato y el nuestro.
+   * Qué se está vendiendo. Sin decirlo, lo dice el pedido: con asientos es `FLIGHT_WITH_EXTRAS`
+   * (el asiento es el extra y su fallo no tumba el vuelo, SAB-16); sin ellos, `FLIGHT_ONLY`: nada es
+   * accesorio y la política es `HALT_ON_ERROR`, que es el default del contrato y el nuestro.
    */
   readonly useCase?: SabreBookingUseCase;
   readonly haltOnInvalidConnectingTime?: boolean;
@@ -253,6 +258,8 @@ export interface SabreOrderCreateOutcome {
   readonly timestamp?: string;
   /** La política de emisión que viajó, si se pidió con {@link SabreOrderCreateOptions.ticketing}. */
   readonly ticketing?: SabreTicketingDecision;
+  /** Los asientos pedidos y cuántos no quedaron confirmados (SAB-16). Conteos, nunca números. */
+  readonly seats: SabreSeatOutcome;
   /**
    * Lo que se puede persistir en `orders.provider_raw` **sin PAN y sin PII**: la reserva no
    * viaja entera. Ver {@link providerRawOf}.
@@ -260,9 +267,26 @@ export interface SabreOrderCreateOutcome {
   readonly providerRaw: Record<string, unknown>;
 }
 
+/** Los asientos de una reserva, contados. */
+export interface SabreSeatOutcome {
+  readonly requested: number;
+  /** Pedidos que la respuesta no trae asignados, o que trae `FAILED`/`UNCONFIRMED`. */
+  readonly notConfirmed: number;
+}
+
 /** El plan del builder más la política de emisión que se decidió para esta oferta. */
 export interface SabreOrderCreatePlan extends SabreCreateBookingPlan {
   readonly ticketing?: SabreTicketingDecision;
+  /** Los asientos que viajaron, con la posición con que se pidieron: se cruzan con la respuesta. */
+  readonly seats: readonly SabreRequestedSeat[];
+}
+
+/** Un asiento tal como viajó: vuelo, viajero y avión en posiciones base cero, y su número. */
+export interface SabreRequestedSeat {
+  readonly flightPosition: number;
+  readonly travelerPosition: number;
+  readonly legIndex: number;
+  readonly number: string;
 }
 
 export class SabreOrderCreateAdapter implements OrderCreatePort {
@@ -290,7 +314,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     let tolerance: readonly SabrePartialFailureDomain[];
     try {
       plan = this.plan(request, options);
-      useCase = options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE;
+      useCase = useCaseOf(request, options);
       tolerance = toleranceOf(useCase);
     } catch (err) {
       if (
@@ -312,7 +336,12 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
         : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
     });
 
-    const mapped: SabreCreateBookingMapped = mapSabreCreateBookingResponse(result.data);
+    const mapped: SabreCreateBookingMapped = withRequestedSeats(
+      mapSabreCreateBookingResponse(result.data),
+      plan.seats,
+      segmentsOf(request.offer).length,
+    );
+    const seats = seatOutcomeOf(mapped.order, plan.seats);
     const advisories = plan.advisories.map(describeAdvisory);
     const failures = classifySabrePartialFailure(mapped.order, tolerance);
 
@@ -336,6 +365,9 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       hasBookingSignature: mapped.hasBookingSignature,
       ...(advisories.length === 0 ? {} : { advisories }),
       ...ticketingLogMeta(plan.ticketing),
+      ...(seats.requested === 0
+        ? {}
+        : { seatsRequested: seats.requested, seatsNotConfirmed: seats.notConfirmed }),
     });
 
     return {
@@ -351,7 +383,16 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       conversationId: result.conversationId,
       ...(mapped.timestamp === undefined ? {} : { timestamp: mapped.timestamp }),
       ...(plan.ticketing === undefined ? {} : { ticketing: plan.ticketing }),
-      providerRaw: providerRawOf(mapped, plan, result.conversationId, useCase, tolerance, failures),
+      seats,
+      providerRaw: providerRawOf(
+        mapped,
+        plan,
+        result.conversationId,
+        useCase,
+        tolerance,
+        failures,
+        seats,
+      ),
     };
   }
 
@@ -360,10 +401,13 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
    * traducción por la puerta pública sin montar un `fetch` falso.
    */
   plan(request: OrderCreateRequest, options: SabreOrderCreateOptions = {}): SabreOrderCreatePlan {
-    const product = productOf(
-      request.offer,
-      options.flightStatusCode ?? DEFAULT_FLIGHT_STATUS_CODE,
+    const { travelers, order } = travelersOf(request);
+    const seated = withSeats(
+      productOf(request.offer, options.flightStatusCode ?? DEFAULT_FLIGHT_STATUS_CODE),
+      request,
+      order,
     );
+    const product = seated.product;
     const ticketing =
       options.ticketing === undefined
         ? undefined
@@ -372,7 +416,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       ticketing === undefined ? options.agency : { ...options.agency, ...ticketing.agency };
     const input: SabreCreateBookingInput = {
       product,
-      travelers: travelersOf(request),
+      travelers,
       contactInfo: contactInfoOf(request.contactInfo),
       carriers: carriersOf(request.offer),
       ...(options.targetPcc === undefined ? {} : { targetPcc: options.targetPcc }),
@@ -381,7 +425,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     };
 
     const built = buildSabreCreateBookingRequest(input, this.cfg, {
-      partialFailureTolerance: [...toleranceOf(options.useCase ?? SABRE_DEFAULT_BOOKING_USE_CASE)],
+      partialFailureTolerance: [...toleranceOf(useCaseOf(request, options))],
       ...(options.haltOnInvalidConnectingTime === undefined
         ? {}
         : { haltOnInvalidConnectingTime: options.haltOnInvalidConnectingTime }),
@@ -390,7 +434,11 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
         : { asynchronousUpdateWaitTimeMs: options.asynchronousUpdateWaitTimeMs }),
       ...(options.omitPayment === undefined ? {} : { omitPayment: options.omitPayment }),
     });
-    return ticketing === undefined ? built : { ...built, ticketing: ticketing.decision };
+    return {
+      ...built,
+      seats: seated.seats,
+      ...(ticketing === undefined ? {} : { ticketing: ticketing.decision }),
+    };
   }
 
   /**
@@ -499,6 +547,19 @@ function toleranceOf(useCase: SabreBookingUseCase): readonly SabrePartialFailure
     );
   }
   return [...tolerance];
+}
+
+/**
+ * El caso de uso de ESTA reserva. Lo declarado manda; si no se declaró nada, lo dice el pedido: con
+ * asientos, el asiento es el extra (`FLIGHT_WITH_EXTRAS`) y un asiento que la aerolínea no confirma
+ * no tumba el vuelo (`DO_NOT_HALT_ON_SEAT_BOOKING_ERROR`). Sin ellos, nada es accesorio.
+ */
+function useCaseOf(
+  request: OrderCreateRequest,
+  options: SabreOrderCreateOptions,
+): SabreBookingUseCase {
+  if (options.useCase !== undefined) return options.useCase;
+  return (request.seats?.length ?? 0) > 0 ? 'FLIGHT_WITH_EXTRAS' : SABRE_DEFAULT_BOOKING_USE_CASE;
 }
 
 /**
@@ -735,11 +796,18 @@ interface PricePassengerBindingRaw {
  * Flight Check no usan esta cadena. No hay fallback por orden ni por «el único adulto» porque ese
  * atajo se vuelve intercambio de documentos en cuanto se reserva más de un pasajero.
  */
-function travelersOf(request: OrderCreateRequest): SabreTravelerInput[] {
+function travelersOf(request: OrderCreateRequest): {
+  travelers: SabreTravelerInput[];
+  /** Los pasajeros en el orden de `travelers`: la posición de cada uno es su `travelerIndex - 1`. */
+  order: Passenger[];
+} {
   const priceOfferId = rawId(request.offer, SABRE_RAW_KEYS.priceOfferId);
   const priceOfferItemIds = rawIds(request.offer, SABRE_RAW_KEYS.priceOfferItemIds);
   if (priceOfferId === null || priceOfferItemIds === null) {
-    return request.passengers.map((passenger) => travelerOf(passenger));
+    return {
+      travelers: request.passengers.map((passenger) => travelerOf(passenger)),
+      order: [...request.passengers],
+    };
   }
 
   const bindings = rawPricePassengerBindings(request.offer);
@@ -809,6 +877,7 @@ function travelersOf(request: OrderCreateRequest): SabreTravelerInput[] {
   }
 
   const travelers: SabreTravelerInput[] = [];
+  const order: Passenger[] = [];
   for (let index = 0; index < expectedTypes.length; index += 1) {
     const passenger = passengerByIndex.get(index);
     const binding = bindingByIndex.get(index);
@@ -826,8 +895,9 @@ function travelersOf(request: OrderCreateRequest): SabreTravelerInput[] {
       );
     }
     travelers.push(travelerOf(passenger, binding.pricePassengerId));
+    order.push(passenger);
   }
-  return travelers;
+  return { travelers, order };
 }
 
 function expectedPaxTypes(request: OrderCreateRequest): Array<'ADT' | 'CHD' | 'INF'> {
@@ -1005,6 +1075,214 @@ function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductI
   };
 }
 
+/**
+ * Por qué bloque viaja la reserva de esta oferta: `flightOffer` si trae la cadena de Flight Check o
+ * la de `offers/price` (NDC), `flightDetails` si no. Es la misma pregunta que se hace
+ * {@link productOf}, y la usa también el mapa de asientos: lo que se puede reservar depende del
+ * bloque (ver {@link withSeats}).
+ */
+export type SabreBookingLane = 'flightOffer' | 'flightDetails';
+
+export function sabreBookingLaneOf(offer: Offer): SabreBookingLane {
+  const flightCheck =
+    rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId) !== null &&
+    rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds) !== null;
+  const price =
+    rawId(offer, SABRE_RAW_KEYS.priceOfferId) !== null &&
+    rawIds(offer, SABRE_RAW_KEYS.priceOfferItemIds) !== null;
+  return flightCheck || price ? 'flightOffer' : 'flightDetails';
+}
+
+/**
+ * Los asientos pedidos (SAB-16), en el bloque que ya eligió {@link productOf}.
+ *
+ * - **`flightOffer`** (NDC, y ATPCO revalidado con Flight Check): `seatOffers[]` con el
+ *   `seatOfferId` del mapa leído justo antes de reservar, el número y el viajero
+ *   (`BookSeatOffer`, `:5273-5303`). El id es lo único que ata el asiento a SU tramo —el bloque no
+ *   tiene posición de vuelo—, así que sin él no sale nada. El contrato dice «Applicable for NDC
+ *   flights only»; que Booking Management acepte también las ofertas de Flight Check se certifica en
+ *   CERT (SAB-21), con `seats` apagado en `SABRE_OPERATIONS` hasta entonces. El segundo avión de un
+ *   cambio de equipo no tiene campo en este bloque: se rechaza, y el mapa ya lo marca no vendible.
+ * - **`flightDetails`** (ATPCO sin Flight Check): `flights[].seats[]` por número, sin id, y
+ *   `changeOfGaugeSeats[]` para el segundo avión.
+ *
+ * El viajero es la posición del pasajero en `travelers[]` (`order`), que es la que arma
+ * {@link travelersOf}: el asiento nombra al pasajero por su `requestedTravelerIndex`, nunca por el
+ * orden del formulario. Todo lo que no se puede pedir lanza antes de la red
+ * (`SabreOrderCreateInputError`, que el saga lee como «no salió»).
+ */
+function withSeats(
+  product: SabreBookingProductInput,
+  request: OrderCreateRequest,
+  order: readonly Passenger[],
+): { product: SabreBookingProductInput; seats: SabreRequestedSeat[] } {
+  const requested = request.seats ?? [];
+  if (requested.length === 0) return { product, seats: [] };
+
+  const segmentCount = segmentsOf(request.offer).length;
+  const seats: SabreRequestedSeat[] = [];
+  const travelerSlots = new Set<string>();
+  const seatSlots = new Set<string>();
+  for (const seat of requested) {
+    const travelerPosition = travelerPositionOf(seat, order);
+    if (
+      !Number.isSafeInteger(seat.segmentRef) ||
+      seat.segmentRef < 0 ||
+      seat.segmentRef >= segmentCount
+    ) {
+      throw new SabreOrderCreateInputError('un asiento nombra un tramo que la oferta no tiene');
+    }
+    if (seat.legIndex !== 0 && seat.legIndex !== 1) {
+      throw new SabreOrderCreateInputError(
+        'un asiento nombra un avión que el tramo no tiene: sólo hay primero y segundo',
+      );
+    }
+    const number = seatNumberOf(seat);
+    const where = `${String(seat.segmentRef)}:${String(seat.legIndex)}`;
+    const travelerSlot = `${where}:${String(travelerPosition)}`;
+    const seatSlot = `${where}:${number}`;
+    if (travelerSlots.has(travelerSlot) || seatSlots.has(seatSlot)) {
+      // DUPLICATE_SEAT_ASSIGNMENT / SEATS_DUPLICATE_ASSOCIATION: se rechaza antes de la red.
+      throw new SabreOrderCreateInputError(
+        'un pasajero lleva dos asientos en el mismo avión, o un asiento está pedido dos veces',
+      );
+    }
+    travelerSlots.add(travelerSlot);
+    seatSlots.add(seatSlot);
+    seats.push({
+      flightPosition: seat.segmentRef,
+      travelerPosition,
+      legIndex: seat.legIndex,
+      number,
+    });
+  }
+
+  if (product.kind === 'ndc') {
+    const seatOffers: SabreSeatInput[] = requested.map((seat, index) => {
+      const wire = seats[index] as SabreRequestedSeat;
+      if (seat.legIndex !== 0) {
+        throw new SabreOrderCreateInputError(
+          'una reserva por oferta no tiene dónde pedir el asiento del segundo avión de un cambio de equipo',
+        );
+      }
+      const seatOfferId = seat.offerRef?.trim();
+      if (seatOfferId === undefined || seatOfferId.length === 0) {
+        throw new SabreOrderCreateInputError(
+          'un asiento de una reserva por oferta necesita la oferta del asiento del mapa (seatOfferId)',
+        );
+      }
+      return { seatOfferId, number: wire.number, travelerPosition: wire.travelerPosition };
+    });
+    return { product: { ...product, seatOffers }, seats };
+  }
+
+  const toInput = (seat: SabreRequestedSeat): SabreSeatInput => ({
+    number: seat.number,
+    travelerPosition: seat.travelerPosition,
+  });
+  const flights = product.flights.map((flight, position): SabreFlightInput => {
+    const mine = seats.filter((seat) => seat.flightPosition === position);
+    const first = mine.filter((seat) => seat.legIndex === 0).map(toInput);
+    const second = mine.filter((seat) => seat.legIndex === 1).map(toInput);
+    return {
+      ...flight,
+      ...(first.length === 0 ? {} : { seats: first }),
+      ...(second.length === 0 ? {} : { changeOfGaugeSeats: second }),
+    };
+  });
+  return { product: { ...product, flights }, seats };
+}
+
+/** La posición en `travelers[]` del pasajero que nombra el asiento. Un infante no tiene asiento. */
+function travelerPositionOf(seat: SeatSelection, order: readonly Passenger[]): number {
+  const matches = order.flatMap((passenger, position) =>
+    passenger.requestedTravelerIndex === seat.passengerIndex ? [position] : [],
+  );
+  const position = matches[0];
+  if (matches.length !== 1 || position === undefined) {
+    throw new SabreOrderCreateInputError(
+      'cada asiento tiene que nombrar a un único pasajero de la reserva por su requestedTravelerIndex',
+    );
+  }
+  if (order[position]?.paxType === 'INF') {
+    throw new SabreOrderCreateInputError('un infante en brazos no ocupa asiento');
+  }
+  return position;
+}
+
+/** `12` + `C` → `12C`, el `^[0-9]+[A-Z]$` del contrato (`:5293`). */
+function seatNumberOf(seat: SeatSelection): string {
+  if (!Number.isSafeInteger(seat.row) || seat.row < 1 || seat.row > 999) {
+    throw new SabreOrderCreateInputError('la fila de un asiento no es un número de fila');
+  }
+  if (!/^[A-Z]$/.test(seat.column)) {
+    throw new SabreOrderCreateInputError('la columna de un asiento no es una letra');
+  }
+  return `${String(seat.row)}${seat.column}`;
+}
+
+/**
+ * Cada asiento PEDIDO tiene que volver en la respuesta. `SEAT_NOT_ALLOWED_FOR_BOOKING` es un
+ * `WARNING` y la reserva se crea igual, sin asiento (docs/sabre/03 §4.5): leer sólo los asientos
+ * que volvieron daría la reserva por completa. El que falta se agrega como asiento `FAILED`, con su
+ * número, y la reserva pasa a `PARTIAL`: el vuelo está, el asiento no.
+ *
+ * Sólo si la respuesta trae vuelos: sin ellos (la reserva todavía se está armando) no hay contra
+ * qué cruzar, y lo resuelve la lectura de cierre. Las posiciones de vuelo se cruzan sólo cuando la
+ * respuesta trae tantos vuelos como tramos la oferta; si no, basta con viajero, avión y número.
+ */
+function withRequestedSeats(
+  mapped: SabreCreateBookingMapped,
+  requested: readonly SabreRequestedSeat[],
+  segmentCount: number,
+): SabreCreateBookingMapped {
+  if (requested.length === 0) return mapped;
+  if (!mapped.order.items.some((item) => item.kind === 'flight')) return mapped;
+
+  const positional = mapped.flightCount === segmentCount;
+  const returned = (wanted: SabreRequestedSeat): boolean =>
+    mapped.seats.some(
+      (seat: SabreAssignedSeat) =>
+        seat.travelerPosition === wanted.travelerPosition &&
+        seat.legIndex === wanted.legIndex &&
+        seat.number === wanted.number &&
+        (!positional || seat.flightPosition === wanted.flightPosition),
+    );
+  const missing = requested.filter((wanted) => !returned(wanted));
+  if (missing.length === 0) return mapped;
+
+  const items: OrderItemResult[] = [
+    ...mapped.order.items,
+    ...missing.map(
+      (wanted): OrderItemResult => ({
+        kind: 'seat',
+        status: 'FAILED',
+        seatNumber: wanted.number,
+      }),
+    ),
+  ];
+  return {
+    ...mapped,
+    order: {
+      ...mapped.order,
+      items,
+      outcome: mapped.order.outcome === 'CONFIRMED' ? 'PARTIAL' : mapped.order.outcome,
+    },
+  };
+}
+
+/** Los asientos de la reserva, contados: los pedidos y los que no quedaron confirmados. */
+function seatOutcomeOf(
+  order: OrderCreateResult,
+  requested: readonly SabreRequestedSeat[],
+): SabreSeatOutcome {
+  return {
+    requested: requested.length,
+    notConfirmed: order.items.filter((item) => item.kind === 'seat' && item.status !== 'CONFIRMED')
+      .length,
+  };
+}
+
 /** `YK` es el marcador de pasiva, y se compara normalizado porque llega por opción del llamador. */
 function isPassive(flightStatusCode: string): boolean {
   return flightStatusCode.trim().toUpperCase() === SABRE_PASSIVE_FLIGHT_STATUS_CODE;
@@ -1083,6 +1361,7 @@ export function providerRawOf(
   useCase: SabreBookingUseCase,
   tolerance: readonly SabrePartialFailureDomain[],
   failures: SabrePartialFailureVerdict,
+  seats: SabreSeatOutcome = { requested: 0, notConfirmed: 0 },
 ): Record<string, unknown> {
   return {
     provider: 'sabre',
@@ -1106,11 +1385,17 @@ export function providerRawOf(
     asynchronousUpdateWaitTimeMs: plan.asynchronousUpdateWaitTimeMs,
     carriers: [...plan.carriers],
     ...ticketingRawOf(plan.ticketing),
+    // Conteos de los asientos (SAB-16). El número de cada uno va en su ítem: no es un dato del
+    // pasajero, y es lo que dice qué asiento no quedó.
+    ...(seats.requested === 0
+      ? {}
+      : { seatsRequested: seats.requested, seatsNotConfirmed: seats.notConfirmed }),
     items: mapped.order.items.map((item) => ({
       kind: item.kind,
       status: item.status,
       ...(item.providerItemId === undefined ? {} : { providerItemId: item.providerItemId }),
       ...(item.statusCode === undefined ? {} : { statusCode: item.statusCode }),
+      ...(item.seatNumber === undefined ? {} : { seatNumber: item.seatNumber }),
     })),
     // `message` y `fieldValue` NO se copian: `fieldValue` es el valor que mandamos —documento del
     // pasajero— devuelto tal cual, y `message` es texto libre del proveedor.

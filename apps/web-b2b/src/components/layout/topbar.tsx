@@ -1,7 +1,9 @@
 'use client';
 
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, LogOut, User } from 'lucide-react';
+import { ChevronDown, LogOut, User, UserRound } from 'lucide-react';
+import Link from 'next/link';
+import { accountDisplay } from './account-display';
 import { AgencyTrigger, CommandMenuButton } from './agency-switcher';
 import { MobileNav } from './mobile-nav';
 import { logout } from './session-sync';
@@ -9,6 +11,7 @@ import { ThemeToggle } from './theme-toggle';
 
 interface TopbarProps {
   userEmail?: string;
+  userName?: string;
   tenantName?: string;
   tenantSlug?: string;
   logoUrl?: string;
@@ -22,7 +25,15 @@ interface TopbarProps {
  * cerraba. Sin modal, el menú se cierra solo en cuanto el foco sale de él. La agencia ya no es un
  * menú: abre el selector de agencia (agency-switcher.tsx).
  */
-export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: TopbarProps) {
+export function Topbar({
+  userEmail,
+  userName,
+  tenantName,
+  tenantSlug,
+  logoUrl,
+  role,
+}: TopbarProps) {
+  const account = accountDisplay(userName, userEmail);
   // Revoca en el API, avisa a las demás pestañas (se van al login juntas) y sale con una navegación
   // dura: un `router.push` conservaba el Router Cache y "Atrás" volvía a dibujar la pantalla de
   // antes (clientes, órdenes) sin pedirla al servidor.
@@ -49,13 +60,15 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
           <DropdownMenu.Trigger asChild>
             <button
               type="button"
+              // En el teléfono el nombre no se ve: sin esto, el botón era sólo un ícono sin nombre.
+              aria-label={`Tu cuenta: ${account.primary}`}
               className="group flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-[var(--color-surface-muted)] cursor-pointer"
             >
               <span className="flex size-7.5 items-center justify-center rounded-full bg-gradient-to-tr from-[var(--color-primary)]/10 to-[var(--color-accent)]/10 border border-[var(--color-primary)]/15 text-[var(--color-primary)] shadow-sm transition-transform group-hover:scale-105">
                 <User className="size-4 shrink-0" />
               </span>
               <span className="hidden md:inline text-xs font-semibold text-[var(--color-fg-muted)] group-hover:text-[var(--color-fg)] transition-colors max-w-[150px] truncate">
-                {userEmail ?? 'Usuario'}
+                {account.primary}
               </span>
               <ChevronDown className="size-3 text-[var(--color-fg-subtle)] transition-transform duration-200 group-hover:translate-y-0.5" />
             </button>
@@ -71,13 +84,30 @@ export function Topbar({ userEmail, tenantName, tenantSlug, logoUrl, role }: Top
                 Sesión Iniciada
               </div>
               <div className="px-2.5 pb-2.5 pt-0.5">
-                <p className="truncate text-xs font-semibold text-[var(--color-fg)]">{userEmail}</p>
+                <p className="truncate text-xs font-semibold text-[var(--color-fg)]">
+                  {account.primary}
+                </p>
+                {account.secondary ? (
+                  <p className="truncate text-[11px] text-[var(--color-fg-muted)]">
+                    {account.secondary}
+                  </p>
+                ) : null}
                 <p className="text-[10px] text-[var(--color-fg-subtle)] uppercase tracking-wider font-semibold mt-0.5">
                   Agente Autorizado
                 </p>
               </div>
 
               <div className="my-1 h-px bg-[var(--color-border)]/60" />
+
+              <DropdownMenu.Item asChild>
+                <Link
+                  href="/configuracion/perfil"
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-[var(--color-fg)] outline-none hover:bg-[var(--color-surface-muted)] focus-visible:bg-[var(--color-surface-muted)] data-[highlighted]:bg-[var(--color-surface-muted)] transition-colors"
+                >
+                  <UserRound className="size-4 text-[var(--color-fg-muted)]" aria-hidden="true" />
+                  <span className="font-medium">Tu perfil</span>
+                </Link>
+              </DropdownMenu.Item>
 
               <DropdownMenu.Item
                 onSelect={handleLogout}

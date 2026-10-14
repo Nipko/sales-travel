@@ -5,7 +5,8 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export type TenantStatus = 'active' | 'suspended' | 'archived';
 export type TenantType = 'platform' | 'consolidator' | 'agency' | 'subagency';
 export type UserStatus = 'active' | 'suspended';
-export type MembershipStatus = 'active' | 'suspended' | 'invited';
+/** `removed` = la quitaron del nodo (0067): no da acceso ni aparece en Equipo, pero la fila queda. */
+export type MembershipStatus = 'active' | 'suspended' | 'invited' | 'removed';
 export type LanguageCode = 'es' | 'pt' | 'en';
 export type Role =
   | 'superadmin'
@@ -144,6 +145,10 @@ export interface UsersTable {
   id: Generated<string>;
   email: string;
   password_hash: string | null;
+  /**
+   * 0069: con `app_user`, sólo lo cambia la cuenta de `app.current_user_id` (trigger
+   * `users_name_self_only`). La forma la valida PersonNameSchema en el borde (PATCH /me).
+   */
   name: string | null;
   status: Generated<UserStatus>;
   email_verified_at: Timestamp | null;
@@ -290,6 +295,10 @@ export interface MembershipsTable {
   role: Role;
   status: Generated<MembershipStatus>;
   invited_by: string | null;
+  /** Desde cuándo está quitada del nodo (0067); `null` si no lo está. */
+  removed_at: Timestamp | null;
+  /** Quién la quitó (0067). */
+  removed_by: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -614,8 +623,27 @@ export interface FlightOrderTrackingTable {
   /** `HH:MM`; sólo con fecha. */
   ticketing_deadline_time: string | null;
   ticketing_deadline_zone: TicketingDeadlineZone | null;
-  /** Sólo con zona `UTC`: con la hora de la oficina del proveedor sería un instante inventado. */
+  /**
+   * 0084: zona IANA de la oficina del proveedor, la que declara la cuenta de la reserva. Sólo con
+   * zona `PROVIDER_LOCAL`.
+   */
+  ticketing_deadline_time_zone: string | null;
+  /**
+   * Con zona `UTC`, o (0084) con `PROVIDER_LOCAL` más hora y la zona de la oficina. Sin esa zona,
+   * la hora de la oficina daría un instante inventado.
+   */
   ticketing_deadline_at: Timestamp | null;
+  /**
+   * 0084: el aviso de «vence en menos de 24 h» del plazo vigente, tomado (el candado del envío).
+   * NULL: no salió, o su correo falló y espera la próxima corrida (0085).
+   */
+  deadline_alerted_24h_at: Timestamp | null;
+  /** 0084: el de «vence en menos de 2 h». Al tomarse marca también el de 24 h. */
+  deadline_alerted_2h_at: Timestamp | null;
+  /** 0085: correos fallidos del aviso de 24 h del plazo vigente; al tope se cierra sin correo. */
+  deadline_alert_24h_failures: Generated<number>;
+  /** 0085: lo mismo para el aviso de 2 h. */
+  deadline_alert_2h_failures: Generated<number>;
   last_read_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
@@ -849,6 +877,62 @@ export interface WalletHoldLevelsTable {
   updated_at: Generated<Timestamp>;
 }
 
+/**
+ * Un ajuste de una retención abierta (0086): lo que un nivel retuvo (`hold`) o liberó (`release`) por
+ * una operación de servicios adicionales de la orden, con su asiento. Lo escribe sólo
+ * `wallet_hold_adjust`; lo ve el dueño de la cartera.
+ */
+export interface WalletHoldAdjustmentsTable {
+  id: Generated<string>;
+  group_id: string;
+  order_id: string;
+  level_id: string;
+  depth: number;
+  tenant_id: string;
+  portfolio_id: string;
+  origin_tenant_id: string;
+  order_number: number | null;
+  currency: string;
+  operation_id: string;
+  direction: 'hold' | 'release';
+  /** Positivo; `direction` dice el sentido. */
+  amount_minor: number;
+  transaction_id: string;
+  created_by: string;
+  created_at: Generated<Timestamp>;
+}
+
+/**
+ * Estado de un servicio agregado a una orden (0086). `unverified` y `remove-unverified` se mandaron
+ * sin confirmación: siguen contando en el total y en la retención hasta que se concilien.
+ */
+export type OrderAncillaryLineStatus = 'active' | 'unverified' | 'removed' | 'remove-unverified';
+
+/** Un servicio adicional agregado a una orden de vuelo, para un pasajero (0086). Sin PII. */
+export interface OrderAncillaryLinesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  added_operation_id: string;
+  removed_operation_id: string | null;
+  service_offer_item_id: string;
+  passenger_index: number;
+  category: 'BAGGAGE' | 'MEAL' | 'LOUNGE' | 'PET' | 'FEE' | 'OTHER';
+  service_code: string;
+  airline_code: string;
+  name: string;
+  /** Los tramos que cubre, como los dio el catálogo. */
+  segments: ColumnType<unknown, string, string>;
+  /** Unidades menores de `currency`, sin markup (P-16). */
+  amount_minor: number;
+  currency: string;
+  provider_item_ids: string[];
+  provider_item_ids_shared: boolean;
+  status: OrderAncillaryLineStatus;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export type DepositReportStatus = 'pending' | 'approved' | 'rejected';
 
 /**
@@ -949,8 +1033,9 @@ export interface PackageItemsTable {
  * `hcn-check`, `hcn-ticket` y `reconcile` (0042) son de la post-venta de hotel. En la base
  * `type` es TEXT sin CHECK (0021): sumar uno no necesita migración.
  *
- * `issue`, `modify` y `add-services` son escrituras en el proveedor de una orden de vuelo: como
- * máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083).
+ * `issue`, `modify`, `add-services` y `remove-services` son escrituras en el proveedor de una orden de
+ * vuelo: como máximo una pendiente por orden (`uq_order_operations_pending_provider_write`, 0083;
+ * `remove-services` desde 0086).
  */
 export type OrderOperationType =
   | 'cancel'
@@ -962,13 +1047,15 @@ export type OrderOperationType =
   | 'reconcile'
   | 'issue'
   | 'modify'
-  | 'add-services';
+  | 'add-services'
+  | 'remove-services';
 
 /** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
 export const PROVIDER_WRITE_OPERATION_TYPES = [
   'issue',
   'modify',
   'add-services',
+  'remove-services',
 ] as const satisfies readonly OrderOperationType[];
 export type OrderOperationStatus = 'pending' | 'success' | 'failed';
 
@@ -1206,6 +1293,8 @@ export interface DB {
   portfolio_deposit_reports: PortfolioDepositReportsTable;
   wallet_hold_groups: WalletHoldGroupsTable;
   wallet_hold_levels: WalletHoldLevelsTable;
+  wallet_hold_adjustments: WalletHoldAdjustmentsTable;
+  order_ancillary_lines: OrderAncillaryLinesTable;
   tenant_booking_permissions: TenantBookingPermissionsTable;
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;

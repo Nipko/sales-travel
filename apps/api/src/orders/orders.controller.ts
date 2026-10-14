@@ -22,15 +22,20 @@ import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { TboHotelsExceptionFilter } from '../providers-tbo/tbo-hotels-exception.filter.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import { BookingHoldLedger, type OpenWalletHold } from '../portfolios/booking-hold.ledger.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
+  AddServicesSchema,
   CreateOrderSchema,
   IssueOrderSchema,
   PayOrderSchema,
+  RemoveServicesSchema,
   ReshopOrderSchema,
   isSameMinorAmount,
+  type AddServicesInput,
   type IssueOrderInput,
+  type RemoveServicesInput,
 } from './dto.js';
 import {
   FlightOrderTrackingStore,
@@ -44,6 +49,12 @@ import {
 import { OrderCapabilitiesService } from './order-capabilities.service.js';
 import { OrderConfirmationService, isTestContent } from './order-confirmation.service.js';
 import { OrdersService, type CreateOrderDto, type OrderRow } from './orders.service.js';
+import { SERVICES_MESSAGES } from './order-services.plan.js';
+import {
+  FlightServicesService,
+  type ServicesAddReply,
+  type ServicesRemoveReply,
+} from './order-services.service.js';
 import { ISSUE_CLAIM_MESSAGES, FlightTicketIssueService } from './ticket-issue.service.js';
 import {
   TICKET_VOID_MESSAGES,
@@ -99,6 +110,13 @@ export class OrdersController {
     @Optional() private readonly flightTracking?: FlightOrderTrackingStore,
     /** La emisión de tiquetes (SAB-08). Opcional por lo mismo: en la app siempre está. */
     @Optional() private readonly ticketIssues?: FlightTicketIssueService,
+    /**
+     * Qué órdenes tienen saldo retenido en la cartera (0060; SAB-10), para que Reservas avise que
+     * cancelar o anular lo libera. Opcional por lo mismo: en la app siempre está.
+     */
+    @Optional() private readonly walletHolds?: BookingHoldLedger,
+    /** Maletas y servicios antes de emitir (SAB-20). Opcional por lo mismo: en la app siempre está. */
+    @Optional() private readonly services?: FlightServicesService,
   ) {}
 
   /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
@@ -123,6 +141,28 @@ export class OrdersController {
     } catch (error) {
       this.logger.warn(
         `flights.tracking.read_failed orders=${ids.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
+      );
+      return new Map();
+    }
+  }
+
+  /**
+   * La retención abierta de las órdenes pedidas, en una sola lectura. Si la base falla, la lista
+   * sale igual sin ella (`walletHold: null`): el aviso de la cancelación no tumba Reservas.
+   */
+  private async walletHoldsOf(
+    tenantId: string,
+    rows: readonly Pick<OrderRow, 'id'>[],
+  ): Promise<Map<string, OpenWalletHold>> {
+    if (this.walletHolds === undefined || rows.length === 0) return new Map();
+    try {
+      return await this.walletHolds.openHoldsOf(
+        tenantId,
+        rows.map((row) => row.id),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `orders.wallet_hold.read_failed orders=${rows.length} error=${error instanceof Error ? error.name.slice(0, 64) : 'UnknownError'}`,
       );
       return new Map();
     }
@@ -219,8 +259,11 @@ export class OrdersController {
       rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
     );
     const flights = await this.flightTrackingOf(tenantId, rows);
+    const holds = await this.walletHoldsOf(tenantId, rows);
     return {
-      orders: rows.map((r) => this.serialize(r, tracking.get(r.id), flights.get(r.id))),
+      orders: rows.map((r) =>
+        this.serialize(r, tracking.get(r.id), flights.get(r.id), holds.get(r.id)),
+      ),
     };
   }
 
@@ -234,7 +277,10 @@ export class OrdersController {
       ? await this.hotelReads.trackingOf(tenantId, [row.id])
       : undefined;
     const flights = await this.flightTrackingOf(tenantId, [row]);
-    return { order: this.serialize(row, tracking?.get(row.id), flights.get(row.id)) };
+    const holds = await this.walletHoldsOf(tenantId, [row]);
+    return {
+      order: this.serialize(row, tracking?.get(row.id), flights.get(row.id), holds.get(row.id)),
+    };
   }
 
   /**
@@ -416,6 +462,60 @@ export class OrdersController {
     return this.orders.listServices(tenantId, row);
   }
 
+  /**
+   * Agrega maletas y servicios a una reserva confirmada y sin emitir (SAB-20). Corre en el request:
+   * claim durable (0083), total y retención de cartera ajustados ANTES de llamar al proveedor, UNA
+   * llamada y el desenlace por línea. Lo agregado se emite como EMD junto con el tiquete, con la
+   * forma de pago de la cuenta (sin tarjeta).
+   *
+   * Es VENTA (`@SalesOperation`): compromete dinero, y el superadmin no vende. Lo pueden pedir los
+   * roles que venden, como emitir (SAB-FD-3 A).
+   */
+  @SalesOperation()
+  @Roles(...SELLING_ROLES)
+  @Post(':id/services/add')
+  @HttpCode(200)
+  async addServices(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddServicesSchema)) body: AddServicesInput,
+  ): Promise<ServicesAddReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(SERVICES_MESSAGES.notFound);
+    if (row.status !== 'confirmed') throw new ConflictException(SERVICES_MESSAGES.notConfirmed);
+    this.assertSupports(row, 'addServices');
+    if (this.services === undefined) {
+      throw new ServiceUnavailableException(SERVICES_MESSAGES.unavailable);
+    }
+    return this.services.requestAdd(tenantId, row, userId, body);
+  }
+
+  /**
+   * Quita servicios agregados mientras la reserva no se emita (SAB-20), y libera su parte de la
+   * retención de cartera. No es `@SalesOperation`: deshace lo vendido, como cancelar o anular.
+   */
+  @Roles(...SELLING_ROLES)
+  @Post(':id/services/remove')
+  @HttpCode(200)
+  async removeServices(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RemoveServicesSchema)) body: RemoveServicesInput,
+  ): Promise<ServicesRemoveReply> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException(SERVICES_MESSAGES.notFound);
+    if (row.status !== 'confirmed') throw new ConflictException(SERVICES_MESSAGES.notConfirmed);
+    this.assertSupports(row, 'addServices');
+    if (this.services === undefined) {
+      throw new ServiceUnavailableException(SERVICES_MESSAGES.unavailable);
+    }
+    return this.services.requestRemove(tenantId, row, userId, body);
+  }
+
   @SalesOperation()
   @Post(':id/reshop')
   async reshopOrder(
@@ -455,6 +555,9 @@ export class OrdersController {
    * `flightTracking`: lo guardado de una orden de vuelo (0082): localizadores de la aerolínea,
    * tiquetes con su estado y plazo de emisión. `null` en las demás verticales y en un vuelo que
    * todavía no tiene lecturas guardadas.
+   *
+   * `walletHold`: la retención de cartera abierta de la orden (`held` o `captured`), o `null` si no
+   * tiene una que liberar: sin retención, exenta por la cuenta propia, ya liberada o en conflicto.
    */
   private serialize(
     row: {
@@ -478,6 +581,7 @@ export class OrdersController {
     },
     tracking?: PublicHotelOrderTracking,
     flightTracking?: PublicFlightOrderTracking,
+    walletHold?: OpenWalletHold,
   ) {
     return {
       id: row.id,
@@ -501,6 +605,7 @@ export class OrdersController {
       testContent: isTestContent(row),
       providerTracking: tracking ?? null,
       flightTracking: flightTracking ?? null,
+      walletHold: walletHold ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

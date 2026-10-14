@@ -76,6 +76,47 @@ async function rejection(p: Promise<unknown>): Promise<string> {
   throw new Error('esperaba un error HTTP');
 }
 
+/**
+ * Congela, hasta el fin de `trx`, lo que cuenta la guarda del último superadmin.
+ *
+ * `assertNotLastSuperadmin` cuenta los superadmins activos de TODA la base, y la base es compartida:
+ * los demás tests crean superadmins en su beforeAll y los borran en su afterAll. En READ COMMITTED
+ * cada sentencia ve lo último confirmado, así que uno que otro test confirmaba entre el UPDATE que
+ * suspende a "los demás" y la cuenta de la guarda aparecía activo, la guarda no daba el 409 y el
+ * test caía de vez en cuando en la corrida completa en paralelo (reproducido con un proceso que
+ * crea y borra superadmins de fondo: 7 de 12 corridas).
+ *
+ * Nadie escribe `users` ni `memberships` hasta el ROLLBACK (SHARE: no aparece, no se reactiva ni se
+ * va ningún superadmin) y las filas que la transacción va a suspender y la guarda va a tomar quedan
+ * ya tomadas (FOR UPDATE). Todo con NOWAIT: si algo está tomado, se suelta lo pedido, se espera un
+ * poco y se reintenta. Nunca se espera un candado ajeno teniendo los propios, así que no hay abrazo
+ * mortal con otro test (por ejemplo, el que borra su cuenta y arrastra sus memberships).
+ */
+async function freezeSuperadmins(trx: Transaction<DB>): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    await sql`SAVEPOINT freeze_superadmins`.execute(trx);
+    try {
+      await sql`LOCK TABLE users, memberships IN SHARE MODE NOWAIT`.execute(trx);
+      await sql`
+        SELECT 1 FROM memberships
+         WHERE role = 'superadmin' AND status = 'active'
+           FOR UPDATE NOWAIT`.execute(trx);
+      await sql`
+        SELECT 1 FROM users u
+         WHERE u.status = 'active'
+           AND EXISTS (SELECT 1 FROM memberships m
+                        WHERE m.user_id = u.id AND m.role = 'superadmin' AND m.status = 'active')
+           FOR UPDATE OF u NOWAIT`.execute(trx);
+      await sql`RELEASE SAVEPOINT freeze_superadmins`.execute(trx);
+      return;
+    } catch (err) {
+      await sql`ROLLBACK TO SAVEPOINT freeze_superadmins`.execute(trx);
+      if ((err as { code?: unknown }).code !== '55P03' || attempt >= 400) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
 d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Postgres', () => {
   const pool = new pg.Pool();
   const database = new ComoAppUser();
@@ -535,6 +576,7 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
         .transaction()
         .execute(async (trx) => {
           await sql`SET LOCAL lock_timeout = '10s'`.execute(trx);
+          await freezeSuperadmins(trx);
           await sql`
             UPDATE memberships SET status = 'suspended'
              WHERE role = 'superadmin' AND status = 'active'
@@ -560,6 +602,7 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
         [root],
       );
       expect(rows[0]!.status).toBe('active');
-    });
+      // Puede esperar a que otro test suelte sus cuentas o sus memberships (freezeSuperadmins).
+    }, 30_000);
   });
 });

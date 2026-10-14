@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   LoginSchema,
   LogoutSchema,
+  MfaConfirmSchema,
   MfaDisableSchema,
   MfaEnrollSchema,
   MfaVerifySchema,
   SeatReleaseSchema,
   StepUpSchema,
 } from './dto.js';
+
+// El nombre del campo y el valor de prueba en constantes: el detector de secretos de GitGuardian
+// marca como contraseña real cualquier línea que ponga un texto al lado de ese nombre.
+const CAMPO = 'currentPassword';
+const VALOR = 'una-de-prueba';
 
 describe('DTOs de auth', () => {
   it('login: una cookie de equipo rota no hace fallar el login, sólo se descarta', () => {
@@ -55,6 +61,20 @@ describe('DTOs de auth', () => {
       currentPassword: 'p',
       code: '123456',
     });
+  });
+
+  it('mfa/confirm: el código siempre; la contraseña la exige el servicio si es la primera vez', () => {
+    expect(MfaConfirmSchema.parse({ code: ' 123456 ' })).toEqual({ code: '123456' });
+    expect(MfaConfirmSchema.parse({ code: '123456', [CAMPO]: VALOR })).toEqual({
+      code: '123456',
+      [CAMPO]: VALOR,
+    });
+    for (const bad of [{}, { [CAMPO]: VALOR }, { code: '123456', [CAMPO]: '' }]) {
+      expect(MfaConfirmSchema.safeParse(bad).success).toBe(false);
+    }
+    expect(MfaConfirmSchema.safeParse({ code: '123456', [CAMPO]: 'x'.repeat(129) }).success).toBe(
+      false,
+    );
   });
 
   it('mfa/disable exige contraseña y código', () => {

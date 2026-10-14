@@ -1,4 +1,9 @@
-import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  GoneException,
+  NotFoundException,
+} from '@nestjs/common';
 
 /**
  * `POST /admin/users` ya no da de alta a nadie (docs/platform/14). Vinculaba a su nodo cualquier
@@ -44,6 +49,39 @@ export class InvitationAlreadyPendingError extends ConflictException {
     super('Ya hay una invitación pendiente para ese correo en este nodo: reenvíala.');
     this.name = 'InvitationAlreadyPendingError';
     this.publicDetails = invitationId === undefined ? undefined : { invitationId };
+  }
+}
+
+/**
+ * Se canjeó por el formulario de cuenta nueva (`POST /invitations/accept`) una invitación cuyo correo
+ * ya tiene una cuenta (USR-17). Quien ya tiene cuenta no elige otra contraseña: ingresa con la suya y
+ * acepta con la sesión abierta (`POST /invitations/join`). Antes la contraseña nueva se ignoraba en
+ * silencio y la membership se sumaba sin que la cuenta se autenticara. La transacción del canje se
+ * deshace: la invitación queda pendiente. 409.
+ *
+ * Sale sólo con un token vigente, así que no dice nada que quien controla ese buzón no sepa: la vista
+ * previa de la invitación ya se lo cuenta.
+ */
+export class InvitationSignInRequiredError extends ConflictException {
+  readonly reason = 'INVITATION_SIGN_IN_REQUIRED';
+
+  constructor() {
+    super('Ya tienes una cuenta con este correo: ingresa con ella para aceptar la invitación.');
+    this.name = 'InvitationSignInRequiredError';
+  }
+}
+
+/**
+ * La sesión que acepta (`POST /invitations/join`) no es la de la cuenta del correo invitado (USR-17).
+ * Sin esto, cualquiera con una cuenta y el enlace de otra persona sumaba SU cuenta al nodo con el rol
+ * de la invitación. La transacción se deshace: la invitación queda pendiente para su dueño. 403.
+ */
+export class InvitationAccountMismatchError extends ForbiddenException {
+  readonly reason = 'INVITATION_ACCOUNT_MISMATCH';
+
+  constructor() {
+    super('Esta invitación es para otra cuenta: ingresa con el correo al que te llegó.');
+    this.name = 'InvitationAccountMismatchError';
   }
 }
 

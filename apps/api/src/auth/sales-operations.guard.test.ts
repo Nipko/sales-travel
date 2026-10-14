@@ -58,7 +58,12 @@ function noVenta(motivo: string, ...rutas: string[]): [string, Clase][] {
 
 const ENTRADAS: [string, Clase][] = [
   // ───────────────────────── Ventas ─────────────────────────
-  ...venta('búsqueda y revalidación de vuelos', 'POST /search/flights', 'POST /search/offer-price'),
+  ...venta(
+    'búsqueda y revalidación de vuelos, y el mapa de asientos de la oferta que se va a reservar',
+    'POST /search/flights',
+    'POST /search/offer-price',
+    'POST /search/seat-map',
+  ),
   ...venta(
     'búsqueda de hoteles con precio, también el tramo siguiente de una búsqueda por destino',
     'POST /hotels/availability',
@@ -90,6 +95,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/issue',
     'POST /orders/:id/reshop',
     'POST /orders/:id/services',
+    'POST /orders/:id/services/add',
   ),
   ...venta(
     'cotizaciones: crear, editar y enviar',
@@ -122,10 +128,11 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/mfa/verify',
     'POST /auth/seats/release',
     'POST /auth/verify-email',
+    'POST /invitations/preview',
     'POST /invitations/accept',
   ),
   ...noVenta(
-    'la cuenta propia: sesión, dispositivos, contraseña y MFA',
+    'la cuenta propia: sesión, dispositivos, contraseña, MFA, su nombre y aceptar una invitación con ella',
     'POST /auth/switch-tenant',
     'GET /auth/session',
     'POST /auth/logout',
@@ -144,7 +151,9 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/step-up',
     'POST /auth/resend-verification',
     'GET /me',
+    'PATCH /me',
     'GET /me/memberships',
+    'POST /invitations/join',
   ),
   ...noVenta(
     'administración de la red: nodos, usuarios, invitaciones, marca y configuración',
@@ -157,12 +166,16 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/users/:userId',
     'GET /admin/users/:userId/impact',
     'GET /admin/users/:userId/audit',
+    'GET /admin/exports/users',
     'POST /admin/users',
     'PATCH /admin/users/status',
     'PATCH /admin/memberships/role',
     'PATCH /admin/memberships/status',
+    'POST /admin/memberships/remove',
     'GET /admin/memberships/impact',
     'GET /admin/invitations',
+    'GET /admin/legacy-passwords',
+    'POST /admin/legacy-passwords/require-reset',
     'POST /invitations',
     'GET /invitations',
     'POST /invitations/:id/revoke',
@@ -182,6 +195,7 @@ const ENTRADAS: [string, Clase][] = [
     'POST /tenants/:id/members/:userId/unlock',
     'GET /tenants/:id/members/:userId',
     'GET /tenants/:id/members/:userId/audit',
+    'GET /tenants/:id/members-export',
     'POST /tenants/:id/members/:userId/sessions/:sessionId/revoke',
     'GET /tenants/:id/branding',
     'GET /tenants/:id/branding/own',
@@ -295,9 +309,10 @@ const ENTRADAS: [string, Clase][] = [
     'POST /orders/:id/send-confirmation',
   ),
   ...noVenta(
-    'corrección: cancelar lo vendido (también anulando sus tiquetes), reintentar una cancelación o rechazar un hold',
+    'corrección: cancelar lo vendido (también anulando sus tiquetes o quitando servicios adicionales), reintentar una cancelación o rechazar un hold',
     'POST /orders/:id/cancel',
     'POST /orders/:id/void',
+    'POST /orders/:id/services/remove',
     'POST /orders/:id/operations/:opId/retry',
     'POST /hotels/reservations/:id/cancel',
     'POST /cars/reservations/cancel',
@@ -383,6 +398,7 @@ const ENTRADAS: [string, Clase][] = [
 const VENTAS_DEL_MODELO = [
   'POST /search/flights',
   'POST /search/offer-price',
+  'POST /search/seat-map',
   'POST /hotels/availability',
   'POST /hotels/availability/more',
   'POST /hotels/prebook',
@@ -392,6 +408,7 @@ const VENTAS_DEL_MODELO = [
   'POST /orders',
   'POST /orders/:id/pay',
   'POST /orders/:id/issue',
+  'POST /orders/:id/services/add',
   'POST /quotations',
   'PATCH /quotations/:id/status',
   'POST /quotations/:id/send-email',

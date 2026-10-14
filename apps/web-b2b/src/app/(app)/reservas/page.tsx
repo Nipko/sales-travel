@@ -9,12 +9,14 @@ import {
   Eye,
   FileText,
   Hotel,
+  Luggage,
   Mail,
   Package,
   Plane,
   RefreshCw,
   Search,
   Ticket,
+  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
@@ -53,9 +55,12 @@ import {
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
-import { parseFlightTracking, retrieveNotice } from './flight-order-view';
+import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
+import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
+import { AddServicesSheet } from './_components/add-services-sheet';
+import { canManageServices } from './services-view';
 import { ISSUE_MESSAGES, canIssueTicket } from './issue-ticket-view';
 import { useIssueTracker, type IssueSettlement } from './use-issue-tracker';
 import { HotelOrderDetail } from './_components/hotel-order-detail';
@@ -130,6 +135,8 @@ interface Order {
   providerTracking?: unknown;
   /** Sólo en vuelos: localizadores de la aerolínea, tiquetes y plazo guardados (0082). */
   flightTracking?: unknown;
+  /** Saldo retenido en la cartera que cancelar libera (SAB-10); `null` si no hay nada que liberar. */
+  walletHold?: 'held' | 'captured' | null;
   createdAt: string;
 }
 
@@ -219,14 +226,35 @@ export default function ReservasPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   /** La reserva cuya emisión se está confirmando (SAB-08). */
   const [issuing, setIssuing] = useState<Order | null>(null);
+  /** La reserva cuyas maletas y servicios se están viendo (SAB-20). */
+  const [servicesSheet, setServicesSheet] = useState<Order | null>(null);
   // Búsqueda + filtros (organización de la lista).
   const [query, setQuery] = useState('');
   const [statusF, setStatusF] = useState<'all' | 'confirmed' | 'pending' | 'cancelled'>('all');
   const [verticalF, setVerticalF] = useState<'all' | 'flights' | 'hotels' | 'cars'>('all');
+  /** «Por vencer» (SAB-14): vuelos confirmados cuyo plazo de emisión vence en menos de 24 h. */
+  const [dueSoonF, setDueSoonF] = useState(false);
+  // El reloj de la lista: «Por vencer» y los avisos de la fila cambian solos con el paso del tiempo.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dueSoonIds = useMemo(
+    () =>
+      new Set(
+        orders
+          .filter((o) => orderVerticalOf(o) === 'flights' && isDueSoonOrder(o, new Date(now)))
+          .map((o) => o.id),
+      ),
+    [orders, now],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
+      if (dueSoonF && !dueSoonIds.has(o.id)) return false;
       if (verticalF !== 'all' && orderVerticalOf(o) !== verticalF) return false;
       if (statusF === 'confirmed' && !(o.status === 'confirmed' || o.status === 'ticketed'))
         return false;
@@ -252,7 +280,7 @@ export default function ReservasPage() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query, statusF, verticalF]);
+  }, [orders, query, statusF, verticalF, dueSoonF, dueSoonIds]);
 
   /**
    * Relee la lista. Después de una cancelación de hotel el estado lo decide el servidor (puede ser
@@ -660,6 +688,19 @@ export default function ReservasPage() {
             <FilterChip active={statusF === 'cancelled'} onClick={() => setStatusF('cancelled')}>
               Canceladas
             </FilterChip>
+            {dueSoonIds.size > 0 || dueSoonF ? (
+              <>
+                <span className="mx-1 h-4 w-px bg-[var(--color-border)]" aria-hidden />
+                <FilterChip
+                  active={dueSoonF}
+                  onClick={() => setDueSoonF((v) => !v)}
+                  title="Vuelos confirmados sin tiquete cuyo plazo de emisión vence en menos de 24 h o ya venció"
+                >
+                  <AlertTriangle aria-hidden="true" className="size-3" /> Por vencer
+                  <span className="tabular-nums">· {dueSoonIds.size}</span>
+                </FilterChip>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -875,6 +916,19 @@ export default function ReservasPage() {
                             {order.id in issuesInFlight ? 'Emitiendo…' : 'Emitir tiquete'}
                           </Button>
                         )}
+                        {/* Maletas y servicios antes de emitir; se cobran con el tiquete (SAB-20). */}
+                        {canManageServices(order) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={actionLoading === order.id || order.id in issuesInFlight}
+                            onClick={() => setServicesSheet(order)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <Luggage aria-hidden="true" className="size-3.5" /> Servicios
+                            adicionales
+                          </Button>
+                        )}
                         {(order.status === 'pending' || order.status === 'confirmed') &&
                           supportsOrderCapability(order.capabilities, 'pay') && (
                             <Button
@@ -903,7 +957,8 @@ export default function ReservasPage() {
                           </Button>
                         )}
                         {order.status === 'ticketed' &&
-                          supportsOrderCapability(order.capabilities, 'services') && (
+                          supportsOrderCapability(order.capabilities, 'services') &&
+                          !supportsOrderCapability(order.capabilities, 'addServices') && (
                             <Button
                               variant="secondary"
                               size="sm"
@@ -1132,6 +1187,7 @@ export default function ReservasPage() {
             }}
             issueInFlight={detailOrder.id in issuesInFlight}
             onIssueRequest={() => setIssuing(detailOrder)}
+            onServicesRequest={() => setServicesSheet(detailOrder)}
             onOrderChanged={() => void loadOrders(false)}
           />
         ))}
@@ -1171,6 +1227,16 @@ export default function ReservasPage() {
         />
       )}
 
+      {/* Maletas y servicios antes de emitir (SAB-20): el total y la retención los decide el API. */}
+      {servicesSheet && (
+        <AddServicesSheet
+          key={servicesSheet.id}
+          order={servicesSheet}
+          onClose={() => setServicesSheet(null)}
+          onChanged={() => void loadOrders(false)}
+        />
+      )}
+
       {/* Confirmación de cancelación (evita cancelaciones por error) */}
       {confirmCancel && (
         <ConfirmDialog
@@ -1178,6 +1244,7 @@ export default function ReservasPage() {
           message={`¿Seguro que quieres cancelar esta reserva${
             confirmCancel.pnr ? ` (PNR ${confirmCancel.pnr})` : ''
           }? Esta acción no se puede deshacer.`}
+          note={walletReleaseNote(confirmCancel)}
           confirmLabel="Sí, cancelar reserva"
           danger
           loading={actionLoading === confirmCancel.id}
@@ -1200,6 +1267,7 @@ function OrderDetailModal({
   onPayRequest,
   issueInFlight,
   onIssueRequest,
+  onServicesRequest,
   onOrderChanged,
 }: {
   order: Order;
@@ -1209,6 +1277,8 @@ function OrderDetailModal({
   /** Hay una emisión de esta reserva siguiéndose en la página. */
   issueInFlight: boolean;
   onIssueRequest: () => void;
+  /** Abrir las maletas y servicios de la reserva (SAB-20). */
+  onServicesRequest: () => void;
   /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
   onOrderChanged: () => void;
 }) {
@@ -1229,6 +1299,7 @@ function OrderDetailModal({
     (order.status === 'pending' || order.status === 'confirmed') &&
     supportsOrderCapability(order.capabilities, 'pay');
   const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
+  const canServices = !isCar && canManageServices(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
   // autos hasta tener una plantilla propia, para no enviar correos con datos vacíos.
   const canSendEmail =
@@ -1695,6 +1766,16 @@ function OrderDetailModal({
               <Ticket aria-hidden="true" className="size-3.5" /> Emitir tiquete
             </Button>
           )}
+          {canServices && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onServicesRequest}
+              className="gap-1.5 text-xs"
+            >
+              <Luggage aria-hidden="true" className="size-3.5" /> Servicios adicionales
+            </Button>
+          )}
           {canPay && (
             <Button variant="primary" size="sm" onClick={onPayRequest} className="gap-1.5 text-xs">
               <CreditCard className="size-3.5" /> Pagar / Emitir tiquete
@@ -1712,16 +1793,20 @@ function OrderDetailModal({
 function FilterChip({
   active,
   onClick,
+  title,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
+      title={title}
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
         active
@@ -1737,6 +1822,7 @@ function FilterChip({
 function ConfirmDialog({
   title,
   message,
+  note,
   confirmLabel,
   danger,
   loading,
@@ -1745,6 +1831,8 @@ function ConfirmDialog({
 }: {
   title: string;
   message: string;
+  /** Un aviso aparte, debajo del mensaje (p. ej. el saldo retenido que se libera). */
+  note?: string | undefined;
   confirmLabel: string;
   danger?: boolean;
   loading?: boolean;
@@ -1768,6 +1856,12 @@ function ConfirmDialog({
           <h2 className="text-sm font-semibold text-[var(--color-fg)]">{title}</h2>
         </div>
         <p className="mb-4 text-xs leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
+        {note ? (
+          <p className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-xs leading-relaxed text-[var(--color-fg)]">
+            <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{note}</span>
+          </p>
+        ) : null}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" disabled={loading} onClick={onClose}>
             No, volver

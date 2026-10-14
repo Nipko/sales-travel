@@ -11,6 +11,7 @@ import {
   SabreFlightCheckRequestError,
   SabreGetBookingBuildError,
   SabreOrderCreateInputError,
+  SabreOrderManageAdapter,
   SabrePriceRequestError,
 } from '@sales-travel/sabre';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +26,9 @@ import {
   TICKET_VOID_NOT_AVAILABLE_MESSAGE,
   TicketVoidNotAvailableError,
   supportsAuditedCancel,
+  supportsAncillaries,
   supportsAuditedCreate,
+  supportsSeatMap,
   supportsTicketing,
   type ProviderFlagsPort,
 } from '../providers/provider.types.js';
@@ -41,6 +44,7 @@ import {
   parseSabreOperations,
   sabreShopOptionsFromAccountConfig,
   sabreTicketingSettingsFromAccountConfig,
+  withOfficeTimeZone,
 } from './sabre.factory.js';
 import { platformRootId } from '../__fixtures__/platform-root.js';
 
@@ -580,16 +584,20 @@ describe('SabreProviderFactory — alcance real de Sabre', () => {
     expect(factory.capabilities).toEqual({
       retrieve: true,
       cancel: true,
-      // `pay`, `services` y `reshop` NO son operaciones de este contrato: no es un cableado
-      // pendiente. `OrdersController.assertSupports` las rechaza con un mensaje claro.
+      // `pay` y `reshop` NO son operaciones de este contrato: no es un cableado pendiente.
+      // `OrdersController.assertSupports` las rechaza con un mensaje claro.
       pay: false,
-      services: false,
       reshop: false,
+      // Las maletas y servicios (SAB-20) están cableados y nacen apagados hasta certificarlos.
+      services: false,
+      addServices: false,
       // La emisión está cableada, pero nace apagada: sin `SABRE_OPERATIONS` no se ofrece.
       issue: false,
       // Igual la anulación y la consulta de condiciones que la acompaña (SAB-09).
       ticketCheck: false,
       void: false,
+      // Y la elección de asiento al reservar (SAB-16), hasta certificarla en CERT (SAB-21).
+      seatMap: false,
     });
   });
 
@@ -710,6 +718,72 @@ describe('SabreProviderFactory — price/create/get/cancel están CABLEADOS al A
     const adapter = await adapterReal();
     expect(supportsAuditedCreate(adapter)).toBe(true);
     expect(supportsAuditedCancel(adapter)).toBe(true);
+  });
+});
+
+/**
+ * El plazo de emisión de una lectura lleva la zona de la oficina de la cuenta (SAB-14): Sabre da la
+ * fecha y la hora del PCC sin zona, y sin ella la post-venta no puede avisar antes de que venza.
+ */
+describe('SabreFlightProviderAdapter — la zona de la oficina en el plazo de la lectura', () => {
+  const ctx = { tenantId: 't1' };
+  const lectura = (ticketingDeadline?: {
+    date: string;
+    time?: string;
+    zone: 'UTC' | 'PROVIDER_LOCAL';
+  }) => ({
+    found: true,
+    airlineLocators: [],
+    warnings: [],
+    ...(ticketingDeadline === undefined ? {} : { ticketingDeadline }),
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('withOfficeTimeZone pega la zona sólo a un plazo en la hora de la oficina', () => {
+    expect(
+      withOfficeTimeZone(
+        lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+        'America/Lima',
+      ).ticketingDeadline,
+    ).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+    // Un plazo UTC ya tiene instante; una lectura sin plazo no gana uno.
+    const utc = lectura({ date: '2026-10-20', time: '18:00', zone: 'UTC' });
+    expect(withOfficeTimeZone(utc, 'America/Lima')).toBe(utc);
+    const sinPlazo = lectura();
+    expect(withOfficeTimeZone(sinPlazo, 'America/Lima')).toBe(sinPlazo);
+    // Una zona que el motor no conoce no se pega.
+    const local = lectura({ date: '2026-10-20', zone: 'PROVIDER_LOCAL' });
+    expect(withOfficeTimeZone(local, 'Marte/Olympus')).toBe(local);
+  });
+
+  it('la lectura sale con la zona que declara la cuenta, o con la de por defecto', async () => {
+    vi.spyOn(SabreOrderManageAdapter.prototype, 'retrieveForDisplay').mockResolvedValue(
+      lectura({ date: '2026-10-20', time: '18:00', zone: 'PROVIDER_LOCAL' }),
+    );
+
+    const lima = await factoryWith(() =>
+      Promise.resolve(resolved({ config: { pccTimeZone: 'America/Lima' } })),
+    ).forTenant('t1');
+    expect((await lima.retrieveForDisplay('ABC123', ctx)).ticketingDeadline).toEqual({
+      date: '2026-10-20',
+      time: '18:00',
+      zone: 'PROVIDER_LOCAL',
+      timeZone: 'America/Lima',
+    });
+
+    // Sin zona declarada, la de la cuenta por defecto: la misma con que se pidió el plazo.
+    const porDefecto = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    expect((await porDefecto.retrieveForDisplay('ABC123', ctx)).ticketingDeadline?.timeZone).toBe(
+      'America/Bogota',
+    );
   });
 });
 
@@ -1569,6 +1643,11 @@ describe('FlightProviderRegistry + Sabre', () => {
       expect(registry.recordsOrderAccount(SABRE_PROVIDER_CODE)).toBe(true);
     });
 
+    it('lo que se reserva con Sabre lo liquida la red: retiene la cartera como un hotel (SAB-10)', () => {
+      const { registry } = registryConOrden(() => Promise.resolve(resolved()));
+      expect(registry.settlementOf(SABRE_PROVIDER_CODE)).toBe('network-wallet');
+    });
+
     it('una orden con cuenta sale con ESA cuenta aunque el tenant tenga otra vigente', async () => {
       const { registry, creds } = registryConOrden(() =>
         Promise.resolve(resolved({ id: 'acc-de-la-orden', inherited: true })),
@@ -2118,5 +2197,253 @@ describe('SabreProviderFactory — anular tiquetes (VOID)', () => {
     ).toMatch(
       /^No pudimos leer las condiciones de los tiquetes de esta reserva \(TICKET_CHECK_MALFORMED\)/,
     );
+  });
+});
+
+describe('SabreProviderFactory — asientos al reservar (SAB-16)', () => {
+  const RUTA_SEATS = '/v3/offers/getseats/byReservationPayload';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** El `fetch` del ACL: token, Get Seats y createBooking, con lo que salió por cada ruta. */
+  function cable(): { rutas: string[]; cuerpos: Map<string, string> } {
+    const rutas: string[] = [];
+    const cuerpos = new Map<string, string>();
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (typeof init?.body === 'string') cuerpos.set(ruta, init.body);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      if (ruta === RUTA_SEATS) return respuesta({ response: { segments: [], seatMaps: [] } });
+      if (ruta === RUTA_CREATE) {
+        return respuesta({
+          confirmationId: PNR,
+          booking: {
+            bookingId: PNR,
+            flights: [
+              {
+                itemId: '1',
+                flightStatusCode: 'HK',
+                flightStatusName: 'Confirmed',
+                seats: [{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }],
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    return { rutas, cuerpos };
+  }
+
+  const criterios = (): OrderCreateRequest['criteria'] => pedidoDeReserva().criteria;
+
+  it('sin `seats` en SABRE_OPERATIONS: la capacidad apagada y el mapa no se consulta', async () => {
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities.seatMap).toBe(false);
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    const error = await adapter
+      .getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SabreOperationNotSupportedError);
+    // Ni siquiera el token: cada Get Seats es una llamada facturable.
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `seats` encendida: capacidad en true y Get Seats v3 por el cliente de la cuenta', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ seatMap: true, issue: false, void: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsSeatMap(adapter))
+      throw new Error('el adapter de Sabre perdió el mapa de asientos');
+    // La respuesta no trae ningún mapa: el ACL lo dice en vez de pintar «no quedan asientos».
+    await expect(
+      adapter.getSeatMap(ofertaAtpco(), criterios(), { tenantId: 't1' }),
+    ).rejects.toThrow();
+    expect(red.rutas).toEqual([RUTA_TOKEN, RUTA_SEATS]);
+    // Sin nombres ni documentos en la consulta del mapa.
+    expect(red.cuerpos.get(RUTA_SEATS)).not.toContain(PII.surname);
+  });
+
+  it('la reserva con asiento sale con FLIGHT_WITH_EXTRAS y el asiento en su vuelo', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'seats');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+
+    const creada = await adapter.createOrderAudited(
+      {
+        ...pedidoDeReserva(),
+        seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+      },
+      { tenantId: 't1', requestId: 'req-asiento' },
+    );
+
+    const body = JSON.parse(red.cuerpos.get(RUTA_CREATE) ?? '{}') as Record<string, unknown>;
+    expect(body['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+    const vuelos = (body['flightDetails'] as { flights: Array<Record<string, unknown>> }).flights;
+    expect(vuelos[0]?.['seats']).toEqual([{ number: '12C', travelerIndex: 1 }]);
+    expect(creada.result.outcome).toBe('CONFIRMED');
+    expect(creada.result.items).toContainEqual(
+      expect.objectContaining({ kind: 'seat', status: 'CONFIRMED', seatNumber: '12C' }),
+    );
+    expect(creada.audit['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
+  });
+
+  it('sin `seats` encendida, una reserva con asientos no sale por ninguna de las dos entradas', async () => {
+    // Hoy no llega ninguna —sin mapa no hay asiento atado—, pero la reserva es la llamada que mueve
+    // dinero: no depende de que el servicio de arriba siga mirando la capacidad.
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const conAsiento: OrderCreateRequest = {
+      ...pedidoDeReserva(),
+      seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+    };
+    const ctx = { tenantId: 't1', requestId: 'req-asiento-apagado' };
+
+    await expect(adapter.createOrderAudited(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    await expect(adapter.createOrder(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    expect(red.rutas).toEqual([]);
+  });
+});
+
+describe('SabreProviderFactory — maletas y servicios antes de emitir (SAB-20)', () => {
+  const RUTA_ANCILLARIES_SHOP = '/v1/dc/ancillaries/shop';
+  const RUTA_FULFILL = '/v1/trip/orders/fulfillFlightTickets';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** El `fetch` del ACL, con lo PRIMERO que salió por cada ruta (la emisión relee después). */
+  function cable(): { rutas: string[]; cuerpos: Map<string, string> } {
+    const rutas: string[] = [];
+    const cuerpos = new Map<string, string>();
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const ruta = new URL(String(input)).pathname;
+      rutas.push(ruta);
+      if (typeof init?.body === 'string' && !cuerpos.has(ruta)) cuerpos.set(ruta, init.body);
+      if (ruta === RUTA_TOKEN) return tokenOk();
+      // Una respuesta fuera de contrato: alcanza para ver que el pedido salió por el ACL.
+      if (ruta === RUTA_ANCILLARIES_SHOP) return respuesta({});
+      if (ruta === RUTA_GET) {
+        return respuesta({
+          bookingId: PNR,
+          isCancelable: true,
+          flights: [
+            {
+              itemId: '1',
+              confirmationId: 'AB123',
+              airlineCode: 'AV',
+              sourceType: 'ATPCO',
+              flightStatusCode: 'HK',
+              flightStatusName: 'Confirmed',
+            },
+          ],
+        });
+      }
+      if (ruta === RUTA_FULFILL) return respuesta({});
+      throw new Error(`el ACL llamó a ${ruta}, que este test no preparó`);
+    });
+    return { rutas, cuerpos };
+  }
+
+  const reserva = {
+    orderId: PNR,
+    contentSource: 'ATPCO',
+    passengers: [{ paxType: 'ADT' as const }],
+  };
+
+  it('sin `services` en SABRE_OPERATIONS: las capacidades apagadas y ni el catálogo sale', async () => {
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ services: false, addServices: false });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsAncillaries(adapter)) throw new Error('el adapter de Sabre perdió los servicios');
+    const ctx = { tenantId: 't1' };
+    for (const llamada of [
+      () => adapter.listAncillaries(reserva, ctx),
+      () =>
+        adapter.addAncillaries(reserva, [{ serviceOfferItemId: 'x', passengerIndexes: [0] }], ctx),
+      () => adapter.removeAncillaries(reserva, ['1'], ctx),
+    ]) {
+      expect(await llamada().catch((e: unknown) => e)).toBeInstanceOf(
+        SabreOperationNotSupportedError,
+      );
+    }
+    // Ni siquiera el token: con la operación apagada no se toca Sabre.
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `services`: capacidades en true y el catálogo por Stateless Ancillaries, sin PII', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'services');
+    const red = cable();
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({
+      services: true,
+      addServices: true,
+      issue: false,
+      void: false,
+      seatMap: false,
+    });
+
+    const adapter = await factory.forTenant('t1');
+    if (!supportsAncillaries(adapter)) throw new Error('el adapter de Sabre perdió los servicios');
+    await expect(adapter.listAncillaries(reserva, { tenantId: 't1' })).rejects.toThrow();
+    expect(red.rutas).toEqual([RUTA_TOKEN, RUTA_ANCILLARIES_SHOP]);
+    expect(red.cuerpos.get(RUTA_ANCILLARIES_SHOP)).toContain(PNR);
+    expect(red.cuerpos.get(RUTA_ANCILLARIES_SHOP)).not.toContain(PII.surname);
+  });
+
+  it('una reserva NDC se rechaza antes de salir, con un mensaje que no culpa al vendedor', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'services');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAncillaries(adapter)) throw new Error('el adapter de Sabre perdió los servicios');
+
+    const error = await adapter
+      .listAncillaries({ ...reserva, contentSource: 'NDC' }, { tenantId: 't1' })
+      .catch((e: unknown) => e);
+    expect(humanizeSabreError(error)).toContain('NDC');
+    expect(red.rutas).toEqual([]);
+  });
+
+  it('con `issue` y `services`, la lectura previa a emitir pide los servicios para cobrar sus EMD', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue,services');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+    await adapter
+      .issueTickets(PNR, { tenantId: 't1', requestId: 'req-emd' }, { travelerCount: 1 })
+      .catch(() => undefined);
+    expect(red.cuerpos.get(RUTA_GET)).toContain('ANCILLARIES');
+  });
+
+  it('con `issue` sin `services`, la emisión es sólo de tiquetes, como antes', async () => {
+    vi.stubEnv('SABRE_OPERATIONS', 'issue');
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsTicketing(adapter)) throw new Error('el adapter de Sabre no sabe emitir');
+    await adapter
+      .issueTickets(PNR, { tenantId: 't1', requestId: 'req-emd' }, { travelerCount: 1 })
+      .catch(() => undefined);
+    expect(red.cuerpos.get(RUTA_GET)).not.toContain('ANCILLARIES');
   });
 });

@@ -20,6 +20,7 @@ import type {
   FlightDocumentStatus,
   TicketingDeadlineZone as DbTicketingDeadlineZone,
 } from '../database/database.types.js';
+import { instantOfWallClock, isIanaTimeZone } from './ticketing-deadline-clock.js';
 
 /**
  * Lo que una lectura del proveedor dice de una reserva de VUELO, guardado en Postgres (0082): los
@@ -51,7 +52,10 @@ export interface StoredFlightDocument {
   readonly providerStatusCode: string | null;
 }
 
-/** El plazo guardado. `at` sólo existe con zona `UTC`. */
+/**
+ * El plazo guardado. `at` existe con zona `UTC`, o con la hora de la oficina más su hora y la zona
+ * de la oficina (`timeZone`, 0084).
+ */
 export interface StoredTicketingDeadline extends TicketingDeadline {
   readonly at?: Date;
 }
@@ -96,6 +100,8 @@ export interface PublicFlightOrderTracking {
     date: string;
     time?: string;
     zone: TicketingDeadlineZone;
+    /** Sólo con `PROVIDER_LOCAL`: la zona IANA de la oficina, con la que se calculó `at`. */
+    timeZone?: string;
     at?: string;
   } | null;
 }
@@ -200,6 +206,9 @@ export function flightReadOf(view: OrderView, at: Date): FlightOrderRead {
     airlineLocators.push({ carrierCode: parsed.data.carrierCode, locator: parsed.data.locator });
   }
   const deadline = DeadlineSchema.safeParse(view.ticketingDeadline);
+  // La zona de la oficina se valida aparte: una zona que no se entiende se pierde sola, y el plazo
+  // sigue valiendo como hora de la oficina sin instante.
+  const timeZone = view.ticketingDeadline?.timeZone;
   return {
     at,
     airlineLocators,
@@ -210,16 +219,24 @@ export function flightReadOf(view: OrderView, at: Date): FlightOrderRead {
             date: deadline.data.date,
             zone: deadline.data.zone,
             ...(deadline.data.time === undefined ? {} : { time: deadline.data.time }),
+            ...(deadline.data.zone === 'PROVIDER_LOCAL' && isIanaTimeZone(timeZone)
+              ? { timeZone }
+              : {}),
           },
         }
       : {}),
   };
 }
 
-/** El instante de un plazo UTC con hora. Con la hora de la oficina, o sin hora, no hay instante. */
-function deadlineInstant(deadline: TicketingDeadline): Date | null {
-  if (deadline.zone !== 'UTC' || deadline.time === undefined) return null;
-  return new Date(`${deadline.date}T${deadline.time}:00.000Z`);
+/**
+ * El instante de un plazo con hora: UTC tal cual, o la hora de la oficina en la zona que declaró la
+ * cuenta (0084). Sin hora, o con la hora de la oficina sin su zona, no hay instante: sería inventado.
+ */
+export function deadlineInstant(deadline: TicketingDeadline): Date | null {
+  if (deadline.time === undefined) return null;
+  if (deadline.zone === 'UTC') return new Date(`${deadline.date}T${deadline.time}:00.000Z`);
+  if (deadline.timeZone === undefined) return null;
+  return instantOfWallClock(deadline.date, deadline.time, deadline.timeZone) ?? null;
 }
 
 /** Lo que hay que escribir de un documento, o `null` si la lectura no cambia nada. */
@@ -314,6 +331,7 @@ export function publicFlightOrderTracking(
             date: deadline.date,
             zone: deadline.zone,
             ...(deadline.time === undefined ? {} : { time: deadline.time }),
+            ...(deadline.timeZone === undefined ? {} : { timeZone: deadline.timeZone }),
             ...(deadline.at === undefined ? {} : { at: deadline.at.toISOString() }),
           },
   };
@@ -350,6 +368,10 @@ export class FlightOrderTrackingStore {
    * Una lectura sin localizadores o sin plazo no borra los guardados: puede venir filtrada, y el
    * vendedor no puede perder el localizador del check-in porque una consulta no lo trajo. Una que
    * los trae, los reemplaza. Un documento que la lectura no trae no se toca.
+   *
+   * Una lectura que cambia el INSTANTE del plazo vuelve a NULL los avisos de vencimiento (0084) y a
+   * cero sus intentos fallidos (0085): el aviso que ya salió decía otra hora. Con el mismo instante,
+   * los avisos se conservan.
    */
   async recordRead(
     tenantId: string,
@@ -384,14 +406,27 @@ export class FlightOrderTrackingStore {
             ticketing_deadline_date: deadline.date,
             ticketing_deadline_time: deadline.time ?? null,
             ticketing_deadline_zone: deadline.zone,
+            ticketing_deadline_time_zone:
+              deadline.zone === 'PROVIDER_LOCAL' ? (deadline.timeZone ?? null) : null,
             ticketing_deadline_at: deadlineInstant(deadline),
           }),
     };
+    // En un UPDATE todo el SET lee la fila vieja: el CASE compara el instante guardado con el nuevo.
+    // Con otro instante es otro aviso: marcas en NULL e intentos fallidos en cero (0085).
+    const alertResets =
+      deadline === undefined
+        ? {}
+        : {
+            deadline_alerted_24h_at: sql<Date | null>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alerted_24h_at END`,
+            deadline_alerted_2h_at: sql<Date | null>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alerted_2h_at END`,
+            deadline_alert_24h_failures: sql<number>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alert_24h_failures ELSE 0 END`,
+            deadline_alert_2h_failures: sql<number>`CASE WHEN flight_order_tracking.ticketing_deadline_at IS NOT DISTINCT FROM excluded.ticketing_deadline_at THEN flight_order_tracking.deadline_alert_2h_failures ELSE 0 END`,
+          };
 
     await trx
       .insertInto('flight_order_tracking')
       .values({ order_id: orderId, tenant_id: tenantId, ...updates })
-      .onConflict((oc) => oc.column('order_id').doUpdateSet(updates))
+      .onConflict((oc) => oc.column('order_id').doUpdateSet({ ...updates, ...alertResets }))
       .execute();
 
     if (read.documents.length === 0) return { added: 0, statusChanged: 0 };
@@ -482,6 +517,7 @@ export class FlightOrderTrackingStore {
           ),
           'ticketing_deadline_time',
           'ticketing_deadline_zone',
+          'ticketing_deadline_time_zone',
           'ticketing_deadline_at',
           'last_read_at',
         ])
@@ -524,6 +560,9 @@ export class FlightOrderTrackingStore {
               ...(row.ticketing_deadline_time === null
                 ? {}
                 : { time: row.ticketing_deadline_time }),
+              ...(typeof row.ticketing_deadline_time_zone === 'string'
+                ? { timeZone: row.ticketing_deadline_time_zone }
+                : {}),
               ...(at === null ? {} : { at }),
             };
       result.set(row.order_id, {

@@ -124,6 +124,8 @@ describe('cada evento que escribe el API tiene su nombre', () => {
     constValue(apiSource('orders/admin-orders.service.ts'), 'ADMIN_ORDER_VIEWED_EVENT'),
     constValue(apiSource('orders/admin-order-actions.service.ts'), 'ADMIN_ORDER_ACTION_EVENT'),
     constValue(apiSource('audit/admin-audit.service.ts'), 'PLATFORM_AUDIT_EXPORTED_EVENT'),
+    constValue(apiSource('tenants/user-export.service.ts'), 'USERS_EXPORTED_EVENT'),
+    constValue(apiSource('tenants/legacy-passwords.service.ts'), 'LEGACY_RESET_BATCH_EVENT'),
     constValue(
       apiSource('reconciliation/reconciliation.service.ts'),
       'RECONCILIATION_REQUESTED_EVENT',

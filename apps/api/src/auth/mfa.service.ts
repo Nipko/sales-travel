@@ -3,6 +3,7 @@ import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import {
   decryptCredentials,
   encryptCredentials,
@@ -12,6 +13,8 @@ import {
   MfaCodeRejectedError,
   MfaNoPendingEnrollmentError,
   MfaNotEnabledError,
+  MfaPasswordInvalidError,
+  MfaPasswordRequiredError,
   MfaReauthInvalidError,
   MfaReauthLockedError,
   MfaRequiredByRoleError,
@@ -55,12 +58,16 @@ export interface MfaStatus {
  */
 @Injectable()
 export class MfaService {
+  /** Hash bcrypt de relleno (memoizado): sin contraseña guardada igual se paga un bcrypt.compare. */
+  private dummyHashPromise: Promise<string> | null = null;
+
   constructor(
     private readonly db: DatabaseService,
     private readonly totp: TotpService,
     private readonly password: PasswordService,
     private readonly audit: AuditService,
     private readonly attempts: LoginAttemptsService,
+    private readonly notices: SecurityNoticeService,
   ) {}
 
   /** ¿Algún rol activo del usuario exige MFA? Sigue a la persona, no al tenant activo. */
@@ -110,6 +117,8 @@ export class MfaService {
    *
    * Con MFA ya activo esto es "cambiar de teléfono" y exige la contraseña y un código vigente:
    * antes cualquier sesión (una robada, por ejemplo) apagaba el MFA activo con sólo llamar acá.
+   * La primera vez no pide nada: un secreto pendiente no protege ni abre nada, y la contraseña se
+   * pide al confirmarlo (USR-13b).
    */
   async beginEnrollment(
     userId: string,
@@ -136,12 +145,19 @@ export class MfaService {
       if (!ok) throw new MfaReauthInvalidError();
     }
 
+    // Sólo si la cuenta sigue como se leyó. Si no, un paso 1 sin contraseña que leyó la cuenta sin
+    // 2FA y escribió después de que la persona lo activó dejaba un pendiente "de cambio de teléfono"
+    // que confirmEnrollment activa sin contraseña ni código de la app de la persona (USR-13b).
     const secret = this.totp.generateSecret();
-    await this.db.db
+    const written = await this.db.db
       .updateTable('users')
       .set({ mfa_pending_secret: encryptCredentials(secret).toString('base64') })
       .where('id', '=', userId)
-      .execute();
+      .where('mfa_enabled_at', rotation ? 'is not' : 'is', null)
+      .executeTakeFirst();
+    if (written.numUpdatedRows === 0n) {
+      throw rotation ? new MfaNotEnabledError() : new MfaAlreadyEnabledError();
+    }
 
     await this.audit.emit({
       eventType: 'auth.mfa.enrollment_started',
@@ -158,21 +174,45 @@ export class MfaService {
    * Paso 2: verifica un código contra el secreto PENDIENTE, lo activa y entrega códigos de
    * recuperación nuevos. La sesión actual queda verificada con MFA; las demás del usuario (abiertas
    * sin segundo factor, o con el teléfono anterior) y sus equipos de confianza se cierran.
+   *
+   * La primera activación (también la que sigue a un restablecimiento hecho por un admin) pide la
+   * contraseña (USR-13b). Sin eso, en una cuenta sin 2FA una sesión robada lo activaba con su propio
+   * teléfono: la sesión quedaba reconfirmada para las acciones de alto impacto (USR-13), las de la
+   * persona se cerraban y no llegaba ningún aviso. Se prueba como en el login: un bcrypt aunque no
+   * haya contraseña guardada, y cada intento suma al bloqueo de la cuenta (withLockout, acción
+   * `enroll`). Al cambiar de teléfono no: la contraseña y un código vigente ya se pidieron en
+   * beginEnrollment, y `currentPassword` se ignora.
+   *
+   * Después le avisa a la persona por correo (USR-12): `mfa_enabled` la primera vez y
+   * `mfa_changed` al cambiar de teléfono.
    */
   async confirmEnrollment(
     userId: string,
     currentSessionId: string | undefined,
     code: string,
+    currentPassword?: string,
   ): Promise<{ recoveryCodes: string[] }> {
     const user = await this.db.db
       .selectFrom('users')
-      .select(['mfa_pending_secret', 'mfa_enabled_at', 'mfa_last_used_step'])
+      .select(['mfa_pending_secret', 'mfa_enabled_at', 'mfa_last_used_step', 'password_hash'])
       .where('id', '=', userId)
       .executeTakeFirst();
     if (!user?.mfa_pending_secret) throw new MfaNoPendingEnrollmentError();
 
     const parsed = classifyMfaCode(code);
     if (parsed.kind !== 'totp') throw new MfaCodeRejectedError();
+
+    const rotation = user.mfa_enabled_at !== null;
+    if (!rotation) {
+      // Sin contraseña no se prueba nada ni se cuenta: es un formulario incompleto, no un intento.
+      if (!currentPassword) throw new MfaPasswordRequiredError();
+      const hash = user.password_hash;
+      const ok = await this.withLockout(userId, 'enroll', () =>
+        this.passwordMatches(currentPassword, hash),
+      );
+      if (!ok) throw new MfaPasswordInvalidError();
+    }
+
     const pending = decryptCredentials(Buffer.from(user.mfa_pending_secret, 'base64'));
     const step = this.totp.verify(pending, parsed.value, {
       minStep: stepOf(user.mfa_last_used_step),
@@ -182,13 +222,13 @@ export class MfaService {
 
     const codes = Array.from({ length: RECOVERY_CODE_COUNT }, generateRecoveryCode);
     const hashes = await Promise.all(codes.map((c) => this.password.hash(c)));
-    const rotation = user.mfa_enabled_at !== null;
     const pendingCipher = user.mfa_pending_secret;
 
-    const revokedSessions = await this.db.withRequestContext({ userId }, async (trx) => {
+    const done = await this.db.withRequestContext({ userId }, async (trx) => {
       // Mover el pendiente y reclamar el paso en un solo UPDATE condicional: 0 filas = otro
-      // request confirmó antes, el secreto cambió o el código ya se usó.
-      const moved = await sql<{ id: string }>`
+      // request confirmó antes, el secreto cambió, el código ya se usó o la cuenta pasó a tener (o
+      // dejó de tener) el 2FA desde la lectura, que es lo que decidió si hacía falta la contraseña.
+      const moved = await sql<{ id: string; mfa_enabled_at: Date }>`
         UPDATE users
            SET mfa_secret         = mfa_pending_secret,
                mfa_pending_secret = NULL,
@@ -196,10 +236,12 @@ export class MfaService {
                mfa_last_used_step = ${String(step)}::bigint
          WHERE id = ${userId}::uuid
            AND mfa_pending_secret = ${pendingCipher}
+           AND (mfa_enabled_at IS NOT NULL) = ${rotation}
            AND (mfa_last_used_step IS NULL OR mfa_last_used_step < ${String(step)}::bigint)
-        RETURNING id
+        RETURNING id, mfa_enabled_at
       `.execute(trx);
-      if (moved.rows.length === 0) throw new MfaCodeRejectedError();
+      const row = moved.rows[0];
+      if (row === undefined) throw new MfaCodeRejectedError();
 
       await this.replaceRecoveryCodes(trx, userId, hashes);
 
@@ -218,7 +260,7 @@ export class MfaService {
         .where('user_id', '=', userId)
         .where('revoked_at', 'is', null)
         .execute();
-      return revoked;
+      return { revokedSessions: revoked, enabledAt: row.mfa_enabled_at };
     });
 
     await this.audit.emit({
@@ -226,7 +268,16 @@ export class MfaService {
       actorUserId: userId,
       aggregateType: 'user',
       aggregateId: userId,
-      payload: { rotation, revokedSessions },
+      payload: { rotation, revokedSessions: done.revokedSessions },
+    });
+
+    // Después del commit: si no fue la persona, se entera por su propio buzón. Cambiar de teléfono
+    // también avisa: pide la contraseña y un código de la app anterior, pero quien tiene las dos
+    // cosas deja a la persona afuera de su propia cuenta.
+    this.notices.notify(rotation ? 'mfa_changed' : 'mfa_enabled', {
+      userId,
+      tenantId: null,
+      at: done.enabledAt,
     });
 
     return { recoveryCodes: codes.map(formatRecoveryCode) };
@@ -390,7 +441,8 @@ export class MfaService {
   /**
    * Desactiva MFA. Exige la contraseña actual y un código: si no, una sesión secuestrada podría
    * quitar el segundo factor sin más. No se puede con un rol que lo exige. Cierra las demás
-   * sesiones y los equipos de confianza; la actual sigue.
+   * sesiones y los equipos de confianza; la actual sigue. Después le avisa a la persona por correo
+   * (`mfa_disabled`): si no fue ella, su cuenta quedó con la contraseña sola.
    */
   async disable(
     userId: string,
@@ -441,6 +493,7 @@ export class MfaService {
       aggregateId: userId,
       payload: { revokedSessions },
     });
+    this.notices.notify('mfa_disabled', { userId, tenantId: null, at: new Date() });
     return { ok: true };
   }
 
@@ -456,7 +509,7 @@ export class MfaService {
    */
   private async withLockout(
     userId: string,
-    action: 'rotation' | 'recovery_codes' | 'disable' | 'step_up',
+    action: 'rotation' | 'recovery_codes' | 'disable' | 'step_up' | 'enroll',
     check: () => Promise<boolean>,
   ): Promise<boolean> {
     const reserved = await this.attempts.reserve(userId);
@@ -474,6 +527,19 @@ export class MfaService {
     });
     if (reserved.locked) throw new MfaReauthLockedError(LOCKOUT_MINUTES);
     return false;
+  }
+
+  /**
+   * La contraseña contra su hash con el mismo cuidado que el login: sin contraseña guardada igual se
+   * corre un bcrypt.compare (contra un hash de relleno), así el tiempo de respuesta no dice si la
+   * cuenta tiene una.
+   */
+  private async passwordMatches(candidate: string, hash: string | null): Promise<boolean> {
+    const against =
+      hash ??
+      (await (this.dummyHashPromise ??= this.password.hash('timing-guard-not-a-real-credential')));
+    const ok = await this.password.verify(candidate, against);
+    return hash !== null && ok;
   }
 
   private async replaceRecoveryCodes(

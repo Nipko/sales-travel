@@ -5,6 +5,25 @@ import { OfferSchema } from '@sales-travel/canonical';
 /** Objetos JSON de pasajeros que se persisten verbatim después de validar el sobre. */
 const jsonObject = z.record(z.unknown());
 
+/** Nueve pasajeros con asiento, por hasta dieciséis aviones (tramos y cambios de equipo). */
+const SEATS_MAX = 9 * 16;
+
+/**
+ * Un asiento elegido al reservar (SAB-16), en los ejes del mapa de asientos. `strict` y sin
+ * `offerRef`: la oferta del asiento la pone el servidor desde el mapa que vuelve a leer justo antes
+ * de reservar, nunca el navegador. Tampoco hay precio: sólo se reservan asientos sin cargo, y eso
+ * también lo decide el mapa.
+ */
+export const SeatSelectionSchema = z
+  .object({
+    passengerIndex: z.number().int().min(0).max(8),
+    segmentRef: z.number().int().min(0).max(15),
+    legIndex: z.number().int().min(0).max(1).default(0),
+    row: z.number().int().min(1).max(999),
+    column: z.string().regex(/^[A-Z]$/),
+  })
+  .strict();
+
 // La Offer sí cruza una frontera de seguridad: de ella salen tenant, proveedor, precio e ids
 // opacos que se reenvían a Sabre. Por eso se valida completa contra el contrato canónico; aceptar
 // un record arbitrario aquí permitiría saltarse todos esos invariantes antes de la revalidación.
@@ -22,6 +41,7 @@ export const CreateOrderSchema = z
       })
       .passthrough(),
     quotationId: z.string().uuid().optional(),
+    seats: z.array(SeatSelectionSchema).min(1).max(SEATS_MAX).optional(),
   })
   // No existe cobro/emisión en createOrder. Rechazar `payment` evita que un cliente crea que una
   // tarjeta enviada y silenciosamente descartada fue procesada.
@@ -53,6 +73,55 @@ export const IssueOrderSchema = z
   })
   .strict();
 export type IssueOrderInput = z.infer<typeof IssueOrderSchema>;
+
+/**
+ * Agregar maletas y servicios a una reserva confirmada (SAB-20). Sólo QUÉ y para QUIÉN: el precio lo
+ * pone el servidor con el catálogo que vuelve a leer. `expectedTotalMinor` es lo que el vendedor vio
+ * que suman los servicios elegidos: si el catálogo dice otra cosa, no se agrega nada (409).
+ */
+export const AddServicesSchema = z
+  .object({
+    selections: z
+      .array(
+        z
+          .object({
+            serviceOfferItemId: z.string().min(1).max(200),
+            passengerIndexes: z
+              .array(z.number().int().min(0).max(8))
+              .min(1)
+              .max(9)
+              .refine((ids) => new Set(ids).size === ids.length, 'passengerIndexes repetidos'),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20)
+      .refine(
+        (list) => new Set(list.map((s) => s.serviceOfferItemId)).size === list.length,
+        'serviceOfferItemId repetido',
+      ),
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type AddServicesInput = z.infer<typeof AddServicesSchema>;
+
+/**
+ * Quitar servicios agregados antes de emitir: las líneas de la orden (ids nuestros, nunca del
+ * proveedor) y lo que el vendedor vio que suman.
+ */
+export const RemoveServicesSchema = z
+  .object({
+    lineIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length, 'lineIds repetidos'),
+    expectedTotalMinor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+  })
+  .strict();
+export type RemoveServicesInput = z.infer<typeof RemoveServicesSchema>;
 
 /**
  * ¿El total guardado de la orden es el que el vendedor vio? `orders.total_amount` es BIGINT (0023)

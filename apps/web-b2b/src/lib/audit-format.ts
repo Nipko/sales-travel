@@ -109,6 +109,10 @@ const LABELS: Readonly<Record<string, string>> = {
   UserInvitationRevoked: 'Invitación revocada',
   UserInvitationAccepted: 'Invitación aceptada',
   UserInvitationRejected: 'Invitación rechazada (ya no era válida)',
+  // USR-17: una sesión de otra cuenta intentó aceptarla; quedó pendiente para su dueño.
+  UserInvitationAccountMismatch: 'Invitación rechazada (otra cuenta intentó aceptarla)',
+  // USR-18: la persona cambió su propio nombre (Mi cuenta → Perfil).
+  UserProfileUpdated: 'Cambió su nombre',
   MembershipRoleChanged: 'Cambio de rol',
   MembershipRemoved: 'Quitado del nodo',
   'auth.mfa.reset_by_admin': '2FA restablecido por un administrador',
@@ -117,6 +121,8 @@ const LABELS: Readonly<Record<string, string>> = {
   'auth.session.released_by_admin': 'Puesto liberado',
   'auth.password_reset.sent_by_admin': 'Enlace para restablecer contraseña enviado',
   'auth.password_reset.required_by_admin': 'Cambio de contraseña forzado',
+  // USR-14: el lote del superadmin sobre las cuentas heredadas (cada cuenta deja además el de arriba).
+  'auth.password_reset.required_bulk': 'Forzó el cambio de contraseña a cuentas heredadas',
   'auth.lockout.cleared_by_admin': 'Cuenta desbloqueada',
   'auth.login.success': 'Ingresó',
   'auth.login.failed': 'Ingreso fallido',
@@ -128,11 +134,18 @@ const LABELS: Readonly<Record<string, string>> = {
   'auth.mfa.enabled': '2FA activado',
   'auth.mfa.disabled': '2FA desactivado',
   'auth.mfa.step_up': 'Reconfirmó su 2FA para una acción de alto impacto',
+  'auth.mfa.reauth_failed': 'Verificación fallida dentro de su sesión',
   'users.exported': 'Exportó la lista de usuarios',
   TenantCreated: 'Nodo creado',
   ProviderCredentialsUpdated: 'Credenciales de proveedor actualizadas',
   MarkupRuleCreated: 'Regla de markup creada',
   MarkupRuleDeleted: 'Regla de markup eliminada',
+  // Maletas y servicios adicionales de una reserva, antes de emitir (SAB-20).
+  OrderServicesRequested: 'Pidió un cambio de servicios adicionales',
+  OrderServicesAdded: 'Servicios adicionales agregados a una reserva',
+  OrderServicesRemoved: 'Servicios adicionales quitados de una reserva',
+  OrderServicesChangeFailed: 'Cambio de servicios adicionales sin completar',
+  'portfolio.hold.adjusted': 'Retención de cartera ajustada por servicios adicionales',
 };
 
 /**
@@ -180,6 +193,8 @@ const OPERATION_LABELS: Readonly<Record<string, string>> = {
   OrderTicketed: 'Tiquetes emitidos',
   OrderTicketIssueFailed: 'La emisión de tiquetes no terminó',
   OrderTicketsVoided: 'Tiquetes anulados',
+  OrderTicketingDeadlineApproaching: 'Aviso del plazo de emisión',
+  OrderSeatsNotConfirmed: 'La aerolínea no confirmó asientos',
   OrderProviderStatusChanged: 'Cambió el estado en el proveedor',
   OrderFlightDocumentsChanged: 'Cambiaron los documentos del vuelo',
   OrderReconciliationDiscrepancy: 'Diferencia en la conciliación',
@@ -322,6 +337,18 @@ const LOGIN_FAILURES: Readonly<Record<string, string>> = {
   unknown_user: 'Correo no registrado',
 };
 
+/**
+ * Qué intentaba quien falló la contraseña o el código dentro de su sesión (`action` de
+ * MfaService.withLockout). Cada fallo suma al bloqueo de la cuenta, como en el login.
+ */
+const REAUTH_ACTIONS: Readonly<Record<string, string>> = {
+  enroll: 'Contraseña incorrecta al activar el 2FA',
+  rotation: 'Al cambiar de teléfono',
+  recovery_codes: 'Al regenerar los códigos de recuperación',
+  disable: 'Al desactivar el 2FA',
+  step_up: 'Al reconfirmar el 2FA',
+};
+
 const LOGIN_METHODS: Readonly<Record<string, string>> = {
   password: 'Con contraseña',
   mfa: 'Con contraseña y 2FA',
@@ -332,6 +359,7 @@ const LOGIN_METHODS: Readonly<Record<string, string>> = {
 /** Por qué se revocó una invitación que nadie revocó a mano: algo le pasó a quien la envió. */
 const REVOCATION_CAUSES: Readonly<Record<string, string>> = {
   membership_suspended: 'al suspender el acceso de quien la envió',
+  membership_removed: 'al quitar del nodo a quien la envió',
   role_changed: 'al cambiar el rol de quien la envió',
   user_suspended: 'al suspender la cuenta de quien la envió',
 };
@@ -375,6 +403,14 @@ function role(value: unknown): string | null {
 function asRole(value: unknown): string | null {
   const r = role(value);
   return r === null ? null : `como ${r}`;
+}
+
+/** "de «Ana Ruiz» a «Ana María Ruiz»", o sólo el nuevo si antes no tenía. */
+function nameChange(p: Readonly<Record<string, unknown>>): string | null {
+  const before = text(record(p['before'])?.['name']);
+  const after = text(record(p['after'])?.['name']);
+  if (after === null) return null;
+  return before === null ? `«${after}»` : `de «${before}» a «${after}»`;
 }
 
 const ANNOUNCEMENT_SEVERITIES: Readonly<Record<string, string>> = {
@@ -538,12 +574,52 @@ export function eventDetail(
     case 'UserStatusChanged':
       parts.push(target, sessionsClosed(p['revokedSessions']));
       break;
+    case 'UserProfileUpdated':
+      parts.push(nameChange(p));
+      break;
+    case 'users.exported': {
+      // USR-16: qué se exportó y cuántas personas; los filtros quedan en el payload.
+      const users = count(p['users']);
+      parts.push(
+        p['scope'] === 'platform'
+          ? 'Toda la plataforma'
+          : p['scope'] === 'node'
+            ? 'El equipo del nodo'
+            : null,
+        users === null
+          ? null
+          : plural(users, 'persona', 'personas') +
+              (p['truncated'] === true ? ' (hasta el tope)' : ''),
+      );
+      break;
+    }
     case 'auth.sessions.revoked_by_admin':
       parts.push(target, sessionsClosed(p['revoked']));
       break;
     case 'auth.password_reset.required_by_admin':
-      parts.push(target, sessionsClosed(p['revokedSessions']));
+      parts.push(
+        target,
+        sessionsClosed(p['revokedSessions']),
+        p['bulk'] === true ? 'En bloque: cuenta heredada' : null,
+      );
       break;
+    case 'auth.password_reset.required_bulk': {
+      // USR-14: cuántas quedaron obligadas y cuántas no, del lote.
+      const sent = count(p['sent']);
+      const mailFailed = count(p['emailFailed']);
+      const skipped = count(p['skipped']);
+      const failed = count(p['failed']);
+      const forced = sent === null && mailFailed === null ? null : (sent ?? 0) + (mailFailed ?? 0);
+      parts.push(
+        forced === null ? null : plural(forced, 'cuenta obligada', 'cuentas obligadas'),
+        skipped === null || skipped === 0 ? null : plural(skipped, 'omitida', 'omitidas'),
+        mailFailed === null || mailFailed === 0
+          ? null
+          : plural(mailFailed, 'correo sin enviar', 'correos sin enviar'),
+        failed === null || failed === 0 ? null : plural(failed, 'con error', 'con error'),
+      );
+      break;
+    }
     case 'auth.login.failed': {
       const reason = text(p['reason']);
       parts.push(reason === null ? null : (LOGIN_FAILURES[reason] ?? null));
@@ -552,6 +628,14 @@ export function eventDetail(
     case 'auth.login.success': {
       const method = text(p['method']);
       parts.push(method === null ? null : (LOGIN_METHODS[method] ?? null));
+      break;
+    }
+    case 'auth.mfa.reauth_failed': {
+      const action = text(p['action']);
+      parts.push(
+        action === null ? null : (REAUTH_ACTIONS[action] ?? null),
+        p['locked'] === true ? 'Cuenta bloqueada por intentos' : null,
+      );
       break;
     }
     case 'auth.login.password_reset_required':

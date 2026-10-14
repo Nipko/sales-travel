@@ -19,6 +19,7 @@ import {
   Shield,
   Ticket,
   UserCog,
+  UserRound,
   Users,
   Wallet,
   type LucideIcon,
@@ -61,10 +62,12 @@ export const adminNav: NavItem[] = [
 ];
 
 /**
- * Seguridad de la propia cuenta (2FA, contraseña, dispositivos). Va aparte de adminNav
- * porque no es administración de la agencia: la usa cualquier usuario, incluido un vendedor.
+ * La propia cuenta: el perfil (tu nombre) y la seguridad (2FA, contraseña, dispositivos). Va aparte
+ * de adminNav porque no es administración de la agencia: la usa cualquier usuario, incluido un
+ * vendedor.
  */
 export const accountNav: NavItem[] = [
+  { label: 'Perfil', href: '/configuracion/perfil', icon: UserRound },
   { label: 'Seguridad', href: '/configuracion/seguridad', icon: Lock },
 ];
 

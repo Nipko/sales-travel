@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { describeTicketingDeadline, ticketingDeadline, ticketingState } from './ticketing-deadline';
+import {
+  DEADLINE_URGENCY_LABEL,
+  deadlineUrgency,
+  describeTicketingDeadline,
+  ticketingDeadline,
+  ticketingState,
+} from './ticketing-deadline';
 
 describe('ticketingDeadline', () => {
   it('prefiere el instante con zona de Flight Check sobre el reloj de BFM', () => {
@@ -104,5 +110,56 @@ describe('describeTicketingDeadline', () => {
         clock: 'office',
       }),
     ).toContain('(fecha local de la oficina emisora)');
+  });
+});
+
+describe('el plazo de la oficina con su zona (SAB-14)', () => {
+  // 18:00 de Bogotá = 23:00 UTC = 20:00 de São Paulo.
+  const plazo = {
+    kind: 'instant' as const,
+    at: '2026-10-14T23:00:00.000Z',
+    office: { time: '18:00', timeZone: 'America/Bogota' },
+  };
+  const ahora = new Date('2026-10-14T15:00:00.000Z');
+
+  it('en la hora de quien mira; la de la oficina aparte sólo si es otra', () => {
+    const enBogota = describeTicketingDeadline(plazo, ahora, {
+      clock: 'office',
+      timeZone: 'America/Bogota',
+    });
+    expect(enBogota).toMatch(/^Urgente · Emitir antes del /);
+    expect(enBogota).toContain('18:00');
+    expect(enBogota).not.toContain('oficina emisora');
+
+    const enSaoPaulo = describeTicketingDeadline(plazo, ahora, {
+      clock: 'office',
+      timeZone: 'America/Sao_Paulo',
+    });
+    expect(enSaoPaulo).toContain('20:00 (18:00 en la oficina emisora)');
+  });
+
+  it('deadlineUrgency: menos de 2 h, hoy, o nada', () => {
+    const zona = 'America/Bogota';
+    expect(deadlineUrgency(plazo, new Date('2026-10-14T21:30:00.000Z'), zona)).toBe('two-hours');
+    expect(deadlineUrgency(plazo, ahora, zona)).toBe('today');
+    // Las 03:30 UTC son las 22:30 de hoy en Bogotá y las 00:30 de mañana en São Paulo.
+    const noche = { kind: 'instant' as const, at: '2026-10-15T03:30:00.000Z' };
+    expect(deadlineUrgency(noche, ahora, 'America/Bogota')).toBe('today');
+    expect(deadlineUrgency(noche, ahora, 'America/Sao_Paulo')).toBeNull();
+    // Vencido o lejos: nada (el vencido lo dice el plazo mismo).
+    expect(deadlineUrgency(plazo, new Date('2026-10-15T00:00:00.000Z'), zona)).toBeNull();
+    expect(deadlineUrgency(plazo, new Date('2026-10-13T15:00:00.000Z'), zona)).toBeNull();
+    // Con la hora de la oficina sin zona sólo se sabe el día.
+    expect(
+      deadlineUrgency({ kind: 'provider-clock', date: '2026-10-14', time: '18:00' }, ahora, zona),
+    ).toBe('today');
+    expect(deadlineUrgency({ kind: 'provider-clock', date: '2026-10-15' }, ahora, zona)).toBeNull();
+  });
+
+  it('los textos dicen el plazo, no sólo lo colorean', () => {
+    expect(DEADLINE_URGENCY_LABEL).toEqual({
+      'two-hours': 'Vence en menos de 2 h',
+      today: 'Vence hoy',
+    });
   });
 });

@@ -1,7 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseMemberDetail } from '../../../../../../lib/member-detail';
 import { apiDetail, iso, MIN, NOW } from '../../../../../../lib/member-detail.fixture';
 import { parsePlatformUser, type PlatformUser } from '../../../../../../lib/platform-users';
@@ -9,6 +9,7 @@ import { voseoIn } from '../../../../../../lib/voseo';
 import {
   DirectoryFiltersBar,
   DirectoryResults,
+  ExportUsersButton,
   PlatformSheetMenuItems,
   UserActionItems,
   type DirectoryState,
@@ -111,6 +112,10 @@ function menu(u: PlatformUser, self = false): string {
   );
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('DirectoryResults', () => {
   it('cada persona con sus columnas, sus nodos como chips "Nodo · Rol" y "+N"', () => {
     const html = results({ status: 'ready', users: [user()], nextCursor: null });
@@ -136,6 +141,10 @@ describe('DirectoryResults', () => {
   });
 
   it('estados de la cuenta: suspendida en toda la plataforma, bloqueada, correo sin verificar, sin nodos', () => {
+    // Mediodía en Bogotá: con el reloj real, cerca de la medianoche el bloqueo de 15 min cae en el
+    // día siguiente y la etiqueta pasa a llevar la fecha («Bloqueado hasta el 14 de oct, …»).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-13T17:00:00Z'));
     const html = results({
       status: 'ready',
       users: [
@@ -393,5 +402,26 @@ describe('DirectoryFiltersBar', () => {
     });
     expect(html).toContain('No pudimos cargar los nodos de la red.');
     expect(html).toContain('aria-label="Volver a cargar los nodos"');
+  });
+});
+
+describe('ExportUsersButton: exportar el directorio a CSV (USR-16)', () => {
+  const button = (exporting: boolean) =>
+    renderToStaticMarkup(createElement(ExportUsersButton, { exporting, onExport: () => {} }));
+
+  it('el botón lleva la nota de qué sale, enlazada', () => {
+    const html = button(false);
+    const id = /<button[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeDefined();
+    expect(html).toContain(
+      `<p id="${id}" class="text-xs text-[var(--color-fg-muted)] sm:text-right">Se exportan hasta 10.000 personas con estos filtros, una fila por cada nodo.</p>`,
+    );
+    expect(html).toMatch(/<button[^>]*>.*Exportar CSV<\/button>/);
+    expect(html).not.toContain('disabled=""');
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('mientras exporta, espera y lo dice', () => {
+    expect(button(true)).toMatch(/<button[^>]*disabled=""[^>]*>.*Exportando…<\/button>/);
   });
 });

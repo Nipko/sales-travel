@@ -4,6 +4,9 @@
  *
  * `ticketCheck` es consultar las condiciones de los tiquetes emitidos y `void`, anularlos (SAB-09).
  * Son post-venta, no venta: deshacen lo vendido.
+ *
+ * `addServices` es agregar y quitar maletas y servicios a una reserva confirmada, antes de emitir
+ * (SAB-20). Distinta de `services`, que en otros proveedores lista el equipaje de una emitida.
  */
 export type OrderCapability =
   | 'retrieve'
@@ -13,10 +16,11 @@ export type OrderCapability =
   | 'reshop'
   | 'issue'
   | 'ticketCheck'
-  | 'void';
+  | 'void'
+  | 'addServices';
 
 /** Las opcionales en el API: un proveedor que no las declara no las tiene. */
-type OptionalOrderCapability = 'issue' | 'ticketCheck' | 'void';
+type OptionalOrderCapability = 'issue' | 'ticketCheck' | 'void' | 'addServices';
 
 export type OrderCapabilities = Readonly<
   Record<Exclude<OrderCapability, OptionalOrderCapability>, boolean>
@@ -91,6 +95,7 @@ export const SALE_ORDER_CAPABILITIES = [
   'services',
   'reshop',
   'issue',
+  'addServices',
 ] as const satisfies readonly OrderCapability[];
 
 /**
