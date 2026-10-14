@@ -1,7 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseMemberDetail } from '../../../../../../lib/member-detail';
 import { apiDetail, iso, MIN, NOW } from '../../../../../../lib/member-detail.fixture';
 import { parsePlatformUser, type PlatformUser } from '../../../../../../lib/platform-users';
@@ -111,6 +111,10 @@ function menu(u: PlatformUser, self = false): string {
   );
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('DirectoryResults', () => {
   it('cada persona con sus columnas, sus nodos como chips "Nodo · Rol" y "+N"', () => {
     const html = results({ status: 'ready', users: [user()], nextCursor: null });
@@ -136,6 +140,10 @@ describe('DirectoryResults', () => {
   });
 
   it('estados de la cuenta: suspendida en toda la plataforma, bloqueada, correo sin verificar, sin nodos', () => {
+    // Mediodía en Bogotá: con el reloj real, cerca de la medianoche el bloqueo de 15 min cae en el
+    // día siguiente y la etiqueta pasa a llevar la fecha («Bloqueado hasta el 14 de oct, …»).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-13T17:00:00Z'));
     const html = results({
       status: 'ready',
       users: [
