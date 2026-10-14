@@ -82,7 +82,7 @@ export function MoveNodeDialog({
       open
       onClose={close}
       title={`Mover ${node.name}`}
-      description="Elegí el nuevo padre. El nodo se mueve con todo lo que cuelga de él."
+      description="Elige el nuevo padre. El nodo se mueve con todo lo que cuelga de él."
       className="max-w-lg"
       footer={
         blocked !== undefined ? (

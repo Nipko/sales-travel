@@ -41,7 +41,7 @@ export function SeatPolicyFields({
         </p>
         <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
           Cuántas personas pueden estar conectadas a la vez y cuándo se cierra una sesión inactiva.
-          Los podés ampliar después desde el nodo.
+          Los puedes ampliar después desde el nodo.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
