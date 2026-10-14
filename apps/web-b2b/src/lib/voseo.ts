@@ -84,6 +84,23 @@ export const VOSEO_WORDS: readonly string[] = [
   'buscá',
   'avisá',
   'contactá',
+  // Las que quedaban en Carteras, Mi Red, las cuentas de proveedor y los mensajes del API.
+  'cargá',
+  'contá',
+  'reintentá',
+  'reemplazá',
+  'desactivá',
+  'informá',
+  'informás',
+  'vendés',
+  'escribís',
+  'borrás',
+  'informalo',
+  'guardala',
+  'habilitale',
+  'dejalo',
+  'promovela',
+  'quitale',
 ];
 
 /**

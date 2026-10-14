@@ -121,7 +121,7 @@ export default function OficinasPage() {
             Oficinas de autos
           </h1>
           <p className="text-xs text-[var(--color-fg-muted)]">
-            Buscá oficinas de renta cercanas vía AgentCars · por ciudad o coordenadas
+            Busca oficinas de renta cercanas vía AgentCars · por ciudad o coordenadas
           </p>
         </div>
       </header>

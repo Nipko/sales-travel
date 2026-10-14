@@ -300,7 +300,7 @@ const SABRE: ProviderForm = {
         { value: 'upsell', label: 'Varias familias nativas (requiere habilitación)' },
         { value: 'off', label: 'No solicitar familias' },
       ],
-      help: 'CERT usa “Una familia” por defecto: este PCC rechaza el upsell nativo con MIP/PROCESS. Elegí varias sólo cuando Sabre confirme el entitlement para este PCC.',
+      help: 'CERT usa “Una familia” por defecto: este PCC rechaza el upsell nativo con MIP/PROCESS. Elige varias sólo cuando Sabre confirme el entitlement para este PCC.',
     },
     {
       key: 'brandLadderRounds',
@@ -398,7 +398,7 @@ const SABRE: ProviderForm = {
     {
       key: 'applicationId',
       label: 'Application-ID (opcional)',
-      help: 'Cabecera que Sabre recomienda en algunos productos. Lo asigna tu account manager; si no te lo dieron, dejalo vacío.',
+      help: 'Cabecera que Sabre recomienda en algunos productos. Lo asigna tu account manager; si no te lo dieron, déjalo vacío.',
     },
     {
       key: 'sabreGroup',
@@ -500,13 +500,13 @@ function tboDraftIssues(payload: ProviderAccountPayload): Readonly<Record<string
       'La URL no puede llevar «?…» ni «#…»: a esa base se le agrega el nombre de cada operación.';
   } else if (environment === 'live' && isTestEndpoint) {
     issues[baseUrlKey] =
-      'Una cuenta de Producción no puede apuntar al entorno de pruebas de TBO. Cargá la URL de producción que te entregó TBO.';
+      'Una cuenta de Producción no puede apuntar al entorno de pruebas de TBO. Carga la URL de producción que te entregó TBO.';
   } else if (url.protocol === 'http:' && environment === 'live') {
     issues[baseUrlKey] =
       'En Producción la URL tiene que empezar con https://: la contraseña de producción no puede viajar sin cifrar.';
   } else if (url.protocol === 'http:' && url.host !== test.host) {
     issues[baseUrlKey] =
-      'http:// sólo se admite para el entorno de pruebas que publica TBO (api.tbotechnology.in). Para cualquier otro host usá https://.';
+      'http:// sólo se admite para el entorno de pruebas que publica TBO (api.tbotechnology.in). Para cualquier otro host usa https://.';
   }
   return issues;
 }
@@ -519,7 +519,7 @@ function tboDraftWarnings(payload: ProviderAccountPayload): readonly Notice[] {
     {
       tone: 'warn',
       title: 'Las credenciales de test viajan sin cifrar',
-      body: 'TBO publica su entorno de pruebas sólo por http://, así que el usuario y la contraseña de test viajan legibles por internet en cada llamada. Usá credenciales exclusivas de test, nunca las de producción. En Producción la plataforma exige https://.',
+      body: 'TBO publica su entorno de pruebas sólo por http://, así que el usuario y la contraseña de test viajan legibles por internet en cada llamada. Usa credenciales exclusivas de test, nunca las de producción. En Producción la plataforma exige https://.',
     },
   ];
 }
@@ -537,7 +537,7 @@ function tboDraftWarnings(payload: ProviderAccountPayload): readonly Notice[] {
  */
 const TBO_HOTELS: ProviderForm = {
   label: 'TBO Holidays',
-  note: 'TBO autentica cada llamada con el usuario y la contraseña de API que te entrega TBO. La cuenta se carga una sola vez en el consolidador y la heredan las agencias de su red. Nace en Sandbox: se guarda cifrada pero no habilita TBO en ninguna búsqueda. Cuando la credencial esté verificada, promovela: abrí Editar, cargá de nuevo usuario y contraseña y guardala con estado Activo. Activo es necesario pero no alcanza: mientras no se conozca el costo por búsqueda, la plataforma además enciende TBO agencia por agencia, y sin ese permiso TBO no aparece aunque la cuenta esté activa. Al pasar de test a producción reemplazá esta misma cuenta, con la misma etiqueta, en vez de crear otra.',
+  note: 'TBO autentica cada llamada con el usuario y la contraseña de API que te entrega TBO. La cuenta se carga una sola vez en el consolidador y la heredan las agencias de su red. Nace en Sandbox: se guarda cifrada pero no habilita TBO en ninguna búsqueda. Cuando la credencial esté verificada, promuévela: abre Editar, carga de nuevo usuario y contraseña y guárdala con estado Activo. Activo es necesario pero no alcanza: mientras no se conozca el costo por búsqueda, la plataforma además enciende TBO agencia por agencia, y sin ese permiso TBO no aparece aunque la cuenta esté activa. Al pasar de test a producción reemplaza esta misma cuenta, con la misma etiqueta, en vez de crear otra.',
   credentials: [
     {
       key: 'username',
@@ -554,7 +554,7 @@ const TBO_HOTELS: ProviderForm = {
       required: true,
       verbatim: true,
       requiredMessage: 'La contraseña es obligatoria: sin ella TBO rechaza cada llamada.',
-      help: 'Se guarda cifrada tal cual la escribís, espacios incluidos, y no se muestra de vuelta. Para rotarla hay que volver a cargar la cuenta completa.',
+      help: 'Se guarda cifrada tal cual la escribes, espacios incluidos, y no se muestra de vuelta. Para rotarla hay que volver a cargar la cuenta completa.',
     },
   ],
   config: [
@@ -582,7 +582,7 @@ const TBO_HOTELS: ProviderForm = {
   ownerRestriction: {
     tenantTypes: ['platform', 'consolidator'],
     explanation:
-      'TBO Holidays opera sólo con la cuenta del consolidador, que heredan las agencias de su red. Una cuenta propia de agencia no se usa: deja a TBO fuera de sus búsquedas. Si esta agencia tiene una, guardala Deshabilitada para volver a heredar la del consolidador.',
+      'TBO Holidays opera sólo con la cuenta del consolidador, que heredan las agencias de su red. Una cuenta propia de agencia no se usa: deja a TBO fuera de sus búsquedas. Si esta agencia tiene una, guárdala Deshabilitada para volver a heredar la del consolidador.',
   },
   initialStatus: 'sandbox',
   draftIssues: tboDraftIssues,
@@ -695,7 +695,7 @@ function fieldIssue(field: ProviderField, value: string): string | null {
     return field.requiredMessage ?? `${field.label} es obligatorio.`;
   }
   if (field.options && !field.options.some((o) => o.value === value)) {
-    return `${field.label}: elegí una de las opciones disponibles.`;
+    return `${field.label}: elige una de las opciones disponibles.`;
   }
   if (field.minLength !== undefined && value.length < field.minLength) {
     return `${field.label} necesita al menos ${field.minLength} caracteres.`;
@@ -743,7 +743,7 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
         ok: false,
         fieldErrors: {},
         summary:
-          'Cargá al menos una credencial: el API no acepta guardar una cuenta con las credenciales vacías, y las que ya están guardadas no se pueden reutilizar porque no se devuelven.',
+          'Carga al menos una credencial: el API no acepta guardar una cuenta con las credenciales vacías, y las que ya están guardadas no se pueden reutilizar porque no se devuelven.',
       };
     }
     return { ok: true, fieldErrors: {}, summary: null };
@@ -753,7 +753,7 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
     ok: false,
     fieldErrors,
     summary:
-      messages.length === 1 ? first : `Revisá ${messages.length} campos antes de guardar. ${first}`,
+      messages.length === 1 ? first : `Revisa ${messages.length} campos antes de guardar. ${first}`,
   };
 }
 
@@ -849,7 +849,7 @@ export function statusNotice(status: ProviderAccountStatus): Notice {
         title: 'Sandbox NO habilita el proveedor',
         // Dice qué le pasa a ESTA cuenta, no qué le pasa al proveedor: la agencia puede seguir
         // resolviendo por otra cuenta propia activa o por la de un ancestro heredable.
-        body: 'La credencial se guarda cifrada, pero la resolución la ignora: esta cuenta no va a habilitar nada y no vas a ver ningún error explicando por qué. Para promoverla, volvé a esta pantalla, cargá los mismos datos y guardá con estado Activo.',
+        body: 'La credencial se guarda cifrada, pero la resolución la ignora: esta cuenta no va a habilitar nada y no vas a ver ningún error explicando por qué. Para promoverla, vuelve a esta pantalla, carga los mismos datos y guarda con estado Activo.',
       };
     case 'disabled':
       return {
@@ -960,7 +960,7 @@ function inheritanceMessage(effect: InheritanceEffect, names: InheritanceNames):
       return {
         tone: 'warn',
         title: `${tenantName} va a dejar de usar las credenciales de ${ownerName}`,
-        body: `Hoy ${tenantName} cotiza ${providerLabel} con la cuenta de ${ownerName}. Al guardar ésta como Activa, pasa a resolver la suya propia —cuelga más abajo en el árbol, así que gana— y la heredada deja de aplicarse. Si la borrás más adelante, vuelve a heredar.`,
+        body: `Hoy ${tenantName} cotiza ${providerLabel} con la cuenta de ${ownerName}. Al guardar ésta como Activa, pasa a resolver la suya propia —cuelga más abajo en el árbol, así que gana— y la heredada deja de aplicarse. Si la borras más adelante, vuelve a heredar.`,
       };
     case 'keeps-inherited':
       return {
@@ -987,7 +987,7 @@ function inheritanceMessage(effect: InheritanceEffect, names: InheritanceNames):
       return {
         tone: 'warn',
         title: `Reemplaza la cuenta «${nextLabel}», que es la que está en uso`,
-        body: `${tenantName} ya cotiza ${providerLabel} con su cuenta propia «${nextLabel}». Guardar con esa misma etiqueta SOBRESCRIBE esa cuenta: las credenciales de ahora se pierden y quedan éstas. Si querías conservarla, cambiá la etiqueta.`,
+        body: `${tenantName} ya cotiza ${providerLabel} con su cuenta propia «${nextLabel}». Guardar con esa misma etiqueta SOBRESCRIBE esa cuenta: las credenciales de ahora se pierden y quedan éstas. Si querías conservarla, cambia la etiqueta.`,
       };
     case 'rivals-own':
       return {
@@ -995,7 +995,7 @@ function inheritanceMessage(effect: InheritanceEffect, names: InheritanceNames):
         title: `${tenantName} va a quedar con dos cuentas activas de ${providerLabel}`,
         // La afirmación honesta: NO sabemos cuál gana. La resolución sólo desempata por
         // profundidad del tenant, y dos cuentas del mismo tenant empatan.
-        body: `Hoy resuelve la cuenta propia «${resolvedLabel ?? DEFAULT_ACCOUNT_LABEL}» y ésta se guarda como «${nextLabel}», así que quedan las dos activas. Esto NO reemplaza a la que está en uso: la resolución sólo desempata por nivel en el árbol, y entre dos cuentas de la misma agencia no hay criterio — no podemos decirte cuál va a usar. Si lo que querés es reemplazarla, guardá con la etiqueta «${resolvedLabel ?? DEFAULT_ACCOUNT_LABEL}»; si querés convivir con las dos, desactivá una.`,
+        body: `Hoy resuelve la cuenta propia «${resolvedLabel ?? DEFAULT_ACCOUNT_LABEL}» y ésta se guarda como «${nextLabel}», así que quedan las dos activas. Esto NO reemplaza a la que está en uso: la resolución sólo desempata por nivel en el árbol, y entre dos cuentas de la misma agencia no hay criterio — no podemos decirte cuál va a usar. Si lo que quieres es reemplazarla, guarda con la etiqueta «${resolvedLabel ?? DEFAULT_ACCOUNT_LABEL}»; si quieres convivir con las dos, desactiva una.`,
       };
     case 'downgrades-own':
       return {
@@ -1019,7 +1019,7 @@ function inheritanceMessage(effect: InheritanceEffect, names: InheritanceNames):
       return {
         tone: 'muted',
         title: 'Se guarda, pero no habilita nada todavía',
-        body: `${providerLabel} sigue sin resolver ninguna cuenta para ${tenantName}. Guardá con estado Activo cuando quieras que ésta sea la cuenta que resuelve.`,
+        body: `${providerLabel} sigue sin resolver ninguna cuenta para ${tenantName}. Guarda con estado Activo cuando quieras que ésta sea la cuenta que resuelve.`,
       };
   }
 }
@@ -1381,7 +1381,7 @@ export function accountCertaintyNotice(
         tone: 'muted',
         // El motivo cambia según el campo (blob cifrado, o fila de un ancestro que la RLS oculta),
         // pero la consecuencia para el operador es una sola: el API no lo devuelve.
-        text: `Pasa el filtro de estado; si está completa, no lo podemos ver: el API no devuelve ${listar(certainty.fields)}. Si el proveedor no aparece en las búsquedas, volvé a cargar la cuenta entera.`,
+        text: `Pasa el filtro de estado; si está completa, no lo podemos ver: el API no devuelve ${listar(certainty.fields)}. Si el proveedor no aparece en las búsquedas, vuelve a cargar la cuenta entera.`,
       };
     case 'nothing-required':
       return null;

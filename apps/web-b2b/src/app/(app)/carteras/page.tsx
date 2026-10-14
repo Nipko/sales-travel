@@ -16,7 +16,7 @@ import {
 } from '../../../lib/wallets';
 import { CarterasClient } from './CarterasClient';
 
-const UNREADABLE = 'No pudimos leer las carteras de tu agencia. Recargá la página.';
+const UNREADABLE = 'No pudimos leer las carteras de tu agencia. Recarga la página.';
 
 /**
  * Cartera B2B: lo que la agencia ve de sus carteras (una por moneda), sus movimientos, los depósitos

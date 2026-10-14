@@ -102,7 +102,7 @@ export const UpdateWalletSchema = z
   })
   .strict()
   .refine((v) => v.creditLimitMinor !== undefined || v.status !== undefined, {
-    message: 'indicá el cupo o el estado que querés fijar',
+    message: 'indica el cupo o el estado que quieres fijar',
   });
 export type UpdateWalletDto = z.infer<typeof UpdateWalletSchema>;
 
@@ -165,9 +165,9 @@ export const SubmitDepositReportSchema = z
     currency: IsoCurrencySchema,
     amountMinor: PositiveAmountMinor,
     reference: z
-      .string({ required_error: 'indicá la referencia del depósito' })
+      .string({ required_error: 'indica la referencia del depósito' })
       .trim()
-      .min(1, 'indicá la referencia del depósito')
+      .min(1, 'indica la referencia del depósito')
       .max(100, 'la referencia admite hasta 100 caracteres'),
     depositedOn: DepositDate.nullable()
       .optional()

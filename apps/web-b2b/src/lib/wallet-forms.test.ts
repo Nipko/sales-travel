@@ -84,7 +84,7 @@ describe('parseAmountInput — lo que escribe una persona, en unidades menores',
   });
 
   it('vacío, con signo, cero o por encima del tope: error con motivo', () => {
-    expect(parseAmountInput('', 2)).toMatchObject({ ok: false, error: 'Indicá el monto.' });
+    expect(parseAmountInput('', 2)).toMatchObject({ ok: false, error: 'Indica el monto.' });
     expect(parseAmountInput('-5', 2)).toMatchObject({ ok: false, error: /sin signo/ });
     expect(parseAmountInput('0', 2)).toMatchObject({ ok: false, error: /mayor que cero/ });
     expect(parseAmountInput('0', 2, { allowZero: true })).toEqual({ ok: true, value: 0 });

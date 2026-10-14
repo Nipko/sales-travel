@@ -285,7 +285,7 @@ export function ClientesClient({
   const handleCreateOpportunity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oppCustomer) {
-      toast.error('Elegí un cliente para la oportunidad');
+      toast.error('Elige un cliente para la oportunidad');
       return;
     }
 

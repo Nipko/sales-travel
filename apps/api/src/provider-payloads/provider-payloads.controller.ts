@@ -81,7 +81,7 @@ function optionsOf(query: ExportQuery): ProviderPayloadExportOptions {
     const role = currentRole();
     if (role === undefined || !isPlatformRole(role)) {
       throw new ForbiddenException(
-        'Sólo la plataforma exporta sin redactar. Pedíselo con la referencia del ticket del proveedor.',
+        'Sólo la plataforma exporta sin redactar. Pídeselo con la referencia del ticket del proveedor.',
       );
     }
   }

@@ -47,7 +47,7 @@ describe('proxyTicketCheck', () => {
 
   it('sin respuesta legible sale como 5xx, con un texto que se puede leer', async () => {
     const caido = await proxyTicketCheck(ORDEN, () =>
-      Promise.resolve({ kind: 'unreachable', status: 503, message: 'Revisá tu conexión' }),
+      Promise.resolve({ kind: 'unreachable', status: 503, message: 'Revisa tu conexión' }),
     );
     const html = await proxyTicketCheck(ORDEN, () =>
       Promise.resolve({ kind: 'not-json', status: 404, message: 'página' }),

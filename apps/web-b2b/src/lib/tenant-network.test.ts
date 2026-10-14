@@ -282,7 +282,7 @@ describe('moveTargets: adónde se puede mover un nodo (D6 A)', () => {
     expect(moveTargets(RED, 'p')).toEqual([]);
     expect(moveBlockedReason(RED, planetour)).toMatch(/raíz de la red/);
     expect(moveTargets(RED, 'b')).toEqual([]);
-    expect(moveBlockedReason(RED, bogota)).toMatch(/quitale antes la marca de sucursal/);
+    expect(moveBlockedReason(RED, bogota)).toMatch(/quítale antes la marca de sucursal/);
   });
 
   it('con destinos no hay motivo de bloqueo', () => {

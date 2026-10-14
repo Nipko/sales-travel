@@ -65,11 +65,11 @@ const ADMIN_MEMBERSHIP_ROLES: readonly string[] = [
  */
 const NOT_THE_AGENCY = {
   deposit:
-    'Tu agencia no registra depósitos en su cartera: informalo en Cartera B2B y quien te financia lo aprueba.',
+    'Tu agencia no registra depósitos en su cartera: infórmalo en Cartera B2B y quien te financia lo aprueba.',
   withdraw:
     'Tu agencia no registra retiros ni ajustes en su cartera: los registra quien te financia.',
   creditLimit:
-    'El cupo de la cartera lo fija quien financia a tu agencia: pedíselo a tu consolidador, a tu agencia o a Planetour.',
+    'El cupo de la cartera lo fija quien financia a tu agencia: pídeselo a tu consolidador, a tu agencia o a Planetour.',
 } as const;
 
 /**

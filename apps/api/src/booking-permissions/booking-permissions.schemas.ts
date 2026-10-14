@@ -13,7 +13,7 @@ export const BookingPermissionsTenantIdSchema = z
 export const UpdateBookingPermissionsSchema = z
   .object({
     nonRefundableRates: z.enum(['allowed', 'blocked'], {
-      errorMap: () => ({ message: 'indicá allowed o blocked' }),
+      errorMap: () => ({ message: 'indica allowed o blocked' }),
     }),
     reason: z
       .string({ required_error: 'el motivo es obligatorio' })

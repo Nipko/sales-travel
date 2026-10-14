@@ -19,7 +19,7 @@ describe('humanizeDespegarError', () => {
     expect(humanizeDespegarError(403, '{"message":"invalid apikey"}')).toContain('API key');
   });
 
-  it('410/vencimiento → volvé a buscar', () => {
+  it('410/vencimiento → vuelve a buscar', () => {
     expect(humanizeDespegarError(410, '{"message":"product expired"}')).toContain('venció');
     expect(humanizeDespegarError(409, '{"message":"room sold out"}')).toContain('venció');
   });

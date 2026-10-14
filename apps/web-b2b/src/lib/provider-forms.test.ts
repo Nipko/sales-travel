@@ -320,7 +320,7 @@ describe('validateProviderDraft — el cuerpo vacío que el API rechaza', () => 
   });
 
   it('los errores de campo mandan sobre el cuerpo vacío: son más concretos', () => {
-    // Con Sabre vacío las dos cosas son ciertas. Decir "cargá al menos una credencial" en vez de
+    // Con Sabre vacío las dos cosas son ciertas. Decir "carga al menos una credencial" en vez de
     // nombrar EPR, contraseña y PCC sería cambiar tres instrucciones por una vaga.
     const result = validateProviderDraft(sabre(), { credentials: {}, config: {} });
     expect(result.ok).toBe(false);
@@ -1228,7 +1228,7 @@ describe('TBO Holidays — nace en Sandbox y la pantalla lo explica', () => {
     expect(note).toContain('no habilita TBO');
     expect(note).toContain('estado Activo');
     // Promover exige volver a cargar la credencial: el API no la devuelve.
-    expect(note).toContain('cargá de nuevo usuario y contraseña');
+    expect(note).toContain('carga de nuevo usuario y contraseña');
   });
 
   it('no promete que Activo alcance: TBO además se enciende agencia por agencia (opt-in)', () => {
@@ -1236,7 +1236,7 @@ describe('TBO Holidays — nace en Sandbox y la pantalla lo explica', () => {
   });
 
   it('el paso a producción reemplaza la cuenta, no agrega otra', () => {
-    expect(tbo().note).toContain('reemplazá esta misma cuenta');
+    expect(tbo().note).toContain('reemplaza esta misma cuenta');
   });
 
   it('el aviso del estado Sandbox dice que no habilita el proveedor', () => {

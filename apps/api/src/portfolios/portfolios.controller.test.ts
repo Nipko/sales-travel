@@ -91,7 +91,7 @@ async function rechazo(p: Promise<unknown> | (() => unknown)): Promise<unknown> 
 
 describe('PortfoliosController: la agencia ya no mueve su propia cartera', () => {
   it.each([
-    ['deposit', 'informalo en Cartera B2B'],
+    ['deposit', 'infórmalo en Cartera B2B'],
     ['withdraw', 'los registra quien te financia'],
     ['updateLimit', 'lo fija quien financia a tu agencia'],
   ] as const)('%s responde 403 con motivo y sin tocar el servicio', async (route, texto) => {

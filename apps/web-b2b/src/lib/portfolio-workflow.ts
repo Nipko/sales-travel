@@ -55,7 +55,7 @@ export function rejectionFailure(
     return {
       kind: 'release-pending',
       title: 'La reserva quedó cancelada con el proveedor; falta liberar el saldo retenido.',
-      description: `Las carteras están ocupadas con otras reservas. Probá "${PORTFOLIO_RELEASE_RETRY.label}" en unos segundos.`,
+      description: `Las carteras están ocupadas con otras reservas. Prueba "${PORTFOLIO_RELEASE_RETRY.label}" en unos segundos.`,
     };
   }
   if (reason === 'PORTFOLIO_HOLD_STATE_CONFLICT') {
@@ -65,19 +65,19 @@ export function rejectionFailure(
       description:
         detail !== ''
           ? detail
-          : 'La retención quedó como cargo. Pedile a quien te financia que la concilie.',
+          : 'La retención quedó como cargo. Pídele a quien te financia que la concilie.',
     };
   }
   if (status === 400) {
     return {
       kind: 'not-cancelled',
       title: 'No se canceló la reserva.',
-      description: detail !== '' ? detail : 'Intentá de nuevo.',
+      description: detail !== '' ? detail : 'Inténtalo de nuevo.',
     };
   }
   return {
     kind: 'unknown',
     title: 'No pudimos confirmar cómo quedó la reserva.',
-    description: `${detail !== '' ? `${detail} ` : ''}Revisá la reserva en Mis Reservas antes de reintentar.`,
+    description: `${detail !== '' ? `${detail} ` : ''}Revisa la reserva en Mis Reservas antes de reintentar.`,
   };
 }

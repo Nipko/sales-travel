@@ -85,7 +85,7 @@ describe('diálogos de quien financia', () => {
         onClose: noop,
       }),
     );
-    expect(html).toMatch(/<option value="" disabled="" selected="">Elegí la moneda<\/option>/);
+    expect(html).toMatch(/<option value="" disabled="" selected="">Elige la moneda<\/option>/);
     expect(html).not.toMatch(/<option value="AED"[^>]*selected/);
     expect(html).toContain('>Habilitar<');
   });
