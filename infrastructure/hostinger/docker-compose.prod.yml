@@ -175,6 +175,12 @@ services:
       MAIL_PASS: ${MAIL_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PlaneTour}
+      # Plazos del envío por SMTP en ms (100 a 60000; vacío = 5000, 5000, 10000 y 15000): conectar,
+      # saludo del servidor, silencio en un paso y tope del envío entero. README §3.
+      MAIL_CONNECTION_TIMEOUT_MS: ${MAIL_CONNECTION_TIMEOUT_MS:-}
+      MAIL_GREETING_TIMEOUT_MS: ${MAIL_GREETING_TIMEOUT_MS:-}
+      MAIL_SOCKET_TIMEOUT_MS: ${MAIL_SOCKET_TIMEOUT_MS:-}
+      MAIL_SEND_TIMEOUT_MS: ${MAIL_SEND_TIMEOUT_MS:-}
       # Cola de reintentos de post-venta (BullMQ). Sin esto, el worker no arranca (reintento manual).
       REDIS_HOST: redis
       REDIS_PORT: '6379'

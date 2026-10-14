@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import { loadMailTimeouts, type MailTimeouts } from './mail-timeouts.config.js';
 
 export interface MailMessage {
   to: string;
@@ -72,6 +73,77 @@ export function specFromEnv(env: NodeJS.ProcessEnv): TransportSpec | null {
   return { host, port, secure, user, pass, from: buildFrom(fromEmail, str(env['MAIL_FROM_NAME'])) };
 }
 
+export type DeliveryResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string; readonly timedOut: boolean };
+
+/** nodemailer marca con ETIMEDOUT sus tres plazos; el DNS vencido sólo lo dice en el mensaje. */
+function isTimeout(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'ETIMEDOUT' || (err instanceof Error && /timed? ?out/i.test(err.message));
+}
+
+/**
+ * Crea el transporte y envía, con plazos acotados. Nunca lanza.
+ *
+ * Al vencer `sendTimeoutMs` se devuelve sin esperar más: nodemailer no deja cortar un envío en
+ * curso, así que esa conexión sigue hasta que el servidor conteste, corte o calle
+ * `socketTimeoutMs`. Lo que importa es que el flujo que avisa no quede tomado. No loguea: el error
+ * de SMTP puede citar direcciones y el llamador decide cómo registrarlo.
+ */
+export async function deliverMail(
+  spec: TransportSpec,
+  msg: MailMessage,
+  timeouts: MailTimeouts,
+): Promise<DeliveryResult> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const transporter = nodemailer.createTransport({
+      host: spec.host,
+      port: spec.port,
+      secure: spec.secure,
+      auth: { user: spec.user, pass: spec.pass },
+      connectionTimeout: timeouts.connectionTimeoutMs,
+      // nodemailer espera el DNS 30 s por su cuenta: cuenta dentro del plazo de conexión.
+      dnsTimeout: timeouts.connectionTimeoutMs,
+      greetingTimeout: timeouts.greetingTimeoutMs,
+      socketTimeout: timeouts.socketTimeoutMs,
+    });
+    const send = transporter
+      .sendMail({
+        from: spec.from,
+        to: msg.to,
+        subject: msg.subject,
+        html: msg.html,
+        text: msg.text,
+      })
+      .then(
+        (): DeliveryResult => ({ ok: true }),
+        (err: unknown): DeliveryResult => ({
+          ok: false,
+          reason: err instanceof Error ? err.message : String(err),
+          timedOut: isTimeout(err),
+        }),
+      );
+    const deadline = new Promise<DeliveryResult>((resolve) => {
+      timer = setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            reason: `sin respuesta en ${timeouts.sendTimeoutMs} ms`,
+            timedOut: true,
+          }),
+        timeouts.sendTimeoutMs,
+      );
+    });
+    return await Promise.race([send, deadline]);
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err), timedOut: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Envío de correo multi-tenant con BYO-email. Resuelve la cuenta 'email' del propio tenant o de un
  * ancestro heredable (mismo mecanismo BYOC que los proveedores); si no hay ninguna, usa el SMTP por
@@ -81,23 +153,33 @@ export function specFromEnv(env: NodeJS.ProcessEnv): TransportSpec | null {
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger('MailerService');
+  private readonly timeouts: MailTimeouts;
 
-  constructor(private readonly creds: ProviderCredentialsService) {}
+  constructor(private readonly creds: ProviderCredentialsService) {
+    const config = loadMailTimeouts(process.env);
+    for (const reason of config.invalidReasons) this.logger.warn(reason);
+    this.timeouts = config.timeouts;
+  }
 
   async sendToTenant(tenantId: string | null, msg: MailMessage): Promise<boolean> {
     const spec = await this.resolveSpec(tenantId);
     if (!spec) {
       // Sin el destinatario: un correo es dato personal y no va al log.
       this.logger.warn(
-        `no email transport (tenant=${tenantId ?? 'none'}); skipping "${msg.subject}"`,
+        `mail.send.skipped tenant=${tenantId ?? 'none'} reason=no_transport subject="${msg.subject}"`,
       );
       return false;
     }
-    const r = await this.deliver(spec, msg);
+    const r = await deliverMail(spec, msg, this.timeouts);
     if (!r.ok) {
-      // NUNCA loguear credenciales; sólo el mensaje del error de transporte, sin las direcciones
-      // que el servidor SMTP suele citar al rechazar un destinatario.
-      this.logger.error(`email send failed (tenant=${tenantId}): ${redactAddresses(r.reason)}`);
+      // NUNCA loguear credenciales ni el destinatario; sólo el mensaje del error de transporte, sin
+      // las direcciones que el servidor SMTP suele citar al rechazar un destinatario.
+      const line = `tenant=${tenantId ?? 'none'} error=${JSON.stringify(redactAddresses(r.reason))}`;
+      if (r.timedOut) {
+        this.logger.warn(`mail.send.timed_out ${line} budgetMs=${this.timeouts.sendTimeoutMs}`);
+      } else {
+        this.logger.error(`mail.send.failed ${line}`);
+      }
       return false;
     }
     return true;
@@ -115,40 +197,23 @@ export class MailerService {
         reason: 'No hay correo configurado para este nodo ni un correo del sistema por defecto.',
       };
     }
-    const r = await this.deliver(spec, {
-      to,
-      subject: 'Correo de prueba · PlaneTour',
-      html: '<p>Este es un <strong>correo de prueba</strong> de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.</p>',
-      text: 'Correo de prueba de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.',
-    });
-    return r.ok
-      ? { sent: true, from: spec.from }
-      : { sent: false, reason: `El envío falló: ${r.reason}` };
-  }
-
-  /** Crea el transporte y envía. No loguea credenciales; el error de SMTP no las incluye. */
-  private async deliver(
-    spec: TransportSpec,
-    msg: MailMessage,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: spec.host,
-        port: spec.port,
-        secure: spec.secure,
-        auth: { user: spec.user, pass: spec.pass },
-      });
-      await transporter.sendMail({
-        from: spec.from,
-        to: msg.to,
-        subject: msg.subject,
-        html: msg.html,
-        text: msg.text,
-      });
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, reason: (err as Error).message };
-    }
+    const r = await deliverMail(
+      spec,
+      {
+        to,
+        subject: 'Correo de prueba · PlaneTour',
+        html: '<p>Este es un <strong>correo de prueba</strong> de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.</p>',
+        text: 'Correo de prueba de PlaneTour. Si lo recibiste, la configuración SMTP funciona correctamente.',
+      },
+      this.timeouts,
+    );
+    if (r.ok) return { sent: true, from: spec.from };
+    return {
+      sent: false,
+      reason: r.timedOut
+        ? `El servidor de correo no respondió a tiempo (${r.reason}). Revisa el servidor, el puerto y si usa SSL.`
+        : `El envío falló: ${r.reason}`,
+    };
   }
 
   /** Cuenta 'email' del tenant (propia/heredada) o, si no hay, el SMTP del sistema. */
