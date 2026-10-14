@@ -13,7 +13,10 @@ import type { Role } from '../database/database.types.js';
 import { requestContextStorage, type RequestContext } from '../request-context/request-context.js';
 import { IpThrottlerGuard } from '../throttler/ip-throttler.guard.js';
 import { LEGACY_RESET_BATCH_MAX, RequireLegacyResetSchema } from './dto.js';
-import { LegacyPasswordsController } from './legacy-passwords.controller.js';
+import {
+  LEGACY_RESET_BATCHES_PER_MINUTE,
+  LegacyPasswordsController,
+} from './legacy-passwords.controller.js';
 import type { LegacyPasswordsService } from './legacy-passwords.service.js';
 
 /*
@@ -142,9 +145,11 @@ describe('alto impacto: forzar pide el 2FA de los últimos 10 minutos (D1 = C)',
   });
 });
 
-describe('como mucho 10 lotes por minuto', () => {
-  it('el undécimo en el minuto es 429', async () => {
-    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', proto.requireReset)).toBe(10);
+describe('como mucho 12 lotes por minuto', () => {
+  it('alcanzan para la lista entera aunque el primero lo frene el 2FA; el decimotercero es 429', async () => {
+    // 500 cuentas en lotes de 50 son 10 pedidos, más el que frena el 2FA y se repite tras el código.
+    expect(LEGACY_RESET_BATCHES_PER_MINUTE).toBe(12);
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', proto.requireReset)).toBe(12);
     expect(Reflect.getMetadata('THROTTLER:TTLdefault', proto.requireReset)).toBe(60_000);
 
     const guard = new IpThrottlerGuard(
@@ -155,14 +160,14 @@ describe('como mucho 10 lotes por minuto', () => {
     await guard.onModuleInit();
     const req = { ip: '172.18.0.2', headers: { 'x-edge-peer-ip': '190.24.8.9' } };
     const res = { header: vi.fn() };
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       await expect(guard.canActivate(contextFor(proto.requireReset, req, res))).resolves.toBe(true);
     }
-    const eleventh = await guard
+    const thirteenth = await guard
       .canActivate(contextFor(proto.requireReset, req, res))
       .catch((e: unknown) => e);
-    expect(eleventh).toBeInstanceOf(ThrottlerException);
-    expect((eleventh as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(thirteenth).toBeInstanceOf(ThrottlerException);
+    expect((thirteenth as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
   });
 });
 

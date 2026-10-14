@@ -17,8 +17,10 @@ import type { MailerService } from '../mail/mailer.service.js';
 import type { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
 import { requestContextStorage, type RequestContext } from '../request-context/request-context.js';
+import { InvitationsService } from './invitations.service.js';
 import { LegacyPasswordsController } from './legacy-passwords.controller.js';
 import {
+  LEGACY_CREATED_BEFORE,
   LEGACY_RESET_BATCH_EVENT,
   LegacyPasswordsService,
   type LegacyPasswordAccount,
@@ -30,13 +32,16 @@ import {
  *   - el criterio: aparecen las cuentas que nacieron como las creaban los caminos retirados
  *     (`POST /admin/users` con un correo nuevo y el admin inicial de `POST /admin/tenants` con
  *     contraseña: la cuenta y una membership con `invited_by` de otra cuenta, en una transacción),
- *     con o sin su evento; no aparecen las que aceptaron una invitación, se registraron solas, se
- *     vincularon ya existiendo, vienen de un seed, ya cambiaron su contraseña, ya tienen el cambio
- *     pendiente, están suspendidas o son de quien mira;
+ *     con o sin su evento, también sin accesos activos; no aparecen las que aceptaron una invitación
+ *     (tampoco con el canje de verdad, ni aunque algún día éste pusiera `invited_by`), se
+ *     registraron solas, se vincularon ya existiendo, vienen de un seed, nacieron después del tope,
+ *     ya cambiaron su contraseña, ya tienen el cambio pendiente, están suspendidas o son de quien
+ *     mira. Las cuentas del test nacen antes del tope, salvo las que prueban el tope;
  *   - sólo el superadmin: un admin de red recibe 403 sin que nada cambie;
  *   - forzar: un resultado por cuenta, el cambio de USR-3 (marca, sesiones cerradas, un solo
  *     enlace), su rastro con el lote y el del lote; un correo que no sale queda dicho y auditado;
- *   - volver a correrlo no le escribe a nadie de nuevo;
+ *   - volver a correrlo no le escribe a nadie de nuevo, y dos lotes a la vez sobre la misma cuenta la
+ *     fuerzan una sola vez (la fila tomada);
  *   - forzar pide el 2FA de los últimos 10 minutos, medido con el reloj de la base.
  *
  * Lo que la API ejecuta corre como `app_user` (NOBYPASSRLS); el superusuario sólo siembra y mira.
@@ -77,6 +82,15 @@ async function rejection(p: Promise<unknown>): Promise<string> {
   throw new Error('esperaba un error HTTP');
 }
 
+/** Espera a que `cond` se cumpla (hasta 10 s). */
+async function waitFor(cond: () => Promise<boolean>): Promise<void> {
+  const until = Date.now() + 10_000;
+  while (!(await cond())) {
+    if (Date.now() > until) throw new Error('la condición no se cumplió a tiempo');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -112,6 +126,13 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
   );
   const legacy = new LegacyPasswordsService(database, network, audit, resets);
   const controller = new LegacyPasswordsController(legacy);
+  // El canje de una invitación de verdad: la cuenta que crea nunca es heredada.
+  const invitations = new InvitationsService(
+    database,
+    password,
+    mailer as unknown as MailerService,
+    audit,
+  );
 
   let platform: string;
   let norte: string;
@@ -122,6 +143,16 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
   let root: string;
   /** Otro superadmin, que sí lo ve en la lista. */
   let root2: string;
+
+  /**
+   * Un instante distinto en cada llamada, antes del tope del criterio: las cuentas que importan
+   * nacieron antes del alta por invitación. Sin esto nacerían hoy y el tope las descartaría a todas.
+   */
+  let ticks = 0;
+  function past(): string {
+    ticks += 1;
+    return new Date(Date.UTC(2026, 5, 1, 12, ticks)).toISOString();
+  }
 
   const slug = (label: string) => `lp-${label}-${sfx}`;
   const email = (label: string) => `lp-${label}-${sfx}@test.local`;
@@ -138,17 +169,19 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
   /** Una cuenta que eligió su propia contraseña (o la de un test), sin membership. */
   async function user(label: string, mail = email(label)): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (email, password_hash, name, mfa_enabled_at)
-       VALUES ($1, 'hash-propio', $2, now()) RETURNING id`,
-      [mail, `Persona ${label}`],
+      `INSERT INTO users (email, password_hash, name, mfa_enabled_at, created_at)
+       VALUES ($1, 'hash-propio', $2, now(), $3) RETURNING id`,
+      [mail, `Persona ${label}`, past()],
     );
     return rows[0]!.id;
   }
 
+  /** Una membership en otra transacción que la de su cuenta: con otro instante. */
   async function member(tenantId: string, userId: string, role: Role, invitedBy?: string) {
     await pool.query(
-      `INSERT INTO memberships (tenant_id, user_id, role, invited_by) VALUES ($1, $2, $3, $4)`,
-      [tenantId, userId, role, invitedBy ?? null],
+      `INSERT INTO memberships (tenant_id, user_id, role, invited_by, created_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [tenantId, userId, role, invitedBy ?? null, past()],
     );
   }
 
@@ -169,26 +202,36 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
 
   /**
    * Como `POST /admin/users` con un correo nuevo, hasta 2026-09-30: la cuenta con la contraseña que
-   * escribió el admin y su membership, en una transacción. Con `event`, también el `UserCreated` que
-   * escribía desde 2026-08-06 (antes no había evento).
+   * escribió el admin y su membership, en una transacción: las dos con el mismo `now()`, que acá se
+   * fija a mano (`at`; si no se dice, uno de antes del tope). Con `event`, también el `UserCreated`
+   * que escribía desde 2026-08-06 (antes no había evento).
    */
   async function createdByAdmin(
     label: string,
-    opts: { tenantId?: string; by?: string; role?: Role; event?: boolean; mail?: string } = {},
+    opts: {
+      tenantId?: string;
+      by?: string;
+      role?: Role;
+      event?: boolean;
+      mail?: string;
+      at?: string;
+    } = {},
   ): Promise<string> {
     const tenantId = opts.tenantId ?? norte;
     const by = opts.by ?? adminNorte;
     const role = opts.role ?? 'vendedor';
+    const at = opts.at ?? past();
     return inOneTransaction(async (c) => {
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, name)
-         VALUES ($1, 'hash-elegido-por-el-admin', $2) RETURNING id`,
-        [opts.mail ?? email(label), `Persona ${label}`],
+        `INSERT INTO users (email, password_hash, name, created_at)
+         VALUES ($1, 'hash-elegido-por-el-admin', $2, $3) RETURNING id`,
+        [opts.mail ?? email(label), `Persona ${label}`, at],
       );
       const id = rows[0]!.id;
       await c.query(
-        `INSERT INTO memberships (tenant_id, user_id, role, invited_by) VALUES ($1, $2, $3, $4)`,
-        [tenantId, id, role, by],
+        `INSERT INTO memberships (tenant_id, user_id, role, invited_by, created_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [tenantId, id, role, by, at],
       );
       if (opts.event) {
         await c.query(
@@ -203,6 +246,7 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
 
   /** Como `POST /admin/tenants` con `adminPassword`: el nodo, su admin inicial y TenantCreated. */
   async function initialAdmin(label: string): Promise<{ tenantId: string; userId: string }> {
+    const at = past();
     return inOneTransaction(async (c) => {
       const t = await c.query<{ id: string }>(
         `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
@@ -211,14 +255,15 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
       );
       const tenantId = t.rows[0]!.id;
       const u = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, name)
-         VALUES ($1, 'hash-elegido-por-el-admin', NULL) RETURNING id`,
-        [email(label)],
+        `INSERT INTO users (email, password_hash, name, created_at)
+         VALUES ($1, 'hash-elegido-por-el-admin', NULL, $2) RETURNING id`,
+        [email(label), at],
       );
       const userId = u.rows[0]!.id;
       await c.query(
-        `INSERT INTO memberships (tenant_id, user_id, role, invited_by) VALUES ($1, $2, 'tenant_admin', $3)`,
-        [tenantId, userId, root2],
+        `INSERT INTO memberships (tenant_id, user_id, role, invited_by, created_at)
+         VALUES ($1, $2, 'tenant_admin', $3, $4)`,
+        [tenantId, userId, root2, at],
       );
       await c.query(
         `INSERT INTO domain_events (tenant_id, actor_user_id, event_type, aggregate_type, aggregate_id, payload)
@@ -311,6 +356,8 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
   let pendiente: string;
   let suspendida: string;
   let huerfana: string;
+  let despues: string;
+  let sinAccesos: string;
 
   beforeAll(async () => {
     database.onModuleInit();
@@ -335,16 +382,18 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
     inicial = await initialAdmin('inicial');
 
     // Aceptó una invitación: eligió su contraseña; la membership no lleva invited_by.
+    const alAceptar = past();
     invitada = await inOneTransaction(async (c) => {
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, email_verified_at)
-         VALUES ($1, 'hash-propio', now()) RETURNING id`,
-        [email('invitada')],
+        `INSERT INTO users (email, password_hash, email_verified_at, created_at)
+         VALUES ($1, 'hash-propio', now(), $2) RETURNING id`,
+        [email('invitada'), alAceptar],
       );
       const id = rows[0]!.id;
       await c.query(
-        `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'vendedor')`,
-        [norte, id],
+        `INSERT INTO memberships (tenant_id, user_id, role, created_at)
+         VALUES ($1, $2, 'vendedor', $3)`,
+        [norte, id, alAceptar],
       );
       await c.query(
         `INSERT INTO user_invitations (tenant_id, email, role, token_hash, invited_by, expires_at, accepted_at)
@@ -355,6 +404,7 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
     });
 
     // Se registró sola (alta pública): su nodo y su membership sin invited_by.
+    const alRegistrarse = past();
     registrada = await inOneTransaction(async (c) => {
       const t = await c.query<{ id: string }>(
         `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
@@ -362,12 +412,14 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
         [slug('propia'), norte],
       );
       const u = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash) VALUES ($1, 'hash-propio') RETURNING id`,
-        [email('registrada')],
+        `INSERT INTO users (email, password_hash, created_at)
+         VALUES ($1, 'hash-propio', $2) RETURNING id`,
+        [email('registrada'), alRegistrarse],
       );
       await c.query(
-        `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'tenant_admin')`,
-        [t.rows[0]!.id, u.rows[0]!.id],
+        `INSERT INTO memberships (tenant_id, user_id, role, created_at)
+         VALUES ($1, $2, 'tenant_admin', $3)`,
+        [t.rows[0]!.id, u.rows[0]!.id, alRegistrarse],
       );
       return u.rows[0]!.id;
     });
@@ -377,15 +429,17 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
     await member(sur, vinculada, 'vendedor', adminNorte);
 
     // Del seed del superadmin: UserCreated con `source`, membership sin invited_by.
+    const alSembrar = past();
     sembrada = await inOneTransaction(async (c) => {
       const u = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, email_verified_at)
-         VALUES ($1, 'hash-del-seed', now()) RETURNING id`,
-        [email('sembrada')],
+        `INSERT INTO users (email, password_hash, email_verified_at, created_at)
+         VALUES ($1, 'hash-del-seed', now(), $2) RETURNING id`,
+        [email('sembrada'), alSembrar],
       );
       await c.query(
-        `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'superadmin')`,
-        [platform, u.rows[0]!.id],
+        `INSERT INTO memberships (tenant_id, user_id, role, created_at)
+         VALUES ($1, $2, 'superadmin', $3)`,
+        [platform, u.rows[0]!.id, alSembrar],
       );
       await c.query(
         `INSERT INTO domain_events (tenant_id, actor_user_id, event_type, aggregate_type, aggregate_id, payload)
@@ -410,6 +464,16 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
     await member(norte, creador, 'admin');
     huerfana = await createdByAdmin('huerfana', { by: creador });
     await pool.query(`DELETE FROM users WHERE id = $1`, [creador]);
+
+    // Nació como las heredadas, pero en el tope: ningún camino retirado pudo crearla.
+    despues = await createdByAdmin('despues', { at: LEGACY_CREATED_BEFORE });
+
+    // Heredada a la que quitaron de su único nodo (USR-11): sin accesos, sigue con la contraseña.
+    sinAccesos = await createdByAdmin('sin-accesos', { tenantId: sur });
+    await pool.query(
+      `UPDATE memberships SET status = 'removed', removed_at = now() WHERE user_id = $1`,
+      [sinAccesos],
+    );
   });
 
   beforeEach(() => {
@@ -435,10 +499,11 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
           email('con-evento'),
           `${FAILS}-${sfx}@test.local`,
           email('inicial'),
+          email('sin-accesos'),
         ].sort(),
       );
       // No están: invitada, registrada, vinculada, sembrada, cambio, pendiente, suspendida,
-      // huérfana (su creador ya no existe) ni quien mira.
+      // huérfana (su creador ya no existe), la nacida en el tope ni quien mira.
       const ids = (await listed(root)).map((u) => u.id);
       for (const id of [
         invitada,
@@ -449,11 +514,48 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
         pendiente,
         suspendida,
         huerfana,
+        despues,
         root,
         adminNorte,
       ]) {
         expect(ids).not.toContain(id);
       }
+    });
+
+    it('la que quitaron de todos sus nodos sigue en la lista, sin accesos activos', async () => {
+      const [row] = (await listed(root)).filter((u) => u.id === sinAccesos);
+      expect(row).toMatchObject({ activeNodes: 0, origin: { tenantId: sur } });
+    });
+
+    it('quien acepta una invitación de verdad nunca es heredada, aunque el canje pusiera invited_by', async () => {
+      await invitations.invite({
+        actorUserId: adminNorte,
+        tenantId: norte,
+        email: email('canje'),
+        role: 'vendedor',
+      });
+      const link = mailer.sendToTenant.mock.calls.find((c) => c[1].to === email('canje'));
+      const token = decodeURIComponent(/token=([^\s"&]+)/.exec(link![1].text)![1]!);
+      const { userId } = await invitations.accept({
+        token,
+        name: 'Persona canje',
+        password: 'una-contraseña-propia-y-larga',
+      });
+
+      expect(await listedEmails(root)).not.toContain(email('canje'));
+      const forced = await controller.requireReset(root, { userIds: [userId] });
+      expect(forced.results).toEqual([{ userId, status: 'skipped', reason: 'not_candidate' }]);
+
+      // Si algún día el canje anotara quién invitó en la membership (misma transacción que la
+      // cuenta), el tope sigue dejándola afuera: nació después del alta por invitación.
+      await pool.query(`UPDATE memberships SET invited_by = $1 WHERE user_id = $2`, [
+        adminNorte,
+        userId,
+      ]);
+      expect(await listedEmails(root)).not.toContain(email('canje'));
+      const again = await controller.requireReset(root, { userIds: [userId] });
+      expect(again.results).toEqual([{ userId, status: 'skipped', reason: 'not_candidate' }]);
+      expect(await state(userId)).toMatchObject({ required: false, tokens: 0 });
     });
 
     it('quien mira no se ve a sí mismo; otro superadmin sí lo ve', async () => {
@@ -606,6 +708,67 @@ d('cuentas heredadas con una contraseña de un admin, contra Postgres', () => {
       expect(await state(heredada)).toEqual(before);
       expect(await events('auth.password_reset.required_by_admin', heredada)).toHaveLength(1);
     });
+
+    it('sin accesos activos: el correo por el del sistema y el rastro en el nodo donde nació', async () => {
+      const out = await controller.requireReset(root, { userIds: [sinAccesos] });
+
+      expect(out.results).toEqual([{ userId: sinAccesos, status: 'sent', revokedSessions: 0 }]);
+      expect(mailer.sendToTenant).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          to: email('sin-accesos'),
+          text: expect.stringContaining('Tu cuenta en la plataforma se creó') as unknown,
+        }),
+      );
+      expect(await events('auth.password_reset.required_by_admin', sinAccesos)).toMatchObject([
+        { actor_user_id: root, tenant_id: sur, payload: { bulk: true } },
+      ]);
+    });
+
+    it('dos lotes a la vez sobre la misma cuenta la fuerzan una sola vez', async () => {
+      const carrera = await createdByAdmin('carrera');
+      // Alguien tiene la fila tomada: los dos lotes llegan y esperan detrás.
+      const holder = await pool.connect();
+      let open = true;
+      try {
+        await holder.query('BEGIN');
+        await holder.query(`SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE`, [carrera]);
+        const { rows: me } = await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+        const holderPid = me[0]!.pid;
+
+        const first = controller.requireReset(root, { userIds: [carrera] });
+        const second = controller.requireReset(root2, { userIds: [carrera] });
+        // El segundo en la fila espera al primero, no a quien la tiene: se cuenta el árbol entero.
+        await waitFor(async () => {
+          const { rows } = await pool.query<{ n: number }>(
+            `WITH RECURSIVE waiting(pid) AS (
+               SELECT $1::int
+               UNION
+               SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
+             )
+             SELECT count(*)::int - 1 AS n FROM waiting`,
+            [holderPid],
+          );
+          return rows[0]!.n >= 2;
+        });
+        await holder.query('COMMIT');
+        open = false;
+
+        const results = (await Promise.all([first, second])).flatMap((b) => b.results);
+        expect(results.map((r) => r.status).sort()).toEqual(['sent', 'skipped']);
+        expect(results.find((r) => r.status === 'skipped')).toMatchObject({
+          reason: 'already_required',
+        });
+      } finally {
+        if (open) await holder.query('ROLLBACK');
+        holder.release();
+      }
+      expect(await state(carrera)).toMatchObject({ required: true, tokens: 1, unused: 1 });
+      expect(await events('auth.password_reset.required_by_admin', carrera)).toHaveLength(1);
+      expect(
+        mailer.sendToTenant.mock.calls.filter((c) => c[1].to === email('carrera')),
+      ).toHaveLength(1);
+    }, 20_000);
 
     it('con el enlace, la persona elige su contraseña y deja de estar obligada', async () => {
       await controller.requireReset(root2, { userIds: [inicial.userId] });

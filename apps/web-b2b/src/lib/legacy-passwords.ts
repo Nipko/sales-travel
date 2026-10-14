@@ -290,18 +290,26 @@ export function legacyDoneMessage(run: LegacyResetRun): string {
   let forced = 0;
   let skipped = 0;
   let mailFailed = 0;
+  let unknown = 0;
   for (const r of run.results) {
     if (r.status === 'sent' || r.status === 'email_failed') forced += 1;
     if (r.status === 'email_failed') mailFailed += 1;
     if (r.status === 'skipped') skipped += 1;
+    if (r.status === 'unknown') unknown += 1;
   }
-  const parts = [
-    forced === 0
-      ? 'No se forzó el cambio a ninguna cuenta.'
-      : forced === 1
-        ? 'Listo: 1 cuenta tiene que elegir una contraseña nueva.'
-        : `Listo: ${cuentas(forced)} tienen que elegir una contraseña nueva.`,
-  ];
+  const parts: string[] = [];
+  if (forced === 1) parts.push('Listo: 1 cuenta tiene que elegir una contraseña nueva.');
+  else if (forced > 1) {
+    parts.push(`Listo: ${cuentas(forced)} tienen que elegir una contraseña nueva.`);
+  } else if (unknown === 0) parts.push('No se forzó el cambio a ninguna cuenta.');
+  // Sin respuesta pudo aplicarse: decir "ninguna" sería falso.
+  if (unknown > 0) {
+    parts.push(
+      unknown === 1
+        ? '1 cuenta quedó sin confirmar.'
+        : `${cuentas(unknown)} quedaron sin confirmar.`,
+    );
+  }
   if (skipped > 0) parts.push(skipped === 1 ? '1 se omitió.' : `${skipped} se omitieron.`);
   if (mailFailed > 0) {
     parts.push(
@@ -414,10 +422,11 @@ function postBatch(userIds: readonly string[]): Promise<Called<LegacyResetResult
  * Es de alto impacto: si el 2FA de la sesión no es de los últimos minutos, `withStepUp` pide el
  * código y repite el lote una vez (USR-13).
  *
- * Si el primer lote no sale (o se cierra el diálogo del código), no se hizo nada: vuelve el error
- * (o `StepUpCancelled`). Si uno posterior falla, la corrida se detiene y lo dice: las de ese lote
- * quedan `unknown` si el servidor no respondió (pudo aplicarse) o `not_processed` si el API lo
- * rechazó, y las de los lotes siguientes `not_processed`.
+ * Si el API rechaza el primer lote (o se cierra el diálogo del código), no se hizo nada: vuelve el
+ * error (o `StepUpCancelled`). Si un lote no tiene respuesta (sin conexión, 5xx o el corte del borde
+ * a los 100 s), la corrida se detiene y lo dice: las de ese lote quedan `unknown` (el servidor pudo
+ * aplicarlo, también si es el primero) y las de los siguientes `not_processed`. Si el API rechaza
+ * uno posterior, ése y los siguientes quedan `not_processed`.
  *
  * `onProgress` recibe cuántas cuentas ya tienen respuesta.
  */
@@ -430,11 +439,13 @@ export async function requireLegacyResets(
   for (const [i, batch] of batches.entries()) {
     const res = await withStepUp(() => postBatch(batch));
     if (isStepUpCancelled(res) || !res.ok) {
-      if (i === 0) {
+      const uncertain = !isStepUpCancelled(res) && (res.status === 0 || res.status >= 500);
+      // Sin respuesta, ni siquiera el primero se da por no hecho: el servidor sigue aunque el borde
+      // corte, y la lista que quedó abierta ya no dice la verdad.
+      if (i === 0 && !uncertain) {
         if (isStepUpCancelled(res)) return res;
         return { ok: false, message: res.message, ...(res.reason ? { reason: res.reason } : {}) };
       }
-      const uncertain = !isStepUpCancelled(res) && (res.status === 0 || res.status >= 500);
       for (const userId of batch) {
         results.push({ userId, status: uncertain ? 'unknown' : 'not_processed' });
       }

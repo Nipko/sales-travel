@@ -254,6 +254,20 @@ describe('cómo se dice, en tú', () => {
         error: null,
       }),
     ).toBe('No se forzó el cambio a ninguna cuenta. 2 se omitieron.');
+    // Sin respuesta no se dice "ninguna": pudo aplicarse.
+    expect(
+      legacyDoneMessage({
+        results: [
+          { userId: ANA, status: 'sent', revokedSessions: 0 },
+          { userId: BETO, status: 'unknown' },
+          { userId: NORTE, status: 'not_processed' },
+        ],
+        error: 'El servidor no respondió a tiempo.',
+      }),
+    ).toBe('Listo: 1 cuenta tiene que elegir una contraseña nueva. 1 cuenta quedó sin confirmar.');
+    expect(legacyDoneMessage({ results: [{ userId: ANA, status: 'unknown' }], error: 'x' })).toBe(
+      '1 cuenta quedó sin confirmar.',
+    );
   });
 
   it('por qué no cargó o no se aplicó', () => {
@@ -374,6 +388,23 @@ describe('las llamadas del navegador', () => {
       reason: 'SUPERADMIN_REQUIRED',
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el primero no responde, pudo aplicarse: "sin confirmar", no un error que lo dé por no hecho', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('<html>524</html>', { status: 524 }));
+    const res = await requireLegacyResets(ids(60));
+    if (!res.ok || isStepUpCancelled(res)) throw new Error('esperaba la corrida');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const statuses = res.data.results.map((r) => r.status);
+    expect(statuses.slice(0, 50).every((s) => s === 'unknown')).toBe(true);
+    expect(statuses.slice(50).every((s) => s === 'not_processed')).toBe(true);
+    expect(res.data.error).toMatch(/Vuelve a abrir la lista/);
+    expect(legacyDoneMessage(res.data)).toBe('50 cuentas quedaron sin confirmar.');
+
+    fetchMock.mockRejectedValueOnce(new TypeError('offline'));
+    const offline = await requireLegacyResets([ANA]);
+    if (!offline.ok || isStepUpCancelled(offline)) throw new Error('esperaba la corrida');
+    expect(offline.data.results).toEqual([{ userId: ANA, status: 'unknown' }]);
   });
 
   it('si un lote posterior no responde, el suyo queda "sin confirmar" y los siguientes sin procesar', async () => {

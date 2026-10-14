@@ -1543,6 +1543,17 @@ Sale de los datos, no de los eventos. Una cuenta aparece si:
    cambiarla (0026 agregó la columna sin rellenarla).
 3. **Está activa y sin un cambio forzado pendiente** (`status = 'active'`,
    `password_reset_required_at` nulo), y no es quien mira.
+4. **Nació antes del tope** `LEGACY_CREATED_BEFORE` (2026-10-14 00:00 UTC). Los caminos retirados
+   salieron de producción el 2026-09-30; el tope va dos semanas después para no perder ninguna aunque
+   ese despliegue se hubiera demorado. Es una red de seguridad: la cuenta de quien acepta una
+   invitación nace en la misma transacción que su membership, así que si algún día el canje anota
+   `invited_by` en ella, sin el tope cada cuenta nueva pasaría a ser "heredada" y el panel ofrecería
+   forzarle el cambio (todas elegidas) a gente que eligió su propia contraseña. El test de
+   integración lo prueba con el canje de verdad y con `invited_by` puesto a mano.
+
+La membership de origen cuenta aunque hoy esté quitada (USR-11) o suspendida: quien perdió todos sus
+accesos sigue en la lista con "Sin accesos activos", porque si vuelve con una invitación acepta
+ingresando con la contraseña que eligió el admin.
 
 Los eventos dicen lo mismo, pero no alcanzan: `UserCreated` existe desde 2026-08-06 y `TenantCreated`
 con `admin: 'created'` desde 2026-09-28, y los dos caminos existen desde 2026-05-05. El test de
@@ -1562,18 +1573,23 @@ nació cada cuenta y quién eligió la contraseña, para que el superadmin la re
   existe). Las más recientes primero, hasta 500 (`truncated` si había más). No pide el 2FA: sólo lee.
 - **`POST /admin/legacy-passwords/require-reset`** `{ userIds }` (Zod estricto: de 1 a 50 UUID, en
   minúsculas; uno repetido cuenta una vez) → `200 { results, counts }`. Pide el **2FA de los últimos
-  10 minutos** (`@RequireRecentMfa`, en la lista del test del guard) y como mucho **10 lotes por
-  minuto** (`@Throttle`, 429).
+  10 minutos** (`@RequireRecentMfa`, en la lista del test del guard) y como mucho **12 lotes por
+  minuto** (`@Throttle`, 429): los 10 de una lista llena (500 / 50) y dos de margen, porque el
+  pedido que frena el 2FA (y el panel repite tras el código) también suma; con 10 justos, el último
+  lote de una lista llena salía 429.
   - Primero los cambios, uno por cuenta y cada uno en su transacción: toma la fila del usuario
     (`FOR NO KEY UPDATE`, el mismo orden usuario → enlaces de USR-3), vuelve a mirar el criterio
-    (la lista pudo quedar vieja) y `PasswordResetService.requireReset` la marca, cierra todas sus
-    sesiones, deja sin efecto sus enlaces y emite uno nuevo. Una cuenta que falla queda `failed` y
-    no frena a las demás.
+    (la lista pudo quedar vieja, y un id que no está en la lista no se fuerza: `not_candidate`) y
+    `PasswordResetService.requireReset` la marca, cierra todas sus sesiones, deja sin efecto sus
+    enlaces y emite uno nuevo. Una cuenta que falla queda `failed` (su transacción se deshace y no
+    se le escribe) y no frena a las demás. Dos lotes a la vez sobre la misma cuenta se ordenan en
+    esa fila: el segundo la ve con el cambio pendiente y la omite (`already_required`).
   - Después los correos, hasta 5 a la vez, por el correo de su nodo activo más antiguo (el mismo que
-    usan los avisos de USR-12, `mail/mail-node.ts`), con la variante nueva `legacy`: "Tu cuenta en
-    {nodo} se creó con una contraseña que eligió un administrador. Para que sólo tú la conozcas,
-    elige una nueva…". Sale después del commit. Si no sale, `email_failed`: el cambio igual quedó y
-    al intentar ingresar le llega otro enlace (USR-3).
+    usan los avisos de USR-12, `mail/mail-node.ts`) o, sin accesos activos, por el del sistema
+    ("Tu cuenta en la plataforma…"), con la variante nueva `legacy`: "Tu cuenta en {nodo} se creó
+    con una contraseña que eligió un administrador. Para que sólo tú la conozcas, elige una
+    nueva…". Sale después del commit. Si no sale, `email_failed`: el cambio igual quedó y al
+    intentar ingresar le llega otro enlace (USR-3).
   - Cada resultado: `sent` o `email_failed` (con `revokedSessions`), `skipped` con `reason`
     (`self`, `suspended`, `already_required`, `password_changed`, `not_candidate`) o `failed`.
     `counts = { sent, emailFailed, skipped, failed }`.
@@ -1585,7 +1601,8 @@ nació cada cuenta y quién eligió la contraseña, para que el superadmin la re
   `SUPERADMIN_REQUIRED` a cualquier otro. Como en las exportaciones, el 2FA se pide antes: un admin
   de nodo con 2FA viejo escribe el código y después recibe el 403. El panel no le ofrece la acción.
 - **El rastro**: cada cuenta deja `auth.password_reset.required_by_admin` en su transacción, en su
-  nodo (lo ve la Actividad de ese nodo y el historial de la persona), con
+  nodo (lo ve la Actividad de ese nodo y el historial de la persona; sin accesos activos, en el nodo
+  donde nació, para que no quede en un evento sin nodo que ninguna Actividad muestra), con
   `{ targetUserId, revokedSessions, bulk: true, batchId }`. Un correo que no sale deja
   `auth.password_reset.email_failed` (`{ targetUserId, via: 'legacy', batchId }`). Al final, el
   lote deja `auth.password_reset.required_bulk` en la raíz `platform`, con
@@ -1609,11 +1626,13 @@ nació cada cuenta y quién eligió la contraseña, para que el superadmin la re
   nueva. No pueden ingresar hasta hacerlo.". Si el 2FA no es de los últimos 10 minutos, el diálogo
   del código (`withStepUp`); cerrarlo no hace nada.
 - **En lotes de 50**, uno después del otro (`requireLegacyResets`, `lib/legacy-passwords.ts`); el
-  botón dice "Forzando el cambio… {x} de {k}" y el diálogo no se cierra mientras corre. Si el primer
-  lote falla, no se hizo nada y el error queda arriba de la lista. Si falla uno posterior, la corrida
-  se detiene y lo dice: las cuentas de ese lote quedan **Sin confirmar** si el servidor no respondió
-  (pudo aplicarse: hay que volver a abrir la lista) o **Sin procesar** si el API lo rechazó (429,
-  403), y las de los lotes siguientes **Sin procesar**.
+  botón dice "Forzando el cambio… {x} de {k}" y el diálogo no se cierra mientras corre. Si el API
+  rechaza el primer lote, no se hizo nada y el error queda arriba de la lista. Si un lote no tiene
+  respuesta (sin conexión, 5xx o el corte del borde a los 100 s; también el primero, porque el
+  servidor sigue aunque el borde corte), la corrida se detiene y las cuentas de ese lote quedan
+  **Sin confirmar** (el resumen dice cuántas, nunca "ninguna"), y el aviso se vuelve a contar para
+  que la lista nueva diga cuáles quedaron forzadas. Si el API rechaza uno posterior (429, 403), ése
+  y los siguientes quedan **Sin procesar**. Al terminar, el foco pasa a **Cerrar**.
 - **El resultado por cuenta**, con el resumen arriba (también como aviso): "Listo: {a} cuentas tienen
   que elegir una contraseña nueva. {s} se omitieron. A {f} no les llegó el correo: al intentar
   ingresar les llega otro.". Cada fila: _Enlace enviado_, _Cambio forzado, pero el correo no salió_
@@ -1634,25 +1653,29 @@ nació cada cuenta y quién eligió la contraseña, para que el superadmin la re
   quien mira, una fila de más), cómo sale cada cuenta y el tope; por qué se omite cada una y en qué
   orden; un resultado por cuenta en el orden pedido; el lote y el nodo en el cambio; el correo
   `legacy` después del commit y por el nodo de la persona; un correo que falla (auditado sin la
-  dirección) o una transacción que falla no frenan a las demás; ids repetidos; el rastro del lote y
-  su fallo; como mucho 5 correos a la vez; 403 sin leer ni escribir nada.
+  dirección) o una transacción que falla no frenan a las demás; sin accesos activos, el correo del
+  sistema y el rastro en el nodo de origen; ids repetidos; el rastro del lote y su fallo; como
+  mucho 5 correos a la vez; 403 sin leer ni escribir nada.
 - `legacy-passwords.controller.test.ts`: rutas, roles, 401, el 2FA de 10 minutos sólo al forzar (y
-  sin 2FA activo, `MFA_REQUIRED_FOR_ACTION`), el 429 al undécimo lote en el minuto con el guard de la
-  app y el esquema del cuerpo.
-- `legacy-passwords.integration.test.ts` (Postgres, como `app_user`): aparecen las cuentas creadas
-  como lo hacían los caminos retirados, con y sin `UserCreated`, y el admin inicial con
-  `TenantCreated`; no aparecen la que aceptó una invitación, la que se registró sola, la vinculada ya
-  existiendo, la del seed, la que cambió su contraseña, la que ya tiene el cambio pendiente, la
+  sin 2FA activo, `MFA_REQUIRED_FOR_ACTION`), el 429 al decimotercer lote en el minuto con el guard
+  de la app y el esquema del cuerpo.
+- `legacy-passwords.integration.test.ts` (Postgres, como `app_user`; las cuentas nacen con fechas de
+  antes del tope): aparecen las cuentas creadas como lo hacían los caminos retirados, con y sin
+  `UserCreated`, el admin inicial con `TenantCreated` y la que quitaron de todos sus nodos; no
+  aparecen la que aceptó una invitación (ni la del canje de verdad de `InvitationsService`, tampoco
+  con `invited_by` puesto a mano), la que se registró sola, la vinculada ya existiendo, la del seed,
+  la nacida en el tope, la que cambió su contraseña, la que ya tiene el cambio pendiente, la
   suspendida, la de un creador que ya no existe ni quien mira (otro superadmin sí la ve); 403 a un
   admin de red sin cambiar nada; forzar con resultados por cuenta, sesiones cerradas, un solo enlace
   (el del correo), el rastro de cada cuenta con el lote y el del lote; un correo que no sale dicho y
-  auditado; volver a correrlo no escribe a nadie; con el enlace la persona elige la suya y deja de
-  ser heredada; el 2FA con el reloj de la base.
+  auditado; volver a correrlo no escribe a nadie; dos lotes a la vez sobre la misma cuenta (con la
+  fila tomada por un tercero hasta que los dos esperan) la fuerzan una sola vez; con el enlace la
+  persona elige la suya y deja de ser heredada; el 2FA con el reloj de la base.
 - `password-reset.service.test.ts`: la variante `legacy` del correo (en tú, escapada) y el evento
   con `bulk` y el lote. `recent-mfa.guard.test.ts` y `sales-operations.guard.test.ts` suman las rutas.
 - Web: `lib/legacy-passwords.test.ts` (lo que trae el API, los textos en tú, los lotes de 50, el
-  reintento con el código, cancelar, un lote posterior que no responde o que el API rechaza, una
-  cuenta que no volvió), `app/api/admin/legacy-passwords/legacy-passwords.route.test.ts`,
+  reintento con el código, cancelar, un lote (también el primero) que no responde, uno posterior
+  que el API rechaza, una cuenta que no volvió), `app/api/admin/legacy-passwords/legacy-passwords.route.test.ts`,
   `legacy-passwords.render.test.ts` (el aviso, la lista elegida, el resultado y la alerta),
   `audit-format.test.ts` y `platform-audit.test.ts`.
 

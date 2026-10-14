@@ -29,7 +29,8 @@ import { SuperadminRequiredError } from '../network/superadmin.errors.js';
  *     existía crea la membership en otra transacción;
  *   - conserva la contraseña con que nació: `password_hash` no nulo y `password_changed_at` nulo (el
  *     canje del enlace y Mi cuenta → Seguridad lo fijan; antes de 0026 no había cómo cambiarla);
- *   - está activa y sin un cambio forzado pendiente (`password_reset_required_at` nulo).
+ *   - está activa y sin un cambio forzado pendiente (`password_reset_required_at` nulo);
+ *   - se creó antes de {@link LEGACY_CREATED_BEFORE}, el tope de seguridad.
  *
  * Los eventos (`UserCreated`, que existe desde 2026-08-06, y `TenantCreated` con `admin: 'created'`,
  * desde 2026-09-28) dicen lo mismo, pero no cubren las cuentas de mayo a agosto. No se reconoce una
@@ -43,6 +44,16 @@ import { SuperadminRequiredError } from '../network/superadmin.errors.js';
 
 /** Como mucho tantas cuentas en la lista; las más recientes primero. */
 export const LEGACY_PASSWORDS_LIST_MAX = 500;
+
+/**
+ * Tope de seguridad del criterio: sólo cuentan las cuentas creadas antes de este instante. Los
+ * caminos retirados salieron de producción con el alta por invitación (2026-09-30); el tope va dos
+ * semanas después para no perder ninguna aunque ese despliegue se hubiera demorado. Lo que cuida: la
+ * cuenta de quien acepta una invitación nace en la misma transacción que su membership, así que si
+ * algún día el canje le pone `invited_by` (quién la invitó), sin el tope cada cuenta nueva pasaría a
+ * ser "heredada" y el panel ofrecería forzarle el cambio a gente que eligió su propia contraseña.
+ */
+export const LEGACY_CREATED_BEFORE = '2026-10-14T00:00:00Z';
 
 /** Correos que salen a la vez dentro de un lote. Cada uno abre su propia conexión SMTP. */
 export const LEGACY_RESET_MAIL_CONCURRENCY = 5;
@@ -107,8 +118,8 @@ export interface LegacyResetBatch {
 // ─────────────────────────── El criterio, en SQL ───────────────────────────
 
 /**
- * La membership con que nació la cuenta `u`, si se la dio otra cuenta en la misma transacción. Una
- * sola: los caminos retirados creaban una.
+ * La membership con que nació la cuenta `u`, si se la dio otra cuenta en la misma transacción y antes
+ * del tope. Una sola: los caminos retirados creaban una. Cuenta aunque hoy esté quitada o suspendida.
  */
 const ORIGIN_MEMBERSHIP = sql`
   SELECT m.tenant_id, m.invited_by
@@ -117,6 +128,7 @@ const ORIGIN_MEMBERSHIP = sql`
      AND m.invited_by IS NOT NULL
      AND m.invited_by <> u.id
      AND m.created_at = u.created_at
+     AND u.created_at < ${LEGACY_CREATED_BEFORE}::timestamptz
    ORDER BY m.id
    LIMIT 1`;
 
@@ -169,7 +181,8 @@ interface LockedAccount {
   has_password: boolean;
   changed: boolean;
   required: boolean;
-  legacy: boolean;
+  /** El nodo donde nació con la contraseña de un admin; `null` si no es heredada. */
+  origin_tenant_id: string | null;
 }
 
 /**
@@ -182,7 +195,7 @@ function lockAccount(trx: Transaction<DB>, userId: string) {
            u.password_hash IS NOT NULL AS has_password,
            u.password_changed_at IS NOT NULL AS changed,
            u.password_reset_required_at IS NOT NULL AS required,
-           EXISTS (${ORIGIN_MEMBERSHIP}) AS legacy
+           (SELECT o.tenant_id FROM (${ORIGIN_MEMBERSHIP}) o) AS origin_tenant_id
       FROM users u
      WHERE u.id = ${userId}::uuid
        FOR NO KEY UPDATE OF u`.execute(trx);
@@ -196,7 +209,7 @@ export function legacySkipReason(row: LockedAccount | undefined): LegacyResetSki
   if (row.status !== 'active') return 'suspended';
   if (row.required) return 'already_required';
   if (row.changed) return 'password_changed';
-  if (!row.has_password || !row.legacy) return 'not_candidate';
+  if (!row.has_password || row.origin_tenant_id === null) return 'not_candidate';
   return null;
 }
 
@@ -245,7 +258,10 @@ interface Forced {
   email: string;
   token: string;
   revokedSessions: number;
+  /** El nodo por cuyo correo se le escribe; sin accesos activos, el correo del sistema. */
   node: MailNode | undefined;
+  /** El nodo de su rastro: el de su correo o, sin accesos activos, donde nació. */
+  auditTenantId: string;
 }
 
 // ─────────────────────────── El servicio ───────────────────────────
@@ -297,7 +313,8 @@ export class LegacyPasswordsService {
    * mirar el criterio (la lista pudo quedar vieja) y `PasswordResetService.requireReset` la marca,
    * cierra sus sesiones, deja un solo enlace y lo audita (`bulk: true` y el lote). Una cuenta que
    * falla no frena a las demás. Después los correos, hasta {@link LEGACY_RESET_MAIL_CONCURRENCY} a
-   * la vez, cada uno por el correo de su nodo más antiguo (el mismo de los avisos de USR-12); el que
+   * la vez, cada uno por el correo de su nodo activo más antiguo (el mismo de los avisos de USR-12),
+   * o por el del sistema si no tiene ninguno; el que
    * no sale queda auditado (`via: 'legacy'`) y la persona recibe otro al intentar ingresar. Al final,
    * el rastro del lote en la raíz `platform`, con cuántas de cada resultado.
    */
@@ -330,22 +347,25 @@ export class LegacyPasswordsService {
   ): Promise<LegacyResetResult | Forced> {
     if (userId === actorUserId) return { userId, status: 'skipped', reason: 'self' };
     try {
-      // Su nodo más antiguo: el del correo y el del rastro, así su Actividad lo muestra.
+      // Su nodo activo más antiguo: el del correo y el del rastro, así su Actividad lo muestra.
       const node = await mailNodeOf(this.db, userId);
       return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
         const { rows } = await lockAccount(trx, userId);
         const row = rows[0];
         const reason = legacySkipReason(row);
-        if (reason !== null || row === undefined) {
+        if (reason !== null || row === undefined || row.origin_tenant_id === null) {
           return { userId, status: 'skipped', reason: reason ?? 'not_candidate' } as const;
         }
+        // Sin accesos activos (la quitaron de todos sus nodos) el rastro va al nodo donde nació: sin
+        // nodo no aparecería en ninguna Actividad.
+        const auditTenantId = node?.tenantId ?? row.origin_tenant_id;
         const { token, revokedSessions } = await this.resets.requireReset(trx, {
           actorUserId,
           targetUserId: userId,
-          tenantId: node?.tenantId ?? null,
+          tenantId: auditTenantId,
           batchId,
         });
-        return { userId, email: row.email, token, revokedSessions, node };
+        return { userId, email: row.email, token, revokedSessions, node, auditTenantId };
       });
     } catch (err) {
       // Sin el correo ni el mensaje de la base (puede citarlo): el id y la clase alcanzan.
@@ -371,7 +391,7 @@ export class LegacyPasswordsService {
     if (!sent) {
       await this.audit.emit({
         eventType: 'auth.password_reset.email_failed',
-        tenantId: forced.node?.tenantId ?? null,
+        tenantId: forced.auditTenantId,
         actorUserId,
         aggregateType: 'user',
         aggregateId: forced.userId,

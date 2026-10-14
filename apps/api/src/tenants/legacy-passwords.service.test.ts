@@ -9,6 +9,7 @@ import type { NetworkService } from '../network/network.service.js';
 import { SuperadminRequiredError } from '../network/superadmin.errors.js';
 import {
   countResults,
+  LEGACY_CREATED_BEFORE,
   LEGACY_PASSWORDS_LIST_MAX,
   LEGACY_RESET_BATCH_EVENT,
   LEGACY_RESET_MAIL_CONCURRENCY,
@@ -28,6 +29,8 @@ import {
 const ACTOR = '99999999-9999-4999-8999-999999999999';
 const PLATFORM = '00000000-0000-4000-8000-000000000001';
 const NORTE = '11111111-1111-4111-8111-111111111111';
+/** Donde nació la cuenta con la contraseña de un admin (puede no ser su nodo de hoy). */
+const ORIGEN = '22222222-2222-4222-8222-222222222222';
 const ANA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const BETO = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CARLA = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -41,7 +44,7 @@ interface Cuenta {
   has_password: boolean;
   changed: boolean;
   required: boolean;
-  legacy: boolean;
+  origin_tenant_id: string | null;
 }
 
 const HEREDADA: Cuenta = {
@@ -50,7 +53,7 @@ const HEREDADA: Cuenta = {
   has_password: true,
   changed: false,
   required: false,
-  legacy: true,
+  origin_tenant_id: ORIGEN,
 };
 
 function candidateRow(id: string, i: number) {
@@ -78,6 +81,8 @@ function banco(
     dbFails?: string[];
     /** El rastro del lote no entra. */
     batchTraceFails?: boolean;
+    /** Las cuentas sin accesos activos: ningún nodo por cuyo correo escribirles. */
+    sinNodo?: string[];
   } = {},
 ) {
   const cuentas = opts.cuentas ?? {};
@@ -88,13 +93,16 @@ function banco(
   const k = scriptedKysely((q: CompiledQuery) => {
     if (q.sql.includes('CROSS JOIN LATERAL')) return opts.candidates ?? [];
     if (q.sql.includes('FOR NO KEY UPDATE OF u')) {
-      const id = q.parameters[0] as string;
+      // El tope del criterio va antes que el id: la cuenta es el último parámetro.
+      expect(q.parameters).toEqual([LEGACY_CREATED_BEFORE, expect.any(String)]);
+      const id = q.parameters[1] as string;
       timeline.push(`lock:${id}`);
       if (opts.dbFails?.includes(id)) throw new Error('la base no respondió');
       const cuenta = cuentas[id];
       return cuenta === undefined ? [] : [cuenta];
     }
     if (q.sql.includes('from "memberships" inner join "tenants"')) {
+      if (opts.sinNodo?.includes(q.parameters[0] as string)) return [];
       return [{ tenantId: NORTE, name: 'Agencia Norte', countryCode: 'CO' }];
     }
     if (q.sql.startsWith('select "id" from "tenants"')) return [{ id: PLATFORM }];
@@ -166,7 +174,7 @@ describe('el criterio, plegado', () => {
       'already_required',
     );
     expect(legacySkipReason({ ...HEREDADA, changed: true })).toBe('password_changed');
-    expect(legacySkipReason({ ...HEREDADA, legacy: false })).toBe('not_candidate');
+    expect(legacySkipReason({ ...HEREDADA, origin_tenant_id: null })).toBe('not_candidate');
     expect(legacySkipReason({ ...HEREDADA, has_password: false })).toBe('not_candidate');
     expect(legacySkipReason(HEREDADA)).toBeNull();
   });
@@ -219,6 +227,7 @@ describe('list: la lista para revisar', () => {
       'm.invited_by IS NOT NULL',
       'm.invited_by <> u.id',
       'm.created_at = u.created_at',
+      'u.created_at < $1::timestamptz',
       "u.status = 'active'",
       'u.password_hash IS NOT NULL',
       'u.password_changed_at IS NULL',
@@ -227,7 +236,7 @@ describe('list: la lista para revisar', () => {
     ]) {
       expect(q!.sql).toContain(piece);
     }
-    expect(q!.parameters).toEqual([ACTOR, LEGACY_PASSWORDS_LIST_MAX + 1]);
+    expect(q!.parameters).toEqual([LEGACY_CREATED_BEFORE, ACTOR, LEGACY_PASSWORDS_LIST_MAX + 1]);
     // Con el contexto del superadmin: la RLS de memberships le deja leerlas todas.
     expect(contexts).toEqual([{ userId: ACTOR }]);
   });
@@ -290,7 +299,7 @@ describe('requireReset: forzar el cambio a las elegidas', () => {
         [BETO]: { ...HEREDADA, required: true },
         [CARLA]: { ...HEREDADA, changed: true },
         [DANI]: { ...HEREDADA, status: 'suspended' },
-        [EMA]: { ...HEREDADA, legacy: false },
+        [EMA]: { ...HEREDADA, origin_tenant_id: null },
       },
     });
 
@@ -361,6 +370,29 @@ describe('requireReset: forzar el cambio a las elegidas', () => {
     });
     // Nunca el correo en el rastro.
     expect(JSON.stringify(audit.emit.mock.calls)).not.toContain('@');
+  });
+
+  it('sin accesos activos: el correo por el del sistema y el rastro en el nodo donde nació', async () => {
+    const { service, resets, audit } = banco({
+      cuentas: { [ANA]: { ...HEREDADA, email: 'ana@agencia.co' } },
+      sinNodo: [ANA],
+      mailFails: ['ana@agencia.co'],
+    });
+
+    const out = await service.requireReset(ACTOR, [ANA]);
+
+    expect(out.results).toEqual([{ userId: ANA, status: 'email_failed', revokedSessions: 2 }]);
+    expect(resets.requireReset.mock.calls[0]![1]).toMatchObject({ tenantId: ORIGEN });
+    expect(resets.sendResetEmail).toHaveBeenCalledWith(
+      null,
+      'ana@agencia.co',
+      expect.any(String),
+      'legacy',
+      null,
+    );
+    expect(audit.emit.mock.calls[0]).toMatchObject([
+      { eventType: 'auth.password_reset.email_failed', tenantId: ORIGEN },
+    ]);
   });
 
   it('una cuenta cuya transacción falla queda "failed" sin frenar a las demás', async () => {

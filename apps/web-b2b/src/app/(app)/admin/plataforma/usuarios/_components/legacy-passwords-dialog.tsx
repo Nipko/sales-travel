@@ -291,7 +291,8 @@ export function LegacyPasswordsDialog({
   const footer =
     phase.kind === 'done' ? (
       <div className="flex justify-end">
-        <Button variant="secondary" onClick={onClose}>
+        {/* El botón que forzó ya no está: sin esto el foco cae al fondo y el teclado se pierde. */}
+        <Button variant="secondary" onClick={onClose} autoFocus>
           {LEGACY_DIALOG_COPY.close}
         </Button>
       </div>
