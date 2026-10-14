@@ -229,6 +229,7 @@ function vueloSiAsientoNo(): OrderCreateResult {
         fieldPath: 'flights[0].seats[0]',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO_DEL_PASAJERO,
+        itemKind: 'seat',
       },
     ],
     compensation: { cancellableItemIds: ['12'] },

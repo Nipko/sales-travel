@@ -600,6 +600,8 @@ function parcial(): OrderCreateResult {
         message: 'The requested seat is no longer available',
         fieldName: 'documentNumber',
         fieldValue: DOCUMENTO,
+        // El ACL lo atribuye al asiento: es lo que deja cerrar «el vuelo sí, el asiento no».
+        itemKind: 'seat',
       },
     ],
     compensation: { cancellableItemIds: ['12'] },
@@ -1033,6 +1035,30 @@ describe('saga de creación — un accesorio caído no cancela el producto', () 
       outcome: 'PARTIAL',
       queued: false,
     });
+    expect(b.queue.compensations).toEqual([]);
+    expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('asiento caído MÁS un error que no es del asiento: escala, no se confirma', async () => {
+    // El atajo de SAB-16 no puede tapar lo que el proveedor dijo de otra cosa: el PNR pudo quedar
+    // sin precio guardado y se emitiría a otra tarifa. Queda `pending` y lo ve una persona.
+    const created: OrderCreateResult = {
+      ...parcial(),
+      issues: [
+        ...parcial().issues,
+        { severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'UNABLE_TO_PRICE_BOOKING' },
+      ],
+    };
+    const b = banco({ created });
+    const { saga } = await b.orders.createOrder(TENANT, USER, dto());
+
+    expect(saga).toEqual({
+      kind: 'escalate',
+      reason: 'partial-without-essential-failure',
+      status: 'pending',
+    });
+    expect(b.fila()?.['status']).toBe('pending');
+    expect(b.audit.first(ORDER_EVENTS.seatsNotConfirmed)).toBeUndefined();
     expect(b.queue.compensations).toEqual([]);
     expect(b.adapter.cancelOrder).not.toHaveBeenCalled();
   });

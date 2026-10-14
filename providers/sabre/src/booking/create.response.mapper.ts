@@ -157,6 +157,36 @@ export const SABRE_WARNING_ERROR_CATEGORY = 'WARNING';
  */
 export const SABRE_ACL_ISSUE_CATEGORY = 'ACL';
 
+/**
+ * `Error.type` de `createBooking` que hablan SÓLO de asientos (SAB-16), del catálogo oficial
+ * (`help-documentation-create-booking-error-list.txt`) y de docs/sabre/03 §4.5. Con ellos la
+ * incidencia sale con `itemKind: 'seat'` y el saga puede cerrar «el vuelo sí, el asiento no».
+ *
+ * Lista CERRADA y no un prefijo: un tipo que no está aquí queda sin atribuir y la reserva escala,
+ * que es el lado seguro. `UNABLE_TO_END_TRANSACTION_TRAVELER_NOT_ELIGIBLE_FOR_PREMIUM_SEATS` no
+ * entra a propósito: es un fallo al cerrar la transacción del PNR entero, no de un asiento.
+ */
+const SABRE_SEAT_ISSUE_TYPES: ReadonlySet<string> = new Set([
+  'UNABLE_TO_BOOK_SEATS',
+  'UNABLE_TO_BOOK_SEATS_CHECK_ASSIGNMENT',
+  'UNABLE_TO_BOOK_SEATS_CHECK_TRAVELERS',
+  'UNABLE_TO_BOOK_SEATS_TRAVELERS_ISSUE',
+  'UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE',
+  'UNABLE_TO_BOOK_SEATS_AREA_PREFERENCE_NOT_ACCEPTED',
+  'PARTIAL_SEAT_ASSIGNMENT',
+  'AIRCRAFT_CHANGE',
+  'DUPLICATE_SEAT_ASSIGNMENT',
+  'SEAT_NOT_ALLOWED_FOR_BOOKING',
+  'SEATS_OFFER_EXPIRED',
+  'SEATS_OFFER_INVALID',
+  'SEATS_OFFER_UNAVAILABLE',
+  'SEATS_OFFER_ID_MISSING',
+  'SEATS_NUMBER_INVALID',
+  'SEATS_ASSIGNMENT_INVALID',
+  'SEATS_DUPLICATE_ASSOCIATION',
+  'SEATS_NOT_AVAILABLE',
+]);
+
 // ---------------------------------------------------------------------------------------------
 // Zod en el borde
 // ---------------------------------------------------------------------------------------------
@@ -432,6 +462,9 @@ function toProviderIssue(error: z.infer<typeof SabreErrorSchema>): ProviderIssue
     ...(error.fieldPath === undefined ? {} : { fieldPath: error.fieldPath }),
     ...(error.fieldName === undefined ? {} : { fieldName: error.fieldName }),
     ...(error.fieldValue === undefined ? {} : { fieldValue: error.fieldValue }),
+    ...(SABRE_SEAT_ISSUE_TYPES.has(error.type.trim().toUpperCase())
+      ? { itemKind: 'seat' as const }
+      : {}),
   };
 }
 

@@ -2296,4 +2296,25 @@ describe('SabreProviderFactory — asientos al reservar (SAB-16)', () => {
     );
     expect(creada.audit['errorHandlingPolicy']).toContain('DO_NOT_HALT_ON_SEAT_BOOKING_ERROR');
   });
+
+  it('sin `seats` encendida, una reserva con asientos no sale por ninguna de las dos entradas', async () => {
+    // Hoy no llega ninguna —sin mapa no hay asiento atado—, pero la reserva es la llamada que mueve
+    // dinero: no depende de que el servicio de arriba siga mirando la capacidad.
+    const red = cable();
+    const adapter = await factoryWith(() => Promise.resolve(resolved())).forTenant('t1');
+    if (!supportsAuditedCreate(adapter)) throw new Error('el adapter de Sabre perdió el puerto');
+    const conAsiento: OrderCreateRequest = {
+      ...pedidoDeReserva(),
+      seats: [{ passengerIndex: 0, segmentRef: 0, legIndex: 0, row: 12, column: 'C' }],
+    };
+    const ctx = { tenantId: 't1', requestId: 'req-asiento-apagado' };
+
+    await expect(adapter.createOrderAudited(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    await expect(adapter.createOrder(conAsiento, ctx)).rejects.toBeInstanceOf(
+      OrderCreateNotSentError,
+    );
+    expect(red.rutas).toEqual([]);
+  });
 });

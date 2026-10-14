@@ -1499,4 +1499,48 @@ describe('SAB-16 — cada asiento pedido tiene que volver', () => {
     expect(wire.outcome.result.outcome).toBe('PARTIAL');
     expect(wire.outcome.seats.notConfirmed).toBe(1);
   });
+
+  it('el vuelo del asiento devuelto también se cruza: el 12C del otro tramo no es el pedido', async () => {
+    // Pedido en el primer tramo; la respuesta trae los dos vuelos y el 12C colgando del segundo.
+    const wire = await book(
+      { ...request(atpcoTwoSegments()), seats: [seatRequest({ segmentRef: 0 })] },
+      {
+        confirmationId: 'PYMUEZ',
+        booking: {
+          bookingId: 'PYMUEZ',
+          flights: [
+            { itemId: 'F1', flightStatusCode: 'HK', flightStatusName: 'Confirmed' },
+            {
+              itemId: 'F2',
+              flightStatusCode: 'HK',
+              flightStatusName: 'Confirmed',
+              seats: [{ number: '12C', statusCode: 'HK', statusName: 'Confirmed' }],
+            },
+          ],
+        },
+      },
+    );
+    expect(wire.outcome.result.outcome).toBe('PARTIAL');
+    expect(wire.outcome.result.items.at(-1)).toEqual({
+      kind: 'seat',
+      status: 'FAILED',
+      seatNumber: '12C',
+    });
+    expect(wire.outcome.seats.notConfirmed).toBe(1);
+  });
+
+  it('el rechazo del asiento sale atribuido al asiento; uno de otra cosa, no', async () => {
+    // Es lo que lee el saga para cerrar «el vuelo sí, el asiento no» sin tapar un error del PNR.
+    const wire = await book(
+      { ...request(atpcoOffer()), seats: [seatRequest()] },
+      {
+        ...CONFIRMED_RESPONSE,
+        errors: [
+          { category: 'APPLICATION_ERROR', type: 'UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE' },
+          { category: 'APPLICATION_ERROR', type: 'DOWNLINE_SERVICE_ERROR' },
+        ],
+      },
+    );
+    expect(wire.outcome.result.issues.map((issue) => issue.itemKind)).toEqual(['seat', undefined]);
+  });
 });

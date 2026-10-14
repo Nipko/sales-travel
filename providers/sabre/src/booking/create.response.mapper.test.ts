@@ -388,6 +388,37 @@ describe('errores del proveedor', () => {
     const mapped = mapSabreCreateBookingResponse(response());
     expect(mapped.timestamp).toBe('2025-10-29T10:17:18');
   });
+
+  it('SAB-16: sólo los errores del catálogo que hablan de un asiento salen atribuidos al asiento', () => {
+    // Es lo que deja al saga cerrar «el vuelo sí, el asiento no». Un error que no es de asiento
+    // —el precio, la forma de pago, cerrar la transacción— queda sin atribuir y la reserva escala.
+    const mapped = mapSabreCreateBookingResponse(
+      response({
+        errors: [
+          { category: 'APPLICATION_ERROR', type: 'UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE' },
+          { category: 'APPLICATION_ERROR', type: 'SEATS_OFFER_EXPIRED' },
+          { category: 'BAD_REQUEST', type: 'DUPLICATE_SEAT_ASSIGNMENT' },
+          { category: 'WARNING', type: 'SEAT_NOT_ALLOWED_FOR_BOOKING' },
+          { category: 'APPLICATION_ERROR', type: 'DOWNLINE_SERVICE_ERROR' },
+          {
+            category: 'APPLICATION_ERROR',
+            type: 'UNABLE_TO_END_TRANSACTION_TRAVELER_NOT_ELIGIBLE_FOR_PREMIUM_SEATS',
+          },
+          { category: 'APPLICATION_ERROR', type: 'SEATS_SOMETHING_NEW' },
+        ],
+      }),
+    );
+    expect(mapped.order.issues.map((issue) => [issue.type, issue.itemKind])).toEqual([
+      ['UNABLE_TO_BOOK_SEATS_NOT_AVAILABLE', 'seat'],
+      ['SEATS_OFFER_EXPIRED', 'seat'],
+      ['DUPLICATE_SEAT_ASSIGNMENT', 'seat'],
+      ['SEAT_NOT_ALLOWED_FOR_BOOKING', 'seat'],
+      ['DOWNLINE_SERVICE_ERROR', undefined],
+      ['UNABLE_TO_END_TRANSACTION_TRAVELER_NOT_ELIGIBLE_FOR_PREMIUM_SEATS', undefined],
+      // Lista cerrada: un tipo nuevo no se adivina por el prefijo.
+      ['SEATS_SOMETHING_NEW', undefined],
+    ]);
+  });
 });
 
 /**

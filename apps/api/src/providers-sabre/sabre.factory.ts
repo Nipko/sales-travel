@@ -1,25 +1,26 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { LoggerPort } from '@sales-travel/core';
 import type { Offer, ProviderEnvironment, SeatMap } from '@sales-travel/canonical';
-import type {
-  FlightSearchCriteria,
-  OfferPriceResult,
-  OrderCancelResult,
-  OrderCreateRequest,
-  OrderCreateResult,
-  OrderPayRequest,
-  OrderPayResult,
-  OrderReshopRequest,
-  OrderReshopResult,
-  OrderView,
-  SearchContext,
-  SeatMapPort,
-  ServiceListRequest,
-  ServiceListResult,
-  TicketCheckResult,
-  TicketIssueOptions,
-  TicketIssueResult,
-  TicketingPort,
+import {
+  OrderCreateNotSentError,
+  type FlightSearchCriteria,
+  type OfferPriceResult,
+  type OrderCancelResult,
+  type OrderCreateRequest,
+  type OrderCreateResult,
+  type OrderPayRequest,
+  type OrderPayResult,
+  type OrderReshopRequest,
+  type OrderReshopResult,
+  type OrderView,
+  type SearchContext,
+  type SeatMapPort,
+  type ServiceListRequest,
+  type ServiceListResult,
+  type TicketCheckResult,
+  type TicketIssueOptions,
+  type TicketIssueResult,
+  type TicketingPort,
 } from '@sales-travel/domain';
 import {
   SABRE_HOSTS,
@@ -413,7 +414,23 @@ export class SabreFlightProviderAdapter
    * MISMA política de emisión y la misma firma, o una reserva quedaría sin plazo según el camino.
    */
   async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+    this.assertSeatsEnabled(request);
     return (await this.inner.create.createBooking(request, ctx, this.bookingOptions())).result;
+  }
+
+  /**
+   * Tercera línea detrás de la capacidad `seatMap` y de {@link getSeatMap}: con `seats` apagado en
+   * este despliegue, una reserva con asientos no sale (SAB-16). Hoy no llega ninguna —sin mapa no
+   * hay asiento atado—, pero la reserva es la llamada que mueve dinero y no puede depender de que el
+   * servicio de arriba no cambie. `OrderCreateNotSentError`: el saga lo lee como «no salió», no como
+   * un resultado incierto.
+   */
+  private assertSeatsEnabled(request: OrderCreateRequest): void {
+    if ((request.seats?.length ?? 0) > 0 && !this.inner.operations.has('seats')) {
+      throw new OrderCreateNotSentError(
+        'la elección de asiento no está encendida para Sabre en este despliegue',
+      );
+    }
   }
 
   /** Lo que toda reserva de esta cuenta lleva además del pedido: su política de emisión y su firma. */
@@ -432,6 +449,7 @@ export class SabreFlightProviderAdapter
     request: OrderCreateRequest,
     ctx: SearchContext,
   ): Promise<OrderCreateAudit> {
+    this.assertSeatsEnabled(request);
     const outcome = await this.inner.create.createBooking(request, ctx, this.bookingOptions());
     const ticketing = outcome.ticketing;
 

@@ -122,7 +122,10 @@ export function failedEssentialItems(result: OrderCreateResult): readonly OrderI
 
 /**
  * Los asientos que no quedaron, en un parcial donde TODO lo demás sí quedó (SAB-16). `0` si el
- * parcial es otra cosa: un vuelo sin confirmar, un hotel o un coche caídos, o un error sin ítem.
+ * parcial es otra cosa: un vuelo sin confirmar, un hotel o un coche caídos, o un `ERROR` que el
+ * proveedor no atribuye a un asiento (`ProviderIssue.itemKind`). Ese último puede ser el PNR sin
+ * precio guardado o una forma de pago rechazada, y que además se cayera un asiento no lo vuelve
+ * accesorio: escala, como sin asientos.
  *
  * Es el único parcial que se cierra como confirmado ({@link decideAfterVerify}). El asiento lo
  * eligió el vendedor en la misma pantalla en la que ahora lee «el vuelo quedó reservado, pero la
@@ -134,6 +137,9 @@ export function seatsNotConfirmed(result: OrderCreateResult): number {
   if (result.outcome !== 'PARTIAL') return 0;
   if (!result.items.some((item) => item.kind === 'flight')) return 0;
   if (result.items.some((item) => item.kind !== 'seat' && item.status !== 'CONFIRMED')) return 0;
+  if (result.issues.some((issue) => issue.severity === 'ERROR' && issue.itemKind !== 'seat')) {
+    return 0;
+  }
   return result.items.filter((item) => item.kind === 'seat' && item.status !== 'CONFIRMED').length;
 }
 

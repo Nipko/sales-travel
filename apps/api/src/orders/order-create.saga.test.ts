@@ -216,6 +216,26 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
     const d = decideAfterVerify({ created: vueloSiAsientoNo(), view: vista() });
     expect(d).toEqual({ kind: 'settled', status: 'confirmed' });
     expect(seatsNotConfirmed(vueloSiAsientoNo())).toBe(1);
+
+    // El caso real trae el rechazo del asiento como `ERROR`; atribuido al asiento, no cambia nada.
+    // Un `WARNING` sin atribuir tampoco: no corta nada.
+    const conSuError = resultado({
+      ...vueloSiAsientoNo(),
+      issues: [
+        {
+          severity: 'ERROR',
+          category: 'APPLICATION_ERROR',
+          type: 'SEATS_NOT_AVAILABLE',
+          itemKind: 'seat',
+        },
+        { severity: 'WARNING', category: 'WARNING', type: 'RESOURCE_UNAVAILABLE' },
+      ],
+    });
+    expect(seatsNotConfirmed(conSuError)).toBe(1);
+    expect(decideAfterVerify({ created: conSuError, view: vista() })).toEqual({
+      kind: 'settled',
+      status: 'confirmed',
+    });
   });
 
   it('SAB-16: el atajo del asiento no vale si algo más no quedó confirmado', () => {
@@ -238,7 +258,27 @@ describe('decideAfterVerify — lo desconocido nunca pasa por confirmado', () =>
       ],
       issues: [{ severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'REMARK_NOT_ADDED' }],
     });
-    for (const created of [conVueloEnEspera, sinVuelos, conErrorSinAsientoCaido]) {
+    // El asiento cayó, pero el proveedor dice además algo que NO es de un asiento: el PNR pudo
+    // quedar sin precio guardado o sin forma de pago. Que también cayera un asiento no lo vuelve
+    // accesorio: escala, como escalaría sin asientos.
+    const conAsientoCaidoYOtroError = resultado({
+      ...vueloSiAsientoNo(),
+      issues: [
+        {
+          severity: 'ERROR',
+          category: 'APPLICATION_ERROR',
+          type: 'SEATS_NOT_AVAILABLE',
+          itemKind: 'seat',
+        },
+        { severity: 'ERROR', category: 'APPLICATION_ERROR', type: 'UNABLE_TO_PRICE_BOOKING' },
+      ],
+    });
+    for (const created of [
+      conVueloEnEspera,
+      sinVuelos,
+      conErrorSinAsientoCaido,
+      conAsientoCaidoYOtroError,
+    ]) {
       expect(seatsNotConfirmed(created)).toBe(0);
       expect(decideAfterVerify({ created, view: vista() })).toMatchObject({ kind: 'escalate' });
     }

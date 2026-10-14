@@ -1,9 +1,14 @@
 import { Logger } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../database/database.service.js';
 import type { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import type { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import {
+  SELLER_RATE_LIMIT_KEY,
+  SellerRateLimitGuard,
+} from '../throttler/seller-rate-limit.guard.js';
 import { SearchController } from './search.controller.js';
 import type { FlightSearchResponse, SearchService } from './search.service.js';
 
@@ -146,6 +151,17 @@ describe('moneda del tenant → criterio de búsqueda', () => {
     });
 
     expect(priced.seatSelection).toBe(false);
+  });
+
+  it('el mapa de asientos tiene tope por vendedor: cada consulta la factura el proveedor (SAB-16)', () => {
+    const handler = Object.getOwnPropertyDescriptor(SearchController.prototype, 'seatMap')
+      ?.value as () => unknown;
+    expect(Reflect.getMetadata(SELLER_RATE_LIMIT_KEY, handler)).toEqual({
+      bucket: 'flights-seat-map',
+      limit: 30,
+      ttlMs: 60_000,
+    });
+    expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toContain(SellerRateLimitGuard);
   });
 
   it('el mapa de asientos también pide la moneda de la agencia (SAB-16)', async () => {

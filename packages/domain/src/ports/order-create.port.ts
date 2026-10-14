@@ -173,6 +173,12 @@ export interface ProviderIssue {
    * logs, spans ni en el cuerpo de ninguna respuesta HTTP.
    */
   fieldValue?: string;
+  /**
+   * El tipo de ítem al que el ACL atribuye esta incidencia, cuando el vocabulario del proveedor lo
+   * dice sin ambigüedad (p.ej. un asiento no disponible). Ausente = sin atribuir: puede ser
+   * cualquier cosa de la reserva, y quien decide la trata como tal (SAB-16).
+   */
+  itemKind?: OrderItemKind;
 }
 
 export type OrderItemKind = 'flight' | 'hotel' | 'car' | 'ancillary' | 'seat';

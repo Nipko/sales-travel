@@ -9,6 +9,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ProviderDisclosureService } from '../provider-disclosure/provider-disclosure.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
+import { SellerRateLimit } from '../throttler/seller-rate-limit.guard.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   OfferPriceBodySchema,
@@ -138,8 +139,13 @@ export class SearchController {
    * El mapa de asientos de la oferta que el vendedor está por reservar (SAB-16). Es venta, como la
    * revalidación: mismo rol, misma moneda y el mismo proveedor que emitió la oferta. Los asientos que
    * se elijan viajan después con `POST /orders`, que vuelve a leer el mapa antes de reservar.
+   *
+   * Cada mapa es una llamada que el proveedor factura, y abrir y cerrar el panel la repite: tope por
+   * vendedor y nodo, como las fichas de hotel (por vendedor y no por IP: web-b2b llama desde su
+   * servidor).
    */
   @SalesOperation()
+  @SellerRateLimit({ bucket: 'flights-seat-map', limit: 30, ttlMs: 60_000 })
   @Post('seat-map')
   async seatMap(
     @CurrentUser() userId: string | undefined,
