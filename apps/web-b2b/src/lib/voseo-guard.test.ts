@@ -55,6 +55,10 @@ const SCANNED = [
   'app/(app)/admin/tenants/_components/suspend-node-dialog.tsx',
   'app/api/admin/tenants',
   'lib/platform-node-stats.ts',
+  // La ficha de cada nodo: su pestaña Resumen y la barra de pestañas.
+  'app/(app)/admin/tenants/[tenantId]/resumen',
+  'app/(app)/admin/tenants/[tenantId]/_components/node-section-nav.tsx',
+  'lib/platform-node-summary.ts',
   'lib/tenant-network.ts',
   // Inicio y Reportes de la agencia.
   'app/(app)/page.tsx',

@@ -11,7 +11,8 @@ import { AdminTenantsService } from './admin-tenants.service.js';
 
 /**
  * Agencias en números contra la base, como `app_user` (el rol de producción, sujeto a la RLS):
- * `admin_node_stats()` (0075) por nodo, y el impacto de suspender un nodo sumado sobre su subárbol.
+ * `admin_node_stats()` (0075) por nodo, el impacto de suspender un nodo sumado sobre su subárbol y
+ * la ficha de cada nodo (lo suyo frente a su red, sus ventas y lo que espera a una persona).
  *
  * La red: Planetour → consolidador C → agencias A y B, y A → sub-agencia S; Planetour → agencia D,
  * fuera de lo que se mira. Una persona con acceso a A y a S cuenta una vez. La base es compartida
@@ -215,6 +216,10 @@ d('Agencias en números (admin_node_stats de 0075 como app_user)', () => {
 
     // Reservas abiertas: la pendiente de A y la confirmada de S; la cancelada de B no.
     const pendingA = await order(agencyA, twoNodes, 'pending');
+    // Pendiente desde hace una hora sin seguimiento: create-stuck en admin_order_attention.
+    await admin.query(`UPDATE orders SET created_at = now() - interval '1 hour' WHERE id = $1`, [
+      pendingA,
+    ]);
     await order(sub, twoNodes, 'confirmed');
     await order(agencyB, sellerB, 'cancelled');
     await order(outside, outsider, 'pending');
@@ -357,17 +362,116 @@ d('Agencias en números (admin_node_stats de 0075 como app_user)', () => {
     });
   });
 
+  it('ficha de C: lo suyo, su red sumada, sus ventas por moneda y lo que espera en su red', async () => {
+    const view = await service.summary(superadmin, consolidator);
+
+    const { rows: platformRow } = await admin.query<{ name: string }>(
+      'SELECT name FROM tenants WHERE id = $1',
+      [platform],
+    );
+    const { createdAt, ...tenant } = view.tenant;
+    expect(tenant).toEqual({
+      id: consolidator,
+      name: `at-c-${sfx}`,
+      slug: `at-c-${sfx}`,
+      tenantType: 'consolidator',
+      isBranch: false,
+      status: 'active',
+      parent: { id: platform, name: platformRow[0]!.name },
+      countryCode: 'CO',
+      defaultCurrency: 'COP',
+    });
+    expect(createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // Lo suyo: su admin, ninguna reserva y lo retenido por el costo de la venta de A.
+    expect(view.own).toMatchObject({
+      tenantId: consolidator,
+      activeUsers: 1,
+      liveSessions: 0,
+      openOrders: 0,
+      sales30d: 0,
+      lastOrderAt: null,
+      held: [{ currency: 'COP', exponent: 2, amountMinor: 800 }],
+    });
+    // Su red: lo mismo que el impacto de suspenderlo.
+    const { tenant: _tenant, ...impact } = await service.impact(superadmin, consolidator);
+    expect(view.subtree).toEqual(impact);
+    // Ventas: C no vendió; su red sí, cada moneda por su lado. La de fuera de la red no está.
+    expect(view.sales).toEqual({
+      days: 30,
+      own: [],
+      subtree: [
+        {
+          currency: 'COP',
+          exponent: 2,
+          // La pendiente de A, la confirmada de S y la cancelada de B.
+          ordersCount: 3,
+          confirmedCount: 1,
+          confirmedAmountMinor: 1000,
+          cancelledCount: 1,
+          failedCount: 0,
+          byVertical: [{ vertical: 'flights', confirmedCount: 1, confirmedAmountMinor: 1000 }],
+        },
+        {
+          currency: 'USD',
+          exponent: 2,
+          ordersCount: 1,
+          confirmedCount: 1,
+          confirmedAmountMinor: 1000,
+          cancelledCount: 0,
+          failedCount: 0,
+          byVertical: [{ vertical: 'flights', confirmedCount: 1, confirmedAmountMinor: 1000 }],
+        },
+      ],
+    });
+    // La pendiente trabada de A, en la red de C.
+    expect(view.attention).toMatchObject({ total: 1, byReason: { 'create-stuck': 1 } });
+  });
+
+  it('ficha de S: sus ventas son las suyas y las de su red; la reserva trabada de A no es de su red', async () => {
+    const view = await service.summary(superadmin, sub);
+    expect(view.tenant.parent).toEqual({ id: agencyA, name: `at-a-${sfx}` });
+    expect(view.own).toMatchObject({ openOrders: 2, sales30d: 2, pendingInvitations: 1 });
+    expect(view.subtree).toMatchObject({ descendants: 0, activeUsers: 1, openOrders: 2 });
+    expect(view.sales?.own.map((s) => [s.currency, s.confirmedCount])).toEqual([
+      ['COP', 1],
+      ['USD', 1],
+    ]);
+    expect(view.sales?.subtree).toEqual(view.sales?.own);
+    expect(view.attention?.total).toBe(0);
+  });
+
+  it('ficha de A: una reserva pendiente no es una venta, pero cuenta como reservas de la moneda', async () => {
+    const view = await service.summary(superadmin, agencyA);
+    expect(view.own).toMatchObject({ seatLimit: 2, seatsUsed: 2, openOrders: 1, sales30d: 0 });
+    expect(view.sales?.own).toEqual([
+      expect.objectContaining({
+        currency: 'COP',
+        ordersCount: 1,
+        confirmedCount: 0,
+        confirmedAmountMinor: 0,
+        byVertical: [],
+      }),
+    ]);
+    expect(view.attention).toMatchObject({ total: 1, byReason: { 'create-stuck': 1 } });
+  });
+
   it('un nodo que no existe es 404 TENANT_NOT_FOUND', async () => {
-    const error = await service
-      .impact(superadmin, '00000000-0000-4000-8000-000000000000')
-      .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(TenantHierarchyNotFoundError);
-    expect((error as TenantHierarchyNotFoundError).reason).toBe('TENANT_NOT_FOUND');
+    for (const read of [service.impact.bind(service), service.summary.bind(service)]) {
+      const error = await read(superadmin, '00000000-0000-4000-8000-000000000000').catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(TenantHierarchyNotFoundError);
+      expect((error as TenantHierarchyNotFoundError).reason).toBe('TENANT_NOT_FOUND');
+    }
   });
 
   it('quien no es superadmin (un consolidator_admin sobre su propia red): 403 de la base', async () => {
     await expect(service.stats(consolidatorAdmin)).rejects.toBeInstanceOf(SuperadminRequiredError);
     await expect(service.impact(consolidatorAdmin, consolidator)).rejects.toBeInstanceOf(
+      SuperadminRequiredError,
+    );
+    // La ficha de su propio nodo tampoco: la primera sección la corta la base.
+    await expect(service.summary(consolidatorAdmin, consolidator)).rejects.toBeInstanceOf(
       SuperadminRequiredError,
     );
   });

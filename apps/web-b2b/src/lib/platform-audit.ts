@@ -383,6 +383,7 @@ export function activitySearch(
   filters: ActivityFilters,
   now: Date,
   cursor?: string | null,
+  limit?: number,
 ): string {
   const params = new URLSearchParams();
   const period = effectivePeriod(filters, now);
@@ -400,6 +401,9 @@ export function activitySearch(
     params.set('aggregateId', filters.aggregateId);
   }
   if (cursor !== undefined && cursor !== null && cursor !== '') params.set('cursor', cursor);
+  if (limit !== undefined && Number.isInteger(limit) && limit >= 1) {
+    params.set('limit', String(limit));
+  }
   return params.toString();
 }
 

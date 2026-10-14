@@ -119,8 +119,8 @@ describe('OverviewContent: todo en orden', () => {
     expect(text).toContain('LATAM NDC');
     expect(text).toContain('TBO Holidays');
     expect(text).toContain('Nodos con más ventas');
-    expect(html).toContain(`href="/admin/tenants/${NODE_SUR}"`);
-    expect(html).toContain(`href="/admin/tenants/${NODE_ANDES}"`);
+    expect(html).toContain(`href="/admin/tenants/${NODE_SUR}/resumen"`);
+    expect(html).toContain(`href="/admin/tenants/${NODE_ANDES}/resumen"`);
     expect(text).toContain('Sucursal');
     expect(text).toContain('Suspendido');
   });

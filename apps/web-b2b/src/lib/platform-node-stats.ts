@@ -76,7 +76,8 @@ function nullableCount(value: unknown): number | null | undefined {
   return value === null ? null : count(value);
 }
 
-function parseHeld(value: unknown): HeldAmount[] | undefined {
+/** Lo retenido por moneda; `undefined` si algún monto no se puede leer. */
+export function parseHeld(value: unknown): HeldAmount[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: HeldAmount[] = [];
   for (const item of value) {
@@ -103,7 +104,8 @@ function parseHeld(value: unknown): HeldAmount[] | undefined {
   return out;
 }
 
-function parseNodeStats(value: unknown): NodeStats | undefined {
+/** Un nodo en números: una fila de `stats` o el `own` de la ficha; `undefined` si no se lee. */
+export function parseNodeStats(value: unknown): NodeStats | undefined {
   const r = asRecord(value);
   if (r === undefined) return undefined;
   const tenantId = r['tenantId'];
