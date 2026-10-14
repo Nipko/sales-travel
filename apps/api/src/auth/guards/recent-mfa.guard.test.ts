@@ -216,9 +216,12 @@ describe('dónde corre y qué rutas la llevan', () => {
       .filter((r) => r.minutes !== undefined);
     // Enviar el enlace y quitar a alguien de un nodo la piden sólo si la persona es admin: lo deciden
     // MemberSupportService y AdminController.removeMembership. Cerrar sesiones y desbloquear son el
-    // soporte de todos los días: no la llevan. Exportar a CSV sí (la Actividad de la plataforma, ADM-8).
+    // soporte de todos los días: no la llevan. Exportar a CSV sí: la Actividad de la plataforma
+    // (ADM-8) y la lista de usuarios, del directorio o del equipo de un nodo (USR-16).
     expect(marked.sort((a, b) => a.route.localeCompare(b.route))).toEqual([
       { route: 'GET /admin/audit/export', minutes: 10 },
+      { route: 'GET /admin/exports/users', minutes: 10 },
+      { route: 'GET /tenants/:id/members-export', minutes: 10 },
       { route: 'PATCH /admin/users/status', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/require-password-reset', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/reset-mfa', minutes: 10 },

@@ -18,6 +18,7 @@ import {
   ACTION_DONE,
   type SheetActionOutcome,
 } from '../../../../../lib/member-detail';
+import { saveFile } from '../../../../../lib/platform-audit-client';
 import { readJson } from '../../../../../lib/read-json';
 import { isStepUpCancelled } from '../../../../../lib/step-up';
 import { queryWithTeamTenant } from '../../../../../lib/team-filters';
@@ -46,6 +47,7 @@ import {
   type TeamActor,
 } from '../../../../../lib/tenant-admin-team';
 import { networkRoot, treeOrder, type NetworkNode } from '../../../../../lib/tenant-network';
+import { exportTeam, usersExportDoneMessage } from '../../../../../lib/user-export';
 import { inputClass, selectClass } from './field-classes';
 import { InvitationList } from './invitation-list';
 import { InviteDialog } from './invite-dialog';
@@ -164,6 +166,7 @@ export function TeamPanel({
   const [inviteSent, setInviteSent] = useState('');
   // La persona cuya ficha está abierta (por id: la fila se refresca después de cada acción).
   const [sheetUserId, setSheetUserId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const seats = useSeatsView(tenantId === '' ? null : tenantId);
   // Adonde va el foco cuando la fila de quien se quitó del nodo desaparece.
   const membersHeading = useRef<HTMLHeadingElement>(null);
@@ -249,6 +252,24 @@ export function TeamPanel({
     } catch {
       // El navegador limitó los cambios de URL: el nodo cambia igual, sólo no se recuerda.
     }
+  }
+
+  /**
+   * Exportar el equipo del nodo a CSV (USR-16): el equipo entero, como lo trae la lista antes de los
+   * filtros. Es de alto impacto: puede pedir el código del 2FA en el medio y repetirse (USR-13).
+   */
+  async function exportCsv() {
+    if (exporting || tenantId === '') return;
+    setExporting(true);
+    const res = await exportTeam(tenantId);
+    setExporting(false);
+    if (isStepUpCancelled(res)) return;
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    saveFile(res.data);
+    toast.success(usersExportDoneMessage(res.data, 'node'));
   }
 
   function failOn(member: NetworkMember, message: string) {
@@ -618,6 +639,8 @@ export function TeamPanel({
           onRemove={(m) => void fromRow(m, removeMember(m))}
           onAction={(m, action) => void fromRow(m, memberAction(m, action))}
           headingRef={membersHeading}
+          onExport={() => void exportCsv()}
+          exporting={exporting}
         />
       ) : null}
 

@@ -151,6 +151,8 @@ export function MemberList({
   onRemove,
   onAction,
   headingRef,
+  onExport,
+  exporting,
 }: {
   state: MembersState;
   search: string;
@@ -183,6 +185,9 @@ export function MemberList({
    * se actuó desaparece (quitarlo del nodo).
    */
   headingRef?: React.Ref<HTMLHeadingElement>;
+  /** Exportar el equipo entero del nodo a CSV (USR-16). Sin él, la barra no lo ofrece. */
+  onExport?: (() => void) | undefined;
+  exporting?: boolean | undefined;
 }) {
   const now = useNow();
   const allRef = useRef<HTMLButtonElement>(null);
@@ -232,6 +237,8 @@ export function MemberList({
             allRef={allRef}
             onChange={onFiltersChange}
             onClear={clearFilters}
+            onExport={onExport}
+            exporting={exporting}
           />
           <p role="status" className="sr-only">
             {shownMembersText(shown.length, items.length)}

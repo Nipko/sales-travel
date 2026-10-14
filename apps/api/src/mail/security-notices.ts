@@ -61,6 +61,14 @@ const ROLE_NAMES: Readonly<Record<Role, string>> = {
   cliente_final: 'Cliente',
 };
 
+/**
+ * El nombre de un rol para una persona (el aviso de cambio de rol, la exportación de usuarios de
+ * USR-16). Un rol que no conoce sale con su código: mejor el código que un nombre inventado.
+ */
+export function roleName(role: string): string {
+  return Object.hasOwn(ROLE_NAMES, role) ? ROLE_NAMES[role as Role] : role;
+}
+
 const BRAND = 'PlaneTour';
 
 /** El enlace de la pantalla de ingreso para elegir una contraseña nueva, como lo lee la persona. */

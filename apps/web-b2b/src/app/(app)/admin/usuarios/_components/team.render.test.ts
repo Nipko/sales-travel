@@ -15,6 +15,7 @@ import {
 import { voseoIn } from '../../../../../lib/voseo';
 import { InvitationList } from './invitation-list';
 import { PendingInvitationNotice } from './invite-dialog';
+import { MemberFilters } from './member-filters';
 import { MemberActionItems, MemberList, type MemberRowError } from './member-list';
 import { invitableRolesIn } from './roles';
 import { SeatsCard, type SeatsState } from './seats-ui';
@@ -735,5 +736,46 @@ describe('MemberList: filtros del equipo y columna Alta', () => {
     for (const html of [members([]), members('loading'), members('error')]) {
       expect(html).not.toContain('Filtrar miembros');
     }
+  });
+});
+
+describe('MemberFilters: exportar el equipo (USR-16)', () => {
+  function bar(props: { onExport?: () => void; exporting?: boolean } = {}): string {
+    return renderToStaticMarkup(
+      createElement(MemberFilters, {
+        filters: DEFAULT_TEAM_FILTERS,
+        counts: { 'mfa-pending': 0, locked: 0, 'never-logged-in': 0, 'reset-pending': 0 },
+        roles: ['vendedor'],
+        suspendedCount: 0,
+        onChange: () => {},
+        onClear: () => {},
+        ...props,
+      }),
+    );
+  }
+
+  it('el botón dice que baja el equipo entero, sin los filtros, a quien lo enfoca o lo toca', () => {
+    const html = bar({ onExport: () => {} });
+    const button = /<button[^>]*aria-describedby="([^"]+)"[^>]*>(.*?)<\/button>/.exec(html);
+    expect(button?.[2]).toContain('Exportar equipo');
+    expect(button?.[0]).toContain(
+      'title="Descarga un CSV con todo el equipo de este nodo, sin los filtros."',
+    );
+    expect(button?.[0]).not.toContain('disabled=""');
+    // La descripción existe y es la que nombra el botón.
+    expect(html).toContain(
+      `<span id="${button?.[1]}" class="sr-only">Descarga un CSV con todo el equipo de este nodo, sin los filtros.</span>`,
+    );
+    expect(voseoIn(html)).toEqual([]);
+  });
+
+  it('mientras exporta, el botón espera y lo dice', () => {
+    const html = bar({ onExport: () => {}, exporting: true });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Exportando…<\/button>/);
+    expect(html).not.toContain('Exportar equipo');
+  });
+
+  it('sin la acción, la barra no lo ofrece', () => {
+    expect(bar()).not.toContain('Exportar');
   });
 });

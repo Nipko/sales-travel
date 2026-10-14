@@ -12,6 +12,7 @@ import {
 } from './audit-format';
 
 const ANA = 'ana@agencia.com';
+const NODO = '11111111-1111-4111-8111-111111111111';
 
 function entry(
   eventType: string,
@@ -177,6 +178,38 @@ describe('eventDetail', () => {
     expect(eventDetail(entry('UserProfileUpdated', payload('Ana', null)))).toBe('');
     expect(eventDetail(entry('UserProfileUpdated', { changed: ['name'] }))).toBe('');
     expect(categoryOf('UserProfileUpdated')).toBe('users');
+  });
+
+  it('exportar la lista de usuarios (USR-16): qué se exportó y cuántas personas, sin ids', () => {
+    expect(
+      eventDetail(
+        entry('users.exported', {
+          scope: 'platform',
+          filters: { search: true, role: 'vendedor', tenantId: NODO },
+          users: 1234,
+          rows: 1500,
+          truncated: false,
+        }),
+      ),
+    ).toBe('Toda la plataforma · 1.234 personas');
+    expect(
+      eventDetail(
+        entry('users.exported', {
+          scope: 'node',
+          filters: { tenantId: NODO },
+          users: 10_000,
+          truncated: true,
+        }),
+      ),
+    ).toBe('El equipo del nodo · 10.000 personas (hasta el tope)');
+    expect(eventDetail(entry('users.exported', { scope: 'node', users: 1 }))).toBe(
+      'El equipo del nodo · 1 persona',
+    );
+    expect(eventDetail(entry('users.exported', { scope: 'otro', users: -1 }))).toBe('');
+    expect(eventLabel('users.exported', {})).toEqual({
+      text: 'Exportó la lista de usuarios',
+      raw: false,
+    });
   });
 
   it('credenciales, precios y nodos', () => {

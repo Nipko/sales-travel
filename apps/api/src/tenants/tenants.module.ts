@@ -17,6 +17,8 @@ import { SeatsController } from './seats.controller.js';
 import { SeatsService } from './seats.service.js';
 import { TenantsController } from './tenants.controller.js';
 import { TenantsService } from './tenants.service.js';
+import { UserExportController } from './user-export.controller.js';
+import { UserExportService } from './user-export.service.js';
 
 @Module({
   imports: [NetworkModule, ProviderEnablementModule],
@@ -29,6 +31,7 @@ import { TenantsService } from './tenants.service.js';
     MemberSupportController,
     MemberDetailController,
     AdminInvitationsController,
+    UserExportController,
   ],
   providers: [
     InvitationsService,
@@ -39,6 +42,7 @@ import { TenantsService } from './tenants.service.js';
     PlatformUsersService,
     MemberDetailService,
     AdminInvitationsService,
+    UserExportService,
   ],
 })
 export class TenantsModule {}

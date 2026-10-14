@@ -405,8 +405,11 @@ export async function readAuditEvents(
   return rows;
 }
 
-/** La raíz `platform` (0050: hay una sola), donde queda el rastro. Sin ella, sin tenant. */
-async function platformTenantId(trx: Transaction<DB>): Promise<string | null> {
+/**
+ * La raíz `platform` (0050: hay una sola), donde queda el rastro. Sin ella, sin tenant. También la
+ * usa la exportación de usuarios (USR-16).
+ */
+export async function platformTenantId(trx: Transaction<DB>): Promise<string | null> {
   const row = await trx
     .selectFrom('tenants')
     .select('id')

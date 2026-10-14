@@ -118,6 +118,12 @@ export function seatsViewTarget(tenantId: string): TenantAdminProxyTarget {
   return { ok: true, path: `/tenants/${tenantId.toLowerCase()}/seats` };
 }
 
+/** `GET /tenants/:id/members-export`: el equipo del nodo en CSV (USR-16). */
+export function teamExportTarget(tenantId: string): TenantAdminProxyTarget {
+  if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
+  return { ok: true, path: `/tenants/${tenantId.toLowerCase()}/members-export` };
+}
+
 /** `POST /tenants/:id/seats/sessions/:sessionId/release`: un admin libera un puesto. */
 export function seatReleaseTarget(tenantId: string, sessionId: string): TenantAdminProxyTarget {
   if (!isTenantId(tenantId)) return { ok: false, error: 'Nodo inválido.' };
