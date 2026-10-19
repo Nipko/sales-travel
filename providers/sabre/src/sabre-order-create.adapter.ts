@@ -44,7 +44,6 @@ import {
   type SabreTicketingSettingsInput,
 } from './booking/ticketing-policy';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
-import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
 import { logRedacted, type SabreLogLevel } from './redaction';
@@ -408,16 +407,8 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       order,
     );
     const product = seated.product;
-    // Con la oferta de Flight Check en `flightOffer`, Sabre rechaza `agency.ticketingPolicy`
-    // (`INVALID_COMBINATION`, H-05 en docs/sabre/12 §3) y ninguna de las 65 reservas por
-    // `flightOffer` de la colección la manda: el plazo es el `paymentTimeLimit` de la oferta, que el
-    // PNR trae al leerlo. La política de la cuenta sólo viaja por `flightDetails`.
-    const omitTicketing = options.ticketing !== undefined && hasFlightCheckChain(request.offer);
-    if (omitTicketing) {
-      this.log('info', 'sabre.createBooking.ticketingPolicyOmitted', { lane: 'flight-check' });
-    }
     const ticketing =
-      options.ticketing === undefined || omitTicketing
+      options.ticketing === undefined
         ? undefined
         : this.ticketingPlan(request.offer, options.ticketing, options.agency);
     const agency =
@@ -801,7 +792,8 @@ interface PricePassengerBindingRaw {
 
 /**
  * NDC: el viajero se enlaza por `requestedTravelerIndex` + tipo y recibe el id de price. ATPCO por
- * `flightDetails` no lleva id, y Flight Check numera por posición ({@link flightCheckTravelersOf}). No hay fallback por orden ni por «el único adulto» porque ese
+ * `flightDetails` —revalidada o no con Flight Check— no lleva id. No hay fallback por orden ni por
+ * «el único adulto» porque ese
  * atajo se vuelve intercambio de documentos en cuanto se reserva más de un pasajero.
  */
 function travelersOf(request: OrderCreateRequest): {
@@ -809,7 +801,6 @@ function travelersOf(request: OrderCreateRequest): {
   /** Los pasajeros en el orden de `travelers`: la posición de cada uno es su `travelerIndex - 1`. */
   order: Passenger[];
 } {
-  if (hasFlightCheckChain(request.offer)) return flightCheckTravelersOf(request);
   const priceOfferId = rawId(request.offer, SABRE_RAW_KEYS.priceOfferId);
   const priceOfferItemIds = rawIds(request.offer, SABRE_RAW_KEYS.priceOfferItemIds);
   if (priceOfferId === null || priceOfferItemIds === null) {
@@ -907,46 +898,6 @@ function travelersOf(request: OrderCreateRequest): {
     order.push(passenger);
   }
   return { travelers, order };
-}
-
-/** La oferta trae la cadena entera de Flight Check: se reserva por `flightOffer` con sus handles. */
-function hasFlightCheckChain(offer: Offer): boolean {
-  return (
-    rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId) !== null &&
-    rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds) !== null
-  );
-}
-
-const PAX_TYPE_RANK: Readonly<Record<Passenger['paxType'], number>> = { ADT: 0, CHD: 1, INF: 2 };
-
-/**
- * Flight Check: con su oferta en `flightOffer`, Booking Management exige `travelers[].id`
- * (`MANDATORY_DATA_MISSING`, H-01 en docs/sabre/12 §3) y Flight Check no lo devuelve. En CERT,
- * `"1"` pasa la validación: es la posición 1-based del viajero en el request de Flight Check, que
- * los manda por tipo —adultos, niños, infantes— (`flight-check/request.builder.ts`). Los pasajeros
- * se ordenan igual, estable dentro de cada tipo, y si no son los tipos que se revalidaron no se
- * reserva: un id corrido es el documento de un pasajero en el billete de otro.
- */
-function flightCheckTravelersOf(request: OrderCreateRequest): {
-  travelers: SabreTravelerInput[];
-  order: Passenger[];
-} {
-  const expected = expectedPaxTypes(request);
-  const order = [...request.passengers].sort(
-    (left, right) => PAX_TYPE_RANK[left.paxType] - PAX_TYPE_RANK[right.paxType],
-  );
-  if (
-    order.length !== expected.length ||
-    order.some((passenger, index) => passenger.paxType !== expected[index])
-  ) {
-    throw new SabreOrderCreateInputError(
-      'los pasajeros no son los que revalidó Flight Check (tipos y cantidades de la búsqueda)',
-    );
-  }
-  return {
-    travelers: order.map((passenger, index) => travelerOf(passenger, String(index + 1))),
-    order,
-  };
 }
 
 function expectedPaxTypes(request: OrderCreateRequest): Array<'ADT' | 'CHD' | 'INF'> {
@@ -1065,33 +1016,15 @@ function rawId(offer: Offer, key: string): string | null {
  * `offers/price`, y `flightOffer` ni siquiera declara el bloque (`:4952-4981`).
  */
 function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductInput {
-  const bookingOfferId = rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId);
-  const bookingOfferItemIds = rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds);
   const offerId = rawId(offer, SABRE_RAW_KEYS.priceOfferId);
   const offerItemIds = rawIds(offer, SABRE_RAW_KEYS.priceOfferItemIds);
   const segments = segmentsOf(offer);
 
-  // Flight Check materializa una oferta ATPCO cacheada en handles de Booking Management. El
-  // bloque wire es `flightOffer` igual que para NDC; `kind: 'ndc'` es sólo el nombre histórico
-  // del discriminante interno del builder y no describe la fuente comercial.
-  if (bookingOfferId !== null && bookingOfferItemIds !== null) {
-    return {
-      kind: 'ndc',
-      offerId: bookingOfferId,
-      selectedOfferItems: bookingOfferItemIds,
-      ...(segments.length === 0 ? {} : { segmentCount: segments.length }),
-    };
-  }
-
-  if (bookingOfferId !== null || bookingOfferItemIds !== null) {
-    throw new SabreOrderCreateInputError(
-      `la oferta trae sólo la mitad de la cadena de identificadores de Flight Check ` +
-        `(${SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId}: ${String(bookingOfferId !== null)}, ` +
-        `${SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds}: ${String(bookingOfferItemIds !== null)}): ` +
-        'reservar con media cadena es reservar otra cosa',
-    );
-  }
-
+  // La oferta de Flight Check NO se reserva por sus handles (`flightOffer`): en CERT, con el
+  // request ya válido, Sabre responde DOWNLINE_SERVICE_ERROR con JA y con LA (H-06, docs/sabre/12
+  // §3), y la colección no tiene un solo ejemplo de ese carril. Flight Check revalida precio y
+  // clase; la reserva va por `flightDetails` + `flightPricing: [{}]` con los segmentos que devolvió,
+  // como el workflow «Air Shop, Book, Cancel» (ATPCO) de la colección.
   if (offerId !== null && offerItemIds !== null) {
     return {
       kind: 'ndc',
@@ -1125,35 +1058,30 @@ function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductI
 }
 
 /**
- * Por qué bloque viaja la reserva de esta oferta: `flightOffer` si trae la cadena de Flight Check o
- * la de `offers/price` (NDC), `flightDetails` si no. Es la misma pregunta que se hace
- * {@link productOf}, y la usa también el mapa de asientos: lo que se puede reservar depende del
- * bloque (ver {@link withSeats}).
+ * Por qué bloque viaja la reserva de esta oferta: `flightOffer` si trae la cadena de
+ * `offers/price` (NDC), `flightDetails` si no —también la ATPCO revalidada con Flight Check—. Es la
+ * misma pregunta que se hace {@link productOf}, y la usa también el mapa de asientos: lo que se
+ * puede reservar depende del bloque (ver {@link withSeats}).
  */
 export type SabreBookingLane = 'flightOffer' | 'flightDetails';
 
 export function sabreBookingLaneOf(offer: Offer): SabreBookingLane {
-  const flightCheck =
-    rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId) !== null &&
-    rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds) !== null;
   const price =
     rawId(offer, SABRE_RAW_KEYS.priceOfferId) !== null &&
     rawIds(offer, SABRE_RAW_KEYS.priceOfferItemIds) !== null;
-  return flightCheck || price ? 'flightOffer' : 'flightDetails';
+  return price ? 'flightOffer' : 'flightDetails';
 }
 
 /**
  * Los asientos pedidos (SAB-16), en el bloque que ya eligió {@link productOf}.
  *
- * - **`flightOffer`** (NDC, y ATPCO revalidado con Flight Check): `seatOffers[]` con el
- *   `seatOfferId` del mapa leído justo antes de reservar, el número y el viajero
- *   (`BookSeatOffer`, `:5273-5303`). El id es lo único que ata el asiento a SU tramo —el bloque no
- *   tiene posición de vuelo—, así que sin él no sale nada. El contrato dice «Applicable for NDC
- *   flights only»; que Booking Management acepte también las ofertas de Flight Check se certifica en
- *   CERT (SAB-21), con `seats` apagado en `SABRE_OPERATIONS` hasta entonces. El segundo avión de un
- *   cambio de equipo no tiene campo en este bloque: se rechaza, y el mapa ya lo marca no vendible.
- * - **`flightDetails`** (ATPCO sin Flight Check): `flights[].seats[]` por número, sin id, y
- *   `changeOfGaugeSeats[]` para el segundo avión.
+ * - **`flightOffer`** (NDC): `seatOffers[]` con el `seatOfferId` del mapa leído justo antes de
+ *   reservar, el número y el viajero (`BookSeatOffer`, `:5273-5303`). El id es lo único que ata el
+ *   asiento a SU tramo —el bloque no tiene posición de vuelo—, así que sin él no sale nada. El
+ *   segundo avión de un cambio de equipo no tiene campo en este bloque: se rechaza, y el mapa ya lo
+ *   marca no vendible.
+ * - **`flightDetails`** (ATPCO, revalidada o no con Flight Check): `flights[].seats[]` por número,
+ *   sin id, y `changeOfGaugeSeats[]` para el segundo avión.
  *
  * El viajero es la posición del pasajero en `travelers[]` (`order`), que es la que arma
  * {@link travelersOf}: el asiento nombra al pasajero por su `requestedTravelerIndex`, nunca por el

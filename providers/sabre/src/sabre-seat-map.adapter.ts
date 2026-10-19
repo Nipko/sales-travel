@@ -162,7 +162,7 @@ export class SabreSeatMapAdapter implements SeatMapPort {
 
 /**
  * Lo que este mapa promete vendible tiene que poder reservarse por el bloque con que va a salir la
- * reserva de ESTA oferta (SAB-16). Una oferta revalidada —NDC o ATPCO con Flight Check— reserva por
+ * reserva de ESTA oferta (SAB-16). Una oferta NDC revalidada con `offers/price` reserva por
  * `flightOffer.seatOffers[]`, que no tiene dónde pedir el asiento del segundo avión de un cambio de
  * equipo; y Sabre exige asiento en los dos aviones o en ninguno. Así que, en ese bloque, los dos
  * aviones de un tramo con cambio de equipo salen como «elección de asiento no disponible»

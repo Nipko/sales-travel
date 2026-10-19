@@ -12,7 +12,6 @@ export const CERT_SCENARIO_IDS = [
   'auth',
   'shop',
   'book-cancel',
-  'book-traveler-id',
   'book-issue-void',
   'seatmap',
   'book-with-seat',
@@ -69,24 +68,6 @@ export const CERT_SCENARIOS: Readonly<Record<CertScenarioId, CertScenarioSpec>> 
     money: false,
     operations: [],
     steps: ['shop', 'flightCheck', 'createBooking', 'getBooking', 'cancelBooking', 'getBooking'],
-  },
-  'book-traveler-id': {
-    id: 'book-traveler-id',
-    forPackage: 'SAB-12',
-    summary:
-      'Sondeo de H-01: qué travelers[].id acepta createBooking por flightOffer con una oferta de Flight Check',
-    // Para en el primer candidato que reserva: como mucho un PNR.
-    pnrs: 1,
-    money: false,
-    operations: [],
-    steps: [
-      'shop',
-      'flightCheck',
-      'createBooking por candidato, hasta el primero que entra',
-      'getBooking',
-      'cancelBooking',
-      'getBooking',
-    ],
   },
   'book-issue-void': {
     id: 'book-issue-void',

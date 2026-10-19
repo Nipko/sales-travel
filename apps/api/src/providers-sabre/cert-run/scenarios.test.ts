@@ -15,7 +15,6 @@ import { CertEvidenceRecorder } from './captures.js';
 import { SabreCertGuardError } from './cert-guard.js';
 import { CERT_SCENARIOS, buildCertPlan, type CertPlan, type CertPlanInput } from './plan.js';
 import {
-  CERT_TRAVELER_ID_CANDIDATES,
   certainCreateRejection,
   describeCertError,
   freeSeatFor,
@@ -459,77 +458,6 @@ function validationRejection(
     ],
   });
 }
-
-describe('runCertPlan — sondeo de travelers[].id (H-01)', () => {
-  it('prueba los candidatos con la misma oferta revalidada y cancela el primero que entra', async () => {
-    const { events, deps, recorder } = harness({
-      createRejects: (request) =>
-        request.passengers[0]?.providerPaxId === '1.1'
-          ? undefined
-          : validationRejection('INVALID_TRAVELER_ID'),
-    });
-    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
-
-    expect(events).toEqual([
-      'search',
-      'price ref-7000',
-      'create 1pax',
-      'create 1pax',
-      'create 1pax',
-      'read PNR001',
-      'cancel PNR001 ALL',
-      'read PNR001',
-    ]);
-    expect(report.scenarios[0]).toMatchObject({ outcome: 'ok', pnr: 'PNR001' });
-    expect(report.scenarios[0]?.notes).toEqual([
-      'travelers[].id "1" (número 1-based): INVALID_TRAVELER_ID',
-      'travelers[].id "0" (requestedTravelerIndex): INVALID_TRAVELER_ID',
-      'travelers[].id "1.1" (nameNumber): ACEPTADO, PNR PNR001',
-    ]);
-    expect(report.pnrs).toEqual([
-      { pnr: 'PNR001', scenario: 'book-traveler-id', state: 'cancelled' },
-    ]);
-    expect(report.leftovers).toEqual([]);
-    expect(recorder.steps.map((s) => s.step).slice(2, 5)).toEqual([
-      'createBooking id 1',
-      'createBooking id 0',
-      'createBooking id 1.1',
-    ]);
-  });
-
-  it('un id por pasajero, cada uno con su posición', async () => {
-    const ids: string[] = [];
-    const { deps } = harness({
-      createRejects: (request) => {
-        ids.push(request.passengers.map((p) => p.providerPaxId).join(','));
-        return undefined;
-      },
-    });
-    await runCertPlan(plan({ scenarios: ['book-traveler-id'], pax: '2ADT1CHD' }), deps);
-    expect(ids).toEqual(['1,2,3']);
-  });
-
-  it('si ninguno entra, falla sin dejar nada colgado', async () => {
-    const { events, deps } = harness({
-      createRejects: () => validationRejection('INVALID_TRAVELER_ID'),
-    });
-    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
-    expect(report.scenarios[0]?.outcome).toBe('failed');
-    expect(report.scenarios[0]?.error).toMatchObject({ name: 'CertScenarioError' });
-    expect(events.filter((e) => e.startsWith('create'))).toHaveLength(
-      CERT_TRAVELER_ID_CANDIDATES.length,
-    );
-    expect(report.leftovers).toEqual([]);
-  });
-
-  it('un fallo que no es de validación corta el sondeo y queda como PNR en duda', async () => {
-    const { events, deps } = harness({ createRejects: () => new Error('timeout') });
-    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
-    expect(events.filter((e) => e.startsWith('create'))).toHaveLength(1);
-    expect(report.scenarios[0]?.outcome).toBe('failed');
-    expect(report.leftovers).toHaveLength(1);
-  });
-});
 
 describe('certainCreateRejection — cuándo un createBooking rechazado no dejó nada', () => {
   it('validación del request: sí', () => {
