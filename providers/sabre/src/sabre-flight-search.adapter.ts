@@ -107,13 +107,21 @@ export function claveDeTramo(offer: Offer, leg: number): string | null {
  * búsqueda de vueltas (Anchored Search) es la vuelta (1). El filtro por trayecto se verificó en
  * CERT: excluir LIGHT en la ida dio STANDARD/LIGHT con la misma vuelta (docs/sabre/15 §2.5).
  */
-interface EscaleraCarrier {
+export interface EscaleraCarrier {
   /** Códigos ya observados POR vuelo del trayecto; jamás se unen globalmente. */
   itinerarios: Map<string, Set<string>>;
 }
 
-/** Sólo excluye un código si TODOS los vuelos de este carrier ya lo tienen. */
-function codigosComunes(state: EscaleraCarrier): string[] {
+/**
+ * Qué códigos excluir en la próxima ronda de un carrier.
+ *
+ * Primero, los que TODOS sus vuelos ya tienen: así una marca vista en un vuelo no salta una
+ * familia todavía no observada en otro. Si no hay ninguno común —pasa en las vueltas de una ida
+ * anclada: en CERT unas vueltas salían en LIGHT y otras sólo en STANDARD, y la escalera no daba ni
+ * un paso—, el conjunto que más vuelos comparten. Lo peor que hace eso es que a un vuelo con otro
+ * conjunto le falte una tarifa intermedia; nunca duplica ni inventa, porque lo ya visto se filtra.
+ */
+export function codigosComunes(state: EscaleraCarrier): string[] {
   let comunes: Set<string> | null = null;
   for (const vistos of state.itinerarios.values()) {
     if (comunes === null) {
@@ -124,7 +132,21 @@ function codigosComunes(state: EscaleraCarrier): string[] {
       if (!vistos.has(code)) comunes.delete(code);
     }
   }
-  return [...(comunes ?? new Set<string>())].sort();
+  if (comunes !== null && comunes.size > 0) return [...comunes].sort();
+
+  const frecuencia = new Map<string, { codes: string[]; vuelos: number }>();
+  for (const vistos of state.itinerarios.values()) {
+    const codes = [...vistos].sort();
+    const firma = codes.join('\u0000');
+    const actual = frecuencia.get(firma) ?? { codes, vuelos: 0 };
+    actual.vuelos += 1;
+    frecuencia.set(firma, actual);
+  }
+  let moda: { codes: string[]; vuelos: number } | null = null;
+  for (const candidato of frecuencia.values()) {
+    if (moda === null || candidato.vuelos > moda.vuelos) moda = candidato;
+  }
+  return moda?.codes ?? [];
 }
 
 function estadosDeEscalera(offers: readonly Offer[], leg: number): Map<string, EscaleraCarrier> {

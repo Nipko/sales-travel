@@ -10,6 +10,7 @@ import { SABRE_HOSTS, parseSabreConfig, type SabreConfig } from './config';
 import { SabreApiError, SabreConfigError } from './errors';
 import {
   SabreFlightSearchAdapter,
+  codigosComunes,
   censoDeContenido,
   countWarningsByCode,
   type SabreFlightSearchDeps,
@@ -1430,5 +1431,23 @@ describe('contenido NDC: sólo si la cuenta lo habilita', () => {
       warnings: expect.objectContaining({ 'ndc-content-skipped': 1 }) as unknown,
     });
     expect(JSON.stringify(calls)).not.toContain('oferta-ndc-de-prueba');
+  });
+});
+
+describe('codigosComunes: qué excluye la próxima ronda de la escalera', () => {
+  const estado = (...sets: string[][]) => ({
+    itinerarios: new Map(sets.map((codes, i) => [`vuelo-${i}`, new Set(codes)])),
+  });
+
+  it('lo que TODOS los vuelos ya tienen', () => {
+    expect(codigosComunes(estado(['SL'], ['SL', 'KM']))).toEqual(['SL']);
+  });
+
+  it('sin nada común, el conjunto que más vuelos comparten (vueltas LIGHT y STANDARD en CERT)', () => {
+    expect(codigosComunes(estado(['SL'], ['SL'], ['KM']))).toEqual(['SL']);
+  });
+
+  it('sin vuelos, nada que excluir', () => {
+    expect(codigosComunes(estado())).toEqual([]);
   });
 });
