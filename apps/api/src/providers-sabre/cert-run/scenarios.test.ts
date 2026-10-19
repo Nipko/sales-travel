@@ -15,6 +15,8 @@ import { CertEvidenceRecorder } from './captures.js';
 import { SabreCertGuardError } from './cert-guard.js';
 import { CERT_SCENARIOS, buildCertPlan, type CertPlan, type CertPlanInput } from './plan.js';
 import {
+  CERT_TRAVELER_ID_CANDIDATES,
+  certainCreateRejection,
   describeCertError,
   freeSeatFor,
   pricedBagFor,
@@ -66,6 +68,8 @@ function offer(source: string, amountMinor: number): Offer {
 interface FakeOptions {
   readonly failRetrieveAfterCreate?: boolean;
   readonly createThrows?: Error;
+  /** Responde a cada `createBooking`: un error lo rechaza, `undefined` lo deja pasar. */
+  readonly createRejects?: (request: OrderCreateRequest) => Error | undefined;
   readonly issueThrows?: Error;
   readonly issueOutcome?: TicketIssueResult['outcome'];
   readonly voidThrows?: Error;
@@ -98,6 +102,8 @@ function fakeFlights(events: string[], options: FakeOptions = {}): CertFlightPor
     createOrderAudited: (request: OrderCreateRequest) => {
       events.push(`create ${String(request.passengers.length)}pax${request.seats ? ' seat' : ''}`);
       if (options.createThrows) return Promise.reject(options.createThrows);
+      const rejected = options.createRejects?.(request);
+      if (rejected) return Promise.reject(rejected);
       created += 1;
       return Promise.resolve({
         result: {
@@ -421,11 +427,143 @@ describe('runCertPlan — reservar y cancelar (SAB-12)', () => {
     expect(r2.leftovers).toEqual([]);
   });
 
+  it('un rechazo de validación de Sabre es un fallo cierto, no un PNR en duda (H-02)', async () => {
+    const { deps } = harness({ createThrows: validationRejection('MANDATORY_DATA_MISSING') });
+    const report = await runCertPlan(plan({ scenarios: ['book-cancel'] }), deps);
+    expect(report.scenarios[0]?.outcome).toBe('failed');
+    expect(report.leftovers).toEqual([]);
+  });
+
   it('sin oferta ATPCO en la ruta no reserva nada', async () => {
     const { events, deps } = harness({ offers: [offer('NDC', 1)] });
     const report = await runCertPlan(plan({ scenarios: ['book-cancel'] }), deps);
     expect(report.scenarios[0]?.error).toMatchObject({ name: 'CertScenarioError' });
     expect(events).toEqual(['search']);
+  });
+});
+
+function validationRejection(
+  type: string,
+  overrides: { path?: string; category?: string; fieldPath?: string } = {},
+): SabreApiError {
+  return new SabreApiError(200, '{}', overrides.path ?? '/v1/trip/orders/createBooking', {
+    conversationId: 'conv-h01',
+    issues: [
+      {
+        source: 'application',
+        severity: 'error',
+        category: overrides.category ?? 'BAD_REQUEST',
+        type,
+        fieldPath: overrides.fieldPath ?? 'CreateBookingRequest.travelers[0]',
+      },
+    ],
+  });
+}
+
+describe('runCertPlan — sondeo de travelers[].id (H-01)', () => {
+  it('prueba los candidatos con la misma oferta revalidada y cancela el primero que entra', async () => {
+    const { events, deps, recorder } = harness({
+      createRejects: (request) =>
+        request.passengers[0]?.providerPaxId === '1.1'
+          ? undefined
+          : validationRejection('INVALID_TRAVELER_ID'),
+    });
+    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
+
+    expect(events).toEqual([
+      'search',
+      'price ref-7000',
+      'create 1pax',
+      'create 1pax',
+      'create 1pax',
+      'read PNR001',
+      'cancel PNR001 ALL',
+      'read PNR001',
+    ]);
+    expect(report.scenarios[0]).toMatchObject({ outcome: 'ok', pnr: 'PNR001' });
+    expect(report.scenarios[0]?.notes).toEqual([
+      'travelers[].id "1" (número 1-based): INVALID_TRAVELER_ID',
+      'travelers[].id "0" (requestedTravelerIndex): INVALID_TRAVELER_ID',
+      'travelers[].id "1.1" (nameNumber): ACEPTADO, PNR PNR001',
+    ]);
+    expect(report.pnrs).toEqual([
+      { pnr: 'PNR001', scenario: 'book-traveler-id', state: 'cancelled' },
+    ]);
+    expect(report.leftovers).toEqual([]);
+    expect(recorder.steps.map((s) => s.step).slice(2, 5)).toEqual([
+      'createBooking id 1',
+      'createBooking id 0',
+      'createBooking id 1.1',
+    ]);
+  });
+
+  it('un id por pasajero, cada uno con su posición', async () => {
+    const ids: string[] = [];
+    const { deps } = harness({
+      createRejects: (request) => {
+        ids.push(request.passengers.map((p) => p.providerPaxId).join(','));
+        return undefined;
+      },
+    });
+    await runCertPlan(plan({ scenarios: ['book-traveler-id'], pax: '2ADT1CHD' }), deps);
+    expect(ids).toEqual(['1,2,3']);
+  });
+
+  it('si ninguno entra, falla sin dejar nada colgado', async () => {
+    const { events, deps } = harness({
+      createRejects: () => validationRejection('INVALID_TRAVELER_ID'),
+    });
+    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
+    expect(report.scenarios[0]?.outcome).toBe('failed');
+    expect(report.scenarios[0]?.error).toMatchObject({ name: 'CertScenarioError' });
+    expect(events.filter((e) => e.startsWith('create'))).toHaveLength(
+      CERT_TRAVELER_ID_CANDIDATES.length,
+    );
+    expect(report.leftovers).toEqual([]);
+  });
+
+  it('un fallo que no es de validación corta el sondeo y queda como PNR en duda', async () => {
+    const { events, deps } = harness({ createRejects: () => new Error('timeout') });
+    const report = await runCertPlan(plan({ scenarios: ['book-traveler-id'] }), deps);
+    expect(events.filter((e) => e.startsWith('create'))).toHaveLength(1);
+    expect(report.scenarios[0]?.outcome).toBe('failed');
+    expect(report.leftovers).toHaveLength(1);
+  });
+});
+
+describe('certainCreateRejection — cuándo un createBooking rechazado no dejó nada', () => {
+  it('validación del request: sí', () => {
+    expect(certainCreateRejection(validationRejection('MANDATORY_DATA_MISSING'))).toBe(
+      'MANDATORY_DATA_MISSING',
+    );
+    expect(certainCreateRejection(validationRejection('INVALID_TRAVELER_ID'))).toBe(
+      'INVALID_TRAVELER_ID',
+    );
+  });
+
+  it('cualquier otra cosa: no se puede afirmar', () => {
+    expect(certainCreateRejection(new Error('timeout'))).toBeUndefined();
+    expect(certainCreateRejection(validationRejection('SEGMENT_NOT_SOLD'))).toBeUndefined();
+    expect(
+      certainCreateRejection(
+        validationRejection('MANDATORY_DATA_MISSING', { category: 'INTERNAL' }),
+      ),
+    ).toBeUndefined();
+    expect(
+      certainCreateRejection(
+        validationRejection('MANDATORY_DATA_MISSING', { fieldPath: 'flights[0].airline' }),
+      ),
+    ).toBeUndefined();
+    expect(
+      certainCreateRejection(
+        validationRejection('MANDATORY_DATA_MISSING', { path: '/v1/trip/orders/modifyBooking' }),
+      ),
+    ).toBeUndefined();
+    expect(
+      certainCreateRejection(
+        new SabreApiError(200, '{}', '/v1/trip/orders/createBooking', { issues: [] }),
+      ),
+    ).toBeUndefined();
   });
 });
 

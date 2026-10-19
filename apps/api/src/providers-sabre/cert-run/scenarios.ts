@@ -269,6 +269,55 @@ function orderViewSummary(view: OrderView): Record<string, unknown> {
   };
 }
 
+/**
+ * Los tipos con que Sabre rechaza un `createBooking` al validar el request (catálogo de errores de
+ * Booking Management). Con `HALT_ON_ERROR` y un `fieldPath` dentro del request no hubo reserva: es
+ * un fallo cierto, no uno en duda (H-02, docs/sabre/12 §3).
+ */
+const CREATE_VALIDATION_REJECTIONS: ReadonlySet<string> = new Set([
+  'MANDATORY_DATA_MISSING',
+  'INVALID_TRAVELER_ID',
+]);
+
+/**
+ * El tipo del rechazo si `err` es un `createBooking` que Sabre rechazó al validar el request —todas
+ * sus issues son errores `BAD_REQUEST` de esos tipos, sobre un campo del request—, o `undefined`
+ * si no se puede afirmar que no quedó nada.
+ */
+export function certainCreateRejection(err: unknown): string | undefined {
+  if (!(err instanceof SabreApiError) || !err.path.endsWith('/createBooking')) return undefined;
+  const { issues } = err;
+  if (issues.length === 0) return undefined;
+  const certain = issues.every(
+    (issue) =>
+      issue.severity === 'error' &&
+      issue.category === 'BAD_REQUEST' &&
+      issue.type !== undefined &&
+      CREATE_VALIDATION_REJECTIONS.has(issue.type) &&
+      issue.fieldPath?.startsWith('CreateBookingRequest.') === true,
+  );
+  return certain ? [...new Set(issues.map((issue) => issue.type))].join(', ') : undefined;
+}
+
+export interface CertTravelerIdCandidate {
+  readonly label: string;
+  readonly idFor: (index: number, passenger: OrderCreateRequest['passengers'][number]) => string;
+}
+
+/**
+ * Los `travelers[].id` que prueba `book-traveler-id`, en orden: las convenciones con que Sabre
+ * numera pasajeros en otros carriles. Flight Check sólo devuelve `passengerTypeCode` y
+ * `requestedTravelerIndex` (0-based) por tarifa.
+ */
+export const CERT_TRAVELER_ID_CANDIDATES: readonly CertTravelerIdCandidate[] = [
+  { label: 'número 1-based', idFor: (index) => String(index + 1) },
+  { label: 'requestedTravelerIndex', idFor: (index) => String(index) },
+  { label: 'nameNumber', idFor: (index) => `${String(index + 1)}.1` },
+  { label: 'tipo de pasajero', idFor: (_index, passenger) => passenger.paxType },
+  { label: 'T + número', idFor: (index) => `T${String(index + 1)}` },
+  { label: 'PAX + número', idFor: (index) => `PAX${String(index + 1)}` },
+];
+
 /** Lo que el arnés necesita de una reserva hecha para seguir el escenario. */
 interface CertBooking {
   readonly pnr: string;
@@ -405,6 +454,9 @@ class CertRun {
         await this.cancel(spec.id, booking.pnr);
         return;
       }
+      case 'book-traveler-id':
+        await this.probeTravelerId(spec.id, report);
+        return;
       case 'book-with-seat': {
         const booking = await this.reserve(spec.id, report, { withSeat: true });
         await this.cancel(spec.id, booking.pnr);
@@ -580,18 +632,36 @@ class CertRun {
         (value) => ({ result: value.result, audit: value.audit }),
       );
     } catch (err) {
-      // Rechazada antes de salir no deja nada. Cualquier otro fallo pudo crear un PNR que no
-      // conocemos: el operador lo busca por el Conversation-ID de la evidencia del paso.
-      if (!(err instanceof OrderCreateNotSentError)) {
-        this.leftovers.push({
-          scenario,
-          state: 'unknown',
-          reason:
-            'createBooking quedó en duda: puede haber un PNR sin localizador conocido. Buscarlo en Sabre Red con el Conversation-ID del paso createBooking',
-        });
-      }
+      this.noteCreateInDoubt(scenario, err);
       throw err;
     }
+    const pnr = this.booked(scenario, report, created);
+    await this.read(scenario, pnr);
+    return { pnr, criteria, offer: priced.offer, passengers };
+  }
+
+  /**
+   * Rechazada antes de salir, o rechazada por Sabre al validar el request, no deja nada. Cualquier
+   * otro fallo pudo crear un PNR que no conocemos: el operador lo busca por el Conversation-ID de la
+   * evidencia del paso.
+   */
+  private noteCreateInDoubt(scenario: CertScenarioId, err: unknown): void {
+    if (err instanceof OrderCreateNotSentError) return;
+    if (certainCreateRejection(err) !== undefined) return;
+    this.leftovers.push({
+      scenario,
+      state: 'unknown',
+      reason:
+        'createBooking quedó en duda: puede haber un PNR sin localizador conocido. Buscarlo en Sabre Red con el Conversation-ID del paso createBooking',
+    });
+  }
+
+  /** El PNR de una creación que salió: entra al registro de limpieza antes de cualquier lectura. */
+  private booked(
+    scenario: CertScenarioId,
+    report: CertScenarioReport,
+    created: OrderCreateAudit,
+  ): string {
     const pnr = created.result.pnr ?? created.result.orderId;
     if (pnr === undefined) {
       throw new CertScenarioError(
@@ -601,9 +671,74 @@ class CertRun {
     this.pnrs.push({ pnr, scenario, state: 'booked' });
     report.pnr = pnr;
     this.deps.announce(`   PNR ${pnr} (${created.result.outcome})`);
+    return pnr;
+  }
 
-    await this.read(scenario, pnr);
-    return { pnr, criteria, offer: priced.offer, passengers };
+  /**
+   * H-01 (docs/sabre/12 §3): createBooking por `flightOffer` con una oferta de Flight Check exige
+   * `travelers[].id`, y Flight Check no lo devuelve. Prueba los candidatos en orden con la MISMA
+   * oferta revalidada y para en el primero que reserva, que se cancela. Sólo sigue al siguiente
+   * cuando Sabre rechazó el request al validarlo ({@link certainCreateRejection}); cualquier otro
+   * fallo corta el sondeo, porque pudo dejar un PNR.
+   */
+  private async probeTravelerId(
+    scenario: CertScenarioId,
+    report: CertScenarioReport,
+  ): Promise<void> {
+    if (this.pnrs.length >= CERT_RUN_MAX_PNRS) {
+      throw new CertScenarioError(
+        `ya se crearon ${String(CERT_RUN_MAX_PNRS)} PNR en esta corrida: no se reserva otro`,
+      );
+    }
+    const { offer, criteria } = await this.bookableOffer(scenario);
+    const priced = await this.step(
+      scenario,
+      'flightCheck',
+      () => this.deps.flights.priceOffer(offer, criteria, this.deps.ctx),
+      (value) => ({
+        priceChanged: value.priceChanged,
+        warnings: value.warnings,
+        offer: offerView(value.offer),
+      }),
+    );
+    const base = certTestPassengers(this.plan.pax, criteria.departureDate);
+
+    for (const candidate of CERT_TRAVELER_ID_CANDIDATES) {
+      const passengers = base.map((passenger, index) => ({
+        ...passenger,
+        providerPaxId: candidate.idFor(index, passenger),
+      }));
+      const ids = passengers.map((passenger) => passenger.providerPaxId).join(',');
+      let created: OrderCreateAudit;
+      try {
+        created = await this.step(
+          scenario,
+          `createBooking id ${ids}`,
+          () =>
+            this.deps.flights.createOrderAudited(
+              { offer: priced.offer, criteria, passengers, contactInfo: CERT_TEST_CONTACT },
+              this.deps.ctx,
+            ),
+          (value) => ({ candidate: candidate.label, result: value.result, audit: value.audit }),
+        );
+      } catch (err) {
+        const rejection = certainCreateRejection(err);
+        if (rejection === undefined) {
+          this.noteCreateInDoubt(scenario, err);
+          throw err;
+        }
+        report.notes.push(`travelers[].id "${ids}" (${candidate.label}): ${rejection}`);
+        continue;
+      }
+      const pnr = this.booked(scenario, report, created);
+      report.notes.push(`travelers[].id "${ids}" (${candidate.label}): ACEPTADO, PNR ${pnr}`);
+      await this.read(scenario, pnr);
+      await this.cancel(scenario, pnr);
+      return;
+    }
+    throw new CertScenarioError(
+      `ningún travelers[].id entró (${String(CERT_TRAVELER_ID_CANDIDATES.length)} candidatos): ver las notas`,
+    );
   }
 
   private read(scenario: CertScenarioId, pnr: string): Promise<OrderView> {

@@ -83,6 +83,7 @@ gh workflow run sabre-cert-run.yml -f scenarios=sab-13 -f allow_money=true
 | `auth`              | sab-12 | Token de la cuenta y su vida real (P-08)                               | 0   | no     |
 | `shop`              | sab-12 | Búsqueda por ruta, con el conteo por carril de contenido               | 0   | no     |
 | `book-cancel`       | sab-12 | shop → flightCheck → createBooking → getBooking → cancel → getBooking  | 1   | no     |
+| `book-traveler-id`  | —      | Sondeo de H-01: `createBooking` con cada `travelers[].id` candidato (`1`, `0`, `1.1`, `ADT`, `T1`, `PAX1`) sobre la misma oferta de Flight Check; para en el primero que reserva y lo cancela. Se pide por nombre, no entra en el atajo sab-12 | 1 | no |
 | `book-issue-void`   | sab-13 | Emisión con la forma de pago de la cuenta (D1), checkFlightTickets, VOID | 1 | sí     |
 | `seatmap`           | sab-21 | Get Seats ATPCO antes de reservar                                      | 0   | no     |
 | `book-with-seat`    | sab-21 | Reserva con un asiento sin cargo y cancelación                         | 1   | no     |
