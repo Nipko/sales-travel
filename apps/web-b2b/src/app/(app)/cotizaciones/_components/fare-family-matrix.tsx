@@ -9,18 +9,19 @@ import {
   Package,
   RefreshCw,
   RotateCcw,
+  Armchair,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Offer } from '../actions';
-import { baggageState } from '../../../../lib/baggage';
-import { policyBadge, policyState, type PolicyState } from '../../../../lib/fare-policy';
+import { fareAttributes, type AttrValue } from '../../../../lib/fare-attributes';
 import { cn } from '../../../../lib/cn';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { isTestFare } from '../../../../lib/test-content';
 import { Button } from '../../../../components/ui/button';
 import { TestContentBadge } from '../../../../components/test-content-badge';
 import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
+import { BaggageIcons } from './baggage-icons';
 import { legFare, type Leg } from './leg-selection';
 import { TicketingDeadlineBadge } from './ticketing-deadline-badge';
 
@@ -92,40 +93,6 @@ function AttrIcon({ value }: { value: AttrValue }) {
   );
 }
 
-/** Los tres estados de una fila, más el `partial` que ya existía. */
-type AttrValue = 'yes' | 'no' | 'partial' | 'unknown';
-
-/** Traduce una franquicia a lo que pinta la fila, sin perder el «no se sabe». */
-function attrDeEquipaje(allowance: { qty: number; weightKg?: number } | undefined): {
-  value: AttrValue;
-  detail?: string;
-} {
-  const state = baggageState(allowance);
-  if (state.kind === 'unknown') return { value: 'unknown', detail: 'No informado' };
-  if (state.kind === 'none') return { value: 'no' };
-  return {
-    value: 'yes',
-    ...(state.weightKg === undefined ? {} : { detail: `${state.weightKg} kg` }),
-  };
-}
-
-/** La política con cargo es `partial`: se permite, pero no gratis. Un ✓ ahí prometía lo contrario. */
-function attrDePolitica(
-  state: PolicyState,
-  formatMoney: (amountMinor: number, currency: string) => string,
-): { value: AttrValue; detail?: string } {
-  const detail = policyBadge(state, formatMoney);
-  const value: AttrValue =
-    state.kind === 'unknown'
-      ? 'unknown'
-      : state.kind === 'no'
-        ? 'no'
-        : state.kind === 'free'
-          ? 'yes'
-          : 'partial';
-  return detail === undefined ? { value } : { value, detail };
-}
-
 function AttrRow({
   icon,
   label,
@@ -137,6 +104,8 @@ function AttrRow({
   value: AttrValue;
   detail?: string;
 }) {
+  // La etiqueta de la aerolínea («1 cabin bag up to 10kg») no cabe en la pastilla: va debajo.
+  const largo = detail !== undefined && detail.length > 16;
   return (
     <div className="flex items-center gap-2.5 py-2 border-b border-[var(--color-border)]/35 last:border-b-0">
       <span className="text-[var(--color-fg-subtle)]/80 size-4 flex items-center justify-center">
@@ -149,9 +118,14 @@ function AttrRow({
             líneas, que es lo que la columna admite. */}
         <span className="text-xs font-semibold leading-tight text-[var(--color-fg-muted)]">
           {label}
+          {largo ? (
+            <span className="mt-0.5 block text-[10px] font-medium text-[var(--color-fg-subtle)]">
+              {detail}
+            </span>
+          ) : null}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {detail && (
+          {detail && !largo && (
             <span className="text-[9px] font-bold text-[var(--color-fg-subtle)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] px-1.5 py-0.5 rounded">
               {detail}
             </span>
@@ -269,8 +243,7 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
       : legFare(fare, mode.leg).name.toUpperCase();
   const bgClass = FARE_COLORS[name] ?? 'bg-[var(--color-surface)] border-[var(--color-border)]/70';
   const badge = FARE_BADGES[name];
-  const baggage = fare.baggage;
-  const policies = fare.policies;
+  const attrs = fareAttributes(fare, mode?.leg, formatMoney);
 
   const encabezado = (
     <div className="mb-4">
@@ -280,6 +253,7 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
             un proveedor y otra de pruebas por otro. Se puede cotizar igual, para probar el flujo. */}
         {isTestFare(fare) ? <TestContentBadge /> : null}
       </div>
+      <BaggageIcons attributes={attrs} className="mt-3" />
       {fare.fareFamily?.cabin && fare.fareFamily.cabin !== 'economy' && (
         <span className="mt-1.5 inline-block rounded-md border border-[var(--color-navy)]/10 bg-[var(--color-navy)]/8 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-navy)]">
           {fare.fareFamily.cabin.replace('_', ' ')}
@@ -346,34 +320,62 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
   );
 
   const atributos = (
-    <div className="rounded-lg border border-[var(--color-border)]/40 px-2.5 py-1">
-      <AttrRow
-        icon={<Package className="size-3.5" />}
-        label="Artículo personal"
-        {...attrDeEquipaje(
-          baggage?.personalItem === undefined ? undefined : { qty: baggage.personalItem },
-        )}
-      />
-      <AttrRow
-        icon={<Briefcase className="size-3.5" />}
-        label="Equipaje de mano"
-        {...attrDeEquipaje(baggage?.carryOn)}
-      />
-      <AttrRow
-        icon={<Luggage className="size-3.5" />}
-        label="Maleta facturada"
-        {...attrDeEquipaje(baggage?.checked)}
-      />
-      <AttrRow
-        icon={<RefreshCw className="size-3.5" />}
-        label="Cambios de fecha"
-        {...attrDePolitica(policyState(policies, 'change'), formatMoney)}
-      />
-      <AttrRow
-        icon={<RotateCcw className="size-3.5" />}
-        label="Reembolso de tarifa"
-        {...attrDePolitica(policyState(policies, 'refund'), formatMoney)}
-      />
+    <div>
+      {/* De dónde sale lo que se lista: con trayecto elegido y sin atributos de marca, lo único
+          que hay es el equipaje y las políticas del viaje completo, y hay que decirlo. */}
+      {mode !== undefined ? (
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+          {attrs.source === 'leg'
+            ? `Incluye en la ${mode.leg === 0 ? 'ida' : 'vuelta'}`
+            : 'Del viaje completo'}
+        </p>
+      ) : null}
+      <div className="rounded-lg border border-[var(--color-border)]/40 px-2.5 py-1">
+        <AttrRow
+          icon={<Package className="size-3.5" />}
+          label="Artículo personal"
+          {...attrs.personalItem}
+        />
+        <AttrRow
+          icon={<Briefcase className="size-3.5" />}
+          label="Equipaje de mano"
+          {...attrs.carryOn}
+        />
+        <AttrRow
+          icon={<Luggage className="size-3.5" />}
+          label="Maleta facturada"
+          {...attrs.checked}
+        />
+        <AttrRow
+          icon={<RefreshCw className="size-3.5" />}
+          label="Cambios de fecha"
+          {...attrs.change}
+        />
+        <AttrRow
+          icon={<RotateCcw className="size-3.5" />}
+          label="Reembolso de tarifa"
+          {...attrs.refund}
+        />
+        {attrs.seat !== undefined && attrs.seat.value !== 'unknown' ? (
+          <AttrRow
+            icon={<Armchair className="size-3.5" />}
+            label="Selección de asiento"
+            {...attrs.seat}
+          />
+        ) : null}
+      </div>
+      {attrs.extras.length > 0 ? (
+        <ul aria-label="También incluye" className="mt-2 flex flex-wrap gap-1">
+          {attrs.extras.slice(0, 4).map((extra) => (
+            <li
+              key={extra}
+              className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]"
+            >
+              {extra}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 

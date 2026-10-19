@@ -7,6 +7,7 @@ import {
   SABRE_ATPCO_OFFER_TTL_SECONDS,
   SabreShopMappingError,
   addDaysToIsoDate,
+  brandFeatureKind,
   canonicalPaxType,
   mapSabreShopResponse,
   resolveOfferExpiry,
@@ -937,5 +938,137 @@ describe('borde del proveedor', () => {
     const first = onlyOffer(run(clone(adultFixture)));
     const second = onlyOffer(run(clone(adultFixture)));
     expect(first.id).not.toBe(second.id);
+  });
+});
+
+describe('atributos de marca por componente (`ReturnBrandAncillaries`, docs/sabre/15 D3)', () => {
+  /** Ida con LIGHT (sin maleta) y vuelta con FULL (maleta incluida): no son los de la oferta. */
+  function conAtributos(): Json {
+    const payload = clone(adultFixture) as unknown as Json;
+    const body = payload['groupedItineraryResponse'] as Json;
+    body['brandFeatureDescs'] = [
+      {
+        id: 1,
+        application: 'F',
+        commercialName: '1 CABIN BAG UP TO 10KG',
+        serviceGroup: 'BG',
+        serviceType: 'Z',
+        subCode: '0LN',
+        vendor: 'ATP',
+      },
+      {
+        id: 2,
+        application: 'C',
+        commercialName: 'CHECKED BAG 23KG',
+        serviceGroup: 'BG',
+        serviceType: 'Z',
+        subCode: '0GO',
+        vendor: 'ATP',
+      },
+      {
+        id: 3,
+        application: 'F',
+        commercialName: 'CHECKED BAG 23KG',
+        serviceGroup: 'BG',
+        serviceType: 'Z',
+        subCode: '0GO',
+        vendor: 'ATP',
+      },
+      {
+        id: 4,
+        application: 'N',
+        commercialName: 'REFUND',
+        serviceGroup: 'BF',
+        serviceType: 'Z',
+        subCode: '06A',
+        vendor: 'ATP',
+      },
+      {
+        id: 5,
+        application: 'C',
+        commercialName: 'CHANGES BEFORE DEPARTURE',
+        serviceGroup: 'BF',
+        serviceType: 'Z',
+        subCode: '05Z',
+        vendor: 'ATP',
+      },
+      {
+        id: 6,
+        application: 'D',
+        commercialName: 'STANDARD SEAT SELECTION',
+        serviceGroup: 'BF',
+        serviceType: 'Z',
+        subCode: '0B5',
+        vendor: 'ATP',
+      },
+      {
+        id: 7,
+        application: 'X',
+        commercialName: 'FUERA DEL CONTRATO',
+        serviceGroup: 'BF',
+        serviceType: 'Z',
+        subCode: '000',
+        vendor: 'ATP',
+      },
+    ];
+    const components = passengerInfos(payload)[0]!['fareComponents'] as Json[];
+    components[0]!['brandFeatures'] = [
+      { ref: 1 },
+      { ref: 2 },
+      { ref: 4 },
+      { ref: 5 },
+      { ref: 6 },
+      { ref: 7 },
+      { ref: 99 },
+    ];
+    components[1]!['brandFeatures'] = [{ ref: 1 }, { ref: 3 }, { ref: 3 }];
+    return payload;
+  }
+
+  it('cada componente trae SUS atributos, normalizados', () => {
+    const offer = onlyOffer(run(conAtributos()));
+    expect(offer.fareComponents?.[0]?.includes).toEqual([
+      { kind: 'carry-on', status: 'included', label: '1 CABIN BAG UP TO 10KG' },
+      { kind: 'checked-bag', status: 'charge', label: 'CHECKED BAG 23KG' },
+      { kind: 'refund', status: 'not-offered', label: 'REFUND' },
+      { kind: 'change', status: 'charge', label: 'CHANGES BEFORE DEPARTURE' },
+      { kind: 'seat', status: 'not-offered', label: 'STANDARD SEAT SELECTION' },
+    ]);
+    // El repetido se cuenta una vez; la referencia colgante y la `application` desconocida, nunca.
+    expect(offer.fareComponents?.[1]?.includes).toEqual([
+      { kind: 'carry-on', status: 'included', label: '1 CABIN BAG UP TO 10KG' },
+      { kind: 'checked-bag', status: 'included', label: 'CHECKED BAG 23KG' },
+    ]);
+    expect(OfferSchema.safeParse(offer).success).toBe(true);
+  });
+
+  it('sin atributos el componente no lleva `includes`: no informado no es «no incluye»', () => {
+    const offer = onlyOffer(run(clone(adultFixture)));
+    expect(offer.fareComponents?.length).toBeGreaterThan(0);
+    for (const component of offer.fareComponents ?? []) expect(component.includes).toBeUndefined();
+  });
+
+  it('un atributo mal formado se descarta sin tumbar la respuesta', () => {
+    const payload = conAtributos();
+    const body = payload['groupedItineraryResponse'] as Json;
+    (body['brandFeatureDescs'] as Json[]).push({ id: 8 });
+    const components = passengerInfos(payload)[0]!['fareComponents'] as Json[];
+    components[1]!['brandFeatures'] = [{ ref: 8 }];
+    const offer = onlyOffer(run(payload));
+    expect(offer.fareComponents?.[1]?.includes).toBeUndefined();
+  });
+
+  it.each([
+    ['BG', 'PERSONAL ITEM', 'personal-item'],
+    ['BG', '2 PC 23 KG', 'checked-bag'],
+    [undefined, 'EQUIPAJE DE MANO 10 KG', 'carry-on'],
+    [undefined, 'BAGAGEM DE MÃO', 'carry-on'],
+    ['SA', 'PREFERRED', 'seat'],
+    ['BF', 'REEMBOLSO CON PENALIDAD', 'refund'],
+    ['BF', 'CAMBIOS SIN CARGO', 'change'],
+    ['BF', 'PRIORITY BOARDING', 'other'],
+    ['BF', 'MILES ACCRUAL 100%', 'other'],
+  ] as const)('%s «%s» → %s', (group, name, kind) => {
+    expect(brandFeatureKind(group, name)).toBe(kind);
   });
 });

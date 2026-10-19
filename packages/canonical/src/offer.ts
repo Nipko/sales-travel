@@ -133,6 +133,31 @@ export const FareBrandSchema = z.object({
 export type FareBrand = z.infer<typeof FareBrandSchema>;
 
 /**
+ * Un atributo de la marca de UN componente: «1 maleta de 23 kg incluida», «cambios con cargo».
+ *
+ * Sale de los atributos de marca del proveedor (ATPCO Table 166 en Sabre), que son por componente
+ * y no por oferta: en un ida y vuelta con LIGHT de ida y FULL de vuelta, la maleta de la vuelta no
+ * es la de la ida. `not-offered` es «esta tarifa no lo incluye» (afirmación del proveedor); que
+ * un `kind` falte en la lista es «no informado», y no se pintan igual.
+ */
+export const FARE_INCLUSION_KINDS = [
+  'personal-item',
+  'carry-on',
+  'checked-bag',
+  'change',
+  'refund',
+  'seat',
+  'other',
+] as const;
+export const FARE_INCLUSION_STATUSES = ['included', 'charge', 'not-offered'] as const;
+export const FareInclusionSchema = z.object({
+  kind: z.enum(FARE_INCLUSION_KINDS),
+  status: z.enum(FARE_INCLUSION_STATUSES),
+  label: z.string().min(1).max(160),
+});
+export type FareInclusion = z.infer<typeof FareInclusionSchema>;
+
+/**
  * Tarifa aplicada a uno o más segmentos de la oferta.
  *
  * Round-trip no implica una única familia: Sabre puede devolver una marca distinta por
@@ -148,6 +173,8 @@ export const FareComponentSchema = z.object({
   origin: z.string().length(3).optional(),
   destination: z.string().length(3).optional(),
   cabin: CabinClassSchema.optional(),
+  /** Ausente = el proveedor no informó qué incluye la marca. Ver {@link FareInclusionSchema}. */
+  includes: z.array(FareInclusionSchema).min(1).optional(),
 });
 export type FareComponent = z.infer<typeof FareComponentSchema>;
 

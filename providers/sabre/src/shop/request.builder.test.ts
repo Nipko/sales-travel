@@ -428,7 +428,7 @@ describe('Anchored Search y marcas por trayecto (docs/sabre/15 §2.5)', () => {
     });
     expect(
       body.TravelerInfoSummary.PriceRequestInformation.TPA_Extensions?.BrandedFareIndicators,
-    ).toEqual({ SingleBrandedFare: true });
+    ).toEqual({ SingleBrandedFare: true, ReturnBrandAncillaries: true });
   });
 
   it('excluir marcas en un trayecto también exige aislar la aerolínea', () => {
@@ -572,15 +572,30 @@ describe('volumen: tier e itinerarios', () => {
     expect(build().TravelerInfoSummary.PriceRequestInformation.TPA_Extensions).toEqual({
       BrandedFareIndicators: {
         SingleBrandedFare: true,
+        ReturnBrandAncillaries: true,
       },
     });
+  });
+
+  it('los atributos de marca se apagan solos, sin tocar la marca (docs/sabre/15 D3)', () => {
+    expect(
+      build({}, {}, { brandAncillaries: false }).TravelerInfoSummary.PriceRequestInformation
+        .TPA_Extensions,
+    ).toEqual({ BrandedFareIndicators: { SingleBrandedFare: true } });
+  });
+
+  it('sin marcas no se piden atributos: no hay marca de la que colgarlos', () => {
+    expect(
+      build({}, {}, { brandedFares: 'off', brandAncillaries: true }).TravelerInfoSummary
+        .PriceRequestInformation.TPA_Extensions,
+    ).toBeUndefined();
   });
 
   it('`single` pide UNA marca por itinerario y no arrastra el upsell', () => {
     expect(
       build({}, {}, { brandedFares: 'single' }).TravelerInfoSummary.PriceRequestInformation
         .TPA_Extensions,
-    ).toEqual({ BrandedFareIndicators: { SingleBrandedFare: true } });
+    ).toEqual({ BrandedFareIndicators: { SingleBrandedFare: true, ReturnBrandAncillaries: true } });
   });
 
   it('el upsell manda las DOS banderas juntas, como el ejemplo oficial', () => {
@@ -597,6 +612,7 @@ describe('volumen: tier e itinerarios', () => {
         SingleBrandedFare: true,
         MultipleBrandedFares: true,
         UpsellLimit: 3,
+        ReturnBrandAncillaries: true,
       },
     });
   });
@@ -609,6 +625,7 @@ describe('volumen: tier e itinerarios', () => {
         SingleBrandedFare: true,
         MultipleBrandedFares: true,
         UpsellLimit: 5,
+        ReturnBrandAncillaries: true,
       },
     });
   });

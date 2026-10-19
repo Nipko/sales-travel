@@ -40,6 +40,17 @@ export interface FareComponent {
   origin?: string;
   destination?: string;
   cabin?: string;
+  /**
+   * Qué incluye la marca de ESTE componente (espejo de `FareInclusion` del canónico). Ausente =
+   * no informado; `not-offered` = no lo incluye. Ver `lib/fare-attributes.ts`.
+   */
+  includes?: FareInclusion[];
+}
+
+export interface FareInclusion {
+  kind: 'personal-item' | 'carry-on' | 'checked-bag' | 'change' | 'refund' | 'seat' | 'other';
+  status: 'included' | 'charge' | 'not-offered';
+  label: string;
 }
 
 export interface OfferPricing {

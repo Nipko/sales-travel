@@ -218,6 +218,19 @@ export const SABRE_BRAND_LADDER_DEFAULT = 2;
 export const SABRE_BRAND_LADDER_MAX = 4;
 
 /**
+ * ¿Se piden los atributos de la marca (`ReturnBrandAncillaries`, ATPCO Table 166, `v5.yml:7972`)?
+ *
+ * Es lo que dice qué incluye la tarifa de CADA trayecto —maleta, cambios, reembolso, asiento—
+ * en vez del equipaje y las políticas de la oferta entera. Sólo tiene efecto si se piden marcas.
+ *
+ * **Encendido por defecto** (docs/sabre/15 §6, D3): la sonda del 2026-10-19 en el PCC de la
+ * cuenta CERT devolvió 103 `brandFeatureDescs`, 14 por componente, con `SingleBrandedFare` y sin
+ * MBF. Aun así es una mejora degradable APARTE: si el motor rechaza la petición, el adapter la
+ * apaga a ella sola antes de tocar las marcas.
+ */
+export const SABRE_BRAND_ANCILLARIES_DEFAULT = true;
+
+/**
  * ¿Se le pide a Sabre contenido NDC? NO, salvo que la cuenta lo encienda.
  *
  * El mapper todavía no convierte una oferta NDC en `Offer`: la descarta con `ndc-content-skipped`
@@ -350,6 +363,8 @@ export interface SabreBrandedFareIndicators {
   SingleBrandedFare?: true;
   MultipleBrandedFares?: true;
   UpsellLimit?: number;
+  /** Ver {@link SABRE_BRAND_ANCILLARIES_DEFAULT}. */
+  ReturnBrandAncillaries?: true;
   /** Marcas a excluir. Ver {@link SabreShopOptionsSchema.excludeBrands}. */
   BrandFilters?: { Brand: { Code: string; PreferLevel: 'Unacceptable' }[] };
 }
@@ -512,6 +527,8 @@ export const SabreShopOptionsSchema = z.object({
     .max(SABRE_BRAND_LADDER_MAX)
     .default(SABRE_BRAND_LADDER_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
+  /** Ver {@link SABRE_BRAND_ANCILLARIES_DEFAULT}. Lo apaga el adapter si Sabre lo rechaza. */
+  brandAncillaries: z.boolean().default(SABRE_BRAND_ANCILLARIES_DEFAULT),
   /**
    * `DataSources.NDC`: `Enable` sólo con `true`. Ver {@link SABRE_NDC_CONTENT_DEFAULT}.
    *
@@ -827,8 +844,9 @@ function dataSourcesFor(ndcContent: boolean): SabreDataSources {
 function brandedFareIndicators(
   opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
 ): SabreBrandedFareIndicators | null {
-  const filtros: Pick<SabreBrandedFareIndicators, 'BrandFilters'> =
-    opts.excludeBrands.length === 0
+  const filtros: Pick<SabreBrandedFareIndicators, 'BrandFilters' | 'ReturnBrandAncillaries'> = {
+    ...(opts.brandAncillaries ? { ReturnBrandAncillaries: true as const } : {}),
+    ...(opts.excludeBrands.length === 0
       ? {}
       : {
           BrandFilters: {
@@ -837,7 +855,8 @@ function brandedFareIndicators(
               PreferLevel: 'Unacceptable' as const,
             })),
           },
-        };
+        }),
+  };
 
   // Excluir marcas exige pedir marcas: sin `SingleBrandedFare` el filtro no tiene sobre qué obrar.
   if (opts.brandedFares === 'off') return null;

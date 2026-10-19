@@ -7,6 +7,7 @@ import {
   type CabinClass,
   type FareBreakdownEntry,
   type FareComponent,
+  type FareInclusion,
   type Itinerary,
   type Offer,
   type ProviderRawValue,
@@ -204,6 +205,22 @@ const SabrePenaltiesInfoSchema = z.object({
     .optional(),
 });
 
+/**
+ * Un atributo de marca, ATPCO Table 166 (`BrandFeatureType`, `v5.yml:2809-2856`).
+ *
+ * Todo opcional aunque el contrato marque campos como requeridos: un atributo mal formado se
+ * descarta al mapear, no tumba la respuesta entera. Es un enriquecimiento, no el precio.
+ */
+const SabreBrandFeatureDescSchema = z.object({
+  id: z.number().optional(),
+  /** `F` gratis, `C` con cargo, `N` no ofrecido, `D` mostrado pero no ofrecido. */
+  application: z.string().optional(),
+  commercialName: z.string().optional(),
+  serviceGroup: z.string().optional(),
+  serviceType: z.string().optional(),
+  subCode: z.string().optional(),
+});
+
 const SabrePassengerInfoSchema = z.object({
   passengerType: z.string().optional(),
   /** CANTIDAD, no ordinal (docs/sabre/02 §7.2). */
@@ -213,6 +230,8 @@ const SabrePassengerInfoSchema = z.object({
     .array(
       z.object({
         ref: z.number().optional(),
+        /** Atributos de la marca de ESTE componente → `brandFeatureDescs` (`v5.yml:3237`). */
+        brandFeatures: z.array(z.object({ ref: z.number().optional() })).optional(),
         beginAirport: z.string().optional(),
         endAirport: z.string().optional(),
         segments: z
@@ -349,6 +368,8 @@ export const SabreGroupedItineraryResponseSchema = z.object({
     legDescs: z.array(SabreLegDescSchema).optional(),
     baggageAllowanceDescs: z.array(SabreBaggageAllowanceDescSchema).optional(),
     fareComponentDescs: z.array(SabreFareComponentDescSchema).optional(),
+    /** Sólo con `ReturnBrandAncillaries` (`v5.yml:3821`). */
+    brandFeatureDescs: z.array(SabreBrandFeatureDescSchema).optional(),
     itineraryGroups: z.array(SabreItineraryGroupSchema).optional(),
   }),
 });
@@ -472,6 +493,7 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
     legs: indexById(body.legDescs),
     baggage: indexById(body.baggageAllowanceDescs),
     fareComponents: indexById(body.fareComponentDescs),
+    brandFeatures: indexById(body.brandFeatureDescs),
   };
 
   const offers: Offer[] = [];
@@ -551,6 +573,7 @@ interface Dictionaries {
   readonly legs: ReadonlyMap<number, SabreLegDesc>;
   readonly baggage: ReadonlyMap<number, z.infer<typeof SabreBaggageAllowanceDescSchema>>;
   readonly fareComponents: ReadonlyMap<number, z.infer<typeof SabreFareComponentDescSchema>>;
+  readonly brandFeatures: ReadonlyMap<number, z.infer<typeof SabreBrandFeatureDescSchema>>;
 }
 
 function indexById<T extends { id?: number | undefined }>(
@@ -1386,6 +1409,7 @@ function resolveFareComponents(
     const fareBasisCode = desc?.fareBasisCode?.trim();
     const origin = normalizeAirport(component.beginAirport);
     const destination = normalizeAirport(component.endAirport);
+    const includes = resolveBrandFeatures(component.brandFeatures, dicts);
 
     out.push({
       segmentRefs,
@@ -1403,9 +1427,71 @@ function resolveFareComponents(
       ...(origin === undefined ? {} : { origin }),
       ...(destination === undefined ? {} : { destination }),
       ...(cabins.length === 1 ? { cabin: cabins[0]! } : {}),
+      ...(includes.length === 0 ? {} : { includes }),
     });
   }
 
+  return out;
+}
+
+const STATUS_BY_APPLICATION: Readonly<Record<string, FareInclusion['status']>> = {
+  F: 'included',
+  C: 'charge',
+  N: 'not-offered',
+  // «Mostrado pero no ofrecido»: la aerolínea lo lista para comparar, y esta marca no lo trae.
+  D: 'not-offered',
+};
+
+/**
+ * Qué es un atributo de Table 166. El grupo de servicio sólo separa equipaje (`BG`) y asiento
+ * (`SA`/`ST`); cambios y reembolso viajan en el grupo genérico de marca (`BF`) con subcódigos
+ * propios de cada aerolínea, así que lo que los distingue es el nombre comercial. Por eso el
+ * nombre manda y el grupo es el respaldo. Lo que no encaja es `other`, nunca un descarte: el
+ * vendedor igual lo ve con la etiqueta de la aerolínea.
+ */
+export function brandFeatureKind(
+  serviceGroup: string | undefined,
+  commercialName: string,
+): FareInclusion['kind'] {
+  const name = commercialName.toUpperCase();
+  const group = serviceGroup?.trim().toUpperCase();
+  if (/\bSEAT|ASIENTO|ASSENTO/.test(name) || group === 'SA' || group === 'ST') return 'seat';
+  if (/REFUND|REEMBOLS/.test(name)) return 'refund';
+  if (/CHANGE|CAMBIO|REBOOK|ALTERA|REMARC/.test(name)) return 'change';
+  if (/CARRY|CABIN BAG|HAND ?BAG|CABINA|DE MANO|DE M[AÃ]O/.test(name)) return 'carry-on';
+  // El artículo personal (bolso bajo el asiento) va en `BG` como la maleta y no es una maleta.
+  if (/PERSONAL|ART[IÍ]CULO|PESSOAL/.test(name)) return 'personal-item';
+  if (group === 'BG' || /CHECKED|BAGGAGE|\bBAG|MALETA|EQUIPAJE|BAGAGEM/.test(name)) {
+    return 'checked-bag';
+  }
+  return 'other';
+}
+
+/**
+ * Los atributos de marca de un componente, normalizados (docs/sabre/15 D3).
+ *
+ * Una lista vacía es «no informado» y el componente queda sin `includes`; nunca se inventa un
+ * `not-offered`, que es una afirmación sobre la tarifa. Se descartan los atributos sin nombre o
+ * con `application` fuera del contrato: sin saber si está incluido, una fila sólo confunde.
+ */
+function resolveBrandFeatures(
+  refs: readonly { ref?: number | undefined }[] | undefined,
+  dicts: Dictionaries,
+): FareInclusion[] {
+  const out: FareInclusion[] = [];
+  const vistos = new Set<string>();
+  for (const { ref } of refs ?? []) {
+    if (ref === undefined) continue;
+    const desc = dicts.brandFeatures.get(ref);
+    const label = desc?.commercialName?.trim().replace(/\s+/g, ' ').slice(0, 160);
+    const status = STATUS_BY_APPLICATION[desc?.application?.trim().toUpperCase() ?? ''];
+    if (label === undefined || label.length === 0 || status === undefined) continue;
+    const kind = brandFeatureKind(desc?.serviceGroup, label);
+    const clave = `${kind}\u0000${status}\u0000${label.toUpperCase()}`;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    out.push({ kind, status, label });
+  }
   return out;
 }
 

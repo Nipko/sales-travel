@@ -248,7 +248,7 @@ Lo que ya existe y basta para la elección por trayecto: `fareComponents[].brand
 
 Añadidos opcionales propuestos (no rompen nada, todos `optional()`):
 
-1. `FareComponent.includes?` — atributos de marca normalizados desde `brandFeatureDescs`
+1. `FareComponent.includes?` (**implementado**, D3) — atributos de marca normalizados desde `brandFeatureDescs`
    (`{kind: 'carry-on'|'checked-bag'|'change'|'refund'|'seat'|'other', status:
 'included'|'charge'|'not-offered', label}`), para el resumen por trayecto. Depende de
    `ReturnBrandAncillaries` (D3).
@@ -291,21 +291,27 @@ Solo ida: igual, sin el paso 3. Móvil primero: pasos apilados con la selección
   por búsqueda. En la búsqueda inicial la escalera mueve la marca de la **ida**; en la de vueltas,
   la de la **vuelta**.
 - **D2 — Anchored Search**, con degradación a las combinaciones de la primera búsqueda.
-- **D3 — pendiente**: la sonda confirmó que `ReturnBrandAncillaries` funciona; mapear
-  `brandFeatureDescs` al canónico queda como siguiente paso.
+- **D3 — hecha (2026-10-19)**: BFM pide `ReturnBrandAncillaries` junto a `SingleBrandedFare`
+  (encendido por defecto, `brandAncillaries` lo apaga por cuenta) como degradación aparte: si el
+  motor rechaza, se apaga sólo eso (orden MFPI → atributos → marcas). `brandFeatureDescs` se mapea
+  a `FareComponent.includes` (`personal-item`/`carry-on`/`checked-bag`/`change`/`refund`/`seat`/
+  `other` × `included`/`charge`/`not-offered`); clasificación por nombre comercial con
+  `serviceGroup` de respaldo (`brandFeatureKind`). Falta: verificar la clasificación contra los
+  nombres reales de la sonda CERT y ajustar las expresiones si alguna marca cae en `other`.
 - **D4 — sí**, sonda corrida (§2.4).
 - **D5 — sí**, la reserva fija marca y fare basis por vuelo; se verifica en CERT cuando se levante
   H-07.
 
 ## 6.1 Lo implementado
 
-| Pieza       | Qué                                                                                                                                           | Dónde                                                                                          |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Request BFM | `fixedOutbound` (Anchored Search) y `legBrandFilters` por trayecto, como alcance interno de la llamada (no configurable por cuenta)           | `providers/sabre/src/shop/request.builder.ts` (`SabreShopRequestScope`, `anchorAndFilterLegs`) |
-| Escalera    | Por trayecto (`marcaDeTramo`, `claveDeTramo`), aerolíneas en paralelo, tope `SABRE_BRAND_LADDER_MAX_CARRIERS`                                 | `providers/sabre/src/sabre-flight-search.adapter.ts`                                           |
-| Vueltas     | `SabreFlightSearchAdapter.searchReturns` → puerto opcional `FlightReturnSearchPort` → `POST /search/flights/returns`                          | adapter, `packages/domain`, `apps/api/src/search`                                              |
-| Reserva     | `flightPricing[0].qualifiers.brandedFares` + `specificFares` por vuelo desde `offer.fareComponents`                                           | `sabre-order-create.adapter.ts` (`atpcoPricingFor`), `booking/create.request.builder.ts`       |
-| UI          | Paso 1: vuelos de ida con sus tarifas («Elegir esta ida»). Paso 2: ida fija arriba, vueltas con sus tarifas y el total («Guardar cotización») | `apps/web-b2b/.../cotizaciones/_components/round-trip-flow.tsx`, `leg-selection.ts`            |
+| Pieza       | Qué                                                                                                                                                                                                                                                      | Dónde                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Request BFM | `fixedOutbound` (Anchored Search) y `legBrandFilters` por trayecto, como alcance interno de la llamada (no configurable por cuenta)                                                                                                                      | `providers/sabre/src/shop/request.builder.ts` (`SabreShopRequestScope`, `anchorAndFilterLegs`)                  |
+| Escalera    | Por trayecto (`marcaDeTramo`, `claveDeTramo`), aerolíneas en paralelo, tope `SABRE_BRAND_LADDER_MAX_CARRIERS`                                                                                                                                            | `providers/sabre/src/sabre-flight-search.adapter.ts`                                                            |
+| Vueltas     | `SabreFlightSearchAdapter.searchReturns` → puerto opcional `FlightReturnSearchPort` → `POST /search/flights/returns`                                                                                                                                     | adapter, `packages/domain`, `apps/api/src/search`                                                               |
+| Reserva     | `flightPricing[0].qualifiers.brandedFares` + `specificFares` por vuelo desde `offer.fareComponents`                                                                                                                                                      | `sabre-order-create.adapter.ts` (`atpcoPricingFor`), `booking/create.request.builder.ts`                        |
+| UI          | Paso 1: vuelos de ida con sus tarifas («Elegir esta ida»). Paso 2: ida fija arriba, vueltas con sus tarifas y el total («Guardar cotización»)                                                                                                            | `apps/web-b2b/.../cotizaciones/_components/round-trip-flow.tsx`, `leg-selection.ts`                             |
+| Qué incluye | `ReturnBrandAncillaries` → `FareComponent.includes`. La tarjeta por trayecto lista lo de ESA marca en ESE trayecto («Incluye en la ida»), con «Del viaje completo» si no hay atributos; íconos de maleta (personal · mano · facturada) en tarjeta y fila | `shop/request.builder.ts`, `shop/response.mapper.ts`, `web-b2b/src/lib/fare-attributes.ts`, `baggage-icons.tsx` |
 
 ## 6.2 Decisiones que se le plantearon al founder
 

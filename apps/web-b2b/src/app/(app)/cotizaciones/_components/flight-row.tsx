@@ -14,6 +14,8 @@ import {
 } from '../../../../lib/test-content';
 import { TestContentBadge } from '../../../../components/test-content-badge';
 import { airlineName } from './airline-names';
+import { fareAttributes } from '../../../../lib/fare-attributes';
+import { BaggageIcons } from './baggage-icons';
 import { FareFamilyMatrix, type FareChoiceMode } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
 import { faresForLeg, legFare } from './leg-selection';
@@ -402,6 +404,11 @@ export function FlightRow({
               columna derecha en escritorio. Antes había dos copias del precio en el DOM. */}
           <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 px-4 py-3 sm:px-5 md:w-48 md:shrink-0 md:flex-col md:items-end md:justify-center md:gap-3 md:border-l md:border-t-0 md:bg-transparent md:p-5">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:order-2 md:justify-end">
+              {/* Las maletas de la tarifa más barata, la del precio que se muestra al lado. */}
+              <BaggageIcons
+                attributes={fareAttributes(cheapest, fareChoice?.leg, formatMoney)}
+                size="sm"
+              />
               {isRoundtrip && fareChoice === undefined ? (
                 <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-fg)]">
                   Ida y vuelta

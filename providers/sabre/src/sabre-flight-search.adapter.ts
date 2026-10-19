@@ -13,6 +13,7 @@ import {
   type SabreMultipleFaresMode,
   SABRE_BRAND_LADDER_DEFAULT,
   SABRE_MULTIPLE_FARES_DEFAULT,
+  SABRE_BRAND_ANCILLARIES_DEFAULT,
   SABRE_NDC_CONTENT_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
@@ -293,6 +294,15 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
    */
   private multipleFaresUnsupported = false;
 
+  /**
+   * Igual que {@link multipleFaresUnsupported}, para `ReturnBrandAncillaries` (docs/sabre/15 D3).
+   *
+   * Aparte de las marcas por la misma razón: que el motor no devuelva los atributos de la marca
+   * no dice nada de las marcas en sí, y perder LIGHT/FULL por no saber qué incluyen sería cambiar
+   * una función que anda por ninguna.
+   */
+  private brandAncillariesUnsupported = false;
+
   constructor(
     private readonly cfg: SabreConfig,
     private readonly deps: SabreFlightSearchDeps = {},
@@ -345,6 +355,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     const pedirMarcas = modo !== 'off';
     const modoMulti = opciones.multipleFares ?? SABRE_MULTIPLE_FARES_DEFAULT;
     const pedirMulti = modoMulti !== 'off' && !this.multipleFaresUnsupported;
+    const pedirAtributos = this.pedirAtributosDeMarca(opciones);
     // Mismo `?? DEFAULT` que las marcas, y por la misma razón. No entra en la degradación: pedir
     // o no NDC no es una capacidad que el PCC rechace, es una decisión de la cuenta, y cada
     // llamada de esta búsqueda la hereda de `...opciones` sin que nadie la pise.
@@ -373,6 +384,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // producción y perderlo por un rechazo del upsell sería cambiar algo que anda por nada.
     let modoActual = modo;
     let multiActual: SabreMultipleFaresMode = pedirMulti ? modoMulti : 'off';
+    let atributosActual = pedirAtributos;
     let result: SabreResult<unknown> | undefined;
     // Lo que se APRENDE de un rechazo se guarda aparte y sólo se fija cuando el escalón de abajo
     // pasa. Fijarlo antes convertía cualquier error BUSINESS —una fecha inválida, un código sin
@@ -380,16 +392,19 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     // marcas falla igual, el error no era de capacidad y no hay nada que aprender.
     let techoAprendido: SabreBrandedFaresMode | null = null;
     let multiAprendido = false;
+    let atributosAprendido = false;
 
     for (;;) {
       const cuerpo = buildSabreShopRequest(criteria, this.cfg, {
         ...opciones,
         brandedFares: modoActual,
         multipleFares: multiActual,
+        brandAncillaries: atributosActual,
       });
       try {
         result = await this.http.postJson<unknown>(SABRE_SHOP_PATH, cuerpo, opciones_http);
         if (multiAprendido) this.multipleFaresUnsupported = true;
+        if (atributosAprendido) this.brandAncillariesUnsupported = true;
         if (techoAprendido !== null) this.brandedFaresTecho = techoAprendido;
         break;
       } catch (err) {
@@ -410,6 +425,18 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
           continue;
         }
 
+        // Segundo escalón: los atributos de marca, antes que las marcas. Sólo viajan cuando se
+        // piden marcas, así que con marcas apagadas apagarlos no cambiaría la petición.
+        if (atributosActual && modoActual !== 'off') {
+          atributosActual = false;
+          atributosAprendido = true;
+          this.log('warn', 'sabre.shop.brand_ancillaries_no_soportados', {
+            path: SABRE_SHOP_PATH,
+            ...detalle,
+          });
+          continue;
+        }
+
         if (modoActual !== 'off') {
           const bajado = degradarBrandedFares(modoActual);
           this.log('warn', 'sabre.shop.branded_fares_degradado', {
@@ -424,6 +451,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
           // lo que arregló nada: no se aprende. La próxima búsqueda lo vuelve a probar sobre el
           // techo de marcas ya aprendido y converge en una sola llamada.
           multiAprendido = false;
+          atributosAprendido = false;
           continue;
         }
 
@@ -451,6 +479,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
           ...opciones,
           brandedFares: 'off',
           multipleFares: 'off',
+          brandAncillaries: false,
         }),
         opciones_http,
       );
@@ -484,6 +513,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       opciones,
       modo: modoActual,
       multi: multiActual,
+      ancillaries: atributosActual,
       httpOptions: opciones_http,
       leg: 0,
     });
@@ -493,6 +523,14 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       pidioNdc: pedirNdc,
     });
     return ofertas;
+  }
+
+  private pedirAtributosDeMarca(opciones: SabreShopOptions): boolean {
+    // Mismo `?? DEFAULT` que las marcas: `opciones` es la entrada sin parsear.
+    return (
+      (opciones.brandAncillaries ?? SABRE_BRAND_ANCILLARIES_DEFAULT) &&
+      !this.brandAncillariesUnsupported
+    );
   }
 
   /**
@@ -532,6 +570,9 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     const modo =
       this.brandedFaresTecho === null ? pedido : menorModo(pedido, this.brandedFaresTecho);
     const marcaIda = modo === 'off' ? null : marcaDeTramo(outbound, 0);
+    // Sin degradación propia: si la búsqueda inicial ya aprendió que el PCC los rechaza, aquí no
+    // se piden; si esta llamada falla, el llamador cae a las combinaciones de la primera búsqueda.
+    const atributos = this.pedirAtributosDeMarca(opciones);
     const scope: SabreShopRequestScope = {
       fixedOutbound,
       ...(marcaIda === null ? {} : { legBrandFilters: [{ leg: 0, preferred: [marcaIda] }] }),
@@ -548,7 +589,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       buildSabreShopRequest(
         criteria,
         this.cfg,
-        { ...opciones, brandedFares: modo, multipleFares: 'off' },
+        { ...opciones, brandedFares: modo, multipleFares: 'off', brandAncillaries: atributos },
         scope,
       ),
       httpOptions,
@@ -566,6 +607,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       opciones,
       modo,
       multi: 'off',
+      ancillaries: atributos,
       httpOptions,
       leg: 1,
       scope,
@@ -601,6 +643,8 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     opciones: SabreShopOptions;
     modo: SabreBrandedFaresMode;
     multi: SabreMultipleFaresMode;
+    /** Lo que pasó la degradación, no lo que pide la cuenta: `opciones` es la entrada sin tocar. */
+    ancillaries: boolean;
     httpOptions: { idempotent: true; conversationId?: string };
     /** Trayecto cuya marca se mueve: 0 en la búsqueda inicial, 1 en la de vueltas. */
     leg: number;
@@ -657,6 +701,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
               ...args.opciones,
               brandedFares: args.modo,
               multipleFares: args.multi,
+              brandAncillaries: args.ancillaries,
             },
             {
               ...args.scope,

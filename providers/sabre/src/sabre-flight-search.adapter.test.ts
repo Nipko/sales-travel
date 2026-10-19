@@ -413,7 +413,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
+      shopOptions: { brandAncillaries: false, brandedFares: 'upsell', multipleFares: 'off' },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -434,7 +434,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const spy = spyFetch((n) => (n === 1 ? rechazoDeNegocio() : json(adultFixture)));
     const sut = adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedFares: 'upsell', multipleFares: 'off' },
+      shopOptions: { brandAncillaries: false, brandedFares: 'upsell', multipleFares: 'off' },
     });
 
     await sut.search(CRITERIA, CTX);
@@ -454,7 +454,7 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const spy = spyFetch((n) => (n <= 2 ? rechazoDeNegocio() : json(adultFixture)));
     const sut = adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedFares: 'single', multipleFares: 'off' },
+      shopOptions: { brandAncillaries: false, brandedFares: 'single', multipleFares: 'off' },
     });
 
     await expect(sut.search(CRITERIA, CTX)).rejects.toThrow(SabreApiError);
@@ -471,7 +471,11 @@ describe('marcas tarifarias: si el PCC no las tiene, la búsqueda igual sale', (
     const spy = spyFetch((n) => (n <= 2 ? rechazoDeNegocio() : json(adultFixture)));
     const sut = adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandedFares: 'single', multipleFares: 'with-baggage' },
+      shopOptions: {
+        brandAncillaries: false,
+        brandedFares: 'single',
+        multipleFares: 'with-baggage',
+      },
     });
 
     await sut.search(CRITERIA, CTX);
@@ -775,6 +779,77 @@ describe('MFPI: varias tarifas por itinerario, apagado por defecto', () => {
   });
 });
 
+describe('atributos de marca (`ReturnBrandAncillaries`): encendidos y degradables aparte', () => {
+  function rechazo(): Response {
+    return json({
+      groupedItineraryResponse: {
+        version: '5',
+        messages: [{ severity: 'Error', type: 'MIP', code: 'PROCESS' }],
+      },
+    });
+  }
+
+  it('por defecto viajan junto a la marca única (docs/sabre/15 D3)', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(
+      peticion(spy.calls[0]!.init).TravelerInfoSummary.PriceRequestInformation.TPA_Extensions
+        ?.BrandedFareIndicators,
+    ).toEqual({ SingleBrandedFare: true, ReturnBrandAncillaries: true });
+  });
+
+  it('si el motor los rechaza, se apagan ELLOS y las marcas se conservan', async () => {
+    const spy = spyFetch((n) => (n === 1 ? rechazo() : json(adultFixture)));
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), { fetch: spy.fetch, logger }).search(CRITERIA, CTX);
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(spy.calls).toHaveLength(2);
+    expect(calls.map((c) => c.message)).toContain('sabre.shop.brand_ancillaries_no_soportados');
+    expect(calls.map((c) => c.message)).not.toContain('sabre.shop.branded_fares_degradado');
+    const reintento = cuerpo(spy.calls[1]!.init);
+    expect(reintento).not.toContain('ReturnBrandAncillaries');
+    expect(reintento).toContain('SingleBrandedFare');
+  });
+
+  it('y no se vuelven a pedir en la siguiente búsqueda', async () => {
+    const spy = spyFetch((n) => (n === 1 ? rechazo() : json(adultFixture)));
+    const sut = adapter(config(), { fetch: spy.fetch });
+
+    await sut.search(CRITERIA, CTX);
+    await sut.search(CRITERIA, CTX);
+
+    expect(spy.calls).toHaveLength(3);
+    expect(cuerpo(spy.calls[2]!.init)).not.toContain('ReturnBrandAncillaries');
+    expect(cuerpo(spy.calls[2]!.init)).toContain('SingleBrandedFare');
+  });
+
+  it('el orden es MFPI, atributos y recién después las marcas', async () => {
+    const spy = spyFetch((n) => (n <= 2 ? rechazo() : json(adultFixture)));
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { multipleFares: 'with-baggage' },
+    }).search(CRITERIA, CTX);
+
+    const cuerpos = spy.calls.map((c) => cuerpo(c.init));
+    expect(cuerpos).toHaveLength(3);
+    expect(cuerpos[1]).not.toContain('FlexibleFares');
+    expect(cuerpos[1]).toContain('ReturnBrandAncillaries');
+    expect(cuerpos[2]).not.toContain('ReturnBrandAncillaries');
+    expect(cuerpos[2]).toContain('SingleBrandedFare');
+  });
+
+  it('la cuenta puede apagarlos', async () => {
+    const spy = spyFetch(() => json(adultFixture));
+    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandAncillaries: false } }).search(
+      CRITERIA,
+      CTX,
+    );
+    expect(cuerpo(spy.calls[0]!.init)).not.toContain('ReturnBrandAncillaries');
+  });
+});
+
 describe('la degradación BAJA hasta donde haga falta, no un escalón y ya', () => {
   /** Rechaza siempre: obliga a recorrer la escalera entera. */
   function rechazoSiempre(): Response {
@@ -796,7 +871,11 @@ describe('la degradación BAJA hasta donde haga falta, no un escalón y ya', () 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandedFares: 'upsell', multipleFares: 'with-baggage' },
+      shopOptions: {
+        brandAncillaries: false,
+        brandedFares: 'upsell',
+        multipleFares: 'with-baggage',
+      },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -822,7 +901,11 @@ describe('la degradación BAJA hasta donde haga falta, no un escalón y ya', () 
     await expect(
       adapter(config(), {
         fetch: spy.fetch,
-        shopOptions: { brandedFares: 'upsell', multipleFares: 'with-baggage' },
+        shopOptions: {
+          brandAncillaries: false,
+          brandedFares: 'upsell',
+          multipleFares: 'with-baggage',
+        },
       }).search(CRITERIA, CTX),
     ).rejects.toThrow(SabreApiError);
 
@@ -1025,7 +1108,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     expect(rq.OriginDestinationInformation[1]?.TPA_Extensions).toBeUndefined();
     expect(
       rq.TravelerInfoSummary.PriceRequestInformation.TPA_Extensions?.BrandedFareIndicators,
-    ).toEqual({ SingleBrandedFare: true });
+    ).toEqual({ SingleBrandedFare: true, ReturnBrandAncillaries: true });
   });
 
   it('aísla por carrier: un código de DL no oculta la siguiente familia homónima de AA', async () => {
@@ -1347,7 +1430,7 @@ describe('contenido NDC: sólo si la cuenta lo habilita', () => {
 
       await adapter(config(), {
         fetch: spy.fetch,
-        shopOptions: { brandedFares: 'upsell', ...ndc },
+        shopOptions: { brandAncillaries: false, brandedFares: 'upsell', ...ndc },
       }).search(CRITERIA, CTX);
 
       expect(spy.calls).toHaveLength(2);
