@@ -318,6 +318,34 @@ describe('cotización ATPCO', () => {
     ]);
   });
 
+  it('con niño e infante fija la marca pero NO el fare basis, que es distinto por pasajero', async () => {
+    // La forma que devolvió Flight Check en CERT (2026-10-19, 2 ADT + 1 CNN + 1 INF): un
+    // componente por tipo de pasajero sobre los mismos vuelos. `SpecificFare` no lleva tipo de
+    // pasajero, así que fijar KLEESCO1 cotizaría al niño y al infante con la tarifa de adulto.
+    const offer: Offer = {
+      ...atpcoOffer(),
+      itineraries: [
+        { segments: [segment()], totalDurationMinutes: 170, stops: 0 },
+        {
+          segments: [segment({ origin: 'LIM', destination: 'BOG', flightNumber: '0632' })],
+          totalDurationMinutes: 170,
+          stops: 0,
+        },
+      ],
+      fareComponents: ['KLEESCO1', 'KLEESCO1CH', 'KLEESCO1IN'].flatMap((fareBasisCode) => [
+        { brand: { code: 'SL' }, fareBasisCode, segmentRefs: [0] },
+        { brand: { code: 'SL' }, fareBasisCode, segmentRefs: [1] },
+      ]),
+    };
+
+    const wire = await book(request(offer), CONFIRMED_RESPONSE);
+    const details = wire.body['flightDetails'] as Record<string, unknown>;
+
+    expect(details['flightPricing']).toEqual([
+      { qualifiers: { brandedFares: [{ brandCode: 'SL', flightIndices: [1, 2] }] } },
+    ]);
+  });
+
   it('un tramo sin marca no recibe una inventada, y un vuelo no lleva dos marcas', async () => {
     const offer: Offer = {
       ...atpcoOffer(),

@@ -35,3 +35,53 @@ export function saleBreakdown(offer: Offer): SaleBreakdown {
     ...(ownMargin > 0 ? { ownMarginMinor: ownMargin } : {}),
   };
 }
+
+/** Precio de venta de UN pasajero de un tipo. */
+export interface PaxSale {
+  readonly paxType: 'ADT' | 'CHD' | 'INF';
+  readonly paxCount: number;
+  /** Lo que se le vende a cada uno de los `paxCount`. */
+  readonly sellPerPaxMinor: number;
+}
+
+/**
+ * El precio de venta repartido por tipo de pasajero (adulto, niño, infante).
+ *
+ * El proveedor informa el NETO de cada uno; el markup de la red se aplica al total. Para que la
+ * agencia vea lo que cobra a cada pasajero, el precio de venta se reparte en proporción al neto de
+ * cada uno —un infante que cuesta el 10 % del neto se lleva el 10 % del markup— y el redondeo se
+ * lo queda el primer adulto, para que la suma cuadre al centavo con el precio de venta de la
+ * oferta. Sin desglose, o con uno que no suma el neto, no se inventa nada: `[]`.
+ */
+export function salePerPax(offer: Offer): PaxSale[] {
+  const entries = offer.fareBreakdown ?? [];
+  if (entries.length === 0) return [];
+  const net = entries.map((e) => e.basePerPax.amountMinor + e.taxesPerPax.amountMinor);
+  const netTotal = entries.reduce((sum, e, i) => sum + net[i]! * e.paxCount, 0);
+  if (netTotal <= 0 || netTotal !== offer.total.amountMinor) return [];
+
+  const sellTotal = saleBreakdown(offer).sellMinor;
+  const sales = entries.map((e, i) => ({
+    paxType: e.paxType,
+    paxCount: e.paxCount,
+    sellPerPaxMinor: Math.round((net[i]! * sellTotal) / netTotal),
+  }));
+  const assigned = sales.reduce((sum, s) => sum + s.sellPerPaxMinor * s.paxCount, 0);
+  const remainder = sellTotal - assigned;
+  if (remainder !== 0) {
+    // El resto va a UN pasajero: si el primer tipo tiene varios, se separa uno para que la suma
+    // cuadre sin repartir centavos que no existen.
+    const first = sales[0]!;
+    if (first.paxCount === 1) {
+      sales[0] = { ...first, sellPerPaxMinor: first.sellPerPaxMinor + remainder };
+    } else {
+      sales.splice(
+        0,
+        1,
+        { ...first, paxCount: 1, sellPerPaxMinor: first.sellPerPaxMinor + remainder },
+        { ...first, paxCount: first.paxCount - 1 },
+      );
+    }
+  }
+  return sales;
+}

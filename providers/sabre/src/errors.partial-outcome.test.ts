@@ -564,10 +564,11 @@ describe('(5) en cancelBooking sólo se tolera lo que un mapper puede leer', () 
  * ──────────────────────────────────────────────────────────────────────────── */
 
 describe('(6) el desenlace parcial sólo existe donde el contrato lo declara', () => {
-  it('la lista es cerrada y son las dos operaciones que tienen mapper', () => {
+  it('la lista es cerrada: las dos reservas con mapper y la búsqueda (BFM con niños)', () => {
     expect(SABRE_PARTIAL_OUTCOME_CONTRACTS.map((contract) => contract.path)).toEqual([
       SABRE_CREATE_BOOKING_PATH,
       SABRE_CANCEL_BOOKING_PATH,
+      SHOP_PATH,
     ]);
   });
 
@@ -746,5 +747,59 @@ describe('(8) los sobres hostiles siguen bloqueados en createBooking y en cancel
     const mapped = mapSabreCreateBookingResponse(outcome.result?.data);
     expect(mapped.order.outcome).toBe('PARTIAL');
     expect(mapped.order.pnr).toBe('GLEBNY');
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * (9) BFM: itinerarios con precio + `MIP/PROCESS` de negocio en `messages[]`
+ *
+ * Medido en CERT el 2026-10-19 con 2 adultos, 1 niño y 1 infante: 7 itinerarios con precio y
+ * `[Error] MIP/PROCESS: NO COMBINABLE FARES FOR CLASS USED`. Rechazarlo tiraba la búsqueda de
+ * Sabre entera en cuanto viajaba un niño.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+describe('(9) en BFM se entrega lo cotizado aunque haya combinaciones sin tarifa', () => {
+  const MIP = {
+    severity: 'Error',
+    type: 'MIP',
+    code: 'PROCESS',
+    text: 'NO COMBINABLE FARES FOR CLASS USED',
+  };
+  const priced = (messages: unknown[], pricingInformation: unknown[] = [{ fare: {} }]) => ({
+    groupedItineraryResponse: {
+      version: '5.0',
+      messages,
+      itineraryGroups: [{ itineraries: [{ id: 1, pricingInformation }] }],
+    },
+  });
+
+  it('con itinerarios cotizados, entrega el cuerpo y lleva el fallo en partialOutcome', async () => {
+    const out = await post(priced([MIP]), SHOP_PATH);
+    expect(out.rejected).toBe(false);
+    expect(out.result?.partialOutcome).toEqual([
+      expect.objectContaining({ source: 'application', type: 'MIP', code: 'PROCESS' }),
+    ]);
+  });
+
+  it('sin un solo itinerario cotizado sigue siendo un rechazo (el upsell de marcas)', async () => {
+    expect((await post(priced([MIP], []), SHOP_PATH)).rejected).toBe(true);
+    expect(
+      (await post({ groupedItineraryResponse: { version: '5.0', messages: [MIP] } }, SHOP_PATH))
+        .rejected,
+    ).toBe(true);
+  });
+
+  it('un error fuera de messages[] sigue rechazando', async () => {
+    const body = priced([MIP]);
+    const conError = { ...body, errors: [{ category: 'APPLICATION_ERROR', type: 'X' }] };
+    expect((await post(conError, SHOP_PATH)).rejected).toBe(true);
+  });
+
+  it('un mensaje sin vocabulario del proveedor sigue rechazando', async () => {
+    expect((await post(priced([{ severity: 'Error' }]), SHOP_PATH)).rejected).toBe(true);
+  });
+
+  it('el mismo sobre en otra operación sigue rechazando', async () => {
+    expect((await post(priced([MIP]), GET_BOOKING_PATH)).rejected).toBe(true);
   });
 });

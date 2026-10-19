@@ -1288,6 +1288,20 @@ export function atpcoPricingFor(offer: Offer): SabrePricingInput[] {
   const fareBases = new Map<string, number[]>();
   const brandedFlights = new Set<number>();
   const pricedFlights = new Set<number>();
+  // `SpecificFare` no lleva tipo de pasajero: un fare basis vale para TODOS. Con niños o
+  // infantes Flight Check devuelve un componente por tipo (CERT, 2026-10-19: KLEESCO1 adulto,
+  // KLEESCO1CH niño, KLEESCO1IN infante en los mismos vuelos), y fijar el primero cotizaría al niño
+  // con la tarifa de adulto. Sólo se fija el fare basis si en TODOS los vuelos hay uno solo; la
+  // marca, que sí es la misma para todos los pasajeros, se fija siempre.
+  const basesPorVuelo = new Map<number, Set<string>>();
+  for (const component of offer.fareComponents ?? []) {
+    const fareBasis = component.fareBasisCode?.trim().toUpperCase();
+    if (fareBasis === undefined || fareBasis.length === 0) continue;
+    for (const ref of component.segmentRefs) {
+      basesPorVuelo.set(ref, (basesPorVuelo.get(ref) ?? new Set<string>()).add(fareBasis));
+    }
+  }
+  const fijarFareBasis = [...basesPorVuelo.values()].every((bases) => bases.size === 1);
 
   for (const component of offer.fareComponents ?? []) {
     const positions = component.segmentRefs.filter((ref) => ref >= 0 && ref < flightCount);
@@ -1297,7 +1311,7 @@ export function atpcoPricingFor(offer: Offer): SabrePricingInput[] {
       appendPositions(brands, brandCode, positions, brandedFlights);
     }
     const fareBasis = component.fareBasisCode?.trim().toUpperCase();
-    if (fareBasis !== undefined && fareBasis.length > 0) {
+    if (fijarFareBasis && fareBasis !== undefined && fareBasis.length > 0) {
       appendPositions(fareBases, fareBasis, positions, pricedFlights);
     }
   }

@@ -1534,3 +1534,36 @@ describe('codigosComunes: qué excluye la próxima ronda de la escalera', () => 
     expect(codigosComunes(estado())).toEqual([]);
   });
 });
+
+describe('niños e infantes: Sabre cotiza lo que puede y avisa del resto', () => {
+  it('itinerarios con precio + MIP/PROCESS en messages[] devuelve las ofertas, no un error', async () => {
+    // CERT, 2026-10-19, 2 ADT + 1 CNN + 1 INF: 7 itinerarios y
+    // «NO COMBINABLE FARES FOR CLASS USED». Antes la búsqueda de Sabre caía entera.
+    const payload = structuredClone(familyFixture) as unknown as {
+      groupedItineraryResponse: { messages: unknown[] };
+    };
+    payload.groupedItineraryResponse.messages.push({
+      severity: 'Error',
+      type: 'MIP',
+      code: 'PROCESS',
+      text: 'NO COMBINABLE FARES FOR CLASS USED',
+    });
+    const spy = spyFetch(() => json(payload));
+    const { logger, calls } = spyLogger();
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      logger,
+      shopOptions: { brandLadderRounds: 0 },
+    }).search(
+      { ...CRITERIA, currency: 'EUR', paxCount: { adults: 3, children: 0, infants: 1 } },
+      CTX,
+    );
+
+    expect(offers.length).toBeGreaterThan(0);
+    expect(offers[0]!.fareBreakdown?.map((entry) => entry.paxType)).toContain('INF');
+    // Una sola llamada: no es un rechazo de marcas, no hay nada que degradar.
+    expect(spy.calls).toHaveLength(1);
+    expect(calls.map((call) => call.message)).toContain('sabre.shop.degradado');
+  });
+});

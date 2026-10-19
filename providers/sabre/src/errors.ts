@@ -966,7 +966,7 @@ const SABRE_BOOKING_LOCATOR_SHAPE = /^[A-Z0-9]{6,64}$/;
  *   servidor dentro de ese `errors[]` siguen siendo `SabreApiError`, con su política de reintento,
  *   su efecto sobre el breaker y su alerta al operador.
  */
-export type SabrePartialOutcomeEvidence = 'LOCATOR' | 'CARRIER_IS_OUTCOME';
+export type SabrePartialOutcomeEvidence = 'LOCATOR' | 'CARRIER_IS_OUTCOME' | 'PRICED_ITINERARIES';
 
 export interface SabrePartialOutcomeContract {
   /** Ruta del `paths:` del contrato, tal y como el ACL la pasa a `postJson`. */
@@ -997,6 +997,11 @@ export const SABRE_PARTIAL_OUTCOME_CONTRACTS: readonly SabrePartialOutcomeContra
   Object.freeze([
     { path: '/v1/trip/orders/createBooking', evidence: 'LOCATOR' },
     { path: '/v1/trip/orders/cancelBooking', evidence: 'CARRIER_IS_OUTCOME' },
+    // BFM con niños o infantes: Sabre cotiza lo que puede y declara el resto como
+    // `MIP/PROCESS: NO COMBINABLE FARES FOR CLASS USED` dentro del MISMO 200 (CERT, 2026-10-19:
+    // 7 itinerarios con precio + ese mensaje). Rechazarlo tiraba la búsqueda entera de Sabre en
+    // cuanto viajaba un niño. Ver {@link isShopPartialOutcome} y docs/sabre/16.
+    { path: '/v5/offers/shop', evidence: 'PRICED_ITINERARIES' },
   ]);
 
 /**
@@ -1134,6 +1139,10 @@ function isDeclaredPartialOutcome(
   const record = sabreEnvelopeRecord(payload);
   if (record === null) return false;
 
+  if (contract.evidence === 'PRICED_ITINERARIES') {
+    return isShopPartialOutcome(record, path, verdict);
+  }
+
   const carrier = splitOutcomeCarrier(record);
   if (!carrier.declared) return false;
 
@@ -1144,6 +1153,72 @@ function isDeclaredPartialOutcome(
   return contract.evidence === 'LOCATOR'
     ? hasBookingLocator(record)
     : verdict.failures.every(isMappablePartialFailure);
+}
+
+/**
+ * El desenlace parcial de BFM: itinerarios con precio + mensajes de error de negocio.
+ *
+ * Tres condiciones, todas:
+ *
+ *  1. **Todo el fallo vive en `groupedItineraryResponse.messages[]`**, medido igual que en las
+ *     reservas: se quita ese array (y sólo ése) y se vuelve a pasar la regla dura por el resto.
+ *  2. **Cada fallo es de negocio**: trae `type` —vocabulario del proveedor, como `MIP`— y
+ *     clasifica como `BUSINESS`. Un entitlement, una sesión o un error de servidor siguen siendo
+ *     `SabreApiError` con su política entera.
+ *  3. **Hay al menos un itinerario con `pricingInformation`**: algo que el mapper puede convertir
+ *     en oferta. Sin itinerarios —el `MIP/PROCESS` con que Sabre rechaza el upsell de marcas— sigue
+ *     siendo un rechazo, y la degradación de marcas del adapter lo sigue viendo.
+ */
+function isShopPartialOutcome(
+  record: Record<string, unknown>,
+  path: string | undefined,
+  verdict: SabreEnvelopeVerdict,
+): boolean {
+  const grouped = sabreEnvelopeRecord(record['groupedItineraryResponse']);
+  if (grouped === null) return false;
+
+  const groupedRest: Record<string, unknown> = {};
+  let carriers = 0;
+  for (const key of Object.keys(grouped)) {
+    if (normalizeEnvelopeToken(key) === 'MESSAGES') {
+      if (!Array.isArray(grouped[key])) return false;
+      carriers += 1;
+      continue;
+    }
+    groupedRest[key] = grouped[key];
+  }
+  if (carriers === 0) return false;
+
+  const rest = { ...record, groupedItineraryResponse: groupedRest };
+  const residual = runEnvelopeScan(rest, contractDeclaresApplicationResults(path));
+  if (!residual.verdict.exhaustive || residual.verdict.failures.length > 0) return false;
+
+  const negocio = verdict.failures.every(
+    (issue) =>
+      issue.source === 'application' &&
+      issue.type !== undefined &&
+      classifySabreFailure({
+        status: 200,
+        ...(issue.category === undefined ? {} : { category: issue.category }),
+        type: issue.type,
+      }).kind === 'BUSINESS',
+  );
+  return negocio && hasPricedItinerary(grouped);
+}
+
+function hasPricedItinerary(grouped: Record<string, unknown>): boolean {
+  const groups = grouped['itineraryGroups'];
+  if (!Array.isArray(groups)) return false;
+  return groups.some((group) => {
+    const itineraries = sabreEnvelopeRecord(group)?.['itineraries'];
+    return (
+      Array.isArray(itineraries) &&
+      itineraries.some((itinerary) => {
+        const pricing = sabreEnvelopeRecord(itinerary)?.['pricingInformation'];
+        return Array.isArray(pricing) && pricing.length > 0;
+      })
+    );
+  });
 }
 
 export interface SabreEnvelopeVerdict {

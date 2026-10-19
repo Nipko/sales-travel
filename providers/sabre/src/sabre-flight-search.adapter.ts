@@ -805,10 +805,17 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
 
     // Degradación declarada por Sabre: la respuesta llegó, pero incompleta. Callarla convierte
     // "te devolví menos de lo que había" en "no hay vuelos" en la pantalla del vendedor (RNF-13).
-    if (mapped.degraded || result.partialUnauthorized.length > 0) {
+    // `partialOutcome`: Sabre cotizó lo que pudo y declaró el resto sin tarifa (con niños o
+    // infantes, `MIP/PROCESS: NO COMBINABLE FARES FOR CLASS USED`). Hay ofertas, pero menos.
+    if (
+      mapped.degraded ||
+      result.partialUnauthorized.length > 0 ||
+      result.partialOutcome.length > 0
+    ) {
       this.log('warn', 'sabre.shop.degradado', {
         ...meta,
         partialUnauthorized: result.partialUnauthorized.length,
+        partialOutcome: result.partialOutcome.length,
       });
       return;
     }

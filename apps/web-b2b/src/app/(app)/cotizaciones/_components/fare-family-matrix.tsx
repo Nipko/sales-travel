@@ -16,7 +16,7 @@ import { useState } from 'react';
 import type { Offer } from '../actions';
 import { fareAttributes, type AttrValue } from '../../../../lib/fare-attributes';
 import { cn } from '../../../../lib/cn';
-import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import { saleBreakdown, salePerPax, type PaxSale } from '../../../../lib/sale-breakdown';
 import { isTestFare } from '../../../../lib/test-content';
 import { Button } from '../../../../components/ui/button';
 import { TestContentBadge } from '../../../../components/test-content-badge';
@@ -287,6 +287,7 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
     ) : null;
 
   const venta = saleBreakdown(fare);
+  const porPasajero = salePerPax(fare);
   const precio = (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
@@ -316,6 +317,7 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
           </strong>
         </span>
       </div>
+      <PaxSales sales={porPasajero} currency={venta.currency} formatMoney={formatMoney} />
     </div>
   );
 
@@ -419,5 +421,51 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
         </>
       )}
     </div>
+  );
+}
+
+const PAX_LABEL: Readonly<Record<PaxSale['paxType'], [string, string]>> = {
+  ADT: ['Adulto', 'Adultos'],
+  CHD: ['Niño', 'Niños'],
+  INF: ['Infante', 'Infantes'],
+};
+
+/**
+ * Lo que se le cobra a cada pasajero. Sólo cuando hay más de uno: con un adulto solo, el precio de
+ * la tarjeta ya lo dice. Los tipos repetidos por el redondeo (un adulto con un centavo más) se
+ * muestran como dos líneas, para que lo escrito sume exactamente el total.
+ */
+function PaxSales({
+  sales,
+  currency,
+  formatMoney,
+}: {
+  sales: readonly PaxSale[];
+  currency: string;
+  formatMoney: (amountMinor: number, currency: string) => string;
+}) {
+  const pasajeros = sales.reduce((total, sale) => total + sale.paxCount, 0);
+  if (pasajeros <= 1) return null;
+  return (
+    <ul
+      aria-label="Precio por pasajero"
+      className="mt-2 space-y-0.5 border-t border-[var(--color-border)]/40 pt-2 text-[11px] text-[var(--color-fg-subtle)]"
+    >
+      {sales.map((sale, index) => {
+        const [uno, varios] = PAX_LABEL[sale.paxType];
+        return (
+          <li
+            key={`${sale.paxType}-${index}`}
+            className="flex items-baseline justify-between gap-2"
+          >
+            <span>{sale.paxCount === 1 ? uno : `${sale.paxCount} ${varios.toLowerCase()}`}</span>
+            <strong className="font-semibold tabular-nums text-[var(--color-fg-muted)]">
+              {formatMoney(sale.sellPerPaxMinor, currency)}
+              {sale.paxCount > 1 ? <span className="font-normal"> c/u</span> : null}
+            </strong>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -81,6 +81,13 @@ export interface Offer {
   taxes: Money;
   // Precio de venta con la cascada de markup del consolidador (opcional; `total` es el neto).
   pricing?: OfferPricing;
+  /** Neto del proveedor por tipo de pasajero. Espejo de `FareBreakdownEntry` del canónico. */
+  fareBreakdown?: {
+    paxType: 'ADT' | 'CHD' | 'INF';
+    paxCount: number;
+    basePerPax: Money;
+    taxesPerPax: Money;
+  }[];
   itineraries?: Itinerary[];
   fareFamily?: { name: string; cabin: string };
   /** Fuente de verdad cuando ida y vuelta llevan familias distintas. */
