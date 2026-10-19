@@ -408,8 +408,16 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
       order,
     );
     const product = seated.product;
+    // Con la oferta de Flight Check en `flightOffer`, Sabre rechaza `agency.ticketingPolicy`
+    // (`INVALID_COMBINATION`, H-05 en docs/sabre/12 §3) y ninguna de las 65 reservas por
+    // `flightOffer` de la colección la manda: el plazo es el `paymentTimeLimit` de la oferta, que el
+    // PNR trae al leerlo. La política de la cuenta sólo viaja por `flightDetails`.
+    const omitTicketing = options.ticketing !== undefined && hasFlightCheckChain(request.offer);
+    if (omitTicketing) {
+      this.log('info', 'sabre.createBooking.ticketingPolicyOmitted', { lane: 'flight-check' });
+    }
     const ticketing =
-      options.ticketing === undefined
+      options.ticketing === undefined || omitTicketing
         ? undefined
         : this.ticketingPlan(request.offer, options.ticketing, options.agency);
     const agency =
@@ -792,8 +800,8 @@ interface PricePassengerBindingRaw {
 }
 
 /**
- * NDC: el viajero se enlaza por `requestedTravelerIndex` + tipo y recibe el id de price. ATPCO y
- * Flight Check no usan esta cadena. No hay fallback por orden ni por «el único adulto» porque ese
+ * NDC: el viajero se enlaza por `requestedTravelerIndex` + tipo y recibe el id de price. ATPCO por
+ * `flightDetails` no lleva id, y Flight Check numera por posición ({@link flightCheckTravelersOf}). No hay fallback por orden ni por «el único adulto» porque ese
  * atajo se vuelve intercambio de documentos en cuanto se reserva más de un pasajero.
  */
 function travelersOf(request: OrderCreateRequest): {
@@ -801,6 +809,7 @@ function travelersOf(request: OrderCreateRequest): {
   /** Los pasajeros en el orden de `travelers`: la posición de cada uno es su `travelerIndex - 1`. */
   order: Passenger[];
 } {
+  if (hasFlightCheckChain(request.offer)) return flightCheckTravelersOf(request);
   const priceOfferId = rawId(request.offer, SABRE_RAW_KEYS.priceOfferId);
   const priceOfferItemIds = rawIds(request.offer, SABRE_RAW_KEYS.priceOfferItemIds);
   if (priceOfferId === null || priceOfferItemIds === null) {
@@ -898,6 +907,46 @@ function travelersOf(request: OrderCreateRequest): {
     order.push(passenger);
   }
   return { travelers, order };
+}
+
+/** La oferta trae la cadena entera de Flight Check: se reserva por `flightOffer` con sus handles. */
+function hasFlightCheckChain(offer: Offer): boolean {
+  return (
+    rawId(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferId) !== null &&
+    rawIds(offer, SABRE_FLIGHT_CHECK_RAW_KEYS.bookingOfferItemIds) !== null
+  );
+}
+
+const PAX_TYPE_RANK: Readonly<Record<Passenger['paxType'], number>> = { ADT: 0, CHD: 1, INF: 2 };
+
+/**
+ * Flight Check: con su oferta en `flightOffer`, Booking Management exige `travelers[].id`
+ * (`MANDATORY_DATA_MISSING`, H-01 en docs/sabre/12 §3) y Flight Check no lo devuelve. En CERT,
+ * `"1"` pasa la validación: es la posición 1-based del viajero en el request de Flight Check, que
+ * los manda por tipo —adultos, niños, infantes— (`flight-check/request.builder.ts`). Los pasajeros
+ * se ordenan igual, estable dentro de cada tipo, y si no son los tipos que se revalidaron no se
+ * reserva: un id corrido es el documento de un pasajero en el billete de otro.
+ */
+function flightCheckTravelersOf(request: OrderCreateRequest): {
+  travelers: SabreTravelerInput[];
+  order: Passenger[];
+} {
+  const expected = expectedPaxTypes(request);
+  const order = [...request.passengers].sort(
+    (left, right) => PAX_TYPE_RANK[left.paxType] - PAX_TYPE_RANK[right.paxType],
+  );
+  if (
+    order.length !== expected.length ||
+    order.some((passenger, index) => passenger.paxType !== expected[index])
+  ) {
+    throw new SabreOrderCreateInputError(
+      'los pasajeros no son los que revalidó Flight Check (tipos y cantidades de la búsqueda)',
+    );
+  }
+  return {
+    travelers: order.map((passenger, index) => travelerOf(passenger, String(index + 1))),
+    order,
+  };
 }
 
 function expectedPaxTypes(request: OrderCreateRequest): Array<'ADT' | 'CHD' | 'INF'> {

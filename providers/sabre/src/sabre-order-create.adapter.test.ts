@@ -466,6 +466,72 @@ describe('cotización ATPCO', () => {
     });
   });
 
+  it('ATPCO revalidado numera los viajeros como Flight Check: "1"…"n", adultos, niños, infantes', async () => {
+    // CERT (H-01): sin `travelers[].id` Sabre responde MANDATORY_DATA_MISSING, y "1" pasa.
+    const base = request(flightCheckedOffer());
+    const adult = base.passengers[0];
+    if (adult === undefined) throw new Error('falta el adulto');
+    const wire = await book(
+      {
+        ...base,
+        criteria: { ...base.criteria, paxCount: { adults: 2, children: 1, infants: 0 } },
+        // A propósito fuera de orden: el niño primero.
+        passengers: [
+          { ...adult, paxId: 'nino', paxType: 'CHD', givenName: 'Nino', birthdate: '2018-05-05' },
+          adult,
+          { ...adult, paxId: 'adulta', givenName: 'Juanita', gender: 'F' },
+        ],
+      },
+      CONFIRMED_RESPONSE,
+    );
+
+    const travelers = wire.body['travelers'] as Array<Record<string, unknown>>;
+    expect(travelers.map((t) => [t['id'], t['passengerCode'], t['givenName']])).toEqual([
+      ['1', 'ADT', 'Juanito'],
+      ['2', 'ADT', 'Juanita'],
+      ['3', 'CNN', 'Nino'],
+    ]);
+  });
+
+  it('ATPCO revalidado con pasajeros que no son los de la búsqueda no sale al cable', async () => {
+    const base = request(flightCheckedOffer());
+    await expect(
+      book(
+        {
+          ...base,
+          criteria: { ...base.criteria, paxCount: { adults: 2, children: 0, infants: 0 } },
+        },
+        CONFIRMED_RESPONSE,
+      ),
+    ).rejects.toThrow(/no son los que revalidó Flight Check/);
+  });
+
+  it('ATPCO revalidado sale sin política de emisión: Sabre no la combina con flightOffer (H-05)', async () => {
+    const { logger, lines } = spyLogger();
+    const offer = flightCheckedOffer();
+    const wire = await book(
+      request({
+        ...offer,
+        provider: {
+          ...offer.provider,
+          raw: {
+            ...offer.provider.raw,
+            [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: '2026-10-15T03:00:00.000Z',
+          },
+        },
+      }),
+      CONFIRMED_RESPONSE,
+      { ticketing: { policy: 'FUTURE_TICKETING' }, receivedFrom: 'PLANETOUR' },
+      { deps: { ...reloj, logger }, cfg: { ticketingPcc: 'T1CK' } },
+    );
+
+    expect(wire.body['agency']).toBeUndefined();
+    expect(wire.raw).not.toContain('ticketingPolicy');
+    expect(wire.body['payment']).toEqual({ formsOfPayment: [{ type: 'CASH' }] });
+    expect(wire.outcome.ticketing).toBeUndefined();
+    expect(lines.map((l) => l.message)).toContain('sabre.createBooking.ticketingPolicyOmitted');
+  });
+
   it('ATPCO con media cadena de Flight Check falla antes de salir al cable', async () => {
     const checked = flightCheckedOffer();
     const offer: Offer = {
@@ -668,17 +734,18 @@ describe('provider_raw', () => {
 const AHORA = new Date('2026-10-13T12:00:00.000Z');
 const reloj: SabreOrderCreateDeps = { now: () => AHORA };
 
-/** ATPCO revalidado por Flight Check, con el plazo de pago que guardó el mapper (UTC). */
+/**
+ * ATPCO con el plazo de pago de Flight Check (UTC) y sin sus handles: se reserva por
+ * `flightDetails`, el único carril donde viaja la política de emisión (H-05). Con los handles, la
+ * reserva va por `flightOffer` sin política (ver «carril de Flight Check» más abajo).
+ */
 function flightCheckedOfferWithDeadline(paymentTimeLimit: string): Offer {
-  const base = flightCheckedOffer();
+  const base = atpcoOffer();
   return {
     ...base,
     provider: {
       ...base.provider,
-      raw: {
-        ...base.provider.raw,
-        [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: paymentTimeLimit,
-      },
+      raw: { [SABRE_FLIGHT_CHECK_RAW_KEYS.paymentTimeLimit]: paymentTimeLimit },
     },
   };
 }
