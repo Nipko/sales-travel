@@ -509,6 +509,39 @@ export class SearchService {
   }
 
   /**
+   * Las vueltas que combinan con la ida que eligió el vendedor, cotizadas con la marca de esa ida
+   * (docs/sabre/15 §5, paso 3). Cada oferta es una ida y vuelta con precio exacto.
+   *
+   * `supported: false` NO es un error: el proveedor que emitió la ida no sabe anclar (LATAM NDC
+   * hoy), y la pantalla elige la vuelta entre las combinaciones de la primera búsqueda. Igual que
+   * la revalidación: es venta, enruta por el proveedor QUE EMITIÓ la oferta y cuenta en la cuota,
+   * porque es otra consulta que el proveedor cobra.
+   */
+  async searchReturns(
+    outbound: Offer,
+    criteria: FlightSearchCriteria,
+    tenantId: string,
+  ): Promise<{ supported: boolean; offers: Offer[] }> {
+    if (outbound.tenantId !== tenantId) {
+      throw new BadRequestException('La oferta no pertenece a la agencia activa.');
+    }
+    if (criteria.returnDate === undefined) {
+      throw new BadRequestException('Elegir la vuelta exige una búsqueda de ida y vuelta.');
+    }
+    const provider = await this.registry.byCodeForOffer(tenantId, outbound.provider.name);
+    const searchReturns = provider.adapter.searchReturns?.bind(provider.adapter);
+    if (searchReturns === undefined) return { supported: false, offers: [] };
+
+    await this.telemetry.assertWithinQuota(tenantId);
+    const offers = await this.breaker.execute(provider.code, () =>
+      searchReturns(criteria, outbound, { tenantId }),
+    );
+    // El entorno sale de la cuenta resuelta, como en la búsqueda: la ida vino del navegador.
+    const stamped = offers.map((offer) => stampProviderEnvironment(offer, provider.environment));
+    return { supported: true, offers: await this.withPricing(stamped, tenantId, 'flights') };
+  }
+
+  /**
    * El mapa de asientos de una oferta que el vendedor está por cerrar (SAB-16).
    *
    * Es venta: enruta por el proveedor QUE EMITIÓ la oferta y corta si la plataforma lo apagó

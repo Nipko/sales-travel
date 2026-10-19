@@ -1,5 +1,5 @@
 import type { CachePort, LoggerPort } from '@sales-travel/core';
-import type { Offer } from '@sales-travel/canonical';
+import type { Offer, Segment } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, FlightSearchPort, SearchContext } from '@sales-travel/domain';
 import { SabreTokenService, type SabreFetch, type SabreTokenProvider } from './auth/token.service';
 import { missingSabreCredentials, sabreConversationIdPrefix, type SabreConfig } from './config';
@@ -16,7 +16,9 @@ import {
   SABRE_NDC_CONTENT_DEFAULT,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
+  type SabreFixedFlight,
   type SabreShopOptions,
+  type SabreShopRequestScope,
 } from './shop/request.builder';
 import {
   mapSabreShopResponse,
@@ -40,10 +42,32 @@ function esRechazoDeCapacidad(err: unknown): boolean {
   );
 }
 
-/** El código de marca que el mapper dejó en `provider.raw`, o `null`. */
-function codigoDeMarca(offer: Offer): string | null {
+/**
+ * El código de marca de UN trayecto (0 = ida, 1 = vuelta), o `null` si el trayecto no tiene
+ * marca o tiene más de una (un componente por tramo con marcas distintas).
+ *
+ * Sale de `fareComponents`, que es por trayecto; `provider.raw.brandCode` es de la oferta entera y
+ * vale `null` justo en el caso que importa aquí, el de ida y vuelta con marcas distintas.
+ */
+export function marcaDeTramo(offer: Offer, leg: number): string | null {
+  const itineraries = offer.itineraries ?? [];
+  if (leg >= itineraries.length) return null;
+  let start = 0;
+  for (let i = 0; i < leg; i += 1) start += itineraries[i]!.segments.length;
+  const end = start + itineraries[leg]!.segments.length;
+
+  const codes = new Set<string>();
+  for (const component of offer.fareComponents ?? []) {
+    if (!component.segmentRefs.some((ref) => ref >= start && ref < end)) continue;
+    const code = component.brand?.code?.trim().toUpperCase();
+    if (code === undefined || code.length === 0) return null;
+    codes.add(code);
+  }
+  if (codes.size === 1) return [...codes][0]!;
+  if (codes.size > 1) return null;
+  // Sin componentes: la marca de la oferta sólo vale para un viaje de un solo trayecto.
   const code = offer.provider.raw?.['brandCode'];
-  return typeof code === 'string' && code.length > 0 ? code : null;
+  return itineraries.length === 1 && typeof code === 'string' && code.length > 0 ? code : null;
 }
 
 /** Carrier comercializador único de toda la oferta; `null` para interline/multi-carrier. */
@@ -57,28 +81,34 @@ function carrierUnico(offer: Offer): string | null {
 }
 
 /**
- * Identidad del vuelo, deliberadamente sin clase de reserva ni marca: ambas cambian al subir la
- * escalera. Incluye los límites de tramo para no confundir dos combinaciones con los mismos
- * segmentos en distinto sentido.
+ * Identidad de los vuelos de UN trayecto, deliberadamente sin clase de reserva ni marca: ambas
+ * cambian al subir la escalera.
  */
-function claveDeItinerario(offer: Offer): string | null {
-  if (offer.itineraries === undefined || offer.itineraries.length === 0) return null;
+export function claveDeTramo(offer: Offer, leg: number): string | null {
+  const itinerary = offer.itineraries?.[leg];
+  if (itinerary === undefined || itinerary.segments.length === 0) return null;
   return JSON.stringify(
-    offer.itineraries.map((itinerary) =>
-      itinerary.segments.map((segment) => [
-        segment.carrier,
-        segment.flightNumber,
-        segment.origin,
-        segment.destination,
-        segment.departureAt,
-        segment.arrivalAt,
-      ]),
-    ),
+    itinerary.segments.map((segment) => [
+      segment.carrier,
+      segment.flightNumber,
+      segment.origin,
+      segment.destination,
+      segment.departureAt,
+      segment.arrivalAt,
+    ]),
   );
 }
 
+/**
+ * La escalera mueve la marca de UN trayecto y deja el otro en la más barata.
+ *
+ * En la búsqueda inicial es la ida (0): así cada vuelo de ida trae sus tarifas con el «desde» de
+ * la vuelta más barata, que es lo que el vendedor compara antes de elegir la vuelta. En la
+ * búsqueda de vueltas (Anchored Search) es la vuelta (1). El filtro por trayecto se verificó en
+ * CERT: excluir LIGHT en la ida dio STANDARD/LIGHT con la misma vuelta (docs/sabre/15 §2.5).
+ */
 interface EscaleraCarrier {
-  /** Códigos ya observados POR vuelo; jamás se unen globalmente. */
+  /** Códigos ya observados POR vuelo del trayecto; jamás se unen globalmente. */
   itinerarios: Map<string, Set<string>>;
 }
 
@@ -97,14 +127,14 @@ function codigosComunes(state: EscaleraCarrier): string[] {
   return [...(comunes ?? new Set<string>())].sort();
 }
 
-function estadosDeEscalera(offers: readonly Offer[]): Map<string, EscaleraCarrier> {
+function estadosDeEscalera(offers: readonly Offer[], leg: number): Map<string, EscaleraCarrier> {
   const carriers = new Map<string, EscaleraCarrier>();
   for (const offer of offers) {
-    const code = codigoDeMarca(offer);
+    const code = marcaDeTramo(offer, leg);
     const carrier = carrierUnico(offer);
-    const itinerary = claveDeItinerario(offer);
-    // Un filtro request-level no puede aislar con honestidad un itinerario interline ni una
-    // combinación ida/vuelta con códigos de marca distintos (`brandCode` es null en ese caso).
+    const itinerary = claveDeTramo(offer, leg);
+    // Un filtro de una ronda acotada a un carrier no puede aislar con honestidad un itinerario
+    // interline, ni un trayecto con dos marcas (`marcaDeTramo` es null en ese caso).
     if (code === null || carrier === null || itinerary === null) continue;
     const state = carriers.get(carrier) ?? { itinerarios: new Map<string, Set<string>>() };
     const vistos = state.itinerarios.get(itinerary) ?? new Set<string>();
@@ -115,11 +145,43 @@ function estadosDeEscalera(offers: readonly Offer[]): Map<string, EscaleraCarrie
   return carriers;
 }
 
+/**
+ * `Segment` canónico → vuelo fijo de Anchored Search. Fecha y hora LOCALES del aeropuerto, que es
+ * lo que trae `departureAt` antes del offset: se corta el string, no se pasa por `Date`, que lo
+ * convertiría a UTC y movería el vuelo de día.
+ */
+function vueloFijo(segment: Segment): SabreFixedFlight {
+  const local = (iso: string): string => {
+    const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2})?/.exec(iso);
+    if (match === null) throw new SabreConfigError('la ida elegida trae una hora sin forma ISO');
+    return `${match[1]}${match[2] ?? ':00'}`;
+  };
+  const flightNumber = Number.parseInt(segment.flightNumber, 10);
+  if (!/^\d{1,4}$/.test(segment.flightNumber) || flightNumber < 1) {
+    throw new SabreConfigError('la ida elegida trae un número de vuelo que no se puede fijar');
+  }
+  return {
+    flightNumber,
+    departureDateTime: local(segment.departureAt),
+    arrivalDateTime: local(segment.arrivalAt),
+    origin: segment.origin,
+    destination: segment.destination,
+    marketingCarrier: segment.carrier,
+    operatingCarrier: segment.operatingCarrier ?? segment.carrier,
+  };
+}
+
 /** Clase cerrada para diagnóstico; nunca usa `message`, que puede arrastrar texto del proveedor. */
 function claseSeguraDeError(error: unknown): string {
   const name = error instanceof Error ? error.name : 'NonErrorThrown';
   return /^[A-Za-z][A-Za-z0-9]{0,79}$/.test(name) ? name : 'UnknownError';
 }
+
+/**
+ * Cuántas aerolíneas recorre la escalera por búsqueda. Cada una cuesta `brandLadderRounds`
+ * consultas que Sabre cobra; seis cubre las que de verdad operan una ruta LATAM típica.
+ */
+export const SABRE_BRAND_LADDER_MAX_CARRIERS = 6;
 
 /** El más conservador de dos modos. `off` < `single` < `upsell`. */
 function menorModo(a: SabreBrandedFaresMode, b: SabreBrandedFaresMode): SabreBrandedFaresMode {
@@ -401,6 +463,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       modo: modoActual,
       multi: multiActual,
       httpOptions: opciones_http,
+      leg: 0,
     });
 
     this.logMapping(mapped, result, ctx, {
@@ -408,6 +471,85 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       pidioNdc: pedirNdc,
     });
     return ofertas;
+  }
+
+  /**
+   * Las vueltas que combinan con una ida ya elegida, cotizadas con la marca de esa ida.
+   *
+   * Es Anchored Search (docs/sabre/15 §2.5): la ida va fija (`Fixed` + sus vuelos) y, si tiene
+   * marca, como `BrandFilters` preferido de ese trayecto. Cada oferta devuelta es una ida y vuelta
+   * con precio exacto: no hay sumas de trayectos sueltos. Después, la escalera recorre las marcas
+   * de la VUELTA con el mismo presupuesto de rondas que la búsqueda inicial.
+   *
+   * Sólo se devuelven ofertas cuya ida es exactamente la elegida y, si la ida tenía marca, en esa
+   * marca: «Preferred» es una preferencia, y una vuelta cotizada con otra marca de ida no es el
+   * precio de lo que el vendedor eligió.
+   *
+   * Sin `returnDate`, o con una ida que no se puede fijar (sin vuelos, número no numérico), lanza:
+   * el llamador decide si cae a las combinaciones de la primera búsqueda.
+   */
+  async searchReturns(
+    criteria: FlightSearchCriteria,
+    outbound: Offer,
+    ctx: SearchContext,
+  ): Promise<Offer[]> {
+    if (criteria.returnDate === undefined) {
+      throw new SabreConfigError('searchReturns exige una búsqueda de ida y vuelta');
+    }
+    if (outbound.tenantId !== ctx.tenantId) {
+      throw new SabreConfigError('la ida elegida es de otro tenant');
+    }
+    const ida = outbound.itineraries?.[0];
+    if (ida === undefined || ida.segments.length === 0) {
+      throw new SabreConfigError('la ida elegida no trae vuelos que fijar');
+    }
+    const fixedOutbound = ida.segments.map(vueloFijo);
+    const claveIda = claveDeTramo(outbound, 0);
+    const opciones = this.deps.shopOptions ?? {};
+    const pedido = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
+    const modo =
+      this.brandedFaresTecho === null ? pedido : menorModo(pedido, this.brandedFaresTecho);
+    const marcaIda = modo === 'off' ? null : marcaDeTramo(outbound, 0);
+    const scope: SabreShopRequestScope = {
+      fixedOutbound,
+      ...(marcaIda === null ? {} : { legBrandFilters: [{ leg: 0, preferred: [marcaIda] }] }),
+    };
+    const httpOptions = {
+      idempotent: true as const,
+      ...(ctx.requestId === undefined
+        ? {}
+        : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
+    };
+
+    const result = await this.http.postJson<unknown>(
+      SABRE_SHOP_PATH,
+      buildSabreShopRequest(
+        criteria,
+        this.cfg,
+        { ...opciones, brandedFares: modo, multipleFares: 'off' },
+        scope,
+      ),
+      httpOptions,
+    );
+    const mapped = this.mapear(result, criteria, ctx);
+    const deLaIda = (offer: Offer): boolean =>
+      claveDeTramo(offer, 0) === claveIda &&
+      (marcaIda === null || marcaDeTramo(offer, 0) === marcaIda);
+    const base = mapped.offers.filter(deLaIda);
+
+    const ofertas = await this.escaleraDeMarcas({
+      base,
+      criteria,
+      ctx,
+      opciones,
+      modo,
+      multi: 'off',
+      httpOptions,
+      leg: 1,
+      scope,
+    });
+    this.logMapping(mapped, result, ctx, { pidioMarcas: modo !== 'off', pidioNdc: false });
+    return ofertas.filter(deLaIda);
   }
 
   /**
@@ -438,80 +580,110 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     modo: SabreBrandedFaresMode;
     multi: SabreMultipleFaresMode;
     httpOptions: { idempotent: true; conversationId?: string };
+    /** Trayecto cuya marca se mueve: 0 en la búsqueda inicial, 1 en la de vueltas. */
+    leg: number;
+    /** Alcance fijo de todas las rondas (la ida anclada y su marca en la búsqueda de vueltas). */
+    scope?: SabreShopRequestScope;
   }): Promise<Offer[]> {
     const rondas = args.opciones.brandLadderRounds ?? SABRE_BRAND_LADDER_DEFAULT;
     if (rondas <= 0 || args.modo === 'off') return [...args.base];
 
-    const ofertas = [...args.base];
-    const porCarrier = estadosDeEscalera(args.base);
-    if (porCarrier.size === 0) return ofertas;
+    const porCarrier = estadosDeEscalera(args.base, args.leg);
+    if (porCarrier.size === 0) return [...args.base];
 
-    for (const [carrier, state] of porCarrier) {
-      let exclusionAnterior = '';
-      for (let ronda = 0; ronda < rondas; ronda += 1) {
-        const excludeBrands = codigosComunes(state);
-        const firma = excludeBrands.join('\u0000');
-        // Sin intersección no existe un filtro seguro. Si no avanzó, repetir la llamada sólo
-        // devolvería lo mismo y volvería a cobrarla.
-        if (excludeBrands.length === 0 || firma === exclusionAnterior) break;
-        exclusionAnterior = firma;
+    // Las aerolíneas con más vuelos primero, y no más de SABRE_BRAND_LADDER_MAX_CARRIERS: cada una
+    // cuesta `rondas` consultas más, y la cola larga de una ruta (un vuelo de una aerolínea que
+    // casi no opera ahí) no paga lo que cuesta.
+    const elegidos = [...porCarrier]
+      .sort(([, a], [, b]) => b.itinerarios.size - a.itinerarios.size)
+      .slice(0, SABRE_BRAND_LADDER_MAX_CARRIERS);
 
-        let extra;
-        try {
-          const respuesta = await this.http.postJson<unknown>(
-            SABRE_SHOP_PATH,
-            buildSabreShopRequest(
-              args.criteria,
-              this.cfg,
-              {
-                ...args.opciones,
-                brandedFares: args.modo,
-                multipleFares: args.multi,
-                excludeBrands,
-              },
-              { onlyMarketingCarrier: carrier },
-            ),
-            args.httpOptions,
-          );
-          extra = this.mapear(respuesta, args.criteria, args.ctx);
-        } catch (err) {
-          // Una ronda extra NO puede costar la búsqueda: lo que ya se tiene es válido y vendible.
-          // Esto incluye transporte/timeout, auth, capacidad y mapeo. A diferencia de la primera
-          // ronda, la escalera no determina si hay oferta: sólo intenta enriquecer una base que ya
-          // pasó contrato. El diagnóstico conserva clase/código cerrados, nunca `message`.
-          this.log('warn', 'sabre.shop.escalera_de_marcas_cortada', {
-            path: SABRE_SHOP_PATH,
-            carrier,
-            ronda,
-            errorClass: claseSeguraDeError(err),
-            ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
-          });
-          break;
-        }
+    // En PARALELO por aerolínea; las rondas de cada una, en orden (cada una depende de lo que
+    // trajo la anterior). En serie, cinco aerolíneas con dos rondas eran diez búsquedas una
+    // detrás de otra. El semáforo del cliente HTTP sigue acotando cuántas van a la vez.
+    const porAerolinea = await Promise.all(
+      elegidos.map(([carrier, state]) => this.escalonarAerolinea(args, rondas, carrier, state)),
+    );
+    return [...args.base, ...porAerolinea.flat()];
+  }
 
-        // La respuesta se vuelve a comprobar: ni un proveedor que ignore `VendorPref`, ni un
-        // itinerario nuevo que entró por el ranking puede contaminar el estado de la escalera.
-        // Se filtra antes de actualizar los sets para conservar ofertas distintas de la misma
-        // familia (p.ej. otra fuente/PCC) dentro del mismo vuelo.
-        const nuevas = extra.offers.filter((offer) => {
-          if (carrierUnico(offer) !== carrier) return false;
-          const itinerary = claveDeItinerario(offer);
-          const code = codigoDeMarca(offer);
-          if (itinerary === null || code === null) return false;
-          const vistos = state.itinerarios.get(itinerary);
-          return vistos !== undefined && !vistos.has(code);
+  /** Las rondas de UNA aerolínea. Devuelve sólo lo nuevo; nunca lanza. */
+  private async escalonarAerolinea(
+    args: Parameters<SabreFlightSearchAdapter['escaleraDeMarcas']>[0],
+    rondas: number,
+    carrier: string,
+    state: EscaleraCarrier,
+  ): Promise<Offer[]> {
+    const ofertas: Offer[] = [];
+    let exclusionAnterior = '';
+    for (let ronda = 0; ronda < rondas; ronda += 1) {
+      const excludeBrands = codigosComunes(state);
+      const firma = excludeBrands.join('\u0000');
+      // Sin intersección no existe un filtro seguro. Si no avanzó, repetir la llamada sólo
+      // devolvería lo mismo y volvería a cobrarla.
+      if (excludeBrands.length === 0 || firma === exclusionAnterior) break;
+      exclusionAnterior = firma;
+
+      let extra;
+      try {
+        const respuesta = await this.http.postJson<unknown>(
+          SABRE_SHOP_PATH,
+          buildSabreShopRequest(
+            args.criteria,
+            this.cfg,
+            {
+              ...args.opciones,
+              brandedFares: args.modo,
+              multipleFares: args.multi,
+            },
+            {
+              ...args.scope,
+              onlyMarketingCarrier: carrier,
+              legBrandFilters: [
+                ...(args.scope?.legBrandFilters ?? []).filter((f) => f.leg !== args.leg),
+                { leg: args.leg, excluded: excludeBrands },
+              ],
+            },
+          ),
+          args.httpOptions,
+        );
+        extra = this.mapear(respuesta, args.criteria, args.ctx);
+      } catch (err) {
+        // Una ronda extra NO puede costar la búsqueda: lo que ya se tiene es válido y vendible.
+        // Esto incluye transporte/timeout, auth, capacidad y mapeo. A diferencia de la primera
+        // ronda, la escalera no determina si hay oferta: sólo intenta enriquecer una base que ya
+        // pasó contrato. El diagnóstico conserva clase/código cerrados, nunca `message`.
+        this.log('warn', 'sabre.shop.escalera_de_marcas_cortada', {
+          path: SABRE_SHOP_PATH,
+          carrier,
+          ronda,
+          errorClass: claseSeguraDeError(err),
+          ...(err instanceof SabreApiError ? { kind: err.failure.kind, code: err.code } : {}),
         });
-        if (nuevas.length === 0) break;
+        break;
+      }
 
-        for (const offer of nuevas) {
-          const itinerary = claveDeItinerario(offer)!;
-          const code = codigoDeMarca(offer)!;
-          state.itinerarios.get(itinerary)!.add(code);
-          ofertas.push(offer);
-        }
+      // La respuesta se vuelve a comprobar: ni un proveedor que ignore `VendorPref`, ni un
+      // itinerario nuevo que entró por el ranking puede contaminar el estado de la escalera.
+      // Se filtra antes de actualizar los sets para conservar ofertas distintas de la misma
+      // familia (p.ej. otra fuente/PCC) dentro del mismo vuelo.
+      const nuevas = extra.offers.filter((offer) => {
+        if (carrierUnico(offer) !== carrier) return false;
+        const itinerary = claveDeTramo(offer, args.leg);
+        const code = marcaDeTramo(offer, args.leg);
+        if (itinerary === null || code === null) return false;
+        const vistos = state.itinerarios.get(itinerary);
+        return vistos !== undefined && !vistos.has(code);
+      });
+      if (nuevas.length === 0) break;
+
+      for (const offer of nuevas) {
+        const itinerary = claveDeTramo(offer, args.leg)!;
+        const code = marcaDeTramo(offer, args.leg)!;
+        state.itinerarios.get(itinerary)!.add(code);
+        ofertas.push(offer);
       }
     }
-
     return ofertas;
   }
 

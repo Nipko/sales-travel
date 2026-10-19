@@ -1,4 +1,5 @@
 import { Body, Controller, ForbiddenException, Logger, Post, UseFilters } from '@nestjs/common';
+import type { Offer } from '@sales-travel/canonical';
 import {
   FlightSearchCriteriaSchema,
   type FlightSearchCriteria,
@@ -13,8 +14,10 @@ import { SellerRateLimit } from '../throttler/seller-rate-limit.guard.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   OfferPriceBodySchema,
+  ReturnSearchBodySchema,
   SeatMapBodySchema,
   type OfferPriceBody,
+  type ReturnSearchBody,
   type SeatMapBody,
 } from './search.schemas.js';
 import {
@@ -48,6 +51,15 @@ export interface FlightSearchEnvelope extends FlightSearchResponse {
  * la oferta deja elegir asiento al reservar (SAB-16), para que la pantalla ofrezca el botón sólo
  * donde sirve. No consulta a nadie: es la capacidad del proveedor.
  */
+/**
+ * Las vueltas de una ida elegida. `supported: false` = el proveedor no sabe anclar y la pantalla
+ * elige entre las combinaciones de la primera búsqueda.
+ */
+export interface ReturnSearchEnvelope {
+  supported: boolean;
+  offers: Offer[];
+}
+
 export interface OfferPriceEnvelope extends OfferPriceResult {
   seatSelection: boolean;
 }
@@ -111,6 +123,27 @@ export class SearchController {
     ]);
 
     return { ...result, showProviderInResults };
+  }
+
+  /**
+   * Paso 2 de ida y vuelta: con la ida y su tarifa elegidas, las vueltas que combinan con ella y su
+   * precio total (Anchored Search en Sabre). Es otra consulta que el proveedor cobra: mismo rol,
+   * cuota y límite por vendedor que la búsqueda, y la moneda de la agencia, como la revalidación.
+   */
+  @SalesOperation()
+  @SellerRateLimit({ bucket: 'flights-returns', limit: 30, ttlMs: 60_000 })
+  @Post('flights/returns')
+  async flightReturns(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(ReturnSearchBodySchema)) body: ReturnSearchBody,
+  ): Promise<ReturnSearchEnvelope> {
+    if (!userId) throw new ForbiddenException();
+
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
+    const moneda = await this.monedaDelTenant(tenantId);
+    if (moneda !== undefined) body.searchCriteria.currency = moneda;
+
+    return this.search.searchReturns(body.outbound, body.searchCriteria, tenantId);
   }
 
   @SalesOperation()

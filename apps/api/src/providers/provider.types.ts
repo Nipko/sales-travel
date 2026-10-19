@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type {
   AncillaryPort,
+  FlightReturnSearchPort,
   FlightSearchPort,
   OfferPricePort,
   OrderCancelResult,
@@ -34,7 +35,8 @@ export interface FlightProviderAdapter
   extends FlightSearchPort,
     OfferPricePort,
     OrderCreatePort,
-    OrderManagePort {}
+    OrderManagePort,
+    Partial<FlightReturnSearchPort> {}
 
 /**
  * Lo que una creación de reserva entrega ADEMÁS del `OrderCreateResult` del dominio.

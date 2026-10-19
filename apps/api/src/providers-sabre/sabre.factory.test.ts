@@ -566,12 +566,12 @@ describe('SabreProviderFactory — el entorno sale de los hosts, no de lo que de
 });
 
 describe('SabreProviderFactory — shopOptions por cuenta', () => {
-  it('sin configuración aplica single, cero rondas pagadas, MFPI apagado y sin NDC', () => {
+  it('sin configuración aplica single, dos rondas de escalera, MFPI apagado y sin NDC', () => {
     const parsed = sabreShopOptionsFromAccountConfig({});
     expect(parsed.invalidFields).toEqual([]);
     expect(parsed.options).toMatchObject({
       brandedFares: 'single',
-      brandLadderRounds: 0,
+      brandLadderRounds: 2,
       upsellLimit: 3,
       multipleFares: 'off',
       ndcContent: false,
@@ -635,7 +635,7 @@ describe('SabreProviderFactory — shopOptions por cuenta', () => {
     ]);
     expect(parsed.options).toMatchObject({
       brandedFares: 'single',
-      brandLadderRounds: 0,
+      brandLadderRounds: 2,
       upsellLimit: 3,
       multipleFares: 'off',
       ndcContent: false,

@@ -204,15 +204,17 @@ export const SABRE_MULTIPLE_FARES_DEFAULT: SabreMultipleFaresMode = 'off';
 /**
  * Cuántas rondas EXTRA de exclusión hace la escalera de marcas por búsqueda.
  *
- * Cada ronda es una llamada de shop completa, y Sabre cobra por consulta: es el único parámetro
- * de este paquete cuyo coste es lineal y en dinero. Por eso arranca en 0 —una búsqueda, una
- * llamada, como hoy— y se sube por cuenta cuando la agencia decida que la comparación vale lo
- * que cuesta.
+ * Cada ronda es una llamada de shop completa por aerolínea, y Sabre cobra por consulta: es el
+ * único parámetro de este paquete cuyo coste es lineal y en dinero. Una cuenta lo baja a 0 con
+ * `config.brandLadderRounds`.
  *
- * Con 2 rondas el vendedor ve hasta 3 marcas por vuelo, que es donde está casi todo el valor:
- * la barata, la del medio y la flexible.
+ * **2 por defecto** desde el 2026-10-19, por decisión del founder (docs/sabre/15 §6, D1): sin el
+ * producto Multiple Branded Fares —rechazado también en el PCC de reserva, sonda del mismo día—
+ * es la única forma de que el vendedor vea más de una tarifa por vuelo. Con 2 rondas ve hasta 3
+ * marcas por trayecto: la barata, la del medio y la flexible. Las aerolíneas van en paralelo y
+ * con tope ({@link SABRE_BRAND_LADDER_MAX_CARRIERS} en el adapter).
  */
-export const SABRE_BRAND_LADDER_DEFAULT = 0;
+export const SABRE_BRAND_LADDER_DEFAULT = 2;
 export const SABRE_BRAND_LADDER_MAX = 4;
 
 /**
@@ -299,6 +301,29 @@ export interface SabreOriginDestinationInformation {
   DepartureDateTime: string;
   OriginLocation: { LocationCode: string };
   DestinationLocation: { LocationCode: string };
+  /** Anchored Search (`v5.yml:2716`): este trayecto va con sus vuelos fijos. */
+  Fixed?: true;
+  TPA_Extensions?: SabreOriginDestinationTpa;
+}
+
+/** `OriginDestinationInformation.TPA_Extensions` (`v5.yml:4440-4460`), lo que este builder emite. */
+export interface SabreOriginDestinationTpa {
+  /** Los vuelos del trayecto fijo (`v5.yml:4532`). Sólo con `Fixed`. */
+  Flight?: SabreFixedFlightRq[];
+  SegmentType?: { Code: 'O' };
+  /** Marcas preferidas o excluidas SÓLO en este trayecto (`v5.yml:4458`, _"for main fare leg"_). */
+  BrandFilters?: { Brand: { Code: string; PreferLevel: 'Preferred' | 'Unacceptable' }[] };
+}
+
+/** Un vuelo fijo de Anchored Search, con la forma del contrato (`v5.yml:4532-4545`). */
+export interface SabreFixedFlightRq {
+  Number: number;
+  DepartureDateTime: string;
+  ArrivalDateTime: string;
+  Type: 'A';
+  OriginLocation: { LocationCode: string };
+  DestinationLocation: { LocationCode: string };
+  Airline: { Marketing: string; Operating: string };
 }
 
 export interface SabreCabinPref {
@@ -401,6 +426,35 @@ export interface SabreShopRequest {
  */
 export interface SabreShopRequestScope {
   onlyMarketingCarrier?: string;
+  /**
+   * Anchored Search: los vuelos de la IDA ya elegida. La respuesta trae sólo vueltas combinables
+   * con ellos, cada una con su precio de ida y vuelta (docs/sabre/15 §2.5). Verificado en CERT el
+   * 2026-10-19: con LA4402 fijo, 16 vueltas.
+   */
+  fixedOutbound?: readonly SabreFixedFlight[];
+  /**
+   * `BrandFilters` por trayecto (0 = ida, 1 = vuelta). A diferencia del filtro del request, éste
+   * mueve la marca de UN trayecto y deja al otro en la más barata: excluir LIGHT en la ida dio
+   * STANDARD/LIGHT en CERT, que es la combinación mixta que el vendedor elige por trayecto.
+   */
+  legBrandFilters?: readonly SabreLegBrandFilter[];
+}
+
+export interface SabreFixedFlight {
+  readonly flightNumber: number;
+  /** `YYYY-MM-DDTHH:MM:SS` local del aeropuerto, como lo pide el contrato. */
+  readonly departureDateTime: string;
+  readonly arrivalDateTime: string;
+  readonly origin: string;
+  readonly destination: string;
+  readonly marketingCarrier: string;
+  readonly operatingCarrier: string;
+}
+
+export interface SabreLegBrandFilter {
+  readonly leg: number;
+  readonly preferred?: readonly string[];
+  readonly excluded?: readonly string[];
 }
 
 /**
@@ -493,13 +547,28 @@ export function buildSabreShopRequest(
     // abrir exactamente la colisión entre aerolíneas que la escalera aísla.
     throw new SabreConfigError('excludeBrands requiere onlyMarketingCarrier');
   }
+  const excludesPerLeg = (parsedScope.legBrandFilters ?? []).some(
+    (filter) => (filter.excluded ?? []).length > 0,
+  );
+  if (excludesPerLeg && parsedScope.onlyMarketingCarrier === undefined) {
+    // Mismo motivo que arriba: el filtro de trayecto tampoco lleva carrier.
+    throw new SabreConfigError('legBrandFilters.excluded requiere onlyMarketingCarrier');
+  }
+  if (parsedScope.legBrandFilters !== undefined && opts.brandedFares === 'off') {
+    // Sin marcas pedidas el filtro no tiene sobre qué obrar, y mandarlo sería un request que
+    // dice una cosa y pide otra.
+    throw new SabreConfigError('legBrandFilters requiere pedir marcas');
+  }
   const pseudoCityCode = requireHomePcc(cfg);
 
   return {
     OTA_AirLowFareSearchRQ: {
       Version: SABRE_BFM_VERSION,
       POS: buildPos(pseudoCityCode, opts.maxPccs),
-      OriginDestinationInformation: buildOriginDestinations(criteria),
+      OriginDestinationInformation: anchorAndFilterLegs(
+        buildOriginDestinations(criteria),
+        parsedScope,
+      ),
       TravelPreferences: buildTravelPreferences(criteria, opts, parsedScope),
       TravelerInfoSummary: buildTravelerInfoSummary(criteria, opts),
       TPA_Extensions: {
@@ -516,13 +585,112 @@ export function buildSabreShopRequest(
   };
 }
 
+const SCOPE_CARRIER = /^[A-Z0-9]{2,3}$/;
+const SCOPE_AIRPORT = /^[A-Z]{3}$/;
+const SCOPE_LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+const SCOPE_BRAND_CODE = /^[A-Z0-9]{1,12}$/;
+
 function parseShopRequestScope(scope: SabreShopRequestScope): SabreShopRequestScope {
+  const invalid = (field: string): never => {
+    throw new SabreConfigError(`scope de búsqueda de Sabre inválido (${field})`);
+  };
   const carrier = scope.onlyMarketingCarrier;
-  if (carrier === undefined) return {};
-  if (!/^[A-Z0-9]{2,3}$/.test(carrier)) {
-    throw new SabreConfigError('scope de búsqueda de Sabre inválido (onlyMarketingCarrier)');
+  if (carrier !== undefined && !SCOPE_CARRIER.test(carrier)) invalid('onlyMarketingCarrier');
+
+  const fixed = scope.fixedOutbound;
+  if (fixed !== undefined) {
+    if (fixed.length === 0 || fixed.length > 8) invalid('fixedOutbound');
+    for (const flight of fixed) {
+      const ok =
+        Number.isInteger(flight.flightNumber) &&
+        flight.flightNumber >= 1 &&
+        flight.flightNumber <= 9999 &&
+        SCOPE_LOCAL_DATETIME.test(flight.departureDateTime) &&
+        SCOPE_LOCAL_DATETIME.test(flight.arrivalDateTime) &&
+        SCOPE_AIRPORT.test(flight.origin) &&
+        SCOPE_AIRPORT.test(flight.destination) &&
+        SCOPE_CARRIER.test(flight.marketingCarrier) &&
+        SCOPE_CARRIER.test(flight.operatingCarrier);
+      if (!ok) invalid('fixedOutbound');
+    }
   }
-  return { onlyMarketingCarrier: carrier };
+
+  const filters = scope.legBrandFilters;
+  if (filters !== undefined) {
+    const legs = new Set<number>();
+    for (const filter of filters) {
+      if (
+        !Number.isInteger(filter.leg) ||
+        filter.leg < 0 ||
+        filter.leg > 1 ||
+        legs.has(filter.leg)
+      ) {
+        invalid('legBrandFilters.leg');
+      }
+      legs.add(filter.leg);
+      const codes = [...(filter.preferred ?? []), ...(filter.excluded ?? [])];
+      if (codes.length === 0 || codes.some((code) => !SCOPE_BRAND_CODE.test(code))) {
+        invalid('legBrandFilters');
+      }
+    }
+  }
+
+  return {
+    ...(carrier === undefined ? {} : { onlyMarketingCarrier: carrier }),
+    ...(fixed === undefined ? {} : { fixedOutbound: fixed }),
+    ...(filters === undefined || filters.length === 0 ? {} : { legBrandFilters: filters }),
+  };
+}
+
+/**
+ * Anchored Search y filtros de marca por trayecto sobre los tramos ya armados.
+ *
+ * El trayecto fijo es la ida (`RPH 1`): la ayuda de Anchored Search exige que lo fijo sea un
+ * bloque continuo desde el principio o desde el final, y la ida cumple las dos cosas.
+ */
+function anchorAndFilterLegs(
+  legs: SabreOriginDestinationInformation[],
+  scope: SabreShopRequestScope,
+): SabreOriginDestinationInformation[] {
+  if (scope.fixedOutbound !== undefined && legs.length < 2) {
+    throw new SabreConfigError('fixedOutbound sólo tiene sentido en ida y vuelta');
+  }
+  if ((scope.legBrandFilters ?? []).some((filter) => filter.leg >= legs.length)) {
+    throw new SabreConfigError('legBrandFilters apunta a un trayecto que la búsqueda no tiene');
+  }
+  return legs.map((leg, index) => {
+    const tpa: SabreOriginDestinationTpa = {};
+    if (index === 0 && scope.fixedOutbound !== undefined) {
+      tpa.Flight = scope.fixedOutbound.map((flight) => ({
+        Number: flight.flightNumber,
+        DepartureDateTime: flight.departureDateTime,
+        ArrivalDateTime: flight.arrivalDateTime,
+        Type: 'A',
+        OriginLocation: { LocationCode: flight.origin },
+        DestinationLocation: { LocationCode: flight.destination },
+        Airline: { Marketing: flight.marketingCarrier, Operating: flight.operatingCarrier },
+      }));
+      tpa.SegmentType = { Code: 'O' };
+    }
+    const filter = scope.legBrandFilters?.find((candidate) => candidate.leg === index);
+    if (filter !== undefined) {
+      tpa.BrandFilters = {
+        Brand: [
+          ...(filter.preferred ?? []).map((Code) => ({ Code, PreferLevel: 'Preferred' as const })),
+          ...(filter.excluded ?? []).map((Code) => ({
+            Code,
+            PreferLevel: 'Unacceptable' as const,
+          })),
+        ],
+      };
+    }
+    if (Object.keys(tpa).length === 0) return leg;
+    return {
+      ...leg,
+      ...(tpa.Flight === undefined ? {} : { Fixed: true as const }),
+      TPA_Extensions: tpa,
+    };
+  });
 }
 
 function parseShopOptions(

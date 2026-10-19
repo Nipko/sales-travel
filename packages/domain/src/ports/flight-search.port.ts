@@ -26,6 +26,20 @@ export interface FlightSearchPort {
   search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]>;
 }
 
+/**
+ * Port OPCIONAL: las vueltas que combinan con una ida ya elegida, cada una con su precio de ida y
+ * vuelta. Es el segundo paso de «elegir ida + tarifa, después vuelta + tarifa». Sabre lo hace con
+ * Anchored Search (docs/sabre/15 §2.5); un proveedor que no lo implemente deja que la UI elija la
+ * vuelta entre las combinaciones de la primera búsqueda.
+ */
+export interface FlightReturnSearchPort {
+  searchReturns(
+    criteria: FlightSearchCriteria,
+    outbound: Offer,
+    ctx: SearchContext,
+  ): Promise<Offer[]>;
+}
+
 export interface SearchContext {
   tenantId: string;
   /** Para distinguir solicitudes en logs/tracing. */

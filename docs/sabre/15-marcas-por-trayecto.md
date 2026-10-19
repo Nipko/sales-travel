@@ -1,6 +1,6 @@
 # Varias tarifas por vuelo y elección de marca por trayecto
 
-**Estado:** investigación cerrada · diseño **propuesto, pendiente de acuerdo del founder** (§6).
+**Estado:** investigación cerrada · diseño **acordado e implementado** (§6). Falta verificar la reserva en CERT (H-07).
 **Fecha:** 2026-10-19.
 **Antecedente:** [`14-consulta-marcas-tarifarias.md`](14-consulta-marcas-tarifarias.md) (el
 `MIP/PROCESS` del upsell y la escalera de marcas). Este documento no lo repite: parte de ahí.
@@ -111,11 +111,33 @@ mano, facturada, cambios, reembolso, asiento), en vez de inferirlo del equipaje 
   resultado de búsqueda; página no accesible sin cuenta). Esto da dos preguntas concretas para el
   ticket de doc 14 §A: ¿tiene el EPR la keyword `SUBAAA`? ¿está MBF activo en el PCC de búsqueda
   (no sólo en `7VYK`)?
-- **Sin verificar todavía en el PCC de reserva actual de la cuenta CERT:** se preparó una sonda de
-  sólo búsqueda (6 variantes: `single`, `single+ReturnBrandAncillaries`, `multi`, `single+multi`,
-  `+ParityMode Leg`, `+ParityMode Itin/LegParity`) que imprime conteos de `pricingInformation` por
-  itinerario y códigos de marca. Correrla requiere copiar un script al contenedor `api` del VPS,
-  que necesita autorización explícita (§6, D4).
+- **Verificado en el PCC de reserva de la cuenta CERT (2026-10-19, sonda de sólo búsqueda,
+  autorizada por el founder, BOG-MIA ida y vuelta a 30+7 días):**
+
+  | Variante de `BrandedFareIndicators`                                   | Resultado                                                                       |
+  | --------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+  | `SingleBrandedFare`                                                   | 44 itinerarios, **1** `pricingInformation` cada uno (LA LIGHT/LIGHT 425,53 USD) |
+  | `SingleBrandedFare` + `ReturnBrandAncillaries`                        | Igual, y **103 `brandFeatureDescs`, 14 por componente**: funciona sin MBF       |
+  | `MultipleBrandedFares` + `UpsellLimit`                                | Rechazo de negocio (`BUSINESS`)                                                 |
+  | `Single` + `Multiple` (ejemplo oficial)                               | Rechazo de negocio                                                              |
+  | `Single` + `Multiple` + `ParityMode: Leg` + `ParityModeForLowest`     | Rechazo de negocio                                                              |
+  | `Single` + `Multiple` + `ParityMode: Itin` + `ItinParityFallbackMode` | Rechazo de negocio                                                              |
+
+  **MBF tampoco está en el PCC de reserva.** No es el PCC: es la cuenta.
+
+- **Anchored Search y `BrandFilters` por trayecto, misma sonda:**
+
+  | Petición                                    | Resultado                                                                          |
+  | ------------------------------------------- | ---------------------------------------------------------------------------------- |
+  | Base (`single`)                             | 50 ofertas: SL/SL 39, MAINREF/MAINREF 5, MAINFL/MAINFL 4, BASIC/FULL 1, ECOSAVER 1 |
+  | Ida LA4402 fija (`Fixed`)                   | **16 vueltas** combinables (SL/SL 13, SL/KM 3)                                     |
+  | Ida fija + `Preferred SL` en la ida         | Igual (SL ya era la más barata)                                                    |
+  | Ida fija + `Unacceptable SL` en la ida      | Ida **KM STANDARD** + vuelta SL LIGHT, 443,03 USD (contra 425,53)                  |
+  | Sin anclar + `Unacceptable SL` en la vuelta | 37 ofertas SL/**KM**: la vuelta sube, la ida queda en LIGHT                        |
+
+  Conclusión: el filtro por trayecto mueve la marca de **un** trayecto y deja el otro en la más
+  barata, con precio exacto de ida y vuelta. Es todo lo que hace falta para elegir tarifa por
+  trayecto sin MBF.
 
 ### 2.5 Ayuda oficial con sesión iniciada (developer.sabre.com, BFM SOAP 7.2.0 Help)
 
@@ -262,7 +284,30 @@ Solo ida: igual, sin el paso 3. Móvil primero: pasos apilados con la selección
 
 ---
 
-## 6. Decisiones que necesita el founder
+## 6. Decisiones (acordadas con el founder el 2026-10-19)
+
+- **D1 — sí, escalera en 2 rondas** por defecto para toda la red (`SABRE_BRAND_LADDER_DEFAULT = 2`;
+  una cuenta la baja con `config.brandLadderRounds`). Las aerolíneas van en paralelo y con tope de 6
+  por búsqueda. En la búsqueda inicial la escalera mueve la marca de la **ida**; en la de vueltas,
+  la de la **vuelta**.
+- **D2 — Anchored Search**, con degradación a las combinaciones de la primera búsqueda.
+- **D3 — pendiente**: la sonda confirmó que `ReturnBrandAncillaries` funciona; mapear
+  `brandFeatureDescs` al canónico queda como siguiente paso.
+- **D4 — sí**, sonda corrida (§2.4).
+- **D5 — sí**, la reserva fija marca y fare basis por vuelo; se verifica en CERT cuando se levante
+  H-07.
+
+## 6.1 Lo implementado
+
+| Pieza       | Qué                                                                                                                                           | Dónde                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Request BFM | `fixedOutbound` (Anchored Search) y `legBrandFilters` por trayecto, como alcance interno de la llamada (no configurable por cuenta)           | `providers/sabre/src/shop/request.builder.ts` (`SabreShopRequestScope`, `anchorAndFilterLegs`) |
+| Escalera    | Por trayecto (`marcaDeTramo`, `claveDeTramo`), aerolíneas en paralelo, tope `SABRE_BRAND_LADDER_MAX_CARRIERS`                                 | `providers/sabre/src/sabre-flight-search.adapter.ts`                                           |
+| Vueltas     | `SabreFlightSearchAdapter.searchReturns` → puerto opcional `FlightReturnSearchPort` → `POST /search/flights/returns`                          | adapter, `packages/domain`, `apps/api/src/search`                                              |
+| Reserva     | `flightPricing[0].qualifiers.brandedFares` + `specificFares` por vuelo desde `offer.fareComponents`                                           | `sabre-order-create.adapter.ts` (`atpcoPricingFor`), `booking/create.request.builder.ts`       |
+| UI          | Paso 1: vuelos de ida con sus tarifas («Elegir esta ida»). Paso 2: ida fija arriba, vueltas con sus tarifas y el total («Guardar cotización») | `apps/web-b2b/.../cotizaciones/_components/round-trip-flow.tsx`, `leg-selection.ts`            |
+
+## 6.2 Decisiones que se le plantearon al founder
 
 | #   | Decisión                                                                                                                                                                                                                     | Recomendación                                                                                                                                                                                                                                                                                                                                    |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

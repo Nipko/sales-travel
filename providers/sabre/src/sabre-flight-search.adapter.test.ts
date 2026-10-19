@@ -14,7 +14,11 @@ import {
   countWarningsByCode,
   type SabreFlightSearchDeps,
 } from './sabre-flight-search.adapter';
-import { SABRE_SHOP_PATH } from './shop/request.builder';
+import {
+  SABRE_SHOP_PATH,
+  type SabreAirLowFareSearchRq,
+  type SabreShopRequest,
+} from './shop/request.builder';
 import { SabreShopMappingError, type SabreMapWarning } from './shop/response.mapper';
 
 const TENANT_ID = '11111111-2222-4333-8444-555555555555';
@@ -96,6 +100,11 @@ function spyFetch(responder: (n: number) => Response): FetchSpy {
  * pasaría a ser una aserción que no puede fallar nunca. Acá la suposición se declara y se rompe
  * ruidosamente si deja de valer.
  */
+/** El request de shop tal como salió al cable, con su tipo. */
+function peticion(init: RequestInit): SabreAirLowFareSearchRq {
+  return (JSON.parse(cuerpo(init)) as SabreShopRequest).OTA_AirLowFareSearchRQ;
+}
+
 function cuerpo(init: RequestInit): string {
   const { body } = init;
   if (typeof body !== 'string') throw new Error('el cuerpo de la petición a Sabre no es texto');
@@ -957,9 +966,19 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     return json(payload);
   }
 
-  it('por defecto NO escala: cada ronda es una llamada y Sabre cobra por consulta', async () => {
+  it('por defecto escala (2 rondas, docs/sabre/15 D1) y para en cuanto una ronda no trae nada nuevo', async () => {
     const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
     await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    // La base y UNA ronda: la ronda devolvió la misma marca, así que la segunda no se paga.
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it('con 0 rondas en la cuenta NO escala: cada ronda es una llamada y Sabre cobra por consulta', async () => {
+    const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
+    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandLadderRounds: 0 } }).search(
+      CRITERIA,
+      CTX,
+    );
     expect(spy.calls).toHaveLength(1);
   });
 
@@ -985,6 +1004,27 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     const marcas = new Set(offers.map((o) => o.fareFamily?.name));
     expect(marcas).toContain('MAIN CABIN');
     expect(marcas).toContain('MAIN CABIN FLEXIBLE');
+  });
+
+  it('la exclusión va en el trayecto de IDA, no en todo el request: la vuelta sigue en la más barata', async () => {
+    const spy = spyFetch((n) =>
+      n === 1 ? conMarca('MAIN', 'MAIN CABIN') : conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'),
+    );
+
+    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandLadderRounds: 1 } }).search(
+      CRITERIA,
+      CTX,
+    );
+
+    const rq = peticion(spy.calls[1]!.init);
+    // Verificado en CERT: excluir LIGHT en la ida dio STANDARD/LIGHT (docs/sabre/15 §2.5).
+    expect(rq.OriginDestinationInformation[0]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'MAIN', PreferLevel: 'Unacceptable' }],
+    });
+    expect(rq.OriginDestinationInformation[1]?.TPA_Extensions).toBeUndefined();
+    expect(
+      rq.TravelerInfoSummary.PriceRequestInformation.TPA_Extensions?.BrandedFareIndicators,
+    ).toEqual({ SingleBrandedFare: true });
   });
 
   it('aísla por carrier: un código de DL no oculta la siguiente familia homónima de AA', async () => {
@@ -1158,6 +1198,110 @@ function conTarifaNdc(): Response {
   pricing['offer'] = { offerId: 'oferta-ndc-de-prueba', source: 'NDC', timeToLive: 1255 };
   return json(payload);
 }
+
+describe('searchReturns: Anchored Search con la ida elegida', () => {
+  function conMarca(code: string, name: string): Response {
+    const payload = structuredClone(adultFixture) as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const descs = payload['groupedItineraryResponse']!['fareComponentDescs'] as Array<
+      Record<string, unknown>
+    >;
+    for (const desc of descs) desc['brand'] = { code, brandName: name };
+    return json(payload);
+  }
+
+  async function idaElegida() {
+    const spy = spyFetch(() => conMarca('SL', 'LIGHT'));
+    const offers = await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    const outbound = offers[0];
+    if (outbound === undefined) throw new Error('la fixture no trajo ofertas');
+    return outbound;
+  }
+
+  it('fija los vuelos de la ida y prefiere su marca SOLO en ese trayecto', async () => {
+    const outbound = await idaElegida();
+    const spy = spyFetch(() => conMarca('SL', 'LIGHT'));
+
+    const offers = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 0 },
+    }).searchReturns(CRITERIA, outbound, CTX);
+
+    expect(spy.calls).toHaveLength(1);
+    const rq = peticion(spy.calls[0]!.init);
+    const ida = rq.OriginDestinationInformation[0];
+    expect(ida?.Fixed).toBe(true);
+    expect(ida?.TPA_Extensions?.SegmentType).toEqual({ Code: 'O' });
+    expect(ida?.TPA_Extensions?.Flight).toHaveLength(outbound.itineraries![0]!.segments.length);
+    const primero = outbound.itineraries![0]!.segments[0]!;
+    expect(ida?.TPA_Extensions?.Flight?.[0]).toMatchObject({
+      Number: Number(primero.flightNumber),
+      DepartureDateTime: primero.departureAt.slice(0, 19),
+      OriginLocation: { LocationCode: primero.origin },
+      Airline: { Marketing: primero.carrier },
+    });
+    expect(ida?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'SL', PreferLevel: 'Preferred' }],
+    });
+    expect(rq.OriginDestinationInformation[1]?.Fixed).toBeUndefined();
+
+    // Sólo vuelve lo que sale con ESA ida: lo demás no es el precio de lo que se eligió.
+    expect(offers.length).toBeGreaterThan(0);
+    const clave = JSON.stringify(outbound.itineraries![0]!.segments.map((s) => s.flightNumber));
+    for (const offer of offers) {
+      expect(JSON.stringify(offer.itineraries![0]!.segments.map((s) => s.flightNumber))).toBe(
+        clave,
+      );
+    }
+  });
+
+  it('descarta las vueltas cotizadas con OTRA marca de ida', async () => {
+    const outbound = await idaElegida();
+    const spy = spyFetch(() => conMarca('KM', 'STANDARD'));
+
+    const offers = await adapter(config(), { fetch: spy.fetch }).searchReturns(
+      CRITERIA,
+      outbound,
+      CTX,
+    );
+
+    expect(offers).toEqual([]);
+  });
+
+  it('con rondas, recorre las marcas de la VUELTA manteniendo la ida fija', async () => {
+    const outbound = await idaElegida();
+    const spy = spyFetch(() => conMarca('SL', 'LIGHT'));
+
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 1 },
+    }).searchReturns(CRITERIA, outbound, CTX);
+
+    expect(spy.calls).toHaveLength(2);
+    const rq = peticion(spy.calls[1]!.init);
+    expect(rq.OriginDestinationInformation[0]?.Fixed).toBe(true);
+    expect(rq.OriginDestinationInformation[0]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'SL', PreferLevel: 'Preferred' }],
+    });
+    expect(rq.OriginDestinationInformation[1]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'SL', PreferLevel: 'Unacceptable' }],
+    });
+  });
+
+  it('sin vuelta en el criterio no hay nada que anclar', async () => {
+    const outbound = await idaElegida();
+    const { returnDate: _sinVuelta, ...soloIda } = CRITERIA;
+    await expect(
+      adapter(config(), { fetch: spyFetch(() => conMarca('SL', 'LIGHT')).fetch }).searchReturns(
+        soloIda,
+        outbound,
+        CTX,
+      ),
+    ).rejects.toThrow(/ida y vuelta/);
+  });
+});
 
 describe('contenido NDC: sólo si la cuenta lo habilita', () => {
   it('sin opciones NO pide NDC: el mapper lo descartaría y se paga en latencia y payload', async () => {

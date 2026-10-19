@@ -27,3 +27,15 @@ export const SeatMapBodySchema = z
   })
   .strict();
 export type SeatMapBody = z.infer<typeof SeatMapBodySchema>;
+
+/**
+ * Las vueltas para una ida ya elegida (docs/sabre/15 §5). La ida es una oferta de la búsqueda de ida
+ * y vuelta tal como la recibió el navegador, con su marca por trayecto en `fareComponents`.
+ */
+export const ReturnSearchBodySchema = z
+  .object({
+    outbound: OfferSchema,
+    searchCriteria: FlightSearchCriteriaSchema,
+  })
+  .strict();
+export type ReturnSearchBody = z.infer<typeof ReturnSearchBodySchema>;

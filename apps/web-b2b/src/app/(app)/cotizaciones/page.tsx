@@ -29,8 +29,10 @@ import {
   FlightFilters,
   type FlightFilterState,
 } from './_components/flight-filters';
+import { groupByLeg, isRoundTripResult } from './_components/leg-selection';
 import { PaxField } from './_components/pax-field';
 import { ResultsHeader } from './_components/results-header';
+import { RoundTripFlow } from './_components/round-trip-flow';
 import { RouteField } from './_components/route-field';
 import {
   DEFAULT_CABIN,
@@ -314,9 +316,16 @@ export default function CotizacionesPage() {
 
   // Los grupos sin filtrar alimentan las OPCIONES de filtro (aerolineas, precio maximo):
   // derivarlas de la lista ya filtrada haria desaparecer las opciones al usarlas.
+  // Ida y vuelta se elige por trayecto (docs/sabre/15 §5): la lista del paso 1 son vuelos de IDA,
+  // cada uno con sus tarifas de ida. Solo ida sigue agrupando por itinerario completo.
+  const roundTrip = searched?.returnDate !== undefined && isRoundTripResult(result.offers);
   const allGroups = useMemo(
-    () => sortGroups(groupOffersByFlight(result.offers), sort),
-    [result.offers, sort],
+    () =>
+      sortGroups(
+        roundTrip ? groupByLeg(result.offers, 0) : groupOffersByFlight(result.offers),
+        sort,
+      ),
+    [result.offers, sort, roundTrip],
   );
   const flightGroups = useMemo(() => applyFlightFilters(allGroups, filters), [allGroups, filters]);
 
@@ -425,6 +434,7 @@ export default function CotizacionesPage() {
             sort={sort}
             onSortChange={setSort}
             onQuote={handleQuote}
+            roundTrip={roundTrip && searched !== null ? searched : null}
           />
         </div>
       </form>
@@ -514,6 +524,7 @@ function SearchResults({
   sort,
   onSortChange,
   onQuote,
+  roundTrip,
 }: {
   hasSearched: boolean;
   echo: string;
@@ -525,6 +536,8 @@ function SearchResults({
   sort: SortKey;
   onSortChange: (key: SortKey) => void;
   onQuote: (offer: Offer) => Promise<void>;
+  /** Los criterios de una búsqueda de ida y vuelta: se elige por trayecto. `null` = una sola lista. */
+  roundTrip: QuoteCriteria | null;
 }) {
   const { pending } = useFormStatus();
 
@@ -562,6 +575,7 @@ function SearchResults({
           sort={sort}
           onSortChange={onSortChange}
           onQuote={onQuote}
+          roundTrip={roundTrip}
         />
       )}
     </>
@@ -580,8 +594,59 @@ function SearchResultsBody({
   sort,
   onSortChange,
   onQuote,
+  roundTrip,
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
+
+  const simulatedBadge = (group: FlightGroup) =>
+    group.offers.some((offer) => isSimulatedOffer(offer, simulated)) ? (
+      <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--color-fg)]">
+        <AlertTriangle className="size-3 shrink-0 text-[var(--color-warning)]" />
+        Tarifa simulada · no cotizable
+      </div>
+    ) : null;
+
+  if (allGroups.length > 0 && roundTrip !== null) {
+    return (
+      <section className="animate-fade-in-up mt-8">
+        <DegradedProvidersNotice providers={result.providers} />
+        <SimulatedFaresNotice result={result} />
+        <RoundTripFlow
+          outboundGroups={flightGroups}
+          allOffers={result.offers}
+          criteria={roundTrip}
+          showProvider={result.showProviderInResults}
+          rowNotice={simulatedBadge}
+          formatMoney={formatMoney}
+          formatTime={flightTime}
+          formatDate={flightDate}
+          formatDuration={formatDuration}
+          onQuote={onQuote}
+          outboundHeader={
+            <>
+              <FlightFilters
+                groups={allGroups}
+                value={filters}
+                onChange={onFiltersChange}
+                formatMoney={formatMoney}
+              />
+              <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
+              {flightGroups.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
+                  <p className="text-sm font-medium text-[var(--color-fg)]">
+                    Ningún vuelo coincide con los filtros
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+                    Prueba quitando algún filtro.
+                  </p>
+                </div>
+              ) : null}
+            </>
+          }
+        />
+      </section>
+    );
+  }
 
   // Se entra por allGroups, no por flightGroups: si los filtros excluyen todo, la sección
   // tiene que seguir en pantalla para poder limpiarlos. Con la condición sobre los grupos

@@ -21,12 +21,30 @@ import { isTestFare } from '../../../../lib/test-content';
 import { Button } from '../../../../components/ui/button';
 import { TestContentBadge } from '../../../../components/test-content-badge';
 import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
+import { legFare, type Leg } from './leg-selection';
 import { TicketingDeadlineBadge } from './ticketing-deadline-badge';
+
+/**
+ * Cómo se usa la matriz. Por defecto, cada tarjeta es una combinación completa y su botón guarda
+ * la cotización. Con `leg`, cada tarjeta es la tarifa de UN trayecto (ida o vuelta) y el botón lo
+ * elige — es el flujo de ida y vuelta por trayecto (docs/sabre/15 §5).
+ */
+export interface FareChoiceMode {
+  /** Trayecto cuya tarifa se compara: el nombre y los componentes de la tarjeta son los suyos. */
+  leg: Leg;
+  /** Texto del botón. */
+  actionLabel: string;
+  /** Rótulo del precio: «Ida y vuelta desde», «Total ida y vuelta». */
+  priceLabel: string;
+  /** `false` cuando el botón sólo elige y no guarda nada: no hay «Cotización Guardada» que mostrar. */
+  confirmsSave: boolean;
+}
 
 interface FareFamilyMatrixProps {
   fares: Offer[];
   formatMoney: (amountMinor: number, currency: string) => string;
   onQuote?: (offer: Offer) => Promise<void>;
+  mode?: FareChoiceMode;
 }
 
 const FARE_COLORS: Record<string, string> = {
@@ -148,9 +166,11 @@ function AttrRow({
 function QuoteButton({
   fare,
   onQuote,
+  mode,
 }: {
   fare: Offer;
   onQuote?: (offer: Offer) => Promise<void>;
+  mode?: FareChoiceMode;
 }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -159,7 +179,7 @@ function QuoteButton({
     if (!onQuote || loading || done) return;
     setLoading(true);
     void onQuote(fare)
-      .then(() => setDone(true))
+      .then(() => setDone(mode?.confirmsSave ?? true))
       .finally(() => setLoading(false));
   }
 
@@ -190,7 +210,7 @@ function QuoteButton({
           Procesando...
         </>
       ) : (
-        'Guardar Cotización'
+        (mode?.actionLabel ?? 'Guardar Cotización')
       )}
     </Button>
   );
@@ -210,7 +230,7 @@ export function fareGridClass(count: number): string {
   return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
 }
 
-export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatrixProps) {
+export function FareFamilyMatrix({ fares, formatMoney, onQuote, mode }: FareFamilyMatrixProps) {
   const solo = fares.length === 1;
   return (
     <div className={cn('grid gap-4', fareGridClass(fares.length))}>
@@ -221,6 +241,7 @@ export function FareFamilyMatrix({ fares, formatMoney, onQuote }: FareFamilyMatr
           solo={solo}
           formatMoney={formatMoney}
           onQuote={onQuote}
+          {...(mode === undefined ? {} : { mode })}
         />
       ))}
     </div>
@@ -233,11 +254,19 @@ interface FareCardProps {
   solo: boolean;
   formatMoney: (amountMinor: number, currency: string) => string;
   onQuote?: (offer: Offer) => Promise<void>;
+  mode?: FareChoiceMode;
 }
 
-function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
-  const components = fareComponentsForDisplay(fare);
-  const name = fareFamilySummary(fare) ?? 'STANDARD';
+function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
+  // Con un trayecto elegido, la tarjeta habla SÓLO de ese trayecto: nombrarla «LIGHT / FLEX»
+  // mezclaría la tarifa que se está eligiendo con la del otro trayecto.
+  const components = fareComponentsForDisplay(fare).filter(
+    (component) => mode === undefined || component.itineraryIndexes.includes(mode.leg),
+  );
+  const name =
+    mode === undefined
+      ? (fareFamilySummary(fare) ?? 'STANDARD')
+      : legFare(fare, mode.leg).name.toUpperCase();
   const bgClass = FARE_COLORS[name] ?? 'bg-[var(--color-surface)] border-[var(--color-border)]/70';
   const badge = FARE_BADGES[name];
   const baggage = fare.baggage;
@@ -287,7 +316,7 @@ function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
   const precio = (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
-        Precio de venta
+        {mode?.priceLabel ?? 'Precio de venta'}
       </p>
       <p className="mt-1 text-2xl font-bold leading-none tracking-tight tabular-nums text-[var(--color-fg)]">
         {formatMoney(venta.sellMinor, venta.currency)}
@@ -375,7 +404,7 @@ function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
           {atributos}
           <div className="flex flex-col lg:items-stretch">
             {precio}
-            <QuoteButton fare={fare} onQuote={onQuote} />
+            <QuoteButton fare={fare} onQuote={onQuote} {...(mode === undefined ? {} : { mode })} />
           </div>
         </>
       ) : (
@@ -384,7 +413,7 @@ function FareCard({ fare, solo, formatMoney, onQuote }: FareCardProps) {
           {trayectos ? <div className="mb-4">{trayectos}</div> : null}
           <div className="mb-4 border-b border-[var(--color-border)]/50 pb-4">{precio}</div>
           <div className="flex-1">{atributos}</div>
-          <QuoteButton fare={fare} onQuote={onQuote} />
+          <QuoteButton fare={fare} onQuote={onQuote} {...(mode === undefined ? {} : { mode })} />
         </>
       )}
     </div>

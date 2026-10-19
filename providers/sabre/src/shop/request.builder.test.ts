@@ -370,6 +370,95 @@ describe('scope interno de carrier para BrandFilters', () => {
   });
 });
 
+describe('Anchored Search y marcas por trayecto (docs/sabre/15 §2.5)', () => {
+  const IDA = {
+    flightNumber: 4402,
+    departureDateTime: '2026-11-12T07:00:00',
+    arrivalDateTime: '2026-11-12T11:10:00',
+    origin: 'BOG',
+    destination: 'MIA',
+    marketingCarrier: 'LA',
+    operatingCarrier: 'LA',
+  } as const;
+  const idaYVuelta = { returnDate: '2026-11-19' };
+
+  it('fija la ida con sus vuelos y deja la vuelta libre', () => {
+    const body = build(idaYVuelta, {}, {}, { fixedOutbound: [IDA] });
+
+    expect(body.OriginDestinationInformation[0]).toMatchObject({
+      Fixed: true,
+      TPA_Extensions: {
+        SegmentType: { Code: 'O' },
+        Flight: [
+          {
+            Number: 4402,
+            DepartureDateTime: '2026-11-12T07:00:00',
+            ArrivalDateTime: '2026-11-12T11:10:00',
+            Type: 'A',
+            OriginLocation: { LocationCode: 'BOG' },
+            DestinationLocation: { LocationCode: 'MIA' },
+            Airline: { Marketing: 'LA', Operating: 'LA' },
+          },
+        ],
+      },
+    });
+    expect(body.OriginDestinationInformation[1]).not.toHaveProperty('Fixed');
+    expect(body.OriginDestinationInformation[1]).not.toHaveProperty('TPA_Extensions');
+  });
+
+  it('el filtro de marca va en el trayecto pedido, no en el request', () => {
+    const body = build(
+      idaYVuelta,
+      {},
+      {},
+      {
+        onlyMarketingCarrier: 'LA',
+        legBrandFilters: [
+          { leg: 0, preferred: ['SL'] },
+          { leg: 1, excluded: ['SL'] },
+        ],
+      },
+    );
+
+    expect(body.OriginDestinationInformation[0]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'SL', PreferLevel: 'Preferred' }],
+    });
+    expect(body.OriginDestinationInformation[1]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'SL', PreferLevel: 'Unacceptable' }],
+    });
+    expect(
+      body.TravelerInfoSummary.PriceRequestInformation.TPA_Extensions?.BrandedFareIndicators,
+    ).toEqual({ SingleBrandedFare: true });
+  });
+
+  it('excluir marcas en un trayecto también exige aislar la aerolínea', () => {
+    expect(() =>
+      build(idaYVuelta, {}, {}, { legBrandFilters: [{ leg: 1, excluded: ['SL'] }] }),
+    ).toThrow(/onlyMarketingCarrier/);
+  });
+
+  it('rechaza lo que no se puede mandar: solo ida anclada, trayecto inexistente, marcas apagadas', () => {
+    expect(() => build({}, {}, {}, { fixedOutbound: [IDA] })).toThrow(/ida y vuelta/);
+    expect(() => build({}, {}, {}, { legBrandFilters: [{ leg: 1, preferred: ['SL'] }] })).toThrow(
+      /trayecto/,
+    );
+    expect(() =>
+      build(
+        idaYVuelta,
+        {},
+        { brandedFares: 'off' },
+        { legBrandFilters: [{ leg: 0, preferred: ['SL'] }] },
+      ),
+    ).toThrow(/pedir marcas/);
+    expect(() =>
+      build(idaYVuelta, {}, {}, { fixedOutbound: [{ ...IDA, departureDateTime: '2026-11-12' }] }),
+    ).toThrow(SabreConfigError);
+    expect(() =>
+      build(idaYVuelta, {}, {}, { legBrandFilters: [{ leg: 0, preferred: ['s l'] }] }),
+    ).toThrow(SabreConfigError);
+  });
+});
+
 describe('equipaje y penalidades: los dos interruptores, siempre', () => {
   it('Baggage.RequestType "C" pide franquicia y cargos', () => {
     expect(build().TravelPreferences.Baggage).toEqual({

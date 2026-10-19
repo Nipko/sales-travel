@@ -14,8 +14,9 @@ import {
 } from '../../../../lib/test-content';
 import { TestContentBadge } from '../../../../components/test-content-badge';
 import { airlineName } from './airline-names';
-import { FareFamilyMatrix } from './fare-family-matrix';
+import { FareFamilyMatrix, type FareChoiceMode } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
+import { faresForLeg, legFare } from './leg-selection';
 import {
   buildItineraryView,
   codeshareOperators,
@@ -47,6 +48,11 @@ interface FlightRowProps {
    * administración, para que no haya dos nombres para el mismo proveedor.
    */
   showProvider?: boolean;
+  /**
+   * Ida y vuelta por trayecto: la fila muestra SÓLO ese trayecto y abre sus tarifas, una por
+   * marca. Sin esto, la fila es la combinación completa de siempre.
+   */
+  fareChoice?: FareChoiceMode;
 }
 
 /* ---------------------------------------------------------------------------
@@ -326,20 +332,30 @@ export function FlightRow({
   formatDuration,
   onQuote,
   showProvider = false,
+  fareChoice,
 }: FlightRowProps) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
   const cheapest = group.offers[0];
-  const itineraries = cheapest?.itineraries ?? [];
+  const allItineraries = cheapest?.itineraries ?? [];
+  // Con elección por trayecto se pinta sólo ese trayecto; el índice real decide la etiqueta.
+  const shown = allItineraries
+    .map((itinerary, index) => ({ itinerary, index }))
+    .filter(({ index }) => fareChoice === undefined || index === fareChoice.leg);
+  const itineraries = shown.map(({ itinerary }) => itinerary);
   const firstItinerary = itineraries[0];
 
   if (!cheapest || !firstItinerary?.segments[0]) return null;
 
-  const isRoundtrip = itineraries.length > 1;
-  const hasMultipleFares = group.offers.length > 1;
+  const isRoundtrip = allItineraries.length > 1;
+  const fares = fareChoice === undefined ? group.offers : faresForLeg(group.offers, fareChoice.leg);
+  const hasMultipleFares = fares.length > 1;
   // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
   const venta = saleBreakdown(cheapest);
-  const familySummary = fareFamilySummary(cheapest);
+  const familySummary =
+    fareChoice === undefined
+      ? fareFamilySummary(cheapest)
+      : fares.map((fare) => legFare(fare, fareChoice.leg).name).join(' · ');
 
   return (
     <article
@@ -370,7 +386,7 @@ export function FlightRow({
               providerLabel={providerTagFor(cheapest.provider.name, showProvider)?.label}
               testFares={testFareShare(group.offers)}
             />
-            {itineraries.map((it, i) => (
+            {shown.map(({ itinerary: it, index: i }) => (
               <ItineraryLeg
                 key={i}
                 itinerary={it}
@@ -386,7 +402,7 @@ export function FlightRow({
               columna derecha en escritorio. Antes había dos copias del precio en el DOM. */}
           <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 px-4 py-3 sm:px-5 md:w-48 md:shrink-0 md:flex-col md:items-end md:justify-center md:gap-3 md:border-l md:border-t-0 md:bg-transparent md:p-5">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:order-2 md:justify-end">
-              {isRoundtrip ? (
+              {isRoundtrip && fareChoice === undefined ? (
                 <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-fg)]">
                   Ida y vuelta
                 </span>
@@ -400,7 +416,7 @@ export function FlightRow({
 
             <div className="shrink-0 text-right md:order-1 md:w-full">
               <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                {hasMultipleFares ? 'Desde' : 'Total'}
+                {fareChoice?.priceLabel ?? (hasMultipleFares ? 'Desde' : 'Total')}
               </p>
               <p className="text-xl font-bold leading-tight tabular-nums text-[var(--color-fg)]">
                 {formatMoney(venta.sellMinor, venta.currency)}
@@ -416,7 +432,7 @@ export function FlightRow({
                   invitación va siempre — también cuando hay una sola tarifa, que antes no
                   mostraba nada y dejaba la venta escondida. */}
               <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-fg-muted)]">
-                {hasMultipleFares ? `${group.offers.length} tarifas` : 'Ver tarifa'}
+                {hasMultipleFares ? `${fares.length} tarifas` : 'Ver tarifa'}
                 <ChevronDown
                   aria-hidden="true"
                   className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
@@ -430,7 +446,12 @@ export function FlightRow({
       <div id={panelId} hidden={!expanded}>
         {expanded ? (
           <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 p-4 sm:p-5">
-            <FareFamilyMatrix fares={group.offers} formatMoney={formatMoney} onQuote={onQuote} />
+            <FareFamilyMatrix
+              fares={fares}
+              formatMoney={formatMoney}
+              onQuote={onQuote}
+              {...(fareChoice === undefined ? {} : { mode: fareChoice })}
+            />
           </div>
         ) : null}
       </div>

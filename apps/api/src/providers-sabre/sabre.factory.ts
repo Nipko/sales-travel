@@ -441,6 +441,15 @@ export class SabreFlightProviderAdapter
     return this.inner.search.search(criteria, ctx);
   }
 
+  /** Anchored Search: vueltas con la ida elegida fija y su marca (docs/sabre/15 §2.5). */
+  searchReturns(
+    criteria: FlightSearchCriteria,
+    outbound: Offer,
+    ctx: SearchContext,
+  ): Promise<Offer[]> {
+    return this.inner.search.searchReturns(criteria, outbound, ctx);
+  }
+
   priceOffer(
     offer: Offer,
     criteria: FlightSearchCriteria,

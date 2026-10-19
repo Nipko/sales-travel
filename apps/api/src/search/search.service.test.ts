@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpStatus, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpStatus, Logger } from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria, SearchContext } from '@sales-travel/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -947,3 +947,60 @@ describe('SearchService.priceOffer', () => {
 function regla(valueMinor: number): ApplicableRule {
   return { tenantId: TENANT, tenantName: 'agencia', level: 1, ruleType: 'percentage', valueMinor };
 }
+
+describe('SearchService.searchReturns', () => {
+  beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const idaYVuelta = () => criteria({ returnDate: '2026-11-17' });
+
+  it('un proveedor que no sabe anclar responde `supported: false` sin llamar a nadie', async () => {
+    const b = banco();
+
+    const res = await b.service.searchReturns(offer(), idaYVuelta(), TENANT);
+
+    expect(res).toEqual({ supported: false, offers: [] });
+    expect(b.assertWithinQuota).not.toHaveBeenCalled();
+  });
+
+  it('enruta al proveedor que emitió la ida, cobra cuota y aplica el waterfall', async () => {
+    const b = banco({ rules: [regla(1_000)] });
+    const vuelta = offer({ id: '7f1c2b0a-1a2b-4c3d-8e9f-0a1b2c3d4e5f' });
+    const searchReturns = vi.fn(() => Promise.resolve([vuelta]));
+    Object.assign(b.adapter(), { searchReturns });
+
+    const res = await b.service.searchReturns(offer(), idaYVuelta(), TENANT);
+
+    expect(searchReturns).toHaveBeenCalledWith(idaYVuelta(), offer(), { tenantId: TENANT });
+    expect(b.assertWithinQuota).toHaveBeenCalledTimes(1);
+    expect(res.supported).toBe(true);
+    expect(res.offers[0]?.pricing?.finalMinor).toBe(110_000);
+  });
+
+  it('las vueltas de una cuenta de pruebas salen marcadas', async () => {
+    const b = banco({ providers: [{ code: PRINCIPAL, providerEnvironment: 'test' }] });
+    Object.assign(b.adapter(), { searchReturns: vi.fn(() => Promise.resolve([offer()])) });
+
+    const res = await b.service.searchReturns(offer(), idaYVuelta(), TENANT);
+
+    expect(res.offers[0]?.provider.environment).toBe('test');
+  });
+
+  it('rechaza una ida de otra agencia y una búsqueda sin vuelta', async () => {
+    const b = banco();
+    Object.assign(b.adapter(), { searchReturns: vi.fn(() => Promise.resolve([])) });
+
+    await expect(
+      b.service.searchReturns(offer({ tenantId: OTRO_TENANT }), idaYVuelta(), TENANT),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(b.service.searchReturns(offer(), criteria(), TENANT)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});

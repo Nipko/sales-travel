@@ -269,3 +269,58 @@ export async function searchFlightsAction(
     showProviderInResults: res.data.showProviderInResults === true,
   };
 }
+
+/** Las vueltas para una ida elegida. `supported: false` = el proveedor no sabe anclar. */
+export interface ReturnSearchResult {
+  ok: boolean;
+  supported: boolean;
+  offers: Offer[];
+  error?: string;
+}
+
+/**
+ * Paso 2 de ida y vuelta: con la ida y su tarifa elegidas, las vueltas que combinan con ella y el
+ * total de cada combinación (Anchored Search en Sabre, docs/sabre/15 §5). La moneda la pone el
+ * API con la de la agencia, como en la búsqueda.
+ */
+export async function searchReturnsAction(
+  outbound: Offer,
+  criteria: {
+    origin: string;
+    destination: string;
+    departureDate: string;
+    returnDate?: string;
+    paxCount: { adults: number; children: number; infants: number };
+    cabin: string;
+  },
+): Promise<ReturnSearchResult> {
+  if (criteria.returnDate === undefined) {
+    return { ok: false, supported: false, offers: [], error: 'La búsqueda no es de ida y vuelta.' };
+  }
+  const searchCriteria = {
+    origin: criteria.origin,
+    destination: criteria.destination,
+    departureDate: criteria.departureDate,
+    returnDate: criteria.returnDate,
+    paxCount: criteria.paxCount,
+    cabin: criteria.cabin,
+    currency: outbound.total.currency,
+  };
+
+  let res: Awaited<ReturnType<typeof api<{ supported: boolean; offers: Offer[] }>>>;
+  try {
+    res = await api<{ supported: boolean; offers: Offer[] }>('/search/flights/returns', {
+      method: 'POST',
+      body: JSON.stringify({ outbound, searchCriteria }),
+    });
+  } catch {
+    return {
+      ok: false,
+      supported: false,
+      offers: [],
+      error: 'No se pudo conectar al servicio de búsqueda.',
+    };
+  }
+  if (!res.ok) return { ok: false, supported: false, offers: [], error: res.error.message };
+  return { ok: true, supported: res.data.supported, offers: res.data.offers };
+}

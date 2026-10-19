@@ -59,8 +59,9 @@ function noVenta(motivo: string, ...rutas: string[]): [string, Clase][] {
 const ENTRADAS: [string, Clase][] = [
   // ───────────────────────── Ventas ─────────────────────────
   ...venta(
-    'búsqueda y revalidación de vuelos, y el mapa de asientos de la oferta que se va a reservar',
+    'búsqueda y revalidación de vuelos, las vueltas de una ida elegida y el mapa de asientos de la oferta que se va a reservar',
     'POST /search/flights',
+    'POST /search/flights/returns',
     'POST /search/offer-price',
     'POST /search/seat-map',
   ),
@@ -402,6 +403,7 @@ const ENTRADAS: [string, Clase][] = [
  */
 const VENTAS_DEL_MODELO = [
   'POST /search/flights',
+  'POST /search/flights/returns',
   'POST /search/offer-price',
   'POST /search/seat-map',
   'POST /hotels/availability',
