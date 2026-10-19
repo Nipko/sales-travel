@@ -594,6 +594,34 @@ describe('índices 1-based', () => {
     });
   });
 
+  it('dos marcas para el mismo vuelo se rechazan: Sabre no puede cotizarlas (`:5815`)', () => {
+    const flight = {
+      flightNumber: 462,
+      airlineCode: 'AV',
+      fromAirportCode: 'BOG',
+      toAirportCode: 'LIM',
+      departureDate: '2026-09-14',
+      departureTime: '09:15',
+      bookingClass: 'Y',
+      flightStatusCode: 'NN',
+    };
+    const conMarcas = (brandedFares: { brandCode: string; flightPositions: number[] }[]) =>
+      atpcoInput({ product: { kind: 'atpco', flights: [flight], pricing: [{ brandedFares }] } });
+
+    expect(() =>
+      build(
+        conMarcas([
+          { brandCode: 'SL', flightPositions: [0] },
+          { brandCode: 'KM', flightPositions: [0] },
+        ]),
+      ),
+    ).toThrow(/brandedFares/);
+    const plan = build(conMarcas([{ brandCode: 'SL', flightPositions: [0] }]));
+    expect(plan.body.flightDetails?.flightPricing?.[0]?.qualifiers?.brandedFares).toEqual([
+      { brandCode: 'SL', flightIndices: [1] },
+    ]);
+  });
+
   it('un secondaryFormOfPayment sin primary se rechaza: primary es el único required', () => {
     expect(() =>
       build(

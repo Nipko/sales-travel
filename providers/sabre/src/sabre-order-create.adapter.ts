@@ -1023,8 +1023,8 @@ function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductI
   // La oferta de Flight Check NO se reserva por sus handles (`flightOffer`): en CERT, con el
   // request ya válido, Sabre responde DOWNLINE_SERVICE_ERROR con JA y con LA (H-06, docs/sabre/12
   // §3), y la colección no tiene un solo ejemplo de ese carril. Flight Check revalida precio y
-  // clase; la reserva va por `flightDetails` + `flightPricing: [{}]` con los segmentos que devolvió,
-  // como el workflow «Air Shop, Book, Cancel» (ATPCO) de la colección.
+  // clase; la reserva va por `flightDetails` con los segmentos que devolvió, como el workflow «Air
+  // Shop, Book, Cancel» (ATPCO) de la colección, y `flightPricing` fija marca y fare basis por vuelo.
   if (offerId !== null && offerItemIds !== null) {
     return {
       kind: 'ndc',
@@ -1053,7 +1053,7 @@ function productOf(offer: Offer, flightStatusCode: string): SabreBookingProductI
   return {
     kind: 'atpco',
     flights: segments.map((s) => flightOf(s, flightStatusCode)),
-    ...(isPassive(flightStatusCode) ? {} : { pricing: defaultAtpcoPricing() }),
+    ...(isPassive(flightStatusCode) ? {} : { pricing: atpcoPricingFor(offer) }),
   };
 }
 
@@ -1266,17 +1266,78 @@ function isPassive(flightStatusCode: string): boolean {
 }
 
 /**
- * `flightPricing: [{}]` — «cotiza con defaults».
+ * La cotización del PNR ATPCO: la marca y el fare basis que se vendieron, vuelo por vuelo.
  *
- * Se construye fresco en cada reserva en vez de compartir una constante: el array cruza a Zod y de
- * ahí al body, y un objeto compartido entre reservas es la clase de estado que acaba mutado por
- * accidente. Los cualificadores del pricing waterfall del consolidador —comisión, aerolínea
- * validadora, `priceComparisons`— existen en el builder y NO se rellenan aquí: no hay todavía un
- * caso de uso que los pida por este puerto, y un campo sin caso de uso es superficie que nadie
- * prueba.
+ * Sin cualificadores (`[{}]`, «cotiza con defaults») Sabre elige la tarifa más baja válida para
+ * las clases reservadas, y dos marcas pueden compartir RBD: el vendedor elige FLEX en la vuelta y
+ * el PNR queda en LIGHT. Con `brandedFares` + `specificFares` por vuelo —el ejemplo «createBooking
+ * - Branded fares» de la colección— cada vuelo se cotiza en lo que se eligió, aunque ida y vuelta
+ * lleven marcas distintas (docs/sabre/15 §3.2).
+ *
+ * Sale de `offer.fareComponents`: `segmentRefs` indexa los segmentos aplanados de `itineraries`
+ * en el mismo orden que `flightDetails.flights`. Un vuelo sin componente, o un componente sin
+ * marca o sin fare basis, simplemente no lleva ese cualificador: no se inventa uno. Sin nada que
+ * fijar se vuelve a `[{}]`.
+ *
+ * Los cualificadores del pricing waterfall —comisión, aerolínea validadora, `priceComparisons`—
+ * existen en el builder y NO se rellenan aquí: no hay todavía un caso de uso que los pida.
  */
-function defaultAtpcoPricing(): SabrePricingInput[] {
-  return [{}];
+export function atpcoPricingFor(offer: Offer): SabrePricingInput[] {
+  const flightCount = segmentsOf(offer).length;
+  const brands = new Map<string, number[]>();
+  const fareBases = new Map<string, number[]>();
+  const brandedFlights = new Set<number>();
+  const pricedFlights = new Set<number>();
+
+  for (const component of offer.fareComponents ?? []) {
+    const positions = component.segmentRefs.filter((ref) => ref >= 0 && ref < flightCount);
+    if (positions.length === 0) continue;
+    const brandCode = component.brand?.code?.trim().toUpperCase();
+    if (brandCode !== undefined && brandCode.length > 0) {
+      appendPositions(brands, brandCode, positions, brandedFlights);
+    }
+    const fareBasis = component.fareBasisCode?.trim().toUpperCase();
+    if (fareBasis !== undefined && fareBasis.length > 0) {
+      appendPositions(fareBases, fareBasis, positions, pricedFlights);
+    }
+  }
+
+  const pricing: SabrePricingInput = {
+    ...(brands.size === 0
+      ? {}
+      : {
+          brandedFares: [...brands].map(([brandCode, flightPositions]) => ({
+            brandCode,
+            flightPositions,
+          })),
+        }),
+    ...(fareBases.size === 0
+      ? {}
+      : {
+          specificFares: [...fareBases].map(([fareBasisCode, flightPositions]) => ({
+            fareBasisCode,
+            flightPositions,
+          })),
+        }),
+  };
+  return [pricing];
+}
+
+/**
+ * Un vuelo ya fijado por otro componente no se vuelve a fijar: dos valores para el mismo vuelo
+ * no se pueden cotizar y el builder los rechazaría. Gana el primero, que es el del componente que
+ * Sabre listó primero.
+ */
+function appendPositions(
+  byValue: Map<string, number[]>,
+  value: string,
+  positions: readonly number[],
+  taken: Set<number>,
+): void {
+  const free = positions.filter((position) => !taken.has(position));
+  if (free.length === 0) return;
+  for (const position of free) taken.add(position);
+  byValue.set(value, [...(byValue.get(value) ?? []), ...free]);
 }
 
 /**

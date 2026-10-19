@@ -272,6 +272,87 @@ describe('cotización ATPCO', () => {
     expect(wire.raw).toContain('"flightPricing":[{}]');
   });
 
+  it('fija la marca y el fare basis de cada vuelo, aunque ida y vuelta lleven marcas distintas', async () => {
+    // Ida con escala en STANDARD, vuelta directa en LIGHT: la combinación que el vendedor arma
+    // eligiendo tarifa por trayecto (docs/sabre/15 §5). Es la forma del ejemplo «createBooking -
+    // Branded fares» de la colección: una cotización, un valor por vuelo.
+    const offer: Offer = {
+      ...atpcoOffer(),
+      itineraries: [
+        {
+          segments: [
+            segment(),
+            segment({ origin: 'LIM', destination: 'SCL', flightNumber: '0631' }),
+          ],
+          totalDurationMinutes: 400,
+          stops: 1,
+        },
+        {
+          segments: [segment({ origin: 'SCL', destination: 'BOG', flightNumber: '0632' })],
+          totalDurationMinutes: 300,
+          stops: 0,
+        },
+      ],
+      fareComponents: [
+        { brand: { code: 'km', name: 'STANDARD' }, fareBasisCode: 'qlkm1', segmentRefs: [0, 1] },
+        { brand: { code: 'SL', name: 'LIGHT' }, fareBasisCode: 'QLSL1', segmentRefs: [2] },
+      ],
+    };
+
+    const wire = await book(request(offer), CONFIRMED_RESPONSE);
+    const details = wire.body['flightDetails'] as Record<string, unknown>;
+
+    expect(details['flightPricing']).toEqual([
+      {
+        qualifiers: {
+          brandedFares: [
+            { brandCode: 'KM', flightIndices: [1, 2] },
+            { brandCode: 'SL', flightIndices: [3] },
+          ],
+          specificFares: [
+            { fareBasisCode: 'QLKM1', flightIndices: [1, 2] },
+            { fareBasisCode: 'QLSL1', flightIndices: [3] },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('un tramo sin marca no recibe una inventada, y un vuelo no lleva dos marcas', async () => {
+    const offer: Offer = {
+      ...atpcoOffer(),
+      itineraries: [
+        { segments: [segment()], totalDurationMinutes: 170, stops: 0 },
+        {
+          segments: [segment({ origin: 'LIM', destination: 'BOG', flightNumber: '0632' })],
+          totalDurationMinutes: 170,
+          stops: 0,
+        },
+      ],
+      fareComponents: [
+        { brand: { code: 'SL' }, fareBasisCode: 'QLSL1', segmentRefs: [0] },
+        // Repite el vuelo 0: gana el primero, porque dos valores para un vuelo no se cotizan.
+        { brand: { code: 'KM' }, segmentRefs: [0] },
+        { fareBasisCode: 'YOW', segmentRefs: [1] },
+      ],
+    };
+
+    const wire = await book(request(offer), CONFIRMED_RESPONSE);
+    const details = wire.body['flightDetails'] as Record<string, unknown>;
+
+    expect(details['flightPricing']).toEqual([
+      {
+        qualifiers: {
+          brandedFares: [{ brandCode: 'SL', flightIndices: [1] }],
+          specificFares: [
+            { fareBasisCode: 'QLSL1', flightIndices: [1] },
+            { fareBasisCode: 'YOW', flightIndices: [2] },
+          ],
+        },
+      },
+    ]);
+  });
+
   it('cotiza en todas las formas de itinerario, no sólo en la de un tramo', async () => {
     // Ida y vuelta con escala: dos itinerarios, tres tramos, un solo bloque de cotización. Si la
     // cotización dependiera de la forma del itinerario, alguno de estos tres cuerpos saldría sin

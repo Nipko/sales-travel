@@ -443,6 +443,8 @@ export const SABRE_FLIGHTS_MAX = 16;
 export const SABRE_FLIGHT_PRICING_MAX = 10;
 /** `:5765` — dos umbrales de comparación de precio como mucho. */
 export const SABRE_PRICE_COMPARISONS_MAX = 2;
+/** `:5838`, `:5997` — `brandedFares` y `specificFares`, 16 entradas como mucho. */
+export const SABRE_PRICING_QUALIFIER_LIST_MAX = 16;
 /** `:723-725` — `profiles` no se construye aquí, pero el tope se documenta con los demás. */
 export const SABRE_PROFILES_MAX = 13;
 
@@ -504,6 +506,10 @@ const SEAT_NUMBER = /^[0-9]+[A-Z]$/;
 const AMOUNT = /^[0-9]+(\.[0-9]{1,3})?$/;
 /** `:7689`, `:5796` — porcentaje con hasta 2 decimales. */
 const PERCENT = /^[0-9]{1,2}(\.[0-9]{1,2})?$/;
+/** `BrandedFare.brandCode` (`:4917`) no declara patrón; éste es el de los códigos ATPCO/NDC vistos. */
+const BRAND_CODE = /^[A-Z0-9]{1,12}$/;
+/** `SpecificFare.fareBasisCode` (`:6373`) tampoco: ATPCO admite hasta 15 caracteres alfanuméricos. */
+const FARE_BASIS_CODE = /^[A-Z0-9]{1,15}$/;
 /** `:5314` / `:5319` — los dos patrones de tarjeta, aquí sólo para el guard anti-PAN del test. */
 const MISC_CREDIT_CODE_MIN = 2;
 const MISC_CREDIT_CODE_MAX = 18;
@@ -601,10 +607,28 @@ export interface SabrePriceComparison {
  */
 export interface SabrePricingQualifiers {
   readonly flightIndices?: readonly SabreIndex[];
+  /**
+   * `BrandedFare` (`:4911-4930`): la marca que se cotiza en cada vuelo. Sin esto `[{}]` cotiza la
+   * tarifa más baja de las clases reservadas, que puede ser OTRA marca con la misma RBD. La
+   * colección lo usa así en «createBooking - Branded fares», con una marca distinta por vuelo.
+   */
+  readonly brandedFares?: readonly SabreBrandedFareQualifier[];
+  /** `SpecificFare` (`:6367-6385`): el fare basis exacto por vuelo, con autoprecio completo. */
+  readonly specificFares?: readonly SabreSpecificFareQualifier[];
   readonly validatingAirlineCode?: string;
   readonly commissionPercentage?: string;
   readonly commissionAmount?: string;
   readonly payment?: SabrePaymentMethod;
+}
+
+export interface SabreBrandedFareQualifier {
+  readonly brandCode: string;
+  readonly flightIndices: readonly SabreIndex[];
+}
+
+export interface SabreSpecificFareQualifier {
+  readonly fareBasisCode: string;
+  readonly flightIndices: readonly SabreIndex[];
 }
 
 /** `PricingDetails` — `:5759-5773`. `{}` significa «cotiza con defaults». */
@@ -880,6 +904,32 @@ const PricingInputSchema = z
     /** 0-based en la lista de vuelos. */
     flightPositions: z.array(positionSchema).min(1).optional(),
     validatingAirlineCode: z.string().regex(AIRLINE_CODE).optional(),
+    /** Marca por vuelo. Posiciones 0-based en la lista de vuelos; un vuelo, una marca. */
+    brandedFares: z
+      .array(
+        z
+          .object({
+            brandCode: z.string().regex(BRAND_CODE),
+            flightPositions: z.array(positionSchema).min(1),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(SABRE_PRICING_QUALIFIER_LIST_MAX)
+      .optional(),
+    /** Fare basis por vuelo. Posiciones 0-based en la lista de vuelos; un vuelo, un fare basis. */
+    specificFares: z
+      .array(
+        z
+          .object({
+            fareBasisCode: z.string().regex(FARE_BASIS_CODE),
+            flightPositions: z.array(positionSchema).min(1),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(SABRE_PRICING_QUALIFIER_LIST_MAX)
+      .optional(),
     commissionPercentage: z.string().regex(PERCENT).optional(),
     commissionAmount: z.string().regex(AMOUNT).optional(),
     /** 0-based en `formsOfPayment`. */
@@ -1443,6 +1493,22 @@ function buildPricing(
     ...(pricing.flightPositions === undefined
       ? {}
       : { flightIndices: pricing.flightPositions.map((pos) => sabreIndexIn(flights, pos)) }),
+    ...(pricing.brandedFares === undefined
+      ? {}
+      : {
+          brandedFares: pricing.brandedFares.map((fare) => ({
+            brandCode: fare.brandCode,
+            flightIndices: fare.flightPositions.map((pos) => sabreIndexIn(flights, pos)),
+          })),
+        }),
+    ...(pricing.specificFares === undefined
+      ? {}
+      : {
+          specificFares: pricing.specificFares.map((fare) => ({
+            fareBasisCode: fare.fareBasisCode,
+            flightIndices: fare.flightPositions.map((pos) => sabreIndexIn(flights, pos)),
+          })),
+        }),
     ...(pricing.validatingAirlineCode === undefined
       ? {}
       : { validatingAirlineCode: pricing.validatingAirlineCode }),
@@ -1454,6 +1520,12 @@ function buildPricing(
       : { commissionAmount: pricing.commissionAmount }),
     ...buildPricingPayment(pricing, formsOfPayment),
   };
+
+  // «Indices cannot be repeated under `BrandedFare.flightIndices` or `SpecificFare.flightIndices`»
+  // (`:5815-5817`): dos marcas —o dos fare basis— para el mismo vuelo no se pueden cotizar, y la
+  // cotización con defaults que saldría en su lugar no es la tarifa que se vendió.
+  assertOneValuePerFlight(qualifiers.brandedFares, 'brandedFares');
+  assertOneValuePerFlight(qualifiers.specificFares, 'specificFares');
 
   // `commissionAmount` y `commissionPercentage` son mutuamente excluyentes (`:7686`). El contrato
   // no lo expresa en el esquema —lo dice la descripción—, así que lo comprueba el ACL.
@@ -1469,6 +1541,24 @@ function buildPricing(
     ...(comparisons === undefined ? {} : { priceComparisons: comparisons }),
     ...(Object.keys(qualifiers).length === 0 ? {} : { qualifiers }),
   };
+}
+
+function assertOneValuePerFlight(
+  entries: readonly { readonly flightIndices: readonly SabreIndex[] }[] | undefined,
+  field: string,
+): void {
+  if (entries === undefined) return;
+  const seen = new Set<SabreIndex>();
+  for (const entry of entries) {
+    for (const index of entry.flightIndices) {
+      if (seen.has(index)) {
+        throw new SabreCreateBookingError(
+          `${field}: un vuelo no puede llevar dos valores (booking-management-v1.yml:5815)`,
+        );
+      }
+      seen.add(index);
+    }
+  }
 }
 
 function buildPricingPayment(
