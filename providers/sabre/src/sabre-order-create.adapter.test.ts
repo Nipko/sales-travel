@@ -1,4 +1,4 @@
-import type { Offer, Segment } from '@sales-travel/canonical';
+import { ageOnDate, type Offer, type Segment } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
 import {
   OrderCreateNotSentError,
@@ -1640,5 +1640,81 @@ describe('SAB-16 — cada asiento pedido tiene que volver', () => {
       },
     );
     expect(wire.outcome.result.issues.map((issue) => issue.itemKind)).toEqual(['seat', undefined]);
+  });
+});
+
+describe('código de pasajero en la reserva: edad del niño e infante con asiento', () => {
+  it('niño con su edad el día de la salida (C08) e infante con asiento (INS)', async () => {
+    const base = request(atpcoOffer());
+    const adulto = base.passengers[0]!;
+    const input: OrderCreateRequest = {
+      ...base,
+      criteria: {
+        ...base.criteria,
+        // Salida 2026-09-14: el niño cumple 9 el 2026-09-15, así que viaja con 8.
+        paxCount: { adults: 1, children: 1, infants: 2, childAges: [8], infantsWithSeat: 1 },
+      },
+      passengers: [
+        adulto,
+        {
+          ...adulto,
+          paxId: 'pax-2',
+          requestedTravelerIndex: 1,
+          paxType: 'CHD',
+          birthdate: '2017-09-15',
+        },
+        {
+          ...adulto,
+          paxId: 'pax-3',
+          requestedTravelerIndex: 2,
+          paxType: 'INF',
+          birthdate: '2026-01-10',
+        },
+        {
+          ...adulto,
+          paxId: 'pax-4',
+          requestedTravelerIndex: 3,
+          paxType: 'INF',
+          birthdate: '2025-12-01',
+        },
+      ],
+    };
+
+    const wire = await book(input, CONFIRMED_RESPONSE);
+    const travelers = wire.body['travelers'] as Array<Record<string, unknown>>;
+
+    expect(travelers.map((t) => t['passengerCode'])).toEqual(['ADT', 'C08', 'INS', 'INF']);
+  });
+
+  it('sin edades en la búsqueda, el niño va como CNN aunque traiga fecha de nacimiento', async () => {
+    const base = request(atpcoOffer());
+    const adulto = base.passengers[0]!;
+    const wire = await book(
+      {
+        ...base,
+        criteria: { ...base.criteria, paxCount: { adults: 1, children: 1, infants: 0 } },
+        passengers: [
+          adulto,
+          {
+            ...adulto,
+            paxId: 'pax-2',
+            requestedTravelerIndex: 1,
+            paxType: 'CHD',
+            birthdate: '2017-09-15',
+          },
+        ],
+      },
+      CONFIRMED_RESPONSE,
+    );
+    const travelers = wire.body['travelers'] as Array<Record<string, unknown>>;
+    expect(travelers.map((t) => t['passengerCode'])).toEqual(['ADT', 'CNN']);
+  });
+});
+
+describe('ageOnDate', () => {
+  it('cuenta años cumplidos sin pasar por Date', () => {
+    expect(ageOnDate('2017-09-15', '2026-09-14')).toBe(8);
+    expect(ageOnDate('2017-09-15', '2026-09-15')).toBe(9);
+    expect(ageOnDate('raro', '2026-09-15')).toBeNull();
   });
 });

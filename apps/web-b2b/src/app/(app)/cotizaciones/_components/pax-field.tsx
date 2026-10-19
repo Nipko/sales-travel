@@ -4,7 +4,10 @@ import { Minus, Plus, Users } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import {
+  adjustInfantsWithSeat,
   adjustPax,
+  CHILD_AGES,
+  setChildAge,
   canAddPax,
   canRemovePax,
   paxComposition,
@@ -88,6 +91,12 @@ export function PaxField({ value, onChange, triggerId }: PaxFieldProps) {
       <input type="hidden" name="adults" value={value.adults} />
       <input type="hidden" name="children" value={value.children} />
       <input type="hidden" name="infants" value={value.infants} />
+      <input
+        type="hidden"
+        name="childAges"
+        value={(value.childAges ?? []).map((age) => (age === null ? '' : String(age))).join(',')}
+      />
+      <input type="hidden" name="infantsWithSeat" value={value.infantsWithSeat ?? 0} />
 
       <button
         ref={triggerRef}
@@ -154,9 +163,16 @@ export function PaxField({ value, onChange, triggerId }: PaxFieldProps) {
             onDec={() => bump('children', -1)}
             onInc={() => bump('children', 1)}
           />
+          {value.children > 0 ? (
+            <ChildAges
+              ages={value.childAges ?? []}
+              count={value.children}
+              onChange={(index, age) => onChange(setChildAge(value, index, age))}
+            />
+          ) : null}
           <PaxRow
             title="Infantes"
-            subtitle="Menores de 2 años, en regazo"
+            subtitle="Menores de 2 años"
             singular="infante"
             value={value.infants}
             canAdd={canAddPax(value, 'infants')}
@@ -165,6 +181,20 @@ export function PaxField({ value, onChange, triggerId }: PaxFieldProps) {
             onInc={() => bump('infants', 1)}
             hint={value.infants >= value.adults ? 'Uno por adulto' : undefined}
           />
+          {value.infants > 0 ? (
+            <div className="-mt-1 mb-1 rounded-lg bg-[var(--color-surface-muted)]/60 px-3">
+              <PaxRow
+                title="Con asiento propio"
+                subtitle="Paga como niño; el resto va en brazos"
+                singular="infante con asiento"
+                value={value.infantsWithSeat ?? 0}
+                canAdd={(value.infantsWithSeat ?? 0) < value.infants}
+                canRemove={(value.infantsWithSeat ?? 0) > 0}
+                onDec={() => onChange(adjustInfantsWithSeat(value, -1))}
+                onInc={() => onChange(adjustInfantsWithSeat(value, 1))}
+              />
+            </div>
+          ) : null}
 
           {/*
             Por qué el «+» está apagado, dicho antes de que lo intenten. `aria-live` porque el
@@ -263,5 +293,58 @@ function StepButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * La edad de cada niño el día del viaje. Un `<select>` nativo por niño: en móvil abre la rueda
+ * del sistema, se maneja con teclado y el lector de pantalla lo anuncia sin ayuda.
+ */
+function ChildAges({
+  ages,
+  count,
+  onChange,
+}: {
+  readonly ages: readonly (number | null)[];
+  readonly count: number;
+  readonly onChange: (index: number, age: number | null) => void;
+}) {
+  const baseId = useId();
+  return (
+    <div className="-mt-1 mb-1 grid grid-cols-2 gap-2 rounded-lg bg-[var(--color-surface-muted)]/60 p-2.5">
+      <p className="col-span-2 text-[11px] text-[var(--color-fg-muted)]">
+        Edad el día del viaje: cambia el precio del niño.
+      </p>
+      {Array.from({ length: count }, (_, index) => {
+        const id = `${baseId}-age-${String(index)}`;
+        const age = ages[index] ?? null;
+        return (
+          <div key={id} className="flex flex-col gap-1">
+            <label htmlFor={id} className="text-[11px] font-medium text-[var(--color-fg-muted)]">
+              {count === 1 ? 'Edad del niño' : `Niño ${String(index + 1)}`}
+            </label>
+            <select
+              id={id}
+              value={age === null ? '' : String(age)}
+              onChange={(event) =>
+                onChange(index, event.target.value === '' ? null : Number(event.target.value))
+              }
+              aria-invalid={age === null || undefined}
+              className={cn(
+                'h-9 rounded-lg border bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)]',
+                age === null ? 'border-[var(--color-warning)]/60' : 'border-[var(--color-border)]',
+              )}
+            >
+              <option value="">Elegir</option>
+              {CHILD_AGES.map((option) => (
+                <option key={option} value={option}>
+                  {option} años
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+      })}
+    </div>
   );
 }

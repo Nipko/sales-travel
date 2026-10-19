@@ -1,7 +1,7 @@
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { z } from 'zod';
-import { SABRE_PTC } from '../shop/request.builder';
+import { sabrePassengerGroups } from '../shop/request.builder';
 
 /** `basePath: /v1/offers` + `/flightCheck` (`flightcheck-api-v1.yml:15-16,23`). */
 export const SABRE_FLIGHT_CHECK_PATH = '/v1/offers/flightCheck';
@@ -223,9 +223,11 @@ function readFlightNumber(value: string, path: string): number {
 
 function buildTravelers(criteria: FlightSearchCriteria): SabreFlightCheckTraveler[] {
   const travelers: SabreFlightCheckTraveler[] = [];
-  appendTravelers(travelers, SABRE_PTC.adults, criteria.paxCount.adults);
-  appendTravelers(travelers, SABRE_PTC.children, criteria.paxCount.children);
-  appendTravelers(travelers, SABRE_PTC.infants, criteria.paxCount.infants);
+  // Los MISMOS códigos que la búsqueda (edad del niño, infante con asiento): revalidar con otros
+  // daría otro precio. Ver `sabrePassengerGroups`.
+  for (const group of sabrePassengerGroups(criteria.paxCount)) {
+    appendTravelers(travelers, group.code, group.quantity);
+  }
   if (travelers.length > SABRE_FLIGHT_CHECK_MAX_TRAVELERS) {
     throw new SabreFlightCheckRequestError(['travelers:too_many']);
   }

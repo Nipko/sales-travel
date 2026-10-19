@@ -409,3 +409,39 @@ describe('OrdersService.createOrder — idempotencia cross-request', () => {
     expect(b.adapter.createOrder).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('OrdersService.createOrder — edad de los niños contra la búsqueda', () => {
+  // Salida 2026-09-10: nacido el 2018-09-11, el niño viaja con 7 años.
+  const conNino = (childAges: number[]): CreateOrderDto => {
+    const base = dto();
+    return {
+      ...base,
+      searchCriteria: {
+        ...base.searchCriteria,
+        paxCount: { adults: 1, children: 1, infants: 0, childAges },
+      },
+      passengers: [
+        PASSENGER,
+        { ...PASSENGER, paxId: 'pax-2', paxType: 'CHD', birthdate: '2018-09-11' },
+      ],
+    };
+  };
+
+  it('una edad que no cuadra con la fecha de nacimiento se rechaza sin llamar al proveedor', async () => {
+    const b = bank();
+
+    await expect(b.service.createOrder(TENANT, USER, conNino([8]), KEY_A)).rejects.toThrow(
+      /edad de un niño/,
+    );
+    expect(b.adapter.priceOffer).not.toHaveBeenCalled();
+    expect(b.adapter.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('con la edad que tendrá el día del viaje, sigue', async () => {
+    const b = bank();
+
+    await b.service.createOrder(TENANT, USER, conNino([7]), KEY_A);
+
+    expect(b.adapter.createOrder).toHaveBeenCalledTimes(1);
+  });
+});

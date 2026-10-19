@@ -30,7 +30,13 @@ export async function createQuotationAction(
     departureDate: string;
     returnDate?: string;
     tripType: string;
-    paxCount: { adults: number; children: number; infants: number };
+    paxCount: {
+      adults: number;
+      children: number;
+      infants: number;
+      childAges?: number[];
+      infantsWithSeat?: number;
+    };
     cabin: string;
     currency: string;
   },

@@ -50,9 +50,60 @@ export const SABRE_PTC = {
   adults: 'ADT',
   children: 'CNN',
   infants: 'INF',
-} as const satisfies Record<keyof FlightSearchCriteria['paxCount'], string>;
+} as const satisfies Record<'adults' | 'children' | 'infants', string>;
 
 export type SabrePtc = (typeof SABRE_PTC)[keyof typeof SABRE_PTC];
+
+/** Infante en su propio asiento: paga y ocupa como un niño (CERT, docs/sabre/16). */
+export const SABRE_PTC_INFANT_WITH_SEAT = 'INS';
+
+/** Un tipo de pasajero tal como se le pide a Sabre: código y cuántos. */
+export interface SabrePassengerGroup {
+  /** `ADT`, `CNN` o `C02`…`C11`, `INF` (en brazos) o `INS` (con asiento). */
+  readonly code: string;
+  readonly quantity: number;
+  readonly kind: 'adult' | 'child' | 'lap-infant' | 'seat-infant';
+}
+
+/** Código de niño con su edad: `C08` es un niño de 8 años. Sin edad, el genérico `CNN`. */
+export function sabreChildCode(age: number | undefined): string {
+  return age === undefined ? SABRE_PTC.children : `C${String(age).padStart(2, '0')}`;
+}
+
+/**
+ * Los pasajeros de una búsqueda en el vocabulario de Sabre, en el orden en que se piden.
+ *
+ * REST BFM v5 no tiene campo de edad: la edad del niño va en el CÓDIGO (`C08`), y en CERT cambia
+ * el precio (docs/sabre/16 §2). Los niños se agrupan por edad. Los infantes se parten entre en
+ * brazos (`INF`) y con asiento (`INS`). La MISMA lista sale en la búsqueda, en Flight Check y en
+ * el mapa de asientos: si una cotiza un niño de 8 y otra uno genérico, revalidar daría otro precio.
+ */
+export function sabrePassengerGroups(
+  paxCount: FlightSearchCriteria['paxCount'],
+): SabrePassengerGroup[] {
+  const groups: SabrePassengerGroup[] = [
+    { code: SABRE_PTC.adults, quantity: paxCount.adults, kind: 'adult' },
+  ];
+  if (paxCount.children > 0) {
+    const ages = paxCount.childAges;
+    if (ages === undefined || ages.length !== paxCount.children) {
+      groups.push({ code: SABRE_PTC.children, quantity: paxCount.children, kind: 'child' });
+    } else {
+      const porEdad = new Map<number, number>();
+      for (const age of ages) porEdad.set(age, (porEdad.get(age) ?? 0) + 1);
+      for (const [age, quantity] of [...porEdad].sort(([a], [b]) => a - b)) {
+        groups.push({ code: sabreChildCode(age), quantity, kind: 'child' });
+      }
+    }
+  }
+  const withSeat = Math.min(paxCount.infantsWithSeat ?? 0, paxCount.infants);
+  const onLap = paxCount.infants - withSeat;
+  if (onLap > 0) groups.push({ code: SABRE_PTC.infants, quantity: onLap, kind: 'lap-infant' });
+  if (withSeat > 0) {
+    groups.push({ code: SABRE_PTC_INFANT_WITH_SEAT, quantity: withSeat, kind: 'seat-infant' });
+  }
+  return groups;
+}
 
 /**
  * Enum cerrado de cabina de Sabre (`v5.yml:5653`): seis cabinas frente a nuestras cuatro.
@@ -409,7 +460,8 @@ export interface SabreTravelPreferences {
 }
 
 export interface SabrePassengerTypeQuantity {
-  Code: SabrePtc;
+  /** Ver {@link sabrePassengerGroups}. */
+  Code: string;
   Quantity: number;
   TPA_Extensions: { VoluntaryChanges: typeof SABRE_VOLUNTARY_CHANGES };
 }
@@ -904,10 +956,9 @@ function buildTravelerInfoSummary(
   criteria: FlightSearchCriteria,
   opts: z.infer<typeof SabreShopOptionsSchema> & { numTrips: number },
 ): SabreTravelerInfoSummary {
-  const { adults, children, infants } = criteria.paxCount;
-  const quantities: SabrePassengerTypeQuantity[] = [passengerType(SABRE_PTC.adults, adults)];
-  if (children > 0) quantities.push(passengerType(SABRE_PTC.children, children));
-  if (infants > 0) quantities.push(passengerType(SABRE_PTC.infants, infants));
+  const quantities = sabrePassengerGroups(criteria.paxCount).map((group) =>
+    passengerType(group.code, group.quantity),
+  );
 
   return {
     AirTravelerAvail: [{ PassengerTypeQuantity: quantities }],
@@ -926,7 +977,7 @@ function buildTravelerInfoSummary(
   };
 }
 
-function passengerType(code: SabrePtc, quantity: number): SabrePassengerTypeQuantity {
+function passengerType(code: string, quantity: number): SabrePassengerTypeQuantity {
   return {
     Code: code,
     Quantity: quantity,

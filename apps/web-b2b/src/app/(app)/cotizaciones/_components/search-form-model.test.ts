@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adjustInfantsWithSeat,
   adjustPax,
   cabinLabel,
+  completeChildAges,
   canAddPax,
   canRemovePax,
   DEFAULT_PAX,
@@ -9,6 +11,7 @@ import {
   paxLabel,
   paxTotal,
   returnDateForMode,
+  setChildAge,
   searchEcho,
   validateSearch,
   type PaxCounts,
@@ -145,8 +148,12 @@ describe('returnDateForMode', () => {
 
 describe('adjustPax', () => {
   it('suma y resta de a uno', () => {
-    expect(adjustPax(DEFAULT_PAX, 'children', 1)).toEqual(pax(1, 1, 0));
-    expect(adjustPax(pax(1, 2, 0), 'children', -1)).toEqual(pax(1, 1, 0));
+    // Cada niño trae su edad, todavía sin elegir.
+    expect(adjustPax(DEFAULT_PAX, 'children', 1)).toEqual({ ...pax(1, 1, 0), childAges: [null] });
+    expect(adjustPax(pax(1, 2, 0), 'children', -1)).toEqual({
+      ...pax(1, 1, 0),
+      childAges: [null],
+    });
   });
 
   it('nunca baja de un adulto', () => {
@@ -181,7 +188,7 @@ describe('adjustPax', () => {
   });
 
   it('deja llegar justo al tope', () => {
-    expect(adjustPax(pax(8, 0, 0), 'children', 1)).toEqual(pax(8, 1, 0));
+    expect(adjustPax(pax(8, 0, 0), 'children', 1)).toEqual({ ...pax(8, 1, 0), childAges: [null] });
   });
 });
 
@@ -259,5 +266,49 @@ describe('searchEcho', () => {
 
   it('lleva los códigos en mayúscula aunque se hayan tecleado en minúscula', () => {
     expect(searchEcho(draft({ origin: 'bog', destination: 'mde' }))).toContain('BOG → MDE');
+  });
+});
+
+describe('edad de cada niño e infante con asiento (docs/sabre/16)', () => {
+  const uno = { adults: 2, children: 0, infants: 0 };
+
+  it('sumar un niño agrega una edad sin elegir; quitarlo se lleva la última', () => {
+    const dos = adjustPax(adjustPax(uno, 'children', 1), 'children', 1);
+    expect(dos.childAges).toEqual([null, null]);
+    const conEdad = setChildAge(dos, 0, 8);
+    expect(adjustPax(conEdad, 'children', -1).childAges).toEqual([8]);
+  });
+
+  it('sólo hay edades completas cuando todos los niños tienen la suya', () => {
+    const dos = adjustPax(adjustPax(uno, 'children', 1), 'children', 1);
+    expect(completeChildAges(dos)).toBeNull();
+    expect(completeChildAges(setChildAge(setChildAge(dos, 0, 8), 1, 3))).toEqual([8, 3]);
+    expect(completeChildAges(uno)).toEqual([]);
+  });
+
+  it('con asiento nunca pasa de los infantes, y bajar infantes lo arrastra', () => {
+    const dos = adjustPax(adjustPax(uno, 'infants', 1), 'infants', 1);
+    const conAsiento = adjustInfantsWithSeat(adjustInfantsWithSeat(dos, 1), 1);
+    expect(adjustInfantsWithSeat(conAsiento, 1).infantsWithSeat).toBe(2);
+    expect(adjustPax(conAsiento, 'infants', -1).infantsWithSeat).toBe(1);
+    expect(paxComposition({ ...conAsiento, infantsWithSeat: 1 })).toBe(
+      '2 adultos · 2 infantes (1 con asiento)',
+    );
+  });
+
+  it('no deja buscar sin la edad de cada niño', () => {
+    const conNino = adjustPax(uno, 'children', 1);
+    const problem = validateSearch(
+      {
+        origin: 'BOG',
+        destination: 'MIA',
+        departureDate: '2099-01-10',
+        returnDate: '',
+        mode: 'oneway',
+        pax: conNino,
+      },
+      '2026-10-19',
+    );
+    expect(problem?.field).toBe('pax');
   });
 });

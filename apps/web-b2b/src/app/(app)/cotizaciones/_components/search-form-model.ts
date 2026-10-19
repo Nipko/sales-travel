@@ -28,9 +28,20 @@ export interface PaxCounts {
   readonly adults: number;
   readonly children: number;
   readonly infants: number;
+  /**
+   * Edad de cada niño (2 a 11), una por niño y en orden; `null` = todavía sin elegir. Se pide
+   * siempre, como en los sitios de venta: con la edad Sabre cotiza el precio real del niño, que
+   * puede ser distinto del de un niño genérico (docs/sabre/16).
+   */
+  readonly childAges?: readonly (number | null)[];
+  /** Cuántos de los infantes viajan con asiento propio (pagan como niño). El resto, en brazos. */
+  readonly infantsWithSeat?: number;
 }
 
-export type PaxKey = keyof PaxCounts;
+export type PaxKey = 'adults' | 'children' | 'infants';
+
+/** Edades que se pueden elegir para un niño: de 2 a 11 años cumplidos el día del viaje. */
+export const CHILD_AGES: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 export const DEFAULT_PAX: PaxCounts = { adults: 1, children: 0, infants: 0 };
 
@@ -57,7 +68,21 @@ export function adjustPax(pax: PaxCounts, key: PaxKey, delta: 1 | -1): PaxCounts
   const bounded = Math.max(PAX_MIN[key], raw);
 
   const next: PaxCounts = { ...pax, [key]: bounded };
-  const clamped: PaxCounts = { ...next, infants: Math.min(next.infants, next.adults) };
+  const infants = Math.min(next.infants, next.adults);
+  // Una edad por niño: sumar un niño agrega una edad sin elegir; quitarlo se lleva la última.
+  const ages = [...(pax.childAges ?? [])];
+  while (ages.length < next.children) ages.push(null);
+  ages.length = next.children;
+  const withSeat = Math.min(pax.infantsWithSeat ?? 0, infants);
+  // Sin niños ni infantes con asiento, las claves no aparecen: el caso de casi todas las búsquedas
+  // sigue siendo `{ adults, children, infants }`.
+  const { childAges: _ages, infantsWithSeat: _seat, ...counts } = next;
+  const clamped: PaxCounts = {
+    ...counts,
+    infants,
+    ...(ages.length > 0 ? { childAges: ages } : {}),
+    ...(withSeat > 0 ? { infantsWithSeat: withSeat } : {}),
+  };
 
   // Se rechaza el incremento entero en vez de recortarlo: recortar mostraría un número que el
   // usuario no pidió y parecería que el botón no responde.
@@ -74,6 +99,28 @@ export function adjustPax(pax: PaxCounts, key: PaxKey, delta: 1 | -1): PaxCounts
  */
 export function canAddPax(pax: PaxCounts, key: PaxKey): boolean {
   return adjustPax(pax, key, 1)[key] > pax[key];
+}
+
+/** Fija la edad del niño `index` (0 = el primero). */
+export function setChildAge(pax: PaxCounts, index: number, age: number | null): PaxCounts {
+  const ages = [...(pax.childAges ?? [])];
+  while (ages.length < pax.children) ages.push(null);
+  if (index < 0 || index >= pax.children) return pax;
+  ages[index] = age;
+  return { ...pax, childAges: ages };
+}
+
+/** Sube o baja cuántos infantes van con asiento propio, entre 0 y los infantes que hay. */
+export function adjustInfantsWithSeat(pax: PaxCounts, delta: 1 | -1): PaxCounts {
+  const next = Math.min(pax.infants, Math.max(0, (pax.infantsWithSeat ?? 0) + delta));
+  return { ...pax, infantsWithSeat: next };
+}
+
+/** Las edades de los niños, si están TODAS elegidas; `null` si falta alguna. */
+export function completeChildAges(pax: PaxCounts): number[] | null {
+  const ages = pax.childAges ?? [];
+  if (ages.length !== pax.children) return pax.children === 0 ? [] : null;
+  return ages.every((age): age is number => age !== null) ? [...ages] : null;
 }
 
 /** ¿Se puede restar uno de este tipo? */
@@ -102,7 +149,17 @@ function plural(n: number, one: string, many: string): string {
 export function paxComposition(pax: PaxCounts): string {
   const parts = [plural(pax.adults, 'adulto', 'adultos')];
   if (pax.children > 0) parts.push(plural(pax.children, 'niño', 'niños'));
-  if (pax.infants > 0) parts.push(plural(pax.infants, 'infante', 'infantes'));
+  if (pax.infants > 0) {
+    const withSeat = pax.infantsWithSeat ?? 0;
+    const infants = plural(pax.infants, 'infante', 'infantes');
+    parts.push(
+      withSeat === 0
+        ? infants
+        : pax.infants === 1
+          ? `${infants} con asiento`
+          : `${infants} (${String(withSeat)} con asiento)`,
+    );
+  }
   return parts.join(' · ');
 }
 
@@ -165,7 +222,7 @@ export interface SearchDraft {
 }
 
 /** Qué control tiene la culpa. La página lo traduce a un id para llevar el foco ahí. */
-export type SearchField = 'origin' | 'destination' | 'dates';
+export type SearchField = 'origin' | 'destination' | 'dates' | 'pax';
 
 export interface SearchProblem {
   readonly field: SearchField;
@@ -204,6 +261,9 @@ export function validateSearch(draft: SearchDraft, today: IsoDate): SearchProble
     if (draft.returnDate < draft.departureDate) {
       return { field: 'dates', message: 'La vuelta no puede ser anterior a la ida.' };
     }
+  }
+  if (completeChildAges(draft.pax) === null) {
+    return { field: 'pax', message: 'Elige la edad de cada niño: cambia el precio de su tarifa.' };
   }
   return null;
 }

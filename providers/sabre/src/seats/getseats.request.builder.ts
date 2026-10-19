@@ -2,7 +2,7 @@ import type { Offer, Segment } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { z } from 'zod';
 import { SABRE_RAW_KEYS } from '../price/request.builder';
-import { SABRE_PTC } from '../shop/request.builder';
+import { sabrePassengerGroups } from '../shop/request.builder';
 import { SABRE_PROVIDER_NAME } from '../shop/response.mapper';
 
 /**
@@ -207,7 +207,12 @@ function buildPayloadPlan(offer: Offer, criteria: FlightSearchCriteria): SabreGe
 
   const fareComponents = buildFareComponents(offer, flat.length);
   const { adults, children, infants } = criteria.paxCount;
-  if (adults + children > SABRE_GETSEATS_MAX_SEATED_PASSENGERS) {
+  const groups = sabrePassengerGroups(criteria.paxCount);
+  const lapInfants = groups
+    .filter((group) => group.kind === 'lap-infant')
+    .reduce((total, group) => total + group.quantity, 0);
+  // El infante con asiento (`INS`) OCUPA uno: cuenta como pasajero sentado.
+  if (adults + children + (infants - lapInfants) > SABRE_GETSEATS_MAX_SEATED_PASSENGERS) {
     throw new SabreGetSeatsRequestError(['passengers:too_many']);
   }
   if (infants > adults) {
@@ -237,8 +242,14 @@ function buildPayloadPlan(offer: Offer, criteria: FlightSearchCriteria): SabreGe
   // adulto (`resolveFareComponents` del shop). El fare basis de un niño suele llevar su propio
   // descuento: asociarle el del adulto sería mentirle a Sabre sobre su tarifa, así que el niño
   // viaja sin asociación y Sabre lo resuelve por su PTC.
-  for (let i = 0; i < adults; i += 1) add(SABRE_PTC.adults, i < infants, true);
-  for (let i = 0; i < children; i += 1) add(SABRE_PTC.children, false, false);
+  // Los códigos son los de la búsqueda (`C08`, `INS`): ver `sabrePassengerGroups`.
+  for (const group of groups) {
+    if (group.kind === 'lap-infant') continue;
+    for (let i = 0; i < group.quantity; i += 1) {
+      if (group.kind === 'adult') add(group.code, i < lapInfants, true);
+      else add(group.code, false, false);
+    }
+  }
 
   const body = parseOrThrow(SabreGetSeatsPayloadRequestSchema, {
     returnSeatMapsOnlyForSegmentRefs: [...segmentIndexById.keys()],

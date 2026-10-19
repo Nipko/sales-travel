@@ -36,6 +36,7 @@ import { ResultsHeader } from './_components/results-header';
 import { RoundTripFlow } from './_components/round-trip-flow';
 import { RouteField } from './_components/route-field';
 import {
+  completeChildAges,
   DEFAULT_CABIN,
   DEFAULT_PAX,
   returnDateForMode,
@@ -62,8 +63,9 @@ const FIELD_ID: Readonly<Record<SearchField, string>> = {
   origin: 'search-origin',
   destination: 'search-destination',
   dates: 'search-dates',
+  pax: 'search-pax',
 };
-const PAX_ID = 'search-pax';
+const PAX_ID = FIELD_ID.pax;
 
 /** Qué proveedores devolvieron tarifas inventadas en esta búsqueda. */
 type SimulatedProviders =
@@ -293,7 +295,14 @@ export default function CotizacionesPage() {
       departureDate,
       ...(tripMode === 'roundtrip' && returnDate ? { returnDate } : {}),
       tripType: tripMode,
-      paxCount: { adults: pax.adults, children: pax.children, infants: pax.infants },
+      paxCount: {
+        adults: pax.adults,
+        children: pax.children,
+        infants: pax.infants,
+        // `validateSearch` ya exigió todas las edades: aquí `completeChildAges` no es null.
+        ...(pax.children > 0 ? { childAges: completeChildAges(pax) ?? [] } : {}),
+        ...((pax.infantsWithSeat ?? 0) > 0 ? { infantsWithSeat: pax.infantsWithSeat } : {}),
+      },
       cabin,
     });
     setHasSearched(true);

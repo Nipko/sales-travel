@@ -29,7 +29,7 @@ import {
   type ServiceListResult,
   type TicketCheckResult,
 } from '@sales-travel/domain';
-import type { Money, Offer } from '@sales-travel/canonical';
+import { ageOnDate, type Money, type Offer } from '@sales-travel/canonical';
 import { DatabaseService } from '../database/database.service.js';
 import {
   PROVIDER_WRITE_OPERATION_TYPES,
@@ -815,6 +815,24 @@ export class OrdersService {
       throw new BadRequestException(
         'Los pasajeros no coinciden con la cantidad de adultos, niños e infantes de la búsqueda.',
       );
+    }
+
+    // La edad de cada niño se cotizó en la búsqueda (`C08`, docs/sabre/16) y la aerolínea la
+    // controla por la fecha de nacimiento. Si no coinciden, el precio de la oferta no es el que
+    // la aerolínea va a cobrar: se corta antes de llamar a nadie y el vendedor vuelve a buscar.
+    const childAges = requested.childAges;
+    if (childAges !== undefined) {
+      const fromBirthdates = dto.passengers
+        .filter((passenger) => passenger.paxType === 'CHD')
+        .map((passenger) => ageOnDate(passenger.birthdate, dto.searchCriteria.departureDate));
+      const sorted = (ages: readonly (number | null)[]) =>
+        [...ages].sort((a, b) => (a ?? -1) - (b ?? -1)).join(',');
+      if (sorted(fromBirthdates) !== sorted(childAges)) {
+        throw new BadRequestException(
+          'La edad de un niño según su fecha de nacimiento no coincide con la de la búsqueda. ' +
+            'Vuelve a buscar con la edad que tendrá el día del viaje.',
+        );
+      }
     }
 
     if (dto.searchCriteria.currency !== dto.offer.total.currency) {

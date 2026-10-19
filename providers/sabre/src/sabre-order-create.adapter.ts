@@ -1,5 +1,12 @@
 import type { LoggerPort } from '@sales-travel/core';
-import type { Itinerary, Offer, Segment } from '@sales-travel/canonical';
+import {
+  CHILD_AGE_MAX,
+  CHILD_AGE_MIN,
+  ageOnDate,
+  type Itinerary,
+  type Offer,
+  type Segment,
+} from '@sales-travel/canonical';
 import {
   OrderCreateNotSentError,
   type BookingContactInfo,
@@ -46,6 +53,7 @@ import {
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
+import { SABRE_PTC_INFANT_WITH_SEAT, sabreChildCode } from './shop/request.builder';
 import { logRedacted, type SabreLogLevel } from './redaction';
 
 /**
@@ -750,14 +758,54 @@ function documentoDe(passenger: Passenger): { identityDocuments?: SabreIdentityD
   };
 }
 
-function travelerOf(passenger: Passenger, boundProviderPaxId?: string): SabreTravelerInput {
+/**
+ * El código de cada pasajero en la reserva ATPCO, el MISMO que se usó al cotizar.
+ *
+ * - Niño: con edades en la búsqueda, `Cnn` con su edad el día de la salida (de su fecha de
+ *   nacimiento, que es el dato que la aerolínea controla); sin edades, el genérico `CNN`. La API
+ *   ya comprobó que esas edades coinciden con las de la búsqueda.
+ * - Infante: los primeros `infantsWithSeat` van con asiento (`INS`), el resto en brazos (`INF`).
+ *   Son los primeros para que coincidan con el orden del mapa de asientos, donde los `INS` van
+ *   detrás de los niños.
+ */
+function passengerCodes(request: OrderCreateRequest): Map<Passenger, string> {
+  const codes = new Map<Passenger, string>();
+  // El pedido cruza un borde: sin criterio se queda en los códigos genéricos, y el error que toque
+  // (oferta sin nada reservable, pasajeros incompletos) lo da quien lo valida, no un TypeError.
+  const paxCount = request.criteria?.paxCount;
+  const conEdades = paxCount?.childAges !== undefined;
+  let conAsiento = paxCount?.infantsWithSeat ?? 0;
+  for (const passenger of request.passengers) {
+    if (passenger.paxType === 'CHD' && conEdades) {
+      const age = ageOnDate(passenger.birthdate, request.criteria?.departureDate ?? '');
+      codes.set(
+        passenger,
+        age !== null && age >= CHILD_AGE_MIN && age <= CHILD_AGE_MAX
+          ? sabreChildCode(age)
+          : PASSENGER_CODE_BY_PAX_TYPE.CHD,
+      );
+    } else if (passenger.paxType === 'INF' && conAsiento > 0) {
+      codes.set(passenger, SABRE_PTC_INFANT_WITH_SEAT);
+      conAsiento -= 1;
+    } else {
+      codes.set(passenger, PASSENGER_CODE_BY_PAX_TYPE[passenger.paxType]);
+    }
+  }
+  return codes;
+}
+
+function travelerOf(
+  passenger: Passenger,
+  boundProviderPaxId?: string,
+  passengerCode: string = PASSENGER_CODE_BY_PAX_TYPE[passenger.paxType],
+): SabreTravelerInput {
   const providerPaxId = boundProviderPaxId ?? passenger.providerPaxId;
   return {
     givenName: nombreLimpio(passenger.givenName),
     surname: nombreLimpio(passenger.surname),
     birthDate: passenger.birthdate,
     gender: genderOf(passenger),
-    passengerCode: PASSENGER_CODE_BY_PAX_TYPE[passenger.paxType],
+    passengerCode,
     ...(passenger.title === undefined ? {} : { title: TITLE_BY_DOMAIN_TITLE[passenger.title] }),
     // `providerPaxId` es el id que EMITIÓ el proveedor en el paso de precio. Si no lo hay no se
     // inventa uno nuestro: el contrato se contradice sobre quién lo elige (ver `Passenger`), y un
@@ -804,8 +852,11 @@ function travelersOf(request: OrderCreateRequest): {
   const priceOfferId = rawId(request.offer, SABRE_RAW_KEYS.priceOfferId);
   const priceOfferItemIds = rawIds(request.offer, SABRE_RAW_KEYS.priceOfferItemIds);
   if (priceOfferId === null || priceOfferItemIds === null) {
+    const codes = passengerCodes(request);
     return {
-      travelers: request.passengers.map((passenger) => travelerOf(passenger)),
+      travelers: request.passengers.map((passenger) =>
+        travelerOf(passenger, undefined, codes.get(passenger)),
+      ),
       order: [...request.passengers],
     };
   }

@@ -56,13 +56,24 @@ FOR CLASS USED`** en `groupedItineraryResponse.messages[]`, en el mismo 200: Sab
    niño, infante) con el markup repartido en proporción al neto y el redondeo en un adulto, para
    que la suma cuadre al centavo (`salePerPax`, `apps/web-b2b/src/lib/sale-breakdown.ts`).
 
-## 4. Decisiones de producto pendientes
+## 4. Edad de cada niño e infante con asiento (implementado, decisión del founder 2026-10-19)
 
-- **Edad de cada niño.** Con `CNN` Sabre cotiza un niño genérico; con la edad (`C02`…`C11`) el precio
-  puede cambiar (en la sonda, +42,80 USD por impuestos a los 8 años). Los sitios de venta piden la
-  edad de cada niño al buscar. Implicaría un selector de edad por niño en el campo de pasajeros y
-  mandar `Cnn` con la edad.
-- **Infante con asiento (`INS`).** Hoy sólo existe «infante en brazos» (`INF`). Con asiento cotiza
-  como un niño. Sería una opción por infante en el campo de pasajeros.
+- **Selector de pasajeros** (`apps/web-b2b/.../_components/pax-field.tsx`): un desplegable de edad
+  (2 a 11 años, el día del viaje) por cada niño, obligatorio para buscar, como en los sitios de
+  venta; y «Con asiento propio» bajo Infantes (paga como niño; el resto va en brazos).
+- **Criterio** (`PaxCountSchema`, `packages/canonical/src/pax.ts`): `childAges` (una por niño) e
+  `infantsWithSeat` (≤ infantes), opcionales: sin ellos todo sigue como antes (`CNN`, `INF`).
+- **Sabre** (`sabrePassengerGroups`, `shop/request.builder.ts`): niños agrupados por edad como
+  `C02`…`C11`, infantes partidos entre `INF` e `INS`. La MISMA lista sale en la búsqueda, en
+  Flight Check y en el mapa de asientos (donde el `INS` ocupa asiento y el `INF` no).
+- **Reserva**: el código del niño sale de su fecha de nacimiento (edad el día de la salida); los
+  primeros `infantsWithSeat` infantes van como `INS`. La API rechaza crear la orden si la edad por
+  fecha de nacimiento no coincide con la de la búsqueda, antes de llamar a nadie: el precio cotizado
+  no sería el que cobra la aerolínea.
+
+## 5. Pendiente
+
 - **Reserva con niños e infantes en CERT**: pendiente de que Sabre resuelva H-07
   (`12-hallazgos-sandbox.md`).
+- **LATAM NDC** no informa el desglose por pasajero, así que sus tarjetas no muestran «Precio por
+  pasajero», y todavía no recibe las edades.

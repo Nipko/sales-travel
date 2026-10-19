@@ -9,6 +9,7 @@ import {
   SABRE_DATA_SOURCES,
   SABRE_SHOP_PATH,
   buildSabreShopRequest,
+  sabrePassengerGroups,
   type SabreShopOptions,
   type SabreShopRequestScope,
   type SabreShopRequest,
@@ -706,5 +707,48 @@ describe('seguridad: ningún PCC de terceros en el body saliente (§6.4)', () =>
     const json = JSON.stringify(build({}, { epr: '500001', password: 'Pa55w0rd!' }));
     expect(json).not.toContain('Pa55w0rd!');
     expect(json).not.toContain('500001');
+  });
+});
+
+describe('tipos de pasajero: edad del niño e infante con asiento (docs/sabre/16)', () => {
+  const ptq = (body: ReturnType<typeof build>) =>
+    body.TravelerInfoSummary.AirTravelerAvail[0].PassengerTypeQuantity.map(
+      (p) => `${p.Code}x${p.Quantity}`,
+    );
+
+  it('sin edades ni asiento, lo de siempre: ADT, CNN, INF', () => {
+    expect(ptq(build({ paxCount: { adults: 2, children: 1, infants: 1 } }))).toEqual([
+      'ADTx2',
+      'CNNx1',
+      'INFx1',
+    ]);
+  });
+
+  it('con edades, un código por edad (C08) agrupando los iguales', () => {
+    expect(
+      ptq(build({ paxCount: { adults: 2, children: 3, infants: 0, childAges: [8, 3, 8] } })),
+    ).toEqual(['ADTx2', 'C03x1', 'C08x2']);
+  });
+
+  it('el infante con asiento va como INS; los demás, en brazos', () => {
+    expect(
+      ptq(build({ paxCount: { adults: 2, children: 0, infants: 2, infantsWithSeat: 1 } })),
+    ).toEqual(['ADTx2', 'INFx1', 'INSx1']);
+  });
+
+  it('sabrePassengerGroups marca qué es cada grupo', () => {
+    expect(
+      sabrePassengerGroups({
+        adults: 1,
+        children: 1,
+        infants: 1,
+        childAges: [11],
+        infantsWithSeat: 1,
+      }),
+    ).toEqual([
+      { code: 'ADT', quantity: 1, kind: 'adult' },
+      { code: 'C11', quantity: 1, kind: 'child' },
+      { code: 'INS', quantity: 1, kind: 'seat-infant' },
+    ]);
   });
 });

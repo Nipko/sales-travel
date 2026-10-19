@@ -219,6 +219,9 @@ export async function searchFlightsAction(
   const adults = asInt(formData.get('adults'), 1);
   const children = asInt(formData.get('children'), 0);
   const infants = asInt(formData.get('infants'), 0);
+  const infantsWithSeat = asInt(formData.get('infantsWithSeat'), 0);
+  const childAgesRaw = asString(formData.get('childAges')).trim();
+  const childAges = childAgesRaw === '' ? [] : childAgesRaw.split(',').map((v) => Number(v));
 
   // --- Validaciones ---
   if (!IATA_RE.test(origin)) {
@@ -252,6 +255,16 @@ export async function searchFlightsAction(
   if (infants > adults) {
     return fallo('No puede haber más infantes que adultos (uno por adulto).');
   }
+  // Una edad por niño, de 2 a 11: con ella Sabre cotiza el precio real del niño (docs/sabre/16).
+  if (
+    childAges.length !== children ||
+    childAges.some((age) => !Number.isInteger(age) || age < 2 || age > 11)
+  ) {
+    return fallo('Elige la edad de cada niño (de 2 a 11 años).');
+  }
+  if (infantsWithSeat < 0 || infantsWithSeat > infants) {
+    return fallo('Revisa cuántos infantes viajan con asiento.');
+  }
   const totalPax = adults + children + infants;
   if (totalPax > 9) {
     return fallo('Máximo 9 pasajeros por reserva (límite GDS).');
@@ -263,7 +276,13 @@ export async function searchFlightsAction(
     ...(originKind ? { originKind } : {}),
     ...(destinationKind ? { destinationKind } : {}),
     departureDate,
-    paxCount: { adults, children, infants },
+    paxCount: {
+      adults,
+      children,
+      infants,
+      ...(children > 0 ? { childAges } : {}),
+      ...(infantsWithSeat > 0 ? { infantsWithSeat } : {}),
+    },
     cabin,
   };
   if (isRoundtrip) body.returnDate = returnDate;
@@ -320,7 +339,13 @@ export async function searchReturnsAction(
     destinationKind?: LocationKind;
     departureDate: string;
     returnDate?: string;
-    paxCount: { adults: number; children: number; infants: number };
+    paxCount: {
+      adults: number;
+      children: number;
+      infants: number;
+      childAges?: number[];
+      infantsWithSeat?: number;
+    };
     cabin: string;
   },
 ): Promise<ReturnSearchResult> {
