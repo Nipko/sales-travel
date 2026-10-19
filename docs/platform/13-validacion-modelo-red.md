@@ -287,7 +287,7 @@ Esperado: `"ok": true`, `"tenant": "unchanged"` (0049 ya lo promovió), `"member
 2. Si tu cuenta no tiene MFA, el login te pide activarlo: es obligatorio para el superadmin.
 3. Comprueba:
    - el menú tiene _Gestión de Agencias_ y _Proveedores de la plataforma_;
-   - no tiene _Buscar / Cotizar_, _Hoteles_, _Autos_ ni _Oficinas_;
+   - no tiene _Vuelos_, _Hoteles_, _Autos_ ni _Oficinas_;
    - _Gestión de Agencias_ muestra a Planetour como "Raíz de la red" y el aviso "Un nodo fuera de la red de Planetour S.A.S" con Amazon Minimalist.
 
 ### Paso 4 — Mover Amazon Minimalist bajo Planetour
@@ -320,7 +320,7 @@ Lo que Amazon gana y lo que todavía no conviene darle:
 3. El **admin inicial** es opcional. Si pones su correo, se le envía una invitación como `tenant_admin` de la sucursal: al aceptarla elige su contraseña (nadie más la conoce). Queda en _Equipo_ como **Invitado · vence en 7 días**, con **Reenviar** si no le llegó.
 4. Pulsa **Crear sucursal**. La fila nueva lleva el badge "Sucursal" y dice "Cuelga de Planetour S.A.S".
 5. Para el vendedor, ve a _Equipo (Usuarios)_, elige la sucursal en _Agencia_, pulsa **Invitar usuario**, pon su correo con rol **Vendedor** y envía. El vendedor acepta desde el correo y elige su contraseña.
-6. Comprueba con la cuenta del vendedor que _Buscar / Cotizar_ funciona. Con tu cuenta de superadmin, esa pantalla (`/cotizaciones`) muestra el aviso de que el superadministrador no vende, y la API responde 403 `PLATFORM_ROLE_CANNOT_SELL`.
+6. Comprueba con la cuenta del vendedor que _Vuelos_ funciona. Con tu cuenta de superadmin, esa pantalla (`/cotizaciones`) muestra el aviso de que el superadministrador no vende, y la API responde 403 `PLATFORM_ROLE_CANNOT_SELL`.
 
 El vendedor tiene que ser **otra cuenta, con otro correo**. El superadmin no vende tampoco desde una sucursal donde además sea miembro: la regla mira a la persona, no al nodo.
 

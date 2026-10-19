@@ -13,11 +13,11 @@ import {
   Lock,
   MapPin,
   Network,
+  Plane,
   Plug,
   Settings,
   Settings2,
   Shield,
-  Ticket,
   UserCog,
   UserRound,
   Users,
@@ -40,7 +40,7 @@ export type NavBadge = 'pendingDeposits';
 
 export const operationsNav: NavItem[] = [
   { label: 'Inicio', href: '/', icon: Home },
-  { label: 'Buscar / Cotizar', href: '/cotizaciones', icon: Ticket },
+  { label: 'Vuelos', href: '/cotizaciones', icon: Plane },
   { label: 'Hoteles', href: '/hoteles', icon: Hotel },
   { label: 'Autos', href: '/autos', icon: Car },
   { label: 'Oficinas', href: '/autos/oficinas', icon: MapPin },
