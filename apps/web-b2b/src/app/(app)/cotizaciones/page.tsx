@@ -183,7 +183,14 @@ type QuoteCriteria = Omit<Parameters<typeof createQuotationAction>[1], 'currency
 
 export default function CotizacionesPage() {
   const router = useRouter();
-  const [result, formAction] = useActionState(searchFlightsAction, initialState);
+  // El estado anterior NO viaja al servidor. Con `useActionState(searchFlightsAction, …)` React
+  // manda el estado previo como primer argumento del server action, o sea TODOS los resultados de la
+  // búsqueda anterior; con varias tarifas por vuelo y lo que incluye cada una ya pasaban de 1 MB y la
+  // siguiente búsqueda moría con 413 («Algo salió mal»). El action no lo usa: va el inicial.
+  const [result, formAction] = useActionState(
+    (_previous: SearchResult, formData: FormData) => searchFlightsAction(initialState, formData),
+    initialState,
+  );
   const today = useMemo(() => todayIso(), []);
   const [hasSearched, setHasSearched] = useState(false);
   const [sort, setSort] = useState<SortKey>('best');
