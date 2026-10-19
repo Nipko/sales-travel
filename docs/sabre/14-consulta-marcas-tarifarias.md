@@ -1,6 +1,7 @@
 # Consulta abierta: varias tarifas por itinerario en BFM v5
 
 **Estado:** las marcas EXISTEN y el terminal de agente las ve; falta el permiso de API. Ver §0.
+**Continúa en:** [`15-marcas-por-trayecto.md`](15-marcas-por-trayecto.md) — Anchored Search, reserva con marca por vuelo y elección por trayecto.
 **Fecha:** 2026-08-27.
 **Para qué sirve este documento:** es autocontenido. Se puede pasar tal cual a soporte de Sabre
 (§A, en inglés) o a un agente de investigación (§B) sin explicar nada más.
