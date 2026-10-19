@@ -29,6 +29,7 @@ import {
   KillSwitchNotice,
   ProviderIdentity,
 } from '../../../_components/provider-enablement-ui';
+import { ForeignCurrencyFaresCard } from './foreign-currency-fares-card';
 import { NodeSectionNav } from './node-section-nav';
 
 type PanelState =
@@ -184,6 +185,18 @@ export function TenantProvidersPanel({ tenantId }: { tenantId: string }) {
           </div>
         )}
       </section>
+
+      {state.status === 'ready' ? (
+        <section aria-labelledby="tenant-testing-title" className="mt-8">
+          <h2
+            id="tenant-testing-title"
+            className="mb-3 text-sm font-semibold text-[var(--color-fg)]"
+          >
+            Pruebas
+          </h2>
+          <ForeignCurrencyFaresCard tenantId={tenantId} tenantName={state.view.tenantName} />
+        </section>
+      ) : null}
 
       {pending !== null && tenantName !== null ? (
         <ChangeDialog

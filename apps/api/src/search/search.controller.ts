@@ -22,6 +22,7 @@ import {
 } from './search.schemas.js';
 import {
   SearchService,
+  type SaleCurrencyPolicy,
   type FlightSearchResponse,
   type SeatMapResponse,
 } from './search.service.js';
@@ -85,6 +86,21 @@ function tenantCurrency(raw: string | null | undefined): string | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * La moneda en que se revalida, se anclan las vueltas o se pide el mapa de asientos de una oferta.
+ *
+ * Siempre la de la agencia: pedir otra devolvería un precio en otra unidad justo antes de
+ * reservar. La excepción es la oferta en otra moneda que la búsqueda dejó pasar porque el
+ * superadmin lo habilitó para pruebas: revalidarla en la moneda de la agencia le cambiaría el
+ * punto de venta al proveedor (LATAM lo deriva de la moneda) y el precio dejaría de cuadrar.
+ */
+export function monedaDeLaOferta(venta: SaleCurrencyPolicy, offer: Offer): string | undefined {
+  if (venta.foreignFares && venta.home !== undefined && offer.total.currency !== venta.home) {
+    return offer.total.currency;
+  }
+  return venta.home;
+}
+
 @Roles(...SELLING_ROLES)
 @Controller('search')
 @UseFilters(LatamNdcExceptionFilter, SabreExceptionFilter)
@@ -111,14 +127,14 @@ export class SearchController {
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
 
     // Moneda base del tenant, inyectada en el criterio. (Sin logs de PII/criterios.)
-    const moneda = await this.monedaDelTenant(tenantId);
-    if (moneda !== undefined) criteria.currency = moneda;
+    const venta = await this.ventaDelTenant(tenantId);
+    if (venta.home !== undefined) criteria.currency = venta.home;
 
     // El ajuste se resuelve FUERA de SearchService a propósito: el servicio cachea la
     // respuesta 90 s por tenant, y meterlo dentro dejaría al vendedor viendo la etiqueta
     // vieja hasta minuto y medio después de que el administrador la cambió.
     const [result, showProviderInResults] = await Promise.all([
-      this.search.searchFlights(criteria, tenantId),
+      this.search.searchFlights(criteria, tenantId, venta),
       this.disclosure.effective(tenantId),
     ]);
 
@@ -140,10 +156,16 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
-    const moneda = await this.monedaDelTenant(tenantId);
+    const venta = await this.ventaDelTenant(tenantId);
+    const moneda = monedaDeLaOferta(venta, body.outbound);
     if (moneda !== undefined) body.searchCriteria.currency = moneda;
 
-    return this.search.searchReturns(body.outbound, body.searchCriteria, tenantId);
+    return this.search.searchReturns(
+      body.outbound,
+      body.searchCriteria,
+      tenantId,
+      venta.home ?? body.searchCriteria.currency,
+    );
   }
 
   @SalesOperation()
@@ -158,10 +180,16 @@ export class SearchController {
 
     // La revalidación tiene que pedir la MISMA moneda que la búsqueda que produjo la oferta:
     // pedir otra devolvería un precio en otra unidad justo antes de reservar.
-    const moneda = await this.monedaDelTenant(tenantId);
+    const venta = await this.ventaDelTenant(tenantId);
+    const moneda = monedaDeLaOferta(venta, body.offer);
     if (moneda !== undefined) body.searchCriteria.currency = moneda;
 
-    const priced = await this.search.priceOffer(body.offer, body.searchCriteria, tenantId);
+    const priced = await this.search.priceOffer(
+      body.offer,
+      body.searchCriteria,
+      tenantId,
+      venta.home ?? body.searchCriteria.currency,
+    );
     return {
       ...priced,
       seatSelection: this.search.seatSelectionAvailable(priced.offer.provider.name),
@@ -187,22 +215,31 @@ export class SearchController {
     if (!userId) throw new ForbiddenException();
 
     const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
-    const moneda = await this.monedaDelTenant(tenantId);
+    const moneda = monedaDeLaOferta(await this.ventaDelTenant(tenantId), body.offer);
     if (moneda !== undefined) body.searchCriteria.currency = moneda;
 
     return this.search.seatMap(body.offer, body.searchCriteria, tenantId);
   }
 
-  /** Moneda de venta de la agencia, ya normalizada y validada. Ver {@link tenantCurrency}. */
-  private async monedaDelTenant(tenantId: string): Promise<string | undefined> {
+  /**
+   * Moneda de venta de la agencia, ya normalizada y validada (ver {@link tenantCurrency}), y si el
+   * superadmin le habilitó tarifas en otra moneda para pruebas (ver {@link SaleCurrencyPolicy}).
+   */
+  private async ventaDelTenant(tenantId: string): Promise<SaleCurrencyPolicy> {
     const tenant = await this.db.db
       .selectFrom('tenants')
-      .select(['default_currency', 'country_code', 'name'])
+      .select(['default_currency', 'foreign_currency_fares'])
       .where('id', '=', tenantId)
       .executeTakeFirst();
+    return {
+      home: this.monedaValida(tenantId, tenant?.default_currency),
+      foreignFares: tenant?.foreign_currency_fares === true,
+    };
+  }
 
-    const moneda = tenantCurrency(tenant?.default_currency);
-    if (moneda === undefined && tenant?.default_currency) {
+  private monedaValida(tenantId: string, raw: string | null | undefined): string | undefined {
+    const moneda = tenantCurrency(raw);
+    if (moneda === undefined && raw) {
       // Sin el valor: un `default_currency` corrupto es dato de configuración, no un secreto,
       // pero tampoco hace falta para arreglarlo — basta con saber QUÉ tenant hay que revisar.
       this.logger.warn(`search.tenant_currency_invalida tenant=${tenantId}`);

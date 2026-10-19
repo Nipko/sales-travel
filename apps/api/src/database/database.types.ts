@@ -71,6 +71,11 @@ export interface TenantsTable {
    * cercano; si ninguno, 30 (`effective_idle_timeout_minutes`). Sólo lo fija el superadmin.
    */
   idle_timeout_minutes: number | null;
+  /**
+   * 0087: tarifas de vuelo en otra moneda que `default_currency`, sin descartarlas. Para pruebas;
+   * sólo lo fija el superadmin.
+   */
+  foreign_currency_fares: Generated<boolean>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

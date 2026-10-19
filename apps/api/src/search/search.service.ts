@@ -84,6 +84,19 @@ export interface SeatMapResponse {
  * proveedor B" no puede servirse cuando B volvió, y van EN CLARO (fuera del hash) para poder
  * barrer por patrón al rotar credenciales.
  */
+/**
+ * Qué hace la búsqueda con las tarifas que vuelven en otra moneda que la de la agencia.
+ *
+ * `foreignFares` lo enciende sólo el superadmin, por agencia (migración 0087), para probar de
+ * punta a punta un proveedor cuyo punto de venta todavía cotiza en otra moneda (LATAM NDC en
+ * BRL). Apagado —el default— rige la puerta de {@link splitByCurrency}.
+ */
+export interface SaleCurrencyPolicy {
+  /** Moneda de venta de la agencia. Sin ella no se distingue qué es «otra moneda». */
+  readonly home?: string;
+  readonly foreignFares: boolean;
+}
+
 function flightsCacheKey(tenantId: string, c: FlightSearchCriteria, codes: string[]): string {
   const digest = createHash('sha256').update(JSON.stringify(c)).digest('hex').slice(0, 24);
   return `search:flights:${tenantId}:${[...codes].sort().join('+')}:${digest}`;
@@ -196,6 +209,7 @@ export class SearchService {
   async searchFlights(
     criteria: FlightSearchCriteria,
     tenantId: string,
+    policy: SaleCurrencyPolicy = { home: criteria.currency, foreignFares: false },
   ): Promise<FlightSearchResponse> {
     // La cuota se comprueba ANTES de salir al proveedor: los proveedores cobran por
     // consulta, así que no tiene sentido gastar la llamada para después rechazarla.
@@ -208,11 +222,11 @@ export class SearchService {
     // las tarifas cambian; es una ventana de conveniencia, no un almacén.
     // El entorno de cada cuenta entra en la clave: si una cuenta pasa de pruebas a producción (o
     // al revés) dentro del TTL, la caché no puede devolver tarifas con la marca de la otra.
-    const cacheKey = flightsCacheKey(
-      tenantId,
-      criteria,
-      active.map((p) => (p.environment === 'test' ? `${p.code}@test` : p.code)),
-    );
+    const cacheKey = flightsCacheKey(tenantId, criteria, [
+      ...active.map((p) => (p.environment === 'test' ? `${p.code}@test` : p.code)),
+      // Encender o apagar las tarifas en otra moneda cambia la lista: no puede servirse la otra.
+      ...(policy.foreignFares ? ['fx'] : []),
+    ]);
     const cached = await this.cache.get<FlightSearchResponse>(cacheKey);
     if (cached) return cached;
 
@@ -237,7 +251,7 @@ export class SearchService {
           cabin: criteria.cabin,
         },
       },
-      () => this.runFanOut(criteria, tenantId, active, skipped, unavailable, durations),
+      () => this.runFanOut(criteria, tenantId, active, skipped, unavailable, durations, policy),
       (r) => r.offers.length,
       // Sin `simulatedOf`: ninguna búsqueda puede ser simulada, así que no hay nada que
       // decirle a la telemetría. Pasar `() => false` sería escribir la misma nada dos veces.
@@ -274,6 +288,7 @@ export class SearchService {
     skipped: SkippedProvider[],
     unavailable: UnavailableProvider[],
     durations: Map<string, number>,
+    policy: SaleCurrencyPolicy,
   ): Promise<FlightSearchResponse> {
     const counts = new Map<string, number>();
     const failures = new Map<string, string>();
@@ -307,9 +322,19 @@ export class SearchService {
     // descartes: si lo único que volvió está en una moneda que la agencia no vende, lo que sale
     // es el 502 con el motivo y no una lista vacía, que el vendedor leería como "no hay vuelos".
     // Ver {@link splitByCurrency}.
-    const { kept, rejected } = splitByCurrency(items, criteria.currency);
+    const { kept, rejected } = policy.foreignFares
+      ? { kept: items, rejected: [] }
+      : splitByCurrency(items, criteria.currency);
     if (rejected.length > 0) {
       this.aplicarDescartesDeMoneda(active, kept, rejected, criteria.currency, counts, failures);
+    }
+    if (policy.foreignFares) {
+      const otras = items.filter((o) => o.total.currency !== criteria.currency).length;
+      if (otras > 0) {
+        this.logger.warn(
+          `search.currency_mismatch_allowed tenant=${tenantId} expected=${criteria.currency} kept=${otras}`,
+        );
+      }
     }
 
     // Con TODOS los proveedores llamados caídos no hay degradación posible: se propaga el
@@ -328,7 +353,7 @@ export class SearchService {
       //
       // Y va DESPUÉS de la puerta de moneda, que es lo que lo hace servir para algo:
       // `dedupeFlightOffers` no deduplica nada mientras haya más de una moneda en el conjunto.
-      offers: await this.withPricing(dedupeFlightOffers(kept), tenantId, 'flights'),
+      offers: await this.withPricing(dedupeFlightOffers(kept), tenantId, 'flights', policy.home),
       // Residuo: ninguna oferta de esta lista puede ser inventada, así que no hay nada que
       // señalar. Ver `FlightSearchResponse.simulated` para el plazo de retirada.
       simulated: SIMULATED_RESIDUE,
@@ -491,6 +516,7 @@ export class SearchService {
     offer: Offer,
     criteria: FlightSearchCriteria,
     tenantId: string,
+    homeCurrency: string = criteria.currency,
   ): Promise<OfferPriceResult> {
     // Enruta por el proveedor QUE EMITIÓ la oferta. Antes iba siempre al único proveedor
     // inyectado: con dos, revalidar una oferta ajena habría devuelto precios de otro vuelo.
@@ -504,7 +530,7 @@ export class SearchService {
     // La revalidación de precio devolvía la oferta del proveedor SIN pasar por el
     // waterfall, así que el último paso antes de reservar descartaba el markup y la
     // agencia terminaba vendiendo al costo. Es el mismo tratamiento que la búsqueda.
-    const [priced] = await this.withPricing([revalidated], tenantId, 'flights');
+    const [priced] = await this.withPricing([revalidated], tenantId, 'flights', homeCurrency);
     return { ...result, offer: priced ?? revalidated };
   }
 
@@ -521,6 +547,7 @@ export class SearchService {
     outbound: Offer,
     criteria: FlightSearchCriteria,
     tenantId: string,
+    homeCurrency: string = criteria.currency,
   ): Promise<{ supported: boolean; offers: Offer[] }> {
     if (outbound.tenantId !== tenantId) {
       throw new BadRequestException('La oferta no pertenece a la agencia activa.');
@@ -538,7 +565,10 @@ export class SearchService {
     );
     // El entorno sale de la cuenta resuelta, como en la búsqueda: la ida vino del navegador.
     const stamped = offers.map((offer) => stampProviderEnvironment(offer, provider.environment));
-    return { supported: true, offers: await this.withPricing(stamped, tenantId, 'flights') };
+    return {
+      supported: true,
+      offers: await this.withPricing(stamped, tenantId, 'flights', homeCurrency),
+    };
   }
 
   /**
@@ -584,14 +614,40 @@ export class SearchService {
    * proveedor) NO se muta; `pricing.finalMinor` es el precio de venta. Sin reglas
    * aplicables, devuelve las ofertas sin tocar (precio = neto).
    */
-  private async withPricing(offers: Offer[], tenantId: string, vertical: string): Promise<Offer[]> {
+  private async withPricing(
+    offers: Offer[],
+    tenantId: string,
+    vertical: string,
+    homeCurrency?: string,
+  ): Promise<Offer[]> {
     const rules = await this.pricing.getApplicableRules(tenantId, vertical);
     if (rules.length === 0) return offers;
     return offers.map((o) => ({
       ...o,
       // Vista acotada al tenant: sin netMinor ni breakdown, que revelarían el margen
       // del consolidador a la agencia que está mirando los resultados.
-      pricing: toTenantView(applyCascade(o.total.amountMinor, rules), tenantId, o.total.currency),
+      pricing: toTenantView(
+        applyCascade(o.total.amountMinor, rulesForCurrency(rules, o.total.currency, homeCurrency)),
+        tenantId,
+        o.total.currency,
+      ),
     }));
   }
+}
+
+/**
+ * Las reglas que valen para una oferta en esta moneda.
+ *
+ * Un markup `fixed` está escrito en minor units de la moneda de la agencia y la regla no guarda
+ * la moneda: sumar «20.000» de un markup en COP a una tarifa en BRL serían 20.000 reales. Sólo
+ * pasa con las tarifas en otra moneda que el superadmin habilitó para pruebas
+ * ({@link SaleCurrencyPolicy}); a esas se les aplican sólo los porcentajes, que no tienen unidad.
+ */
+export function rulesForCurrency<R extends { ruleType: string }>(
+  rules: readonly R[],
+  offerCurrency: string,
+  homeCurrency: string | undefined,
+): R[] {
+  if (homeCurrency === undefined || offerCurrency === homeCurrency) return [...rules];
+  return rules.filter((r) => r.ruleType === 'percentage');
 }

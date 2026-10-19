@@ -353,6 +353,10 @@ export const UpdateSeatsSchema = z
   });
 export type UpdateSeatsDto = z.infer<typeof UpdateSeatsSchema>;
 
+/** Tarifas en otra moneda (0087): sólo el interruptor, nada más del nodo. */
+export const UpdateForeignCurrencyFaresSchema = z.object({ enabled: z.boolean() }).strict();
+export type UpdateForeignCurrencyFaresDto = z.infer<typeof UpdateForeignCurrencyFaresSchema>;
+
 /**
  * Un campo opcional del formulario: vacío, sólo espacios o `null` es "no enviado". El panel manda
  * '' en los datos del admin inicial que no se llenan, y eso daba un 400 al crear una agencia sin

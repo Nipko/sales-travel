@@ -25,7 +25,7 @@ function search(query: string): string[] {
   return rows(groupByCity(searchAirports(query, 8), query));
 }
 
-/** Las filas tal como las devuelve hoy el endpoint (OpenFlights): MDE figura en «Rio Negro». */
+/** Filas como las devolvía el endpoint con el catálogo de OpenFlights, que ponía MDE en «Rio Negro». */
 function fromServer(items: unknown[], query: string): string[] {
   const airports = items.map(normalizeAirport).filter((a): a is Airport => a !== null);
   return rows(groupByCity(airports, query));

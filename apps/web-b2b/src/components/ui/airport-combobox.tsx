@@ -226,11 +226,9 @@ export function AirportCombobox({
    * NADIE lo llamaba: toda la búsqueda salía del JSON de 1,27 MB embebido en el cliente,
    * así que había dos fuentes de verdad y la del servidor era código muerto.
    *
-   * No se elimina el JSON, y esto es deliberado: el job "Sync Airports" que puebla la
-   * tabla viene fallando en su paso de SSH al VPS, así que la tabla puede estar vacía o
-   * vieja. Si se quitara el respaldo, el autocompletado dejaría de funcionar por
-   * completo. Con el híbrido, cuando el sync se arregle la fuente autoritativa manda
-   * sola, y mientras tanto nadie se queda sin buscar.
+   * No se elimina el JSON, y esto es deliberado: si el endpoint falla o no trae nada, el
+   * autocompletado sigue funcionando con el catálogo local. Las dos fuentes salen de
+   * OurAirports (el job "Sync Airports" y tools/generate-airports-json), así que se ven igual.
    */
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);

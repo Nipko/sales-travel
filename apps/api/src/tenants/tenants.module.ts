@@ -17,6 +17,8 @@ import { MemberSupportService } from './member-support.service.js';
 import { PlatformUsersService } from './platform-users.service.js';
 import { SeatsController } from './seats.controller.js';
 import { SeatsService } from './seats.service.js';
+import { ForeignCurrencyFaresService } from './foreign-currency-fares.service.js';
+import { ForeignCurrencyFaresController } from './foreign-currency-fares.controller.js';
 import { TenantsController } from './tenants.controller.js';
 import { TenantsService } from './tenants.service.js';
 import { UserExportController } from './user-export.controller.js';
@@ -30,6 +32,7 @@ import { UserExportService } from './user-export.service.js';
     InvitationsController,
     InvitationPreviewController,
     SeatsController,
+    ForeignCurrencyFaresController,
     MemberSupportController,
     MemberDetailController,
     AdminInvitationsController,
@@ -41,6 +44,7 @@ import { UserExportService } from './user-export.service.js';
     InvitationPreviewService,
     TenantsService,
     SeatsService,
+    ForeignCurrencyFaresService,
     MemberSupportService,
     PlatformUsersService,
     MemberDetailService,

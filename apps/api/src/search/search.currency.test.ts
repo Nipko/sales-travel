@@ -12,7 +12,8 @@ import {
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { MemoryCacheAdapter } from './memory-cache.adapter.js';
 import type { SearchTelemetryService } from './search-telemetry.service.js';
-import { SearchService } from './search.service.js';
+import { monedaDeLaOferta } from './search.controller.js';
+import { SearchService, rulesForCurrency } from './search.service.js';
 
 /**
  * La puerta de moneda del fan-out.
@@ -310,5 +311,87 @@ describe('SearchService — la lista sale en UNA sola moneda', () => {
     // Mismo vuelo, mismo equipaje, mismas políticas: un solo producto, el más barato.
     expect(res.offers).toHaveLength(1);
     expect(res.offers[0]?.total).toEqual({ amountMinor: 90_000, currency: LOCAL });
+  });
+});
+
+describe('tarifas en otra moneda habilitadas por el superadmin (0087)', () => {
+  beforeEach(() => {
+    warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const PRUEBAS = { home: LOCAL, foreignFares: true } as const;
+
+  it('con el interruptor, las tarifas en BRL se muestran en su moneda y el proveedor sigue ok', async () => {
+    const b = banco([
+      { code: 'alfa-air', offers: [offer({ provider: 'alfa-air', currency: AJENA })] },
+      { code: 'beta-air', offers: [offer({ provider: 'beta-air', currency: LOCAL })] },
+    ]);
+
+    const res = await b.service.searchFlights(criteria(), TENANT, PRUEBAS);
+
+    expect(new Set(res.offers.map((o) => o.total.currency))).toEqual(new Set([LOCAL, AJENA]));
+    expect(res.providers.find((p) => p.code === 'alfa-air')?.status).toBe('ok');
+    expect(avisos()).toEqual([expect.stringContaining('search.currency_mismatch_allowed')]);
+  });
+
+  it('sólo BRL ya no es un 502: es lo que se quiere probar', async () => {
+    const b = banco([
+      { code: 'alfa-air', offers: [offer({ provider: 'alfa-air', currency: AJENA })] },
+    ]);
+
+    const res = await b.service.searchFlights(criteria(), TENANT, PRUEBAS);
+
+    expect(res.offers.map((o) => o.total.currency)).toEqual([AJENA]);
+  });
+
+  it('encender el interruptor no sirve la lista de antes desde la caché', async () => {
+    const b = banco([
+      { code: 'alfa-air', offers: [offer({ provider: 'alfa-air', currency: AJENA })] },
+      { code: 'beta-air', offers: [offer({ provider: 'beta-air', currency: LOCAL })] },
+    ]);
+
+    const sin = await b.service.searchFlights(criteria(), TENANT);
+    const con = await b.service.searchFlights(criteria(), TENANT, PRUEBAS);
+
+    expect(sin.offers).toHaveLength(1);
+    expect(con.offers).toHaveLength(2);
+  });
+});
+
+describe('rulesForCurrency: un markup fijo está escrito en la moneda de la agencia', () => {
+  const reglas = [
+    { ruleType: 'percentage', valueMinor: 1000 },
+    { ruleType: 'fixed', valueMinor: 2_000_000 },
+  ];
+
+  it('en la moneda de la agencia valen todas', () => {
+    expect(rulesForCurrency(reglas, LOCAL, LOCAL)).toEqual(reglas);
+  });
+
+  it('en otra moneda sólo los porcentajes: 20.000 COP no son 20.000 BRL', () => {
+    expect(rulesForCurrency(reglas, AJENA, LOCAL)).toEqual([reglas[0]]);
+  });
+
+  it('sin moneda de la agencia no se filtra nada', () => {
+    expect(rulesForCurrency(reglas, AJENA, undefined)).toEqual(reglas);
+  });
+});
+
+describe('monedaDeLaOferta: en qué moneda se revalida', () => {
+  const brl = offer({ provider: 'alfa-air', currency: AJENA });
+  const cop = offer({ provider: 'beta-air', currency: LOCAL });
+
+  it('sin el interruptor, siempre la de la agencia', () => {
+    expect(monedaDeLaOferta({ home: LOCAL, foreignFares: false }, brl)).toBe(LOCAL);
+  });
+
+  it('con el interruptor, la oferta en BRL se revalida en BRL y la de COP en COP', () => {
+    expect(monedaDeLaOferta({ home: LOCAL, foreignFares: true }, brl)).toBe(AJENA);
+    expect(monedaDeLaOferta({ home: LOCAL, foreignFares: true }, cop)).toBe(LOCAL);
   });
 });

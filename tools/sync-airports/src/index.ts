@@ -3,110 +3,33 @@ import pg from 'pg';
 /**
  * Sync diario del catálogo de aeropuertos.
  *
- * Fuente: OpenFlights airports.dat (ODbL — https://openflights.org/data.html).
+ * Fuente: OurAirports (dominio público — https://ourairports.com/data/), la misma que genera el
+ * catálogo local del buscador (tools/generate-airports-json). Antes era OpenFlights, que dejó de
+ * actualizarse: le falta NLU (AIFA, 2022) y pone MDE en «Rio Negro», así que buscar «medellin» en
+ * el endpoint devolvía sólo EOH. OurAirports trae la ciudad a la que sirve cada aeropuerto
+ * (`municipality`) y se mantiene a diario.
  *
  * Estrategia:
- *   1. Descargar el dataset crudo (CSV).
- *   2. Parsear y filtrar a aeropuertos con IATA válido.
- *   3. UPSERT por código (insert si nuevo, update si cambió).
- *   4. Marcar como stale los que ya no aparecen y borrarlos opcionalmente.
+ *   1. Descargar aeropuertos y países (CSV).
+ *   2. Quedarse con los aeropuertos abiertos con IATA válido; si dos filas comparten IATA, la del
+ *      aeropuerto más grande.
+ *   3. UPSERT por código (insert si nuevo, update si cambió). OurAirports no trae zona horaria: la
+ *      que ya esté en la tabla se conserva.
  *
- * Pensado para correr una vez al día desde un cron de GitHub Actions.
+ * Pensado para correr una vez al día desde un cron de GitHub Actions. `--dry-run` descarga y
+ * procesa sin tocar la base, e imprime un resumen.
  */
 
-const SOURCE_URL =
-  'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat';
+const AIRPORTS_URL =
+  'https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';
+const COUNTRIES_URL =
+  'https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/countries.csv';
 
-const COUNTRY_NAME_TO_CODE: Record<string, string> = {
-  Colombia: 'CO',
-  Brazil: 'BR',
-  Peru: 'PE',
-  Chile: 'CL',
-  Argentina: 'AR',
-  Mexico: 'MX',
-  Ecuador: 'EC',
-  Uruguay: 'UY',
-  Paraguay: 'PY',
-  Bolivia: 'BO',
-  Venezuela: 'VE',
-  'Costa Rica': 'CR',
-  Panama: 'PA',
-  'Dominican Republic': 'DO',
-  Cuba: 'CU',
-  Guatemala: 'GT',
-  Honduras: 'HN',
-  Nicaragua: 'NI',
-  'El Salvador': 'SV',
-  'Puerto Rico': 'PR',
-  Haiti: 'HT',
-  Jamaica: 'JM',
-  Suriname: 'SR',
-  Guyana: 'GY',
-  'United States': 'US',
-  Canada: 'CA',
-  Spain: 'ES',
-  France: 'FR',
-  Italy: 'IT',
-  Germany: 'DE',
-  'United Kingdom': 'GB',
-  Netherlands: 'NL',
-  Portugal: 'PT',
-  Switzerland: 'CH',
-  Belgium: 'BE',
-  Ireland: 'IE',
-  Austria: 'AT',
-  Greece: 'GR',
-  Turkey: 'TR',
-  China: 'CN',
-  Japan: 'JP',
-  'South Korea': 'KR',
-  Australia: 'AU',
-  'New Zealand': 'NZ',
-  India: 'IN',
-  Thailand: 'TH',
-  Vietnam: 'VN',
-  Indonesia: 'ID',
-  Singapore: 'SG',
-  Malaysia: 'MY',
-  Philippines: 'PH',
-  'United Arab Emirates': 'AE',
-  Qatar: 'QA',
-  Israel: 'IL',
-  Russia: 'RU',
-  'South Africa': 'ZA',
-  Egypt: 'EG',
-  Morocco: 'MA',
-};
-
-const COUNTRY_NAME_ES: Record<string, string> = {
-  Brazil: 'Brasil',
-  Peru: 'Perú',
-  Mexico: 'México',
-  Panama: 'Panamá',
-  Haiti: 'Haití',
-  'Dominican Republic': 'República Dominicana',
-  'United States': 'Estados Unidos',
-  'United Kingdom': 'Reino Unido',
-  Spain: 'España',
-  France: 'Francia',
-  Italy: 'Italia',
-  Germany: 'Alemania',
-  Netherlands: 'Países Bajos',
-  Belgium: 'Bélgica',
-  Ireland: 'Irlanda',
-  Austria: 'Austria',
-  Greece: 'Grecia',
-  Turkey: 'Turquía',
-  Japan: 'Japón',
-  'South Korea': 'Corea del Sur',
-  Australia: 'Australia',
-  'New Zealand': 'Nueva Zelanda',
-  Thailand: 'Tailandia',
-  Singapore: 'Singapur',
-  'United Arab Emirates': 'Emiratos Árabes Unidos',
-  'South Africa': 'Sudáfrica',
-  Egypt: 'Egipto',
-  Morocco: 'Marruecos',
+/** Tipos de OurAirports que son aeropuertos abiertos, del más grande al más chico. */
+const TYPE_RANK: Readonly<Record<string, number>> = {
+  large_airport: 3,
+  medium_airport: 2,
+  small_airport: 1,
 };
 
 interface AirportRow {
@@ -120,13 +43,38 @@ interface AirportRow {
   timezone: string | null;
 }
 
+function parseCsv(raw: string): Record<string, string>[] {
+  const lines = raw.split(/\r?\n/);
+  const headers = parseLine(lines[0] ?? '');
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line?.trim()) continue;
+    const fields = parseLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((h, j) => {
+      row[h] = fields[j] ?? '';
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
 function parseLine(line: string): string[] {
   const fields: string[] = [];
   let i = 0;
   while (i < line.length) {
     if (line[i] === '"') {
-      const end = line.indexOf('"', i + 1);
-      fields.push(line.slice(i + 1, end));
+      let end = i + 1;
+      while (end < line.length) {
+        if (line[end] === '"') {
+          if (line[end + 1] === '"') end += 2;
+          else break;
+        } else {
+          end++;
+        }
+      }
+      fields.push(line.slice(i + 1, end).replace(/""/g, '"'));
       i = end + 1;
       if (line[i] === ',') i++;
     } else {
@@ -139,46 +87,69 @@ function parseLine(line: string): string[] {
   return fields;
 }
 
-async function fetchSource(): Promise<string> {
-  const res = await fetch(SOURCE_URL);
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${SOURCE_URL}`);
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
   return res.text();
 }
 
-function processCsv(raw: string): AirportRow[] {
-  const seen = new Set<string>();
-  const out: AirportRow[] = [];
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    const f = parseLine(line);
-    // [id, name, city, country, iata, icao, lat, lon, alt, tz, dst, tzdb, type, source]
-    const name = f[1];
-    const city = f[2];
-    const country = f[3];
-    const iata = f[4];
-    const lat = f[6];
-    const lon = f[7];
-    const tz = f[11];
-    const type = f[12];
+const REGION_ES = new Intl.DisplayNames(['es'], { type: 'region' });
 
-    if (type && type !== 'airport') continue;
-    if (!iata || iata === '\\N' || !/^[A-Z]{3}$/.test(iata)) continue;
-    if (!name || !city || !country) continue;
-    if (seen.has(iata)) continue;
-    seen.add(iata);
+/** El país en español, con el ICU de Node; si no lo conoce, el nombre en inglés del CSV. */
+function countryNameEs(iso: string, english: ReadonlyMap<string, string>): string {
+  try {
+    const name = REGION_ES.of(iso);
+    if (name && name !== iso) return name;
+  } catch {
+    // Código que Intl no acepta: se cae al nombre del CSV.
+  }
+  return english.get(iso) ?? iso;
+}
 
-    out.push({
-      code: iata,
-      name: name.replace(/ Airport$/, '').replace(/ International$/, ' Internacional'),
-      city,
-      countryCode: COUNTRY_NAME_TO_CODE[country] ?? null,
-      countryName: COUNTRY_NAME_ES[country] ?? country,
-      latitude: lat && lat !== '\\N' ? Number(lat) : null,
-      longitude: lon && lon !== '\\N' ? Number(lon) : null,
-      timezone: tz && tz !== '\\N' ? tz : null,
+function processRows(
+  airports: readonly Record<string, string>[],
+  countries: readonly Record<string, string>[],
+): AirportRow[] {
+  const english = new Map<string, string>();
+  for (const c of countries) {
+    const code = c['code'];
+    const name = c['name'];
+    if (code && name) english.set(code, name);
+  }
+
+  const best = new Map<string, { rank: number; row: AirportRow }>();
+  for (const r of airports) {
+    const iata = (r['iata_code'] ?? '').trim();
+    const rank = TYPE_RANK[(r['type'] ?? '').trim()];
+    if (rank === undefined || !/^[A-Z]{3}$/.test(iata)) continue;
+    const previous = best.get(iata);
+    if (previous && previous.rank >= rank) continue;
+
+    const name = (r['name'] ?? '')
+      .trim()
+      .replace(/ Airport$/i, '')
+      .replace(/ International$/i, ' Intl')
+      .replace(/ Internacional$/i, ' Intl');
+    if (!name) continue;
+    const iso = (r['iso_country'] ?? '').trim().toUpperCase();
+    const lat = Number.parseFloat(r['latitude_deg'] ?? '');
+    const lon = Number.parseFloat(r['longitude_deg'] ?? '');
+
+    best.set(iata, {
+      rank,
+      row: {
+        code: iata,
+        name,
+        city: (r['municipality'] ?? '').trim() || name,
+        countryCode: /^[A-Z]{2}$/.test(iso) ? iso : null,
+        countryName: iso ? countryNameEs(iso, english) : '',
+        latitude: Number.isFinite(lat) ? lat : null,
+        longitude: Number.isFinite(lon) ? lon : null,
+        timezone: null,
+      },
     });
   }
-  return out;
+  return [...best.values()].map((b) => b.row).sort((a, b) => (a.code < b.code ? -1 : 1));
 }
 
 async function upsert(
@@ -227,6 +198,7 @@ async function upsert(
     RETURNING 1
   `);
 
+  // La zona horaria no viene en OurAirports: la que ya tenga la fila se conserva.
   const updated = await client.query<{ count: string }>(`
     UPDATE airports a
     SET name = s.name,
@@ -235,7 +207,7 @@ async function upsert(
         country_name = s.country_name,
         latitude = s.latitude,
         longitude = s.longitude,
-        timezone = s.timezone,
+        timezone = coalesce(s.timezone, a.timezone),
         updated_at = now()
     FROM _airports_stage s
     WHERE a.code = s.code
@@ -244,7 +216,7 @@ async function upsert(
            a.country_name <> s.country_name OR
            coalesce(a.latitude, 0) <> coalesce(s.latitude, 0) OR
            coalesce(a.longitude, 0) <> coalesce(s.longitude, 0) OR
-           coalesce(a.timezone, '') <> coalesce(s.timezone, ''))
+           (s.timezone IS NOT NULL AND coalesce(a.timezone, '') <> s.timezone))
     RETURNING 1
   `);
 
@@ -255,14 +227,31 @@ async function upsert(
 }
 
 async function main(): Promise<void> {
-  if (!process.env['PGHOST'] || !process.env['PGUSER'] || !process.env['PGPASSWORD']) {
+  const dryRun = process.argv.includes('--dry-run');
+  if (!dryRun && (!process.env['PGHOST'] || !process.env['PGUSER'] || !process.env['PGPASSWORD'])) {
     throw new Error('PGHOST, PGUSER, PGPASSWORD required');
   }
 
-  console.warn('[sync-airports] fetching OpenFlights airports.dat...');
-  const raw = await fetchSource();
-  const rows = processCsv(raw);
+  console.warn('[sync-airports] fetching OurAirports airports.csv + countries.csv...');
+  const [airportsRaw, countriesRaw] = await Promise.all([
+    fetchText(AIRPORTS_URL),
+    fetchText(COUNTRIES_URL),
+  ]);
+  const rows = processRows(parseCsv(airportsRaw), parseCsv(countriesRaw));
   console.warn(`[sync-airports] parsed ${rows.length} airports with valid IATA`);
+
+  if (dryRun) {
+    const sample = new Set(['MDE', 'EOH', 'BOG', 'NLU', 'GRU', 'VCP', 'JFK', 'LHR']);
+    console.warn(
+      JSON.stringify({
+        ok: true,
+        action: 'dry-run',
+        total: rows.length,
+        sample: rows.filter((r) => sample.has(r.code)),
+      }),
+    );
+    return;
+  }
 
   const client = new pg.Client();
   await client.connect();
@@ -276,6 +265,7 @@ async function main(): Promise<void> {
       JSON.stringify({
         ok: true,
         action: 'sync',
+        source: 'ourairports',
         total: rows.length,
         inserted: result.inserted,
         updated: result.updated,
