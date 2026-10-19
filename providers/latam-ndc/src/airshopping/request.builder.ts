@@ -89,7 +89,45 @@ const CURRENCY_COUNTRY_MAP: Record<string, string> = {
   PYG: 'PY',
 };
 
-function buildOriginDestList(c: FlightSearchCriteria): string {
+/**
+ * Códigos de ciudad con varios aeropuertos que no son a la vez un aeropuerto, con el que LATAM
+ * opera como principal.
+ *
+ * El buscador deja elegir la ciudad entera (SAO = GRU + CGH + VCP). Sabre lo resuelve con
+ * `LocationType`; para el AirShopping de LATAM no tenemos evidencia de que `IATA_LocationCode`
+ * acepte un código de ciudad, así que se pide el aeropuerto principal en vez de arriesgar un
+ * rechazo que deje la búsqueda sin LATAM. Los códigos que son ciudad y aeropuerto a la vez
+ * (MDE, MEX, HOU) pasan tal cual.
+ */
+export const LATAM_CITY_MAIN_AIRPORT: Readonly<Record<string, string>> = {
+  SAO: 'GRU',
+  RIO: 'GIG',
+  BHZ: 'CNF',
+  BUE: 'EZE',
+  NYC: 'JFK',
+  WAS: 'IAD',
+  CHI: 'ORD',
+  LON: 'LHR',
+  PAR: 'CDG',
+  MIL: 'MXP',
+  ROM: 'FCO',
+  TYO: 'NRT',
+  YTO: 'YYZ',
+  SEL: 'ICN',
+  BJS: 'PEK',
+  OSA: 'KIX',
+};
+
+export function latamLocationCode(code: string): string {
+  return LATAM_CITY_MAIN_AIRPORT[code] ?? code;
+}
+
+function buildOriginDestList(criteria: FlightSearchCriteria): string {
+  const c = {
+    ...criteria,
+    origin: latamLocationCode(criteria.origin),
+    destination: latamLocationCode(criteria.destination),
+  };
   const cabinCode = c.cabin ? CABIN_MAP[c.cabin] : undefined;
   const cabinXml = cabinCode
     ? `\n          <PreferredCabinType>\n            <CabinTypeCode>${cabinCode}</CabinTypeCode>\n          </PreferredCabinType>`

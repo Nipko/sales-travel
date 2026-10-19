@@ -72,11 +72,11 @@ export interface RangeText {
   /** Nombre del calendario abierto. */
   readonly dialog: string;
   /**
-   * Qué cifra acompaña al rango. Vuelos dice noches y días (el hotel se cotiza por noche y el
-   * seguro por día); hoteles, noches; autos, nada propio: sus días dependen de las horas, que el
-   * formulario conoce y pasa con `describeLength`.
+   * Qué cifra acompaña al rango. Vuelos dice días: un boleto no tiene noches, y «7 noches» en
+   * el buscador de vuelos se lee como si incluyera alojamiento. Hoteles, noches; autos, nada
+   * propio: sus días dependen de las horas, que el formulario conoce y pasa con `describeLength`.
    */
-  readonly length: 'nights-days' | 'nights' | 'none';
+  readonly length: 'days' | 'nights' | 'none';
 }
 
 export const RANGE_TEXT: Readonly<Record<RangePurpose, RangeText>> = {
@@ -91,7 +91,7 @@ export const RANGE_TEXT: Readonly<Record<RangePurpose, RangeText>> = {
     inside: 'dentro del viaje',
     sameDay: 'ida y vuelta el mismo día',
     dialog: 'Elegir fechas del viaje',
-    length: 'nights-days',
+    length: 'days',
   },
   stay: {
     startLabel: 'Entrada',
@@ -364,9 +364,24 @@ export function tripLengthLabel(range: DateRange): string | null {
   return `${length.nights} ${length.nights === 1 ? 'noche' : 'noches'}`;
 }
 
+/** Etiqueta corta en días de calendario, ida y vuelta incluidas: del 12 al 19 son 8 días. */
+export function tripDaysLabel(range: DateRange): string | null {
+  const length = tripLength(range);
+  if (length === null) return null;
+  if (length.nights === 0) return 'Mismo día';
+  return `${length.days} días`;
+}
+
 /** El contador según el uso. Autos no tiene uno propio: sus días dependen de las horas. */
 export function rangeLengthLabel(range: DateRange, purpose: RangePurpose = 'trip'): string | null {
-  return RANGE_TEXT[purpose].length === 'none' ? null : tripLengthLabel(range);
+  switch (RANGE_TEXT[purpose].length) {
+    case 'days':
+      return tripDaysLabel(range);
+    case 'nights':
+      return tripLengthLabel(range);
+    default:
+      return null;
+  }
 }
 
 /**
@@ -536,8 +551,8 @@ export function rangeSummary(
   const nights = `${length.nights} ${length.nights === 1 ? 'noche' : 'noches'}`;
   const days = `${length.days} ${length.days === 1 ? 'día' : 'días'}`;
   switch (text.length) {
-    case 'nights-days':
-      return `${dates} · ${nights} (${days})`;
+    case 'days':
+      return `${dates} · ${days}`;
     case 'nights':
       return `${dates} · ${nights}`;
     default:

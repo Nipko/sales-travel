@@ -1,6 +1,7 @@
 'use server';
 
 import { api } from '../../../lib/api';
+import type { LocationKind } from '../../../lib/airport-cities';
 import type { Offer } from './actions';
 
 interface QuotationResponse {
@@ -24,6 +25,8 @@ export async function createQuotationAction(
   searchCriteria: {
     origin: string;
     destination: string;
+    originKind?: LocationKind;
+    destinationKind?: LocationKind;
     departureDate: string;
     returnDate?: string;
     tripType: string;

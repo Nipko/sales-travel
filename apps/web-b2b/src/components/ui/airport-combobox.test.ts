@@ -5,8 +5,10 @@ import {
   airportSearchTerm,
   airportTyping,
   comboboxKeyAction,
+  locationSelection,
   typedAirportCode,
 } from './airport-combobox';
+import { CITY_AREAS } from '../../lib/airport-cities';
 import type { Airport } from '../../lib/airports';
 
 const BOGOTA: Airport = {
@@ -165,5 +167,23 @@ describe('airportSearchTerm: buscar por lo que se ve en el campo', () => {
       country: 'CO',
     } as Parameters<typeof airportSelection>[0]);
     expect(airportSearchTerm(seleccion.query)).toBe('Bogotá');
+  });
+});
+
+describe('ciudad entera o aeropuerto concreto', () => {
+  const MEDELLIN = CITY_AREAS.find((a) => a.code === 'MDE');
+
+  it('elegir la ciudad anuncia el código de ciudad con kind city', () => {
+    if (!MEDELLIN) throw new Error('falta Medellín en la tabla');
+    const selection = locationSelection({ kind: 'city', area: MEDELLIN });
+
+    expect(selection).toMatchObject({ code: 'MDE', kind: 'city', reason: 'select' });
+    expect(selection.query).toBe('Medellín (MDE · todos)');
+    expect(airportSearchTerm(selection.query)).toBe('Medellín');
+  });
+
+  it('elegir un aeropuerto anuncia kind airport; teclear no anuncia ninguno', () => {
+    expect(airportSelection(BOGOTA).kind).toBe('airport');
+    expect(airportTyping('MDE').kind).toBeUndefined();
   });
 });

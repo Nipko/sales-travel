@@ -259,11 +259,16 @@ describe('duración: la cifra que manda es noches', () => {
     expect(tripLengthLabel({ start: '2026-09-12', end: null })).toBeNull();
   });
 
-  it('el resumen en texto dice las dos unidades, para que nadie cotice 8 noches de hotel', () => {
-    const resumen = rangeSummary({ start: '2026-09-12', end: '2026-09-19' }, IDA_VUELTA);
+  it('un vuelo de ida y vuelta se cuenta en días: un boleto no tiene noches', () => {
+    const viaje: DateRange = { start: '2026-09-12', end: '2026-09-19' };
 
-    expect(resumen).toContain('7 noches');
-    expect(resumen).toContain('8 días');
+    expect(rangeLengthLabel(viaje, 'trip')).toBe('8 días');
+    expect(rangeLengthLabel({ start: '2026-09-12', end: '2026-09-13' }, 'trip')).toBe('2 días');
+    expect(rangeLengthLabel({ start: '2026-09-12', end: '2026-09-12' }, 'trip')).toBe('Mismo día');
+    expect(rangeSummary(viaje, IDA_VUELTA)).toBe(
+      'Del 12 de septiembre al 19 de septiembre · 8 días',
+    );
+    expect(rangeSummary(viaje, IDA_VUELTA)).not.toContain('noche');
   });
 
   it('el resumen del regreso en el día no se lee como un error', () => {
@@ -638,7 +643,7 @@ describe('vuelos sigue igual con las piezas generalizadas', () => {
   it('sin uso explícito, el control es el de vuelos', () => {
     const viaje: DateRange = { start: '2026-09-12', end: '2026-09-19' };
 
-    expect(rangeLengthLabel(viaje)).toBe(tripLengthLabel(viaje));
+    expect(rangeLengthLabel(viaje)).toBe(rangeLengthLabel(viaje, 'trip'));
     expect(rangeSummary(viaje, IDA_VUELTA)).toBe(rangeSummary(viaje, IDA_VUELTA, 'trip'));
     expect(RANGE_TEXT.trip.startMark).toBe('ida');
     expect(RANGE_TEXT.trip.endMark).toBe('vta');

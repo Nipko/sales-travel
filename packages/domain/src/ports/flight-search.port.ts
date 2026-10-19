@@ -6,9 +6,21 @@ import {
 } from '@sales-travel/canonical';
 import { CurrencyCodeSchema, z } from '@sales-travel/validation';
 
+/**
+ * Qué nombra el código de origen o destino: una ciudad entera (código de ciudad o metropolitano,
+ * p. ej. SAO = GRU + CGH + VCP, o MDE = MDE + EOH) o un aeropuerto concreto.
+ *
+ * Hace falta porque el código solo no lo dice: MDE es a la vez Medellín y su aeropuerto
+ * principal. Sin el dato cada proveedor aplica su default (Sabre BFM: ciudad).
+ */
+export const LocationKindSchema = z.enum(['city', 'airport']);
+export type LocationKind = z.infer<typeof LocationKindSchema>;
+
 export const FlightSearchCriteriaSchema = z.object({
   origin: IataAirportCodeSchema,
   destination: IataAirportCodeSchema,
+  originKind: LocationKindSchema.optional(),
+  destinationKind: LocationKindSchema.optional(),
   departureDate: z.string().date(),
   returnDate: z.string().date().optional(),
   paxCount: PaxCountSchema,

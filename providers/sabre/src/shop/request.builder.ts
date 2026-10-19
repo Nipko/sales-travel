@@ -309,11 +309,23 @@ export interface SabrePos {
   Source: SabrePosSource[];
 }
 
+/**
+ * `LocationType` (`v5.yml:4428`): `A` aeropuerto, `C` ciudad. Sin él BFM asume ciudad, así que
+ * pedir el aeropuerto MDE sin decirlo devolvía también los vuelos de EOH (MDE es además el código
+ * de ciudad de Medellín).
+ */
+export type SabreLocationType = 'A' | 'C';
+
+export interface SabreTripLocation {
+  LocationCode: string;
+  LocationType?: SabreLocationType;
+}
+
 export interface SabreOriginDestinationInformation {
   RPH: string;
   DepartureDateTime: string;
-  OriginLocation: { LocationCode: string };
-  DestinationLocation: { LocationCode: string };
+  OriginLocation: SabreTripLocation;
+  DestinationLocation: SabreTripLocation;
   /** Anchored Search (`v5.yml:2716`): este trayecto va con sus vuelos fijos. */
   Fixed?: true;
   TPA_Extensions?: SabreOriginDestinationTpa;
@@ -766,11 +778,13 @@ function buildPos(pseudoCityCode: string, maxPccs: number | undefined): SabrePos
 function buildOriginDestinations(
   criteria: FlightSearchCriteria,
 ): SabreOriginDestinationInformation[] {
+  const origin = tripLocation(criteria.origin, criteria.originKind);
+  const destination = tripLocation(criteria.destination, criteria.destinationKind);
   const outbound: SabreOriginDestinationInformation = {
     RPH: '1',
     DepartureDateTime: `${criteria.departureDate}${SABRE_MIDNIGHT_SUFFIX}`,
-    OriginLocation: { LocationCode: criteria.origin },
-    DestinationLocation: { LocationCode: criteria.destination },
+    OriginLocation: origin,
+    DestinationLocation: destination,
   };
   if (criteria.returnDate === undefined) return [outbound];
 
@@ -779,10 +793,16 @@ function buildOriginDestinations(
     {
       RPH: '2',
       DepartureDateTime: `${criteria.returnDate}${SABRE_MIDNIGHT_SUFFIX}`,
-      OriginLocation: { LocationCode: criteria.destination },
-      DestinationLocation: { LocationCode: criteria.origin },
+      OriginLocation: destination,
+      DestinationLocation: origin,
     },
   ];
+}
+
+/** Sin `kind` no se manda `LocationType`: queda el default de BFM, como antes. */
+function tripLocation(code: string, kind: FlightSearchCriteria['originKind']): SabreTripLocation {
+  if (kind === undefined) return { LocationCode: code };
+  return { LocationCode: code, LocationType: kind === 'city' ? 'C' : 'A' };
 }
 
 function buildTravelPreferences(

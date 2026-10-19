@@ -1,12 +1,23 @@
 'use client';
 
-import { Clock, Plane, Star } from 'lucide-react';
+import { Building2, Clock, Plane, Star } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  describeOption,
+  groupByCity,
+  labelForCode,
+  optionCode,
+  optionKey,
+  optionLabel,
+  optionsFromCodes,
+  recentKey,
+  type LocationKind,
+  type LocationOption,
+} from '../../lib/airport-cities';
 import {
   getAirportByCode,
   getPopularAirports,
-  getRecentAirports,
-  describeAirport,
+  getRecentCodes,
   isDatasetLoaded,
   loadFullDataset,
   normalizeAirport,
@@ -29,6 +40,8 @@ interface AirportComboboxProps {
   name: string;
   label: string;
   defaultValue?: string;
+  /** Si `defaultValue` es la ciudad entera o el aeropuerto (MDE es las dos cosas). */
+  defaultKind?: LocationKind;
   required?: boolean;
   placeholder?: string;
   error?: string;
@@ -36,7 +49,7 @@ interface AirportComboboxProps {
    * El valor cambió. `reason` distingue teclear de elegir: quien recibe esto NO debe
    * suponer que el usuario terminó con el campo salvo que `reason` sea `select`.
    */
-  onChange?: (code: string, reason: AirportChangeReason) => void;
+  onChange?: (code: string, reason: AirportChangeReason, kind?: LocationKind) => void;
   /** id estable para el input visible (permite mover el foco a este campo desde afuera). */
   inputId?: string;
   /** Enfoca este campo al montar (sin abrir el dropdown), para empezar a escribir directo. */
@@ -96,6 +109,8 @@ export function typedAirportCode(value: string): string {
 export interface AirportChange {
   code: string;
   reason: AirportChangeReason;
+  /** Sin dato al teclear: el proveedor aplica su default. */
+  kind?: LocationKind;
 }
 
 /**
@@ -113,8 +128,18 @@ export function airportTyping(value: string): AirportChange {
  * Lo que produce elegir una opción del desplegable: valor, texto visible y el motivo
  * `select`, el único que autoriza al formulario a mover el foco.
  */
+export function locationSelection(option: LocationOption): AirportChange & { query: string } {
+  return {
+    code: optionCode(option),
+    query: optionLabel(option),
+    reason: 'select',
+    kind: option.kind,
+  };
+}
+
+/** Elegir un aeropuerto concreto. */
 export function airportSelection(a: Airport): AirportChange & { query: string } {
-  return { code: a.code, query: `${a.city} (${a.code})`, reason: 'select' };
+  return locationSelection({ kind: 'airport', airport: a, nested: false });
 }
 
 /**
@@ -134,13 +159,20 @@ const DEBOUNCE_MS = 80;
 interface Section {
   label: string;
   icon: typeof Plane;
-  items: Airport[];
+  items: LocationOption[];
+}
+
+/** Las filas de una búsqueda: aeropuertos por relevancia, agrupados por ciudad. */
+function resultSections(ranked: readonly Airport[], term: string): Section[] {
+  const items = groupByCity(ranked, term);
+  return items.length > 0 ? [{ label: 'Resultados', icon: Plane, items }] : [];
 }
 
 export function AirportCombobox({
   name,
   label,
   defaultValue,
+  defaultKind,
   required,
   placeholder = 'Ciudad o código IATA',
   error,
@@ -156,12 +188,11 @@ export function AirportCombobox({
   // Evita que el foco inicial (autoFocus) abra el dropdown automáticamente.
   const suppressOpenRef = useRef(false);
 
-  const [query, setQuery] = useState(() => {
-    if (!defaultValue) return '';
-    const a = getAirportByCode(defaultValue);
-    return a ? `${a.city} (${a.code})` : defaultValue;
-  });
+  const [query, setQuery] = useState(() => labelForCode(defaultValue ?? '', defaultKind));
   const [code, setCode] = useState(defaultValue ?? '');
+  const [kind, setKind] = useState<LocationKind | undefined>(
+    defaultValue ? defaultKind : undefined,
+  );
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [sections, setSections] = useState<Section[]>([]);
@@ -177,16 +208,15 @@ export function AirportCombobox({
     const trimmed = airportSearchTerm(q);
     if (!trimmed) {
       const result: Section[] = [];
-      const recent = getRecentAirports();
+      const recent = optionsFromCodes(getRecentCodes());
       if (recent.length > 0) {
         result.push({ label: 'Recientes', icon: Clock, items: recent });
       }
-      result.push({ label: 'Populares', icon: Star, items: getPopularAirports(8) });
+      const popular = optionsFromCodes(getPopularAirports(8).map((a) => a.code));
+      result.push({ label: 'Populares', icon: Star, items: popular });
       return result;
     }
-    const results = searchAirports(trimmed, 8);
-    if (results.length === 0) return [];
-    return [{ label: 'Resultados', icon: Plane, items: results }];
+    return resultSections(searchAirports(trimmed, 8), trimmed);
   }, []);
 
   /**
@@ -230,9 +260,8 @@ export function AirportCombobox({
           );
           // Sin resultados del servidor se cae al dataset local: puede ser un aeropuerto
           // que la tabla todavía no tiene, no necesariamente uno inexistente.
-          setSections(
-            items.length > 0 ? [{ label: 'Resultados', icon: Plane, items }] : buildSections(query),
-          );
+          const grouped = resultSections(items, trimmed);
+          setSections(grouped.length > 0 ? grouped : buildSections(query));
           setActiveIndex(-1);
         })
         .catch(() => {
@@ -277,7 +306,7 @@ export function AirportCombobox({
     if (activeIndex < 0 || !open) return;
     const item = flatItems[activeIndex];
     if (item) {
-      document.getElementById(`${id}-opt-${item.code}`)?.scrollIntoView({ block: 'nearest' });
+      document.getElementById(`${id}-opt-${optionKey(item)}`)?.scrollIntoView({ block: 'nearest' });
     }
   }, [activeIndex, open]);
 
@@ -286,13 +315,14 @@ export function AirportCombobox({
    * opción y Enter sobre la resaltada—, así que no hay una tercera vía por la que un
    * cambio de valor pueda hacerse pasar por una decisión del usuario.
    */
-  function selectAirport(a: Airport) {
-    const selection = airportSelection(a);
+  function selectOption(option: LocationOption) {
+    const selection = locationSelection(option);
     setCode(selection.code);
+    setKind(selection.kind);
     setQuery(selection.query);
     setOpen(false);
-    saveRecentAirport(selection.code);
-    onChange?.(selection.code, selection.reason);
+    saveRecentAirport(recentKey(option));
+    onChange?.(selection.code, selection.reason, selection.kind);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -309,7 +339,7 @@ export function AirportCombobox({
     } else if (action === 'select') {
       if (!activeItem) return;
       e.preventDefault();
-      selectAirport(activeItem);
+      selectOption(activeItem);
     } else if (action === 'close') {
       setOpen(false);
     }
@@ -320,6 +350,7 @@ export function AirportCombobox({
     setOpen(true);
     const typed = airportTyping(value);
     setCode(typed.code);
+    setKind(undefined);
     onChange?.(typed.code, typed.reason);
   }
 
@@ -334,6 +365,7 @@ export function AirportCombobox({
       </label>
 
       <input type="hidden" name={name} value={code} required={required} />
+      <input type="hidden" name={`${name}Kind`} value={code ? (kind ?? '') : ''} />
 
       <div className="relative">
         <Plane className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
@@ -347,7 +379,7 @@ export function AirportCombobox({
           placeholder={placeholder}
           aria-expanded={open && flatItems.length > 0}
           aria-controls={listboxId}
-          aria-activedescendant={activeItem ? `${id}-opt-${activeItem.code}` : undefined}
+          aria-activedescendant={activeItem ? `${id}-opt-${optionKey(activeItem)}` : undefined}
           aria-autocomplete="list"
           aria-invalid={error ? true : undefined}
           onChange={(e) => handleInputChange(e.target.value)}
@@ -413,53 +445,33 @@ export function AirportCombobox({
                 </span>
               </div>
               <ul role="group" aria-label={section.label}>
-                {section.items.map((a) => {
+                {section.items.map((option) => {
                   globalIdx++;
                   const idx = globalIdx;
                   const isActive = idx === activeIndex;
+                  const key = optionKey(option);
                   return (
                     <li
-                      key={a.code}
-                      id={`${id}-opt-${a.code}`}
+                      key={key}
+                      id={`${id}-opt-${key}`}
                       role="option"
                       aria-selected={isActive}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        selectAirport(a);
+                        selectOption(option);
                       }}
                       onMouseEnter={() => setActiveIndex(idx)}
-                      aria-label={describeAirport(a)}
+                      aria-label={describeOption(option)}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer transition-colors duration-75',
+                        'flex items-center gap-3 px-3 text-sm cursor-pointer transition-colors duration-75',
+                        option.kind === 'airport' && option.nested ? 'py-2 pl-10' : 'py-2.5',
                         isActive
                           ? 'bg-[var(--color-primary)]/8 text-[var(--color-fg)]'
                           : 'text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]',
                       )}
                     >
-                      {/*
-                        Aquí iba un emoji de bandera. Windows no trae fuente para los pares
-                        de indicadores regionales, así que en la mayoría de las máquinas de
-                        las agencias salían dos cuadros vacíos. El código ISO es texto
-                        normal: se ve igual en todas partes y ocupa ancho fijo, que deja el
-                        país en columna para poder escanearlo de un vistazo.
-                      */}
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'w-7 shrink-0 text-center font-mono text-[10px] font-semibold uppercase tracking-wide',
-                          isActive
-                            ? 'text-[var(--color-fg-muted)]'
-                            : 'text-[var(--color-fg-subtle)]',
-                        )}
-                      >
-                        {a.countryCode}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{a.city}</p>
-                        <p className="truncate text-xs text-[var(--color-fg-muted)]">
-                          {[a.name, a.country].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
+                      <OptionLead option={option} isActive={isActive} />
+                      <OptionText option={option} />
                       <span
                         className={cn(
                           'shrink-0 rounded-md px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider',
@@ -470,7 +482,7 @@ export function AirportCombobox({
                             : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
                         )}
                       >
-                        {a.code}
+                        {optionCode(option)}
                       </span>
                     </li>
                   );
@@ -498,6 +510,63 @@ export function AirportCombobox({
           </p>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * La columna de la izquierda. Una ciudad entera lleva el edificio; un aeropuerto suelto, el
+ * código ISO del país (texto, no bandera: en Windows los indicadores regionales salen como
+ * cuadros vacíos); un aeropuerto dentro de su ciudad, el avión, que lo marca como parte de ella.
+ */
+function OptionLead({ option, isActive }: { option: LocationOption; isActive: boolean }) {
+  const tone = isActive ? 'text-[var(--color-fg-muted)]' : 'text-[var(--color-fg-subtle)]';
+  if (option.kind === 'city') {
+    return <Building2 aria-hidden="true" className={cn('size-4 w-7 shrink-0', tone)} />;
+  }
+  if (option.nested) {
+    return <Plane aria-hidden="true" className={cn('size-3.5 shrink-0', tone)} />;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'w-7 shrink-0 text-center font-mono text-[10px] font-semibold uppercase tracking-wide',
+        tone,
+      )}
+    >
+      {option.airport.countryCode}
+    </span>
+  );
+}
+
+function OptionText({ option }: { option: LocationOption }) {
+  if (option.kind === 'city') {
+    return (
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">{option.area.city}</p>
+        <p className="truncate text-xs text-[var(--color-fg-muted)]">
+          Todos los aeropuertos · {option.area.country}
+        </p>
+      </div>
+    );
+  }
+  const { airport } = option;
+  if (option.nested) {
+    // Debajo de su ciudad la fila no repite la ciudad: el nombre del aeropuerto es lo que
+    // distingue a MDE de EOH.
+    return (
+      <div className="min-w-0 flex-1">
+        <p className="truncate">{airport.name}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="truncate font-medium">{airport.city}</p>
+      <p className="truncate text-xs text-[var(--color-fg-muted)]">
+        {[airport.name, airport.country].filter(Boolean).join(' · ')}
+      </p>
     </div>
   );
 }

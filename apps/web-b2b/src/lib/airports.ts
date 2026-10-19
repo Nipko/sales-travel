@@ -424,6 +424,11 @@ function normalize(s: string): string {
   );
 }
 
+/** Minúsculas, sin tildes y con un solo espacio: lo que se compara al buscar. */
+export function normalizeSearchText(s: string): string {
+  return normalize(s);
+}
+
 function exactCityBonus(query: string): number {
   const weight = Math.min(query.length, EXACT_CITY_FULL_LEN) / EXACT_CITY_FULL_LEN;
   return Math.round(weight * EXACT_CITY_MAX_BONUS);
@@ -582,19 +587,28 @@ export function getPopularAirports(limit = 8): Airport[] {
 const RECENT_KEY = 'st:recent-airports';
 const MAX_RECENT = 5;
 
-export function getRecentAirports(): Airport[] {
+/**
+ * Lo último elegido, tal como se guardó: un código de aeropuerto, o `city:XXX` para una
+ * ciudad entera (MDE es las dos cosas y hay que poder distinguirlas).
+ */
+export function getRecentCodes(): string[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(RECENT_KEY);
     if (!raw) return [];
-    const codes = JSON.parse(raw) as string[];
-    return codes
-      .slice(0, MAX_RECENT)
-      .map((c) => getAirportByCode(c))
-      .filter((a): a is Airport => !!a);
+    const codes = JSON.parse(raw) as unknown;
+    return Array.isArray(codes)
+      ? codes.filter((c): c is string => typeof c === 'string').slice(0, MAX_RECENT)
+      : [];
   } catch {
     return [];
   }
+}
+
+export function getRecentAirports(): Airport[] {
+  return getRecentCodes()
+    .map((c) => getAirportByCode(c))
+    .filter((a): a is Airport => !!a);
 }
 
 export function saveRecentAirport(code: string): void {

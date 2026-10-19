@@ -8,6 +8,7 @@ import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { advancesFocus, type AirportChangeReason } from '../../../components/ui/airport-combobox';
 import { Button } from '../../../components/ui/button';
+import type { LocationKind } from '../../../lib/airport-cities';
 import {
   DateRangePicker,
   todayIso,
@@ -192,6 +193,8 @@ export default function CotizacionesPage() {
   const [returnDate, setReturnDate] = useState('');
   const [originCode, setOriginCode] = useState('');
   const [destinationCode, setDestinationCode] = useState('');
+  const [originKind, setOriginKind] = useState<LocationKind | undefined>(undefined);
+  const [destinationKind, setDestinationKind] = useState<LocationKind | undefined>(undefined);
   const [pax, setPax] = useState<PaxCounts>(DEFAULT_PAX);
   const [cabin, setCabin] = useState(DEFAULT_CABIN);
   const [problem, setProblem] = useState<SearchProblem | null>(null);
@@ -220,6 +223,8 @@ export default function CotizacionesPage() {
   function handleSwap() {
     setOriginCode(destinationCode);
     setDestinationCode(originCode);
+    setOriginKind(destinationKind);
+    setDestinationKind(originKind);
     setProblem(null);
   }
 
@@ -246,14 +251,16 @@ export default function CotizacionesPage() {
     document.getElementById(id)?.focus();
   }
 
-  function handleOriginChange(code: string, reason: AirportChangeReason) {
+  function handleOriginChange(code: string, reason: AirportChangeReason, kind?: LocationKind) {
     setOriginCode(code);
+    setOriginKind(kind);
     setProblem(null);
     if (advancesFocus(reason)) focusField(FIELD_ID.destination);
   }
 
-  function handleDestinationChange(code: string, reason: AirportChangeReason) {
+  function handleDestinationChange(code: string, reason: AirportChangeReason, kind?: LocationKind) {
     setDestinationCode(code);
+    setDestinationKind(kind);
     setProblem(null);
     // El siguiente paso es el disparador de fechas, que NO se abre al recibir el foco: quien
     // llega ahí decide si abre el calendario o sigue con Tab.
@@ -281,6 +288,8 @@ export default function CotizacionesPage() {
     setSearched({
       origin: originCode,
       destination: destinationCode,
+      ...(originKind ? { originKind } : {}),
+      ...(destinationKind ? { destinationKind } : {}),
       departureDate,
       ...(tripMode === 'roundtrip' && returnDate ? { returnDate } : {}),
       tripType: tripMode,
@@ -387,6 +396,8 @@ export default function CotizacionesPage() {
               <RouteField
                 originCode={originCode}
                 destinationCode={destinationCode}
+                originKind={originKind}
+                destinationKind={destinationKind}
                 onOriginChange={handleOriginChange}
                 onDestinationChange={handleDestinationChange}
                 onSwap={handleSwap}

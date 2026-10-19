@@ -6,6 +6,7 @@ import {
   AirportCombobox,
   type AirportChangeReason,
 } from '../../../../components/ui/airport-combobox';
+import type { LocationKind } from '../../../../lib/airport-cities';
 import { cn } from '../../../../lib/cn';
 
 /* =============================================================================================
@@ -58,8 +59,15 @@ const COMBO_SLOT = cn(
 export interface RouteFieldProps {
   readonly originCode: string;
   readonly destinationCode: string;
-  readonly onOriginChange: (code: string, reason: AirportChangeReason) => void;
-  readonly onDestinationChange: (code: string, reason: AirportChangeReason) => void;
+  /** Ciudad entera o aeropuerto: hace falta para remontar el campo tras intercambiar. */
+  readonly originKind?: LocationKind;
+  readonly destinationKind?: LocationKind;
+  readonly onOriginChange: (code: string, reason: AirportChangeReason, kind?: LocationKind) => void;
+  readonly onDestinationChange: (
+    code: string,
+    reason: AirportChangeReason,
+    kind?: LocationKind,
+  ) => void;
   readonly onSwap: () => void;
   readonly originInputId: string;
   readonly destinationInputId: string;
@@ -70,6 +78,8 @@ export interface RouteFieldProps {
 export function RouteField({
   originCode,
   destinationCode,
+  originKind,
+  destinationKind,
   onOriginChange,
   onDestinationChange,
   onSwap,
@@ -122,6 +132,7 @@ export function RouteField({
           label="Origen"
           placeholder="Ciudad o código"
           defaultValue={originCode}
+          defaultKind={originKind}
           onChange={onOriginChange}
           // Sólo el primer montaje se lleva el foco. Con `autoFocus` fijo, el remonte del
           // intercambio se lo robaba al usuario y lo devolvía al origen desde donde estuviera.
@@ -161,6 +172,7 @@ export function RouteField({
           label="Destino"
           placeholder="Ciudad o código"
           defaultValue={destinationCode}
+          defaultKind={destinationKind}
           onChange={onDestinationChange}
           required
         />

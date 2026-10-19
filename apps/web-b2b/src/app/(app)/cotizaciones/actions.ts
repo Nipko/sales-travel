@@ -1,5 +1,6 @@
 'use server';
 
+import type { LocationKind } from '../../../lib/airport-cities';
 import { api } from '../../../lib/api';
 
 interface Money {
@@ -189,6 +190,11 @@ function todayISO(): string {
 }
 
 const IATA_RE = /^[A-Z]{3}$/;
+
+/** `city` o `airport` del combobox; cualquier otra cosa (teclear un código) es «sin dato». */
+function asLocationKind(value: unknown): LocationKind | undefined {
+  return value === 'city' || value === 'airport' ? value : undefined;
+}
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function searchFlightsAction(
@@ -197,6 +203,8 @@ export async function searchFlightsAction(
 ): Promise<SearchResult> {
   const origin = asString(formData.get('origin')).toUpperCase().trim();
   const destination = asString(formData.get('destination')).toUpperCase().trim();
+  const originKind = asLocationKind(formData.get('originKind'));
+  const destinationKind = asLocationKind(formData.get('destinationKind'));
   const departureDate = asString(formData.get('departureDate'));
   const returnDate = asString(formData.get('returnDate'));
   const tripType = asString(formData.get('tripType')) || 'roundtrip';
@@ -245,6 +253,8 @@ export async function searchFlightsAction(
   const body: Record<string, unknown> = {
     origin,
     destination,
+    ...(originKind ? { originKind } : {}),
+    ...(destinationKind ? { destinationKind } : {}),
     departureDate,
     paxCount: { adults, children, infants },
     cabin,
@@ -299,6 +309,8 @@ export async function searchReturnsAction(
   criteria: {
     origin: string;
     destination: string;
+    originKind?: LocationKind;
+    destinationKind?: LocationKind;
     departureDate: string;
     returnDate?: string;
     paxCount: { adults: number; children: number; infants: number };
@@ -311,6 +323,8 @@ export async function searchReturnsAction(
   const searchCriteria = {
     origin: criteria.origin,
     destination: criteria.destination,
+    ...(criteria.originKind ? { originKind: criteria.originKind } : {}),
+    ...(criteria.destinationKind ? { destinationKind: criteria.destinationKind } : {}),
     departureDate: criteria.departureDate,
     returnDate: criteria.returnDate,
     paxCount: criteria.paxCount,
