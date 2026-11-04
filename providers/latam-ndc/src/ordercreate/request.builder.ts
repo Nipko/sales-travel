@@ -98,7 +98,7 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
             <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
           </EmailAddress>
           <Phone>
-            <AreaCodeNumber>${areaCode}</AreaCodeNumber>
+            ${areaCode ? `<AreaCodeNumber>${areaCode}</AreaCodeNumber>` : ''}
             <ContactTypeText>MOBILE</ContactTypeText>
             <CountryDialingCode>${dialCode}</CountryDialingCode>
             <PhoneNumber>${number}</PhoneNumber>
@@ -117,7 +117,7 @@ function buildContactInfoList(passengers: Passenger[], contactInfo: BookingConta
             <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
           </EmailAddress>
           <Phone>
-            <AreaCodeNumber>${areaCode}</AreaCodeNumber>
+            ${areaCode ? `<AreaCodeNumber>${areaCode}</AreaCodeNumber>` : ''}
             <ContactTypeText>MOBILE</ContactTypeText>
             <CountryDialingCode>${dialCode}</CountryDialingCode>
             <PhoneNumber>${number}</PhoneNumber>
@@ -141,7 +141,7 @@ function buildPaxList(passengers: Passenger[]): string {
             ${p.identityDoc.expiryDate ? `<ExpiryDate>${escape(p.identityDoc.expiryDate)}</ExpiryDate>` : ''}
             <IdentityDocID>${escape(p.identityDoc.number)}</IdentityDocID>
             <IdentityDocTypeCode>${escape(mapDocType(p.identityDoc.type))}</IdentityDocTypeCode>
-            ${p.identityDoc.issueDate ? `<IssueDate>${escape(p.identityDoc.issueDate)}</IssueDate>` : `<IssueDate>2020-01-01</IssueDate>`}
+            ${p.identityDoc.issueDate ? `<IssueDate>${escape(p.identityDoc.issueDate)}</IssueDate>` : ''}
             <IssuingCountryCode>${escape(p.identityDoc.issuingCountryCode)}</IssuingCountryCode>
           </IdentityDoc>
           <Individual>
@@ -150,18 +150,13 @@ function buildPaxList(passengers: Passenger[]): string {
             <GivenName>${escape(p.givenName.toUpperCase())}</GivenName>
             <IndividualID>${escape(p.paxId)}</IndividualID>
             <Surname>${escape(p.surname.toUpperCase())}</Surname>
-            <TitleName>${escape(mapTitle(p))}</TitleName>
+            ${p.title ? `<TitleName>${escape(p.title)}</TitleName>` : ''}
           </Individual>${loyaltyBlock}
           <PaxID>${escape(p.paxId)}</PaxID>
           <PTC>${escape(p.paxType)}</PTC>
         </Pax>`;
     })
     .join('\n        ');
-}
-
-function mapTitle(p: Passenger): string {
-  if (p.title) return p.title;
-  return p.gender === 'M' ? 'Mr' : 'Mrs';
 }
 
 function mapDocType(type: string): string {
@@ -184,7 +179,9 @@ function parsePhone(contactInfo: BookingContactInfo): {
 } {
   const digits = contactInfo.phone.replace(/\D/g, '');
   const dialCode = contactInfo.countryDialingCode?.replace(/\D/g, '') || '57';
-  const areaCode = contactInfo.areaCode?.replace(/\D/g, '') || '1';
+  // Opcional para LATAM (`[portal:/ndc/order-create]`). Un celular colombiano no tiene código de
+  // área: inventar un «1» era mandarle a la aerolínea un dato que el vendedor no dio.
+  const areaCode = contactInfo.areaCode?.replace(/\D/g, '') ?? '';
 
   let number = digits;
   if (digits.startsWith(dialCode)) {

@@ -134,6 +134,78 @@ describe('AirShopping v2', () => {
   });
 });
 
+describe('Tarifa por trayecto (fareComponents) y desglose', () => {
+  it('un componente por trayecto, con marca, base, clase e índices sobre los segmentos aplanados', () => {
+    const fc = searchOffer().fareComponents!;
+    expect(
+      fc.map((c) => [c.brand?.name, c.fareBasisCode, c.bookingClasses, c.segmentRefs]),
+    ).toEqual([
+      ['LIGHT', 'SLEX0C3E', ['S'], [0]],
+      ['LIGHT', 'SLEX0C3E', ['V'], [1]],
+    ]);
+  });
+
+  it('lo que incluye la marca: equipaje del trayecto, maleta no incluida, cambios con cargo, sin reembolso', () => {
+    const ida = searchOffer().fareComponents![0]!.includes!;
+    expect(ida.map((i) => [i.kind, i.status])).toEqual([
+      ['personal-item', 'included'],
+      ['carry-on', 'included'],
+      ['checked-bag', 'not-offered'],
+      ['change', 'charge'],
+      ['refund', 'not-offered'],
+    ]);
+  });
+
+  it('el desglose por pasajero sólo sale si cuadra con el total', () => {
+    // La vuelta del fixture no trae precio por pasajero: no se puede afirmar un desglose.
+    expect(searchOffer().fareBreakdown).toBeUndefined();
+
+    const raw = xml(`<IATA_AirShoppingRS><Response>
+      <DataLists>
+        <PaxJourneyList><PaxJourney><PaxJourneyID>J1</PaxJourneyID><PaxSegmentRefID>S1</PaxSegmentRefID></PaxJourney></PaxJourneyList>
+        <PaxList><Pax><PaxID>ADT_1</PaxID><PTC>ADT</PTC></Pax><Pax><PaxID>ADT_2</PaxID><PTC>ADT</PTC></Pax><Pax><PaxID>INF_1</PaxID><PTC>INF</PTC></Pax></PaxList>
+        <PaxSegmentList><PaxSegment>
+          <Arrival><AircraftScheduledDateTime TimeZoneCode="-05:00">2026-12-10T10:05:00</AircraftScheduledDateTime><IATA_LocationCode>LIM</IATA_LocationCode></Arrival>
+          <Dep><AircraftScheduledDateTime TimeZoneCode="-05:00">2026-12-10T06:50:00</AircraftScheduledDateTime><IATA_LocationCode>BOG</IATA_LocationCode></Dep>
+          <MarketingCarrierInfo><CarrierDesigCode>LA</CarrierDesigCode><MarketingCarrierFlightNumberText>2580</MarketingCarrierFlightNumberText></MarketingCarrierInfo>
+          <PaxSegmentID>S1</PaxSegmentID>
+        </PaxSegment></PaxSegmentList>
+      </DataLists>
+      <OffersGroup><CarrierOffers><Offer>
+        <OfferID>o1</OfferID>
+        <OfferItem>
+          <FareDetail>
+            <FarePriceType><Price><BaseAmount CurCode="COP">400000</BaseAmount><TotalAmount CurCode="COP">500000</TotalAmount></Price></FarePriceType>
+            <PaxRefID>ADT_1</PaxRefID><PaxRefID>ADT_2</PaxRefID>
+          </FareDetail>
+          <FareDetail>
+            <FarePriceType><Price><BaseAmount CurCode="COP">40000</BaseAmount><TotalAmount CurCode="COP">60000</TotalAmount></Price></FarePriceType>
+            <PaxRefID>INF_1</PaxRefID>
+          </FareDetail>
+          <OfferItemID>I1</OfferItemID>
+          <Service><ServiceAssociations><PaxJourneyRefID>J1</PaxJourneyRefID></ServiceAssociations></Service>
+        </OfferItem>
+        <TotalPrice><BaseAmount CurCode="COP">840000</BaseAmount><TotalAmount CurCode="COP">1060000</TotalAmount></TotalPrice>
+      </Offer></CarrierOffers></OffersGroup>
+    </Response></IATA_AirShoppingRS>`);
+    const offer = mapAirShoppingResponse(raw, criteria, TENANT).offers[0]!;
+    expect(offer.fareBreakdown).toEqual([
+      {
+        paxType: 'ADT',
+        paxCount: 2,
+        basePerPax: { amountMinor: 40_000_000, currency: 'COP' },
+        taxesPerPax: { amountMinor: 10_000_000, currency: 'COP' },
+      },
+      {
+        paxType: 'INF',
+        paxCount: 1,
+        basePerPax: { amountMinor: 4_000_000, currency: 'COP' },
+        taxesPerPax: { amountMinor: 2_000_000, currency: 'COP' },
+      },
+    ]);
+  });
+});
+
 describe('OfferPrice', () => {
   it('impuestos por línea: base + impuestos vuelve a dar el total', () => {
     const raw = xml(`<IATA_OfferPriceRS><Response><PricedOffer>
@@ -154,6 +226,27 @@ describe('OfferPrice', () => {
     expect(offer.total.amountMinor).toBe(360_000_000);
     expect(offer.baseFare.amountMinor + offer.taxes.amountMinor).toBe(offer.total.amountMinor);
     expect(offer.provider.offerRef).toBe(original.provider.offerRef);
+  });
+
+  it('la multa de cambio con monto llega a policies.changeFee; un porcentaje no', () => {
+    const raw = xml(`<IATA_OfferPriceRS><Response>
+      <DataLists><PenaltyList>
+        <Penalty><ChangeFeeInd>true</ChangeFeeInd><PenaltyID>CHANGE_PDE_TRUE_COP_150000_0</PenaltyID><Price><TotalAmount CurCode="COP">150000.0</TotalAmount></Price></Penalty>
+        <Penalty><CancelFeeInd>true</CancelFeeInd><PenaltyID>REFUND_PDE_TRUE_PERCENT_100</PenaltyID><Price><TotalAmount CurCode="PERCENT">100</TotalAmount></Price></Penalty>
+      </PenaltyList></DataLists>
+      <PricedOffer>
+        <OfferID>3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c</OfferID>
+        <OfferItem>
+          <FareDetail><FareComponent><FareRule><PenaltyRefID>CHANGE_PDE_TRUE_COP_150000_0</PenaltyRefID><PenaltyRefID>REFUND_PDE_TRUE_PERCENT_100</PenaltyRefID></FareRule></FareComponent><PaxRefID>ADT_1</PaxRefID></FareDetail>
+          <OfferItemID>SEI|A</OfferItemID>
+        </OfferItem>
+        <TotalPrice><BaseAmount CurCode="COP">2800000</BaseAmount><TotalAmount CurCode="COP">3500000</TotalAmount></TotalPrice>
+      </PricedOffer>
+    </Response></IATA_OfferPriceRS>`);
+    const { offer } = mapOfferPriceResponse(raw, searchOffer());
+    expect(offer.policies?.changeFee).toEqual({ amountMinor: 15_000_000, currency: 'COP' });
+    expect(offer.policies?.refundFee).toBeUndefined();
+    expect(offer.fareComponents).toEqual(searchOffer().fareComponents);
   });
 
   it('un error de LATAM se lanza: nunca devuelve la oferta original como confirmada', () => {

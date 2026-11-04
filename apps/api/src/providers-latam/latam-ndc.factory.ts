@@ -5,7 +5,11 @@ import {
   missingLatamCredentials,
   type LatamNdcConfig,
 } from '@sales-travel/latam-ndc';
-import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import type { ProviderEnvironment } from '@sales-travel/canonical';
+import {
+  ProviderCredentialsService,
+  type ResolvedProviderAccount,
+} from '../provider-credentials/provider-credentials.service.js';
 import {
   ProviderAccountIncompleteError,
   type CallPolicy,
@@ -67,22 +71,55 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
   }
 
   async resolveForTenant(tenantId: string): Promise<TenantAdapter<FlightProviderAdapter>> {
-    let key: string;
-    let cfg: LatamNdcConfig;
-    let credentialSource: CredentialSource;
-
+    let resolved: ResolvedProviderAccount;
     try {
-      const resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
-      cfg = this.toConfig(resolved.credentials, resolved.config);
-      key = `byoc:${resolved.ownerTenantId}:${resolved.updatedAt.getTime()}`;
-      credentialSource = resolved.inherited ? 'inherited' : 'own';
+      resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
     } catch (err) {
       if (!(err instanceof NotFoundException)) throw err;
-      cfg = this.envConfig();
-      key = 'env';
-      credentialSource = 'env';
+      return this.adapterFor(this.envConfig(), 'env', 'env', tenantId);
     }
+    return this.adapterForAccount(resolved, tenantId);
+  }
 
+  /**
+   * La cuenta con que se hizo la reserva (`orders.provider_account_id`). LATAM sólo reconoce una
+   * orden con la agencia que la creó: si el tenant cambia de cuenta o de herencia después, la
+   * postventa tiene que seguir saliendo con la anterior. Antes LATAM no lo implementaba y la
+   * postventa usaba la cuenta ACTUAL del tenant.
+   */
+  async resolveForOrder(
+    tenantId: string,
+    orderId: string,
+  ): Promise<TenantAdapter<FlightProviderAdapter>> {
+    const resolved = await this.creds.resolveForOrder(tenantId, orderId);
+    if (resolved.providerCode !== PROVIDER_CODE) {
+      throw new NotFoundException('la cuenta de la orden no es de LATAM NDC');
+    }
+    return this.adapterForAccount(resolved, tenantId);
+  }
+
+  private adapterForAccount(
+    resolved: ResolvedProviderAccount,
+    tenantId: string,
+  ): TenantAdapter<FlightProviderAdapter> {
+    const cfg = this.toConfig(resolved.credentials, resolved.config);
+    const key = `byoc:${resolved.ownerTenantId}:${resolved.id}:${resolved.updatedAt.getTime()}`;
+    const base = this.adapterFor(cfg, key, resolved.inherited ? 'inherited' : 'own', tenantId);
+    return {
+      ...base,
+      providerEnvironment: environmentOf(cfg, resolved.config),
+      accountOwnerTenantId: resolved.ownerTenantId,
+      accountId: resolved.id,
+      accountUpdatedAt: resolved.updatedAt,
+    };
+  }
+
+  private adapterFor(
+    cfg: LatamNdcConfig,
+    key: string,
+    credentialSource: CredentialSource,
+    tenantId: string,
+  ): TenantAdapter<FlightProviderAdapter> {
     // Puerta única: sin las credenciales que hacen falta para llamar a LATAM, el proveedor NO
     // se sirve. Se comprueba ANTES de construir para que la negativa salga como
     // `ProviderAccountIncompleteError` —que el registry sabe traducir a una ausencia explicada—
@@ -108,7 +145,7 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
       this.cache.set(key, adapter);
       this.evictStale(key);
     }
-    return { adapter, credentialSource };
+    return { adapter, credentialSource, providerEnvironment: environmentOf(cfg, {}) };
   }
 
   /** Los errores LANZADOS por el ACL (red/auth/config) ya tienen traducción propia. */
@@ -120,7 +157,8 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
   /** Conserva sólo la entrada vigente por owner (al rotar credenciales el `updatedAt` cambia la key). */
   private evictStale(currentKey: string): void {
     if (!currentKey.startsWith('byoc:')) return;
-    const ownerPrefix = currentKey.split(':').slice(0, 2).join(':') + ':';
+    // Owner + cuenta: dos cuentas del mismo dueño conviven; sólo se descarta la versión vieja.
+    const ownerPrefix = currentKey.split(':').slice(0, 3).join(':') + ':';
     for (const k of this.cache.keys()) {
       if (k !== currentKey && k.startsWith(ownerPrefix)) this.cache.delete(k);
     }
@@ -165,4 +203,23 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/**
+ * Entorno de la cuenta: `test` si la URL es el sandbox de LATAM (`sandbox.api.latam.com`) o la
+ * cuenta lo declara (`config.environment`: test | cert | sandbox). Sin esto LATAM no declaraba
+ * entorno y sus tarifas de sandbox se presentaban como reales.
+ */
+function environmentOf(cfg: LatamNdcConfig, config: Record<string, unknown>): ProviderEnvironment {
+  const declared =
+    typeof config['environment'] === 'string' ? config['environment'].toLowerCase() : '';
+  if (['test', 'cert', 'sandbox'].includes(declared)) return 'test';
+  if (['live', 'prod', 'production'].includes(declared)) return 'live';
+  let host = '';
+  try {
+    host = new URL(cfg.apiUrl).hostname;
+  } catch {
+    host = cfg.apiUrl;
+  }
+  return /sandbox/i.test(host) ? 'test' : 'live';
 }

@@ -50,7 +50,7 @@ export function buildOrderChangePaymentRequest(
             <EmailAddressText>${escape(contactInfo.email)}</EmailAddressText>
           </EmailAddress>
           <Phone>
-            <AreaCodeNumber>${areaCode}</AreaCodeNumber>
+            ${areaCode ? `<AreaCodeNumber>${areaCode}</AreaCodeNumber>` : ''}
             <ContactTypeText>MOBILE</ContactTypeText>
             <CountryDialingCode>${dialCode}</CountryDialingCode>
             <PhoneNumber>${number}</PhoneNumber>
@@ -131,7 +131,8 @@ function parsePhone(contactInfo: BookingContactInfo): {
 } {
   const digits = contactInfo.phone.replace(/\D/g, '');
   const dialCode = contactInfo.countryDialingCode?.replace(/\D/g, '') || '57';
-  const areaCode = contactInfo.areaCode?.replace(/\D/g, '') || '1';
+  // Opcional para LATAM: sin código de área se omite en vez de inventar «1».
+  const areaCode = contactInfo.areaCode?.replace(/\D/g, '') ?? '';
 
   let number = digits;
   if (digits.startsWith(dialCode)) {

@@ -91,11 +91,19 @@
         <Offer>
           <BaggageAllowance>
             <BaggageAllowanceRefID>PERSONAL_ITEM_1</BaggageAllowanceRefID>
-            <PaxJourneyRefID>FL_BOGLIM_3</PaxJourneyRefID>
+            <BaggageFlightAssociations>
+              <PaxSegmentRefID>SEG_BOG_LIM_2580_Y_SLEX0C3E_20261210</PaxSegmentRefID>
+            </BaggageFlightAssociations>
+            <PaxRefID>ADT_1</PaxRefID>
+            <PaxRefID>ADT_2</PaxRefID>
           </BaggageAllowance>
           <BaggageAllowance>
             <BaggageAllowanceRefID>CARRY_ON_10_22_1</BaggageAllowanceRefID>
-            <PaxJourneyRefID>FL_BOGLIM_3</PaxJourneyRefID>
+            <BaggageFlightAssociations>
+              <PaxSegmentRefID>SEG_BOG_LIM_2580_Y_SLEX0C3E_20261210</PaxSegmentRefID>
+            </BaggageFlightAssociations>
+            <PaxRefID>ADT_1</PaxRefID>
+            <PaxRefID>ADT_2</PaxRefID>
           </BaggageAllowance>
           <OfferID>3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c</OfferID>
           <OfferItem>

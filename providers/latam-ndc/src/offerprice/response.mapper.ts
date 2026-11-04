@@ -1,5 +1,6 @@
 import type { Money, Offer } from '@sales-travel/canonical';
 import type { OfferPriceResult } from '@sales-travel/domain';
+import { buildFareBreakdown, penaltyFees, readFareLists } from '../airshopping/fare-components';
 import { extractPolicies } from '../airshopping/response.mapper';
 import { LatamApiError, LatamBusinessError } from '../errors';
 import { arr, attr, latamErrors, money, pick, text } from '../xml';
@@ -45,7 +46,16 @@ export function mapOfferPriceResponse(
   const itemSuffix = ref.includes('|') ? ref.slice(ref.indexOf('|')) : '';
   const newOfferRef = rawNewId ? `${rawNewId}${itemSuffix}` : ref;
 
-  const policies = extractPolicies(arr<Record<string, unknown>>(offerNode.OfferItem));
+  const items = arr<Record<string, unknown>>(offerNode.OfferItem);
+  const lists = readFareLists(pick(root, 'Response'));
+  const restrictions = extractPolicies(items);
+  const fees = penaltyFees(items, lists);
+  const policies =
+    restrictions || fees.changeFee || fees.refundFee
+      ? { ...originalOffer.policies, ...restrictions, ...fees }
+      : undefined;
+  // Con varios pasajeros, el precio firme por pasajero es el de OfferPrice (`[portal:/ndc/order-create]`).
+  const fareBreakdown = buildFareBreakdown(items, lists, newTotal);
 
   const updatedOffer: Offer = {
     ...originalOffer,
@@ -53,7 +63,8 @@ export function mapOfferPriceResponse(
     total: newTotal,
     baseFare: newBase,
     taxes: newTaxes,
-    ...(policies ? { policies: { ...originalOffer.policies, ...policies } } : {}),
+    ...(policies ? { policies } : {}),
+    ...(fareBreakdown ? { fareBreakdown } : {}),
     ...(declaredExpiry ? { expiresAt: declaredExpiry, expiresAtSource: 'provider' as const } : {}),
     fetchedAt: new Date().toISOString(),
   };
@@ -66,6 +77,9 @@ export function mapOfferPriceResponse(
       `Price changed: ${originalOffer.total.amountMinor} → ${newTotal.amountMinor} ${newTotal.currency}`,
     );
   }
+
+  // Un desglose de la búsqueda que ya no suma el total nuevo no se arrastra.
+  if (!fareBreakdown && priceChanged) delete updatedOffer.fareBreakdown;
 
   return { offer: updatedOffer, priceChanged, warnings };
 }

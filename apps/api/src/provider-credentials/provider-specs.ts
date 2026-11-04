@@ -296,6 +296,7 @@ const LATAM_NDC: ProviderSpec = {
     'accountCode',
     'applicationName',
     'posCity',
+    'environment',
     'mock',
   ],
 };

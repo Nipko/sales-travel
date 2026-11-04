@@ -2,6 +2,13 @@ import type { CabinClass, Itinerary, Offer, Segment } from '@sales-travel/canoni
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { LatamApiError, LatamBusinessError } from '../errors';
+import {
+  buildFareBreakdown,
+  buildFareComponents,
+  readFareLists,
+  type FareLists,
+  type OfferLeg,
+} from './fare-components';
 import { arr, attr, collect, dateTimeWithOffset, latamErrors, money, pick, text } from '../xml';
 
 export const AIRSHOPPING_PATH = '/ndc/v192/airshopping';
@@ -64,6 +71,7 @@ export function mapAirShoppingResponse(
   const journeyMap = buildJourneyMap(response, segmentMap);
   const priceClassMap = buildPriceClassMap(response);
   const baggageMap = buildBaggageAllowanceMap(response);
+  const fareLists = readFareLists(response);
 
   const offerNodes = collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer');
   if (offerNodes.length === 0) {
@@ -80,6 +88,7 @@ export function mapAirShoppingResponse(
         journeyMap,
         priceClassMap,
         baggageMap,
+        fareLists,
         tenantId,
         fetchedAt,
       });
@@ -113,6 +122,7 @@ function mapOneOffer(args: {
   journeyMap: Map<string, KeyedSegment[]>;
   priceClassMap: Map<string, PriceClassInfo>;
   baggageMap: Map<string, BaggageInfo>;
+  fareLists: FareLists;
   tenantId: string;
   fetchedAt: string;
 }): Offer | null {
@@ -135,8 +145,11 @@ function mapOneOffer(args: {
         };
 
   const offerItems = arr<Record<string, unknown>>(args.node.OfferItem);
-  const itineraries = buildItineraries(offerItems, args.journeyMap);
+  const { itineraries, legs } = buildItineraries(offerItems, args.journeyMap);
   if (itineraries.length === 0) return null;
+  const flatKeys = legs.flatMap((l) => l.segmentKeys);
+  const fareComponents = buildFareComponents(legs, flatKeys, args.node, args.fareLists);
+  const fareBreakdown = buildFareBreakdown(offerItems, args.fareLists, total);
 
   // OfferPrice tampoco trae vigencia; la de 30 min es política NUESTRA y se marca como tal.
   const declared = attr(pick(args.node.TimeLimits, 'OfferExpiration'), 'DateTime');
@@ -160,7 +173,9 @@ function mapOneOffer(args: {
     baseFare,
     taxes,
     itineraries,
+    ...(fareBreakdown ? { fareBreakdown } : {}),
     ...(fareFamily ? { fareFamily } : {}),
+    ...(fareComponents ? { fareComponents } : {}),
     ...(baggage ? { baggage } : {}),
     ...(policies ? { policies } : {}),
     fetchedAt: args.fetchedAt,
@@ -179,8 +194,8 @@ function mapOneOffer(args: {
 function buildItineraries(
   offerItems: Record<string, unknown>[],
   journeyMap: Map<string, KeyedSegment[]>,
-): Itinerary[] {
-  const itineraries: Itinerary[] = [];
+): { itineraries: Itinerary[]; legs: OfferLeg[] } {
+  const built: { itinerary: Itinerary; leg: OfferLeg }[] = [];
   const seen = new Set<string>();
 
   for (const item of offerItems) {
@@ -198,18 +213,24 @@ function buildItineraries(
           const rbd = rbdBySegment.get(s.key);
           return rbd ? { ...s.segment, bookingClass: rbd } : s.segment;
         });
-        itineraries.push({
-          segments,
-          totalDurationMinutes: journeyDuration(segments),
-          stops: Math.max(0, segments.length - 1),
+        built.push({
+          itinerary: {
+            segments,
+            totalDurationMinutes: journeyDuration(segments),
+            stops: Math.max(0, segments.length - 1),
+          },
+          leg: { item, journeyId: jRef, segmentKeys: base.map((s) => s.key) },
         });
       }
     }
   }
 
-  return itineraries.sort(
-    (a, b) => Date.parse(a.segments[0]!.departureAt) - Date.parse(b.segments[0]!.departureAt),
+  built.sort(
+    (a, b) =>
+      Date.parse(a.itinerary.segments[0]!.departureAt) -
+      Date.parse(b.itinerary.segments[0]!.departureAt),
   );
+  return { itineraries: built.map((b) => b.itinerary), legs: built.map((b) => b.leg) };
 }
 
 function journeyDuration(segments: Segment[]): number {

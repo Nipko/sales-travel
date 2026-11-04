@@ -61,6 +61,54 @@ describe('LatamNdcProviderFactory', () => {
     expect(factory.settlement ?? DEFAULT_PROVIDER_SETTLEMENT).toBe('provider-direct');
   });
 
+  it('la cuenta BYOC sale con su id y versión: la orden la guarda para la postventa', async () => {
+    const factory = factoryWith(() => Promise.resolve(resolved({ inherited: true })));
+    const r = await factory.resolveForTenant('t1');
+    expect(r).toMatchObject({
+      credentialSource: 'inherited',
+      accountId: 'acc-1',
+      accountOwnerTenantId: 'owner-1',
+      accountUpdatedAt: new Date('2026-01-01T00:00:00Z'),
+      providerEnvironment: 'live',
+    });
+  });
+
+  it('la URL del sandbox de LATAM marca la cuenta como de pruebas', async () => {
+    const sandbox = factoryWith(() =>
+      Promise.resolve(resolved({ config: { apiUrl: 'https://sandbox.api.latam.com' } })),
+    );
+    expect((await sandbox.resolveForTenant('t1')).providerEnvironment).toBe('test');
+    const declared = factoryWith(() =>
+      Promise.resolve(resolved({ config: { apiUrl: 'https://x.test', environment: 'cert' } })),
+    );
+    expect((await declared.resolveForTenant('t1')).providerEnvironment).toBe('test');
+  });
+
+  it('resolveForOrder sale con la cuenta de la reserva, no con la actual del tenant', async () => {
+    const resolveForOrder = vi.fn(() =>
+      Promise.resolve(resolved({ id: 'acc-vieja', ownerTenantId: 'owner-viejo' })),
+    );
+    const resolve = vi.fn(() => Promise.resolve(resolved()));
+    const factory = new LatamNdcProviderFactory({
+      resolve,
+      resolveForOrder,
+    } as unknown as ProviderCredentialsService);
+    const r = await factory.resolveForOrder('t1', 'order-1');
+    expect(resolveForOrder).toHaveBeenCalledWith('t1', 'order-1');
+    expect(resolve).not.toHaveBeenCalled();
+    expect(r.accountId).toBe('acc-vieja');
+    expect(r.adapter).not.toBe((await factory.resolveForTenant('t1')).adapter);
+  });
+
+  it('resolveForOrder rechaza una cuenta de otro proveedor', async () => {
+    const factory = new LatamNdcProviderFactory({
+      resolveForOrder: () => Promise.resolve(resolved({ providerCode: 'sabre' })),
+    } as unknown as ProviderCredentialsService);
+    await expect(factory.resolveForOrder('t1', 'order-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
   it('reuses the same adapter instance for identical resolved credentials (token cache)', async () => {
     const factory = factoryWith(() => Promise.resolve(resolved()));
     const a = await factory.forTenant('t1');

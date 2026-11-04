@@ -223,8 +223,26 @@ Estimaciones en días-persona.
   - La respuesta de cancelación no trae `Order` y se marcaba como fallida aunque LATAM la hubiera aceptado.
 - **Migración `0088`:** pasa a `ticketed`/`confirmed` las órdenes LATAM que quedaron guardadas con `CLOSED`/`OPENED`/`FROZEN`.
 - **Pendiente:**
-  - P0-1 (arnés del sandbox), que espera tu decisión de §5;
-  - H-06 (cancelar por `cancel/bnpl`), que conviene confirmar en el sandbox.
+  - P0-1 (arnés del sandbox), que espera tu decisión de §5.
+
+**2026-11-04, P1 hecho salvo el aviso de recotización:**
+
+- **P1-1 · `fareComponents` por trayecto** (`providers/latam-ndc/src/airshopping/fare-components.ts`). Cada componente lleva:
+  - marca (`FareRefText`), base tarifaria, clase y cabina;
+  - `includes`, que es el equipaje del trayecto asociado por `BaggageFlightAssociations`, la maleta «no incluida» si LATAM informa el equipaje y no trae facturada, cambios y reembolso (`included`/`charge`/`not-offered`) según la restricción y la multa, y los atributos premium `BRAND_INCLUDED_*`.
+  - Con los ejemplos oficiales, LIGHT sale sin maleta facturada y STANDARD con ella, cada trayecto con su propia clase.
+- **P1-2 · Desglose y multas:**
+  - `fareBreakdown` por tipo de pasajero, que solo se publica si cuadra exactamente con el total. Con el ejemplo oficial de 2 adultos, 1 niño y 1 infante cuadra.
+  - `policies.changeFee`/`refundFee` desde `PenaltyList` de OfferPrice, sin contar los porcentajes.
+  - Si el precio cambia y el desglose nuevo no cuadra, el anterior se descarta.
+- **P1-3 · Cancelar una reserva sin pago:** va por `/order/cancel/bnpl` (H-06), con respaldo a `/order/cancel` solo si la cuenta no tiene ese endpoint (404/405). Un error de negocio no dispara un segundo intento.
+- **P1-4 · OrderCreate y cuenta:**
+  - OrderCreate ya no inventa `IssueDate`, `TitleName` ni código de área.
+  - `resolveForOrder`: la postventa sale con la cuenta BYOC con que se reservó. La orden guarda `provider_account_id`.
+  - **Encontrado de paso:** LATAM no declaraba entorno, así que las tarifas de `sandbox.api.latam.com` se presentaban como reales. Ahora la cuenta es `test` si la URL es el sandbox o si `config.environment` es `test`/`cert`/`sandbox`.
+- **Pendiente:**
+  - Aceptar la recotización 70K con Change Booking. Necesita un paso en la UI de reservas: pasa a P2.
+  - El desglose de OfferPrice desde `DataLists/FareList`.
 
 ### P0: correcciones confirmadas y evidencia (≈5–7 d)
 

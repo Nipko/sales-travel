@@ -22,7 +22,7 @@ import { buildAirShoppingRequest, currencyToCountry } from './airshopping/reques
 import { AIRSHOPPING_PATH, mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
 import { missingLatamCredentials, type LatamNdcConfig } from './config';
-import { LatamBusinessError, LatamCredentialsMissingError } from './errors';
+import { LatamApiError, LatamBusinessError, LatamCredentialsMissingError } from './errors';
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { OFFERPRICE_PATH, mapOfferPriceResponse } from './offerprice/response.mapper';
@@ -140,7 +140,18 @@ export class LatamNdcFlightSearchAdapter
     return mapOrderRetrieveResponse(data, trackId);
   }
 
-  async cancelOrder(orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
+  /**
+   * La plataforma sólo cancela órdenes SIN emitir (`order-capabilities.service` bloquea las
+   * `ticketed`), y en LATAM una reserva sin pago se cancela por `/order/cancel/bnpl`
+   * (`[portal:/ndc/bnpl]`, «Cancel BNPL flow»). `/order/cancel` es el VOID o el reembolso de una
+   * orden PAGADA. Si el endpoint BNPL no existe para la cuenta (404/405), se usa el anterior.
+   */
+  async cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
+    try {
+      return await this.cancelBnplOrder(orderId, ctx);
+    } catch (err) {
+      if (!(err instanceof LatamApiError) || ![404, 405].includes(err.status)) throw err;
+    }
     const xml = buildOrderCancelRequest(orderId, this.cfg);
     const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/cancel', xml);
     return mapOrderCancelResponse(data);
