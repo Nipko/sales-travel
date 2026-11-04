@@ -2,6 +2,7 @@ import type { CabinClass, Itinerary, Offer, Segment } from '@sales-travel/canoni
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
 import { LatamApiError, LatamBusinessError } from '../errors';
+import { latamProviderRef } from '../offer-ref';
 import {
   buildFareBreakdown,
   buildFareComponents,
@@ -160,15 +161,13 @@ function mapOneOffer(args: {
   const baggage = extractOfferBaggage(args.node, args.baggageMap);
   const policies = extractPolicies(offerItems);
 
-  // `OfferID|item1,item2`: el OfferID es un UUID y los OfferItemID traen `|` pero nunca `,`.
   const itemIds = offerItems.map((item) => text(item.OfferItemID) ?? '').filter(Boolean);
-  const encodedRef = itemIds.length > 0 ? `${offerRef}|${itemIds.join(',')}` : offerRef;
 
   return {
     id: randomUUID(),
     tenantId: args.tenantId,
     products: ['flight'],
-    provider: { name: 'latam-ndc', offerRef: encodedRef },
+    provider: { name: 'latam-ndc', ...latamProviderRef(offerRef, itemIds) },
     total,
     baseFare,
     taxes,

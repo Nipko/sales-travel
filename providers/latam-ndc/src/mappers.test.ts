@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
+import { OfferSchema } from '@sales-travel/canonical';
 import { buildAirShoppingRequest } from './airshopping/request.builder';
+import { buildOfferPriceRequest } from './offerprice/request.builder';
+import { readLatamOfferRef } from './offer-ref';
 import { mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamApiError, LatamBusinessError } from './errors';
 import { parseLatamXml } from './http/latam-http.client';
@@ -83,10 +86,40 @@ describe('AirShopping v2', () => {
     expect(offer.expiresAtSource).toBe('platform-policy');
   });
 
-  it('el offerRef conserva el OfferID y los OfferItemID con sus barras', () => {
-    expect(searchOffer().provider.offerRef).toBe(
-      '3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c|SEI|T1VUQk9VTkQ=|QkxPQ0sx|MXwx,SEI|SU5CT1VORA==|QkxPQ0sy|MXwx',
-    );
+  it('offerRef lleva sólo el OfferID; los OfferItemID van en raw (un ida y vuelta pasaba de 255)', () => {
+    const provider = searchOffer().provider;
+    expect(provider.offerRef).toBe('3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c');
+    expect(provider.raw).toEqual({
+      offerItemIds: ['SEI|T1VUQk9VTkQ=|QkxPQ0sx|MXwx', 'SEI|SU5CT1VORA==|QkxPQ0sy|MXwx'],
+    });
+  });
+
+  it('con OfferItemID reales (largos) el offerRef sigue dentro de los 255 del canónico', () => {
+    const largo = 'SEI|' + 'Q'.repeat(160) + '|' + 'U'.repeat(120) + '|MnwxfDE=';
+    const source = readFileSync(
+      join(__dirname, '__fixtures__', 'airshopping-rt-multipax.xml'),
+      'utf8',
+    )
+      .replace('SEI|T1VUQk9VTkQ=|QkxPQ0sx|MXwx', largo)
+      .replace('SEI|SU5CT1VORA==|QkxPQ0sy|MXwx', largo + 'X');
+    const offer = mapAirShoppingResponse(parseLatamXml(source), criteria, TENANT).offers[0]!;
+    expect(OfferSchema.safeParse(offer).success).toBe(true);
+    const body = buildOfferPriceRequest(offer, criteria, {
+      apiUrl: 'x',
+      agencyId: 'A',
+      agencyIata: '1',
+      agencyName: 'N',
+      country: 'CO',
+    });
+    expect(body).toContain(`<OfferItemRefID>${largo}</OfferItemRefID>`);
+    expect(body).toContain(`<OfferItemRefID>${largo}X</OfferItemRefID>`);
+  });
+
+  it('una oferta guardada con la forma vieja (OfferID|items) se sigue leyendo', () => {
+    expect(readLatamOfferRef({ name: 'latam-ndc', offerRef: 'o-1|SEI|A|B,SEI|C|D' })).toEqual({
+      offerId: 'o-1',
+      offerItemIds: ['SEI|A|B', 'SEI|C|D'],
+    });
   });
 
   it('lanza los errores de negocio, todos, en vez de devolver 0 vuelos', () => {

@@ -40,11 +40,8 @@ export function mapOfferPriceResponse(
   // LATAM no informa vigencia en OfferPrice; si algún día la manda, manda sobre la nuestra.
   const declaredExpiry = attr(pick(offerNode.TimeLimits, 'OfferExpiration'), 'DateTime');
 
-  // El OfferID no cambia en LATAM, pero si cambiara se respeta y se conservan los ítems.
-  const rawNewId = text(offerNode.OfferID);
-  const ref = originalOffer.provider.offerRef;
-  const itemSuffix = ref.includes('|') ? ref.slice(ref.indexOf('|')) : '';
-  const newOfferRef = rawNewId ? `${rawNewId}${itemSuffix}` : ref;
+  // El OfferID no cambia en LATAM; si cambiara se respeta y se conservan los ítems (`raw`).
+  const newOfferRef = text(offerNode.OfferID) ?? originalOffer.provider.offerRef;
 
   const items = arr<Record<string, unknown>>(offerNode.OfferItem);
   const lists = readFareLists(pick(root, 'Response'));

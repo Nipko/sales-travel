@@ -73,7 +73,7 @@ describe('OrderCreate no inventa datos', () => {
   it('sin fecha de expedición, título ni código de área, no los manda', () => {
     const body = buildOrderCreateRequest(
       {
-        provider: { name: 'latam-ndc', offerRef: 'o1|SEI|A' },
+        provider: { name: 'latam-ndc', offerRef: 'o1', raw: { offerItemIds: ['SEI|A'] } },
       } as never,
       [
         {

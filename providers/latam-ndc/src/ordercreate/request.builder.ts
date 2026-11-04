@@ -1,3 +1,4 @@
+import { readLatamOfferRef } from '../offer-ref';
 import type { Offer } from '@sales-travel/canonical';
 import type { BookingContactInfo, Passenger, PaymentInfo } from '@sales-travel/domain';
 import { currencyToCountry } from '../airshopping/request.builder';
@@ -11,7 +12,7 @@ export function buildOrderCreateRequest(
   currency?: string,
   payment?: PaymentInfo,
 ): string {
-  const { offerId, offerItemIds } = parseOfferRef(offer.provider.offerRef);
+  const { offerId, offerItemIds } = readLatamOfferRef(offer.provider);
   const paxRefIds = passengers
     .map((p) => `<PaxRefID>${escape(p.paxId)}</PaxRefID>`)
     .join('\n            ');
@@ -189,19 +190,6 @@ function parsePhone(contactInfo: BookingContactInfo): {
   }
 
   return { dialCode, areaCode, number };
-}
-
-function parseOfferRef(ref: string): { offerId: string; offerItemIds: string[] } {
-  const pipeIdx = ref.indexOf('|');
-  if (pipeIdx === -1) {
-    return { offerId: ref, offerItemIds: [`${ref}-ITEM1`] };
-  }
-  const offerId = ref.slice(0, pipeIdx);
-  const offerItemIds = ref
-    .slice(pipeIdx + 1)
-    .split(',')
-    .filter(Boolean);
-  return { offerId, offerItemIds: offerItemIds.length > 0 ? offerItemIds : [`${offerId}-ITEM1`] };
 }
 
 function buildPaymentFunctions(payment: PaymentInfo): string {
