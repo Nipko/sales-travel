@@ -294,6 +294,8 @@ const LATAM_NDC: ProviderSpec = {
     'travelAgentId',
     'country',
     'accountCode',
+    'applicationName',
+    'posCity',
     'mock',
   ],
 };

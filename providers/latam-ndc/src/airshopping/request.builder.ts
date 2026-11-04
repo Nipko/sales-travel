@@ -1,5 +1,5 @@
 import type { FlightSearchCriteria } from '@sales-travel/domain';
-import type { LatamNdcConfig } from '../config';
+import { posCityFor, type LatamNdcConfig } from '../config';
 
 /**
  * Arma el XML IATA_AirShoppingRQ para LATAM v192.
@@ -15,6 +15,7 @@ export function buildAirShoppingRequest(
   const pax = buildPaxList(criteria);
   const odList = buildOriginDestList(criteria);
   const country = currencyToCountry(criteria.currency) ?? cfg.country ?? '';
+  const city = posCityFor(cfg, country);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_AirShoppingRQ xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_AirShoppingRQ">
@@ -31,7 +32,14 @@ export function buildAirShoppingRequest(
       </TravelAgency>
     </Sender>
   </Party>
-  <POS>
+  <POS>${
+    city
+      ? `
+    <City>
+      <IATA_LocationCode>${escape(city)}</IATA_LocationCode>
+    </City>`
+      : ''
+  }
     <Country>
       <CountryCode>${escape(country)}</CountryCode>
     </Country>

@@ -32,3 +32,38 @@ export class LatamApiError extends Error {
     this.name = 'LatamApiError';
   }
 }
+
+/** Status sintético de {@link LatamBusinessError}: LATAM respondió, pero dijo que no. */
+export const LATAM_BUSINESS_ERROR_STATUS = 422;
+
+/**
+ * LATAM respondió con `<Error>` de negocio: fecha pasada, oferta vencida, documento inválido…
+ *
+ * Antes estos errores se convertían en un warning y la operación seguía: la revalidación devolvía
+ * la oferta original como «confirmada» y la búsqueda devolvía «0 vuelos». Ahora se lanzan, y quien
+ * llama decide qué hacer. Es subclase de {@link LatamApiError} para que el filtro HTTP y el
+ * humanizador de `apps/api` la sigan atrapando sin cambios de cableado.
+ *
+ * `errors` lleva código y descripción de LATAM. No llevan PII: son mensajes de validación.
+ */
+export class LatamBusinessError extends LatamApiError {
+  /**
+   * Efecto sobre el circuit breaker de la búsqueda (`apps/api/src/search/circuit-breaker.service.ts`,
+   * que lo lee por forma): LATAM respondió, así que no es una caída. Sin esto, cinco búsquedas con
+   * una fecha pasada abrirían el circuito y apagarían LATAM para toda la red.
+   */
+  readonly failure = { circuit: 'IGNORE', kind: 'business' } as const;
+
+  constructor(
+    readonly errors: readonly { code: string; desc: string }[],
+    path: string,
+    readonly trackId?: string,
+  ) {
+    super(LATAM_BUSINESS_ERROR_STATUS, errors.map((e) => `${e.code}: ${e.desc}`).join(' | '), path);
+    this.name = 'LatamBusinessError';
+  }
+
+  hasCode(...codes: string[]): boolean {
+    return this.errors.some((e) => codes.includes(e.code));
+  }
+}

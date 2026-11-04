@@ -1,7 +1,7 @@
 import type { Offer } from '@sales-travel/canonical';
 import type { BookingContactInfo, Passenger, PaymentInfo } from '@sales-travel/domain';
 import { currencyToCountry } from '../airshopping/request.builder';
-import type { LatamNdcConfig } from '../config';
+import { posCityFor, type LatamNdcConfig } from '../config';
 
 export function buildOrderCreateRequest(
   offer: Offer,
@@ -29,6 +29,7 @@ export function buildOrderCreateRequest(
   const paxList = buildPaxList(passengers);
   const paymentBlock = payment ? buildPaymentFunctions(payment) : '';
   const country = currencyToCountry(currency) ?? cfg.country ?? '';
+  const city = posCityFor(cfg, country);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OrderCreateRQ xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderCreateRQ">
@@ -46,7 +47,14 @@ export function buildOrderCreateRequest(
       </TravelAgency>
     </Sender>
   </Party>
-  <POS>
+  <POS>${
+    city
+      ? `
+    <City>
+      <IATA_LocationCode>${escape(city)}</IATA_LocationCode>
+    </City>`
+      : ''
+  }
     <Country>
       <CountryCode>${escape(country)}</CountryCode>
     </Country>

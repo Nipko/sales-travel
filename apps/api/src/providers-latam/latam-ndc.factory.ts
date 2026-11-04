@@ -142,6 +142,8 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
       travelAgentId: str(c['travelAgentId']) ?? str(g['travelAgentId']),
       country: str(c['country']) ?? str(g['country']),
       accountCode: str(c['accountCode']) ?? str(g['accountCode']),
+      applicationName: str(g['applicationName']),
+      posCity: str(g['posCity']),
     };
   }
 
@@ -155,6 +157,8 @@ export class LatamNdcProviderFactory implements TenantProviderFactory<FlightProv
       agencyName: process.env['LATAM_AGENCY_NAME'],
       travelAgentId: process.env['LATAM_TRAVEL_AGENT_ID'],
       country: process.env['LATAM_COUNTRY'],
+      applicationName: process.env['LATAM_APPLICATION_NAME'],
+      posCity: process.env['LATAM_POS_CITY'],
     };
   }
 }

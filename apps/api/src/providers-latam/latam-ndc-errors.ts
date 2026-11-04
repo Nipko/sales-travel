@@ -4,6 +4,8 @@
  * (códigos 933/911, etc.) viajan como result.error en el JSON de respuesta y los humaniza el
  * frontend (humanizeOrderError); este helper cubre los que se lanzan como LatamApiError → 502.
  */
+import { LATAM_BUSINESS_ERROR_STATUS } from '@sales-travel/latam-ndc';
+
 function extractMessage(body: string): string {
   const raw = body.trim();
   try {
@@ -28,6 +30,20 @@ export function humanizeLatamError(status: number, body: string): string {
     return 'LATAM tuvo un problema interno. Prueba de nuevo en unos minutos.';
   }
 
+  // Falta Travel Agent ID (mismo caso que el front maneja para operaciones de orden).
+  if (m.includes('missing agent') || m.includes('403111009') || m.includes('travel agent')) {
+    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cárgalo en Mi Red → Credenciales → LATAM NDC y reintenta.';
+  }
+
+  // Error de negocio (`LatamBusinessError`): LATAM respondió y dijo que no. Va ANTES de la rama de
+  // credenciales porque sus textos («Birthdate is required») contienen "required" y se leían
+  // como «credenciales inválidas».
+  if (status === LATAM_BUSINESS_ERROR_STATUS) {
+    return detail && detail.length <= 220
+      ? `LATAM rechazó la operación: ${detail}`
+      : 'LATAM rechazó la operación. Revisa los datos e inténtalo nuevamente.';
+  }
+
   // Credenciales / token (incluye config faltante apiKey/apiSecret/agencyName y oauth 401/403).
   if (
     status === 401 ||
@@ -41,11 +57,6 @@ export function humanizeLatamError(status: number, body: string): string {
     m.includes('token')
   ) {
     return 'Las credenciales de LATAM (API key/secret/agencia) son inválidas o faltan. Verifícalas en Mi Red → Credenciales → LATAM NDC.';
-  }
-
-  // Falta Travel Agent ID (mismo caso que el front maneja para operaciones de orden).
-  if (m.includes('missing agent') || m.includes('403111009') || m.includes('travel agent')) {
-    return 'Falta el "Travel Agent ID" en tus credenciales de LATAM. Cárgalo en Mi Red → Credenciales → LATAM NDC y reintenta.';
   }
 
   if (detail && detail.length <= 160) {

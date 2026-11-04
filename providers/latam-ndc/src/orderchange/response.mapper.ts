@@ -1,66 +1,62 @@
 import type { OrderPayResult } from '@sales-travel/domain';
+import { mapOrderView } from '../ordermanage/response.mappers';
+import { latamErrors, pick, text } from '../xml';
 
+/**
+ * `OrderViewRS` del pago (`/order/change/payment`, `[portal:/ndc/order-change-pay-later]`).
+ *
+ * El estado se traduce al de la plataforma (ver `normalizeLatamOrderStatus`):
+ * - `CLOSED` → pagada y emitida → `ticketed`.
+ * - `FROZEN` → LATAM rechazó el pago: NO es éxito, aunque la orden siga viva para reintentar.
+ * - `OPENED` → pago todavía en proceso → `confirmed`, con aviso para releer.
+ *
+ * Antes `status` llevaba `CLOSED` tal cual y `orders.service` lo guardaba en `orders.status`.
+ */
 export function mapOrderChangePaymentResponse(raw: unknown): OrderPayResult {
   const root = pick(raw, 'IATA_OrderViewRS', 'OrderViewRS', 'IATA_OrderChangeRS');
-
   if (!root) {
     return {
       success: false,
       warnings: ['No root element in OrderChange response.'],
-      error: 'Invalid response',
+      error: 'Respuesta inválida de LATAM',
     };
   }
 
-  const errorNode = pick(root, 'Error', 'Errors') as
-    | { Code?: string; DescText?: string; Error?: { Code?: string; DescText?: string } }
-    | undefined;
-  if (errorNode) {
-    const inner = errorNode.Error ?? errorNode;
-    const msg = `LATAM error ${inner.Code ?? '?'}: ${inner.DescText ?? 'unknown'}`;
+  const errors = latamErrors(root);
+  if (errors.length > 0) {
+    const msg = errors.map((e) => `LATAM error ${e.code}: ${e.desc}`).join(' | ');
     return { success: false, warnings: [msg], error: msg };
   }
 
   const response = pick(root, 'Response');
-  if (!response) {
-    return { success: false, warnings: ['No Response element.'], error: 'Empty response' };
-  }
-
   const order = pick(response, 'Order') as Record<string, unknown> | undefined;
-  const orderId = order ? extractText(order.OrderID) : undefined;
-  const statusCode = order
-    ? (extractText(order.StatusCode) ?? extractText(order.OrderStatusCode))
-    : undefined;
-
-  let status: string | undefined;
-  if (statusCode) {
-    const s = statusCode.toLowerCase();
-    if (s.includes('confirmed') || s.includes('hk')) status = 'confirmed';
-    else if (s.includes('ticketed') || s.includes('issued')) status = 'ticketed';
-    else if (s.includes('cancel')) status = 'cancelled';
-    else if (s.includes('pending')) status = 'pending';
-    else status = statusCode;
+  if (!order) {
+    return { success: false, warnings: ['No Order element.'], error: 'Respuesta vacía de LATAM' };
   }
 
-  return { success: true, orderId: orderId ?? undefined, status, warnings: [] };
-}
+  const view = mapOrderView(response, order);
+  const rawStatus = text(order.StatusCode)?.toUpperCase();
 
-function extractText(val: unknown): string | undefined {
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (val && typeof val === 'object') {
-    const obj = val as Record<string, unknown>;
-    const text = obj['#text'] ?? obj[''];
-    if (typeof text === 'string') return text;
-    if (typeof text === 'number') return String(text);
+  if (rawStatus === 'FROZEN') {
+    return {
+      success: false,
+      ...(view.orderId ? { orderId: view.orderId } : {}),
+      status: 'confirmed',
+      warnings: view.warnings,
+      error:
+        'LATAM rechazó el pago. La reserva sigue activa: puedes intentar con otro medio de pago.',
+    };
   }
-  return undefined;
-}
 
-function pick(obj: unknown, ...keys: string[]): unknown {
-  if (!obj || typeof obj !== 'object') return undefined;
-  const o = obj as Record<string, unknown>;
-  for (const k of keys) {
-    if (k in o) return o[k];
+  const warnings = [...view.warnings];
+  if (rawStatus === 'OPENED') {
+    warnings.push('El pago sigue en proceso en LATAM. Consulta el estado en unos minutos.');
   }
-  return undefined;
+
+  return {
+    success: true,
+    ...(view.orderId ? { orderId: view.orderId } : {}),
+    ...(view.status ? { status: view.status } : {}),
+    warnings,
+  };
 }

@@ -235,6 +235,9 @@ function fareSelectionChanged(before: Offer, after: Offer): boolean {
  */
 const PENDING_CANCEL_CONSTRAINT = 'uq_order_operations_pending_cancel';
 
+/** Estados que un pago exitoso puede dejar en la orden. Cualquier otro valor cae a `confirmed`. */
+const PAY_RESULT_STATUSES: readonly OrderStatus[] = ['confirmed', 'ticketed'];
+
 /** Quién espera una cancelación: una persona en el panel o un job. */
 type CancelRequestPurpose = NonNullable<HotelCancelRequestOptions['purpose']>;
 
@@ -2908,12 +2911,13 @@ export class OrdersService {
     );
 
     if (result.success) {
+      // Sólo un estado de la plataforma entra en `orders.status`. El de LATAM llegaba tal cual
+      // (`CLOSED`) y una orden emitida quedaba, para todo lo demás, «sin emitir».
+      const status: OrderStatus = PAY_RESULT_STATUSES.includes(result.status as OrderStatus)
+        ? (result.status as OrderStatus)
+        : 'confirmed';
       await this.db.withTenant(tenantId, async (trx) => {
-        await trx
-          .updateTable('orders')
-          .set({ status: (result.status ?? 'confirmed') as OrderStatus })
-          .where('id', '=', id)
-          .execute();
+        await trx.updateTable('orders').set({ status }).where('id', '=', id).execute();
       });
     }
 

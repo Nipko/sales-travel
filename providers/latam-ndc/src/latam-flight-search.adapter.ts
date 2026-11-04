@@ -19,19 +19,23 @@ import type {
   ServiceListResult,
 } from '@sales-travel/domain';
 import { buildAirShoppingRequest, currencyToCountry } from './airshopping/request.builder';
-import { mapAirShoppingResponse } from './airshopping/response.mapper';
+import { AIRSHOPPING_PATH, mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
 import { missingLatamCredentials, type LatamNdcConfig } from './config';
-import { LatamCredentialsMissingError } from './errors';
+import { LatamBusinessError, LatamCredentialsMissingError } from './errors';
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
-import { mapOfferPriceResponse } from './offerprice/response.mapper';
+import { OFFERPRICE_PATH, mapOfferPriceResponse } from './offerprice/response.mapper';
 import { buildOrderChangePaymentRequest } from './orderchange/request.builder';
 import { mapOrderChangePaymentResponse } from './orderchange/response.mapper';
 import { buildOrderCreateRequest } from './ordercreate/request.builder';
 import { mapOrderCreateResponse } from './ordercreate/response.mapper';
 import { buildOrderCancelRequest, buildOrderRetrieveRequest } from './ordermanage/request.builders';
-import { mapOrderCancelResponse, mapOrderRetrieveResponse } from './ordermanage/response.mappers';
+import {
+  ORDER_RETRIEVE_PATH,
+  mapOrderCancelResponse,
+  mapOrderRetrieveResponse,
+} from './ordermanage/response.mappers';
 import { buildOrderReshopRequest } from './orderreshop/request.builder';
 import { mapOrderReshopResponse } from './orderreshop/response.mapper';
 import { buildServiceListRequest } from './servicelist/request.builder';
@@ -70,58 +74,46 @@ export class LatamNdcFlightSearchAdapter
     console.warn('[latam-ndc] adapter initialized');
   }
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
-    const derivedCountry = currencyToCountry(criteria.currency);
-    if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
-      console.warn(
-        `[LatamNdcFlightSearchAdapter] POS mismatch warning: requested currency '${criteria.currency}' maps to country '${derivedCountry}', but agency default is '${this.cfg.country}'. Sandbox keys may fail if they don't support '${derivedCountry}' Point of Sale.`,
-      );
-    }
-
+    const country = currencyToCountry(criteria.currency);
     const xml = buildAirShoppingRequest(criteria, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/airshopping', xml, {
-      trackId: ctx.requestId,
-      country: derivedCountry,
-    });
 
-    const { offers, warnings } = mapAirShoppingResponse(raw, criteria, ctx.tenantId);
-    if (warnings && warnings.length > 0) {
-      console.warn(
-        `[LatamNdcFlightSearchAdapter] AirShopping warnings/errors:`,
-        JSON.stringify(warnings),
-      );
+    // 914 «retrieveTaggedOffer method failed» es transitorio: LATAM pide reintentar 1 o 2 veces
+    // (`[portal:/ndc/status]`).
+    for (let attempt = 1; ; attempt++) {
+      const { data, trackId } = await this.http.postNdc<unknown>(AIRSHOPPING_PATH, xml, {
+        country,
+      });
+      try {
+        const { offers, warnings } = mapAirShoppingResponse(data, criteria, ctx.tenantId, trackId);
+        if (warnings.length > 0) {
+          console.warn(
+            `[latam-ndc] AirShopping track=${trackId} warnings: ${JSON.stringify(warnings)}`,
+          );
+        }
+        return offers;
+      } catch (err) {
+        if (err instanceof LatamBusinessError && err.hasCode('914') && attempt < 3) continue;
+        if (err instanceof LatamBusinessError) {
+          console.warn(`[latam-ndc] AirShopping track=${trackId} error: ${err.body}`);
+        }
+        throw err;
+      }
     }
-    return offers;
   }
 
   async priceOffer(
     offer: Offer,
     criteria: FlightSearchCriteria,
-    ctx: SearchContext,
+    _ctx: SearchContext,
   ): Promise<OfferPriceResult> {
-    const derivedCountry = currencyToCountry(criteria.currency);
-    if (derivedCountry && this.cfg.country && derivedCountry !== this.cfg.country) {
-      console.warn(
-        `[LatamNdcFlightSearchAdapter] POS mismatch warning in OfferPrice: requested currency '${criteria.currency}' maps to country '${derivedCountry}', but agency default is '${this.cfg.country}'.`,
-      );
-    }
-
     const xml = buildOfferPriceRequest(offer, criteria, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/offerPrice', xml, {
-      trackId: ctx.requestId,
-      country: derivedCountry,
+    const { data, trackId } = await this.http.postNdc<unknown>(OFFERPRICE_PATH, xml, {
+      country: currencyToCountry(criteria.currency),
     });
-
-    const result = mapOfferPriceResponse(raw, offer);
-    if (result.warnings && result.warnings.length > 0) {
-      console.warn(
-        `[LatamNdcFlightSearchAdapter] OfferPrice warnings/errors:`,
-        JSON.stringify(result.warnings),
-      );
-    }
-    return result;
+    return mapOfferPriceResponse(data, offer, trackId);
   }
 
-  async createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult> {
+  async createOrder(request: OrderCreateRequest, _ctx: SearchContext): Promise<OrderCreateResult> {
     const xml = buildOrderCreateRequest(
       request.offer,
       request.passengers,
@@ -130,42 +122,37 @@ export class LatamNdcFlightSearchAdapter
       request.criteria?.currency,
       request.payment,
     );
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
-      trackId: ctx.requestId,
+    const { data, trackId } = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
       country: currencyToCountry(request.criteria?.currency),
     });
-
-    return mapOrderCreateResponse(raw);
+    const result = mapOrderCreateResponse(data);
+    if (result.outcome === 'FAILED') {
+      console.warn(
+        `[latam-ndc] OrderCreate track=${trackId} failed: ${result.issues.map((i) => i.type).join(',')}`,
+      );
+    }
+    return result;
   }
 
-  async retrieveForDisplay(orderId: string, ctx: SearchContext): Promise<OrderView> {
+  async retrieveForDisplay(orderId: string, _ctx: SearchContext): Promise<OrderView> {
     const xml = buildOrderRetrieveRequest(orderId, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/retrieve', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapOrderRetrieveResponse(raw);
+    const { data, trackId } = await this.http.postNdc<unknown>(ORDER_RETRIEVE_PATH, xml);
+    return mapOrderRetrieveResponse(data, trackId);
   }
 
-  async cancelOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
+  async cancelOrder(orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
     const xml = buildOrderCancelRequest(orderId, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapOrderCancelResponse(raw);
+    const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/cancel', xml);
+    return mapOrderCancelResponse(data);
   }
 
-  async cancelBnplOrder(orderId: string, ctx: SearchContext): Promise<OrderCancelResult> {
+  async cancelBnplOrder(orderId: string, _ctx: SearchContext): Promise<OrderCancelResult> {
     const xml = buildOrderCancelRequest(orderId, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/cancel/bnpl', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapOrderCancelResponse(raw);
+    const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/cancel/bnpl', xml);
+    return mapOrderCancelResponse(data);
   }
 
-  async payOrder(request: OrderPayRequest, ctx: SearchContext): Promise<OrderPayResult> {
+  async payOrder(request: OrderPayRequest, _ctx: SearchContext): Promise<OrderPayResult> {
     const xml = buildOrderChangePaymentRequest(
       request.orderId,
       request.payment,
@@ -173,31 +160,22 @@ export class LatamNdcFlightSearchAdapter
       request.passengers,
       this.cfg,
     );
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/change/payment', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapOrderChangePaymentResponse(raw);
+    const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/change/payment', xml);
+    return mapOrderChangePaymentResponse(data);
   }
 
-  async listServices(request: ServiceListRequest, ctx: SearchContext): Promise<ServiceListResult> {
+  async listServices(request: ServiceListRequest, _ctx: SearchContext): Promise<ServiceListResult> {
     const xml = buildServiceListRequest(request, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/services/list', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapServiceListResponse(raw);
+    const { data } = await this.http.postNdc<unknown>('/ndc/v192/services/list', xml);
+    return mapServiceListResponse(data);
   }
 
   async reshopWithTickets(
     request: OrderReshopRequest,
-    ctx: SearchContext,
+    _ctx: SearchContext,
   ): Promise<OrderReshopResult> {
     const xml = buildOrderReshopRequest(request, this.cfg);
-    const raw = await this.http.postNdc<unknown>('/ndc/v192/order/requote', xml, {
-      trackId: ctx.requestId,
-    });
-
-    return mapOrderReshopResponse(raw);
+    const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/requote', xml);
+    return mapOrderReshopResponse(data);
   }
 }

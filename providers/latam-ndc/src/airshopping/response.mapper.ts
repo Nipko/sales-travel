@@ -1,21 +1,34 @@
-import type { CabinClass, Itinerary, Money, Offer, Segment } from '@sales-travel/canonical';
+import type { CabinClass, Itinerary, Offer, Segment } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
 import { randomUUID } from 'node:crypto';
+import { LatamApiError, LatamBusinessError } from '../errors';
+import { arr, attr, collect, dateTimeWithOffset, latamErrors, money, pick, text } from '../xml';
+
+export const AIRSHOPPING_PATH = '/ndc/v192/airshopping';
 
 /**
- * Mapea la respuesta IATA_AirShoppingRS de LATAM al modelo canónico.
+ * Códigos con los que LATAM dice «no vendo esa ruta o esa fecha» (`[portal:/ndc/air-shopping-v2]`,
+ * Error Handling). Son una respuesta válida sin vuelos, no una falla del proveedor.
+ */
+export const LATAM_NO_AVAILABILITY_CODES = ['404122006', '404122007'] as const;
+
+/**
+ * Mapea `IATA_AirShoppingRS` (API v2) al modelo canónico.
  *
- * Estructura real de LATAM v192:
- *   IATA_AirShoppingRS
- *     Response
- *       OffersGroup
- *         CarrierOffers
- *           Offer[] → { OfferID, TotalPrice{BaseAmount,TotalAmount}, OfferItem[] }
- *       DataLists
- *         PaxSegmentList → PaxSegment[] (con PaxSegmentID hijo, Dep, Arrival)
- *         PaxJourneyList → PaxJourney[] (con PaxJourneyID, PaxSegmentRefID)
- *         PriceClassList → PriceClass[] (nombre de tarifa: BASIC, LIGHT, FULL)
- *         BaggageAllowanceList
+ * Forma de LATAM v2 (`[portal:/ndc/air-shopping-v2]`):
+ *   Response/OffersGroup/CarrierOffers/Offer[]
+ *     OfferID (UUID) · TotalPrice (de TODOS los pasajeros)
+ *     OfferItem[] — UNO POR TRAYECTO, con todos los pasajeros:
+ *       Service[]/ServiceAssociations/PaxJourneyRefID
+ *       FareDetail[] — uno por grupo de pasajeros: PaxRefID[], FareRefText (marca),
+ *                      FareComponent (FareBasisCode, RBD, PriceClassRefID, FareRule/PenaltyRefID)
+ *       ChangeRestrictions[] / CancelRestrictions[] — uno por pasajero
+ *   Response/DataLists/ PaxSegmentList · PaxJourneyList · PriceClassList · BaggageAllowanceList ·
+ *                       PenaltyList · FareList · ServiceDefinitionList
+ *
+ * Errores: los de «no hay vuelos» devuelven lista vacía; cualquier otro `<Error>` se LANZA como
+ * {@link LatamBusinessError}. Antes se devolvía `[]` y la búsqueda decía «LATAM: 0 vuelos» ante
+ * un error de credenciales o de punto de venta.
  */
 export interface MapResult {
   offers: Offer[];
@@ -26,51 +39,33 @@ export function mapAirShoppingResponse(
   raw: unknown,
   criteria: FlightSearchCriteria,
   tenantId: string,
+  trackId?: string,
 ): MapResult {
   const warnings: string[] = [];
   const root = pick(raw, 'IATA_AirShoppingRS', 'AirShoppingRS');
   if (!root) {
-    // No logueamos el payload crudo (puede contener PII). Verbose sólo con LATAM_DEBUG_HTTP.
-    if (process.env['LATAM_DEBUG_HTTP'] === 'true') {
-      console.warn(
-        '[latam-ndc] AirShopping: no root element. Raw:',
-        JSON.stringify(raw).slice(0, 1000),
-      );
-    } else {
-      console.warn('[latam-ndc] AirShopping: unexpected response (no root element)');
-    }
-    return {
-      offers: [],
-      warnings: ['No IATA_AirShoppingRS root element. Probable error response.'],
-    };
+    throw new LatamApiError(200, 'respuesta sin IATA_AirShoppingRS', AIRSHOPPING_PATH);
   }
 
-  const errorNode = pick(root, 'Error') as { Code?: string; DescText?: string } | undefined;
-  if (errorNode) {
-    console.error(
-      `[LATAM GDS AirShopping Error] GDS returned error - Code: ${errorNode.Code ?? 'unknown'}, Desc: ${errorNode.DescText ?? 'unknown'}`,
-    );
-    return {
-      offers: [],
-      warnings: [`LATAM error ${errorNode.Code ?? '?'}: ${errorNode.DescText ?? 'unknown'}`],
-    };
+  const errors = latamErrors(root);
+  if (errors.length > 0) {
+    if (errors.every((e) => (LATAM_NO_AVAILABILITY_CODES as readonly string[]).includes(e.code))) {
+      return { offers: [], warnings: errors.map((e) => `${e.code}: ${e.desc}`) };
+    }
+    throw new LatamBusinessError(errors, AIRSHOPPING_PATH, trackId);
   }
 
   const response = pick(root, 'Response');
   if (!response) {
-    return { offers: [], warnings: ['No Response element in AirShoppingRS.'] };
+    throw new LatamApiError(200, 'AirShoppingRS sin Response', AIRSHOPPING_PATH);
   }
 
   const segmentMap = buildSegmentMap(response, warnings);
-  const journeyMap = buildJourneyMap(response, segmentMap, warnings);
+  const journeyMap = buildJourneyMap(response, segmentMap);
   const priceClassMap = buildPriceClassMap(response);
   const baggageMap = buildBaggageAllowanceMap(response);
 
-  const offerNodes =
-    collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer').length > 0
-      ? collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer')
-      : collect(response, ['OffersGroup', 'AirlineOffers'], 'Offer');
-
+  const offerNodes = collect(response, ['OffersGroup', 'CarrierOffers'], 'Offer');
   if (offerNodes.length === 0) {
     return { offers: [], warnings: [...warnings, 'No offers in response.'] };
   }
@@ -81,11 +76,10 @@ export function mapAirShoppingResponse(
   for (const node of offerNodes) {
     try {
       const offer = mapOneOffer({
-        node: node as OfferNode,
+        node: node as Record<string, unknown>,
         journeyMap,
         priceClassMap,
         baggageMap,
-        criteria,
         tenantId,
         fetchedAt,
       });
@@ -95,100 +89,57 @@ export function mapAirShoppingResponse(
     }
   }
 
-  // Detect & warn on currency mismatch between what was requested and what LATAM returned.
-  // This commonly happens when the API key is configured for a different country (e.g. Brazil/BRL)
-  // and LATAM ignores the X-latam-Country / <CountryCode> POS hints for pricing purposes.
-  if (offers.length > 0 && criteria.currency) {
-    const responseCurrency = offers[0]?.total?.currency;
-    if (responseCurrency && responseCurrency !== criteria.currency.toUpperCase()) {
-      const msg =
-        `[LATAM GDS AirShopping] ⚠️  Currency mismatch: requested '${criteria.currency}' ` +
-        `but GDS returned '${responseCurrency}'. ` +
-        `The LATAM sandbox API key is likely configured for '${responseCurrency}' (not '${criteria.currency}'). ` +
-        `To receive ${criteria.currency} pricing you need a LATAM NDC API key provisioned for the ` +
-        `corresponding country. Offers are being returned in ${responseCurrency}.`;
-      console.warn(msg);
-      warnings.push(msg);
-    }
+  // LATAM cotiza en la moneda del punto de venta con que dio de alta la cuenta de la agencia, no
+  // en la que pedimos: no hay campo de moneda en el request (§ «Moneda» de docs/latam-ndc). El
+  // aviso se conserva para que la diferencia quede a la vista.
+  const responseCurrency = offers[0]?.total.currency;
+  if (
+    responseCurrency &&
+    criteria.currency &&
+    responseCurrency !== criteria.currency.toUpperCase()
+  ) {
+    warnings.push(
+      `currency mismatch: requested ${criteria.currency.toUpperCase()}, LATAM returned ${responseCurrency}`,
+    );
   }
 
   return { offers, warnings };
 }
 
-// ---- Offer mapping ----
-
-interface TotalPriceNode {
-  TotalAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
-  BaseAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
-  TaxSummary?: {
-    TotalTaxAmount?: string | number | { '#text'?: string | number; '@_CurCode'?: string };
-  };
-  SimpleCurrencyPrice?: { '#text'?: string | number; '@_Code'?: string };
-}
-
-interface OfferNode {
-  OfferID?: string;
-  TotalPrice?: TotalPriceNode;
-  OfferItem?: unknown;
-  BaggageAllowance?: unknown;
-  TimeLimits?: { OfferExpiration?: { '@_DateTime'?: string } };
-}
-
-function extractMoney(amountNode: unknown, currencyHint?: string): Money | null {
-  if (amountNode === undefined || amountNode === null) return null;
-
-  let value: number;
-  let currency: string;
-
-  if (typeof amountNode === 'object' && amountNode !== null) {
-    const obj = amountNode as Record<string, unknown>;
-    const text = obj['#text'] ?? obj[''];
-    value = Number(text);
-    const raw = obj['@_CurCode'] ?? obj['@_Code'] ?? currencyHint ?? 'USD';
-    currency = typeof raw === 'string' ? raw : 'USD';
-  } else {
-    value = Number(amountNode);
-    currency = currencyHint ?? 'USD';
-  }
-
-  if (!Number.isFinite(value)) return null;
-  return { amountMinor: Math.round(value * 100), currency: currency.toUpperCase() };
-}
+// ---- Offer ----
 
 function mapOneOffer(args: {
-  node: OfferNode;
-  journeyMap: Map<string, Segment[]>;
+  node: Record<string, unknown>;
+  journeyMap: Map<string, KeyedSegment[]>;
   priceClassMap: Map<string, PriceClassInfo>;
   baggageMap: Map<string, BaggageInfo>;
-  criteria: FlightSearchCriteria;
   tenantId: string;
   fetchedAt: string;
 }): Offer | null {
-  const offerRef = args.node.OfferID;
+  const offerRef = text(args.node.OfferID);
   if (!offerRef) return null;
 
-  const tp = args.node.TotalPrice;
+  const tp = args.node.TotalPrice as Record<string, unknown> | undefined;
   if (!tp) return null;
-
-  const total =
-    extractMoney(tp.TotalAmount) ??
-    extractMoney(tp.SimpleCurrencyPrice) ??
-    extractMoney(tp.BaseAmount);
+  const total = money(tp.TotalAmount);
   if (!total) return null;
 
-  const baseFare = extractMoney(tp.BaseAmount) ?? total;
-  const taxes = extractMoney(tp.TaxSummary?.TotalTaxAmount, total.currency) ?? {
-    amountMinor: total.amountMinor - baseFare.amountMinor,
-    currency: total.currency,
-  };
+  const baseFare = money(tp.BaseAmount) ?? total;
+  const declaredTaxes = money(pick(tp.TaxSummary, 'TotalTaxAmount'));
+  const taxes =
+    declaredTaxes && declaredTaxes.currency === total.currency
+      ? declaredTaxes
+      : {
+          amountMinor: Math.max(0, total.amountMinor - baseFare.amountMinor),
+          currency: total.currency,
+        };
 
   const offerItems = arr<Record<string, unknown>>(args.node.OfferItem);
-  const itineraries = buildItinerariesFromOfferItems(offerItems, args.journeyMap);
+  const itineraries = buildItineraries(offerItems, args.journeyMap);
   if (itineraries.length === 0) return null;
 
-  // La vigencia que declara LATAM (`OfferExpiration`) es del PROVEEDOR; el respaldo de 30 min es
-  // nuestro. La pantalla sólo marca «Precio expirado» con la del proveedor.
-  const declared = args.node.TimeLimits?.OfferExpiration?.['@_DateTime'];
+  // OfferPrice tampoco trae vigencia; la de 30 min es política NUESTRA y se marca como tal.
+  const declared = attr(pick(args.node.TimeLimits, 'OfferExpiration'), 'DateTime');
   const expiresAt = declared ?? new Date(Date.now() + 30 * 60_000).toISOString();
   const expiresAtSource = declared === undefined ? 'platform-policy' : 'provider';
 
@@ -196,8 +147,8 @@ function mapOneOffer(args: {
   const baggage = extractOfferBaggage(args.node, args.baggageMap);
   const policies = extractPolicies(offerItems);
 
-  // Encode OfferItemIDs into offerRef so OfferPrice can reference them correctly
-  const itemIds = offerItems.map((item) => (item.OfferItemID as string) ?? '').filter(Boolean);
+  // `OfferID|item1,item2`: el OfferID es un UUID y los OfferItemID traen `|` pero nunca `,`.
+  const itemIds = offerItems.map((item) => text(item.OfferItemID) ?? '').filter(Boolean);
   const encodedRef = itemIds.length > 0 ? `${offerRef}|${itemIds.join(',')}` : offerRef;
 
   return {
@@ -209,238 +160,182 @@ function mapOneOffer(args: {
     baseFare,
     taxes,
     itineraries,
-    fareFamily,
-    baggage,
-    policies,
+    ...(fareFamily ? { fareFamily } : {}),
+    ...(baggage ? { baggage } : {}),
+    ...(policies ? { policies } : {}),
     fetchedAt: args.fetchedAt,
     expiresAt,
     expiresAtSource,
   };
 }
 
-// ---- Itinerary building ----
+// ---- Itinerarios ----
 
-function buildItinerariesFromOfferItems(
+/**
+ * Un itinerario por trayecto (`PaxJourney`), ordenados por salida. La clase de reserva de cada
+ * segmento sale del `FareComponent` del OfferItem —es de la tarifa, no del vuelo: el mismo vuelo
+ * va en Q en una oferta y en Y en otra—.
+ */
+function buildItineraries(
   offerItems: Record<string, unknown>[],
-  journeyMap: Map<string, Segment[]>,
+  journeyMap: Map<string, KeyedSegment[]>,
 ): Itinerary[] {
   const itineraries: Itinerary[] = [];
   const seen = new Set<string>();
 
   for (const item of offerItems) {
-    const services = arr<Record<string, unknown>>(item.Service);
-    for (const svc of services) {
-      // LATAM v192: Service.ServiceAssociations.PaxJourneyRefID
-      const assoc = svc.ServiceAssociations as Record<string, unknown> | undefined;
-      const journeyRefs: string[] = [];
-
-      if (assoc) {
-        const refs = assoc.PaxJourneyRefID;
-        if (typeof refs === 'string') journeyRefs.push(refs);
-        else if (Array.isArray(refs)) journeyRefs.push(...refs.map(String));
-      }
-
-      // Fallback: older NDC FlightRefs pattern
-      if (journeyRefs.length === 0 && typeof svc.FlightRefs === 'string') {
-        journeyRefs.push(...svc.FlightRefs.split(/\s+/).filter(Boolean));
-      }
-
-      for (const jRef of journeyRefs) {
+    const rbdBySegment = rbdBySegmentRef(item);
+    for (const svc of arr<Record<string, unknown>>(item.Service)) {
+      const refs = arr<unknown>(pick(svc.ServiceAssociations, 'PaxJourneyRefID'))
+        .map((r) => text(r))
+        .filter((r): r is string => Boolean(r));
+      for (const jRef of refs) {
         if (seen.has(jRef)) continue;
         seen.add(jRef);
-        const segments = journeyMap.get(jRef);
-        if (!segments || segments.length === 0) continue;
-        const totalDur = segments.reduce((sum, s) => sum + s.durationMinutes, 0);
+        const base = journeyMap.get(jRef);
+        if (!base || base.length === 0) continue;
+        const segments = base.map((s) => {
+          const rbd = rbdBySegment.get(s.key);
+          return rbd ? { ...s.segment, bookingClass: rbd } : s.segment;
+        });
         itineraries.push({
           segments,
-          totalDurationMinutes: totalDur,
+          totalDurationMinutes: journeyDuration(segments),
           stops: Math.max(0, segments.length - 1),
         });
       }
     }
   }
 
-  return itineraries;
+  return itineraries.sort(
+    (a, b) => Date.parse(a.segments[0]!.departureAt) - Date.parse(b.segments[0]!.departureAt),
+  );
 }
 
-// ---- Journey & Segment maps ----
+function journeyDuration(segments: Segment[]): number {
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  if (!first || !last) return 0;
+  const span = Math.round((Date.parse(last.arrivalAt) - Date.parse(first.departureAt)) / 60_000);
+  return Number.isFinite(span) && span > 0
+    ? span
+    : segments.reduce((sum, s) => sum + s.durationMinutes, 0);
+}
+
+function rbdBySegmentRef(item: Record<string, unknown>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const fd of arr<Record<string, unknown>>(item.FareDetail)) {
+    for (const fc of arr<Record<string, unknown>>(fd.FareComponent)) {
+      const rbd = text(pick(fc.RBD, 'RBD_Code'))?.trim().toUpperCase();
+      if (!rbd || !/^[A-Z]$/.test(rbd)) continue;
+      for (const ref of arr<unknown>(fc.PaxSegmentRefID)) {
+        const key = text(ref);
+        if (key && !map.has(key)) map.set(key, rbd);
+      }
+    }
+  }
+  return map;
+}
+
+// ---- Segmentos y trayectos ----
+
+interface KeyedSegment {
+  key: string;
+  segment: Segment;
+}
 
 function buildJourneyMap(
   response: unknown,
   segmentMap: Map<string, Segment>,
-  warnings: string[],
-): Map<string, Segment[]> {
-  const map = new Map<string, Segment[]>();
-  const journeys = collect(response, ['DataLists', 'PaxJourneyList'], 'PaxJourney');
-
-  if (journeys.length > 0) {
-    for (const j of journeys) {
-      const node = j as Record<string, unknown>;
-      const journeyId = node.PaxJourneyID as string | undefined;
-      if (!journeyId) continue;
-      const segRefs = arr<string>(node.PaxSegmentRefID);
-      const segments = segRefs
-        .map((ref) => segmentMap.get(ref))
-        .filter((s): s is Segment => Boolean(s));
-      if (segments.length > 0) map.set(journeyId, segments);
+): Map<string, KeyedSegment[]> {
+  const map = new Map<string, KeyedSegment[]>();
+  for (const j of collect(response, ['DataLists', 'PaxJourneyList'], 'PaxJourney')) {
+    const node = j as Record<string, unknown>;
+    const journeyId = text(node.PaxJourneyID);
+    if (!journeyId) continue;
+    const segments: KeyedSegment[] = [];
+    for (const ref of arr<unknown>(node.PaxSegmentRefID)) {
+      const key = text(ref);
+      const segment = key ? segmentMap.get(key) : undefined;
+      if (key && segment) segments.push({ key, segment });
     }
+    if (segments.length > 0) map.set(journeyId, segments);
   }
-
-  // Fallback: older NDC FlightList pattern
-  if (map.size === 0) {
-    const flights = collect(response, ['DataLists', 'FlightList'], 'Flight');
-    for (const f of flights) {
-      const key = (f as Record<string, unknown>)['@_FlightKey'] as string | undefined;
-      if (!key) {
-        warnings.push('flight without FlightKey skipped');
-        continue;
-      }
-      const segRefs = (f as Record<string, unknown>).SegmentReferences;
-      if (typeof segRefs === 'string') {
-        const segments = segRefs
-          .split(/\s+/)
-          .map((ref) => segmentMap.get(ref))
-          .filter((s): s is Segment => Boolean(s));
-        if (segments.length > 0) map.set(key, segments);
-      }
-    }
-  }
-
   return map;
 }
 
 function buildSegmentMap(response: unknown, warnings: string[]): Map<string, Segment> {
   const map = new Map<string, Segment>();
-
-  // LATAM v192: PaxSegmentList → PaxSegment
-  const paxSegs = collect(response, ['DataLists', 'PaxSegmentList'], 'PaxSegment');
-  for (const s of paxSegs) {
-    const seg = mapPaxSegment(s);
+  for (const s of collect(response, ['DataLists', 'PaxSegmentList'], 'PaxSegment')) {
+    const seg = mapPaxSegment(s as Record<string, unknown>);
     if (!seg.ok) {
       warnings.push(`segment skipped: ${seg.reason}`);
       continue;
     }
     map.set(seg.key, seg.segment);
   }
-
-  // Fallback: older NDC FlightSegmentList → FlightSegment
-  if (map.size === 0) {
-    const flightSegs = collect(response, ['DataLists', 'FlightSegmentList'], 'FlightSegment');
-    for (const s of flightSegs) {
-      const seg = mapFlightSegment(s);
-      if (!seg.ok) {
-        warnings.push(`segment skipped: ${seg.reason}`);
-        continue;
-      }
-      map.set(seg.key, seg.segment);
-    }
-  }
-
   return map;
 }
 
 type SegResult = { ok: true; key: string; segment: Segment } | { ok: false; reason: string };
 
-function mapPaxSegment(s: unknown): SegResult {
-  const node = s as Record<string, unknown>;
-  const key = node.PaxSegmentID as string | undefined;
+/** Mapea un `PaxSegment` de LATAM. Exportado para OfferPrice/OrderView, que traen la misma forma. */
+export function mapPaxSegment(node: Record<string, unknown>): SegResult {
+  const key = text(node.PaxSegmentID);
   if (!key) return { ok: false, reason: 'no PaxSegmentID' };
 
-  const dep = node.Dep as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string | Record<string, unknown> }
-    | undefined;
-  const arrNode = node.Arrival as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string | Record<string, unknown> }
-    | undefined;
-  const carrier = node.MarketingCarrierInfo as
-    | { CarrierDesigCode?: string; MarketingCarrierFlightNumberText?: string | number }
-    | undefined;
-  const cabinNode = node.CabinType as
-    | { CabinTypeName?: string; CabinTypeCode?: string }
-    | undefined;
-  const durationStr = node.Duration as string | undefined;
+  const origin = text(pick(node.Dep, 'IATA_LocationCode'));
+  const destination = text(pick(node.Arrival, 'IATA_LocationCode'));
+  if (!origin || !destination) return { ok: false, reason: `${key}: no Dep/Arrival code` };
 
-  if (!dep?.IATA_LocationCode || !arrNode?.IATA_LocationCode)
-    return { ok: false, reason: 'no Dep/Arrival code' };
-
-  const depTime = extractDateTime(dep.AircraftScheduledDateTime);
-  const arrTime = extractDateTime(arrNode.AircraftScheduledDateTime);
-  if (!depTime || !arrTime) return { ok: false, reason: 'no times' };
-
-  if (!carrier?.CarrierDesigCode || !carrier?.MarketingCarrierFlightNumberText) {
-    return { ok: false, reason: 'no carrier info' };
+  const departureAt = dateTimeWithOffset(pick(node.Dep, 'AircraftScheduledDateTime'));
+  const arrivalAt = dateTimeWithOffset(pick(node.Arrival, 'AircraftScheduledDateTime'));
+  if (!departureAt || !arrivalAt) {
+    return { ok: false, reason: `${key}: no times with TimeZoneCode` };
   }
 
-  const departureAt = ensureIso(depTime);
-  const arrivalAt = ensureIso(arrTime);
+  const carrier = text(pick(node.MarketingCarrierInfo, 'CarrierDesigCode'));
+  const flightNumber = text(pick(node.MarketingCarrierInfo, 'MarketingCarrierFlightNumberText'));
+  if (!carrier || !flightNumber) return { ok: false, reason: `${key}: no carrier info` };
+
   const durationMinutes =
-    parseDuration(durationStr) ?? computeDurationMinutes(departureAt, arrivalAt);
+    parseDuration(text(node.Duration)) ?? computeDurationMinutes(departureAt, arrivalAt);
+
+  const operatingCarrier = text(pick(node.OperatingCarrierInfo, 'CarrierDesigCode'));
+  const operatingFlightNumber = text(
+    pick(node.OperatingCarrierInfo, 'OperatingCarrierFlightNumberText'),
+  );
+  const aircraft = arr(node.DatedOperatingLeg)
+    .map((leg) => text(pick(pick(leg, 'CarrierAircraftType'), 'CarrierAircraftTypeCode')))
+    .find(Boolean);
+  const cabinNode = node.CabinType;
 
   return {
     ok: true,
     key,
     segment: {
-      carrier: carrier.CarrierDesigCode,
-      flightNumber: String(carrier.MarketingCarrierFlightNumberText),
-      origin: dep.IATA_LocationCode,
-      destination: arrNode.IATA_LocationCode,
+      carrier,
+      flightNumber: String(flightNumber),
+      origin,
+      destination,
       departureAt,
       arrivalAt,
       durationMinutes,
-      cabin: mapCabin(cabinNode?.CabinTypeName ?? cabinNode?.CabinTypeCode),
+      cabin: mapCabin(
+        text(pick(cabinNode, 'CabinTypeCode')) ?? text(pick(cabinNode, 'CabinTypeName')),
+      ),
+      // La clase real la pone el OfferItem (`rbdBySegmentRef`); 'Y' queda sólo si no la informa.
       bookingClass: 'Y',
+      ...(aircraft ? { aircraft } : {}),
+      ...(operatingCarrier && operatingCarrier !== carrier ? { operatingCarrier } : {}),
+      ...(operatingFlightNumber && /^\d{1,4}[A-Z]?$/.test(operatingFlightNumber)
+        ? { operatingFlightNumber }
+        : {}),
     },
   };
 }
 
-function mapFlightSegment(s: unknown): SegResult {
-  const node = s as Record<string, unknown>;
-  const key =
-    (node['@_SegmentKey'] as string | undefined) ?? (node.PaxSegmentID as string | undefined);
-  if (!key) return { ok: false, reason: 'no SegmentKey' };
-
-  const dep = node.Dep as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
-    | undefined;
-  const arrNode = node.Arrival as
-    | { IATA_LocationCode?: string; AircraftScheduledDateTime?: string }
-    | undefined;
-  const carrier = node.MarketingCarrierInfo as
-    | { CarrierDesigCode?: string; MarketingCarrierFlightNumberText?: string | number }
-    | undefined;
-  const cabinNode = node.CabinType as { CabinTypeName?: string } | undefined;
-  const bookingClassNode = node.ClassOfService as { Code?: string } | undefined;
-
-  if (!dep?.IATA_LocationCode || !arrNode?.IATA_LocationCode)
-    return { ok: false, reason: 'no Dep/Arrival code' };
-  if (!dep.AircraftScheduledDateTime || !arrNode.AircraftScheduledDateTime)
-    return { ok: false, reason: 'no times' };
-  if (!carrier?.CarrierDesigCode || !carrier?.MarketingCarrierFlightNumberText) {
-    return { ok: false, reason: 'no carrier info' };
-  }
-
-  const departureAt = ensureIso(dep.AircraftScheduledDateTime);
-  const arrivalAt = ensureIso(arrNode.AircraftScheduledDateTime);
-  const durationMinutes = computeDurationMinutes(departureAt, arrivalAt);
-
-  return {
-    ok: true,
-    key,
-    segment: {
-      carrier: carrier.CarrierDesigCode,
-      flightNumber: String(carrier.MarketingCarrierFlightNumberText),
-      origin: dep.IATA_LocationCode,
-      destination: arrNode.IATA_LocationCode,
-      departureAt,
-      arrivalAt,
-      durationMinutes,
-      cabin: mapCabin(cabinNode?.CabinTypeName),
-      bookingClass: (bookingClassNode?.Code ?? 'Y').slice(0, 1).toUpperCase(),
-    },
-  };
-}
-
-// ---- Fare family, baggage, policies extraction ----
+// ---- Marca, equipaje y políticas ----
 
 interface PriceClassInfo {
   name: string;
@@ -455,19 +350,15 @@ interface BaggageInfo {
 
 function buildPriceClassMap(response: unknown): Map<string, PriceClassInfo> {
   const map = new Map<string, PriceClassInfo>();
-  const classes = collect(response, ['DataLists', 'PriceClassList'], 'PriceClass');
-  for (const pc of classes) {
+  for (const pc of collect(response, ['DataLists', 'PriceClassList'], 'PriceClass')) {
     const node = pc as Record<string, unknown>;
-    const id = extractText(node.PriceClassID);
-    const name = extractText(node.Name);
+    const id = text(node.PriceClassID);
+    const name = text(node.Name);
     if (!id || !name) continue;
-    const cabinNode = node.CabinType as
-      | { CabinTypeName?: string; CabinTypeCode?: string }
-      | undefined;
     map.set(id, {
       name,
       cabin: mapCabin(
-        extractText(cabinNode?.CabinTypeName) ?? extractText(cabinNode?.CabinTypeCode),
+        text(pick(node.CabinType, 'CabinTypeCode')) ?? text(pick(node.CabinType, 'CabinTypeName')),
       ),
     });
   }
@@ -476,31 +367,32 @@ function buildPriceClassMap(response: unknown): Map<string, PriceClassInfo> {
 
 function buildBaggageAllowanceMap(response: unknown): Map<string, BaggageInfo> {
   const map = new Map<string, BaggageInfo>();
-  const items = collect(response, ['DataLists', 'BaggageAllowanceList'], 'BaggageAllowance');
-  for (const ba of items) {
+  for (const ba of collect(response, ['DataLists', 'BaggageAllowanceList'], 'BaggageAllowance')) {
     const node = ba as Record<string, unknown>;
-    const id = node.BaggageAllowanceID as string | undefined;
+    const id = text(node.BaggageAllowanceID);
     if (!id) continue;
 
-    const typeCode = node.TypeCode as string | undefined;
-    const pieceNode = node.PieceAllowance as { TotalQty?: number | string } | undefined;
-    const qty = Number(pieceNode?.TotalQty ?? 0);
-
+    const qty = Number(text(pick(node.PieceAllowance, 'TotalQty')) ?? 0);
+    // LATAM manda el artículo personal también con TypeCode=CarryOn; sólo el id los distingue.
     let type: BaggageInfo['type'] = 'CarryOn';
-    if (typeCode === 'Checked') type = 'Checked';
-    else if (id.includes('PERSONAL_ITEM')) type = 'PersonalItem';
+    if (text(node.TypeCode) === 'Checked') type = 'Checked';
+    else if (id.includes('PERSONAL_ITEM') && !id.includes('CARRY_ON')) type = 'PersonalItem';
 
     let weightKg: number | undefined;
-    const weightNodes = arr<Record<string, unknown>>(node.WeightAllowance);
-    for (const w of weightNodes) {
-      const measure = w.MaximumWeightMeasure as Record<string, unknown> | undefined;
-      if (measure && measure['@_UnitCode'] === 'KG') {
-        weightKg = Number(measure['#text'] ?? measure[''] ?? 0);
+    for (const w of arr<Record<string, unknown>>(node.WeightAllowance)) {
+      const measure = w.MaximumWeightMeasure;
+      if (attr(measure, 'UnitCode') === 'KG') {
+        const kg = Number(text(measure));
+        if (Number.isFinite(kg)) weightKg = kg;
         break;
       }
     }
 
-    map.set(id, { type, qty, weightKg });
+    map.set(id, {
+      type,
+      qty: Number.isFinite(qty) ? qty : 0,
+      ...(weightKg !== undefined ? { weightKg } : {}),
+    });
   }
   return map;
 }
@@ -510,27 +402,21 @@ function extractFareFamily(
   priceClassMap: Map<string, PriceClassInfo>,
 ): Offer['fareFamily'] {
   for (const item of offerItems) {
-    const fareDetails = arr<Record<string, unknown>>(item.FareDetail);
-    for (const fd of fareDetails) {
-      const fareRefText = extractText(fd.FareRefText);
-      const fareComponents = arr<Record<string, unknown>>(fd.FareComponent);
-      for (const fc of fareComponents) {
-        const priceClassRefID = extractText(fc.PriceClassRefID);
-        if (priceClassRefID) {
-          const pc = priceClassMap.get(priceClassRefID);
-          if (pc) return { name: fareRefText ?? pc.name, cabin: pc.cabin };
-        }
+    for (const fd of arr<Record<string, unknown>>(item.FareDetail)) {
+      const fareRefText = text(fd.FareRefText);
+      for (const fc of arr<Record<string, unknown>>(fd.FareComponent)) {
+        const pcId = text(fc.PriceClassRefID);
+        const pc = pcId ? priceClassMap.get(pcId) : undefined;
+        if (pc) return { name: fareRefText ?? pc.name, cabin: pc.cabin };
       }
-      if (fareRefText) {
-        return { name: fareRefText, cabin: 'economy' };
-      }
+      if (fareRefText) return { name: fareRefText, cabin: 'economy' };
     }
   }
   return undefined;
 }
 
 function extractOfferBaggage(
-  node: OfferNode,
+  node: Record<string, unknown>,
   baggageMap: Map<string, BaggageInfo>,
 ): Offer['baggage'] {
   const refs = arr<Record<string, unknown>>(node.BaggageAllowance);
@@ -543,11 +429,9 @@ function extractOfferBaggage(
   let checkedWeight: number | undefined;
 
   for (const ref of refs) {
-    const refId = ref.BaggageAllowanceRefID as string | undefined;
-    if (!refId) continue;
-    const info = baggageMap.get(refId);
+    const refId = text(ref.BaggageAllowanceRefID);
+    const info = refId ? baggageMap.get(refId) : undefined;
     if (!info) continue;
-
     if (info.type === 'PersonalItem' && info.qty > personalItem) {
       personalItem = info.qty;
     } else if (info.type === 'CarryOn' && info.qty > carryOnQty) {
@@ -561,32 +445,40 @@ function extractOfferBaggage(
 
   return {
     personalItem,
-    carryOn: { qty: carryOnQty, weightKg: carryOnWeight },
-    checked: { qty: checkedQty, weightKg: checkedWeight },
+    carryOn: {
+      qty: carryOnQty,
+      ...(carryOnWeight !== undefined ? { weightKg: carryOnWeight } : {}),
+    },
+    checked: {
+      qty: checkedQty,
+      ...(checkedWeight !== undefined ? { weightKg: checkedWeight } : {}),
+    },
   };
 }
 
 /**
- * Un nodo de restricción AUSENTE es «no informado», no «no permitido»: el PDF lo imprimía como
- * «No reembolsable» sobre un dato que LATAM no mandó. Sólo un nodo presente decide.
+ * ¿Se puede cambiar / reembolsar? LATAM manda `ChangeRestrictions` y `CancelRestrictions` como
+ * LISTA, una entrada por pasajero y por trayecto, con `AllowedModificationInd`. Leerlas como un
+ * solo objeto daba `undefined` → «no permitido» en tarifas que sí permiten cambios.
+ *
+ * La oferta permite algo sólo si TODAS las entradas lo permiten: un ida y vuelta con un trayecto
+ * no cambiable no es cambiable sin más. Sin entradas, el dato es «no informado» (`undefined`).
  */
-function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies'] {
-  let changeable: boolean | undefined;
-  let refundable: boolean | undefined;
-
-  const allowed = (node: Record<string, unknown> | undefined): boolean | undefined => {
-    if (node === undefined) return undefined;
-    const ind = node.AllowedModificationInd;
-    return ind === true || ind === 'true';
+export function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies'] {
+  const verdict = (field: 'ChangeRestrictions' | 'CancelRestrictions'): boolean | undefined => {
+    const values: boolean[] = [];
+    for (const item of offerItems) {
+      for (const entry of arr<Record<string, unknown>>(item[field])) {
+        const ind = entry.AllowedModificationInd;
+        if (ind === true || ind === 'true') values.push(true);
+        else if (ind === false || ind === 'false') values.push(false);
+      }
+    }
+    return values.length === 0 ? undefined : values.every(Boolean);
   };
 
-  for (const item of offerItems) {
-    const change = allowed(item.ChangeRestrictions as Record<string, unknown> | undefined);
-    if (change !== undefined) changeable = (changeable ?? false) || change;
-    const cancel = allowed(item.CancelRestrictions as Record<string, unknown> | undefined);
-    if (cancel !== undefined) refundable = (refundable ?? false) || cancel;
-  }
-
+  const changeable = verdict('ChangeRestrictions');
+  const refundable = verdict('CancelRestrictions');
   if (changeable === undefined && refundable === undefined) return undefined;
   return {
     ...(changeable === undefined ? {} : { changeable }),
@@ -596,27 +488,12 @@ function extractPolicies(offerItems: Record<string, unknown>[]): Offer['policies
 
 // ---- helpers ----
 
-function extractText(val: unknown): string | undefined {
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (val && typeof val === 'object') {
-    const obj = val as Record<string, unknown>;
-    const text = obj['#text'] ?? obj[''];
-    if (typeof text === 'string') return text;
-    if (typeof text === 'number' || typeof text === 'boolean') return String(text);
-  }
-  return undefined;
-}
-
-function extractDateTime(dt: unknown): string | null {
-  return extractText(dt) ?? null;
-}
-
 function parseDuration(iso: string | undefined): number | null {
   if (!iso) return null;
-  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?$/.exec(iso);
+  const m = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?$/.exec(iso);
   if (!m) return null;
-  return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
+  const minutes = Number(m[1] ?? 0) * 1440 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+  return minutes > 0 ? minutes : null;
 }
 
 function computeDurationMinutes(dep: string, arr: string): number {
@@ -629,35 +506,4 @@ function mapCabin(name: string | undefined): CabinClass {
   if (n.includes('business') || n === 'j' || n === 'c') return 'business';
   if (n.includes('premium') || n === 'w') return 'premium_economy';
   return 'economy';
-}
-
-function ensureIso(dt: string): string {
-  if (/[+-]\d{2}:?\d{2}$|Z$/.test(dt)) return dt;
-  return `${dt}Z`;
-}
-
-// ---- generic helpers ----
-
-function pick(obj: unknown, ...keys: string[]): unknown {
-  if (!obj || typeof obj !== 'object') return undefined;
-  const o = obj as Record<string, unknown>;
-  for (const k of keys) {
-    if (k in o) return o[k];
-  }
-  return undefined;
-}
-
-function collect(obj: unknown, path: string[], leaf: string): unknown[] {
-  let cur: unknown = obj;
-  for (const p of path) {
-    cur = pick(cur, p);
-    if (!cur) return [];
-  }
-  const node = pick(cur, leaf);
-  return arr(node);
-}
-
-function arr<T>(v: unknown): T[] {
-  if (v === undefined || v === null) return [];
-  return (Array.isArray(v) ? v : [v]) as T[];
 }

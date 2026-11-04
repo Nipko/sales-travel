@@ -19,6 +19,37 @@ export interface LatamNdcConfig {
   travelAgentId?: string;
   country?: string;
   accountCode?: string;
+  /**
+   * Nombre de la app registrada en el portal de LATAM (`/tools` → Apps). Va en
+   * `X-latam-Application-Name`; sin él se manda el nombre de la agencia, como hasta ahora.
+   */
+  applicationName?: string;
+  /**
+   * Ciudad o aeropuerto IATA del punto de venta (`POS/City/IATA_LocationCode`). El portal lo marca
+   * obligatorio en OrderCreate. Sin él se usa el aeropuerto principal del país de la cuenta.
+   */
+  posCity?: string;
+}
+
+/** Aeropuerto principal por país, para `POS/City` cuando la cuenta no declara uno. */
+const POS_CITY_BY_COUNTRY: Readonly<Record<string, string>> = {
+  CO: 'BOG',
+  PE: 'LIM',
+  CL: 'SCL',
+  BR: 'GRU',
+  AR: 'EZE',
+  EC: 'UIO',
+  UY: 'MVD',
+  PY: 'ASU',
+  BO: 'VVI',
+  MX: 'MEX',
+  US: 'MIA',
+  ES: 'MAD',
+};
+
+export function posCityFor(cfg: LatamNdcConfig, country: string | undefined): string | undefined {
+  if (cfg.posCity && country === cfg.country) return cfg.posCity;
+  return country ? POS_CITY_BY_COUNTRY[country] : undefined;
 }
 
 /**
