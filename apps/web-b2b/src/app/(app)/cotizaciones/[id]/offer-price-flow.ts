@@ -21,13 +21,18 @@ export type OfferPriceRead =
   | { readonly ok: true; readonly data: OfferPriceEnvelope }
   | { readonly ok: false; readonly message: string };
 
+/**
+ * `checkedAt` (epoch ms) es cuándo respondió el proveedor: una confirmación de hace un rato ya no
+ * garantiza nada y la reserva vuelve a revalidar antes de enviar (ver `reserveDecision`).
+ */
 export type PriceVerificationState =
   | {
       readonly kind: 'confirmed';
       readonly changed: boolean;
       readonly newTotal?: string;
+      readonly checkedAt: number;
     }
-  | { readonly kind: 'acceptance-required'; readonly newTotal: string }
+  | { readonly kind: 'acceptance-required'; readonly newTotal: string; readonly checkedAt: number }
   | { readonly kind: 'error'; readonly message: string };
 
 /**
@@ -129,24 +134,113 @@ function fareSelectionIdentity(offer: Offer): string {
   return `components:${JSON.stringify(components)}`;
 }
 
-export function canReserveAfterPriceCheck(
-  state: PriceVerificationState | null,
-  verifying: boolean,
-): boolean {
-  return !verifying && state?.kind === 'confirmed';
+/**
+ * Cuánto vale una confirmación de precio para reservar sin volver a preguntar. Pasado esto, el
+ * clic en «Crear reserva» revalida primero: el servidor lo haría igual, pero un 409 a mitad de la
+ * reserva es peor experiencia que un segundo más de espera antes de enviarla.
+ */
+export const PRICE_CHECK_FRESH_MS = 5 * 60_000;
+
+/**
+ * La revalidación ya no es un paso que el vendedor dispara: corre sola al abrir la cotización. No
+ * corre sobre una cotización cerrada —aceptada o cancelada—, donde no queda nada que reservar y la
+ * llamada al proveedor sólo gastaría cuota.
+ */
+export function shouldAutoVerifyPrice(status: string): boolean {
+  return status !== 'accepted' && status !== 'cancelled';
 }
 
-export function reservationGateMessage(
+/**
+ * Qué hace el clic en «Crear reserva» según el último estado del precio:
+ *
+ * - `go`: confirmación fresca, se crea la reserva en el mismo clic.
+ * - `revalidate`: sin confirmación, con error o vieja; se revalida primero y se espera.
+ * - `ask`: el precio cambió y nadie lo aceptó todavía; se pregunta antes de reservar.
+ */
+export type ReserveDecision = 'go' | 'revalidate' | 'ask';
+
+export function reserveDecision(
+  state: PriceVerificationState | null,
+  now: number,
+  freshForMs: number = PRICE_CHECK_FRESH_MS,
+): ReserveDecision {
+  if (state === null || state.kind === 'error') return 'revalidate';
+  if (state.kind === 'acceptance-required') return 'ask';
+  return now - state.checkedAt <= freshForMs ? 'go' : 'revalidate';
+}
+
+/** El vendedor aceptó el precio nuevo: la oferta ya es la revalidada, sólo cambia el estado. */
+export function acceptRevalidatedPrice(
+  state: Extract<PriceVerificationState, { kind: 'acceptance-required' }>,
+): PriceVerificationState {
+  return {
+    kind: 'confirmed',
+    changed: true,
+    newTotal: state.newTotal,
+    checkedAt: state.checkedAt,
+  };
+}
+
+/**
+ * ¿Los asientos elegidos siguen valiendo tras una revalidación? (SAB-16) Sólo si el proveedor
+ * sigue ofreciendo asientos y la oferta no cambió: un cambio de tarifa puede cambiar la cabina o
+ * la clase, y un asiento elegido sobre la oferta anterior ya no es de fiar.
+ */
+export function seatsSurviveRevalidation(
+  state: PriceVerificationState,
+  seatSelectionOffered: boolean,
+): boolean {
+  return seatSelectionOffered && state.kind === 'confirmed' && !state.changed;
+}
+
+export type PriceStatusTone = 'pending' | 'ok' | 'warning' | 'error';
+
+export interface PriceStatusLine {
+  readonly tone: PriceStatusTone;
+  readonly text: string;
+  /** Sólo los errores se reintentan a mano; lo demás se resuelve al reservar. */
+  readonly retry: boolean;
+}
+
+/** La línea discreta junto al resumen. `null` = nada que decir (cotización cerrada). */
+export function priceStatusLine(
   state: PriceVerificationState | null,
   verifying: boolean,
-): string | undefined {
-  if (verifying) return 'Espera a que termine la revalidación antes de reservar.';
-  if (state === null) return 'Verifica el precio para habilitar la reserva.';
-  if (state.kind === 'error') return state.message;
-  if (state.kind === 'acceptance-required') {
-    return 'Acepta la tarifa revalidada para habilitar la reserva.';
+): PriceStatusLine | null {
+  if (verifying) return { tone: 'pending', text: 'Verificando precio…', retry: false };
+  if (state === null) return null;
+  switch (state.kind) {
+    case 'confirmed':
+      return state.changed
+        ? {
+            tone: 'ok',
+            text: `Nuevo precio aceptado: ${state.newTotal ?? ''}`.trim(),
+            retry: false,
+          }
+        : { tone: 'ok', text: 'Precio confirmado', retry: false };
+    case 'acceptance-required':
+      return {
+        tone: 'warning',
+        text: `El precio cambió a ${state.newTotal}. Se confirma al reservar.`,
+        retry: false,
+      };
+    case 'error':
+      return { tone: 'error', text: state.message, retry: true };
   }
-  return undefined;
+}
+
+export function priceChangeQuestion(newTotal: string): string {
+  return `El precio cambió a ${newTotal}. ¿Reservar con el nuevo precio?`;
+}
+
+/**
+ * El 409 con el que el servidor se niega a reservar porque su propia revalidación vio otro precio
+ * u otra familia (`orders.service.ts`). Es el mismo caso que la revalidación del navegador: hay
+ * que preguntar, no fallar. Otros 409 —oferta vencida, conciliación pendiente— no lo son.
+ */
+export function isServerPriceChange(status: number, message: string | undefined): boolean {
+  if (status !== 409 || message === undefined) return false;
+  return /precio cambi[oó]|familia o la base tarifaria cambi[oó]/i.test(message);
 }
 
 function isOfferPriceEnvelope(value: unknown): value is OfferPriceEnvelope {

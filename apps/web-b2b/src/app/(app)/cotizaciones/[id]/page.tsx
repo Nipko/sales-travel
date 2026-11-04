@@ -19,26 +19,34 @@ import {
   User,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
 import { Label } from '../../../../components/ui/label';
-import { PassengerForm } from './passenger-form';
+import {
+  PassengerForm,
+  type ReservationContact,
+  type ReservationPassenger,
+} from './passenger-form';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
 import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
 import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
 import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
 import {
-  canReserveAfterPriceCheck,
+  acceptRevalidatedPrice,
   displayedPriceChanged,
   displayedTotal,
+  isServerPriceChange,
   offersSeatSelection,
+  priceStatusLine,
   readOfferPriceResponse,
-  reservationGateMessage,
+  reserveDecision,
+  seatsSurviveRevalidation,
+  shouldAutoVerifyPrice,
   withRevalidatedOffer,
   type PriceVerificationState,
 } from './offer-price-flow';
@@ -111,6 +119,13 @@ function humanizeBookingError(raw: string): string {
 }
 
 const ERROR_DESCONOCIDO = 'Error desconocido';
+
+/** Lo que deja una revalidación: el estado, la oferta nueva si la hubo y si los asientos siguen. */
+interface PriceCheck {
+  readonly state: PriceVerificationState;
+  readonly offer?: Offer;
+  readonly seatsKept: boolean;
+}
 
 /**
  * Desenlace de la reserva tal como lo devuelve `POST /api/orders`.
@@ -201,8 +216,14 @@ export default function QuotationDetailPage() {
   const [verifying, setVerifying] = useState(false);
   const [priceStatus, setPriceStatus] = useState<PriceVerificationState | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingOutcomeView | null>(null);
+  // Una sola revalidación en vuelo: la automática al abrir y la del clic en «Crear reserva»
+  // comparten la misma promesa en vez de pedirle dos veces el precio al proveedor.
+  const pendingCheck = useRef<Promise<PriceCheck> | null>(null);
+  // La cotización cuyo precio ya se revalidó solo. Un ref y no estado: en modo estricto React monta
+  // dos veces el efecto, y la segunda no debe volver a llamar al proveedor.
+  const autoVerifiedId = useRef<string | null>(null);
   // SAB-16: elegir asientos. Sólo se ofrece si la revalidación dice que el proveedor lo permite, y
-  // se descarta cada vez que se revalida: los asientos cuelgan de la oferta que se va a reservar.
+  // se descarta si una revalidación cambia la oferta: los asientos cuelgan de la oferta a reservar.
   const [seatSelection, setSeatSelection] = useState(false);
   const [seatChoices, setSeatChoices] = useState<SeatChoice[]>([]);
   const [seatTabsSeen, setSeatTabsSeen] = useState<SeatTab[]>([]);
@@ -222,6 +243,21 @@ export default function QuotationDetailPage() {
       .catch(() => setError('No se pudo cargar la cotización.'))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  /*
+   * El precio se revalida solo al abrir la cotización. Antes era un botón «Verificar precio» que
+   * había que pulsar antes de poder reservar: un paso que el vendedor no necesita decidir, porque
+   * la reserva no puede salir sin él. Ahora corre en segundo plano, y si al reservar ya es viejo o
+   * falló, el propio clic en «Crear reserva» lo repite.
+   */
+  useEffect(() => {
+    if (quotation === null || autoVerifiedId.current === quotation.id) return;
+    if (!shouldAutoVerifyPrice(quotation.status)) return;
+    autoVerifiedId.current = quotation.id;
+    void revalidatePrice();
+    // Sólo al cargar otra cotización: `revalidatePrice` cambia en cada render y la revalidación
+    // misma reemplaza la oferta de `quotation`, lo que no debe volver a dispararla.
+  }, [quotation?.id]);
 
   function handleCopyLink() {
     void navigator.clipboard.writeText(window.location.href).then(() => {
@@ -309,52 +345,46 @@ export default function QuotationDetailPage() {
     }
   }
 
+  /**
+   * El clic en «Crear reserva». Si el precio no está confirmado hace poco, se revalida primero y
+   * se espera; si cambió, se para y el formulario pregunta (con lo escrito intacto); si se confirmó,
+   * la reserva sale en el mismo clic. Un error de revalidación se lanza para que el formulario lo
+   * muestre junto al botón.
+   */
   async function handleCreateOrder(
-    passengers: {
-      paxId: string;
-      requestedTravelerIndex: number;
-      paxType: 'ADT' | 'CHD' | 'INF';
-      title: 'Mr' | 'Mrs' | 'Miss' | 'Dr';
-      givenName: string;
-      surname: string;
-      birthdate: string;
-      gender: 'M' | 'F';
-      citizenshipCountryCode: string;
-      identityDoc: {
-        type: 'P' | 'DNI' | 'CC' | 'CE';
-        number: string;
-        issuingCountryCode: string;
-        issueDate?: string;
-        /** Opcional: una cédula no vence, y mandar `''` tumbaba la reserva entera. */
-        expiryDate?: string;
-      };
-    }[],
-    contactInfo: {
-      email: string;
-      phone: string;
-      countryDialingCode: string;
-      areaCode: string;
-    },
+    passengers: ReservationPassenger[],
+    contactInfo: ReservationContact,
+    options?: { acceptNewPrice?: boolean },
   ) {
     if (!quotation) return;
-    if (!canReserveAfterPriceCheck(priceStatus, verifying)) {
-      setBookingResult({
-        outcome: 'FAILED',
-        error:
-          reservationGateMessage(priceStatus, verifying) ??
-          'La oferta todavía no está habilitada para reservar.',
-      });
-      return;
+    let offer = quotation.selectedOffer;
+    let withSeats = seatSelection && seatChoices.length > 0;
+
+    if (options?.acceptNewPrice === true && priceStatus?.kind === 'acceptance-required') {
+      // La oferta de `quotation` ya es la revalidada: aceptar sólo cambia el estado.
+      setPriceStatus(acceptRevalidatedPrice(priceStatus));
+    } else {
+      const decision = reserveDecision(priceStatus, Date.now());
+      if (decision === 'ask') return;
+      if (decision === 'revalidate') {
+        const check = await revalidatePrice();
+        if (check.state.kind === 'error') throw new Error(check.state.message);
+        // `acceptance-required`: el formulario ya pregunta por el precio nuevo.
+        if (check.state.kind !== 'confirmed' || check.offer === undefined) return;
+        offer = check.offer;
+        withSeats = withSeats && check.seatsKept;
+      }
     }
+
     // Nunca lleva `payment`: createOrder no cobra y el API rechaza el campo (D1). Los asientos van
     // sin precio ni oferta: el servidor vuelve a leer el mapa y sólo reserva los sin cargo.
     const body = {
-      offer: quotation.selectedOffer,
+      offer,
       searchCriteria: quotation.searchCriteria,
       passengers,
       contactInfo,
       quotationId: quotation.id,
-      ...(seatSelection && seatChoices.length > 0 ? { seats: seatChoices } : {}),
+      ...(withSeats ? { seats: seatChoices } : {}),
     };
     let res: Response;
     try {
@@ -389,6 +419,17 @@ export default function QuotationDetailPage() {
     if (isAmbiguousCreateHttpStatus(res.status)) {
       setBookingResult(createOrderTransportFailureView());
       return;
+    }
+    if (isServerPriceChange(res.status, createOrderErrorMessage(data))) {
+      // El servidor revalidó por su cuenta y vio otro precio: no se reservó nada. Se revalida
+      // aquí para traer la oferta nueva y preguntar, igual que si lo hubiera visto el navegador.
+      const check = await revalidatePrice();
+      if (check.state.kind === 'acceptance-required') return;
+      throw new Error(
+        check.state.kind === 'error'
+          ? check.state.message
+          : 'La aerolínea cambió la tarifa mientras se creaba la reserva y no se reservó nada. Vuelve a pulsar «Crear reserva».',
+      );
     }
     if (!res.ok) {
       // La cartera de la agencia o de su red no cubre la reserva: no salió nada hacia la aerolínea
@@ -429,27 +470,40 @@ export default function QuotationDetailPage() {
     });
   }
 
-  async function handleVerifyPrice() {
-    if (!quotation) return;
-    const selectedBeforeRequest = quotation.selectedOffer;
+  /** Revalida el precio. Si ya hay una revalidación en vuelo, devuelve esa misma. */
+  function revalidatePrice(): Promise<PriceCheck> {
+    if (pendingCheck.current !== null) return pendingCheck.current;
+    if (!quotation) {
+      return Promise.resolve({
+        state: { kind: 'error', message: 'La cotización todavía no cargó.' },
+        seatsKept: false,
+      });
+    }
+    const run = runPriceCheck(quotation).finally(() => {
+      pendingCheck.current = null;
+    });
+    pendingCheck.current = run;
+    return run;
+  }
+
+  async function runPriceCheck(current: Quotation): Promise<PriceCheck> {
+    const selectedBeforeRequest = current.selectedOffer;
     setVerifying(true);
-    setPriceStatus(null);
-    setSeatSelection(false);
-    setSeatChoices([]);
-    setSeatTabsSeen([]);
     try {
       const res = await fetch('/api/search/offer-price', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          offer: quotation.selectedOffer,
-          searchCriteria: quotation.searchCriteria,
+          offer: current.selectedOffer,
+          searchCriteria: current.searchCriteria,
         }),
       });
       const read = await readOfferPriceResponse(res, selectedBeforeRequest);
       if (!read.ok) {
-        setPriceStatus({ kind: 'error', message: read.message });
-        return;
+        // La oferta no se tocó: los asientos elegidos siguen colgando de ella.
+        const state: PriceVerificationState = { kind: 'error', message: read.message };
+        setPriceStatus(state);
+        return { state, seatsKept: true };
       }
 
       const changed = displayedPriceChanged(
@@ -458,27 +512,37 @@ export default function QuotationDetailPage() {
         read.data.priceChanged,
       );
       const newTotal = displayedTotal(read.data.offer);
+      const checkedAt = Date.now();
+      const state: PriceVerificationState = changed
+        ? {
+            kind: 'acceptance-required',
+            newTotal: formatMoney(newTotal.amountMinor, newTotal.currency),
+            checkedAt,
+          }
+        : { kind: 'confirmed', changed: false, checkedAt };
 
       // La Offer de precio trae nuevos handles, TTL, desglose y familias. Parchear sólo `total`
       // deja la reserva usando identificadores vencidos; se reemplaza el objeto entero.
-      setQuotation((current) =>
-        current === null ? current : withRevalidatedOffer(current, read.data.offer),
+      setQuotation((latest) =>
+        latest === null ? latest : withRevalidatedOffer(latest, read.data.offer),
       );
-      setSeatSelection(offersSeatSelection(read.data));
+      const seatsOffered = offersSeatSelection(read.data);
+      const seatsKept = seatsSurviveRevalidation(state, seatsOffered);
+      setSeatSelection(seatsOffered);
+      if (!seatsKept) {
+        setSeatChoices([]);
+        setSeatTabsSeen([]);
+      }
       setBookingResult(null);
-      setPriceStatus(
-        changed
-          ? {
-              kind: 'acceptance-required',
-              newTotal: formatMoney(newTotal.amountMinor, newTotal.currency),
-            }
-          : { kind: 'confirmed', changed: false },
-      );
+      setPriceStatus(state);
+      return { state, offer: read.data.offer, seatsKept };
     } catch {
-      setPriceStatus({
+      const state: PriceVerificationState = {
         kind: 'error',
         message: 'No se pudo conectar para revalidar la tarifa. Inténtalo de nuevo.',
-      });
+      };
+      setPriceStatus(state);
+      return { state, seatsKept: true };
     } finally {
       setVerifying(false);
     }
@@ -527,11 +591,13 @@ export default function QuotationDetailPage() {
   // La oferta guardada, o la revalidada por el API si ya se verificó el precio: la marca de la
   // revalidada sale de la cuenta que la cotizó, no de lo que guardó el navegador.
   const testFare = isTestFare(selectedOffer);
-  const reservationEnabled = canReserveAfterPriceCheck(priceStatus, verifying);
-  const reservationDisabledReason = reservationGateMessage(priceStatus, verifying);
+  const priceLine = priceStatusLine(priceStatus, verifying);
   const seatHolders = seatPassengers(searchCriteria.paxCount, passengerNames);
   const seatLine = seatSummary(seatChoices, seatHolders, seatTabsSeen);
-  const offerSeats = seatSelection && reservationEnabled && seatHolders.length > 0;
+  // Los asientos salen de la revalidación automática: se ofrecen cuando el proveedor los permite
+  // y la oferta vigente está confirmada, no mientras se revalida.
+  const offerSeats =
+    seatSelection && !verifying && priceStatus?.kind === 'confirmed' && seatHolders.length > 0;
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8">
@@ -943,6 +1009,47 @@ export default function QuotationDetailPage() {
                       })}`
                     : 'Precio sujeto a revalidación al reservar'}
                 </p>
+                {/* Región viva siempre presente: el lector de pantalla anuncia el cambio de estado
+                    aunque la revalidación termine mientras se mira otra parte de la página. */}
+                <div role="status" aria-live="polite" className="min-h-4">
+                  {priceLine && (
+                    <p
+                      className={`flex items-start gap-1.5 ${
+                        priceLine.tone === 'error'
+                          ? 'text-red-700'
+                          : priceLine.tone === 'warning'
+                            ? 'text-amber-700'
+                            : priceLine.tone === 'ok'
+                              ? 'text-emerald-700'
+                              : 'text-[var(--color-fg-muted)]'
+                      }`}
+                    >
+                      {priceLine.tone === 'pending' ? (
+                        <RefreshCw
+                          aria-hidden="true"
+                          className="mt-px size-3 shrink-0 animate-spin"
+                        />
+                      ) : priceLine.tone === 'ok' ? (
+                        <CheckCircle2 aria-hidden="true" className="mt-px size-3 shrink-0" />
+                      ) : null}
+                      <span>
+                        {priceLine.text}
+                        {priceLine.retry && (
+                          <>
+                            {' '}
+                            <button
+                              type="button"
+                              onClick={() => void revalidatePrice()}
+                              className="font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                            >
+                              Reintentar
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    </p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -951,61 +1058,6 @@ export default function QuotationDetailPage() {
           <Card>
             <CardContent className="space-y-2 p-5">
               <h3 className="mb-3 text-sm font-semibold text-[var(--color-fg)]">Acciones</h3>
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full gap-2"
-                disabled={verifying}
-                onClick={() => void handleVerifyPrice()}
-              >
-                <RefreshCw className={`size-4 ${verifying ? 'animate-spin' : ''}`} />{' '}
-                {verifying ? 'Verificando…' : 'Verificar precio'}
-              </Button>
-              {priceStatus && (
-                <div
-                  className={`rounded-lg border px-3 py-2 text-xs ${
-                    priceStatus.kind === 'error'
-                      ? 'border-red-200 bg-red-50 text-red-800'
-                      : priceStatus.kind === 'acceptance-required'
-                        ? 'border-amber-200 bg-amber-50 text-amber-800'
-                        : 'border-green-200 bg-green-50 text-green-800'
-                  }`}
-                >
-                  {priceStatus.kind === 'error' && priceStatus.message}
-                  {priceStatus.kind === 'acceptance-required' && (
-                    <div className="space-y-2">
-                      <p>La tarifa o el precio cambió. Total revalidado: {priceStatus.newTotal}</p>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        className="w-full"
-                        onClick={() =>
-                          setPriceStatus({
-                            kind: 'confirmed',
-                            changed: true,
-                            newTotal: priceStatus.newTotal,
-                          })
-                        }
-                      >
-                        Aceptar tarifa revalidada
-                      </Button>
-                    </div>
-                  )}
-                  {priceStatus.kind === 'confirmed' && (
-                    <div className="space-y-1">
-                      <p>
-                        {priceStatus.changed
-                          ? `Tarifa revalidada aceptada: ${priceStatus.newTotal ?? ''}`
-                          : 'Precio confirmado — sin cambios'}
-                      </p>
-                      <p className="text-[10px]">
-                        El servidor volverá a validar precio y disponibilidad al crear la reserva.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="my-1 border-t border-[var(--color-border)]" />
               <Button
                 variant="secondary"
                 size="sm"
@@ -1186,8 +1238,9 @@ export default function QuotationDetailPage() {
             customerName={customerName || undefined}
             contactEmail={customerEmail || undefined}
             contactPhone={customerPhone || undefined}
-            disabled={!reservationEnabled}
-            disabledReason={reservationDisabledReason}
+            priceChangeTotal={
+              priceStatus?.kind === 'acceptance-required' ? priceStatus.newTotal : undefined
+            }
             onSubmit={handleCreateOrder}
             onGivenNamesChange={setPassengerNames}
           />

@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '../actions';
 import {
-  canReserveAfterPriceCheck,
+  acceptRevalidatedPrice,
   displayedPriceChanged,
+  isServerPriceChange,
   offersSeatSelection,
+  PRICE_CHECK_FRESH_MS,
+  priceChangeQuestion,
+  priceStatusLine,
   readOfferPriceResponse,
-  reservationGateMessage,
+  reserveDecision,
+  seatsSurviveRevalidation,
+  shouldAutoVerifyPrice,
   withRevalidatedOffer,
   type PriceVerificationState,
 } from './offer-price-flow';
@@ -119,7 +125,7 @@ describe('offersSeatSelection (SAB-16)', () => {
   });
 });
 
-describe('reemplazo y compuerta de reserva', () => {
+describe('reemplazo de la oferta revalidada', () => {
   it('reemplaza íntegramente la seleccionada por la revalidada', () => {
     const original = Object.assign(offer('old'), { onlyOnOld: true });
     const priced = offer('new', 125_000);
@@ -179,18 +185,113 @@ describe('reemplazo y compuerta de reserva', () => {
 
     expect(displayedPriceChanged(before, after, false)).toBe(false);
   });
+});
 
-  it('sólo habilita reserva después de confirmación; error y aceptación pendiente bloquean', () => {
+describe('revalidación automática al abrir la cotización', () => {
+  it('corre en cotizaciones abiertas y no en las cerradas', () => {
+    expect(shouldAutoVerifyPrice('draft')).toBe(true);
+    expect(shouldAutoVerifyPrice('sent')).toBe(true);
+    expect(shouldAutoVerifyPrice('expired')).toBe(true);
+    expect(shouldAutoVerifyPrice('accepted')).toBe(false);
+    expect(shouldAutoVerifyPrice('cancelled')).toBe(false);
+  });
+
+  it('la línea de estado dice qué pasa, sin pedirle nada al vendedor salvo reintentar un error', () => {
+    expect(priceStatusLine(null, false)).toBeNull();
+    expect(priceStatusLine(null, true)).toEqual({
+      tone: 'pending',
+      text: 'Verificando precio…',
+      retry: false,
+    });
+    // Mientras revalida manda «Verificando», aunque haya un estado anterior.
+    expect(priceStatusLine({ kind: 'error', message: 'falló' }, true)?.tone).toBe('pending');
+    expect(priceStatusLine({ kind: 'confirmed', changed: false, checkedAt: 0 }, false)).toEqual({
+      tone: 'ok',
+      text: 'Precio confirmado',
+      retry: false,
+    });
+    expect(priceStatusLine({ kind: 'error', message: 'Sabre no respondió' }, false)).toEqual({
+      tone: 'error',
+      text: 'Sabre no respondió',
+      retry: true,
+    });
+    expect(
+      priceStatusLine({ kind: 'acceptance-required', newTotal: 'USD 1.250', checkedAt: 0 }, false),
+    ).toMatchObject({ tone: 'warning', retry: false, text: expect.stringContaining('USD 1.250') });
+  });
+});
+
+describe('reserveDecision — qué hace el clic en «Crear reserva»', () => {
+  const now = 1_000_000_000;
+
+  it('sin revalidación, con error o con una vieja: revalida primero', () => {
     const states: Array<PriceVerificationState | null> = [
       null,
       { kind: 'error', message: 'falló' },
-      { kind: 'acceptance-required', newTotal: 'USD 120' },
+      { kind: 'confirmed', changed: false, checkedAt: now - PRICE_CHECK_FRESH_MS - 1 },
     ];
-    for (const state of states) expect(canReserveAfterPriceCheck(state, false)).toBe(false);
-    expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, false)).toBe(true);
-    expect(canReserveAfterPriceCheck({ kind: 'confirmed', changed: false }, true)).toBe(false);
-    expect(reservationGateMessage(null, false)).toBe(
-      'Verifica el precio para habilitar la reserva.',
+    for (const state of states)
+      expect(reserveDecision(state, now), JSON.stringify(state)).toBe('revalidate');
+  });
+
+  it('con una confirmación fresca reserva en el mismo clic', () => {
+    expect(reserveDecision({ kind: 'confirmed', changed: false, checkedAt: now }, now)).toBe('go');
+    expect(
+      reserveDecision(
+        { kind: 'confirmed', changed: false, checkedAt: now - PRICE_CHECK_FRESH_MS },
+        now,
+      ),
+    ).toBe('go');
+    expect(
+      reserveDecision({ kind: 'confirmed', changed: true, newTotal: 'USD 1', checkedAt: now }, now),
+    ).toBe('go');
+  });
+
+  it('con un precio nuevo sin aceptar pregunta, por fresco que sea', () => {
+    expect(
+      reserveDecision({ kind: 'acceptance-required', newTotal: 'USD 1', checkedAt: now }, now),
+    ).toBe('ask');
+  });
+
+  it('aceptar convierte la pregunta en una confirmación con la misma hora de revalidación', () => {
+    expect(
+      acceptRevalidatedPrice({ kind: 'acceptance-required', newTotal: 'USD 9', checkedAt: 42 }),
+    ).toEqual({ kind: 'confirmed', changed: true, newTotal: 'USD 9', checkedAt: 42 });
+    expect(priceChangeQuestion('USD 9')).toBe(
+      'El precio cambió a USD 9. ¿Reservar con el nuevo precio?',
     );
+  });
+
+  it('los asientos sólo sobreviven a una revalidación sin cambios y con asientos ofrecidos', () => {
+    const same: PriceVerificationState = { kind: 'confirmed', changed: false, checkedAt: 0 };
+    expect(seatsSurviveRevalidation(same, true)).toBe(true);
+    expect(seatsSurviveRevalidation(same, false)).toBe(false);
+    expect(
+      seatsSurviveRevalidation({ kind: 'acceptance-required', newTotal: 'x', checkedAt: 0 }, true),
+    ).toBe(false);
+    expect(seatsSurviveRevalidation({ kind: 'error', message: 'x' }, true)).toBe(false);
+  });
+
+  it('el 409 de precio o familia del servidor se trata como cambio de precio; otros 409 no', () => {
+    expect(
+      isServerPriceChange(
+        409,
+        'El precio cambió. Revalida la oferta y acepta el nuevo precio antes de reservar.',
+      ),
+    ).toBe(true);
+    expect(
+      isServerPriceChange(
+        409,
+        'La familia o la base tarifaria cambió. Revalida la oferta y acepta la nueva opción antes de reservar.',
+      ),
+    ).toBe(true);
+    expect(
+      isServerPriceChange(
+        409,
+        'La oferta revalidada ya venció o no tiene una vigencia válida. Vuelve a buscar antes de reservar.',
+      ),
+    ).toBe(false);
+    expect(isServerPriceChange(400, 'El precio cambió.')).toBe(false);
+    expect(isServerPriceChange(409, undefined)).toBe(false);
   });
 });

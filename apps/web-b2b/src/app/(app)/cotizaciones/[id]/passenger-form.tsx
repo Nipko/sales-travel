@@ -1,12 +1,13 @@
 'use client';
 
-import { AlertCircle, Check, ClipboardCopy, Plane, UserPlus, Wallet } from 'lucide-react';
+import { AlertCircle, ChevronDown, Plane, UserPlus, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
 import { splitFullName } from '../../../../lib/full-name';
+import { priceChangeQuestion } from './offer-price-flow';
 import {
   birthdateIssue,
   formatBirthdateInput,
@@ -20,7 +21,7 @@ interface PaxCount {
   infants: number;
 }
 
-interface Passenger {
+export interface ReservationPassenger {
   paxId: string;
   /** Índice global 0-based de la búsqueda: ADT, luego CHD y luego INF. */
   requestedTravelerIndex: number;
@@ -41,12 +42,15 @@ interface Passenger {
   };
 }
 
-interface ContactInfo {
+export interface ReservationContact {
   email: string;
   phone: string;
   countryDialingCode: string;
   areaCode: string;
 }
+
+type Passenger = ReservationPassenger;
+type ContactInfo = ReservationContact;
 
 interface PassengerFormProps {
   paxCount: PaxCount;
@@ -54,10 +58,16 @@ interface PassengerFormProps {
   customerName?: string;
   contactEmail?: string;
   contactPhone?: string;
-  /** La reserva se habilita únicamente tras revalidar (y aceptar, si cambió el precio). */
-  disabled?: boolean;
-  disabledReason?: string;
-  onSubmit: (passengers: Passenger[], contactInfo: ContactInfo) => Promise<void>;
+  /**
+   * La revalidación vio otro precio y nadie lo aceptó todavía: el total nuevo, ya formateado. El
+   * formulario pregunta junto al botón y, si se acepta, vuelve a enviar lo mismo que ya se tecleó.
+   */
+  priceChangeTotal?: string;
+  onSubmit: (
+    passengers: Passenger[],
+    contactInfo: ContactInfo,
+    options?: { acceptNewPrice?: boolean },
+  ) => Promise<void>;
   /**
    * Los nombres de pila a medida que se escriben, por `requestedTravelerIndex`. Los usa la elección
    * de asientos para decir «Ana 12C» en vez de «Adulto 1 12C» (SAB-16).
@@ -87,6 +97,37 @@ export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
   for (let i = 1; i <= paxCount.children; i++) pax.push(make('CHD', i, pax.length));
   for (let i = 1; i <= paxCount.infants; i++) pax.push(make('INF', i, pax.length));
   return pax;
+}
+
+/**
+ * El pasajero 1 con el nombre del cliente cuando «El cliente es quien viaja» está marcado.
+ *
+ * Se deriva en cada render en vez de copiarse: así sigue al nombre del cliente si se corrige en
+ * «Cliente y contacto», y lo que el vendedor tecleó a mano en el pasajero 1 no se pisa (vuelve si
+ * desmarca). El reparto nombre/apellido vive en `lib/full-name` (dos apellidos en LATAM).
+ */
+export function withCustomerAsFirstPassenger<T extends { givenName: string; surname: string }>(
+  passengers: readonly T[],
+  customerName: string | undefined,
+  clientTravels: boolean,
+): T[] {
+  const full = (customerName ?? '').trim();
+  if (!clientTravels || !full) return [...passengers];
+  const names = splitFullName(full);
+  return passengers.map((p, i) => (i === 0 ? { ...p, ...names } : p));
+}
+
+/**
+ * El tratamiento quedó dentro de «Más datos (opcional)»: si sigue en el valor por defecto de un
+ * género (Sr/Sra), acompaña al género elegido; uno que el vendedor cambió a mano (Srta, Dr) se
+ * respeta.
+ */
+export function titleForGender(
+  title: Passenger['title'],
+  gender: Passenger['gender'],
+): Passenger['title'] {
+  if (title !== 'Mr' && title !== 'Mrs') return title;
+  return gender === 'F' ? 'Mrs' : 'Mr';
 }
 
 const PAX_TYPE_LABELS: Record<string, string> = {
@@ -191,12 +232,33 @@ export function PassengerForm({
   customerName,
   contactEmail,
   contactPhone,
-  disabled = false,
-  disabledReason,
+  priceChangeTotal,
   onSubmit,
   onGivenNamesChange,
 }: PassengerFormProps) {
-  const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
+  const [typed, setTyped] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
+  const customer = (customerName ?? '').trim();
+
+  /*
+   * «El cliente es quien viaja», marcado de entrada cuando hay cliente. En la mayoría de las
+   * reservas —un solo pasajero— el vendedor escribía el mismo nombre dos veces, una en «Cliente y
+   * contacto» y otra en «Pasajero 1». Ahora el pasajero 1 toma el nombre del cliente y sólo pide lo
+   * que falta para el billete (nacimiento y documento).
+   */
+  const [clientTravels, setClientTravels] = useState(() => customer.length > 0);
+  // Si el cliente se escribe después de abrir el formulario, se marca solo, salvo que el vendedor
+  // ya haya decidido o ya haya escrito a mano en el pasajero 1.
+  const clientChoiceMade = useRef(false);
+  const firstTyped = typed[0];
+  const firstTypedBlank =
+    firstTyped === undefined || (!firstTyped.givenName.trim() && !firstTyped.surname.trim());
+  useEffect(() => {
+    if (clientChoiceMade.current || clientTravels || !customer || !firstTypedBlank) return;
+    setClientTravels(true);
+  }, [customer, clientTravels, firstTypedBlank]);
+
+  const fromCustomer = clientTravels && customer.length > 0;
+  const passengers = withCustomerAsFirstPassenger(typed, customer, fromCustomer);
 
   // Una clave estable por contenido: el efecto avisa cuando cambia un nombre, no en cada render.
   const givenNames = JSON.stringify(passengers.map((p) => p.givenName.trim()));
@@ -207,58 +269,37 @@ export function PassengerForm({
   const [error, setError] = useState<string | null>(null);
   // `attempted` activa el marcado de errores recién cuando el usuario intenta reservar.
   const [attempted, setAttempted] = useState(false);
-  const [copiedHint, setCopiedHint] = useState(false);
 
   const email = (contactEmail ?? '').trim();
   const phone = (contactPhone ?? '').trim();
 
   function updatePax(idx: number, patch: Partial<Passenger>) {
-    setPassengers((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+    setTyped((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
   }
 
   function updateDoc(idx: number, patch: Partial<Passenger['identityDoc']>) {
-    setPassengers((prev) =>
+    setTyped((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, identityDoc: { ...p.identityDoc, ...patch } } : p)),
     );
   }
 
-  /**
-   * El pasajero 1 arranca con los datos del cliente, sin tener que pedirlo.
-   *
-   * Había un botón «Usar datos del cliente», y existir no era suficiente: es una pastilla de
-   * 10 px que hay que descubrir, así que en la práctica el vendedor escribía el mismo nombre dos
-   * veces —una en «Cliente y contacto» y otra en «Pasajero 1»— en la reserva de un solo pax, que
-   * es la mayoría.
-   *
-   * Se copia UNA vez y sólo sobre un pasajero 1 en blanco: si ya hay algo escrito, es del
-   * vendedor y no se pisa. Los campos siguen siendo editables —el reparto nombre/apellido es una
-   * heurística, no un dogma— y el botón se queda para volver a copiar tras cambiar el cliente.
-   */
-  const autorellenado = useRef(false);
-  useEffect(() => {
-    if (autorellenado.current) return;
-    const full = (customerName ?? '').trim();
-    if (!full) return;
-    const primero = passengers[0];
-    if (primero === undefined || primero.givenName.trim() || primero.surname.trim()) return;
+  function updateGender(idx: number, gender: Passenger['gender']) {
+    setTyped((prev) =>
+      prev.map((p, i) =>
+        i === idx ? { ...p, gender, title: titleForGender(p.title, gender) } : p,
+      ),
+    );
+  }
 
-    autorellenado.current = true;
-    setPassengers((prev) => prev.map((p, i) => (i === 0 ? { ...p, ...splitFullName(full) } : p)));
-  }, [customerName, passengers]);
+  function setClientIsTraveler(value: boolean) {
+    clientChoiceMade.current = true;
+    setClientTravels(value);
+  }
 
-  /**
-   * Copia el nombre del cliente al pasajero 1.
-   *
-   * El reparto nombre/apellido vive en `lib/full-name` y NO es «la última palabra»: en LATAM dos
-   * apellidos es la norma, y esa regla partía «Juan Carlos Pérez Gómez» dejando «Pérez» dentro
-   * del nombre de pila. Un nombre que no coincide con el documento puede costar el embarque.
-   */
-  function copyCustomerToPax(idx: number) {
-    const full = (customerName ?? '').trim();
-    if (!full) return;
-    updatePax(idx, splitFullName(full));
-    setCopiedHint(true);
-    setTimeout(() => setCopiedHint(false), 1800);
+  /** «Editar»: deja de seguir al cliente y abre los campos con su nombre ya puesto. */
+  function editCustomerName() {
+    setClientIsTraveler(false);
+    if (customer) updatePax(0, splitFullName(customer));
   }
 
   /**
@@ -300,17 +341,22 @@ export function PassengerForm({
       m.push('Email de contacto válido (en "Cliente y contacto").');
     }
     if (!phone) m.push('Teléfono de contacto (en "Cliente y contacto").');
-    for (const p of passengers) {
+    passengers.forEach((p, idx) => {
       const issues = paxIssues(p);
-      if (issues.length) m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.`);
-    }
+      if (!issues.length) return;
+      const where =
+        idx === 0 && fromCustomer && issues.includes('apellido')
+          ? ' Escribe el nombre completo del cliente o pulsa «Editar».'
+          : '';
+      m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.${where}`);
+    });
     return m;
   }
 
   const problems = validationMessages();
   const canSubmit = problems.length === 0;
 
-  async function handleSubmit() {
+  async function handleSubmit(acceptNewPrice = false) {
     setAttempted(true);
     if (!canSubmit) return;
     setSubmitting(true);
@@ -322,7 +368,11 @@ export function PassengerForm({
         countryDialingCode: '57',
         areaCode: '1',
       };
-      await onSubmit(passengers.map(sinCamposEnBlanco), contactInfo);
+      await onSubmit(
+        passengers.map(sinCamposEnBlanco),
+        contactInfo,
+        acceptNewPrice ? { acceptNewPrice: true } : undefined,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear la reserva');
     } finally {
@@ -334,17 +384,9 @@ export function PassengerForm({
     <Card>
       <CardContent className="relative p-5">
         {submitting && <BookingOverlay />}
-        {disabled && disabledReason && (
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"
-          >
-            {disabledReason}
-          </div>
-        )}
         <fieldset
-          disabled={submitting || disabled}
-          className={cn('m-0 min-w-0 border-0 p-0', (submitting || disabled) && 'opacity-60')}
+          disabled={submitting}
+          className={cn('m-0 min-w-0 border-0 p-0', submitting && 'opacity-60')}
         >
           <div className="mb-1 flex items-center gap-2">
             <UserPlus className="size-4 text-[var(--color-primary)]" />
@@ -353,9 +395,7 @@ export function PassengerForm({
             </h2>
           </div>
           <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
-            Datos de quienes viajan. El contacto de la reserva es el del cliente (arriba). Los
-            campos con <span className="text-red-500">*</span> son obligatorios; el resto es
-            opcional.
+            Sólo lo que pide el billete. El contacto de la reserva es el del cliente (arriba).
           </p>
 
           {/* Passengers */}
@@ -363,71 +403,91 @@ export function PassengerForm({
             {passengers.map((pax, idx) => {
               const issues = attempted ? paxIssues(pax) : [];
               const bad = (field: string) => issues.includes(field);
+              const id = (field: string) => `pax-${pax.paxId}-${field}`;
+              const namesFromCustomer = idx === 0 && fromCustomer;
               return (
                 <div key={pax.paxId} className="rounded-lg border border-[var(--color-border)] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Plane className="size-3.5 text-[var(--color-fg-subtle)]" />
-                      <span className="text-xs font-medium text-[var(--color-fg)]">
-                        {passengerLabel(pax)}
-                      </span>
-                      <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-medium text-[var(--color-fg-muted)]">
-                        {pax.paxType}
-                      </span>
-                    </div>
-                    {idx === 0 && (customerName ?? '').trim() && (
-                      <button
-                        type="button"
-                        onClick={() => copyCustomerToPax(idx)}
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors',
-                          copiedHint
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                            : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]',
-                        )}
-                      >
-                        {copiedHint ? (
-                          <>
-                            <Check className="size-3" />
-                            Datos copiados
-                          </>
-                        ) : (
-                          <>
-                            <ClipboardCopy className="size-3" />
-                            Usar datos del cliente
-                          </>
-                        )}
-                      </button>
-                    )}
+                  <div className="mb-3 flex items-center gap-2">
+                    <Plane aria-hidden="true" className="size-3.5 text-[var(--color-fg-subtle)]" />
+                    <span className="text-xs font-medium text-[var(--color-fg)]">
+                      {passengerLabel(pax)}
+                    </span>
+                    <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-medium text-[var(--color-fg-muted)]">
+                      {pax.paxType}
+                    </span>
                   </div>
 
+                  {idx === 0 && customer && (
+                    <label className="mb-3 flex min-h-10 cursor-pointer items-center gap-2.5 text-sm text-[var(--color-fg)]">
+                      <input
+                        type="checkbox"
+                        checked={clientTravels}
+                        onChange={(e) => setClientIsTraveler(e.target.checked)}
+                        className="size-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
+                      />
+                      El cliente es quien viaja
+                    </label>
+                  )}
+
+                  {namesFromCustomer && (
+                    <p
+                      className={cn(
+                        'mb-3 rounded-md bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]',
+                        (bad('nombre') || bad('apellido')) && 'bg-red-50 text-red-800',
+                      )}
+                    >
+                      Nombre en el documento:{' '}
+                      <span className="font-medium text-[var(--color-fg)]">
+                        {pax.givenName} {pax.surname}
+                      </span>
+                      {!pax.surname.trim() && <span> · falta el apellido</span>} ·{' '}
+                      <button
+                        type="button"
+                        onClick={editCustomerName}
+                        className="font-medium text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                      >
+                        Editar
+                      </button>
+                    </p>
+                  )}
+
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="space-y-1">
-                      <Label>
-                        Nombre(s)
-                        <Req />
-                      </Label>
-                      <input
-                        type="text"
-                        value={pax.givenName}
-                        onChange={(e) => updatePax(idx, { givenName: e.target.value })}
-                        placeholder="OLIVER"
-                        className={cn(inputClass, bad('nombre') && errClass)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>
-                        Apellido(s)
-                        <Req />
-                      </Label>
-                      <input
-                        type="text"
-                        value={pax.surname}
-                        onChange={(e) => updatePax(idx, { surname: e.target.value })}
-                        placeholder="JACKSON"
-                        className={cn(inputClass, bad('apellido') && errClass)}
-                      />
-                    </div>
+                    {!namesFromCustomer && (
+                      <>
+                        <div className="space-y-1">
+                          <Label htmlFor={id('given')}>
+                            Nombre(s)
+                            <Req />
+                          </Label>
+                          <input
+                            id={id('given')}
+                            type="text"
+                            autoComplete="off"
+                            value={pax.givenName}
+                            onChange={(e) => updatePax(idx, { givenName: e.target.value })}
+                            placeholder="OLIVER"
+                            aria-invalid={bad('nombre') || undefined}
+                            className={cn(inputClass, bad('nombre') && errClass)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={id('surname')}>
+                            Apellido(s)
+                            <Req />
+                          </Label>
+                          <input
+                            id={id('surname')}
+                            type="text"
+                            autoComplete="off"
+                            value={pax.surname}
+                            onChange={(e) => updatePax(idx, { surname: e.target.value })}
+                            placeholder="JACKSON"
+                            aria-invalid={bad('apellido') || undefined}
+                            className={cn(inputClass, bad('apellido') && errClass)}
+                          />
+                        </div>
+                      </>
+                    )}
                     <div className="space-y-1">
                       <Label>
                         Fecha de nacimiento
@@ -440,11 +500,24 @@ export function PassengerForm({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label>
+                      <Label htmlFor={id('gender')}>Género</Label>
+                      <select
+                        id={id('gender')}
+                        value={pax.gender}
+                        onChange={(e) => updateGender(idx, e.target.value as 'M' | 'F')}
+                        className={selectClass}
+                      >
+                        <option value="M">Masculino</option>
+                        <option value="F">Femenino</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={id('doc-type')}>
                         Tipo de documento
                         <Req />
                       </Label>
                       <select
+                        id={id('doc-type')}
                         value={pax.identityDoc.type}
                         onChange={(e) =>
                           updateDoc(idx, { type: e.target.value as 'P' | 'DNI' | 'CC' | 'CE' })
@@ -459,65 +532,41 @@ export function PassengerForm({
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <Label>
+                      <Label htmlFor={id('doc-number')}>
                         Número de documento
                         <Req />
                       </Label>
                       <input
+                        id={id('doc-number')}
                         type="text"
+                        autoComplete="off"
                         value={pax.identityDoc.number}
                         onChange={(e) => updateDoc(idx, { number: e.target.value })}
                         placeholder="1234567890"
+                        aria-invalid={bad('número de documento') || undefined}
                         className={cn(inputClass, bad('número de documento') && errClass)}
                       />
                     </div>
                     {pax.identityDoc.type === 'P' && (
                       <div className="space-y-1">
-                        <Label>
+                        <Label htmlFor={id('doc-expiry')}>
                           Vencimiento pasaporte
                           <Req />
                         </Label>
                         <input
+                          id={id('doc-expiry')}
                           type="date"
                           value={pax.identityDoc.expiryDate ?? ''}
                           onChange={(e) => updateDoc(idx, { expiryDate: e.target.value })}
+                          aria-invalid={bad('vencimiento del pasaporte') || undefined}
                           className={cn(inputClass, bad('vencimiento del pasaporte') && errClass)}
                         />
                       </div>
                     )}
                     <div className="space-y-1">
-                      <Label>
-                        Tratamiento
-                        <Opt />
-                      </Label>
-                      <select
-                        value={pax.title}
-                        onChange={(e) =>
-                          updatePax(idx, { title: e.target.value as 'Mr' | 'Mrs' | 'Miss' | 'Dr' })
-                        }
-                        className={selectClass}
-                      >
-                        {TITLE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Género</Label>
-                      <select
-                        value={pax.gender}
-                        onChange={(e) => updatePax(idx, { gender: e.target.value as 'M' | 'F' })}
-                        className={selectClass}
-                      >
-                        <option value="M">Masculino</option>
-                        <option value="F">Femenino</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Nacionalidad</Label>
+                      <Label htmlFor={id('nationality')}>Nacionalidad</Label>
                       <input
+                        id={id('nationality')}
                         type="text"
                         value={pax.citizenshipCountryCode}
                         onChange={(e) =>
@@ -529,8 +578,9 @@ export function PassengerForm({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label>País emisor doc.</Label>
+                      <Label htmlFor={id('doc-country')}>País emisor doc.</Label>
                       <input
+                        id={id('doc-country')}
                         type="text"
                         value={pax.identityDoc.issuingCountryCode}
                         onChange={(e) =>
@@ -541,23 +591,60 @@ export function PassengerForm({
                         className={inputClass}
                       />
                     </div>
-                    {pax.identityDoc.type === 'P' && (
+                  </div>
+
+                  {/* Lo opcional, plegado: no hace falta para reservar y no debe competir con lo
+                      que sí. `<details>` da teclado y lector de pantalla sin JavaScript. */}
+                  <details className="group mt-3">
+                    <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-1 rounded-md text-xs font-medium text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 [&::-webkit-details-marker]:hidden">
+                      <ChevronDown
+                        aria-hidden="true"
+                        className="size-3.5 transition-transform group-open:rotate-180"
+                      />
+                      Más datos (opcional)
+                    </summary>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       <div className="space-y-1">
-                        <Label>
-                          Emisión pasaporte
+                        <Label htmlFor={id('title')}>
+                          Tratamiento
                           <Opt />
                         </Label>
-                        <input
-                          type="date"
-                          value={pax.identityDoc.issueDate ?? ''}
+                        <select
+                          id={id('title')}
+                          value={pax.title}
                           onChange={(e) =>
-                            updateDoc(idx, { issueDate: e.target.value || undefined })
+                            updatePax(idx, {
+                              title: e.target.value as 'Mr' | 'Mrs' | 'Miss' | 'Dr',
+                            })
                           }
-                          className={inputClass}
-                        />
+                          className={selectClass}
+                        >
+                          {TITLE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    )}
-                  </div>
+                      {pax.identityDoc.type === 'P' && (
+                        <div className="space-y-1">
+                          <Label htmlFor={id('doc-issue')}>
+                            Emisión pasaporte
+                            <Opt />
+                          </Label>
+                          <input
+                            id={id('doc-issue')}
+                            type="date"
+                            value={pax.identityDoc.issueDate ?? ''}
+                            onChange={(e) =>
+                              updateDoc(idx, { issueDate: e.target.value || undefined })
+                            }
+                            className={inputClass}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               );
             })}
@@ -603,23 +690,45 @@ export function PassengerForm({
           )}
 
           {error && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
+            >
               {error}
             </div>
           )}
 
-          <div className="mt-5 flex justify-end">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={submitting || disabled}
-              onClick={() => void handleSubmit()}
-              className="gap-2"
+          {priceChangeTotal ? (
+            <div
+              role="alert"
+              className="mt-5 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
-              <Plane className="size-4" />
-              {submitting ? 'Creando reserva…' : 'Crear reserva'}
-            </Button>
-          </div>
+              <p className="text-sm text-amber-900">{priceChangeQuestion(priceChangeTotal)}</p>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={submitting}
+                onClick={() => void handleSubmit(true)}
+                className="h-10 shrink-0 gap-2 sm:h-9"
+              >
+                <Plane className="size-4" />
+                Reservar con el nuevo precio
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-5 flex justify-end">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={submitting}
+                onClick={() => void handleSubmit()}
+                className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
+              >
+                <Plane className="size-4" />
+                {submitting ? 'Creando reserva…' : 'Crear reserva'}
+              </Button>
+            </div>
+          )}
         </fieldset>
       </CardContent>
     </Card>
