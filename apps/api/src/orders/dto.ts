@@ -64,6 +64,10 @@ export const PayOrderSchema = z.object({
 });
 export type PayOrderInput = z.infer<typeof PayOrderSchema>;
 
+/** Enviar el enlace de pago de LATAM: sólo a quién le llega. */
+export const PaymentLinkSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
+export type PaymentLinkInput = z.infer<typeof PaymentLinkSchema>;
+
 /**
  * Pedir la emisión de una reserva. El total y la moneda son los que el vendedor tenía en pantalla
  * al confirmar: si la orden ya dice otra cosa, no se emite (409). Sin forma de pago: la decide la

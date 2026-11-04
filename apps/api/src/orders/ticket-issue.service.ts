@@ -1,3 +1,4 @@
+import { GovernancePaymentsService } from '../governance/governance-payments.service.js';
 import {
   BadRequestException,
   ConflictException,
@@ -140,6 +141,8 @@ export class FlightTicketIssueService {
     private readonly branding: BrandingService,
     /** Donde quedan los documentos (0082). En la app siempre está. */
     @Optional() private readonly tracking?: FlightOrderTrackingStore,
+    /** Gobierno de formas de pago (0089). En la app siempre está. */
+    @Optional() private readonly governance?: GovernancePaymentsService,
   ) {}
 
   /**
@@ -160,6 +163,13 @@ export class FlightTicketIssueService {
       throw new BadRequestException(
         `La operación no está disponible para reservas de proveedor '${order.provider}'.`,
       );
+    }
+
+    // Gobierno de formas de pago (0089): la emisión sale con la forma de pago de la cuenta, y esa
+    // forma tiene que estar habilitada para el nodo antes de comprometer el dinero.
+    const formOfPayment = provider.adapter.issueFormOfPayment;
+    if (this.governance && formOfPayment) {
+      await this.governance.assertEnabled(tenantId, order.provider, formOfPayment.toLowerCase());
     }
 
     const testContent = isTestContentOrder(order);

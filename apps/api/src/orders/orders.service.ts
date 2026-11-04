@@ -18,6 +18,7 @@ import {
   type OrderCancelResult,
   type OrderCreateResult,
   type OrderPayResult,
+  type PaymentLinkResult,
   type OrderReshopRequest,
   type OrderReshopResult,
   type OrderView,
@@ -2875,6 +2876,64 @@ export class OrdersService {
     if (ticketOperation !== undefined && order.status !== 'ticketed') {
       throw new ConflictException(TICKET_VOID_MESSAGES.notTicketed);
     }
+  }
+
+  /**
+   * Le pide al proveedor que mande al pagador un enlace para pagar la reserva en su sitio (LATAM:
+   * `/order/change/send/payment/link`). La tarjeta nunca pasa por la plataforma. La orden sigue
+   * `confirmed`: la relectura la pasa a `ticketed` cuando el proveedor cierra el pago.
+   *
+   * La habilitación de la forma de pago la valida el controlador (gobierno, 0089).
+   */
+  async sendPaymentLink(
+    tenantId: string,
+    row: OrderRow,
+    email: string,
+    actorUserId?: string,
+  ): Promise<PaymentLinkResult> {
+    const { adapter } = await this.flightProviderForOrder(tenantId, row);
+    if (typeof adapter.sendPaymentLink !== 'function') {
+      throw new BadRequestException(
+        `El proveedor '${row.provider}' no ofrece enlace de pago para sus reservas.`,
+      );
+    }
+    let result: PaymentLinkResult;
+    try {
+      result = await adapter.sendPaymentLink(
+        { orderId: row.provider_order_id!, email },
+        { tenantId },
+      );
+    } catch (err) {
+      await this.logOperation(
+        tenantId,
+        row.id,
+        'payment-link',
+        'failed',
+        (err as Error).message,
+        actorUserId,
+      );
+      throw err;
+    }
+    await this.logOperation(
+      tenantId,
+      row.id,
+      'payment-link',
+      result.success ? 'success' : 'failed',
+      result.success ? null : (result.error ?? 'el proveedor no envió el enlace'),
+      actorUserId,
+    );
+    if (result.success) {
+      // Sin el correo en el evento: es dato personal del pagador. Basta con saber que se envió.
+      await this.audit.emit({
+        eventType: 'OrderPaymentLinkSent',
+        tenantId,
+        actorUserId: actorUserId ?? null,
+        aggregateType: 'order',
+        aggregateId: row.id,
+        payload: { provider: row.provider },
+      });
+    }
+    return result;
   }
 
   async payOrder(

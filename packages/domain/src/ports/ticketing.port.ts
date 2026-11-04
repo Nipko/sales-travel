@@ -199,6 +199,11 @@ export interface TicketCheckResult {
 
 export interface TicketingPort {
   /**
+   * La forma de pago con que emite la cuenta (CASH, ON_ACCOUNT, INVOICE). La lee el gobierno de
+   * formas de pago antes de pedir la emisión. Ausente = el proveedor no la expone.
+   */
+  readonly issueFormOfPayment?: string;
+  /**
    * Emite los tiquetes de la reserva. Antes de mandar nada lee la reserva: si cada pasajero ya
    * tiene su tiquete, devuelve `ALREADY_ISSUED` sin emitir otra vez.
    */

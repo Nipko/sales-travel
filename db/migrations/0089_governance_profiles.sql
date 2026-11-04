@@ -146,7 +146,7 @@ $$;
 CREATE FUNCTION governance_bootstrap(p_profile_name TEXT, p_items JSONB, p_tenant_rules JSONB)
 RETURNS UUID
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_profile UUID;
@@ -212,7 +212,7 @@ RETURNS TABLE (
   profile_name    TEXT
 )
 LANGUAGE sql SECURITY DEFINER STABLE
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
   WITH me AS (SELECT path FROM tenants WHERE id = p_tenant_id),
   chain AS (

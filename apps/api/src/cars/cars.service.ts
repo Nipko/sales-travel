@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
+import { GovernancePaymentsService } from '../governance/governance-payments.service.js';
 import { Money } from '@sales-travel/canonical';
 import type {
   CancelQuery,
@@ -64,11 +65,23 @@ export class CarsService {
     private readonly orders: OrdersService,
     private readonly audit: AuditService,
     private readonly activeTenant: ActiveTenantService,
+    /** Gobierno de proveedores y formas de pago (0089). Opcional para los dobles de las suites. */
+    @Optional() private readonly governance?: GovernancePaymentsService,
   ) {}
+
+  /** AgentCars no pasa por los registries: su habilitación la mira el servicio (0089). */
+  private async assertCarsEnabled(tenantId: string): Promise<void> {
+    if (this.governance && !(await this.governance.isEnabled(tenantId, 'agent-cars', ''))) {
+      throw new ForbiddenException(
+        'AgentCars no está habilitado para tu agencia. Pide al administrador de la plataforma que lo habilite.',
+      );
+    }
+  }
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
   async suggest(tenantId: string, q: string, lang?: string): Promise<CarLocation[]> {
+    await this.assertCarsEnabled(tenantId);
     const adapter = await this.factory.forTenant(tenantId);
     return adapter.suggest({ query: q, ...(lang && { lang }) });
   }
@@ -95,6 +108,7 @@ export class CarsService {
   }
 
   async getMatrix(tenantId: string, input: CarSearchInput): Promise<PricedCarOffer[]> {
+    await this.assertCarsEnabled(tenantId);
     const adapter = await this.factory.forTenant(tenantId);
     const source = await this.resolveSource(tenantId, input.source);
     const offers = await adapter.getMatrix(this.toSearchQuery(input, source));
@@ -102,6 +116,7 @@ export class CarsService {
   }
 
   async getSelection(tenantId: string, input: CarSelectionInput): Promise<PricedCarSelection> {
+    await this.assertCarsEnabled(tenantId);
     const adapter = await this.factory.forTenant(tenantId);
     const source = await this.resolveSource(tenantId, input.source);
     const q: CarSelectionQuery = {
@@ -125,6 +140,14 @@ export class CarsService {
   // ───────────────────────── Reserva ─────────────────────────
 
   async book(tenantId: string, userId: string, input: ConfirmInput): Promise<CarBookResult> {
+    await this.assertCarsEnabled(tenantId);
+    if (this.governance) {
+      await this.governance.assertEnabled(
+        tenantId,
+        'agent-cars',
+        input.paymentType === 'pod' ? 'pay_at_destination' : 'prepaid',
+      );
+    }
     const adapter = await this.factory.forTenant(tenantId);
     // El proveedor SIEMPRE recibe el neto (input.total). El precio de venta (con la cascada de
     // markup) se calcula aparte y se guarda en la orden — nunca se le manda al proveedor.

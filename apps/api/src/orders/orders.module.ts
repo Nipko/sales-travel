@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
 import { BookingHoldPolicyService } from '../portfolios/booking-hold-policy.service.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
 import { AgentCarsProviderModule } from '../providers-agent-cars/agent-cars.module.js';
@@ -72,6 +73,8 @@ import { TicketIssueStore } from './ticket-issue.store.js';
     HotelProvidersModule,
     SearchModule,
     NetworkModule,
+    // El gobierno de formas de pago (0089): pagar, enviar el enlace de pago y emitir lo consultan.
+    ProviderEnablementModule,
   ],
   controllers: [OrdersController, AdminOrdersController],
   // El worker de post-venta vive en `PostSaleModule`: enruta también jobs de hoteles, y

@@ -14,6 +14,8 @@ import type {
   OrderReshopRequest,
   OrderReshopResult,
   OrderView,
+  PaymentLinkRequest,
+  PaymentLinkResult,
   SearchContext,
   ServiceListRequest,
   ServiceListResult,
@@ -26,6 +28,11 @@ import { LatamApiError, LatamBusinessError, LatamCredentialsMissingError } from 
 import { LatamHttpClient } from './http/latam-http.client';
 import { buildOfferPriceRequest } from './offerprice/request.builder';
 import { OFFERPRICE_PATH, mapOfferPriceResponse } from './offerprice/response.mapper';
+import {
+  PAYMENT_LINK_PATH,
+  buildPaymentLinkRequest,
+  mapPaymentLinkResponse,
+} from './orderchange/payment-link';
 import { buildOrderChangePaymentRequest } from './orderchange/request.builder';
 import { mapOrderChangePaymentResponse } from './orderchange/response.mapper';
 import { buildOrderCreateRequest } from './ordercreate/request.builder';
@@ -173,6 +180,23 @@ export class LatamNdcFlightSearchAdapter
     );
     const { data } = await this.http.postNdc<unknown>('/ndc/v192/order/change/payment', xml);
     return mapOrderChangePaymentResponse(data);
+  }
+
+  /**
+   * LATAM le manda al pagador un enlace para pagar la reserva en su sitio. La orden sigue `OPENED`
+   * hasta que se pague; la relectura la cierra (`CLOSED` → `ticketed`).
+   */
+  async sendPaymentLink(
+    request: PaymentLinkRequest,
+    _ctx: SearchContext,
+  ): Promise<PaymentLinkResult> {
+    const xml = buildPaymentLinkRequest(request.orderId, request.email, this.cfg);
+    const { data, trackId } = await this.http.postNdc<unknown>(PAYMENT_LINK_PATH, xml);
+    const result = mapPaymentLinkResponse(data);
+    if (!result.success) {
+      console.warn(`[latam-ndc] PaymentLink track=${trackId} failed`);
+    }
+    return result;
   }
 
   async listServices(request: ServiceListRequest, _ctx: SearchContext): Promise<ServiceListResult> {

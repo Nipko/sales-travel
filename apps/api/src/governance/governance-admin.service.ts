@@ -24,14 +24,17 @@ import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { effectiveMatrix, type GovernanceCell } from './governance.policy.js';
 import { GovernanceStore } from './governance.store.js';
 
-/** Eventos de auditoría del gobierno. Van al tenant plataforma (donde cuelga el superadmin). */
+/**
+ * Eventos de auditoría del gobierno. Van al tenant plataforma (donde cuelga el superadmin) y caen en
+ * la categoría «Proveedores» de Plataforma → Actividad (prefijo `platform.provider`).
+ */
 export const GOVERNANCE_EVENTS = {
-  profileCreated: 'governance.profile.created',
-  profileUpdated: 'governance.profile.updated',
-  profileArchived: 'governance.profile.archived',
-  profileDefaultChanged: 'governance.profile.default_changed',
-  profileAssigned: 'governance.profile.assigned',
-  ruleUpdated: 'governance.rule.updated',
+  profileCreated: 'platform.provider_governance.profile.created',
+  profileUpdated: 'platform.provider_governance.profile.updated',
+  profileArchived: 'platform.provider_governance.profile.archived',
+  profileDefaultChanged: 'platform.provider_governance.profile.default_changed',
+  profileAssigned: 'platform.provider_governance.profile.assigned',
+  ruleUpdated: 'platform.provider_governance.rule.updated',
 } as const;
 
 /** Nombre del perfil que siembra la configuración vigente el día que entra el gobierno. */

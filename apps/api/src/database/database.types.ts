@@ -1053,7 +1053,8 @@ export type OrderOperationType =
   | 'issue'
   | 'modify'
   | 'add-services'
-  | 'remove-services';
+  | 'remove-services'
+  | 'payment-link';
 
 /** Los tipos que comparten el claim de 0083. Mismo vocabulario que el índice parcial. */
 export const PROVIDER_WRITE_OPERATION_TYPES = [

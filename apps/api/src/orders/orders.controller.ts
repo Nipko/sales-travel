@@ -1,4 +1,6 @@
+import { GovernancePaymentsService } from '../governance/governance-payments.service.js';
 import {
+  BadRequestException,
   Body,
   Controller,
   ConflictException,
@@ -32,12 +34,14 @@ import {
   IssueOrderSchema,
   ModifyTravelersSchema,
   PayOrderSchema,
+  PaymentLinkSchema,
   RemoveServicesSchema,
   ReshopOrderSchema,
   isSameMinorAmount,
   type AddServicesInput,
   type IssueOrderInput,
   type ModifyTravelersInput,
+  type PaymentLinkInput,
   type RemoveServicesInput,
 } from './dto.js';
 import {
@@ -97,6 +101,16 @@ function publicIssue(issue: ProviderIssue): PublicProviderIssue {
   };
 }
 
+/** `PaymentInfo.type` del cuerpo de `/pay` → código de forma de pago del catálogo de gobierno. */
+const PAY_TYPE_TO_METHOD: Readonly<Record<string, string>> = {
+  'Credit Card': 'card',
+  Cash: 'cash',
+  GOV: 'gov',
+};
+
+/** Los usos del catálogo de gobierno con que se paga una orden sin pagar. */
+const ORDER_PAYMENT_USES: readonly string[] = ['order-pay', 'order-payment-link'];
+
 @Roles(...SELLING_ROLES)
 @Controller('orders')
 @UseFilters(
@@ -130,6 +144,8 @@ export class OrdersController {
     @Optional() private readonly services?: FlightServicesService,
     /** Datos de los pasajeros de una reserva hecha (SAB-25). Opcional por lo mismo. */
     @Optional() private readonly travelers?: FlightTravelersService,
+    /** Gobierno de formas de pago (0089). Opcional por lo mismo: en la app siempre está. */
+    @Optional() private readonly governance?: GovernancePaymentsService,
   ) {}
 
   /** Vuelo = ni hotel ni auto; lo decide `OrderCapabilitiesService`. */
@@ -607,14 +623,63 @@ export class OrdersController {
   async payOrder(
     @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(PayOrderSchema)) body: { payment: unknown },
+    @Body(new ZodValidationPipe(PayOrderSchema)) body: { payment: Record<string, unknown> },
   ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     const row = await this.orders.findById(tenantId, id);
     if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
     this.assertSupports(row, 'pay');
+    // Gobierno de formas de pago (0089): la forma pedida tiene que estar habilitada para el nodo.
+    const method = PAY_TYPE_TO_METHOD[String(body.payment['type'])];
+    if (method === undefined) throw new BadRequestException('Forma de pago desconocida.');
+    await this.governance?.assertEnabled(tenantId, row.provider, method);
     return this.orders.payOrder(tenantId, id, row, body.payment as never, userId);
+  }
+
+  /**
+   * Las formas de pago con que se puede pagar ESTA orden: las que el proveedor admite para una
+   * orden sin pagar y el gobierno habilitó para el nodo (0089). Es lo único que la pantalla ofrece.
+   */
+  @Get(':id/payment-options')
+  async paymentOptions(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row) throw new NotFoundException('Order not found');
+    if (
+      row.status !== 'confirmed' ||
+      !row.provider_order_id ||
+      this.capabilitiesForOrder(row).pay !== true
+    ) {
+      return { provider: row.provider, methods: [] };
+    }
+    const enabled = (await this.governance?.enabledMethods(tenantId, row.provider)) ?? [];
+    return {
+      provider: row.provider,
+      methods: enabled.filter((m) => ORDER_PAYMENT_USES.includes(m.use)),
+    };
+  }
+
+  /** LATAM le manda al pagador un enlace para pagar en su sitio (PCI SAQ-A). */
+  @SalesOperation()
+  @Post(':id/payment-link')
+  async sendPaymentLink(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(PaymentLinkSchema)) body: PaymentLinkInput,
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    const row = await this.orders.findById(tenantId, id);
+    if (!row?.provider_order_id) throw new NotFoundException('Order not found or has no PNR');
+    if (row.status !== 'confirmed') {
+      throw new ConflictException('Sólo se envía enlace de pago a una reserva sin pagar.');
+    }
+    this.assertSupports(row, 'pay');
+    if (!this.governance) throw new ForbiddenException();
+    await this.governance.assertEnabled(tenantId, row.provider, 'payment_link');
+    return this.orders.sendPaymentLink(tenantId, row, body.email, userId);
   }
 
   /**

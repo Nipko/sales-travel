@@ -184,6 +184,22 @@ export interface OrderPayRequest {
   passengers: { paxId: string; paxType: string }[];
 }
 
+/**
+ * Pedirle al proveedor que le mande al pagador un enlace para pagar la reserva en SU sitio (LATAM:
+ * `/order/change/send/payment/link`). La tarjeta nunca pasa por la plataforma (PCI SAQ-A).
+ */
+export interface PaymentLinkRequest {
+  orderId: string;
+  /** A quién le llega el enlace. */
+  email: string;
+}
+
+export interface PaymentLinkResult {
+  success: boolean;
+  warnings: string[];
+  error?: string;
+}
+
 export interface OrderPayResult {
   success: boolean;
   orderId?: string;
@@ -241,6 +257,8 @@ export interface OrderManagePort {
   payOrder(request: OrderPayRequest, ctx: SearchContext): Promise<OrderPayResult>;
   listServices(request: ServiceListRequest, ctx: SearchContext): Promise<ServiceListResult>;
   reshopWithTickets(request: OrderReshopRequest, ctx: SearchContext): Promise<OrderReshopResult>;
+  /** Opcional: sólo el proveedor que cobra por enlace propio lo implementa. */
+  sendPaymentLink?(request: PaymentLinkRequest, ctx: SearchContext): Promise<PaymentLinkResult>;
 }
 
 export const ORDER_MANAGE_PORT = 'ORDER_MANAGE_PORT';

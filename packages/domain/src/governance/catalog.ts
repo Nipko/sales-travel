@@ -21,8 +21,23 @@ export type GovernanceVertical = (typeof GOVERNANCE_VERTICALS)[number];
  */
 export type PaymentPciScope = 'none' | 'saq-a' | 'out-of-scope';
 
+/**
+ * En qué momento se usa la forma de pago:
+ * - `order-pay`: pagar una orden sin pagar desde la plataforma (`POST /orders/:id/pay`).
+ * - `order-payment-link`: el proveedor le manda al pagador un enlace (`POST /orders/:id/payment-link`).
+ * - `ticket-issue`: la forma de pago con que emite la cuenta (Sabre).
+ * - `hotel-book` / `car-book`: se elige al reservar.
+ */
+export type PaymentMethodUse =
+  | 'order-pay'
+  | 'order-payment-link'
+  | 'ticket-issue'
+  | 'hotel-book'
+  | 'car-book';
+
 export interface GovernedPaymentMethod {
   readonly code: string;
+  readonly use: PaymentMethodUse;
   readonly label: string;
   readonly description: string;
   readonly pci: PaymentPciScope;
@@ -43,6 +58,7 @@ export const GOVERNANCE_CATALOG: readonly GovernedProvider[] = [
     paymentMethods: [
       {
         code: 'payment_link',
+        use: 'order-payment-link',
         label: 'Enlace de pago LATAM',
         description:
           'LATAM le envía al pagador un enlace para pagar en su sitio. La tarjeta nunca pasa por la plataforma.',
@@ -50,18 +66,21 @@ export const GOVERNANCE_CATALOG: readonly GovernedProvider[] = [
       },
       {
         code: 'cash',
+        use: 'order-pay',
         label: 'Efectivo / BSP',
         description: 'Pago de agencia (Cash), liquidado por BSP.',
         pci: 'none',
       },
       {
         code: 'gov',
+        use: 'order-pay',
         label: 'GOV',
         description: 'Forma de pago GOV de LATAM.',
         pci: 'none',
       },
       {
         code: 'card',
+        use: 'order-pay',
         label: 'Tarjeta digitada en la plataforma',
         description:
           'El vendedor digita la tarjeta y el número y el CVV pasan por nuestro servidor hacia LATAM. Fuera de PCI SAQ-A.',
@@ -76,18 +95,21 @@ export const GOVERNANCE_CATALOG: readonly GovernedProvider[] = [
     paymentMethods: [
       {
         code: 'cash',
+        use: 'ticket-issue',
         label: 'Emisión en efectivo (BSP)',
         description: 'Forma de pago de emisión CASH, liquidada por BSP.',
         pci: 'none',
       },
       {
         code: 'on_account',
+        use: 'ticket-issue',
         label: 'Emisión a cuenta',
         description: 'Forma de pago de emisión ON_ACCOUNT.',
         pci: 'none',
       },
       {
         code: 'invoice',
+        use: 'ticket-issue',
         label: 'Emisión con factura',
         description: 'Forma de pago de emisión INVOICE.',
         pci: 'none',
@@ -101,6 +123,7 @@ export const GOVERNANCE_CATALOG: readonly GovernedProvider[] = [
     paymentMethods: [
       {
         code: 'card_token',
+        use: 'hotel-book',
         label: 'Tarjeta tokenizada',
         description: 'Tarjeta capturada en el checkout alojado de Despegar; llega como token.',
         pci: 'saq-a',
@@ -120,12 +143,14 @@ export const GOVERNANCE_CATALOG: readonly GovernedProvider[] = [
     paymentMethods: [
       {
         code: 'prepaid',
+        use: 'car-book',
         label: 'Prepago',
         description: 'El auto se paga al reservar.',
         pci: 'none',
       },
       {
         code: 'pay_at_destination',
+        use: 'car-book',
         label: 'Pago en destino',
         description: 'El cliente paga el auto al retirarlo.',
         pci: 'none',

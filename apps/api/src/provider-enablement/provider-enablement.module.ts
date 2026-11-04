@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { GovernancePaymentsService } from '../governance/governance-payments.service.js';
 import { GovernanceStore } from '../governance/governance.store.js';
 import { KillSwitchStore } from './kill-switch.store.js';
 import { ProviderEnablementStore } from './provider-enablement.store.js';
@@ -14,7 +15,7 @@ import { ProviderEnablementStore } from './provider-enablement.store.js';
 @Module({
   // GovernanceStore vive aquí por la misma razón: UNA instancia, que invalidan las escrituras del
   // panel de proveedores y del de gobierno (db/migrations/0089).
-  providers: [ProviderEnablementStore, KillSwitchStore, GovernanceStore],
-  exports: [ProviderEnablementStore, KillSwitchStore, GovernanceStore],
+  providers: [ProviderEnablementStore, KillSwitchStore, GovernanceStore, GovernancePaymentsService],
+  exports: [ProviderEnablementStore, KillSwitchStore, GovernanceStore, GovernancePaymentsService],
 })
 export class ProviderEnablementModule {}

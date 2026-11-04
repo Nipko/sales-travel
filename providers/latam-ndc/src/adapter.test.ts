@@ -97,3 +97,64 @@ describe('OrderCreate no inventa datos', () => {
     expect(body).toContain('<IdentityDocTypeCode>IN</IdentityDocTypeCode>');
   });
 });
+
+describe('enlace de pago', () => {
+  beforeEach(() => vi.spyOn(console, 'warn').mockImplementation(() => undefined));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('manda sólo OrderID y correo, sin tarjeta, al endpoint del enlace', async () => {
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: { body?: string }) => {
+        if (url.endsWith('/oauth/cc/token')) {
+          return Promise.resolve(
+            new Response('{"access_token":"t","expires_in":3600}', { status: 200 }),
+          );
+        }
+        bodies.push(`${new URL(url).pathname} ${init?.body ?? ''}`);
+        return Promise.resolve(
+          new Response(
+            '<IATA_OrderViewRS><Response><Order><OrderID>LA1</OrderID></Order></Response></IATA_OrderViewRS>',
+            { status: 200 },
+          ),
+        );
+      }),
+    );
+    const r = await new LatamNdcFlightSearchAdapter(cfg).sendPaymentLink(
+      { orderId: 'LA1', email: 'paga@cliente.co' },
+      { tenantId: 't' },
+    );
+    expect(r).toEqual({ success: true, warnings: [] });
+    expect(bodies[0]).toContain('/ndc/v192/order/change/send/payment/link');
+    expect(bodies[0]).toContain('<OrderID>LA1</OrderID>');
+    expect(bodies[0]).toContain('<EmailAddressText>paga@cliente.co</EmailAddressText>');
+    expect(bodies[0]).not.toContain('CardNumber');
+    expect(bodies[0]).not.toContain('PaymentFunctions');
+  });
+
+  it('un error de LATAM no es éxito', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(
+          url.endsWith('/oauth/cc/token')
+            ? new Response('{"access_token":"t","expires_in":3600}', { status: 200 })
+            : new Response(
+                '<IATA_OrderViewRS><Error><Code>404107001</Code><DescText>Order Id not found.</DescText></Error></IATA_OrderViewRS>',
+                { status: 404 },
+              ),
+        ),
+      ),
+    );
+    const r = await new LatamNdcFlightSearchAdapter(cfg).sendPaymentLink(
+      { orderId: 'X', email: 'a@b.co' },
+      { tenantId: 't' },
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('404107001');
+  });
+});

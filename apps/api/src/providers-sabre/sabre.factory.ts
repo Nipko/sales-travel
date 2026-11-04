@@ -704,6 +704,11 @@ export class SabreFlightProviderAdapter
     return this.inner.issue.issueTickets(orderId, ctx, options);
   }
 
+  /** La forma de pago de emisión de la cuenta, para el gobierno de formas de pago (0089). */
+  get issueFormOfPayment(): string | undefined {
+    return this.inner.issue.issueFormOfPayment;
+  }
+
   /** Las condiciones de los tiquetes emitidos (`checkFlightTickets`). Es una lectura. */
   checkTickets(orderId: string, ctx: SearchContext): Promise<TicketCheckResult> {
     return this.inner.issue.checkTickets(orderId, ctx);

@@ -174,6 +174,11 @@ export class SabreTicketingAdapter implements TicketingPort {
       });
   }
 
+  /** La forma de pago de emisión de la cuenta: la lee el gobierno de formas de pago (0089). */
+  get issueFormOfPayment(): string {
+    return this.formOfPayment();
+  }
+
   async issueTickets(
     orderId: string,
     ctx: SearchContext,
