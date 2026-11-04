@@ -454,6 +454,17 @@ describe('OrderCreate', () => {
 describe('Requests', () => {
   const cfg = { apiUrl: 'x', agencyId: 'A', agencyIata: '1', agencyName: 'N', country: 'CO' };
 
+  it('el punto de venta es el país de la cuenta aunque la moneda pedida sea BRL (IATA Validation Failed)', () => {
+    const brl = { ...criteria, currency: 'BRL' };
+    expect(buildAirShoppingRequest(brl, cfg).replace(/s+/g, '')).toContain(
+      '<CountryCode>CO</CountryCode>',
+    );
+    const offer = searchOffer();
+    expect(buildOfferPriceRequest(offer, brl, cfg).replace(/s+/g, '')).toContain(
+      '<CountryCode>CO</CountryCode>',
+    );
+  });
+
   it('AirShopping manda POS/City y Country', () => {
     const body = buildAirShoppingRequest(criteria, cfg).replace(/\s+/g, '');
     expect(body).toContain(

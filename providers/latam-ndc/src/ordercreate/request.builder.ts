@@ -1,7 +1,6 @@
 import { readLatamOfferRef } from '../offer-ref';
 import type { Offer } from '@sales-travel/canonical';
 import type { BookingContactInfo, Passenger, PaymentInfo } from '@sales-travel/domain';
-import { currencyToCountry } from '../airshopping/request.builder';
 import { posCityFor, type LatamNdcConfig } from '../config';
 
 export function buildOrderCreateRequest(
@@ -29,7 +28,7 @@ export function buildOrderCreateRequest(
   const contactInfoList = buildContactInfoList(passengers, contactInfo);
   const paxList = buildPaxList(passengers);
   const paymentBlock = payment ? buildPaymentFunctions(payment) : '';
-  const country = currencyToCountry(currency) ?? cfg.country ?? '';
+  const country = cfg.country ?? '';
   const city = posCityFor(cfg, country);
 
   return `<?xml version="1.0" encoding="UTF-8"?>

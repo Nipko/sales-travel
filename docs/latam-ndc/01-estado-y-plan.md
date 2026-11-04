@@ -171,7 +171,11 @@ El portal deja crear una app de desarrollo (`[portal:/tools]`). Elige una forma 
 **La documentación oficial no tiene ningún campo para pedir la moneda.** Ni AirShopping, ni OfferPrice, ni OrderCreate tienen un parámetro de moneda (`[portal:/ndc/air-shopping-v2]`, tabla de campos del request).
 
 - **Cotiza en la moneda del punto de venta con que LATAM dio de alta la cuenta de la agencia.** El ejemplo de AirShopping lo dice así: «Insert your `<AgencyID>` configured for New Shopping flow». El `AgencyID` y el `IATA_Number` los configura LATAM por país.
-- **La señal que mandamos ya es la correcta.** Pedimos COP, enviamos `X-latam-Country: CO` y `POS/Country/CountryCode = CO` (`providers/latam-ndc/src/airshopping/request.builder.ts:81-98`), y desde esta versión también `POS/City = BOG`. **Si aun así LATAM responde en BRL, la cuenta (AgencyID/IATA/app) está habilitada solo para el punto de venta BR.**
+- **El punto de venta es el país de la cuenta (`country`), nunca el de la moneda pedida.** Probado en el sandbox el 2026-11-04:
+  - Con punto de venta CO, la agencia busca y revalida bien, y LATAM cotiza en **BRL**.
+  - Con punto de venta BR, LATAM responde `IATA Validation Failed` (403111003 / 403122003): el IATA de la agencia es colombiano.
+  - Antes el ACL deducía el país de la moneda. Una cotización guardada en BRL revalidaba con punto de venta BR y fallaba. Eso se corrigió.
+  - **Que LATAM cotice en BRL a una agencia CO es configuración de la cuenta en LATAM:** hay que pedirles que la cotice en COP.
 - **No se arregla en código:** hay que pedirle a LATAM que habilite el punto de venta **CO** (y PE, si aplica) para nuestro `AgencyID`, o que entregue credenciales de una agencia colombiana.
 - **Cómo pedirlo:**
   - Escribir a `grp_ndcsupport@latam.com` (`[portal:/faqs]`, Contact Us).

@@ -1,7 +1,6 @@
 import { readLatamOfferRef } from '../offer-ref';
 import type { Offer } from '@sales-travel/canonical';
 import type { FlightSearchCriteria } from '@sales-travel/domain';
-import { currencyToCountry } from '../airshopping/request.builder';
 import type { LatamNdcConfig } from '../config';
 
 export function buildOfferPriceRequest(
@@ -39,7 +38,7 @@ export function buildOfferPriceRequest(
   </Party>
   <POS>
     <Country>
-      <CountryCode>${escape(currencyToCountry(criteria.currency) ?? cfg.country ?? '')}</CountryCode>
+      <CountryCode>${escape(cfg.country ?? '')}</CountryCode>
     </Country>
     <RequestTime>${new Date().toISOString().replace(/\.\d{3}Z$/, '')}</RequestTime>
   </POS>

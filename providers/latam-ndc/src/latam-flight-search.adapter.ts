@@ -20,7 +20,7 @@ import type {
   ServiceListRequest,
   ServiceListResult,
 } from '@sales-travel/domain';
-import { buildAirShoppingRequest, currencyToCountry } from './airshopping/request.builder';
+import { buildAirShoppingRequest } from './airshopping/request.builder';
 import { AIRSHOPPING_PATH, mapAirShoppingResponse } from './airshopping/response.mapper';
 import { LatamTokenService } from './auth/token.service';
 import { missingLatamCredentials, type LatamNdcConfig } from './config';
@@ -81,15 +81,15 @@ export class LatamNdcFlightSearchAdapter
     console.warn('[latam-ndc] adapter initialized');
   }
   async search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
-    const country = currencyToCountry(criteria.currency);
+    // El punto de venta es el país de la CUENTA, nunca el de la moneda pedida: LATAM valida el
+    // IATA de la agencia contra él («403111003 IATA Validation Failed») y cotiza en la moneda con
+    // que dio de alta la cuenta, pidamos la que pidamos (docs/latam-ndc §5b).
     const xml = buildAirShoppingRequest(criteria, this.cfg);
 
     // 914 «retrieveTaggedOffer method failed» es transitorio: LATAM pide reintentar 1 o 2 veces
     // (`[portal:/ndc/status]`).
     for (let attempt = 1; ; attempt++) {
-      const { data, trackId } = await this.http.postNdc<unknown>(AIRSHOPPING_PATH, xml, {
-        country,
-      });
+      const { data, trackId } = await this.http.postNdc<unknown>(AIRSHOPPING_PATH, xml);
       try {
         const { offers, warnings } = mapAirShoppingResponse(data, criteria, ctx.tenantId, trackId);
         if (warnings.length > 0) {
@@ -114,9 +114,7 @@ export class LatamNdcFlightSearchAdapter
     _ctx: SearchContext,
   ): Promise<OfferPriceResult> {
     const xml = buildOfferPriceRequest(offer, criteria, this.cfg);
-    const { data, trackId } = await this.http.postNdc<unknown>(OFFERPRICE_PATH, xml, {
-      country: currencyToCountry(criteria.currency),
-    });
+    const { data, trackId } = await this.http.postNdc<unknown>(OFFERPRICE_PATH, xml);
     return mapOfferPriceResponse(data, offer, trackId);
   }
 
@@ -129,9 +127,7 @@ export class LatamNdcFlightSearchAdapter
       request.criteria?.currency,
       request.payment,
     );
-    const { data, trackId } = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml, {
-      country: currencyToCountry(request.criteria?.currency),
-    });
+    const { data, trackId } = await this.http.postNdc<unknown>('/ndc/v192/order/create', xml);
     const result = mapOrderCreateResponse(data);
     if (result.outcome === 'FAILED') {
       console.warn(

@@ -14,7 +14,8 @@ export function buildAirShoppingRequest(
   const requestTime = new Date().toISOString().replace(/\.\d{3}Z$/, '');
   const pax = buildPaxList(criteria);
   const odList = buildOriginDestList(criteria);
-  const country = currencyToCountry(criteria.currency) ?? cfg.country ?? '';
+  // País de la cuenta, no de la moneda: ver `LatamNdcFlightSearchAdapter.search`.
+  const country = cfg.country ?? '';
   const city = posCityFor(cfg, country);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
