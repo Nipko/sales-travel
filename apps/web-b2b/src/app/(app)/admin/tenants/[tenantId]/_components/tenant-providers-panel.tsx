@@ -31,6 +31,7 @@ import {
 } from '../../../_components/provider-enablement-ui';
 import { ForeignCurrencyFaresCard } from './foreign-currency-fares-card';
 import { NodeSectionNav } from './node-section-nav';
+import { TenantGovernanceCard } from './tenant-governance-card';
 
 type PanelState =
   | { readonly status: 'loading' }
@@ -184,6 +185,20 @@ export function TenantProvidersPanel({ tenantId }: { tenantId: string }) {
             ))}
           </div>
         )}
+      </section>
+
+      <section aria-labelledby="tenant-governance-title" className="mt-8">
+        <h2
+          id="tenant-governance-title"
+          className="mb-1 text-sm font-semibold text-[var(--color-fg)]"
+        >
+          Gobierno de proveedores y formas de pago
+        </h2>
+        <p className="mb-3 max-w-prose text-xs leading-relaxed text-[var(--color-fg-muted)]">
+          Qué proveedores y formas de pago puede usar este nodo. Nada se vende ni se cobra si nadie
+          lo encendió.
+        </p>
+        <TenantGovernanceCard tenantId={tenantId} />
       </section>
 
       {state.status === 'ready' ? (

@@ -28,7 +28,6 @@ import { useViewer } from '../../../components/layout/viewer-context';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
 import { isCarOrder, isHotelOrder, orderVerticalOf } from '../../../lib/order-vertical';
-import { PaymentForm, type PaymentData } from '../cotizaciones/[id]/payment-form';
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
 import { humanizeProviderError } from '../../../lib/provider-errors';
@@ -60,6 +59,7 @@ import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-or
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
+import { OrderPaymentDialog } from './_components/order-payment-dialog';
 import { AddServicesSheet } from './_components/add-services-sheet';
 import { EditTravelersSheet } from './_components/edit-travelers-sheet';
 import { canManageServices } from './services-view';
@@ -216,7 +216,6 @@ export default function ReservasPage() {
     success: boolean;
   } | null>(null);
   const [payingOrder, setPayingOrder] = useState<Order | null>(null);
-  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [servicesOrder, setServicesOrder] = useState<Order | null>(null);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
@@ -500,51 +499,6 @@ export default function ReservasPage() {
         success: false,
         message:
           'No pudimos comprobar el historial de cancelación. Por seguridad no se enviará la operación.',
-      });
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function handlePaySubmit() {
-    if (!payingOrder || !paymentData) return;
-    setActionLoading(payingOrder.id);
-    setActionResult(null);
-    try {
-      const res = await fetch(`/api/orders/${payingOrder.id}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment: paymentData }),
-      });
-      const data = (await res.json()) as { success?: boolean; status?: string; error?: string };
-      if (data.success) {
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === payingOrder.id ? { ...o, status: data.status ?? 'confirmed' } : o,
-          ),
-        );
-        setActionResult({
-          orderId: payingOrder.id,
-          type: 'pay',
-          success: true,
-          message: 'Pago procesado exitosamente',
-        });
-        setPayingOrder(null);
-        setPaymentData(null);
-      } else {
-        setActionResult({
-          orderId: payingOrder.id,
-          type: 'pay',
-          success: false,
-          message: humanizeOrderError(data.error ?? 'No se pudo procesar el pago'),
-        });
-      }
-    } catch {
-      setActionResult({
-        orderId: payingOrder.id,
-        type: 'pay',
-        success: false,
-        message: 'Error de conexión',
       });
     } finally {
       setActionLoading(null);
@@ -944,10 +898,7 @@ export default function ReservasPage() {
                               variant="primary"
                               size="sm"
                               disabled={actionLoading === order.id}
-                              onClick={() => {
-                                setPayingOrder(order);
-                                setPaymentData(null);
-                              }}
+                              onClick={() => setPayingOrder(order)}
                               className="gap-1.5 text-xs"
                             >
                               <CreditCard className="size-3.5" /> Pagar / Emitir
@@ -1025,68 +976,35 @@ export default function ReservasPage() {
         </div>
       )}
 
-      {/* Payment modal */}
+      {/* Pago con las formas que el superadmin habilitó para la red (0089). */}
       {payingOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--color-fg)]">
-                Pagar reserva #{payingOrder.orderNumber}
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setPayingOrder(null);
-                  setPaymentData(null);
-                }}
-                className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[var(--color-fg-muted)]">
-                  {payingOrder.searchCriteria?.origin ?? '—'} →{' '}
-                  {payingOrder.searchCriteria?.destination ?? '—'}
-                </span>
-                <span className="font-mono font-semibold text-[var(--color-fg)]">
-                  {formatMoney(payingOrder.totalAmount, payingOrder.currency)}
-                </span>
-              </div>
-            </div>
-
-            <PaymentForm
-              totalAmountMinor={payingOrder.totalAmount}
-              currency={payingOrder.currency}
-              onPaymentChange={setPaymentData}
-            />
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setPayingOrder(null);
-                  setPaymentData(null);
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!paymentData || actionLoading === payingOrder.id}
-                onClick={() => void handlePaySubmit()}
-                className="gap-1.5"
-              >
-                <CreditCard className="size-3.5" />
-                {actionLoading === payingOrder.id ? 'Procesando…' : 'Confirmar pago'}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <OrderPaymentDialog
+          key={payingOrder.id}
+          order={payingOrder}
+          onClose={() => setPayingOrder(null)}
+          onPaid={(status) => {
+            setOrders((prev) =>
+              prev.map((o) =>
+                o.id === payingOrder.id ? { ...o, status: status ?? 'confirmed' } : o,
+              ),
+            );
+            setActionResult({
+              orderId: payingOrder.id,
+              type: 'pay',
+              success: true,
+              message: 'Pago procesado exitosamente',
+            });
+            setPayingOrder(null);
+          }}
+          onLinkSent={(message) =>
+            setActionResult({
+              orderId: payingOrder.id,
+              type: 'pay',
+              success: true,
+              message,
+            })
+          }
+        />
       )}
 
       {/* Services modal */}
@@ -1191,7 +1109,6 @@ export default function ReservasPage() {
             onCancelRequest={() => setConfirmCancel(detailOrder)}
             onPayRequest={() => {
               setPayingOrder(detailOrder);
-              setPaymentData(null);
               setDetailOrder(null);
             }}
             issueInFlight={detailOrder.id in issuesInFlight}

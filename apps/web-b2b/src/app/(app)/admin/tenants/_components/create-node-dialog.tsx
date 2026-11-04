@@ -24,6 +24,7 @@ import {
   type Language,
   type NodeDraft,
 } from '../../../../../lib/tenant-admin-form';
+import { GovernanceProfileField } from './governance-profile-field';
 import { SeatPolicyFields } from './seat-policy-fields';
 import {
   CREATABLE_KIND_LABEL,
@@ -65,6 +66,8 @@ export function CreateNodeDialog({
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState('');
+  /** `''` = heredar del padre: no viaja. */
+  const [governanceProfileId, setGovernanceProfileId] = useState('');
   const formId = useId();
   // Puestos e inactividad los fija sólo el superadmin; esta pantalla ya es suya, pero si alguna vez
   // la abre otro rol, los campos no aparecen y no viajan (el API respondería 403).
@@ -117,7 +120,9 @@ export function CreateNodeDialog({
 
     savingRef.current = true;
     setSaving(true);
-    const res = await createNode(payload);
+    const res = await createNode(
+      superadmin && governanceProfileId !== '' ? { ...payload, governanceProfileId } : payload,
+    );
     savingRef.current = false;
     if (!res.ok) {
       setSaving(false);
@@ -323,6 +328,16 @@ export function CreateNodeDialog({
             parentName={parent?.name}
             errors={errors}
           />
+        ) : null}
+
+        {superadmin ? (
+          <div className="border-t border-[var(--color-border)] pt-4">
+            <GovernanceProfileField
+              value={governanceProfileId}
+              onChange={setGovernanceProfileId}
+              disabled={saving}
+            />
+          </div>
         ) : null}
 
         <fieldset className="space-y-4 border-t border-[var(--color-border)] pt-4">

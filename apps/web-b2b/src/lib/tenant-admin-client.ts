@@ -50,6 +50,8 @@ export interface NewNodeInput {
   readonly concurrentSeats?: number;
   /** Minutos de inactividad (5-480). Ausente = hereda. Sólo superadmin. */
   readonly idleTimeoutMinutes?: number;
+  /** Perfil de gobierno de proveedores y formas de pago. Ausente = hereda del padre. Sólo superadmin. */
+  readonly governanceProfileId?: string;
 }
 
 /**

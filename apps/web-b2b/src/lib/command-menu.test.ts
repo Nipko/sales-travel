@@ -135,7 +135,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(sections.map((s) => s.label)).not.toContain('Plataforma');
   });
 
-  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Usuarios, Actividad y Sistema', () => {
+  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Gobierno, Usuarios, Actividad y Sistema', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
     expect(platform.map((i) => [i.label, i.href])).toEqual([
@@ -144,6 +144,7 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
       ['Reservas', '/admin/plataforma/reservas'],
       ['Carteras', '/admin/plataforma/carteras'],
       ['Proveedores', '/admin/plataforma/proveedores'],
+      ['Gobierno', '/admin/plataforma/gobierno'],
       ['Usuarios', '/admin/plataforma/usuarios'],
       ['Actividad', '/admin/plataforma/actividad'],
       ['Sistema', '/admin/plataforma/sistema'],

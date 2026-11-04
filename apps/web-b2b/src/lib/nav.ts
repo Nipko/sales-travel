@@ -15,6 +15,7 @@ import {
   Network,
   Plane,
   Plug,
+  Scale,
   Settings,
   Settings2,
   Shield,
@@ -89,6 +90,8 @@ export const superAdminNav: NavItem[] = [
   // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
   // la de las credenciales de la agencia (adminNav).
   { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
+  // Qué proveedores y formas de pago puede usar cada nodo: perfiles y reglas globales.
+  { label: 'Gobierno', href: '/admin/plataforma/gobierno', icon: Scale },
   { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
   // Quién hizo qué, dónde y cuándo, en toda la plataforma.
   { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },

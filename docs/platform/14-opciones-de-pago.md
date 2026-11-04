@@ -1,6 +1,22 @@
 # Gobierno de proveedores y formas de pago, con perfiles
 
-> Estado: **diseño para acordar** (2026-11-04). Pedido del founder:
+> Estado: **implementado** (2026-11-04). Decisiones del founder:
+>
+> - Los perfiles se propagan: quedan enlazados.
+> - Un nodo sin perfil ni reglas hereda de su padre.
+> - Se siembra «Configuración vigente» para no cortar ventas.
+> - La tarjeta digitada de LATAM queda en el catálogo, apagada salvo que el superadmin la encienda.
+>
+> Dónde está cada pieza:
+>
+> - Migraciones: `db/migrations/0089` y `0090`.
+> - API: `apps/api/src/governance/`.
+> - Panel: Plataforma → Gobierno, la sección de Gobierno en Agencias → [nodo] y el selector de perfil en el alta de un nodo.
+> - Pago: diálogo de Reservas con las formas habilitadas y el enlace de pago de LATAM.
+>
+> Al dar de alta un nodo, el panel preselecciona el perfil marcado como predeterminado. Si un admin de red crea la agencia, esta hereda.
+>
+> Pedido original del founder:
 >
 > - Un gobierno completo de los proveedores y sus formas de pago.
 > - Todo habilitado **explícitamente** por el superadmin.
