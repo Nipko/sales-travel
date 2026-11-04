@@ -1,5 +1,7 @@
 import { Injectable, Module } from '@nestjs/common';
 import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
+import { GovernanceStore } from '../governance/governance.store.js';
+import { GovernedProviderFlags } from '../governance/governed-provider-flags.js';
 import { PlatformProviderFlags } from '../provider-enablement/platform-provider-flags.js';
 import { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { LatamNdcProviderFactory } from '../providers-latam/latam-ndc.factory.js';
@@ -78,9 +80,13 @@ export class EnvProviderFlags implements ProviderFlagsPort {
     EnvProviderFlags,
     {
       provide: FLIGHT_PROVIDER_FLAGS,
-      useFactory: (store: ProviderEnablementStore, legacy: EnvProviderFlags): ProviderFlagsPort =>
-        new PlatformProviderFlags(store, legacy),
-      inject: [ProviderEnablementStore, EnvProviderFlags],
+      useFactory: (
+        store: ProviderEnablementStore,
+        legacy: EnvProviderFlags,
+        governance: GovernanceStore,
+      ): ProviderFlagsPort =>
+        new GovernedProviderFlags(governance, new PlatformProviderFlags(store, legacy)),
+      inject: [ProviderEnablementStore, EnvProviderFlags, GovernanceStore],
     },
     FlightProviderRegistry,
   ],

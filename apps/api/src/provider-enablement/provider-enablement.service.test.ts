@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import type { GovernanceStore } from '../governance/governance.store.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RecordingAuditService } from '../audit/__fixtures__/recording-audit.service.js';
 import type { DatabaseService } from '../database/database.service.js';
@@ -192,6 +193,7 @@ function banco(apagados: readonly PanelKillSwitch[] = []) {
     legacyFlights,
     legacyHotels,
     apagadosEnMemoria(apagados),
+    { invalidate: () => undefined } as unknown as GovernanceStore,
   );
   return { service, almacen, audit, contextos, flights, hotels, alfaAir, tbo };
 }

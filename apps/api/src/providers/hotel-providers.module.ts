@@ -1,5 +1,7 @@
 import { Injectable, Module } from '@nestjs/common';
 import { ProviderEnablementModule } from '../provider-enablement/provider-enablement.module.js';
+import { GovernanceStore } from '../governance/governance.store.js';
+import { GovernedProviderFlags } from '../governance/governed-provider-flags.js';
 import { PlatformProviderFlags } from '../provider-enablement/platform-provider-flags.js';
 import { ProviderEnablementStore } from '../provider-enablement/provider-enablement.store.js';
 import { DespegarHotelsProviderFactory } from '../providers-despegar/despegar-hotels.factory.js';
@@ -81,8 +83,10 @@ export class EnvHotelProviderFlags implements ProviderFlagsPort {
       useFactory: (
         store: ProviderEnablementStore,
         legacy: EnvHotelProviderFlags,
-      ): ProviderFlagsPort => new PlatformProviderFlags(store, legacy),
-      inject: [ProviderEnablementStore, EnvHotelProviderFlags],
+        governance: GovernanceStore,
+      ): ProviderFlagsPort =>
+        new GovernedProviderFlags(governance, new PlatformProviderFlags(store, legacy)),
+      inject: [ProviderEnablementStore, EnvHotelProviderFlags, GovernanceStore],
     },
     HotelProviderRegistry,
   ],

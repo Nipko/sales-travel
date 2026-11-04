@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { GovernanceStore } from '../governance/governance.store.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { HotelProviderRegistry } from '../providers/hotel-provider.registry.js';
 import { EnvHotelProviderFlags } from '../providers/hotel-providers.module.js';
@@ -183,6 +184,7 @@ export class ProviderEnablementService {
     private readonly legacyFlights: EnvProviderFlags,
     private readonly legacyHotels: EnvHotelProviderFlags,
     private readonly killSwitches: KillSwitchStore,
+    private readonly governance: GovernanceStore,
   ) {}
 
   /** Todos los proveedores de los registries, con su ajuste global y sus excepciones. */
@@ -319,7 +321,10 @@ export class ProviderEnablementService {
       });
       return true;
     });
-    if (changed) this.store.invalidate();
+    if (changed) {
+      this.store.invalidate();
+      this.governance.invalidate();
+    }
   }
 
   private async viewOf(providerCode: string): Promise<PlatformProviderView> {

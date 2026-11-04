@@ -27,6 +27,7 @@ import { AdminConsoleModule } from './admin-console/admin-console.module.js';
 import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 import { ProviderDisclosureModule } from './provider-disclosure/provider-disclosure.module.js';
+import { GovernanceAdminModule } from './governance/governance-admin.module.js';
 import { ProviderEnablementAdminModule } from './provider-enablement/provider-enablement-admin.module.js';
 import { ProviderPayloadsModule } from './provider-payloads/provider-payloads.module.js';
 import { NetworkModule } from './network/network.module.js';
@@ -70,6 +71,7 @@ import { PackagesModule } from './packages/packages.module.js';
     ProviderCredentialsModule,
     ProviderDisclosureModule,
     ProviderEnablementAdminModule,
+    GovernanceAdminModule,
     ProviderPayloadsModule,
     NetworkModule,
     PricingModule,

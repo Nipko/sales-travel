@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { GovernanceStore } from '../governance/governance.store.js';
 import { sql, type Transaction } from 'kysely';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -185,6 +186,7 @@ d('provider_enablement (0048) contra Postgres', () => {
       legacyFlights,
       legacyHotels,
       new KillSwitchStore(database, new AuditService(database)),
+      { invalidate: () => undefined } as unknown as GovernanceStore,
     );
     return { store, flights, hotels, service, vuelo, hotel };
   }

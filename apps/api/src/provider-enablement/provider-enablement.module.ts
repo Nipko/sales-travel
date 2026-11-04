@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { GovernanceStore } from '../governance/governance.store.js';
 import { KillSwitchStore } from './kill-switch.store.js';
 import { ProviderEnablementStore } from './provider-enablement.store.js';
 
@@ -11,7 +12,9 @@ import { ProviderEnablementStore } from './provider-enablement.store.js';
  * así que nadie que lo importe arma un ciclo.
  */
 @Module({
-  providers: [ProviderEnablementStore, KillSwitchStore],
-  exports: [ProviderEnablementStore, KillSwitchStore],
+  // GovernanceStore vive aquí por la misma razón: UNA instancia, que invalidan las escrituras del
+  // panel de proveedores y del de gobierno (db/migrations/0089).
+  providers: [ProviderEnablementStore, KillSwitchStore, GovernanceStore],
+  exports: [ProviderEnablementStore, KillSwitchStore, GovernanceStore],
 })
 export class ProviderEnablementModule {}
