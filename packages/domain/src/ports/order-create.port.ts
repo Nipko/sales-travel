@@ -254,6 +254,25 @@ export class OrderCreateNotSentError extends Error {
   }
 }
 
+/**
+ * El proveedor RECIBIÓ la creación y la rechazó sin crear nada: respondió con errores de negocio y
+ * sin reserva ni localizador (Sabre: 200 con `APPLICATION_ERROR` y sin `booking`/`confirmationId`).
+ *
+ * No es un resultado incierto. Tratarlo como tal le decía al vendedor «no vuelvas a reservar» y lo
+ * mandaba a conciliar un PNR que no existe. `codes` son los códigos del proveedor (sin datos del
+ * pasajero): van a la pantalla y a la auditoría.
+ */
+export class OrderCreateDeclinedError extends Error {
+  constructor(
+    message: string,
+    readonly codes: readonly string[],
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'OrderCreateDeclinedError';
+  }
+}
+
 export interface OrderCreatePort {
   createOrder(request: OrderCreateRequest, ctx: SearchContext): Promise<OrderCreateResult>;
 }

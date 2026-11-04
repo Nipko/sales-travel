@@ -1,3 +1,4 @@
+import { OrderCreateDeclinedError } from '@sales-travel/domain';
 import type { Offer } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
 import {
@@ -829,16 +830,20 @@ describe('los desenlaces de createBooking salen cada uno con su forma', () => {
 
   it('sin localizador, un errors[] NO se tolera: el coste está dicho entero', async () => {
     // La evidencia que permite entregar un `createBooking` con `errors[]` es el LOCALIZADOR. Sin
-    // él no hay PNR que salvar, y el sobre vuelve a ser un rechazo clasificado.
+    // él no hay PNR que salvar, y el sobre vuelve a ser un rechazo clasificado: un rechazo
+    // DEFINITIVO (`OrderCreateDeclinedError`), con el `SabreApiError` como causa.
     const harness = wire({
       [SABRE_CREATE_BOOKING_PATH]: [
         ok({ errors: [{ category: 'APPLICATION_ERROR', type: 'UNABLE_TO_BOOK_FLIGHT' }] }),
       ],
     });
 
-    await expect(harness.create.createBooking(orderRequest(shopOffer()), CTX)).rejects.toThrow(
-      SabreApiError,
-    );
+    const err = await harness.create
+      .createBooking(orderRequest(shopOffer()), CTX)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OrderCreateDeclinedError);
+    expect((err as OrderCreateDeclinedError).cause).toBeInstanceOf(SabreApiError);
+    expect((err as OrderCreateDeclinedError).codes).toEqual(['UNABLE_TO_BOOK_FLIGHT']);
   });
 });
 

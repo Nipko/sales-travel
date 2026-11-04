@@ -8,6 +8,7 @@ import {
   type Segment,
 } from '@sales-travel/canonical';
 import {
+  OrderCreateDeclinedError,
   OrderCreateNotSentError,
   type BookingContactInfo,
   type OrderCreatePort,
@@ -51,6 +52,7 @@ import {
   type SabreTicketingSettingsInput,
 } from './booking/ticketing-policy';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
+import { SabreApiError } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { SABRE_RAW_KEYS } from './price/request.builder';
 import { SABRE_PTC_INFANT_WITH_SEAT, sabreChildCode } from './shop/request.builder';
@@ -337,11 +339,16 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
     // Sin `idempotent`. No es que sobre: es que decirlo sería mentir sobre lo que pasa si hay un
     // timeout. Un `ERR.2SG.GATEWAY.TIMEOUT` en createBooking no dice si el PNR se creó, y quien
     // decide qué hacer entonces es el saga, releyendo con getBooking.
-    const result: SabreResult<unknown> = await this.http.postJson<unknown>(plan.path, plan.body, {
-      ...(ctx.requestId === undefined
-        ? {}
-        : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
-    });
+    let result: SabreResult<unknown>;
+    try {
+      result = await this.http.postJson<unknown>(plan.path, plan.body, {
+        ...(ctx.requestId === undefined
+          ? {}
+          : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
+      });
+    } catch (err) {
+      throw declinedOrSame(err);
+    }
 
     const mapped: SabreCreateBookingMapped = withRequestedSeats(
       mapSabreCreateBookingResponse(result.data),
@@ -1532,4 +1539,33 @@ function ticketingRawOf(decision: SabreTicketingDecision | undefined): Record<st
           },
         }),
   };
+}
+
+/**
+ * Sabre recibió el createBooking y lo rechazó sin crear nada: 200 con errores de negocio
+ * (`BUSINESS`) o de alta comercial (`ENTITLEMENT`), y el cuerpo sin `booking` ni
+ * `confirmationId`. Ejemplo medido en CERT: H-07, `UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED`
+ * en ~430 ms (docs/sabre/12-hallazgos-sandbox.md).
+ *
+ * Que no hay PNR lo garantiza el cliente HTTP: un `createBooking` CON localizador nunca llega como
+ * `SabreApiError`, se entrega al mapper pase lo que pase en `errors[]` (contrato `LOCATOR` de
+ * `SABRE_PARTIAL_OUTCOME_CONTRACTS`, `errors.ts`). Cualquier otra excepción (timeout, 5xx, gateway)
+ * sigue siendo incierta.
+ */
+function declinedOrSame(err: unknown): unknown {
+  if (!(err instanceof SabreApiError) || err.status !== 200) return err;
+  if (err.failure.kind !== 'BUSINESS' && err.failure.kind !== 'ENTITLEMENT') return err;
+  const codes = [
+    ...new Set(
+      err.issues
+        .filter((i) => i.severity === 'error')
+        .map((i) => i.type ?? i.code)
+        .filter((c): c is string => typeof c === 'string' && /^[A-Z0-9_.-]{1,80}$/.test(c)),
+    ),
+  ];
+  return new OrderCreateDeclinedError(
+    `Sabre rechazó la reserva sin crearla${codes.length > 0 ? `: ${codes.join(', ')}` : ''}`,
+    codes,
+    { cause: err },
+  );
 }

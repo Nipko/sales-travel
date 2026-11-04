@@ -8,9 +8,11 @@ import {
   NotFoundException,
   Optional,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import {
+  OrderCreateDeclinedError,
   OrderCreateNotSentError,
   type BookingContactInfo,
   type FlightSearchCriteria,
@@ -136,6 +138,24 @@ const CAMPO_LEGIBLE: ReadonlyArray<readonly [RegExp, string]> = [
  * se sacan el pasajero y el campo. Si no se reconoce ninguno, el problema está en la oferta y no
  * en lo que el vendedor tecleó.
  */
+/**
+ * Qué decirle al vendedor cuando el proveedor rechazó la reserva sin crearla. Los códigos conocidos
+ * llevan su explicación; el resto, el código tal cual para que soporte lo ubique.
+ */
+const DECLINED_EXPLANATIONS: Readonly<Record<string, string>> = {
+  UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED:
+    'La oficina de Sabre no tiene activado «Store Passenger Type In PNR». Es configuración de la cuenta en Sabre: pídele a Sabre que la active.',
+};
+
+export function declinedMessage(codes: readonly string[]): string {
+  const known = codes.map((c) => DECLINED_EXPLANATIONS[c]).filter((m): m is string => Boolean(m));
+  const detail =
+    known.length > 0 ? known.join(' ') : codes.length > 0 ? `Motivo: ${codes.join(', ')}.` : '';
+  return `El proveedor rechazó la reserva y no se creó nada. ${detail} La cotización sigue disponible.`
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function notSentMessage(detail: string): string {
   const partes = new Set<string>();
   for (const match of detail.matchAll(/travelers\.(\d+)\.([\w.]+)/g)) {
@@ -1123,6 +1143,9 @@ export class OrdersService {
       if (err instanceof OrderCreateNotSentError) {
         await this.rejectNotSent(tenantId, userId, provider.code, intent, err);
       }
+      if (err instanceof OrderCreateDeclinedError) {
+        await this.rejectDeclined(tenantId, userId, provider.code, intent, err);
+      }
       if (sentNothing(err)) {
         await this.rejectNotDispatched(tenantId, userId, provider.code, intent, err);
       }
@@ -1158,6 +1181,47 @@ export class OrdersService {
         reconciliationRequired: true,
       });
     }
+  }
+
+  /**
+   * El proveedor recibió la creación y la rechazó SIN crear nada (`OrderCreateDeclinedError`): no
+   * hay reserva que conciliar, así que la cotización se libera como en {@link rejectNotSent}. Antes
+   * esto salía como «creación incierta», bloqueaba la cotización con «No vuelvas a reservar» y
+   * mandaba a buscar en el PCC un PNR que no existe.
+   */
+  private async rejectDeclined(
+    tenantId: string,
+    userId: string,
+    providerCode: string,
+    intent: OrderRow,
+    err: OrderCreateDeclinedError,
+  ): Promise<never> {
+    await this.intents.failBeforeProvider(tenantId, intent);
+    try {
+      await this.audit.emit({
+        eventType: ORDER_EVENTS.createFailed,
+        tenantId,
+        actorUserId: userId,
+        aggregateType: 'order',
+        aggregateId: intent.id,
+        payload: {
+          provider: providerCode,
+          reason: 'provider-declined',
+          errorName: err.name,
+          codes: err.codes,
+          uncertain: false,
+        },
+      });
+    } catch {
+      // El proveedor no creó nada: perder este evento no abre ninguna reserva fantasma.
+    }
+    throw new UnprocessableEntityException({
+      statusCode: 422,
+      error: 'Unprocessable Entity',
+      message: declinedMessage(err.codes),
+      orderId: intent.id,
+      retryForbidden: false,
+    });
   }
 
   /**

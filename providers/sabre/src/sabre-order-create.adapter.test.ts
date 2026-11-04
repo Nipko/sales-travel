@@ -1,6 +1,7 @@
 import { ageOnDate, type Offer, type Segment } from '@sales-travel/canonical';
 import type { LoggerPort } from '@sales-travel/core';
 import {
+  OrderCreateDeclinedError,
   OrderCreateNotSentError,
   type OrderCreateRequest,
   type OrderCreateResult,
@@ -1716,5 +1717,41 @@ describe('ageOnDate', () => {
     expect(ageOnDate('2017-09-15', '2026-09-14')).toBe(8);
     expect(ageOnDate('2017-09-15', '2026-09-15')).toBe(9);
     expect(ageOnDate('raro', '2026-09-15')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Rechazo sin reserva: definitivo, no incierto
+// ---------------------------------------------------------------------------------------------
+
+describe('rechazo de Sabre sin crear nada', () => {
+  it('H-07 (200, APPLICATION_ERROR, sin booking) es OrderCreateDeclinedError con su código', async () => {
+    const err = await book(request(atpcoOffer()), {
+      errors: [
+        {
+          category: 'APPLICATION_ERROR',
+          type: 'UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED',
+          fieldPath: 'CreateBookingRequest.travelers',
+          fieldName: 'passengerCode',
+        },
+      ],
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OrderCreateDeclinedError);
+    expect((err as OrderCreateDeclinedError).codes).toEqual([
+      'UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED',
+    ]);
+  });
+
+  it('una caída de red después de enviar sigue siendo incierta, no un rechazo', async () => {
+    const cfg = config();
+    const http = new SabreHttpClient(cfg, tokens, {
+      fetch: () => Promise.reject(new Error('socket hang up')),
+      uuid: () => 'conv-fijo',
+    });
+    const adapter = new SabreOrderCreateAdapter(cfg, http);
+    const err = await adapter
+      .createBooking(request(atpcoOffer()), { tenantId: TENANT_ID, requestId: 'req-1' })
+      .catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(OrderCreateDeclinedError);
   });
 });
