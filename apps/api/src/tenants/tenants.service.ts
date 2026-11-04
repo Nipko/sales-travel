@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -190,6 +190,10 @@ export class TenantsService {
     const seatsRequested =
       input.concurrentSeats !== undefined || input.idleTimeoutMinutes !== undefined;
     if (seatsRequested && !superadmin) throw new TenantSeatsSuperadminOnlyError();
+    // El gobierno de proveedores y formas de pago es sólo del superadmin (0089).
+    if (input.governanceProfileId !== undefined && !superadmin) {
+      throw new ForbiddenException('Sólo el superadmin asigna el perfil de gobierno de un nodo.');
+    }
 
     const parentId = input.parentTenantId ?? (superadmin ? await this.platformRootId() : undefined);
     if (parentId === undefined) {
@@ -247,6 +251,20 @@ export class TenantsService {
           .executeTakeFirst();
         if (!row) throw new TenantSlugTakenError();
 
+        if (input.governanceProfileId !== undefined) {
+          const profile = await sql<{ id: string }>`
+            SELECT id FROM governance_profiles
+            WHERE id = ${input.governanceProfileId}::uuid AND archived_at IS NULL
+          `.execute(trx);
+          if (profile.rows.length === 0) {
+            throw new BadRequestException('El perfil de gobierno no existe o está archivado.');
+          }
+          await sql`
+            INSERT INTO tenant_governance_profiles (tenant_id, profile_id, updated_by)
+            VALUES (${row.id}::uuid, ${input.governanceProfileId}::uuid, ${actorUserId}::uuid)
+          `.execute(trx);
+        }
+
         await this.audit.emitWithin(trx, {
           eventType: 'TenantCreated',
           tenantId: row.id,
@@ -265,6 +283,9 @@ export class TenantsService {
               ? {}
               : { idleTimeoutMinutes: input.idleTimeoutMinutes }),
             ...(adminRole === undefined ? {} : { adminRole, admin: 'invited' }),
+            ...(input.governanceProfileId === undefined
+              ? {}
+              : { governanceProfileId: input.governanceProfileId }),
           },
         });
 

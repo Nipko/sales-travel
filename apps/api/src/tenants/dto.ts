@@ -421,6 +421,16 @@ export const CreateTenantSchema = z.object({
   concurrentSeats: optionalField(ConcurrentSeatsSchema),
   /** Minutos de inactividad propios. Sólo el superadmin (403 si no); sin valor, hereda. */
   idleTimeoutMinutes: optionalField(IdleTimeoutMinutesSchema),
+  /**
+   * Perfil de gobierno de proveedores y formas de pago (0089). Sólo el superadmin (403 si no); sin
+   * valor, el nodo hereda lo que gobierna a su padre.
+   */
+  governanceProfileId: optionalField(
+    z
+      .string()
+      .uuid()
+      .transform((v) => v.toLowerCase()),
+  ),
 });
 export type CreateTenantDto = z.infer<typeof CreateTenantSchema>;
 
