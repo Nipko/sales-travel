@@ -11,6 +11,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import type { ProviderAccountStatus } from '../database/database.types.js';
 import { NetworkService } from '../network/network.service.js';
+import { SupervisedCredentialsError } from '../platform-admins/platform-admins.errors.js';
+import { SupervisionService } from '../platform-admins/supervision.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import { UpsertProviderAccountSchema } from './dto.js';
 import { accountReadiness, type ProviderAccountReadiness } from './provider-specs.js';
@@ -42,6 +44,7 @@ export class ProviderCredentialsController {
     private readonly service: ProviderCredentialsService,
     private readonly network: NetworkService,
     private readonly audit: AuditService,
+    private readonly supervision: SupervisionService,
   ) {}
 
   @Post()
@@ -50,7 +53,11 @@ export class ProviderCredentialsController {
     @Body(new ZodValidationPipe(UpsertProviderAccountSchema)) body: UpsertProviderAccountBody,
   ): Promise<{ id: string }> {
     await this.assertCanManage(userId, body.tenantId);
-    const result = await this.service.upsert({
+    // Un supervisado no carga secretos: no pueden esperar en una cola de aprobación.
+    if (userId && (await this.supervision.standing(userId)) === 'supervised') {
+      throw new SupervisedCredentialsError();
+    }
+    const { id, change } = await this.service.upsert({
       tenantId: body.tenantId,
       providerCode: body.providerCode,
       label: body.label,
@@ -65,15 +72,19 @@ export class ProviderCredentialsController {
       tenantId: body.tenantId,
       actorUserId: userId,
       aggregateType: 'provider_account',
-      aggregateId: result.id,
+      aggregateId: id,
       payload: {
         providerCode: body.providerCode,
         label: body.label ?? 'default',
         status: body.status ?? 'sandbox',
         isInheritable: body.isInheritable ?? true,
+        // El antes y el después de lo que no es secreto, y si el secreto cambió (nunca cuál es).
+        before: change.before,
+        after: change.after,
+        credentialsChanged: change.credentialsChanged,
       },
     });
-    return result;
+    return { id };
   }
 
   @Get()

@@ -120,6 +120,38 @@ export class ProviderAccountInUseError extends ConflictException {
   }
 }
 
+/** Lo que se ve de una cuenta en la auditoría: nunca el secreto, sólo si cambió. */
+export interface ProviderAccountSnapshot {
+  status: ProviderAccountStatus;
+  isInheritable: boolean;
+  /** No secreta por contrato (0012): PCC, IATA, endpoints, país. */
+  config: Record<string, unknown>;
+}
+
+export interface ProviderAccountChange {
+  /** `null`: la cuenta es nueva. */
+  before: ProviderAccountSnapshot | null;
+  after: ProviderAccountSnapshot;
+  credentialsChanged: boolean;
+}
+
+function asConfig(value: unknown): Record<string, unknown> {
+  const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : value;
+  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
+
+/** ¿El secreto nuevo es otro? Compara descifrado, en memoria; si no se puede leer, "sí". */
+function credentialsDiffer(blob: Buffer, next: Record<string, unknown>): boolean {
+  try {
+    const current: unknown = JSON.parse(decryptCredentials(blob));
+    return JSON.stringify(current) !== JSON.stringify(next);
+  } catch {
+    return true;
+  }
+}
+
 @Injectable()
 export class ProviderCredentialsService {
   private readonly logger = new Logger(ProviderCredentialsService.name);
@@ -299,7 +331,7 @@ export class ProviderCredentialsService {
     config?: Record<string, unknown>;
     isInheritable?: boolean;
     status?: ProviderAccountStatus;
-  }): Promise<{ id: string }> {
+  }): Promise<{ id: string; change: ProviderAccountChange }> {
     const label = input.label ?? 'default';
     const enc = encryptCredentials(JSON.stringify(input.credentials));
     const status = input.status ?? 'sandbox';
@@ -336,7 +368,18 @@ export class ProviderCredentialsService {
           })
           .where('id', '=', existing.id)
           .execute();
-        return { id: existing.id };
+        return {
+          id: existing.id,
+          change: {
+            before: {
+              status: existing.status,
+              isInheritable: existing.is_inheritable,
+              config: asConfig(existing.config),
+            },
+            after: { status, isInheritable, config: input.config ?? {} },
+            credentialsChanged: credentialsDiffer(existing.credentials_enc, input.credentials),
+          },
+        };
       }
 
       const created = await trx
@@ -352,7 +395,14 @@ export class ProviderCredentialsService {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
-      return { id: created.id };
+      return {
+        id: created.id,
+        change: {
+          before: null,
+          after: { status, isInheritable, config: input.config ?? {} },
+          credentialsChanged: true,
+        },
+      };
     });
   }
 

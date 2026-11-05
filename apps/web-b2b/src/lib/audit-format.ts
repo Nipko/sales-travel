@@ -257,6 +257,23 @@ const OPERATION_LABELS: Readonly<Record<string, string>> = {
   'platform.orders.exported': 'Exportó las reservas de la red',
   'system.post_sale_sweep.completed': 'Barrido de post-venta',
   'system.post_sale_sweep.failed': 'El barrido de post-venta falló',
+  // El gobierno de proveedores y formas de pago.
+  'platform.provider_governance.profile.created': 'Perfil de gobierno creado',
+  'platform.provider_governance.profile.updated': 'Perfil de gobierno editado',
+  'platform.provider_governance.profile.archived': 'Perfil de gobierno archivado',
+  'platform.provider_governance.profile.default_changed': 'Cambió el perfil de los nodos nuevos',
+  'platform.provider_governance.profile.assigned': 'Perfil de gobierno asignado a un nodo',
+  'platform.provider_governance.rule.updated': 'Regla de proveedor o forma de pago cambiada',
+  // Los superadmins y sus solicitudes (docs/platform/16).
+  'platform.superadmin.granted': 'Acceso de superadmin dado',
+  'platform.superadmin.supervision_changed': 'Cambió el tipo de superadmin',
+  'platform.superadmin.revoked': 'Acceso de superadmin quitado',
+  'platform.change_request.created': 'Solicitud de cambio de un supervisado',
+  'platform.change_request.approved': 'Solicitud de cambio aprobada',
+  'platform.change_request.rejected': 'Solicitud de cambio rechazada',
+  'platform.change_request.cancelled': 'Solicitud de cambio cancelada',
+  'platform.change_request.failed': 'Solicitud aprobada que no se pudo aplicar',
+  'db.direct_change': 'Cambio directo en la base de datos',
 };
 
 export type AdminOrderActionKind = 'send-confirmation' | 'retrieve' | 'retry-cancel' | 'cancel';
@@ -497,6 +514,28 @@ function operationDetail(
       return [provider(p['providerCode'] ?? p['provider'])];
     case 'ProviderAccountIssueDetected':
       return [provider(p['providerCode'] ?? p['provider'])];
+    case 'platform.change_request.created':
+    case 'platform.change_request.approved':
+    case 'platform.change_request.rejected':
+    case 'platform.change_request.cancelled':
+    case 'platform.change_request.failed':
+      return [typeof p['summary'] === 'string' ? p['summary'] : null];
+    case 'platform.superadmin.granted':
+    case 'platform.superadmin.supervision_changed': {
+      const after = record(p['after']);
+      return [
+        after?.['supervised'] === true
+          ? 'supervisado'
+          : after?.['supervised'] === false
+            ? 'pleno'
+            : null,
+      ];
+    }
+    case 'db.direct_change': {
+      const op = p['operation'];
+      const verb = op === 'insert' ? 'alta en' : op === 'delete' ? 'baja en' : 'cambio en';
+      return [typeof p['table'] === 'string' ? `${verb} ${p['table']}` : null];
+    }
     case 'platform.audit.exported': {
       const rows = count(p['rows']);
       return [

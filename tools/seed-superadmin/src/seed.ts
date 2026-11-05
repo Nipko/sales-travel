@@ -394,6 +394,9 @@ export async function seedSuperadmin(
   hasher: PasswordHasher,
 ): Promise<SeedReport> {
   await assertPrivileged(db);
+  // Este seed deja su propio evento por cada cambio (con el antes y el después): que el trigger de
+  // cambios directos en la base (0092) no repita cada uno como db.direct_change. Sólo esta transacción.
+  await db.query(`SELECT set_config('app.direct_change_audited', 'on', true)`);
   const found = await inspectTarget(db, settings);
   const platform = await ensurePlatform(db, settings, found.tenant);
   const user = await ensureUser(db, settings, found.user, platform.id, hasher);

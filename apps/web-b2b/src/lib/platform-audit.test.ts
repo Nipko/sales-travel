@@ -64,7 +64,9 @@ describe('las categorías, espejo del API', () => {
   it('los mismos prefijos que audit-categories.ts', () => {
     const source = apiSource('audit/audit-categories.ts');
     // `SYSTEM_EVENT_PREFIX` es 'system.' en el API.
-    const text = source.replace(/SYSTEM_EVENT_PREFIX/g, "'system.'");
+    const text = source
+      .replace(/SYSTEM_EVENT_PREFIX/g, "'system.'")
+      .replace(/DIRECT_DB_EVENT_PREFIX/g, "'db.'");
     for (const category of ACTIVITY_CATEGORIES) {
       const entry = new RegExp(
         `\\n  ${category}: \\{\\s*include: \\[([^\\]]*)\\](?:,\\s*exclude: \\[([^\\]]*)\\])?`,
@@ -79,7 +81,7 @@ describe('las categorías, espejo del API', () => {
     }
   });
 
-  it('los chips del panel: Todo y las siete', () => {
+  it('los chips del panel: Todo y las ocho', () => {
     expect(ACTIVITY_CATEGORY_CHIPS.map((c) => c.label)).toEqual([
       'Todo',
       'Accesos',
@@ -89,6 +91,7 @@ describe('las categorías, espejo del API', () => {
       'Proveedores',
       'Reservas',
       'Sistema',
+      'Superadmins',
     ]);
     expect(activityCategoryOf('system.post_sale_sweep.completed')).toBe('system');
     expect(activityCategoryOf('tenant.provider_disclosure.updated')).toBe('providers');

@@ -18,6 +18,7 @@ import {
   Scale,
   Settings,
   Settings2,
+  ShieldCheck,
   Shield,
   UserCog,
   UserRound,
@@ -93,6 +94,8 @@ export const superAdminNav: NavItem[] = [
   // Qué proveedores y formas de pago puede usar cada nodo: perfiles y reglas globales.
   { label: 'Gobierno', href: '/admin/plataforma/gobierno', icon: Scale },
   { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
+  // Quién es superadmin (pleno o supervisado) y las solicitudes que esperan a un pleno.
+  { label: 'Superadmins', href: '/admin/plataforma/superadmins', icon: ShieldCheck },
   // Quién hizo qué, dónde y cuándo, en toda la plataforma.
   { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },
   // Lo que corre solo: el barrido de post-venta, la conciliación y los catálogos.

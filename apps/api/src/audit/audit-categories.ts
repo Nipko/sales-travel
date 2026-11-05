@@ -1,4 +1,4 @@
-import { SYSTEM_EVENT_PREFIX } from './audit.service.js';
+import { DIRECT_DB_EVENT_PREFIX, SYSTEM_EVENT_PREFIX } from './audit.service.js';
 
 /**
  * Las categorías de Plataforma → Actividad (`GET /admin/audit?category=`): qué eventos entran en cada
@@ -21,6 +21,7 @@ export const PLATFORM_AUDIT_CATEGORIES = [
   'providers',
   'orders',
   'system',
+  'superadmins',
 ] as const;
 export type PlatformAuditCategory = (typeof PLATFORM_AUDIT_CATEGORIES)[number];
 
@@ -62,7 +63,18 @@ export const PLATFORM_AUDIT_CATEGORY_PREFIXES: Readonly<
   system: {
     include: [SYSTEM_EVENT_PREFIX, 'platform.announcement', 'platform.audit', 'platform.orders'],
   },
+  /**
+   * El gobierno de la propia plataforma (docs/platform/16): quién es superadmin (pleno o
+   * supervisado), las solicitudes de cambio de los supervisados y los cambios hechos directo en la
+   * base, fuera del panel.
+   */
+  superadmins: {
+    include: ['platform.superadmin', 'platform.change_request', DIRECT_DB_EVENT_PREFIX],
+  },
 };
+
+/** Lo que "Todo" deja fuera salvo que se pida justo ese tipo: latidos y cambios directos. */
+const HIDDEN_FROM_ALL = [SYSTEM_EVENT_PREFIX, DIRECT_DB_EVENT_PREFIX] as const;
 
 /** Los prefijos que se le pasan a admin_audit_events (0078); `null` = sin ese filtro. */
 export interface AuditTypeFilter {
@@ -75,15 +87,21 @@ export interface AuditTypeFilter {
  *
  * Sin categoría ("Todo") quedan fuera los `system.*`: el barrido de post-venta deja uno cada 15
  * minutos en la raíz y la actividad de la plataforma sólo mostraría eso. Se ven en "Sistema", o si se
- * pide justo uno de esos tipos.
+ * pide justo uno de esos tipos. Tampoco entran los cambios directos en la base (`db.*`): se ven en
+ * "Superadmins" y con "Sólo superadmins" (`platformOnly`), que es donde se buscan.
  */
 export function auditTypeFilter(
   category: PlatformAuditCategory | undefined,
   eventType: string | undefined,
+  platformOnly = false,
 ): AuditTypeFilter {
   if (category === undefined) {
-    const askedForSystem = eventType?.startsWith(SYSTEM_EVENT_PREFIX) === true;
-    return { include: null, exclude: askedForSystem ? null : [SYSTEM_EVENT_PREFIX] };
+    const hidden = HIDDEN_FROM_ALL.filter(
+      (prefix) =>
+        eventType?.startsWith(prefix) !== true &&
+        !(platformOnly && prefix === DIRECT_DB_EVENT_PREFIX),
+    );
+    return { include: null, exclude: hidden.length === 0 ? null : [...hidden] };
   }
   const { include, exclude } = PLATFORM_AUDIT_CATEGORY_PREFIXES[category];
   return {

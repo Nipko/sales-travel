@@ -28,6 +28,7 @@ const FILTERS = [
   'actorEmail',
   'tenantId',
   'includePlatform',
+  'platformOnly',
   'aggregateType',
   'aggregateId',
 ] as const;
@@ -107,6 +108,14 @@ export function adminAuditTarget(
       return bad('Valor inválido para los eventos de la plataforma.');
     }
     out.set('includePlatform', includePlatform);
+  }
+
+  const platformOnly = value('platformOnly');
+  if (platformOnly !== undefined) {
+    if (platformOnly !== 'true' && platformOnly !== 'false') {
+      return bad('Valor inválido para "Sólo superadmins".');
+    }
+    out.set('platformOnly', platformOnly);
   }
 
   const aggregateType = value('aggregateType');

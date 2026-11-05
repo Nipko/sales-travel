@@ -304,6 +304,8 @@ export interface MembershipsTable {
   removed_at: Timestamp | null;
   /** Quién la quitó (0067). */
   removed_by: string | null;
+  /** Superadmin supervisado (0092): sus cambios sensibles los aprueba un superadmin pleno. */
+  platform_supervised: Generated<boolean>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -1312,4 +1314,28 @@ export interface DB {
   markup_rules: MarkupRulesTable;
   package_quotations: PackageQuotationsTable;
   package_items: PackageItemsTable;
+  platform_change_requests: PlatformChangeRequestsTable;
+}
+
+export type PlatformChangeRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'failed';
+
+/** Cambios sensibles de un superadmin supervisado, a la espera de un superadmin pleno (0092). */
+export interface PlatformChangeRequestsTable {
+  id: Generated<string>;
+  kind: string;
+  summary: string;
+  input: ColumnType<unknown, string, string>;
+  requested_by: string;
+  status: Generated<PlatformChangeRequestStatus>;
+  decided_by: string | null;
+  decided_at: Timestamp | null;
+  decision_note: string | null;
+  error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
 }

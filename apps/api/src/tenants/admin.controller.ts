@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   UnauthorizedException,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
@@ -20,6 +21,8 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
 import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
+import { PlatformRoleManagedElsewhereError } from '../platform-admins/platform-admins.errors.js';
+import { SupervisionService } from '../platform-admins/supervision.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ChangeRoleSchema,
@@ -110,9 +113,12 @@ function invitationScope(role: Role, tenantId: string): string | undefined {
   return role === 'superadmin' ? undefined : tenantId;
 }
 
+/** El tipo de cambio de suspender o reactivar una cuenta (docs/platform/16). */
+export const USER_STATUS_CHANGE_KIND = 'users.status';
+
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('admin')
-export class AdminController {
+export class AdminController implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly network: NetworkService,
@@ -123,7 +129,18 @@ export class AdminController {
     private readonly invitations: InvitationsService,
     private readonly platformUsers: PlatformUsersService,
     private readonly notices: SecurityNoticeService,
+    private readonly supervision: SupervisionService,
   ) {}
+
+  /** Suspender o reactivar una cuenta lo aplica un supervisado sólo con la aprobación de un pleno. */
+  onModuleInit(): void {
+    this.supervision.register(USER_STATUS_CHANGE_KIND, {
+      schema: SetUserStatusSchema,
+      summary: (body) =>
+        `Usuarios: ${body.status === 'suspended' ? 'suspender' : 'reactivar'} la cuenta ${body.userId}`,
+      execute: (actor, body) => this.setUserStatus(actor, body),
+    });
+  }
 
   /**
    * Cambia el rol de un usuario en un tenant. Sólo si el solicitante administra ese tenant.
@@ -148,6 +165,9 @@ export class AdminController {
     const current = await this.targetMembership(userId, body.userId, body.tenantId);
     // Quitada del nodo: un rol nuevo sólo llega con una invitación nueva.
     if (current.status === 'removed') throw new MembershipRemovedError();
+    // Un superadmin no se degrada como un rol de nodo: pasaría por encima de la regla de que nunca
+    // quede la plataforma sin un pleno y de la aprobación del supervisado.
+    if (isPlatformRole(current.role)) throw new PlatformRoleManagedElsewhereError();
 
     // Hay que superar en rango tanto al rol actual del objetivo (para poder tocarlo) como
     // al rol que se le quiere dar (para no conceder más autoridad de la propia).
@@ -393,6 +413,7 @@ export class AdminController {
     const actorRole = await this.actorRoleOver(userId, body.tenantId);
     const target = await this.targetMembership(userId, body.userId, body.tenantId);
     if (target.status === 'removed') throw new MembershipRemovedError();
+    if (isPlatformRole(target.role)) throw new PlatformRoleManagedElsewhereError();
 
     this.assertOutranks(actorRole, target.role);
 
@@ -583,6 +604,7 @@ export class AdminController {
     if (body.userId === actor) {
       throw new ForbiddenException('no puedes suspender tu propio usuario');
     }
+    await this.supervision.gate(actor, USER_STATUS_CHANGE_KIND, body);
 
     const { changed, ...effects } = await this.db.withRequestContext(
       { userId: actor },
@@ -625,7 +647,13 @@ export class AdminController {
           actorUserId: actor,
           aggregateType: 'user',
           aggregateId: body.userId,
-          payload: { status: body.status, revokedSessions, revokedInvitations },
+          payload: {
+            status: body.status,
+            before: { status: previous.status },
+            after: { status: body.status },
+            revokedSessions,
+            revokedInvitations,
+          },
         });
         return { revokedSessions, revokedInvitations, changed: previous.status !== body.status };
       },

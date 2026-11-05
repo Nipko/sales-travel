@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { ShieldCheck, X } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { Select, TextInput } from '../../../../../../components/ui/field';
 import { cn } from '../../../../../../lib/cn';
@@ -29,7 +29,9 @@ const LABEL = 'block text-xs font-medium text-[var(--color-fg-muted)]';
 
 /**
  * Las categorías: "Todo" y una por familia de eventos. Van siempre a la vista (también en el
- * teléfono, con scroll lateral): son el primer corte de una investigación.
+ * teléfono, con scroll lateral): son el primer corte de una investigación. Antes de ellas, "Sólo
+ * superadmins": lo que hizo cualquier superadmin y los cambios directos en la base, combinable con
+ * una categoría (docs/platform/16).
  */
 export function ActivityCategoryChips({
   filters,
@@ -44,6 +46,17 @@ export function ActivityCategoryChips({
       aria-label="Categoría de los eventos"
       className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
     >
+      <Chip
+        pressed={filters.platformOnly}
+        onClick={() => onChange({ ...filters, platformOnly: !filters.platformOnly })}
+      >
+        <ShieldCheck aria-hidden="true" className="size-3.5" />
+        Sólo superadmins
+      </Chip>
+      <span
+        aria-hidden="true"
+        className="mx-0.5 w-px shrink-0 self-stretch bg-[var(--color-border)]"
+      />
       {ACTIVITY_CATEGORY_CHIPS.map((chip) => (
         <Chip
           key={chip.label}

@@ -100,6 +100,7 @@ function event(id: string, extra: Partial<ActivityEventView> = {}): ActivityEven
     tenantId: NODE_NORTE,
     tenantName: 'Consolidador Norte',
     actorEmail: 'ana@norte.test',
+    actorPlatformRole: null,
     targetEmail: null,
     aggregateType: null,
     aggregateId: null,

@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import {
   BadRequestException,
   ForbiddenException,
@@ -89,6 +90,7 @@ function banco({
     invitations as unknown as InvitationsService,
     platformUsers as unknown as PlatformUsersService,
     notices as unknown as SecurityNoticeService,
+    supervisionStub(),
   );
   return { controller, network, tenants, db, seats, invitations, platformUsers, notices };
 }
@@ -355,6 +357,7 @@ function bancoMembresia(
     invitations as unknown as InvitationsService,
     {} as PlatformUsersService,
     notices as unknown as SecurityNoticeService,
+    supervisionStub(),
   );
   return { controller, orden, audit, notices, select, update, sessions, invitations, db };
 }
@@ -1086,6 +1089,7 @@ function bancoCuenta({
     invitations as unknown as InvitationsService,
     platformUsers as unknown as PlatformUsersService,
     notices as unknown as SecurityNoticeService,
+    supervisionStub(),
   );
   return {
     controller,

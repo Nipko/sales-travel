@@ -73,6 +73,14 @@ const filterFields = {
     .enum(['true', 'false'], { errorMap: () => ({ message: 'includePlatform es true o false' }) })
     .transform((v) => v === 'true')
     .optional(),
+  /**
+   * Sólo lo que hicieron superadmins (plenos, supervisados o que ya no lo son) y los cambios hechos
+   * directo en la base (0092). Sin valor: todos.
+   */
+  platformOnly: z
+    .enum(['true', 'false'], { errorMap: () => ({ message: 'platformOnly es true o false' }) })
+    .transform((v) => v === 'true')
+    .optional(),
   /** La entidad: `order`, `user`, `tenant`… */
   aggregateType: z
     .string()

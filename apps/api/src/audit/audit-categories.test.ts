@@ -56,6 +56,11 @@ const EXPECTED: Readonly<Record<string, PlatformAuditCategory>> = {
   'platform.announcement.published': 'system',
   'platform.audit.exported': 'system',
   'platform.orders.exported': 'system',
+  'platform.superadmin.granted': 'superadmins',
+  'platform.superadmin.revoked': 'superadmins',
+  'platform.change_request.created': 'superadmins',
+  'platform.change_request.approved': 'superadmins',
+  'db.direct_change': 'superadmins',
 };
 
 const SRC = join(__dirname, '..');
@@ -90,7 +95,7 @@ function emittedEventTypes(): string[] {
 }
 
 describe('las categorías de Plataforma → Actividad', () => {
-  it('son las siete del panel, con sus prefijos', () => {
+  it('son las ocho del panel, con sus prefijos', () => {
     expect(PLATFORM_AUDIT_CATEGORIES).toEqual([
       'access',
       'team',
@@ -99,6 +104,7 @@ describe('las categorías de Plataforma → Actividad', () => {
       'providers',
       'orders',
       'system',
+      'superadmins',
     ]);
     expect(PLATFORM_AUDIT_CATEGORY_PREFIXES.system.include).toEqual([
       'system.',
@@ -146,18 +152,32 @@ describe('las categorías de Plataforma → Actividad', () => {
 });
 
 describe('auditTypeFilter', () => {
-  it('"Todo" deja fuera los system.*', () => {
-    expect(auditTypeFilter(undefined, undefined)).toEqual({ include: null, exclude: ['system.'] });
+  it('"Todo" deja fuera los system.* y los cambios directos en la base', () => {
+    expect(auditTypeFilter(undefined, undefined)).toEqual({
+      include: null,
+      exclude: ['system.', 'db.'],
+    });
     expect(auditTypeFilter(undefined, 'OrderCreated')).toEqual({
+      include: null,
+      exclude: ['system.', 'db.'],
+    });
+  });
+
+  it('pedir justo un system.* o un db.* lo trae', () => {
+    expect(auditTypeFilter(undefined, 'system.post_sale_sweep.failed')).toEqual({
+      include: null,
+      exclude: ['db.'],
+    });
+    expect(auditTypeFilter(undefined, 'db.direct_change')).toEqual({
       include: null,
       exclude: ['system.'],
     });
   });
 
-  it('pedir justo un system.* lo trae', () => {
-    expect(auditTypeFilter(undefined, 'system.post_sale_sweep.failed')).toEqual({
+  it('"Sólo superadmins" sí trae los cambios directos en la base', () => {
+    expect(auditTypeFilter(undefined, undefined, true)).toEqual({
       include: null,
-      exclude: null,
+      exclude: ['system.'],
     });
   });
 

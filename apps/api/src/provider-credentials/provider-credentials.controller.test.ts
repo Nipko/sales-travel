@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
@@ -35,7 +36,7 @@ function controllerCon(
     canManageTenant: () => Promise.resolve(puedeGestionar),
   } as unknown as NetworkService;
   const audit = { emit: () => Promise.resolve() } as unknown as AuditService;
-  return new ProviderCredentialsController(service, network, audit);
+  return new ProviderCredentialsController(service, network, audit, supervisionStub());
 }
 
 /**

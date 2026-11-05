@@ -10,12 +10,15 @@ import {
   Put,
   UnauthorizedException,
   UseGuards,
+  type OnModuleInit,
 } from '@nestjs/common';
+import { z } from '@sales-travel/validation';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
 import { NetworkService } from '../network/network.service.js';
 import { SuperadminGuard } from '../network/superadmin.guard.js';
+import { SupervisionService } from '../platform-admins/supervision.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   ClearKillSwitchSchema,
@@ -37,6 +40,41 @@ import {
 import { ProviderHealthService, type ProviderHealthView } from './provider-health.service.js';
 
 /**
+ * Lo que un superadmin supervisado no aplica solo (docs/platform/16): levantar un apagado de
+ * emergencia y encender o apagar un proveedor. Apagar en una emergencia y cerrar un circuito sí los
+ * hace: cortan o recuperan durante un incidente, y esperar una aprobación sería peor.
+ */
+export const PROVIDER_CHANGE_KINDS = {
+  clearKillSwitch: 'providers.kill_switch.clear',
+  setGlobal: 'providers.enablement.set_global',
+  clearGlobal: 'providers.enablement.clear_global',
+  setTenant: 'providers.enablement.set_tenant',
+  clearTenant: 'providers.enablement.clear_tenant',
+} as const;
+
+const ClearKillSwitchInput = z
+  .object({ code: ProviderCodeParamSchema, dto: ClearKillSwitchSchema })
+  .strict();
+const SetGlobalInput = z
+  .object({ code: ProviderCodeParamSchema, dto: SetProviderEnablementSchema })
+  .strict();
+const ClearGlobalInput = z.object({ code: ProviderCodeParamSchema }).strict();
+const SetTenantInput = z
+  .object({
+    code: ProviderCodeParamSchema,
+    tenantId: TenantIdParamSchema,
+    dto: SetProviderEnablementSchema,
+  })
+  .strict();
+const ClearTenantInput = z
+  .object({ code: ProviderCodeParamSchema, tenantId: TenantIdParamSchema })
+  .strict();
+
+function onOff(enabled: boolean): string {
+  return enabled ? 'encender' : 'apagar';
+}
+
+/**
  * Qué proveedores puede usar cada tenant, desde el panel de la plataforma.
  *
  * También la salud de cada proveedor y las palancas de un incidente: el apagado de emergencia desde
@@ -51,12 +89,50 @@ import { ProviderHealthService, type ProviderHealthView } from './provider-healt
 @Roles(...PLATFORM_ROLES)
 @UseGuards(SuperadminGuard)
 @Controller('admin/providers')
-export class ProviderEnablementController {
+export class ProviderEnablementController implements OnModuleInit {
   constructor(
     private readonly enablement: ProviderEnablementService,
     private readonly network: NetworkService,
     private readonly health: ProviderHealthService,
+    private readonly supervision: SupervisionService,
   ) {}
+
+  onModuleInit(): void {
+    const k = PROVIDER_CHANGE_KINDS;
+    this.supervision.register(k.clearKillSwitch, {
+      schema: ClearKillSwitchInput,
+      summary: (i) => `Proveedores: levantar el apagado de emergencia de ${i.code}`,
+      execute: (actor, i) => this.health.clearKillSwitch(actor, i.code, i.dto.reason ?? null),
+    });
+    this.supervision.register(k.setGlobal, {
+      schema: SetGlobalInput,
+      summary: (i) => `Proveedores: ${onOff(i.dto.enabled)} ${i.code} para toda la plataforma`,
+      execute: (actor, i) =>
+        this.enablement.setGlobal(actor, i.code, {
+          enabled: i.dto.enabled,
+          reason: i.dto.reason ?? null,
+        }),
+    });
+    this.supervision.register(k.clearGlobal, {
+      schema: ClearGlobalInput,
+      summary: (i) => `Proveedores: quitar el ajuste global de ${i.code}`,
+      execute: (actor, i) => this.enablement.clearGlobal(actor, i.code),
+    });
+    this.supervision.register(k.setTenant, {
+      schema: SetTenantInput,
+      summary: (i) => `Proveedores: ${onOff(i.dto.enabled)} ${i.code} en el nodo ${i.tenantId}`,
+      execute: (actor, i) =>
+        this.enablement.setTenant(actor, i.code, i.tenantId, {
+          enabled: i.dto.enabled,
+          reason: i.dto.reason ?? null,
+        }),
+    });
+    this.supervision.register(k.clearTenant, {
+      schema: ClearTenantInput,
+      summary: (i) => `Proveedores: quitar el ajuste de ${i.code} en el nodo ${i.tenantId}`,
+      execute: (actor, i) => this.enablement.clearTenant(actor, i.code, i.tenantId),
+    });
+  }
 
   @Get()
   async list(@CurrentUser() userId: string | undefined): Promise<PlatformProviderView[]> {
@@ -91,6 +167,7 @@ export class ProviderEnablementController {
     @Body(new ZodValidationPipe(ClearKillSwitchSchema)) dto: ClearKillSwitchDto,
   ): Promise<ProviderHealthView> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, PROVIDER_CHANGE_KINDS.clearKillSwitch, { code, dto });
     return this.health.clearKillSwitch(actor, code, dto.reason ?? null);
   }
 
@@ -122,6 +199,7 @@ export class ProviderEnablementController {
     @Body(new ZodValidationPipe(SetProviderEnablementSchema)) dto: SetProviderEnablementDto,
   ): Promise<PlatformProviderView> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, PROVIDER_CHANGE_KINDS.setGlobal, { code, dto });
     return this.enablement.setGlobal(actor, code, {
       enabled: dto.enabled,
       reason: dto.reason ?? null,
@@ -134,6 +212,7 @@ export class ProviderEnablementController {
     @Param('code', new ZodValidationPipe(ProviderCodeParamSchema)) code: string,
   ): Promise<PlatformProviderView> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, PROVIDER_CHANGE_KINDS.clearGlobal, { code });
     return this.enablement.clearGlobal(actor, code);
   }
 
@@ -145,6 +224,7 @@ export class ProviderEnablementController {
     @Body(new ZodValidationPipe(SetProviderEnablementSchema)) dto: SetProviderEnablementDto,
   ): Promise<PlatformProviderView> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, PROVIDER_CHANGE_KINDS.setTenant, { code, tenantId, dto });
     return this.enablement.setTenant(actor, code, tenantId, {
       enabled: dto.enabled,
       reason: dto.reason ?? null,
@@ -158,6 +238,7 @@ export class ProviderEnablementController {
     @Param('tenantId', new ZodValidationPipe(TenantIdParamSchema)) tenantId: string,
   ): Promise<PlatformProviderView> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, PROVIDER_CHANGE_KINDS.clearTenant, { code, tenantId });
     return this.enablement.clearTenant(actor, code, tenantId);
   }
 

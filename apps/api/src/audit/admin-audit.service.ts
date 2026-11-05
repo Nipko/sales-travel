@@ -32,6 +32,15 @@ export interface AdminAuditMetaView {
   requestId: string | null;
 }
 
+export const ADMIN_AUDIT_ACTOR_PLATFORM_ROLES = ['superadmin', 'supervised', 'former'] as const;
+export type AdminAuditActorPlatformRole = (typeof ADMIN_AUDIT_ACTOR_PLATFORM_ROLES)[number];
+
+function actorPlatformRole(value: string | null | undefined): AdminAuditActorPlatformRole | null {
+  return (ADMIN_AUDIT_ACTOR_PLATFORM_ROLES as readonly string[]).includes(value ?? '')
+    ? (value as AdminAuditActorPlatformRole)
+    : null;
+}
+
 /** Un evento como sale en Plataforma → Actividad. */
 export interface AdminAuditEventView {
   id: string;
@@ -43,6 +52,11 @@ export interface AdminAuditEventView {
   /** `null` si no tiene nodo o si el nodo ya no existe. */
   tenantName: string | null;
   actorEmail: string | null;
+  /**
+   * Si quien actuó es superadmin, según su acceso de HOY: pleno, supervisado o que ya no lo es
+   * (`former`). `null`: no es ni fue superadmin, o no hubo persona (un cambio directo en la base).
+   */
+  actorPlatformRole: AdminAuditActorPlatformRole | null;
   /** La cuenta sobre la que se hizo, si no es la de quien lo hizo. */
   targetEmail: string | null;
   aggregateType: string | null;
@@ -79,6 +93,8 @@ export interface AdminAuditRow {
   tenant_name: string | null;
   actor_user_id: string | null;
   actor_email: string | null;
+  /** 0092: 'superadmin', 'supervised', 'former' o NULL. */
+  actor_platform_role?: string | null;
   target_email: string | null;
   aggregate_type: string | null;
   aggregate_id: string | null;
@@ -128,6 +144,7 @@ export function adminAuditEvent(row: AdminAuditRow): AdminAuditEventView {
     tenantId: row.tenant_id,
     tenantName: row.tenant_name,
     actorEmail: row.actor_email,
+    actorPlatformRole: actorPlatformRole(row.actor_platform_role),
     targetEmail: row.target_email,
     aggregateType: row.aggregate_type,
     aggregateId: row.aggregate_id,
@@ -223,6 +240,7 @@ export interface ResolvedAuditFilters {
   readonly includePlatform: boolean;
   readonly aggregateType: string | null;
   readonly aggregateId: string | null;
+  readonly platformOnly: boolean;
 }
 
 /**
@@ -245,6 +263,7 @@ export function exportedFilters(
     includePlatform: filters.includePlatform ?? filters.tenantId === undefined,
     aggregateType: filters.aggregateType ?? null,
     aggregateId: filters.aggregateId ?? null,
+    ...(filters.platformOnly === true ? { platformOnly: true } : {}),
   };
 }
 
@@ -356,7 +375,8 @@ export class AdminAuditService {
       actorUserId = actor.id;
     }
 
-    const types = auditTypeFilter(query.category, query.eventType);
+    const platformOnly = query.platformOnly ?? false;
+    const types = auditTypeFilter(query.category, query.eventType, platformOnly);
     return {
       period,
       include: types.include,
@@ -367,6 +387,7 @@ export class AdminAuditService {
       includePlatform: query.includePlatform ?? root === null,
       aggregateType: query.aggregateType ?? null,
       aggregateId: query.aggregateId ?? null,
+      platformOnly,
     };
   }
 }
@@ -398,7 +419,8 @@ export async function readAuditEvents(
              ${f.aggregateId}::text,
              ${before?.occurredAt ?? null}::timestamptz,
              ${before?.id ?? null}::uuid,
-             ${limit}::int
+             ${limit}::int,
+             ${f.platformOnly}::boolean
            ) a
      ORDER BY a.occurred_at DESC, a.id DESC
   `.execute(trx);

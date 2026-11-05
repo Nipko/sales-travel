@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import { randomBytes } from 'node:crypto';
 import type { HttpException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
@@ -99,6 +100,7 @@ d('suspender o degradar una membership, contra Postgres', () => {
     invitations,
     new PlatformUsersService(database),
     notices as unknown as SecurityNoticeService,
+    supervisionStub(),
   );
 
   let platform: string;

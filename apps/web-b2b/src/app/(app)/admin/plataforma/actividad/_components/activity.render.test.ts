@@ -81,6 +81,7 @@ const ORDER_EVENT: ActivityEventView = {
   tenantId: NODO,
   tenantName: 'Andes Travel',
   actorEmail: 'root@planetour.cloud',
+  actorPlatformRole: 'superadmin',
   targetEmail: null,
   aggregateType: 'order',
   aggregateId: ORDEN,

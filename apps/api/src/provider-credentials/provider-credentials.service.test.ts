@@ -470,9 +470,11 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       { own_orders: 5, inherited_orders: 5 },
     );
 
-    await expect(upsert(service, { status: 'active', isInheritable: true })).resolves.toEqual({
-      id: CUENTA,
-    });
+    await expect(upsert(service, { status: 'active', isInheritable: true })).resolves.toMatchObject(
+      {
+        id: CUENTA,
+      },
+    );
     expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
     expect(actualizo(consultas)).toBe(true);
   });
@@ -494,7 +496,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
     expect((error as Error).message).toContain('agencias de tu red');
     await expect(
       upsert(soloPropias.service, { status: 'active', isInheritable: false }),
-    ).resolves.toEqual({ id: CUENTA });
+    ).resolves.toMatchObject({ id: CUENTA });
   });
 
   it('sin reservas activas se desactiva', async () => {
@@ -502,7 +504,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       { status: 'active', is_inheritable: true },
       { own_orders: 0, inherited_orders: 0 },
     );
-    await expect(upsert(service, { status: 'disabled' })).resolves.toEqual({ id: CUENTA });
+    await expect(upsert(service, { status: 'disabled' })).resolves.toMatchObject({ id: CUENTA });
     expect(actualizo(consultas)).toBe(true);
   });
 
@@ -579,7 +581,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       );
 
       // `baseUrl` vacía y ausente son lo mismo: el factory lee las dos como "no vino".
-      await expect(upsert(service, { status: 'active' })).resolves.toEqual({ id: CUENTA });
+      await expect(upsert(service, { status: 'active' })).resolves.toMatchObject({ id: CUENTA });
       expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
       expect(actualizo(consultas)).toBe(true);
     });
@@ -591,7 +593,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       );
       await expect(
         upsert(service, { status: 'active', credentials: { username: 'otro', password: 'p' } }),
-      ).resolves.toEqual({ id: CUENTA });
+      ).resolves.toMatchObject({ id: CUENTA });
       expect(actualizo(consultas)).toBe(true);
     });
 
@@ -617,7 +619,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
             status: 'active',
             credentials: { username: 'usuario-nuevo', password: 'p' },
           }),
-        ).resolves.toEqual({ id: CUENTA });
+        ).resolves.toMatchObject({ id: CUENTA });
         // El aviso nombra la cuenta; ni el blob ni la credencial nueva.
         expect(JSON.stringify(warn.mock.calls)).toContain(CUENTA);
         expect(JSON.stringify(warn.mock.calls)).not.toContain('usuario-nuevo');
@@ -649,7 +651,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
           credentials: { apiKey: 'otra' },
           config: { baseUrl: 'https://otra.example' },
         }),
-      ).resolves.toEqual({ id: CUENTA });
+      ).resolves.toMatchObject({ id: CUENTA });
       expect(otro.consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(
         false,
       );
@@ -663,7 +665,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
           status: 'active',
           credentials: { username: 'otro', password: 'p' },
         }),
-      ).resolves.toEqual({ id: CUENTA });
+      ).resolves.toMatchObject({ id: CUENTA });
     });
   });
 
@@ -714,7 +716,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
     ])('%s se guarda sin consultar: sigue siendo la misma oficina', async (_caso, cambio) => {
       const { service, consultas } = conReservas();
 
-      await expect(sabre(service, cambio)).resolves.toEqual({ id: CUENTA });
+      await expect(sabre(service, cambio)).resolves.toMatchObject({ id: CUENTA });
       expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
       expect(actualizo(consultas)).toBe(true);
     });
@@ -724,7 +726,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
         credentials: { epr: 'EPR-1', password: 'vieja' },
         config: { environment: 'cert', homePcc: 'A1B2' },
       });
-      await expect(sabre(mudado.service)).resolves.toEqual({ id: CUENTA });
+      await expect(sabre(mudado.service)).resolves.toMatchObject({ id: CUENTA });
 
       const otro = conReservas({
         credentials: { epr: 'EPR-1', password: 'vieja' },
@@ -737,7 +739,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
 
     it('sin entorno guardado el factory lee CERT: guardarla desde la pantalla, con CERT, no cambia nada', async () => {
       const cargadaPorApi = conReservas({ config: {} });
-      await expect(sabre(cargadaPorApi.service)).resolves.toEqual({ id: CUENTA });
+      await expect(sabre(cargadaPorApi.service)).resolves.toMatchObject({ id: CUENTA });
 
       const aProduccion = conReservas({ config: {} });
       await expect(
@@ -751,7 +753,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
         const ilegible = conReservas({ credentials: 'ilegible' });
         await expect(
           sabre(ilegible.service, { credentials: { ...SABRE_GUARDADA, homePcc: 'Z9Y8' } }),
-        ).resolves.toEqual({ id: CUENTA });
+        ).resolves.toMatchObject({ id: CUENTA });
 
         const otroEntorno = conReservas({ credentials: 'ilegible' });
         await expect(
@@ -768,7 +770,7 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       { status: 'sandbox', is_inheritable: true },
       { own_orders: 9, inherited_orders: 9 },
     );
-    await expect(upsert(service, { status: 'disabled' })).resolves.toEqual({ id: CUENTA });
+    await expect(upsert(service, { status: 'disabled' })).resolves.toMatchObject({ id: CUENTA });
     expect(consultas.some((sql) => sql.includes('provider_account_active_orders'))).toBe(false);
   });
 });

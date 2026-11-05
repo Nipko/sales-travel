@@ -7,6 +7,12 @@ import { ModalPortal, useModalBehavior } from '../../../../../../components/ui/d
 import { eventDetail, eventLabel } from '../../../../../../lib/audit-format';
 import {
   activityActorLabel,
+  activityApproval,
+  activityChanges,
+  activityDirectSource,
+  activityReason,
+  activitySecretChanges,
+  actorPlatformRoleLabel,
   activityCategoryLabel,
   activityCategoryOf,
   activityNodeLabel,
@@ -126,7 +132,15 @@ export function EventDetailContent({
           </Fact>
           <Fact label="Categoría">{activityCategoryLabel(category)}</Fact>
           <Fact label="Nodo">{activityNodeLabel(event)}</Fact>
-          <Fact label="Quién">{activityActorLabel(event)}</Fact>
+          <Fact label="Quién">
+            {activityActorLabel(event)}
+            {actorPlatformRoleLabel(event.actorPlatformRole) !== null ? (
+              <span className="text-[var(--color-fg-muted)]">
+                {' '}
+                · {actorPlatformRoleLabel(event.actorPlatformRole)}
+              </span>
+            ) : null}
+          </Fact>
           {event.targetEmail !== null ? <Fact label="Sobre quién">{event.targetEmail}</Fact> : null}
           {entity !== null ? (
             <Fact label="Entidad">
@@ -145,6 +159,8 @@ export function EventDetailContent({
           </Link>
         ) : null}
       </Section>
+
+      <ChangeSections event={event} />
 
       <Section title="Datos del evento">
         {payload === null ? (
@@ -190,6 +206,120 @@ export function EventDetailContent({
         </div>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Lo que hace claro un cambio (docs/platform/16): qué campos cambiaron con su antes y después, qué
+ * secreto cambió (sin el valor), por qué, quién lo pidió y quién lo aprobó, y si se hizo directo en
+ * la base, desde dónde. Sin nada de eso no muestra nada: quedan los datos del evento.
+ */
+export function ChangeSections({ event }: { event: ActivityEventView }) {
+  const changes = activityChanges(event.payload);
+  const secrets = activitySecretChanges(event.payload);
+  const reason = activityReason(event.payload);
+  const approval = activityApproval(event.payload);
+  const direct = activityDirectSource(event);
+
+  return (
+    <>
+      {direct !== null ? (
+        <Section title="Hecho fuera del panel">
+          <p className="rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-sm text-[var(--color-fg)]">
+            Este cambio no pasó por la plataforma: alguien lo escribió directo en la base de datos
+            (una consola, una migración o un script). No hay una persona de la plataforma detrás.
+          </p>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
+            <Fact label="Tabla">
+              <Mono value={direct.table} />
+            </Fact>
+            <Fact label="Usuario de la base">
+              <Mono value={direct.dbUser} />
+            </Fact>
+            <Fact label="Programa">
+              <Mono value={direct.application} />
+            </Fact>
+          </dl>
+        </Section>
+      ) : null}
+
+      {changes.length > 0 || secrets.length > 0 ? (
+        <Section title="Qué cambió">
+          {changes.length > 0 ? (
+            <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+              <table className="w-full text-xs">
+                <caption className="sr-only">Cada campo con su valor antes y después</caption>
+                <thead className="bg-[var(--color-surface-muted)] text-left text-[11px] text-[var(--color-fg-muted)]">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Campo
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Antes
+                    </th>
+                    <th scope="col" className="px-3 py-2 font-medium">
+                      Después
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {changes.map((row) => (
+                    <tr key={row.field}>
+                      <th
+                        scope="row"
+                        className="px-3 py-2 text-left align-top font-mono text-[11px] font-normal text-[var(--color-fg-muted)] [overflow-wrap:anywhere]"
+                      >
+                        {row.field}
+                      </th>
+                      <td className="px-3 py-2 align-top font-mono text-[11px] text-[var(--color-fg-muted)] line-through decoration-[var(--color-fg-subtle)] [overflow-wrap:anywhere]">
+                        {row.before}
+                      </td>
+                      <td className="px-3 py-2 align-top font-mono text-[11px] font-medium text-[var(--color-fg)] [overflow-wrap:anywhere]">
+                        {row.after}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {secrets.length > 0 ? (
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              También cambió: {secrets.join(', ')}. El valor secreto nunca se guarda en la
+              auditoría.
+            </p>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {reason !== null ? (
+        <Section title="Por qué">
+          <p className="text-sm text-[var(--color-fg)] [overflow-wrap:anywhere]">{reason}</p>
+        </Section>
+      ) : null}
+
+      {approval !== null ? (
+        <Section title="Aprobación">
+          <p className="text-sm text-[var(--color-fg)]">
+            Lo pidió un superadmin supervisado y lo aprobó un superadmin pleno antes de aplicarse.
+          </p>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+            <Fact label="Pidió (id de la cuenta)">
+              <Mono value={approval.requestedBy} />
+            </Fact>
+            <Fact label="Aprobó (id de la cuenta)">
+              <Mono value={approval.approvedBy} />
+            </Fact>
+            <Fact label="Solicitud">
+              <Mono value={approval.changeRequestId} />
+            </Fact>
+            {approval.note !== null ? (
+              <Fact label="Nota de quien aprobó">{approval.note}</Fact>
+            ) : null}
+          </dl>
+        </Section>
+      ) : null}
+    </>
   );
 }
 

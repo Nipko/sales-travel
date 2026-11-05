@@ -229,7 +229,11 @@ describe('AuditService.networkAudit', () => {
     const { audit, negocio } = banco();
     await audit.networkAudit(VIEWER, ROOT);
     const sql = plano(negocio()[0]);
-    expect(sql.replace(`e.event_type NOT LIKE 'system.%'`, '')).not.toContain('LIKE');
+    expect(
+      sql
+        .replace(`e.event_type NOT LIKE 'system.%'`, '')
+        .replace(`e.event_type NOT LIKE 'db.%'`, ''),
+    ).not.toContain('LIKE');
     expect(sql).not.toContain('e.actor_user_id =');
   });
 

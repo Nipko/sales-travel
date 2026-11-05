@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { sql, type Insertable, type RawBuilder, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, DomainEventsTable } from '../database/database.types.js';
+import { approvalAuditPayload, currentApproval } from '../platform-admins/approval-context.js';
 import { currentContext } from '../request-context/request-context.js';
 import {
   encodeAuditCursor,
@@ -46,6 +47,14 @@ export interface AuditEntry {
  */
 export const SYSTEM_EVENT_PREFIX = 'system.';
 
+/**
+ * Los cambios hechos directo en la base, fuera de la API (`db.direct_change`, trigger de 0092): una
+ * consola psql, una migración, un seed. Son de la plataforma: la Actividad de la red no los muestra
+ * (dicen el usuario de la base y la IP del servidor) y Plataforma → Actividad los muestra en
+ * «Superadmins» y en «Sólo superadmins», no en «Todo».
+ */
+export const DIRECT_DB_EVENT_PREFIX = 'db.';
+
 /** Una página del audit log, del evento más nuevo al más viejo. */
 export interface AuditPage {
   events: AuditEntry[];
@@ -82,6 +91,7 @@ const ALL = sql<boolean>`true`;
 
 /** El patrón de los `system.*`, como literal: no corre los parámetros de la consulta. */
 const NOT_SYSTEM_EVENT = sql.lit(`${SYSTEM_EVENT_PREFIX}%`);
+const NOT_DIRECT_DB_EVENT = sql.lit(`${DIRECT_DB_EVENT_PREFIX}%`);
 
 /** Lo de antes del cursor, en el orden del historial: (occurred_at, id) descendente. */
 function beforeCursor(before: AuditCursor | undefined): RawBuilder<boolean> {
@@ -183,13 +193,20 @@ function toPage(rows: readonly AuditRow[], limit: number): AuditPage {
 /** La fila de `domain_events` de un evento, con el actor y el tenant del request si no vienen. */
 function auditRow(event: AuditEvent): Insertable<DomainEventsTable> {
   const ctx = currentContext();
+  // Un cambio que se aplica al aprobar la solicitud de un supervisado: quién lo pidió y quién lo
+  // aprobó quedan en el mismo evento que el cambio (docs/platform/16).
+  const approval = currentApproval();
+  const payload =
+    approval === undefined
+      ? (event.payload ?? {})
+      : { ...(event.payload ?? {}), approval: approvalAuditPayload(approval) };
   return {
     tenant_id: event.tenantId ?? ctx?.tenantId ?? null,
     actor_user_id: event.actorUserId ?? ctx?.userId ?? null,
     event_type: event.eventType,
     aggregate_type: event.aggregateType ?? null,
     aggregate_id: event.aggregateId ?? null,
-    payload: JSON.stringify(event.payload ?? {}),
+    payload: JSON.stringify(payload),
     meta: JSON.stringify({
       requestId: ctx?.requestId ?? null,
       // Sin IP ni user-agent, un audit log de seguridad no sirve para investigar
@@ -265,6 +282,7 @@ export class AuditService {
           JOIN tenants t ON t.id = e.tenant_id
          WHERE ${withinRoot('t.path', rootTenantId)}
            AND e.event_type NOT LIKE ${NOT_SYSTEM_EVENT}
+           AND e.event_type NOT LIKE ${NOT_DIRECT_DB_EVENT}
            AND ${category}
            AND ${actor}
            AND ${beforeCursor(opts.before)}

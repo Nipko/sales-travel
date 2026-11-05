@@ -68,6 +68,7 @@ describe('cómo sale cada evento', () => {
       tenantId: NODO,
       tenantName: 'Andes Travel',
       actorEmail: 'ana@agencia.com',
+      actorPlatformRole: null,
       targetEmail: null,
       aggregateType: 'provider_account',
       aggregateId: 'acc-1',
@@ -230,6 +231,7 @@ describe('AdminAuditService.list', () => {
       null,
       null,
       21,
+      false,
     ]);
     // Corre como quien pide: la guarda de la base lee app.current_user_id.
     expect(scripted.indexOf('set_config')).toBeGreaterThanOrEqual(0);
@@ -238,13 +240,22 @@ describe('AdminAuditService.list', () => {
     );
   });
 
-  it('"Todo" excluye system.* y mira también los eventos sin nodo', async () => {
+  it('"Todo" excluye system.* y db.* y mira también los eventos sin nodo', async () => {
     const { service, lecturas } = banco();
     await service.list(SUPERADMIN, AdminAuditQuerySchema.parse({}), NOW);
     const params = lecturas()[0]?.parameters ?? [];
     expect(params[4]).toBeNull();
-    expect(params[5]).toEqual(['system.']);
+    expect(params[5]).toEqual(['system.', 'db.']);
     expect(params[9]).toBe(true);
+    expect(params[15]).toBe(false);
+  });
+
+  it('"Sólo superadmins" pasa platformOnly y trae los cambios directos en la base', async () => {
+    const { service, lecturas } = banco();
+    await service.list(SUPERADMIN, AdminAuditQuerySchema.parse({ platformOnly: 'true' }), NOW);
+    const params = lecturas()[0]?.parameters ?? [];
+    expect(params[5]).toEqual(['system.']);
+    expect(params[15]).toBe(true);
   });
 
   it('un correo que no es de nadie: lista vacía, sin leer el audit log', async () => {
@@ -315,7 +326,7 @@ describe('AdminAuditService.exportCsv', () => {
     );
     // Pide una de más para saber si se pasa de 5.000.
     const read = scripted.queries.find((q) => q.sql.includes('admin_audit_events('));
-    expect(read?.parameters.at(-1)).toBe(ADMIN_AUDIT_EXPORT_MAX_ROWS + 1);
+    expect(read?.parameters.at(-2)).toBe(ADMIN_AUDIT_EXPORT_MAX_ROWS + 1);
   });
 
   it('más de 5.000: exporta las 5.000 más nuevas y lo dice', async () => {

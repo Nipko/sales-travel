@@ -294,8 +294,9 @@ export class PlatformUsersService {
   }
 
   /**
-   * 409 si suspender a `targetUserId` dejaría la plataforma sin ningún superadmin activo (cuenta
-   * activa con una membership de superadmin activa). Va en la transacción de la suspensión.
+   * 409 si suspender a `targetUserId` dejaría la plataforma sin ningún superadmin PLENO activo (cuenta
+   * activa con una membership de superadmin activa y no supervisada, 0092): un supervisado no aprueba
+   * nada, así que sin un pleno nadie podría decidir sus solicitudes. Va en la transacción de la suspensión.
    *
    * Quien suspende ya es un superadmin activo, así que esto sólo se da en una carrera: dos
    * superadmins que se suspenden uno al otro a la vez. Para que la segunda vea la primera, bloquea
@@ -310,6 +311,7 @@ export class PlatformUsersService {
       .where('user_id', '=', targetUserId)
       .where('role', '=', 'superadmin')
       .where('status', '=', 'active')
+      .where('platform_supervised', '=', false)
       .executeTakeFirst();
     if (!target) return;
 
@@ -324,7 +326,8 @@ export class PlatformUsersService {
             .select(sql<number>`1`.as('one'))
             .whereRef('m.user_id', '=', 'u.id')
             .where('m.role', '=', 'superadmin')
-            .where('m.status', '=', 'active'),
+            .where('m.status', '=', 'active')
+            .where('m.platform_supervised', '=', false),
         ),
       )
       .orderBy('u.id')

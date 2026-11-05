@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { HttpException } from '@nestjs/common';
 import { Kysely, PostgresDialect, sql, type Transaction } from 'kysely';
@@ -127,6 +128,7 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
       invitations,
       new PlatformUsersService(database),
       asNotices,
+      supervisionStub(),
     );
   }
   const admin = adminWith(audit);
@@ -641,6 +643,7 @@ d('quitar a una persona de un nodo, contra Postgres', () => {
       invitations,
       new PlatformUsersService(database),
       asNotices,
+      supervisionStub(),
     );
 
     // adminA es tenant_admin: no supera a otro tenant_admin.

@@ -109,7 +109,7 @@ describe('upsert de una cuenta tbo-hotels', () => {
   it('una cuenta nueva sin estado nace `sandbox`: no habilita TBO hasta promoverla', async () => {
     const { service, consultas } = servicioQueGraba({ existente: false });
 
-    await expect(service.upsert(ALTA)).resolves.toEqual({ id: 'acc-nueva' });
+    await expect(service.upsert(ALTA)).resolves.toMatchObject({ id: 'acc-nueva' });
     expect(escritura(consultas)['status']).toBe('sandbox');
   });
 

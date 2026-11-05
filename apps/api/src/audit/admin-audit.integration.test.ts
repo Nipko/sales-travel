@@ -439,7 +439,7 @@ d('Plataforma → Actividad (0078) contra Postgres', () => {
 
     const { rows } = await pool.query<{ can: boolean }>(
       `SELECT has_function_privilege('public',
-         'admin_audit_events(timestamptz, timestamptz, text[], text[], text, uuid, uuid, boolean, text, text, timestamptz, uuid, integer)',
+         'admin_audit_events(timestamptz, timestamptz, text[], text[], text, uuid, uuid, boolean, text, text, timestamptz, uuid, integer, boolean)',
          'EXECUTE') AS can`,
     );
     expect(rows[0]?.can).toBe(false);

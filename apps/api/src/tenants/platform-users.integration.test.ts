@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import { randomBytes } from 'node:crypto';
 import type { HttpException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
@@ -147,6 +148,7 @@ d('directorio de usuarios de la plataforma y suspensión de la cuenta, contra Po
     invitations,
     platformUsers,
     notices as unknown as SecurityNoticeService,
+    supervisionStub(),
   );
 
   let platform: string;

@@ -1,3 +1,4 @@
+import { supervisionStub } from '../__fixtures__/supervision-stub.js';
 import {
   BadRequestException,
   ForbiddenException,
@@ -50,6 +51,7 @@ function banco({ esSuperadmin = true } = {}) {
     service as unknown as ProviderEnablementService,
     network as unknown as NetworkService,
     health as unknown as ProviderHealthService,
+    supervisionStub(),
   );
   return { controller, service, health, network };
 }

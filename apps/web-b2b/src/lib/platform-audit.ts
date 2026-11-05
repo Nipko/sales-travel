@@ -22,6 +22,7 @@ export const ACTIVITY_CATEGORIES = [
   'providers',
   'orders',
   'system',
+  'superadmins',
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number];
 
@@ -42,6 +43,7 @@ export const ACTIVITY_CATEGORY_CHIPS: readonly {
   { id: 'providers', label: 'Proveedores' },
   { id: 'orders', label: 'Reservas' },
   { id: 'system', label: 'Sistema' },
+  { id: 'superadmins', label: 'Superadmins' },
 ];
 
 /**
@@ -64,6 +66,7 @@ export const ACTIVITY_CATEGORY_PREFIXES: Readonly<
   providers: { include: ['platform.provider', 'Provider', 'tenant.provider_disclosure'] },
   orders: { include: ['Order', 'Hotel', 'CarReservation', 'platform.order.'] },
   system: { include: ['system.', 'platform.announcement', 'platform.audit', 'platform.orders'] },
+  superadmins: { include: ['platform.superadmin', 'platform.change_request', 'db.'] },
 };
 
 /** La categoría de un tipo de evento, o `null` (sólo aparece en "Todo"). */
@@ -115,6 +118,11 @@ export interface ActivityFilters {
   /** Una entidad y su id (desde el detalle de un evento o la ficha de una reserva). */
   readonly aggregateType: string | null;
   readonly aggregateId: string | null;
+  /**
+   * Sólo lo que hicieron superadmins (plenos, supervisados o que ya no lo son) y los cambios hechos
+   * directo en la base, fuera del panel.
+   */
+  readonly platformOnly: boolean;
 }
 
 export const DEFAULT_ACTIVITY_FILTERS: ActivityFilters = {
@@ -126,6 +134,7 @@ export const DEFAULT_ACTIVITY_FILTERS: ActivityFilters = {
   eventType: null,
   aggregateType: null,
   aggregateId: null,
+  platformOnly: false,
 };
 
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -244,7 +253,8 @@ export function activeFilterCount(filters: ActivityFilters): number {
     (filters.tenantId !== null ? 1 : 0) +
     (actorEmailTerm(filters.actorEmail) !== null ? 1 : 0) +
     (filters.eventType !== null ? 1 : 0) +
-    (filters.aggregateType !== null ? 1 : 0)
+    (filters.aggregateType !== null ? 1 : 0) +
+    (filters.platformOnly ? 1 : 0)
   );
 }
 
@@ -263,6 +273,7 @@ const CATEGORY_PARAM: Readonly<Record<ActivityCategory, string>> = {
   providers: 'proveedores',
   orders: 'reservas',
   system: 'sistema',
+  superadmins: 'superadmins',
 };
 
 type SearchParamsLike =
@@ -319,6 +330,7 @@ export function activityFiltersFromSearchParams(params: SearchParamsLike): Activ
     eventType: tipo !== undefined && EVENT_TYPE.test(tipo) ? tipo : null,
     aggregateType: aggregateId === null ? null : aggregateType,
     aggregateId,
+    platformOnly: paramOf(params, 'solo')?.trim().toLowerCase() === 'superadmins',
   };
 }
 
@@ -342,6 +354,7 @@ export function activityFiltersToSearchParams(filters: ActivityFilters): URLSear
     params.set('entidad', filters.aggregateType);
     params.set('id', filters.aggregateId);
   }
+  if (filters.platformOnly) params.set('solo', 'superadmins');
   return params;
 }
 
@@ -400,6 +413,7 @@ export function activitySearch(
     params.set('aggregateType', filters.aggregateType);
     params.set('aggregateId', filters.aggregateId);
   }
+  if (filters.platformOnly) params.set('platformOnly', 'true');
   if (cursor !== undefined && cursor !== null && cursor !== '') params.set('cursor', cursor);
   if (limit !== undefined && Number.isInteger(limit) && limit >= 1) {
     params.set('limit', String(limit));
@@ -424,11 +438,19 @@ export interface ActivityEventView {
   readonly tenantId: string | null;
   readonly tenantName: string | null;
   readonly actorEmail: string | null;
+  /** Si quien actuó es superadmin hoy (pleno o supervisado) o lo fue. `null`: no. */
+  readonly actorPlatformRole: ActivityActorPlatformRole | null;
   readonly targetEmail: string | null;
   readonly aggregateType: string | null;
   readonly aggregateId: string | null;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly meta: ActivityMetaView;
+}
+
+export type ActivityActorPlatformRole = 'superadmin' | 'supervised' | 'former';
+
+function actorPlatformRoleOf(value: unknown): ActivityActorPlatformRole | null {
+  return value === 'superadmin' || value === 'supervised' || value === 'former' ? value : null;
 }
 
 export interface ActivityPage {
@@ -463,6 +485,7 @@ function parseEvent(value: unknown): ActivityEventView | undefined {
     tenantId: text(r['tenantId'], 64),
     tenantName: text(r['tenantName']),
     actorEmail: text(r['actorEmail'], 254),
+    actorPlatformRole: actorPlatformRoleOf(r['actorPlatformRole']),
     targetEmail: text(r['targetEmail'], 254),
     aggregateType: text(r['aggregateType'], 40),
     aggregateId: text(r['aggregateId'], AGGREGATE_ID_MAX),
@@ -514,6 +537,7 @@ export function activityActorLabel(
   event: Pick<ActivityEventView, 'actorEmail' | 'eventType'>,
 ): string {
   if (event.actorEmail !== null) return event.actorEmail;
+  if (event.eventType.startsWith('db.')) return 'Directo en la base de datos';
   if (event.eventType.startsWith('system.')) return 'Proceso automático';
   if (event.eventType.startsWith('auth.')) return 'Sin sesión';
   return 'Sistema';
@@ -599,4 +623,148 @@ export function exportFilename(disposition: string | null, period: { from: strin
   return name !== undefined && /^[A-Za-z0-9._-]{1,100}\.csv$/.test(name)
     ? name
     : `actividad-${period.from}-a-${period.to}.csv`;
+}
+
+// ───────────────────────────── Qué cambió, por qué y quién lo aprobó ─────────────────────────────
+
+/** La marca de quien actuó en la lista y el detalle. */
+export function actorPlatformRoleLabel(role: ActivityActorPlatformRole | null): string | null {
+  switch (role) {
+    case 'superadmin':
+      return 'Superadmin';
+    case 'supervised':
+      return 'Superadmin supervisado';
+    case 'former':
+      return 'Ex superadmin';
+    default:
+      return null;
+  }
+}
+
+/** Un campo que cambió: su nombre y el valor antes y después, ya en texto. */
+export interface ActivityChangeRow {
+  readonly field: string;
+  readonly before: string;
+  readonly after: string;
+}
+
+/** El valor de un campo en texto: "—" si no había, sí/no, o el JSON compacto. */
+export function changeValueText(value: unknown): string {
+  if (value === undefined || value === null) return '—';
+  if (typeof value === 'boolean') return value ? 'sí' : 'no';
+  if (typeof value === 'string') return value === '' ? '(vacío)' : value;
+  if (typeof value === 'number') return String(value);
+  return JSON.stringify(value);
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/**
+ * Los campos que cambiaron, de lo que trae el evento:
+ *
+ *   - `before` y `after` (lo que deja la API: gobierno, credenciales, superadmins, cuentas): cada
+ *     campo de primer nivel que difiere; un objeto anidado (la `config` de una cuenta) se abre un
+ *     nivel más, para que se vea justo la clave que cambió;
+ *   - `changes` (un cambio directo en la base, `db.direct_change`): `{ campo: { before, after } }`;
+ *   - `previousRole` / `newRole` (un cambio de rol).
+ *
+ * Sin nada de eso, ninguna fila: el detalle muestra los datos del evento tal cual.
+ */
+export function activityChanges(payload: Readonly<Record<string, unknown>>): ActivityChangeRow[] {
+  const rows: ActivityChangeRow[] = [];
+  const push = (field: string, before: unknown, after: unknown) => {
+    if (sameValue(before, after)) return;
+    const b = asRecord(before);
+    const a = asRecord(after);
+    if (b !== null && a !== null) {
+      for (const key of [...new Set([...Object.keys(b), ...Object.keys(a)])].sort()) {
+        if (!sameValue(b[key], a[key])) {
+          rows.push({
+            field: `${field}.${key}`,
+            before: changeValueText(b[key]),
+            after: changeValueText(a[key]),
+          });
+        }
+      }
+      return;
+    }
+    rows.push({ field, before: changeValueText(before), after: changeValueText(after) });
+  };
+
+  const changes = asRecord(payload['changes']);
+  if (changes !== null) {
+    for (const [field, value] of Object.entries(changes)) {
+      const pair = asRecord(value);
+      if (pair !== null) push(field, pair['before'], pair['after']);
+    }
+  }
+  if ('before' in payload || 'after' in payload) {
+    const before = asRecord(payload['before']);
+    const after = asRecord(payload['after']);
+    if (before !== null || after !== null) {
+      const fields = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+      for (const field of fields) push(field, before?.[field], after?.[field]);
+    } else {
+      push('valor', payload['before'], payload['after']);
+    }
+  }
+  if ('previousRole' in payload || 'newRole' in payload) {
+    push('rol', payload['previousRole'], payload['newRole']);
+  }
+  return rows;
+}
+
+/** Lo secreto que cambió: sólo se dice que cambió, nunca el valor. */
+export function activitySecretChanges(payload: Readonly<Record<string, unknown>>): string[] {
+  const out: string[] = [];
+  if (payload['credentialsChanged'] === true) out.push('credenciales');
+  const listed = payload['secretColumnsChanged'];
+  if (Array.isArray(listed)) {
+    for (const column of listed) if (typeof column === 'string') out.push(column);
+  }
+  return out;
+}
+
+/** El porqué que dejó quien actuó (`reason`) o quien decidió (`note`). */
+export function activityReason(payload: Readonly<Record<string, unknown>>): string | null {
+  return text(payload['reason'], 500) ?? text(payload['note'], 500);
+}
+
+export interface ActivityApproval {
+  readonly changeRequestId: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string;
+  readonly note: string | null;
+}
+
+/** Si el cambio se aplicó al aprobar la solicitud de un supervisado: quién pidió y quién aprobó. */
+export function activityApproval(
+  payload: Readonly<Record<string, unknown>>,
+): ActivityApproval | null {
+  const a = asRecord(payload['approval']);
+  const changeRequestId = text(a?.['changeRequestId'], 64);
+  const requestedBy = text(a?.['requestedBy'], 64);
+  const approvedBy = text(a?.['approvedBy'], 64);
+  if (changeRequestId === null || requestedBy === null || approvedBy === null) return null;
+  return { changeRequestId, requestedBy, approvedBy, note: text(a?.['note'], 500) };
+}
+
+export interface ActivityDirectSource {
+  readonly table: string | null;
+  readonly dbUser: string | null;
+  readonly application: string | null;
+}
+
+/** De dónde vino un cambio directo en la base: la tabla, el usuario de la base y el programa. */
+export function activityDirectSource(
+  event: Pick<ActivityEventView, 'eventType' | 'payload'>,
+): ActivityDirectSource | null {
+  if (!event.eventType.startsWith('db.')) return null;
+  return {
+    table: text(event.payload['table'], 64),
+    dbUser: text(event.payload['dbUser'], 64),
+    application: text(event.payload['application'], 128),
+  };
 }

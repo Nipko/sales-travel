@@ -242,6 +242,18 @@ const ENTRADAS: [string, Clase][] = [
     'PUT /admin/governance/tenants/:tenantId/profile',
   ),
   ...noVenta(
+    'superadmins plenos y supervisados, y las solicitudes de cambio que aprueba un pleno (docs/platform/16)',
+    'GET /admin/platform-admins',
+    'GET /admin/platform-admins/me',
+    'POST /admin/platform-admins',
+    'PUT /admin/platform-admins/:userId/supervision',
+    'POST /admin/platform-admins/:userId/revoke',
+    'GET /admin/change-requests',
+    'POST /admin/change-requests/:id/approve',
+    'POST /admin/change-requests/:id/reject',
+    'POST /admin/change-requests/:id/cancel',
+  ),
+  ...noVenta(
     'tarifas en otra moneda para pruebas: interruptor del superadmin por nodo, sin precio',
     'GET /admin/tenants/:id/foreign-currency-fares',
     'PATCH /admin/tenants/:id/foreign-currency-fares',

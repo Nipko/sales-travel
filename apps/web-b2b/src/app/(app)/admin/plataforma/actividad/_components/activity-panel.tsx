@@ -14,6 +14,7 @@ import {
   DEFAULT_ACTIVITY_FILTERS,
   activeFilterCount,
   activityActorLabel,
+  actorPlatformRoleLabel,
   activityHref,
   activityNodeLabel,
   actorEmailTerm,
@@ -465,6 +466,28 @@ function EventName({ event }: { event: ActivityEventView }) {
   );
 }
 
+/**
+ * Si actuó un superadmin (pleno, supervisado o que ya no lo es) o fue un cambio directo en la base:
+ * una marca junto a quién, para que lo hecho por la plataforma se vea de un vistazo.
+ */
+function ActorBadge({ event }: { event: ActivityEventView }) {
+  const direct = event.eventType.startsWith('db.');
+  const label = direct ? 'Fuera del panel' : actorPlatformRoleLabel(event.actorPlatformRole);
+  if (label === null) return null;
+  return (
+    <span
+      className={cn(
+        'mt-0.5 inline-flex w-fit items-center rounded-full border px-1.5 py-px text-[10px] font-medium',
+        direct
+          ? 'border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 text-[var(--color-fg)]'
+          : 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 text-[var(--color-primary)]',
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 function NodeCell({ event }: { event: ActivityEventView }) {
   if (event.tenantId === null) {
     return (
@@ -566,6 +589,7 @@ export function ActivityTable({
                   >
                     {activityActorLabel(event)}
                   </span>
+                  <ActorBadge event={event} />
                 </td>
                 <td className={cn(TD, 'text-xs text-[var(--color-fg-muted)]')}>
                   <span className="line-clamp-2 [overflow-wrap:anywhere]">
@@ -608,6 +632,7 @@ export function ActivityTable({
                   <span className="min-w-0 [overflow-wrap:anywhere]">
                     {activityActorLabel(event)}
                   </span>
+                  <ActorBadge event={event} />
                 </span>
                 {detail !== '' ? (
                   <span className="mt-1 block text-xs text-[var(--color-fg-muted)] [overflow-wrap:anywhere]">
