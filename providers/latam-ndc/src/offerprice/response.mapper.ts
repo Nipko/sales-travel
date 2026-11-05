@@ -40,8 +40,15 @@ export function mapOfferPriceResponse(
   // LATAM no informa vigencia en OfferPrice; si algún día la manda, manda sobre la nuestra.
   const declaredExpiry = attr(pick(offerNode.TimeLimits, 'OfferExpiration'), 'DateTime');
 
-  // El OfferID no cambia en LATAM; si cambiara se respeta y se conservan los ítems (`raw`).
-  const newOfferRef = text(offerNode.OfferID) ?? originalOffer.provider.offerRef;
+  // La referencia de la oferta se CONSERVA: es el OfferID de la búsqueda, con el que LATAM reserva.
+  // El sandbox devuelve en `PricedOffer/OfferID` un token `SEI|…` de ~334 caracteres (no el UUID
+  // de la documentación): copiarlo a `offerRef` lo sacaba de los 255 del canónico y la API rechazaba
+  // crear la reserva. Se guarda aparte, en `raw`, por si hiciera falta.
+  const pricedOfferId = text(offerNode.OfferID);
+  const providerRaw: Offer['provider']['raw'] =
+    pricedOfferId && pricedOfferId !== originalOffer.provider.offerRef
+      ? { ...originalOffer.provider.raw, pricedOfferId }
+      : originalOffer.provider.raw;
 
   const items = arr<Record<string, unknown>>(offerNode.OfferItem);
   const lists = readFareLists(pick(root, 'Response'));
@@ -56,7 +63,7 @@ export function mapOfferPriceResponse(
 
   const updatedOffer: Offer = {
     ...originalOffer,
-    provider: { ...originalOffer.provider, offerRef: newOfferRef },
+    provider: { ...originalOffer.provider, ...(providerRaw ? { raw: providerRaw } : {}) },
     total: newTotal,
     baseFare: newBase,
     taxes: newTaxes,

@@ -261,6 +261,20 @@ describe('OfferPrice', () => {
     expect(offer.provider.offerRef).toBe(original.provider.offerRef);
   });
 
+  it('un OfferID largo en OfferPrice (sandbox: SEI|… de 334) no reemplaza la referencia', () => {
+    const largo = 'SEI|' + 'Q'.repeat(330);
+    const raw = xml(`<IATA_OfferPriceRS><Response><PricedOffer>
+      <OfferID>${largo}</OfferID>
+      <TotalPrice><BaseAmount CurCode="COP">2800000</BaseAmount><TotalAmount CurCode="COP">3500000</TotalAmount></TotalPrice>
+    </PricedOffer></Response></IATA_OfferPriceRS>`);
+    const original = searchOffer();
+    const { offer } = mapOfferPriceResponse(raw, original);
+    expect(offer.provider.offerRef).toBe(original.provider.offerRef);
+    expect(offer.provider.raw?.['pricedOfferId']).toBe(largo);
+    expect(offer.provider.raw?.['offerItemIds']).toEqual(original.provider.raw?.['offerItemIds']);
+    expect(OfferSchema.safeParse(offer).success).toBe(true);
+  });
+
   it('la multa de cambio con monto llega a policies.changeFee; un porcentaje no', () => {
     const raw = xml(`<IATA_OfferPriceRS><Response>
       <DataLists><PenaltyList>
