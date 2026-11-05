@@ -259,7 +259,10 @@ function buildFareBasisPreferences(offer: Offer): SabreFlightCheckFareBasisPrefe
   const components = offer.fareComponents ?? [];
   for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
     const component = components[componentIndex];
-    const fareBasisCode = component?.fareBasisCode;
+    // Shop entrega el fare basis con el designador de tiquete (`OLN0AHM5/SHRF`). Flight Check sólo
+    // entiende el fare basis: con el designador contesta «No combinable fares» y el vuelo no se
+    // puede reservar (AA SFO-DFW-BOG, 2026-11-05). El designador se queda en la oferta canónica.
+    const fareBasisCode = component?.fareBasisCode?.split('/')[0]?.trim();
     if (component === undefined || fareBasisCode === undefined) continue;
     if (
       fareBasisCode.length < 1 ||

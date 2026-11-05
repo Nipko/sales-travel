@@ -180,6 +180,20 @@ describe('buildSabreFlightCheckRequest', () => {
     });
   });
 
+  it('manda el fare basis sin el designador de tiquete (con él, «No combinable fares»)', () => {
+    const input = offer();
+    input.fareComponents = [{ fareBasisCode: 'OLN0AHM5/SHRF', segmentRefs: [0, 1, 2] }];
+    expect(buildSabreFlightCheckRequest(input, CRITERIA).fare).toEqual({
+      currencyCode: 'USD',
+      fareBasisCode: {
+        preferences: [
+          { values: ['OLN0AHM5'], journeyIndices: [0] },
+          { values: ['OLN0AHM5'], journeyIndices: [1] },
+        ],
+      },
+    });
+  });
+
   it('omite sólo el calificador fareBasis cuando la oferta no lo conoce', () => {
     const input = offer();
     input.fareComponents = [{ segmentRefs: [0, 1, 2] }];
