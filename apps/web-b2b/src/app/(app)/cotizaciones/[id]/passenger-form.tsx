@@ -1,13 +1,21 @@
 'use client';
 
-import { AlertCircle, ChevronDown, Plane, UserPlus, Wallet } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle2, ChevronDown, Plane, UserPlus, Wallet } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
 import { cn } from '../../../../lib/cn';
-import { splitFullName } from '../../../../lib/full-name';
+import {
+  isTravelerCandidate,
+  linkedCustomerId,
+  passengerFromCustomer,
+  type CrmCustomer,
+  type CrmLink,
+  type PassengerFill,
+} from '../../../../lib/customer-search';
 import { priceChangeQuestion } from './offer-price-flow';
+import { CustomerSearchCombobox } from './customer-search-combobox';
 import {
   birthdateIssue,
   formatBirthdateInput,
@@ -52,12 +60,33 @@ export interface ReservationContact {
 type Passenger = ReservationPassenger;
 type ContactInfo = ReservationContact;
 
+/** Lo que acompaña a los pasajeros al reservar. */
+export interface ReservationSubmitOptions {
+  acceptNewPrice?: boolean;
+  /** Por pasajero, el cliente del CRM del que salió (o `null` si se tecleó). */
+  customerIds: readonly (string | null)[];
+}
+
 interface PassengerFormProps {
   paxCount: PaxCount;
-  /** Cliente/contacto único (vive en la página). Se usa como contacto de la reserva. */
-  customerName?: string;
+  /** Contacto de la reserva: el email y el teléfono de «Facturación» (viven en la página). */
   contactEmail?: string;
   contactPhone?: string;
+  /**
+   * «Facturación», que va debajo de los pasajeros y antes del botón de reservar. Recibe si ya se
+   * intentó reservar, para marcar lo que falta igual que en los pasajeros.
+   */
+  billingSection?: (state: { attempted: boolean }) => ReactNode;
+  /** Lo que falta en «Facturación», para el resumen junto al botón. */
+  billingProblems?: readonly string[];
+  /** «Guardar pasajeros y facturador en Clientes». Sin `onSaveToCrmChange` no se pinta. */
+  saveToCrm?: boolean;
+  onSaveToCrmChange?: (value: boolean) => void;
+  /** Avisa de los pasajeros a medida que se escriben (la facturación usa al pasajero 1). */
+  onPassengersChange?: (
+    passengers: readonly Passenger[],
+    customerIds: readonly (string | null)[],
+  ) => void;
   /**
    * La revalidación vio otro precio y nadie lo aceptó todavía: el total nuevo, ya formateado. El
    * formulario pregunta junto al botón y, si se acepta, vuelve a enviar lo mismo que ya se tecleó.
@@ -66,7 +95,7 @@ interface PassengerFormProps {
   onSubmit: (
     passengers: Passenger[],
     contactInfo: ContactInfo,
-    options?: { acceptNewPrice?: boolean },
+    options: ReservationSubmitOptions,
   ) => Promise<void>;
   /**
    * Los nombres de pila a medida que se escriben, por `requestedTravelerIndex`. Los usa la elección
@@ -100,21 +129,27 @@ export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
 }
 
 /**
- * El pasajero 1 con el nombre del cliente cuando «El cliente es quien viaja» está marcado.
- *
- * Se deriva en cada render en vez de copiarse: así sigue al nombre del cliente si se corrige en
- * «Cliente y contacto», y lo que el vendedor tecleó a mano en el pasajero 1 no se pisa (vuelve si
- * desmarca). El reparto nombre/apellido vive en `lib/full-name` (dos apellidos en LATAM).
+ * El pasajero con los datos de una ficha del CRM. Lo que la ficha no trae se conserva; el
+ * tratamiento acompaña al género como si se hubiera elegido a mano.
  */
-export function withCustomerAsFirstPassenger<T extends { givenName: string; surname: string }>(
-  passengers: readonly T[],
-  customerName: string | undefined,
-  clientTravels: boolean,
-): T[] {
-  const full = (customerName ?? '').trim();
-  if (!clientTravels || !full) return [...passengers];
-  const names = splitFullName(full);
-  return passengers.map((p, i) => (i === 0 ? { ...p, ...names } : p));
+export function withCustomerFill(p: Passenger, fill: PassengerFill): Passenger {
+  const gender = fill.gender ?? p.gender;
+  return {
+    ...p,
+    givenName: fill.givenName,
+    surname: fill.surname,
+    birthdate: fill.birthdate ?? p.birthdate,
+    gender,
+    title: titleForGender(p.title, gender),
+    citizenshipCountryCode: fill.citizenshipCountryCode ?? p.citizenshipCountryCode,
+    identityDoc: {
+      ...p.identityDoc,
+      type: fill.identityDoc.type,
+      number: fill.identityDoc.number,
+      issuingCountryCode: fill.identityDoc.issuingCountryCode ?? p.identityDoc.issuingCountryCode,
+      expiryDate: fill.identityDoc.expiryDate ?? p.identityDoc.expiryDate,
+    },
+  };
 }
 
 /**
@@ -149,8 +184,6 @@ const DOC_TYPE_OPTIONS = [
   { value: 'P', label: 'Pasaporte' },
   { value: 'DNI', label: 'DNI' },
 ];
-
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const inputClass =
   'h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20';
@@ -223,48 +256,46 @@ function Opt() {
   return <span className="font-normal text-[var(--color-fg-subtle)]"> (opcional)</span>;
 }
 
-function passengerLabel(pax: Passenger): string {
+/** «Adulto 1», «Niño 2»: cómo se nombra a un pasajero en la pantalla. */
+export function passengerLabel(pax: Pick<Passenger, 'paxType' | 'paxId'>): string {
   return `${PAX_TYPE_LABELS[pax.paxType] ?? pax.paxType} ${pax.paxId.split('_')[1] ?? ''}`.trim();
 }
 
 export function PassengerForm({
   paxCount,
-  customerName,
   contactEmail,
   contactPhone,
+  billingSection,
+  billingProblems,
+  saveToCrm,
+  onSaveToCrmChange,
+  onPassengersChange,
   priceChangeTotal,
   onSubmit,
   onGivenNamesChange,
 }: PassengerFormProps) {
-  const [typed, setTyped] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
-  const customer = (customerName ?? '').trim();
-
-  /*
-   * «El cliente es quien viaja», marcado de entrada cuando hay cliente. En la mayoría de las
-   * reservas —un solo pasajero— el vendedor escribía el mismo nombre dos veces, una en «Cliente y
-   * contacto» y otra en «Pasajero 1». Ahora el pasajero 1 toma el nombre del cliente y sólo pide lo
-   * que falta para el billete (nacimiento y documento).
-   */
-  const [clientTravels, setClientTravels] = useState(() => customer.length > 0);
-  // Si el cliente se escribe después de abrir el formulario, se marca solo, salvo que el vendedor
-  // ya haya decidido o ya haya escrito a mano en el pasajero 1.
-  const clientChoiceMade = useRef(false);
-  const firstTyped = typed[0];
-  const firstTypedBlank =
-    firstTyped === undefined || (!firstTyped.givenName.trim() && !firstTyped.surname.trim());
-  useEffect(() => {
-    if (clientChoiceMade.current || clientTravels || !customer || !firstTypedBlank) return;
-    setClientTravels(true);
-  }, [customer, clientTravels, firstTypedBlank]);
-
-  const fromCustomer = clientTravels && customer.length > 0;
-  const passengers = withCustomerAsFirstPassenger(typed, customer, fromCustomer);
+  const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
+  // La ficha del CRM de la que salió cada pasajero, por `paxId`.
+  const [links, setLinks] = useState<Record<string, CrmLink>>({});
+  // Cuántas veces se rellenó cada pasajero desde el CRM: remonta la fecha de nacimiento, que
+  // guarda su propio texto mientras se teclea.
+  const [fills, setFills] = useState<Record<string, number>>({});
+  const customerIds = passengers.map((p) => linkedCustomerId(links[p.paxId], p.identityDoc.number));
 
   // Una clave estable por contenido: el efecto avisa cuando cambia un nombre, no en cada render.
   const givenNames = JSON.stringify(passengers.map((p) => p.givenName.trim()));
   useEffect(() => {
     onGivenNamesChange?.(JSON.parse(givenNames) as string[]);
   }, [givenNames, onGivenNamesChange]);
+  const snapshot = JSON.stringify({ passengers, customerIds });
+  useEffect(() => {
+    if (!onPassengersChange) return;
+    const parsed = JSON.parse(snapshot) as {
+      passengers: Passenger[];
+      customerIds: (string | null)[];
+    };
+    onPassengersChange(parsed.passengers, parsed.customerIds);
+  }, [snapshot, onPassengersChange]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // `attempted` activa el marcado de errores recién cuando el usuario intenta reservar.
@@ -274,32 +305,32 @@ export function PassengerForm({
   const phone = (contactPhone ?? '').trim();
 
   function updatePax(idx: number, patch: Partial<Passenger>) {
-    setTyped((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+    setPassengers((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
   }
 
   function updateDoc(idx: number, patch: Partial<Passenger['identityDoc']>) {
-    setTyped((prev) =>
+    setPassengers((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, identityDoc: { ...p.identityDoc, ...patch } } : p)),
     );
   }
 
   function updateGender(idx: number, gender: Passenger['gender']) {
-    setTyped((prev) =>
+    setPassengers((prev) =>
       prev.map((p, i) =>
         i === idx ? { ...p, gender, title: titleForGender(p.title, gender) } : p,
       ),
     );
   }
 
-  function setClientIsTraveler(value: boolean) {
-    clientChoiceMade.current = true;
-    setClientTravels(value);
-  }
-
-  /** «Editar»: deja de seguir al cliente y abre los campos con su nombre ya puesto. */
-  function editCustomerName() {
-    setClientIsTraveler(false);
-    if (customer) updatePax(0, splitFullName(customer));
+  function pickCustomer(idx: number, paxId: string, customer: CrmCustomer) {
+    setPassengers((prev) =>
+      prev.map((p, i) => (i === idx ? withCustomerFill(p, passengerFromCustomer(customer)) : p)),
+    );
+    setLinks((prev) => ({
+      ...prev,
+      [paxId]: { customerId: customer.id, documentNumber: customer.documentNumber },
+    }));
+    setFills((prev) => ({ ...prev, [paxId]: (prev[paxId] ?? 0) + 1 }));
   }
 
   /**
@@ -337,19 +368,13 @@ export function PassengerForm({
 
   function validationMessages(): string[] {
     const m: string[] = [];
-    if (!email || !EMAIL_RE.test(email)) {
-      m.push('Email de contacto válido (en "Cliente y contacto").');
-    }
-    if (!phone) m.push('Teléfono de contacto (en "Cliente y contacto").');
-    passengers.forEach((p, idx) => {
+    passengers.forEach((p) => {
       const issues = paxIssues(p);
       if (!issues.length) return;
-      const where =
-        idx === 0 && fromCustomer && issues.includes('apellido')
-          ? ' Escribe el nombre completo del cliente o pulsa «Editar».'
-          : '';
-      m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.${where}`);
+      m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.`);
     });
+    // El email y el teléfono de contacto son los de «Facturación», que reclama los suyos.
+    m.push(...(billingProblems ?? []));
     return m;
   }
 
@@ -371,7 +396,7 @@ export function PassengerForm({
       await onSubmit(
         passengers.map(sinCamposEnBlanco),
         contactInfo,
-        acceptNewPrice ? { acceptNewPrice: true } : undefined,
+        acceptNewPrice ? { acceptNewPrice: true, customerIds } : { customerIds },
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear la reserva');
@@ -390,12 +415,10 @@ export function PassengerForm({
         >
           <div className="mb-1 flex items-center gap-2">
             <UserPlus className="size-4 text-[var(--color-primary)]" />
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">
-              Pasajeros de la reserva
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--color-fg)]">Pasajeros</h2>
           </div>
           <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
-            Sólo lo que pide el billete. El contacto de la reserva es el del cliente (arriba).
+            Sólo lo que pide el billete. Si el pasajero ya es cliente, búscalo y se rellena solo.
           </p>
 
           {/* Passengers */}
@@ -404,7 +427,7 @@ export function PassengerForm({
               const issues = attempted ? paxIssues(pax) : [];
               const bad = (field: string) => issues.includes(field);
               const id = (field: string) => `pax-${pax.paxId}-${field}`;
-              const namesFromCustomer = idx === 0 && fromCustomer;
+              const linked = customerIds[idx] !== null;
               return (
                 <div key={pax.paxId} className="rounded-lg border border-[var(--color-border)] p-4">
                   <div className="mb-3 flex items-center gap-2">
@@ -415,85 +438,63 @@ export function PassengerForm({
                     <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-medium text-[var(--color-fg-muted)]">
                       {pax.paxType}
                     </span>
+                    {linked && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                        <CheckCircle2 aria-hidden="true" className="size-3" />
+                        Cliente registrado
+                      </span>
+                    )}
                   </div>
 
-                  {idx === 0 && customer && (
-                    <label className="mb-3 flex min-h-10 cursor-pointer items-center gap-2.5 text-sm text-[var(--color-fg)]">
-                      <input
-                        type="checkbox"
-                        checked={clientTravels}
-                        onChange={(e) => setClientIsTraveler(e.target.checked)}
-                        className="size-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
-                      />
-                      El cliente es quien viaja
-                    </label>
-                  )}
-
-                  {namesFromCustomer && (
-                    <p
-                      className={cn(
-                        'mb-3 rounded-md bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]',
-                        (bad('nombre') || bad('apellido')) && 'bg-red-50 text-red-800',
-                      )}
-                    >
-                      Nombre en el documento:{' '}
-                      <span className="font-medium text-[var(--color-fg)]">
-                        {pax.givenName} {pax.surname}
-                      </span>
-                      {!pax.surname.trim() && <span> · falta el apellido</span>} ·{' '}
-                      <button
-                        type="button"
-                        onClick={editCustomerName}
-                        className="font-medium text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
-                      >
-                        Editar
-                      </button>
-                    </p>
-                  )}
+                  <div className="mb-3">
+                    <CustomerSearchCombobox
+                      id={id('crm')}
+                      label="Buscar cliente registrado"
+                      accept={isTravelerCandidate}
+                      onPick={(customer) => pickCustomer(idx, pax.paxId, customer)}
+                    />
+                  </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {!namesFromCustomer && (
-                      <>
-                        <div className="space-y-1">
-                          <Label htmlFor={id('given')}>
-                            Nombre(s)
-                            <Req />
-                          </Label>
-                          <input
-                            id={id('given')}
-                            type="text"
-                            autoComplete="off"
-                            value={pax.givenName}
-                            onChange={(e) => updatePax(idx, { givenName: e.target.value })}
-                            placeholder="OLIVER"
-                            aria-invalid={bad('nombre') || undefined}
-                            className={cn(inputClass, bad('nombre') && errClass)}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor={id('surname')}>
-                            Apellido(s)
-                            <Req />
-                          </Label>
-                          <input
-                            id={id('surname')}
-                            type="text"
-                            autoComplete="off"
-                            value={pax.surname}
-                            onChange={(e) => updatePax(idx, { surname: e.target.value })}
-                            placeholder="JACKSON"
-                            aria-invalid={bad('apellido') || undefined}
-                            className={cn(inputClass, bad('apellido') && errClass)}
-                          />
-                        </div>
-                      </>
-                    )}
+                    <div className="space-y-1">
+                      <Label htmlFor={id('given')}>
+                        Nombre(s)
+                        <Req />
+                      </Label>
+                      <input
+                        id={id('given')}
+                        type="text"
+                        autoComplete="off"
+                        value={pax.givenName}
+                        onChange={(e) => updatePax(idx, { givenName: e.target.value })}
+                        placeholder="OLIVER"
+                        aria-invalid={bad('nombre') || undefined}
+                        className={cn(inputClass, bad('nombre') && errClass)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={id('surname')}>
+                        Apellido(s)
+                        <Req />
+                      </Label>
+                      <input
+                        id={id('surname')}
+                        type="text"
+                        autoComplete="off"
+                        value={pax.surname}
+                        onChange={(e) => updatePax(idx, { surname: e.target.value })}
+                        placeholder="JACKSON"
+                        aria-invalid={bad('apellido') || undefined}
+                        className={cn(inputClass, bad('apellido') && errClass)}
+                      />
+                    </div>
                     <div className="space-y-1">
                       <Label>
                         Fecha de nacimiento
                         <Req />
                       </Label>
                       <DobField
+                        key={fills[pax.paxId] ?? 0}
                         value={pax.birthdate}
                         onChange={(v) => updatePax(idx, { birthdate: v })}
                         invalid={bad('fecha de nacimiento')}
@@ -650,6 +651,12 @@ export function PassengerForm({
             })}
           </div>
 
+          {billingSection ? (
+            <div className="mt-6 border-t border-[var(--color-border)] pt-5">
+              {billingSection({ attempted })}
+            </div>
+          ) : null}
+
           {/*
             Sin cobro en este paso, y sin un solo campo de tarjeta: la reserva sale sin forma de
             pago y el API rechaza `payment` en createOrder. Un formulario de tarjeta aquí sólo
@@ -697,6 +704,25 @@ export function PassengerForm({
               {error}
             </div>
           )}
+
+          {onSaveToCrmChange ? (
+            <label className="mt-4 flex min-h-10 cursor-pointer items-start gap-2.5 text-xs text-[var(--color-fg-muted)]">
+              <input
+                type="checkbox"
+                checked={saveToCrm === true}
+                onChange={(e) => onSaveToCrmChange(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
+              />
+              <span>
+                <span className="font-medium text-[var(--color-fg)]">
+                  Guardar pasajeros y facturador en Clientes
+                </span>
+                <span className="block">
+                  Quienes no salieron de la búsqueda quedan registrados para la próxima venta.
+                </span>
+              </span>
+            </label>
+          ) : null}
 
           {priceChangeTotal ? (
             <div

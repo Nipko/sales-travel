@@ -16,21 +16,41 @@ import {
   Plane,
   RefreshCw,
   Send,
-  User,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
-import { Label } from '../../../../components/ui/label';
 import {
   PassengerForm,
+  passengerLabel,
   type ReservationContact,
   type ReservationPassenger,
+  type ReservationSubmitOptions,
 } from './passenger-form';
+import { BillingSection } from './billing-section';
+import {
+  billingDraftFromQuotation,
+  billingIdentity,
+  billingProblems,
+  describeMissing,
+  emptyBillingDraft,
+  isValidEmail,
+  quotationCustomerPatch,
+  resolveBilling,
+  type BillingDraft,
+  type QuotationCustomerPatch,
+} from '../../../../lib/billing';
+import {
+  billingWithSavedCustomer,
+  crmSaveNote,
+  crmUpsertPlan,
+  upsertedCustomerId,
+  type CustomerUpsertBody,
+} from '../../../../lib/billing-crm';
 import { humanizeProviderError } from '../../../../lib/provider-errors';
 import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
 import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
@@ -93,6 +113,8 @@ interface Quotation {
   customerName: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
+  /** A nombre de quién se factura (0091); `null` si nunca se guardó. */
+  billing?: unknown;
   notes: string | null;
   expiresAt: string;
   createdAt: string;
@@ -119,6 +141,45 @@ function humanizeBookingError(raw: string): string {
 }
 
 const ERROR_DESCONOCIDO = 'Error desconocido';
+
+/** Guardar en Clientes o en la cotización nunca debe frenar la reserva más que esto. */
+const CRM_TIMEOUT_MS = 8000;
+
+/** `PATCH /api/quotations/:id/customer`. Lanza si no se pudo guardar, con el texto del API. */
+async function patchQuotationCustomer(
+  quotationId: string,
+  patch: QuotationCustomerPatch,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`/api/quotations/${quotationId}/customer`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+    signal,
+  });
+  if (!res.ok) {
+    const read = await readJson<{ error?: string; message?: string }>(res);
+    const d = read.ok ? read.data : {};
+    throw new Error(d.error ?? d.message ?? 'No se pudo guardar la facturación.');
+  }
+}
+
+/** Guarda a alguien en Clientes. `null` si no se pudo: nunca lanza. */
+async function upsertCustomer(body: CustomerUpsertBody): Promise<string | null> {
+  try {
+    const res = await fetch('/api/customers/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(CRM_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const read = await readJson<unknown>(res);
+    return read.ok ? upsertedCustomerId(read.data) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Lo que deja una revalidación: el estado, la oferta nueva si la hubo y si los asientos siguen. */
 interface PriceCheck {
@@ -203,13 +264,19 @@ export default function QuotationDetailPage() {
   const [quotation, setQuotation] = useState<Quotation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  const [billingDraft, setBillingDraft] = useState<BillingDraft>(emptyBillingDraft);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [customerSaved, setCustomerSaved] = useState(false);
+  const [saveInfo, setSaveInfo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [billingTouched, setBillingTouched] = useState(false);
+  // Los pasajeros tal como se escriben: «Facturación» usa al pasajero 1.
+  const [paxSnapshot, setPaxSnapshot] = useState<{
+    passengers: readonly ReservationPassenger[];
+    customerIds: readonly (string | null)[];
+  }>({ passengers: [], customerIds: [] });
+  const [saveToCrm, setSaveToCrm] = useState(true);
+  const [crmNote, setCrmNote] = useState<string | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailResult, setEmailResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -235,9 +302,7 @@ export default function QuotationDetailPage() {
       .then((res) => res.json() as Promise<{ quotation: Quotation }>)
       .then((data) => {
         setQuotation(data.quotation);
-        setCustomerName(data.quotation.customerName ?? '');
-        setCustomerEmail(data.quotation.customerEmail ?? '');
-        setCustomerPhone(data.quotation.customerPhone ?? '');
+        setBillingDraft(billingDraftFromQuotation(data.quotation.billing, data.quotation));
         setNotes(data.quotation.notes ?? '');
       })
       .catch(() => setError('No se pudo cargar la cotización.'))
@@ -266,59 +331,76 @@ export default function QuotationDetailPage() {
     });
   }
 
-  async function handleSaveCustomer() {
-    if (!quotation) return;
-    setSaving(true);
+  const handlePassengersChange = useCallback(
+    (passengers: readonly ReservationPassenger[], customerIds: readonly (string | null)[]) =>
+      setPaxSnapshot({ passengers, customerIds }),
+    [],
+  );
+
+  const passenger1 = paxSnapshot.passengers[0];
+  const passenger1CustomerId = paxSnapshot.customerIds[0] ?? null;
+  const resolvedBilling = resolveBilling(billingDraft, passenger1, passenger1CustomerId);
+  // Lo que usan «Enviar por email» y «Enviar por WhatsApp»: el contacto de quien factura.
+  const contactName = billingIdentity(billingDraft, passenger1).name;
+  const contactEmail = billingDraft.email.trim();
+  const contactPhone = billingDraft.phone.trim();
+
+  function changeBilling(draft: BillingDraft) {
+    setBillingDraft(draft);
+    setSaveInfo(null);
     setSaveError(null);
-    setCustomerSaved(false);
+  }
+
+  /** Guarda la facturación (si está completa) y el contacto que la refleja. Lanza si falla. */
+  async function persistBilling(current: Quotation): Promise<void> {
+    const { patch } = quotationCustomerPatch(billingDraft, passenger1, notes, passenger1CustomerId);
+    await patchQuotationCustomer(current.id, patch);
+    setQuotation((latest) =>
+      latest === null
+        ? latest
+        : {
+            ...latest,
+            customerName: patch.customerName,
+            customerEmail: patch.customerEmail,
+            customerPhone: patch.customerPhone,
+            notes: patch.notes,
+            ...(patch.billing ? { billing: patch.billing } : {}),
+          },
+    );
+  }
+
+  async function handleSaveBilling() {
+    if (!quotation) return;
+    setBillingTouched(true);
+    setSaveInfo(null);
+    setSaveError(null);
+    if (contactEmail && !isValidEmail(contactEmail)) {
+      setSaveError('Escribe un email válido.');
+      return;
+    }
+    setSaving(true);
     try {
-      const res = await fetch(`/api/quotations/${quotation.id}/customer`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: customerName || null,
-          customerEmail: customerEmail || null,
-          customerPhone: customerPhone || null,
-          notes: notes || null,
-        }),
-      });
-      if (!res.ok) {
-        const d = (await res.json()) as { error?: string; message?: string };
-        setSaveError(d.error ?? d.message ?? 'No se pudo guardar el cliente.');
-        return;
-      }
-      setQuotation({
-        ...quotation,
-        customerName: customerName || null,
-        customerEmail: customerEmail || null,
-        customerPhone: customerPhone || null,
-        notes: notes || null,
-      });
-      setCustomerSaved(true);
-      setTimeout(() => setCustomerSaved(false), 2500);
-    } catch {
-      setSaveError('Error de conexión.');
+      const missing = resolvedBilling.missing;
+      await persistBilling(quotation);
+      setSaveInfo(
+        missing.length === 0
+          ? 'Guardado'
+          : `Contacto guardado. Para la factura falta: ${describeMissing(missing)}.`,
+      );
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Error de conexión.');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleSendEmail() {
-    if (!quotation || !customerEmail) return;
+    if (!quotation || !isValidEmail(contactEmail)) return;
     setEmailSending(true);
     setEmailResult(null);
     try {
-      // Asegura que el email del cliente esté guardado antes de enviar.
-      await fetch(`/api/quotations/${quotation.id}/customer`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: customerName || null,
-          customerEmail: customerEmail || null,
-          customerPhone: customerPhone || null,
-          notes: notes || null,
-        }),
-      });
+      // El correo sale al email de «Facturación»: se guarda antes de enviar.
+      await persistBilling(quotation);
       const res = await fetch(`/api/quotations/${quotation.id}/send-email`, { method: 'POST' });
       const data = (await res.json()) as {
         sent?: boolean;
@@ -332,17 +414,59 @@ export default function QuotationDetailPage() {
       }
       setEmailResult(
         data.sent
-          ? { ok: true, text: `Cotización enviada a ${data.to ?? customerEmail}` }
+          ? { ok: true, text: `Cotización enviada a ${data.to ?? contactEmail}` }
           : {
               ok: false,
               text: 'No hay correo configurado para enviar. Configura el email de la agencia (Mi Red → Email) o el del sistema.',
             },
       );
-    } catch {
-      setEmailResult({ ok: false, text: 'Error de conexión.' });
+    } catch (err) {
+      setEmailResult({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Error de conexión.',
+      });
     } finally {
       setEmailSending(false);
     }
+  }
+
+  /**
+   * Antes de reservar: guarda en Clientes a quien no salió de la búsqueda (si el vendedor no lo
+   * desmarcó) y la facturación en la cotización. Nada de esto frena la reserva: lo que falle
+   * queda en una nota junto al resultado.
+   */
+  async function saveBeforeBooking(
+    current: Quotation,
+    passengers: readonly ReservationPassenger[],
+    customerIds: readonly (string | null)[],
+  ): Promise<void> {
+    const resolved = resolveBilling(billingDraft, passengers[0], customerIds[0] ?? null);
+    const plan = crmUpsertPlan({
+      enabled: saveToCrm,
+      passengers: passengers.map((p) => ({ ...p, label: passengerLabel(p) })),
+      customerIds,
+      billing: resolved.billing,
+    });
+    const results = await Promise.all(plan.items.map((item) => upsertCustomer(item.body)));
+    const billing = billingWithSavedCustomer(resolved.billing, plan, results);
+    if (billing?.mode === 'other' && billing.customerId) {
+      const id = billing.customerId;
+      setBillingDraft((d) => (d.mode === 'other' && !d.customerId ? { ...d, customerId: id } : d));
+    }
+    const lines: string[] = [];
+    const saved = crmSaveNote(plan, results);
+    if (saved) lines.push(saved);
+    try {
+      const { patch } = quotationCustomerPatch(billingDraft, passengers[0], notes, null);
+      await patchQuotationCustomer(
+        current.id,
+        { ...patch, ...(billing ? { billing } : {}) },
+        AbortSignal.timeout(CRM_TIMEOUT_MS),
+      );
+    } catch {
+      lines.push('No se pudo guardar la facturación en la cotización; usa «Guardar facturación».');
+    }
+    setCrmNote(lines.length > 0 ? lines.join(' ') : null);
   }
 
   /**
@@ -354,13 +478,13 @@ export default function QuotationDetailPage() {
   async function handleCreateOrder(
     passengers: ReservationPassenger[],
     contactInfo: ReservationContact,
-    options?: { acceptNewPrice?: boolean },
+    options: ReservationSubmitOptions,
   ) {
     if (!quotation) return;
     let offer = quotation.selectedOffer;
     let withSeats = seatSelection && seatChoices.length > 0;
 
-    if (options?.acceptNewPrice === true && priceStatus?.kind === 'acceptance-required') {
+    if (options.acceptNewPrice === true && priceStatus?.kind === 'acceptance-required') {
       // La oferta de `quotation` ya es la revalidada: aceptar sólo cambia el estado.
       setPriceStatus(acceptRevalidatedPrice(priceStatus));
     } else {
@@ -375,6 +499,8 @@ export default function QuotationDetailPage() {
         withSeats = withSeats && check.seatsKept;
       }
     }
+
+    await saveBeforeBooking(quotation, passengers, options.customerIds);
 
     // Nunca lleva `payment`: createOrder no cobra y el API rechaza el campo (D1). Los asientos van
     // sin precio ni oferta: el servidor vuelve a leer el mapa y sólo reserva los sin cargo.
@@ -598,6 +724,24 @@ export default function QuotationDetailPage() {
   // y la oferta vigente está confirmada, no mientras se revalida.
   const offerSeats =
     seatSelection && !verifying && priceStatus?.kind === 'confirmed' && seatHolders.length > 0;
+
+  function renderBilling(attempted: boolean) {
+    return (
+      <BillingSection
+        draft={billingDraft}
+        onChange={changeBilling}
+        passenger1={passenger1}
+        missing={resolvedBilling.missing}
+        showErrors={attempted || billingTouched}
+        notes={notes}
+        onNotesChange={setNotes}
+        onSave={() => void handleSaveBilling()}
+        saving={saving}
+        saveInfo={saveInfo}
+        saveError={saveError}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8">
@@ -856,90 +1000,12 @@ export default function QuotationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Cliente y contacto (única sección: sirve para enviar la cotización y como contacto de la reserva) */}
-          <Card>
-            <CardContent className="p-5">
-              <div className="mb-1 flex items-center gap-2">
-                <User className="size-4 text-[var(--color-primary)]" />
-                <h2 className="text-sm font-semibold text-[var(--color-fg)]">Cliente y contacto</h2>
-              </div>
-              <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
-                Se usa para enviar la cotización y como contacto de la reserva. Email y teléfono son
-                obligatorios para reservar.
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="customerName">
-                    Nombre<span className="text-red-500"> *</span>
-                  </Label>
-                  <input
-                    id="customerName"
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Juan Pérez"
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="customerEmail">
-                    Email<span className="text-red-500"> *</span>
-                  </Label>
-                  <input
-                    id="customerEmail"
-                    type="email"
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    placeholder="juan@example.com"
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="customerPhone">
-                    Teléfono<span className="text-red-500"> *</span>
-                  </Label>
-                  <input
-                    id="customerPhone"
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="3001234567"
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="notes">
-                    Notas
-                    <span className="font-normal text-[var(--color-fg-subtle)]"> (opcional)</span>
-                  </Label>
-                  <input
-                    id="notes"
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Preferencias, observaciones..."
-                    className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus-visible:border-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/20"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-end gap-3">
-                {customerSaved && (
-                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
-                    <CheckCircle2 className="size-3.5" /> Guardado
-                  </span>
-                )}
-                {saveError && <span className="text-xs font-medium text-red-600">{saveError}</span>}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => void handleSaveCustomer()}
-                >
-                  {saving ? 'Guardando…' : 'Guardar cliente'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Con la reserva ya creada, «Facturación» queda aquí para enviar la cotización. */}
+          {!shouldShowBookingForm(bookingResult) && (
+            <Card>
+              <CardContent className="p-5">{renderBilling(false)}</CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right sidebar */}
@@ -1062,7 +1128,7 @@ export default function QuotationDetailPage() {
                 variant="secondary"
                 size="sm"
                 className="w-full gap-2"
-                disabled={!customerEmail || emailSending}
+                disabled={!isValidEmail(contactEmail) || emailSending}
                 onClick={() => void handleSendEmail()}
               >
                 <Mail className="size-4" /> {emailSending ? 'Enviando…' : 'Enviar por email'}
@@ -1082,11 +1148,11 @@ export default function QuotationDetailPage() {
                 variant="secondary"
                 size="sm"
                 className="w-full gap-2"
-                disabled={!customerPhone}
+                disabled={!contactPhone}
                 onClick={() => {
-                  if (customerPhone) {
-                    const phone = customerPhone.replace(/\D/g, '');
-                    const text = `Hola ${customerName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
+                  if (contactPhone) {
+                    const phone = contactPhone.replace(/\D/g, '');
+                    const text = `Hola ${contactName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
                     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
                   }
                 }}
@@ -1178,6 +1244,15 @@ export default function QuotationDetailPage() {
         </div>
       )}
 
+      {crmNote && (
+        <p
+          role="status"
+          className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]"
+        >
+          {crmNote}
+        </p>
+      )}
+
       {/*
         El formulario vuelve SÓLO si no quedó nada reservado. Con `PARTIAL` o `PENDING` hay PNR
         en el proveedor: reofrecer "reservar" ahí es invitar a crear una segunda reserva encima
@@ -1235,9 +1310,13 @@ export default function QuotationDetailPage() {
           ) : null}
           <PassengerForm
             paxCount={searchCriteria.paxCount}
-            customerName={customerName || undefined}
-            contactEmail={customerEmail || undefined}
-            contactPhone={customerPhone || undefined}
+            contactEmail={contactEmail || undefined}
+            contactPhone={contactPhone || undefined}
+            billingSection={({ attempted }) => renderBilling(attempted)}
+            billingProblems={billingProblems(billingDraft.mode, resolvedBilling.missing)}
+            saveToCrm={saveToCrm}
+            onSaveToCrmChange={setSaveToCrm}
+            onPassengersChange={handlePassengersChange}
             priceChangeTotal={
               priceStatus?.kind === 'acceptance-required' ? priceStatus.newTotal : undefined
             }

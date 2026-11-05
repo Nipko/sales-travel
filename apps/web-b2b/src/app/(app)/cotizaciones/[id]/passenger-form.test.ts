@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   buildEmptyPassengers,
   PassengerForm,
+  passengerLabel,
   titleForGender,
-  withCustomerAsFirstPassenger,
+  withCustomerFill,
 } from './passenger-form';
+import { passengerFromCustomer, type CrmCustomer } from '../../../../lib/customer-search';
 import { PaymentForm } from './payment-form';
 
 describe('buildEmptyPassengers', () => {
@@ -54,7 +56,6 @@ function renderCheckout(paxCount = { adults: 2, children: 1, infants: 1 }): stri
   return renderToStaticMarkup(
     createElement(PassengerForm, {
       paxCount,
-      customerName: 'Juan Carlos Pérez Gómez',
       contactEmail: 'juan@example.com',
       contactPhone: '3001234567',
       onSubmit: async () => {},
@@ -108,34 +109,60 @@ describe('PassengerForm — el checkout de vuelos no pide tarjeta (D1)', () => {
   });
 });
 
-describe('withCustomerAsFirstPassenger — «El cliente es quien viaja»', () => {
-  const vacios = () => buildEmptyPassengers({ adults: 2, children: 0, infants: 0 });
+const ANA: CrmCustomer = {
+  id: '3f1c2b4a-1d2e-4f5a-8b6c-7d8e9f0a1b2c',
+  customerType: 'person',
+  firstName: 'Ana María',
+  lastName: 'Ruiz Toro',
+  email: 'ana@example.com',
+  phone: '3001112233',
+  documentType: 'PASAPORTE',
+  documentNumber: 'AB123456',
+  documentIssuingCountry: 'COL',
+  birthdate: '1985-03-09T00:00:00.000Z',
+  gender: 'F',
+  nationality: 'COL',
+  passportExpiry: '2031-01-31',
+  address: null,
+  city: null,
+  countryCode: null,
+};
 
-  it('marcado, el pasajero 1 toma nombre y apellidos del cliente con el reparto LATAM', () => {
-    const out = withCustomerAsFirstPassenger(vacios(), 'Juan Carlos Pérez Gómez', true);
-    expect(out[0]).toMatchObject({ givenName: 'Juan Carlos', surname: 'Pérez Gómez' });
-    expect(out[1]).toMatchObject({ givenName: '', surname: '' });
+describe('withCustomerFill — «Buscar cliente registrado» en un pasajero', () => {
+  it('vuelca nombre, nacimiento, género, nacionalidad y pasaporte de la ficha', () => {
+    const [pax] = buildEmptyPassengers({ adults: 1, children: 0, infants: 0 });
+    const out = withCustomerFill(pax!, passengerFromCustomer(ANA));
+    expect(out).toMatchObject({
+      givenName: 'Ana María',
+      surname: 'Ruiz Toro',
+      birthdate: '1985-03-09',
+      gender: 'F',
+      title: 'Mrs',
+      citizenshipCountryCode: 'CO',
+      identityDoc: {
+        type: 'P',
+        number: 'AB123456',
+        issuingCountryCode: 'CO',
+        expiryDate: '2031-01-31',
+      },
+    });
+    expect(out.paxId).toBe('ADT_1');
   });
 
-  it('sigue al cliente: si su nombre cambia, cambia el pasajero 1', () => {
-    const pax = vacios();
-    expect(withCustomerAsFirstPassenger(pax, 'Ana Ruiz', true)[0]?.surname).toBe('Ruiz');
-    expect(withCustomerAsFirstPassenger(pax, 'Ana Ruiz Toro', true)[0]?.surname).toBe('Ruiz Toro');
+  it('lo que la ficha no trae se conserva', () => {
+    const [pax] = buildEmptyPassengers({ adults: 1, children: 0, infants: 0 });
+    const typed = { ...pax!, birthdate: '1990-01-01', citizenshipCountryCode: 'PE' };
+    const out = withCustomerFill(
+      typed,
+      passengerFromCustomer({ ...ANA, birthdate: null, nationality: 'Colombia', gender: null }),
+    );
+    expect(out.birthdate).toBe('1990-01-01');
+    expect(out.citizenshipCountryCode).toBe('PE');
+    expect(out.gender).toBe('M');
   });
 
-  it('desmarcado o sin cliente, deja lo tecleado tal cual', () => {
-    const pax = vacios();
-    pax[0] = { ...pax[0]!, givenName: 'MARIA', surname: 'LOPEZ' };
-    for (const [nombre, marcado] of [
-      ['Juan Pérez', false],
-      ['   ', true],
-      [undefined, true],
-    ] as const) {
-      expect(withCustomerAsFirstPassenger(pax, nombre, marcado)[0]).toMatchObject({
-        givenName: 'MARIA',
-        surname: 'LOPEZ',
-      });
-    }
+  it('nombra a cada pasajero por tipo y número', () => {
+    expect(passengerLabel({ paxType: 'CHD', paxId: 'CHD_2' })).toBe('Niño 2');
   });
 
   it('el tratamiento por defecto acompaña al género; uno elegido a mano se respeta', () => {
@@ -147,7 +174,15 @@ describe('withCustomerAsFirstPassenger — «El cliente es quien viaja»', () =>
 });
 
 describe('PassengerForm — sólo lo necesario', () => {
-  function render(props: { customerName?: string; priceChangeTotal?: string } = {}): string {
+  function render(
+    props: {
+      priceChangeTotal?: string;
+      billingProblems?: readonly string[];
+      onSaveToCrmChange?: (v: boolean) => void;
+      saveToCrm?: boolean;
+      billingSection?: (state: { attempted: boolean }) => ReactNode;
+    } = {},
+  ): string {
     return renderToStaticMarkup(
       createElement(PassengerForm, {
         paxCount: { adults: 1, children: 0, infants: 0 },
@@ -159,22 +194,39 @@ describe('PassengerForm — sólo lo necesario', () => {
     );
   }
 
-  it('con cliente, marca «El cliente es quien viaja» y cambia los campos de nombre por una línea', () => {
-    const html = render({ customerName: 'Juan Carlos Pérez Gómez' });
-    expect(html).toMatch(
-      /<input[^>]*type="checkbox"[^>]*checked=""[^>]*>El cliente es quien viaja/,
+  it('cada pasajero tiene «Buscar cliente registrado» y ya no hay «El cliente es quien viaja»', () => {
+    const html = renderToStaticMarkup(
+      createElement(PassengerForm, {
+        paxCount: { adults: 2, children: 0, infants: 0 },
+        onSubmit: async () => {},
+      }),
     );
-    expect(html).toContain('Nombre en el documento:');
-    expect(html).toContain('>Juan Carlos Pérez Gómez</span>');
-    expect(html).toMatch(/<button[^>]*>Editar<\/button>/);
-    expect(html).not.toContain('placeholder="OLIVER"');
-  });
-
-  it('sin cliente no hay casilla y los nombres se escriben a mano', () => {
-    const html = render();
+    expect(html.match(/>Buscar cliente registrado<\/label>/g)).toHaveLength(2);
+    expect(html).toMatch(/<input[^>]*role="combobox"[^>]*aria-expanded="false"/);
+    expect(html).toMatch(/<label[^>]*for="pax-ADT_1-crm-search"/);
     expect(html).not.toContain('El cliente es quien viaja');
     expect(html).toContain('placeholder="OLIVER"');
     expect(html).toContain('placeholder="JACKSON"');
+  });
+
+  it('«Facturación» va entre los pasajeros y el pago, y la casilla de Clientes junto al botón', () => {
+    const html = render({
+      billingSection: () => createElement('p', null, 'BLOQUE-FACTURACION'),
+      saveToCrm: true,
+      onSaveToCrmChange: () => {},
+    });
+    const pasajeros = html.indexOf('pax-ADT_1-doc-number');
+    const factura = html.indexOf('BLOQUE-FACTURACION');
+    const pago = html.indexOf('Pago y emisión');
+    expect(pasajeros).toBeLessThan(factura);
+    expect(factura).toBeLessThan(pago);
+    expect(html).toMatch(
+      /<input[^>]*type="checkbox"[^>]*checked=""[^>]*>[\s\S]*Guardar pasajeros y facturador en Clientes/,
+    );
+  });
+
+  it('sin `onSaveToCrmChange` no pinta la casilla de Clientes', () => {
+    expect(render()).not.toContain('Guardar pasajeros y facturador en Clientes');
   });
 
   it('el tratamiento va plegado en «Más datos (opcional)»; lo obligatorio queda a la vista', () => {
@@ -207,7 +259,7 @@ describe('PassengerForm — sólo lo necesario', () => {
   });
 
   it('sin cambio de precio el formulario no está deshabilitado esperando una verificación', () => {
-    const html = render({ customerName: 'Ana Ruiz' });
+    const html = render();
     expect(html).not.toMatch(/<fieldset[^>]*disabled/);
     expect(html).not.toContain('Verifica el precio');
   });
