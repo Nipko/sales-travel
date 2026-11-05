@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Route } from 'next';
+import { isAdminRole } from './roles';
 import { navForViewer, type Viewer } from './viewer';
 
 export interface NavItem {
@@ -102,19 +103,9 @@ export const superAdminNav: NavItem[] = [
   { label: 'Sistema', href: '/admin/plataforma/sistema', icon: Settings2 },
 ];
 
-/** Roles que ven la sección Administración. */
-const ADMIN_NAV_ROLES: readonly string[] = [
-  'superadmin',
-  'platform_admin',
-  'consolidator_admin',
-  'tenant_admin',
-  'agency_admin',
-  'admin',
-];
-
 /** ¿Ve la sección Administración (Mi Red, Mi Agencia, Equipo…) con este rol en la agencia activa? */
 export function seesAdministration(role: string | undefined): boolean {
-  return ADMIN_NAV_ROLES.includes(role ?? '');
+  return isAdminRole(role);
 }
 
 /** Mis Reservas: las reservas del tenant activo. */
@@ -130,7 +121,10 @@ export interface NavSection {
  * el sidebar y para la paleta de comandos (⌘K): si no, una ofrecía pantallas que la otra no.
  */
 export function navSections(role: string | undefined, viewer: Viewer): NavSection[] {
+  // La consola es de la PERSONA superadmin, esté en el nodo que esté (H12, docs/platform/16): el API
+  // la autoriza por identidad. Lo que depende del nodo activo (Mis Reservas, Gestión) sigue el rol.
   const platform = role === 'superadmin';
+  const seesConsole = viewer.superadmin || platform;
   // El superadmin no vende: sin Buscar/Cotizar, Hoteles ni Autos (lib/viewer.ts). Con la plataforma
   // activa tampoco Mis Reservas: su tenant no tiene reservas, las de la red están en Plataforma.
   const operations = navForViewer(operationsNav, viewer).filter(
@@ -140,9 +134,8 @@ export function navSections(role: string | undefined, viewer: Viewer): NavSectio
     { label: 'Operaciones', items: operations },
     // La plataforma va primero entre lo suyo; Gestión (Clientes, Cartera B2B, Reportes) mostraría
     // los datos del tenant de la plataforma, que no vende: vacíos.
-    ...(platform
-      ? [{ label: 'Plataforma', items: superAdminNav }]
-      : [{ label: 'Gestión', items: managementNav }]),
+    ...(seesConsole ? [{ label: 'Plataforma', items: superAdminNav }] : []),
+    ...(platform ? [] : [{ label: 'Gestión', items: managementNav }]),
   ];
   if (seesAdministration(role)) {
     sections.push({ label: 'Administración', items: adminNav });

@@ -178,8 +178,9 @@ d('bóveda de payloads (0043) contra Postgres', () => {
     agencia = await crearTenant(`pp-a-${sfx}`, 'agency', consolidador);
     otroConsolidador = await crearTenant(`pp-o-${sfx}`, 'consolidator', null);
 
-    // Los roles de plataforma se leen como globales, no por ser la plataforma ancestro de todos.
-    await crearUsuario('plataforma', plataforma, 'platform_admin');
+    // El superadmin lee como global, no por ser la plataforma ancestro de todos. `platform_admin` ya no
+    // lee (0093, docs/platform/16 H7).
+    await crearUsuario('plataforma', plataforma, 'superadmin');
     await crearUsuario('consolidador', consolidador, 'consolidator_admin');
     await crearUsuario('tenantAdmin', consolidador, 'tenant_admin');
     await crearUsuario('agencia', agencia, 'agency_admin');

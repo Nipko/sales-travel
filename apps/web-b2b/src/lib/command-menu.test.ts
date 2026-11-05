@@ -128,11 +128,13 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(operations).toContain('/');
   });
 
-  it('un superadmin que opera una sucursal como vendedor sí ve Mis Reservas', () => {
+  it('un superadmin que opera una sucursal como vendedor ve Mis Reservas y, por ser quien es, la Plataforma', () => {
     const sections = navSections('vendedor', { platformUser: true, superadmin: true });
     const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
     expect(operations).toContain('/reservas');
-    expect(sections.map((s) => s.label)).not.toContain('Plataforma');
+    // H12 (docs/platform/16): la consola es de la persona, no del nodo activo.
+    expect(sections.map((s) => s.label)).toContain('Plataforma');
+    expect(sections.map((s) => s.label)).toContain('Gestión');
   });
 
   it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Gobierno, Usuarios, Superadmins, Actividad y Sistema', () => {

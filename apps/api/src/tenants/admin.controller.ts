@@ -9,8 +9,10 @@ import {
   Post,
   Query,
   UnauthorizedException,
+  UseGuards,
   type OnModuleInit,
 } from '@nestjs/common';
+import { z } from '@sales-travel/validation';
 import { sql, type Transaction } from 'kysely';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -21,6 +23,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus, Role } from '../database/database.types.js';
 import { SecurityNoticeService } from '../mail/security-notice.service.js';
 import { NetworkService } from '../network/network.service.js';
+import { SuperadminGuard } from '../network/superadmin.guard.js';
 import { PlatformRoleManagedElsewhereError } from '../platform-admins/platform-admins.errors.js';
 import { SupervisionService } from '../platform-admins/supervision.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -116,6 +119,19 @@ function invitationScope(role: Role, tenantId: string): string | undefined {
 /** El tipo de cambio de suspender o reactivar una cuenta (docs/platform/16). */
 export const USER_STATUS_CHANGE_KIND = 'users.status';
 
+/** Corregir y mover nodos: lo aplica un supervisado sólo con la aprobación de un pleno. */
+export const TENANT_CHANGE_KINDS = {
+  update: 'tenants.update',
+  move: 'tenants.move',
+} as const;
+
+const UpdateTenantInput = z
+  .object({ tenantId: TenantIdParamSchema, body: UpdateTenantSchema })
+  .strict();
+const MoveTenantInput = z
+  .object({ tenantId: TenantIdParamSchema, body: MoveTenantSchema })
+  .strict();
+
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('admin')
 export class AdminController implements OnModuleInit {
@@ -139,6 +155,31 @@ export class AdminController implements OnModuleInit {
       summary: (body) =>
         `Usuarios: ${body.status === 'suspended' ? 'suspender' : 'reactivar'} la cuenta ${body.userId}`,
       execute: (actor, body) => this.setUserStatus(actor, body),
+    });
+    this.supervision.register(TENANT_CHANGE_KINDS.update, {
+      schema: UpdateTenantInput,
+      summary: (i) =>
+        `Red: ${[
+          i.body.status === undefined
+            ? null
+            : i.body.status === 'suspended'
+              ? 'suspender'
+              : 'reactivar',
+          i.body.tenantType === undefined ? null : `pasar a ${i.body.tenantType}`,
+          i.body.isBranch === undefined
+            ? null
+            : i.body.isBranch
+              ? 'marcar como sucursal'
+              : 'quitar la marca de sucursal',
+        ]
+          .filter((x) => x !== null)
+          .join(', ')} el nodo ${i.tenantId}${i.body.reason ? ` — ${i.body.reason}` : ''}`,
+      execute: (actor, i) => this.updateTenant(actor, i.tenantId, i.body),
+    });
+    this.supervision.register(TENANT_CHANGE_KINDS.move, {
+      schema: MoveTenantInput,
+      summary: (i) => `Red: mover el nodo ${i.tenantId} bajo ${i.body.parentTenantId}`,
+      execute: (actor, i) => this.moveTenant(actor, i.tenantId, i.body),
     });
   }
 
@@ -271,6 +312,7 @@ export class AdminController implements OnModuleInit {
    * Toda la red para el panel de la plataforma, con tipo, sucursal, padre y profundidad. Sólo
    * superadmin: un admin de red ve la suya con /tenants/network.
    */
+  @UseGuards(SuperadminGuard)
   @Get('tenants')
   async listTenants(
     @CurrentUser() userId: string | undefined,
@@ -284,6 +326,7 @@ export class AdminController implements OnModuleInit {
    * sus nodos y roles, búsqueda por nombre o correo, filtros y paginado por cursor. Sólo
    * superadmin: lista usuarios de TODOS los tenants. Ver PlatformUsersService.list.
    */
+  @UseGuards(SuperadminGuard)
   @Get('users')
   async listUsers(
     @CurrentUser() userId: string | undefined,
@@ -299,6 +342,7 @@ export class AdminController implements OnModuleInit {
    * invitaciones salen de la misma consulta que usa la suspensión, en una transacción que se deshace.
    * Sólo superadmin; nunca sobre uno mismo; 404 si la cuenta no existe.
    */
+  @UseGuards(SuperadminGuard)
   @Get('users/:userId/impact')
   async userImpact(
     @CurrentUser() userId: string | undefined,
@@ -336,6 +380,7 @@ export class AdminController implements OnModuleInit {
   }
 
   /** Corrige estado, sucursal o tipo de un nodo (dentro de D4). Sólo superadmin, auditado. */
+  @UseGuards(SuperadminGuard)
   @Patch('tenants/:id')
   async updateTenant(
     @CurrentUser() userId: string | undefined,
@@ -343,6 +388,7 @@ export class AdminController implements OnModuleInit {
     @Body(new ZodValidationPipe(UpdateTenantSchema)) body: UpdateTenantDto,
   ): Promise<{ tenant: TenantState }> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, TENANT_CHANGE_KINDS.update, { tenantId, body });
     return { tenant: await this.tenants.update(actor, tenantId, body) };
   }
 
@@ -365,6 +411,7 @@ export class AdminController implements OnModuleInit {
   }
 
   /** Mueve un nodo con su subárbol bajo otro padre (D6 A). Sólo superadmin, auditado. */
+  @UseGuards(SuperadminGuard)
   @Post('tenants/:id/move')
   async moveTenant(
     @CurrentUser() userId: string | undefined,
@@ -372,6 +419,7 @@ export class AdminController implements OnModuleInit {
     @Body(new ZodValidationPipe(MoveTenantSchema)) body: MoveTenantDto,
   ): Promise<MovedTenant> {
     const actor = await this.assertSuperadmin(userId);
+    await this.supervision.gate(actor, TENANT_CHANGE_KINDS.move, { tenantId, body });
     return this.tenants.move(actor, tenantId, body.parentTenantId);
   }
 
@@ -595,6 +643,7 @@ export class AdminController implements OnModuleInit {
    * Alto impacto: pide el 2FA de los últimos minutos (`@RequireRecentMfa`, USR-13, D1 = C).
    */
   @RequireRecentMfa()
+  @UseGuards(SuperadminGuard)
   @Patch('users/status')
   async setUserStatus(
     @CurrentUser() userId: string | undefined,

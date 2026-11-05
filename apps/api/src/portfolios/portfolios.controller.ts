@@ -12,7 +12,7 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
-import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
+import { ADMIN_ROLES, AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
@@ -47,15 +47,8 @@ export type HoldBookingResponse =
   | { retained: true; portfolio: WalletView; transaction: WalletMovementView }
   | { retained: false; reason: 'OWN_PROVIDER_ACCOUNT'; message: string };
 
-/** Los roles de membership que administran un nodo (los de `assertAdminMembership`). */
-const ADMIN_MEMBERSHIP_ROLES: readonly string[] = [
-  'superadmin',
-  'platform_admin',
-  'consolidator_admin',
-  'tenant_admin',
-  'agency_admin',
-  'admin',
-];
+/** Los roles de membership que administran un nodo (los de `assertAdminMembership`): roles.ts. */
+const ADMIN_MEMBERSHIP_ROLES: readonly string[] = ADMIN_ROLES;
 
 /**
  * Por qué la agencia ya no mueve su propia cartera (decisión del founder del 2026-09-29, opción A;

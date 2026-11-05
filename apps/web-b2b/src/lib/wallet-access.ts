@@ -1,3 +1,4 @@
+import { ADMIN_ROLES } from './roles';
 import type { NetworkNode } from './tenant-network';
 
 /**
@@ -61,13 +62,7 @@ export function canManageWalletsFromNetwork(
  * los que informan un depósito en Cartera B2B y los que cancelan y liberan una reserva retenida. El
  * vendedor ve las carteras y sus movimientos, pero no hace ninguna de las dos cosas.
  */
-const AGENCY_WALLET_ADMIN_ROLES: readonly string[] = [
-  'superadmin',
-  'consolidator_admin',
-  'tenant_admin',
-  'agency_admin',
-  'admin',
-];
+const AGENCY_WALLET_ADMIN_ROLES: readonly string[] = ADMIN_ROLES;
 
 export function canReportDeposits(role: string | undefined): boolean {
   return role !== undefined && AGENCY_WALLET_ADMIN_ROLES.includes(role);

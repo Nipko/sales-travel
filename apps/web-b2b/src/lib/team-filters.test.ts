@@ -141,7 +141,8 @@ describe('applyTeamFilters', () => {
   it('cada filtro rápido deja a quien corresponde', () => {
     const only = (chip: TeamFilters['chip']) =>
       ids(applyTeamFilters(TEAM, filters({ chip }), '', NOW));
-    expect(only('mfa-pending')).toEqual(['beto']);
+    // Desde H6 (docs/platform/16) los admins (elsa, gabi) también exigen 2FA.
+    expect(only('mfa-pending')).toEqual(['beto', 'elsa', 'gabi']);
     expect(only('locked')).toEqual(['carla']);
     expect(only('never-logged-in')).toEqual(['dani', 'fer']);
     expect(only('reset-pending')).toEqual(['elsa']);
@@ -185,7 +186,7 @@ describe('applyTeamFilters', () => {
 describe('chipCounts y suspendedCount', () => {
   it('cuenta cada filtro rápido sobre todo el equipo', () => {
     expect(chipCounts(TEAM, filters(), '', NOW)).toEqual({
-      'mfa-pending': 1,
+      'mfa-pending': 3,
       locked: 1,
       'never-logged-in': 2,
       'reset-pending': 1,

@@ -16,6 +16,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
+import { isAdminRole } from '../../lib/roles';
 import { PLATFORM_HOME, shouldLandOnPlatformOverview } from '../../lib/platform-overview';
 import {
   parseDashboardKpis,
@@ -268,8 +269,7 @@ export default async function DashboardPage() {
                 </thead>
                 <tbody>
                   {memberships.map((m) => {
-                    const isAdminRole =
-                      m.role === 'superadmin' || m.role === 'tenant_admin' || m.role === 'admin';
+                    const adminRole = isAdminRole(m.role);
                     return (
                       <tr
                         key={m.id}
@@ -284,7 +284,7 @@ export default async function DashboardPage() {
                         <td className="px-6 py-4.5">
                           <span
                             className={`inline-flex items-center rounded-lg border px-2.5 py-0.5 text-[10px] font-bold ${
-                              isAdminRole
+                              adminRole
                                 ? 'bg-[var(--color-primary)]/[0.06] text-[var(--color-primary)] border-[var(--color-primary)]/15'
                                 : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]'
                             }`}

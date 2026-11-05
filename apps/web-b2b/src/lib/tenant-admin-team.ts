@@ -1,4 +1,5 @@
 import { lastAccessLabel, lockedUntilLabel, relativeTime } from './tenant-admin-format';
+import { MFA_REQUIRED_ROLES, ROLE_RANK } from './roles';
 import { PLATFORM_ROLES } from './viewer';
 
 /**
@@ -9,25 +10,8 @@ import { PLATFORM_ROLES } from './viewer';
  * (administrar TODOS los nodos del miembro y superarlo en rango, o ser superadmin).
  */
 
-/** Espejo de ROLE_RANK del API (apps/api/src/auth/roles.ts). */
-export const ROLE_RANK: Readonly<Record<string, number>> = {
-  superadmin: 100,
-  platform_admin: 90,
-  consolidator_admin: 70,
-  tenant_admin: 60,
-  agency_admin: 50,
-  admin: 40,
-  vendedor: 20,
-  cliente_final: 10,
-};
-
-/** Espejo de MFA_REQUIRED_ROLES del API (apps/api/src/auth/roles.ts). */
-export const MFA_REQUIRED_ROLES: readonly string[] = [
-  'superadmin',
-  'platform_admin',
-  'consolidator_admin',
-  'tenant_admin',
-];
+/** De lib/roles.ts, espejo del API. */
+export { MFA_REQUIRED_ROLES, ROLE_RANK };
 
 export function roleRank(role: string): number {
   return ROLE_RANK[role] ?? 0;

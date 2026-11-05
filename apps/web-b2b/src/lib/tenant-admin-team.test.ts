@@ -258,10 +258,11 @@ describe('mfaState: 2FA activo / pendiente / no requerido', () => {
     }
   });
 
-  it('no requerido para vendedores y managers sin 2FA', () => {
+  it('no requerido para vendedores y clientes sin 2FA; los admins sí lo exigen (H6)', () => {
     expect(mfaState(member({ role: 'vendedor' }))).toBe('not-required');
-    expect(mfaState(member({ role: 'admin' }))).toBe('not-required');
-    expect(mfaState(member({ role: 'agency_admin' }))).toBe('not-required');
+    expect(mfaState(member({ role: 'cliente_final' }))).toBe('not-required');
+    expect(mfaState(member({ role: 'admin' }))).not.toBe('not-required');
+    expect(mfaState(member({ role: 'agency_admin' }))).not.toBe('not-required');
   });
 
   it('desconocido si el API no lo dice', () => {
@@ -270,7 +271,14 @@ describe('mfaState: 2FA activo / pendiente / no requerido', () => {
 
   it('el espejo coincide con MFA_REQUIRED_ROLES del API', () => {
     expect([...MFA_REQUIRED_ROLES].sort()).toEqual(
-      ['consolidator_admin', 'platform_admin', 'superadmin', 'tenant_admin'].sort(),
+      [
+        'admin',
+        'agency_admin',
+        'consolidator_admin',
+        'platform_admin',
+        'superadmin',
+        'tenant_admin',
+      ].sort(),
     );
   });
 });

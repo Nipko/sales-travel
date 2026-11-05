@@ -1,3 +1,5 @@
+import { PLATFORM_ROLES } from './roles';
+
 /**
  * Quién mira el panel, para decidir qué se le ofrece. Sin I/O.
  *
@@ -13,8 +15,7 @@ export interface MembershipLike {
   readonly status: string;
 }
 
-/** Espejo de PLATFORM_ROLES del API (apps/api/src/auth/roles.ts). */
-export const PLATFORM_ROLES: readonly string[] = ['superadmin', 'platform_admin'];
+export { PLATFORM_ROLES };
 
 /** El texto del API para el 403 de venta, el mismo en la web. */
 export const SUPERADMIN_CANNOT_SELL =

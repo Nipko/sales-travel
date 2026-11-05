@@ -25,9 +25,11 @@ describe('sección Plataforma del menú', () => {
     });
   });
 
-  it('sólo con el rol superadmin en la agencia activa, como sus pantallas', () => {
+  it('para la persona superadmin, esté en el nodo que esté (H12); para nadie más', () => {
     const viewer = { platformUser: true, superadmin: true };
     expect(navSections('superadmin', viewer).map((s) => s.label)).toContain('Plataforma');
-    expect(navSections('tenant_admin', viewer).map((s) => s.label)).not.toContain('Plataforma');
+    expect(navSections('tenant_admin', viewer).map((s) => s.label)).toContain('Plataforma');
+    const nodo = { platformUser: false, superadmin: false };
+    expect(navSections('tenant_admin', nodo).map((s) => s.label)).not.toContain('Plataforma');
   });
 });

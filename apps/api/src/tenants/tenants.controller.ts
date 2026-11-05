@@ -26,7 +26,7 @@ import {
   type NetworkUser,
 } from '../network/network.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { AGENCY_ADMIN_ROLES } from '../auth/roles.js';
+import { AGENCY_ADMIN_ROLES, isAdminRole } from '../auth/roles.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   UpdateBrandingSchema,
@@ -363,15 +363,7 @@ export class TenantsController {
       .where('status', '=', 'active')
       .executeTakeFirst();
     if (!row) throw new ForbiddenException('not a member of this tenant');
-    const adminRoles = [
-      'superadmin',
-      'platform_admin',
-      'consolidator_admin',
-      'tenant_admin',
-      'agency_admin',
-      'admin',
-    ];
-    if (!adminRoles.includes(row.role)) {
+    if (!isAdminRole(row.role)) {
       throw new ForbiddenException('admin role required');
     }
   }

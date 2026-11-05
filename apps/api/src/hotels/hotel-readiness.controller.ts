@@ -1,7 +1,15 @@
-import { Controller, ForbiddenException, Get, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
+import { PLATFORM_ROLES } from '../auth/roles.js';
 import { NetworkService } from '../network/network.service.js';
+import { SuperadminGuard } from '../network/superadmin.guard.js';
 import { HotelReadinessService, type HotelReadinessView } from './hotel-readiness.service.js';
 
 /**
@@ -9,10 +17,11 @@ import { HotelReadinessService, type HotelReadinessView } from './hotel-readines
  * Hoteles en lugar de la búsqueda (D-TBO-H1 A). No es una venta: no da precio ni disponibilidad, y
  * no cambia la regla de que el superadmin no vende.
  *
- * Sólo el superadmin: `@Roles` deja fuera a todo rol de nodo, y la comprobación explícita deja fuera
- * a `platform_admin`, como el resto del panel de la plataforma (`/admin/providers`).
+ * Sólo el superadmin, como el resto del panel de la plataforma: `@Roles` deja fuera a todo rol de
+ * nodo y {@link SuperadminGuard} corre antes de los pipes (docs/platform/16, H10).
  */
-@Roles('superadmin')
+@Roles(...PLATFORM_ROLES)
+@UseGuards(SuperadminGuard)
 @Controller('admin/hotels')
 export class HotelReadinessController {
   constructor(

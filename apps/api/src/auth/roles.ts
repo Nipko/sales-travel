@@ -33,10 +33,12 @@ export const ASSIGNABLE_ROLES = [
   'cliente_final',
 ] as const satisfies readonly Role[];
 
-/** Roles que administran su nodo (y su subárbol). Espejo de is_admin_user() en SQL. */
+/**
+ * Roles que administran su nodo (y su subárbol). `platform_admin` ya no: está retirado y desde 0093
+ * ninguna membership activa lo tiene (docs/platform/16, H7).
+ */
 export const ADMIN_ROLES = [
   'superadmin',
-  'platform_admin',
   'consolidator_admin',
   'tenant_admin',
   'agency_admin',
@@ -122,12 +124,18 @@ export function highestRole(roles: readonly Role[]): Role | undefined {
   );
 }
 
-/** Roles a los que se les exige MFA. Requisito no negociable de CLAUDE.md. */
+/**
+ * Roles a los que se les exige MFA. Requisito no negociable de CLAUDE.md. Desde el 2026-11-05 todo rol
+ * que administra (founder, docs/platform/16 H6): `agency_admin` y `admin` también cargan
+ * credenciales de proveedor, markup y movimientos de cartera.
+ */
 export const MFA_REQUIRED_ROLES = [
   'superadmin',
   'platform_admin',
   'consolidator_admin',
   'tenant_admin',
+  'agency_admin',
+  'admin',
 ] as const satisfies readonly Role[];
 
 export function requiresMfa(role: Role): boolean {

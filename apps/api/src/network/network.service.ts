@@ -141,15 +141,24 @@ interface NetworkRow {
 export class NetworkService {
   constructor(private readonly db: DatabaseService) {}
 
-  /** ¿El usuario tiene rol superadmin en algún nodo? (acceso global). */
+  /**
+   * ¿Es superadmin de la plataforma (acceso global)? Mismo criterio que `is_platform_superadmin()`
+   * (0075), que repite la base: membership superadmin activa, en el nodo `platform`, de una cuenta
+   * activa (docs/platform/16, H11). Pleno o supervisado: lo que el supervisado no aplica solo lo
+   * decide SupervisionService.
+   */
   async isSuperadmin(userId: string): Promise<boolean> {
     return this.db.withRequestContext({ userId }, async (trx) => {
       const row = await trx
-        .selectFrom('memberships')
-        .select('id')
-        .where('user_id', '=', userId)
-        .where('status', '=', 'active')
-        .where('role', '=', 'superadmin')
+        .selectFrom('memberships as m')
+        .innerJoin('users as u', 'u.id', 'm.user_id')
+        .innerJoin('tenants as t', 't.id', 'm.tenant_id')
+        .select('m.id')
+        .where('m.user_id', '=', userId)
+        .where('m.status', '=', 'active')
+        .where('m.role', '=', 'superadmin')
+        .where('u.status', '=', 'active')
+        .where('t.tenant_type', '=', 'platform')
         .executeTakeFirst();
       return Boolean(row);
     });
@@ -175,7 +184,7 @@ export class NetworkService {
             AND m.status = 'active'
             AND (
               m.role = 'superadmin'
-              OR (m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin') AND admin_t.path OPERATOR(public.@>) target_t.path)
+              OR (m.role = ANY(${[...AGENCY_ADMIN_ROLES]}::text[]) AND admin_t.path OPERATOR(public.@>) target_t.path)
             )
             AND NOT EXISTS (
               SELECT 1 FROM tenants anc
@@ -288,7 +297,7 @@ export class NetworkService {
               m.tenant_id = ${tenantId}::uuid
               OR m.role = 'superadmin'
               OR (
-                m.role IN ('tenant_admin','admin','consolidator_admin','agency_admin','platform_admin')
+                m.role = ANY(${[...AGENCY_ADMIN_ROLES]}::text[])
                 AND EXISTS (
                   SELECT 1
                   FROM tenants admin_t
@@ -368,7 +377,7 @@ export class NetworkService {
                    t.status, nlevel(t.path) AS depth
             FROM tenants t
             JOIN memberships m ON m.user_id = ${userId}::uuid AND m.status = 'active'
-                              AND m.role IN ('tenant_admin', 'admin', 'consolidator_admin', 'agency_admin')
+                              AND m.role = ANY(${[...AGENCY_ADMIN_ROLES]}::text[])
             JOIN tenants admin_t ON admin_t.id = m.tenant_id
             WHERE admin_t.path OPERATOR(public.@>) t.path
             ORDER BY depth, t.name

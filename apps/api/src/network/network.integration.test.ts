@@ -132,7 +132,7 @@ d('hierarchical authorization (canManageTenant semantics)', () => {
          WHERE m.user_id = $1::uuid AND m.status='active'
            AND ( m.tenant_id = $2::uuid
                  OR m.role='superadmin'
-                 OR ( m.role IN ('tenant_admin','admin','consolidator_admin','agency_admin','platform_admin')
+                 OR ( m.role IN ('tenant_admin','admin','consolidator_admin','agency_admin')
                       AND EXISTS (SELECT 1 FROM tenants admin_t JOIN tenants target_t ON target_t.id=$2::uuid
                                   WHERE admin_t.id=m.tenant_id AND admin_t.path OPERATOR(public.@>) target_t.path) ) )
        ) AS ok`,

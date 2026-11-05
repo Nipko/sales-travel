@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import { parseMemberships, resolveActiveMembership } from '../../../lib/agencies';
 import { api } from '../../../lib/api';
+import { isAdminRole } from '../../../lib/roles';
 import { getActiveTenant } from '../../../lib/session';
+import { viewerOf } from '../../../lib/viewer';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const activeTenantId = await getActiveTenant();
@@ -14,16 +16,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/');
   }
 
-  // Admin section requires at least admin-level role
-  const allowedAdminRoles = [
-    'superadmin',
-    'platform_admin',
-    'consolidator_admin',
-    'tenant_admin',
-    'agency_admin',
-    'admin',
-  ];
-  if (!allowedAdminRoles.includes(activeMembership.role)) {
+  // Administración: un rol que administra en el nodo activo (lib/roles.ts, espejo del API); o la
+  // persona superadmin, que entra a la consola de la plataforma desde cualquier nodo (H12).
+  if (!isAdminRole(activeMembership.role) && !viewerOf(memberships).superadmin) {
     redirect('/');
   }
 

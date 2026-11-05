@@ -135,7 +135,7 @@ Detalle en `docs/platform/10-mapa-completo-plataforma.md` §10.
 - **Hosted checkout** únicamente en fase 1 (PCI SAQ-A). Nunca PAN/CVV en servidor.
 - **Webhooks** con signature verification + idempotency keys + outbox pattern.
 - **Secretos** vía sops + age en repo (NUNCA secretos planos en commits).
-- **MFA obligatorio** para roles `tenant_admin` y superiores.
+- **MFA obligatorio** para todo rol que administra (`admin` y superiores; desde 2026-11-05, ver `docs/platform/16-roles-y-superadmins.md`).
 - **Audit log** inmutable de toda acción sensible (event sourcing parcial en `domain_events`).
 - **Headers de seguridad:** Helmet (CSP estricto, HSTS preload, X-Frame-Options DENY, Referrer-Policy strict-origin).
 - **Rate limiting** en endpoints públicos (Cloudflare + middleware app).

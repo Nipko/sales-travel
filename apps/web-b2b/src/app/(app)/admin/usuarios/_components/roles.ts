@@ -40,12 +40,12 @@ export const INVITABLE_ROLES: readonly InvitableRole[] = [
   {
     value: 'admin',
     label: 'Manager',
-    hint: 'Vende y además gestiona al equipo y las reservas del nodo.',
+    hint: 'Vende y además gestiona al equipo y las reservas del nodo. Se le exige verificación en dos pasos.',
   },
   {
     value: 'agency_admin',
     label: 'Admin de agencia',
-    hint: 'Administra la agencia: equipo, precios y credenciales propias.',
+    hint: 'Administra la agencia: equipo, precios y credenciales propias. Se le exige verificación en dos pasos.',
   },
   {
     value: 'tenant_admin',
