@@ -33,7 +33,7 @@ describe('checkout de vuelos con una tarifa de pruebas', () => {
 
     expect(aviso).toBeGreaterThan(-1);
     expect(aviso).toBeLessThan(formulario);
-    expect(page.slice(aviso - 200, aviso)).toMatch(/\{testFare \? \(\s*<TestContentNotice/);
+    expect(page.slice(aviso - 200, aviso)).toMatch(/\{testFare \? \(?\s*<TestContentNotice/);
   });
 
   it('la marca sale de la oferta elegida (la revalidada, si ya se verificó el precio)', () => {

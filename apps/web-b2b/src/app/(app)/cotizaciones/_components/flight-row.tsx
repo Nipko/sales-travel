@@ -435,7 +435,7 @@ export function FlightRow({
                   tu costo {formatMoney(venta.costMinor, venta.currency)}
                 </p>
               ) : null}
-              {/* La única puerta a "Guardar cotización" es abrir esta tarjeta, así que la
+              {/* La única puerta a «Elegir» es abrir esta tarjeta, así que la
                   invitación va siempre — también cuando hay una sola tarifa, que antes no
                   mostraba nada y dejaba la venta escondida. */}
               <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-fg-muted)]">

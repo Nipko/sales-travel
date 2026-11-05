@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertCircle, CheckCircle2, ChevronDown, Plane, UserPlus, Wallet } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
@@ -102,6 +102,13 @@ interface PassengerFormProps {
    * de asientos para decir «Ana 12C» en vez de «Adulto 1 12C» (SAB-16).
    */
   onGivenNamesChange?: (names: readonly string[]) => void;
+  /**
+   * El botón «Reservar» de la barra inferior del teléfono vive fuera del formulario: el formulario
+   * deja aquí su envío (`true` = con el precio nuevo) para que esa barra reserve lo mismo.
+   */
+  submitRef?: MutableRefObject<((acceptNewPrice?: boolean) => void) | null>;
+  /** Avisa cuando empieza y termina el envío, para que la barra inferior lo refleje. */
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
@@ -273,6 +280,8 @@ export function PassengerForm({
   priceChangeTotal,
   onSubmit,
   onGivenNamesChange,
+  submitRef,
+  onSubmittingChange,
 }: PassengerFormProps) {
   const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
   // La ficha del CRM de la que salió cada pasajero, por `paxId`.
@@ -380,6 +389,19 @@ export function PassengerForm({
 
   const problems = validationMessages();
   const canSubmit = problems.length === 0;
+
+  useEffect(() => {
+    onSubmittingChange?.(submitting);
+  }, [submitting, onSubmittingChange]);
+
+  // Cada render deja el envío con el estado de ahora: la barra inferior reserva lo que se ve.
+  useEffect(() => {
+    if (!submitRef) return;
+    submitRef.current = (acceptNewPrice?: boolean) => void handleSubmit(acceptNewPrice === true);
+    return () => {
+      submitRef.current = null;
+    };
+  });
 
   async function handleSubmit(acceptNewPrice = false) {
     setAttempted(true);
@@ -675,8 +697,8 @@ export function PassengerForm({
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3">
               <p className="text-xs font-medium text-[var(--color-fg)]">Reserva sin cobro</p>
               <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
-                Se crea el PNR sin cobrar nada. El pago y la emisión se hacen después desde
-                Reservas, cuando el proveedor los permite.
+                Se crea el PNR sin cobrar nada. El pago y la emisión se hacen después desde el
+                detalle de la reserva, que se abre al reservar, cuando el proveedor los permite.
               </p>
             </div>
           </section>
@@ -742,16 +764,16 @@ export function PassengerForm({
               </Button>
             </div>
           ) : (
-            <div className="mt-5 flex justify-end">
+            <div id="checkout-reservar" className="mt-5 flex scroll-mt-24 justify-end">
               <Button
                 variant="primary"
                 size="sm"
                 disabled={submitting}
                 onClick={() => void handleSubmit()}
-                className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
+                className="h-11 w-full gap-2 text-sm sm:h-10 sm:w-auto sm:min-w-40"
               >
                 <Plane className="size-4" />
-                {submitting ? 'Creando reserva…' : 'Crear reserva'}
+                {submitting ? 'Reservando…' : 'Reservar'}
               </Button>
             </div>
           )}

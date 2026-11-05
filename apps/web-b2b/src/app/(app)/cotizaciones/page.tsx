@@ -323,8 +323,8 @@ export default function CotizacionesPage() {
   const handleQuote = useCallback(
     async (offer: Offer) => {
       if (searched === null) {
-        setQuoteError('Vuelve a buscar antes de cotizar.');
-        return;
+        setQuoteError('Vuelve a buscar antes de elegir un vuelo.');
+        throw new Error('sin búsqueda');
       }
       const res = await createQuotationAction(offer, {
         ...searched,
@@ -333,7 +333,11 @@ export default function CotizacionesPage() {
       if (res.ok && res.quotationId) {
         router.push(`/cotizaciones/${res.quotationId}`);
       } else {
-        setQuoteError(res.error || 'No se pudo guardar la cotización.');
+        setQuoteError(
+          res.error || 'No se pudo abrir la reserva de este vuelo. Inténtalo de nuevo.',
+        );
+        // El botón del vuelo no se queda en «Abriendo reserva…»: se puede volver a elegir.
+        throw new Error('no se creó la cotización');
       }
     },
     [searched, router],

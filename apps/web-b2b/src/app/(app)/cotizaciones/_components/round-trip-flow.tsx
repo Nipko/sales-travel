@@ -40,14 +40,14 @@ interface RoundTripFlowProps {
 
 const OUTBOUND_CHOICE: FareChoiceMode = {
   leg: 0,
-  actionLabel: 'Elegir esta ida',
+  actionLabel: 'Elegir ida',
   priceLabel: 'Ida y vuelta desde',
   confirmsSave: false,
 };
 
 const RETURN_CHOICE: FareChoiceMode = {
   leg: 1,
-  actionLabel: 'Guardar cotización',
+  actionLabel: 'Elegir vuelta y continuar',
   priceLabel: 'Total ida y vuelta',
   confirmsSave: true,
 };

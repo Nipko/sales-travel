@@ -125,16 +125,33 @@ function ExpiredHoldNote({ note }: { note: string }) {
  * Las secciones del detalle: «Localizadores de la aerolínea», «Tiquetes» y el plazo de emisión.
  * Una reserva confirmada o emitida sin localizador lo dice: el hueco se ve, no se calla.
  */
-export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
+export type FlightTrackingSection = 'locators' | 'tickets' | 'deadline';
+
+const ALL_SECTIONS: readonly FlightTrackingSection[] = ['locators', 'tickets', 'deadline'];
+
+export function FlightOrderTracking({
+  order,
+  sections = ALL_SECTIONS,
+}: {
+  order: FlightTrackingOrder;
+  /** Qué partes pintar. El detalle de la reserva lleva el localizador y el plazo arriba. */
+  sections?: readonly FlightTrackingSection[];
+}) {
   const tracking = parseFlightTracking(order.flightTracking);
-  const locators = tracking?.airlineLocators ?? [];
-  const documents = tracking?.documents ?? [];
-  const live = order.status === 'confirmed' || order.status === 'ticketed';
-  const deadline = order.status === 'confirmed' ? orderTicketingDeadline(order) : null;
+  const locators = sections.includes('locators') ? (tracking?.airlineLocators ?? []) : [];
+  const documents = sections.includes('tickets') ? (tracking?.documents ?? []) : [];
+  const live =
+    sections.includes('locators') && (order.status === 'confirmed' || order.status === 'ticketed');
+  const showTickets =
+    sections.includes('tickets') && (documents.length > 0 || order.status === 'ticketed');
+  const deadline =
+    sections.includes('deadline') && order.status === 'confirmed'
+      ? orderTicketingDeadline(order)
+      : null;
   const now = new Date();
   const holdNote = deadline === null ? undefined : expiredHoldNote(order, now);
 
-  if (locators.length === 0 && documents.length === 0 && deadline === null && !live) return null;
+  if (locators.length === 0 && !showTickets && deadline === null && !live) return null;
 
   return (
     <>
@@ -169,7 +186,7 @@ export function FlightOrderTracking({ order }: { order: FlightTrackingOrder }) {
         </section>
       )}
 
-      {(documents.length > 0 || order.status === 'ticketed') && (
+      {showTickets && (
         <section>
           <h3 className={HEADING}>Tiquetes</h3>
           {documents.length > 0 ? (

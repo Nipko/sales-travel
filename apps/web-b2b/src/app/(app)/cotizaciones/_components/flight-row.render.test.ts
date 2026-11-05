@@ -112,7 +112,7 @@ describe('FareFamilyMatrix — cada tarjeta dice si su tarifa es de pruebas', ()
     const etiqueta = html.indexOf('>Prueba<span class="sr-only">');
     expect(light).toBeGreaterThan(-1);
     expect(etiqueta).toBeGreaterThan(full);
-    expect(html.match(/Guardar Cotización/g)).toHaveLength(2);
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*Guardar Cotización/);
+    expect(html.match(/>Elegir<\/button>/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*Elegir/);
   });
 });

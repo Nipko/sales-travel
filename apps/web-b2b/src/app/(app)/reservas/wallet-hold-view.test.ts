@@ -38,9 +38,16 @@ describe('walletReleaseNote', () => {
  */
 describe('Reservas avisa del saldo retenido al cancelar', () => {
   const page = readFileSync(fileURLToPath(new URL('./page.tsx', import.meta.url)), 'utf8');
+  const detail = readFileSync(fileURLToPath(new URL('./[id]/page.tsx', import.meta.url)), 'utf8');
+  // La forma de la orden la comparten la lista y el detalle.
+  const model = readFileSync(fileURLToPath(new URL('./order-model.ts', import.meta.url)), 'utf8');
 
   it('la confirmación de la cancelación lleva el aviso de esa orden', () => {
     expect(page).toContain('note={walletReleaseNote(confirmCancel)}');
-    expect(page).toMatch(/walletHold\?: 'held' \| 'captured' \| null;/);
+    expect(model).toMatch(/walletHold\?: 'held' \| 'captured' \| null;/);
+  });
+
+  it('el detalle de la reserva también lo lleva, al cancelar y al reintentar', () => {
+    expect(detail.match(/note=\{walletReleaseNote\(current\)\}/g)).toHaveLength(2);
   });
 });

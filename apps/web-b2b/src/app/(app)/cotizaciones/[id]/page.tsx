@@ -1,29 +1,37 @@
 'use client';
 
-import { describePolicy, policyState } from '../../../../lib/fare-policy';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { TicketingDeadlineBadge } from '../_components/ticketing-deadline-badge';
-import { flightDate, flightTime, formatMoney } from '../../../../lib/flight-format';
-import {
-  Armchair,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  Copy,
-  Download,
-  Mail,
-  Plane,
-  RefreshCw,
-  Send,
-} from 'lucide-react';
+import { formatMoney } from '../../../../lib/flight-format';
+import { AlertTriangle, Armchair, ArrowLeft, ArrowRight, Plane } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
-import { describeBaggage, hasAnyBaggageInfo } from '../../../../lib/baggage';
 import { readJson } from '../../../../lib/read-json';
+import { ItineraryTimeline, ItineraryTimelineSkeleton } from '../_components/itinerary-timeline';
+import {
+  buildTimeline,
+  cabinLabel,
+  routeTitle,
+  travelDates,
+} from '../_components/itinerary-timeline-view';
+import {
+  MobileCheckoutBar,
+  OfferConditions,
+  PriceBreakdown,
+  PriceStatus,
+  ShareQuoteMenu,
+} from './booking-summary';
+import {
+  bookingToast,
+  createdOrderId,
+  paxCountLabel,
+  reservationHref,
+  totalPassengers,
+} from './booking-navigation';
 import {
   PassengerForm,
   passengerLabel,
@@ -55,7 +63,7 @@ import { humanizeProviderError } from '../../../../lib/provider-errors';
 import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
 import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
-import { fareComponentsForDisplay, fareFamilySummary } from '../_components/fare-components-view';
+import { fareFamilySummary } from '../_components/fare-components-view';
 import {
   acceptRevalidatedPrice,
   displayedPriceChanged,
@@ -122,17 +130,10 @@ interface Quotation {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es-CO', {
-    weekday: 'short',
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
-}
-
-function formatDuration(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 /** Traduce errores crudos del proveedor a mensajes claros (helper compartido). */
@@ -206,33 +207,37 @@ function describeIssues(issues: CreateOrderProviderResult['issues']): string | u
   return errores.map((i) => `${i.category}: ${i.type}`).join(' | ');
 }
 
-/** Sólo `CONFIRMED` es verde. `PARTIAL` y `PENDING` son ámbar: hay reserva, pero no está cerrada. */
+/**
+ * Sólo `CONFIRMED` es verde. `PARTIAL` y `PENDING` son ámbar: hay reserva, pero no está cerrada.
+ * Los colores salen de los tokens (con transparencia) para seguir al tema oscuro; el texto va en
+ * `--color-fg`, porque los colores de estado no llegan a AA como texto.
+ */
 const BOOKING_OUTCOME_STYLE: Record<BookingOutcome, { box: string; title: string; text: string }> =
   {
     CONFIRMED: {
-      box: 'border-green-200 bg-green-50',
-      title: 'Reserva creada exitosamente',
-      text: 'text-green-800',
+      box: 'border-[var(--color-success)]/40 bg-[var(--color-success)]/10',
+      title: 'Reserva creada',
+      text: 'text-[var(--color-fg)]',
     },
     PARTIAL: {
-      box: 'border-amber-200 bg-amber-50',
+      box: 'border-[var(--color-warning)]/50 bg-[var(--color-warning)]/12',
       title: 'Reserva creada PARCIALMENTE — hay servicios sin confirmar',
-      text: 'text-amber-900',
+      text: 'text-[var(--color-fg)]',
     },
     PENDING: {
-      box: 'border-amber-200 bg-amber-50',
+      box: 'border-[var(--color-warning)]/50 bg-[var(--color-warning)]/12',
       title: 'Reserva enviada — el proveedor todavía no la confirmó',
-      text: 'text-amber-900',
+      text: 'text-[var(--color-fg)]',
     },
     UNCERTAIN: {
-      box: 'border-amber-200 bg-amber-50',
+      box: 'border-[var(--color-warning)]/50 bg-[var(--color-warning)]/12',
       title: 'Creación incierta — requiere conciliación',
-      text: 'text-amber-900',
+      text: 'text-[var(--color-fg)]',
     },
     FAILED: {
-      box: 'border-red-200 bg-red-50',
+      box: 'border-[var(--color-danger)]/40 bg-[var(--color-danger)]/8',
       title: 'No se pudo crear la reserva',
-      text: 'text-red-800',
+      text: 'text-[var(--color-fg)]',
     },
   };
 
@@ -243,24 +248,25 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   },
   sent: {
     label: 'Enviada',
-    className: 'bg-blue-50 text-blue-700',
+    className: 'bg-[var(--color-primary)]/10 text-[var(--color-fg)]',
   },
   accepted: {
     label: 'Aceptada',
-    className: 'bg-green-50 text-green-700',
+    className: 'bg-[var(--color-success)]/12 text-[var(--color-fg)]',
   },
   expired: {
     label: 'Expirada',
-    className: 'bg-amber-50 text-amber-700',
+    className: 'bg-[var(--color-warning)]/15 text-[var(--color-fg)]',
   },
   cancelled: {
     label: 'Cancelada',
-    className: 'bg-red-50 text-red-700',
+    className: 'bg-[var(--color-danger)]/10 text-[var(--color-fg)]',
   },
 };
 
 export default function QuotationDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [quotation, setQuotation] = useState<Quotation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -283,7 +289,7 @@ export default function QuotationDetailPage() {
   const [verifying, setVerifying] = useState(false);
   const [priceStatus, setPriceStatus] = useState<PriceVerificationState | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingOutcomeView | null>(null);
-  // Una sola revalidación en vuelo: la automática al abrir y la del clic en «Crear reserva»
+  // Una sola revalidación en vuelo: la automática al abrir y la del clic en «Reservar»
   // comparten la misma promesa en vez de pedirle dos veces el precio al proveedor.
   const pendingCheck = useRef<Promise<PriceCheck> | null>(null);
   // La cotización cuyo precio ya se revalidó solo. Un ref y no estado: en modo estricto React monta
@@ -296,14 +302,26 @@ export default function QuotationDetailPage() {
   const [seatTabsSeen, setSeatTabsSeen] = useState<SeatTab[]>([]);
   const [seatSheetOpen, setSeatSheetOpen] = useState(false);
   const [passengerNames, setPassengerNames] = useState<readonly string[]>([]);
+  // La barra inferior del teléfono reserva con el mismo envío que el botón del formulario.
+  const submitRef = useRef<((acceptNewPrice?: boolean) => void) | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/quotations/${params.id}`)
-      .then((res) => res.json() as Promise<{ quotation: Quotation }>)
-      .then((data) => {
-        setQuotation(data.quotation);
-        setBillingDraft(billingDraftFromQuotation(data.quotation.billing, data.quotation));
-        setNotes(data.quotation.notes ?? '');
+    fetch(`/api/quotations/${encodeURIComponent(params.id)}`)
+      .then(async (res) => {
+        const read = await readJson<{ quotation?: Quotation | null }>(res);
+        const loaded = read.ok && res.ok ? read.data.quotation : null;
+        if (!loaded) {
+          setError(
+            res.status === 404
+              ? 'No encontramos esta cotización. Puede que ya no exista.'
+              : 'No se pudo cargar la cotización.',
+          );
+          return;
+        }
+        setQuotation(loaded);
+        setBillingDraft(billingDraftFromQuotation(loaded.billing, loaded));
+        setNotes(loaded.notes ?? '');
       })
       .catch(() => setError('No se pudo cargar la cotización.'))
       .finally(() => setLoading(false));
@@ -313,7 +331,7 @@ export default function QuotationDetailPage() {
    * El precio se revalida solo al abrir la cotización. Antes era un botón «Verificar precio» que
    * había que pulsar antes de poder reservar: un paso que el vendedor no necesita decidir, porque
    * la reserva no puede salir sin él. Ahora corre en segundo plano, y si al reservar ya es viejo o
-   * falló, el propio clic en «Crear reserva» lo repite.
+   * falló, el propio clic en «Reservar» lo repite.
    */
   useEffect(() => {
     if (quotation === null || autoVerifiedId.current === quotation.id) return;
@@ -470,7 +488,7 @@ export default function QuotationDetailPage() {
   }
 
   /**
-   * El clic en «Crear reserva». Si el precio no está confirmado hace poco, se revalida primero y
+   * El clic en «Reservar». Si el precio no está confirmado hace poco, se revalida primero y
    * se espera; si cambió, se para y el formulario pregunta (con lo escrito intacto); si se confirmó,
    * la reserva sale en el mismo clic. Un error de revalidación se lanza para que el formulario lo
    * muestre junto al botón.
@@ -554,7 +572,7 @@ export default function QuotationDetailPage() {
       throw new Error(
         check.state.kind === 'error'
           ? check.state.message
-          : 'La aerolínea cambió la tarifa mientras se creaba la reserva y no se reservó nada. Vuelve a pulsar «Crear reserva».',
+          : 'La aerolínea cambió la tarifa mientras se creaba la reserva y no se reservó nada. Vuelve a pulsar «Reservar».',
       );
     }
     if (!res.ok) {
@@ -581,9 +599,11 @@ export default function QuotationDetailPage() {
     }
     // El vuelo quedó y algún asiento no: se dice cuál, en vez de los códigos del proveedor.
     const seatNotices = seatOutcomeMessages(data.providerResult?.items, data.saga);
-    setBookingResult({
+    const orderId = createdOrderId(data);
+    const view: BookingOutcomeView = {
       outcome,
       pnr: data.providerResult?.pnr,
+      ...(orderId === undefined ? {} : { orderId }),
       error:
         outcome === 'CONFIRMED' || seatNotices.length > 0
           ? undefined
@@ -593,7 +613,18 @@ export default function QuotationDetailPage() {
                 ERROR_DESCONOCIDO,
             ),
       ...(seatNotices.length > 0 ? { seatNotices } : {}),
-    });
+    };
+    // El estado se fija igual: oculta el formulario mientras se abre el detalle, y si la
+    // navegación tarda, el aviso con el enlace sigue a la vista.
+    setBookingResult(view);
+    const href = reservationHref(view);
+    if (href !== null) {
+      const aviso = bookingToast(view);
+      const options = aviso.description === undefined ? {} : { description: aviso.description };
+      if (aviso.tone === 'success') toast.success(aviso.title, options);
+      else toast.warning(aviso.title, options);
+      router.push(href);
+    }
   }
 
   /** Revalida el precio. Si ya hay una revalidación en vuelo, devuelve esa misma. */
@@ -674,13 +705,29 @@ export default function QuotationDetailPage() {
     }
   }
 
+  const selectedForTimeline = quotation?.selectedOffer;
+  const legs = useMemo(
+    () => (selectedForTimeline ? buildTimeline(selectedForTimeline, formatMoney) : []),
+    [selectedForTimeline],
+  );
+
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-5 py-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 rounded bg-[var(--color-surface-muted)]" />
-          <div className="h-64 rounded-xl bg-[var(--color-surface-muted)]" />
-          <div className="h-48 rounded-xl bg-[var(--color-surface-muted)]" />
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8" aria-busy="true">
+        <span className="sr-only" role="status">
+          Cargando la reserva…
+        </span>
+        <div className="mb-6 animate-pulse space-y-2">
+          <div className="h-3 w-28 rounded bg-[var(--color-surface-muted)]" />
+          <div className="h-7 w-56 rounded bg-[var(--color-surface-muted)]" />
+          <div className="h-4 w-72 max-w-full rounded bg-[var(--color-surface-muted)]" />
+        </div>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-5">
+            <ItineraryTimelineSkeleton legs={2} />
+            <div className="h-72 animate-pulse rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]" />
+          </div>
+          <div className="hidden h-80 animate-pulse rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] lg:block" />
         </div>
       </div>
     );
@@ -688,14 +735,21 @@ export default function QuotationDetailPage() {
 
   if (error || !quotation) {
     return (
-      <div className="mx-auto max-w-6xl px-5 py-8">
-        <p className="text-sm text-[var(--color-danger)]">{error || 'Cotización no encontrada.'}</p>
-        <Link
-          href="/cotizaciones"
-          className="mt-4 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
-        >
-          <ArrowLeft className="size-4" /> Volver a búsqueda
-        </Link>
+      <div className="mx-auto max-w-xl px-4 py-16 text-center sm:px-5">
+        <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--color-danger)]/10">
+          <AlertTriangle aria-hidden="true" className="size-5 text-[var(--color-danger)]" />
+        </span>
+        <h1 className="text-lg font-semibold text-[var(--color-fg)]">
+          No pudimos abrir esta reserva
+        </h1>
+        <p role="alert" className="mt-1 text-sm text-[var(--color-fg-muted)]">
+          {error || 'Cotización no encontrada.'}
+        </p>
+        <Button asChild variant="secondary" size="md" className="mt-6">
+          <Link href="/cotizaciones">
+            <ArrowLeft aria-hidden="true" /> Volver a buscar vuelos
+          </Link>
+        </Button>
       </div>
     );
   }
@@ -707,11 +761,7 @@ export default function QuotationDetailPage() {
   // reserva revalida el precio de todas formas.
   const priceFromProvider = quotation.selectedOffer.expiresAtSource === 'provider';
   const isExpired = priceFromProvider && new Date(quotation.expiresAt) < new Date();
-  const totalPax =
-    searchCriteria.paxCount.adults +
-    searchCriteria.paxCount.children +
-    searchCriteria.paxCount.infants;
-  const fareComponents = fareComponentsForDisplay(selectedOffer);
+  const totalPax = totalPassengers(searchCriteria.paxCount);
   const fareSummary = fareFamilySummary(selectedOffer);
   const venta = saleBreakdown(selectedOffer);
   // La oferta guardada, o la revalidada por el API si ya se verificó el precio: la marca de la
@@ -724,6 +774,37 @@ export default function QuotationDetailPage() {
   // y la oferta vigente está confirmada, no mientras se revalida.
   const offerSeats =
     seatSelection && !verifying && priceStatus?.kind === 'confirmed' && seatHolders.length > 0;
+  const showForm = shouldShowBookingForm(bookingResult);
+  const totalText = formatMoney(venta.sellMinor, venta.currency);
+  const paxText = paxCountLabel(searchCriteria.paxCount);
+  const priceChangeTotal =
+    priceStatus?.kind === 'acceptance-required' ? priceStatus.newTotal : undefined;
+  const subtitle = [
+    routeTitle(legs) || `${searchCriteria.origin} → ${searchCriteria.destination}`,
+    travelDates(legs),
+    paxText,
+    cabinLabel(searchCriteria.cabin),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const createdHref = bookingResult?.orderId
+    ? `/reservas/${encodeURIComponent(bookingResult.orderId)}`
+    : null;
+
+  function sendWhatsApp() {
+    if (!contactPhone) return;
+    const phone = contactPhone.replace(/\D/g, '');
+    const text = `Hola ${contactName || ''}! Te envío cotización #${quotation!.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
+  }
+
+  function reserveFromBar() {
+    submitRef.current?.(priceChangeTotal !== undefined);
+    // Lo que falte o falle se dice junto al botón del formulario: se lleva la vista hasta ahí.
+    document
+      .getElementById('checkout-reservar')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   function renderBilling(attempted: boolean) {
     return (
@@ -743,588 +824,302 @@ export default function QuotationDetailPage() {
     );
   }
 
-  return (
-    <div className="mx-auto max-w-6xl px-5 py-8">
-      {/* Header */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/cotizaciones"
-            className="flex size-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
-          >
-            <ArrowLeft className="size-4" />
-          </Link>
-          <div>
-            <h1 className="text-lg font-semibold text-[var(--color-fg)]">
-              Cotización #{quotation.quoteNumber}
-            </h1>
-            <p className="text-xs text-[var(--color-fg-muted)]">
-              Creada {formatDate(quotation.createdAt)}
-            </p>
-          </div>
+  /** El cuerpo del resumen: la columna derecha en escritorio y el panel de la barra en el teléfono. */
+  function renderSummaryBody() {
+    return (
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-medium text-[var(--color-fg-muted)]">
+            Total · {totalPax === 1 ? '1 pasajero' : `${totalPax} pasajeros`}
+          </p>
+          <p className="mt-0.5 font-mono text-2xl font-bold tabular-nums tracking-tight text-[var(--color-fg)]">
+            {totalText}
+          </p>
+          <p className="text-[11px] text-[var(--color-fg-subtle)]">Impuestos y tasas incluidos</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusInfo.className}`}>
-            {statusInfo.label}
-          </span>
-          {isExpired && quotation.status === 'draft' && (
-            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-              Precio expirado
-            </span>
-          )}
+        <PriceBreakdown offer={selectedOffer} />
+        <div className="border-t border-[var(--color-border)] pt-4">
+          <h3 className="mb-2 text-xs font-semibold text-[var(--color-fg)]">Condiciones</h3>
+          <OfferConditions offer={selectedOffer} />
+        </div>
+        <div className="space-y-1.5 border-t border-[var(--color-border)] pt-4 text-[11px]">
+          <TicketingDeadlineBadge raw={quotation!.selectedOffer.provider.raw} />
+          <p className="text-[var(--color-fg-subtle)]">
+            {priceFromProvider
+              ? `${isExpired ? 'Precio vencido el' : 'Precio garantizado hasta el'} ${new Date(
+                  quotation!.expiresAt,
+                ).toLocaleString('es-CO', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}`
+              : 'Precio sujeto a revalidación al reservar'}
+          </p>
+          <PriceStatus line={priceLine} onRetry={() => void revalidatePrice()} />
         </div>
       </div>
+    );
+  }
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-        {/* Main column */}
-        <div className="space-y-5">
-          {/* Flight details */}
-          <Card>
-            <CardContent className="p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Plane className="size-4 text-[var(--color-primary)]" />
-                <h2 className="text-sm font-semibold text-[var(--color-fg)]">Vuelo</h2>
-                {fareComponents.length === 0 && selectedOffer.fareFamily && (
-                  <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]">
-                    {selectedOffer.fareFamily.name}
-                  </span>
+  const shareMenu = (
+    <ShareQuoteMenu
+      quoteNumber={quotation.quoteNumber}
+      emailDisabledReason={
+        isValidEmail(contactEmail) ? undefined : 'Escribe el email en «Facturación»'
+      }
+      emailSending={emailSending}
+      onEmail={() => void handleSendEmail()}
+      whatsappDisabledReason={contactPhone ? undefined : 'Escribe el teléfono en «Facturación»'}
+      onWhatsApp={sendWhatsApp}
+      copied={copied}
+      onCopyLink={handleCopyLink}
+      pdfHref={`/api/quotations/${quotation.id}/pdf`}
+    />
+  );
+
+  return (
+    <div
+      className={`mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8 ${showForm ? 'pb-32 lg:pb-8' : ''}`}
+    >
+      {/* Encabezado: qué se está reservando, en una línea. La cotización queda como dato chico. */}
+      <header className="mb-6">
+        <Link
+          href="/cotizaciones"
+          className="mb-3 inline-flex min-h-8 items-center gap-1.5 rounded-md text-xs font-medium text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+        >
+          <ArrowLeft aria-hidden="true" className="size-3.5" /> Volver a la búsqueda
+        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+              <span>
+                Cotización #{quotation.quoteNumber} · {formatDate(quotation.createdAt)}
+              </span>
+              <span className={`rounded-full px-2 py-0.5 font-medium ${statusInfo.className}`}>
+                {statusInfo.label}
+              </span>
+              {isExpired && quotation.status === 'draft' ? (
+                <span className="rounded-full bg-[var(--color-warning)]/15 px-2 py-0.5 font-medium text-[var(--color-fg)]">
+                  Precio expirado
+                </span>
+              ) : null}
+              {testFare ? <TestContentBadge /> : null}
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)] sm:text-2xl">
+              Reservar vuelo
+            </h1>
+            <p className="mt-1 text-sm text-[var(--color-fg-muted)]">{subtitle}</p>
+          </div>
+          <div className="shrink-0">{shareMenu}</div>
+        </div>
+        {emailResult ? (
+          <p
+            role={emailResult.ok ? 'status' : 'alert'}
+            className={`mt-3 rounded-lg border px-3 py-2 text-xs text-[var(--color-fg)] ${
+              emailResult.ok
+                ? 'border-[var(--color-success)]/40 bg-[var(--color-success)]/10'
+                : 'border-[var(--color-danger)]/40 bg-[var(--color-danger)]/8'
+            }`}
+          >
+            {emailResult.text}
+          </p>
+        ) : null}
+      </header>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        {/* Columna principal: el vuelo, y debajo todo lo que pide reservarlo. */}
+        <div className="min-w-0 space-y-5">
+          <section aria-labelledby="checkout-itinerario">
+            <div className="mb-2.5 flex items-center gap-2">
+              <Plane aria-hidden="true" className="size-4 text-[var(--color-primary)]" />
+              <h2 id="checkout-itinerario" className="text-sm font-semibold text-[var(--color-fg)]">
+                Itinerario
+              </h2>
+            </div>
+            <ItineraryTimeline legs={legs} />
+          </section>
+
+          {bookingResult ? (
+            <div
+              role={bookingResult.outcome === 'FAILED' ? 'alert' : 'status'}
+              className={`rounded-xl border p-4 ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].box}`}
+            >
+              <div className="space-y-1">
+                <p
+                  className={`text-sm font-semibold ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+                >
+                  {BOOKING_OUTCOME_STYLE[bookingResult.outcome].title}
+                </p>
+                {bookingResult.pnr && (
+                  <p className="font-mono text-lg font-bold text-[var(--color-fg)]">
+                    PNR: {bookingResult.pnr}
+                  </p>
                 )}
-                {testFare ? <TestContentBadge /> : null}
+                {bookingResult.orderId && !createdHref ? (
+                  <p className="font-mono text-xs text-[var(--color-fg-muted)]">
+                    Reserva local: {bookingResult.orderId}
+                  </p>
+                ) : null}
+                {bookingResult.error && (
+                  <p className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}>
+                    {bookingResult.error}
+                  </p>
+                )}
+                {bookingResult.seatNotices?.map((notice) => (
+                  <p
+                    key={notice}
+                    className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+                  >
+                    {notice}
+                  </p>
+                ))}
+                {bookingResult.funding && (
+                  <div
+                    role="alert"
+                    className={`space-y-1 text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
+                  >
+                    <p className="font-medium">{bookingResult.funding.title}</p>
+                    <p>{bookingResult.funding.detail}</p>
+                    <p>No se hizo ninguna reserva con la aerolínea ni se retuvo saldo.</p>
+                    {bookingResult.funding.action === 'portfolios' && (
+                      <Link
+                        href={PORTFOLIOS_HREF}
+                        className="inline-flex font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                      >
+                        {PORTFOLIOS_LINK_LABEL}
+                      </Link>
+                    )}
+                  </div>
+                )}
+                {createdHref ? (
+                  <Link
+                    href={createdHref}
+                    className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+                  >
+                    {reservationHref(bookingResult) ? 'Abriendo la reserva…' : 'Ver la reserva'}
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Link>
+                ) : null}
               </div>
+            </div>
+          ) : null}
 
-              <div className="space-y-4">
-                {selectedOffer.itineraries?.map((it, idx) => {
-                  const first = it.segments[0]!;
-                  const last = it.segments[it.segments.length - 1]!;
-                  const stopAirports = it.segments.slice(0, -1).map((s) => s.destination);
-                  const faresForLeg = fareComponents.filter((component) =>
-                    component.itineraryIndexes.includes(idx),
-                  );
-                  return (
-                    <div key={idx} className="rounded-lg border border-[var(--color-border)] p-4">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                            {selectedOffer.itineraries!.length > 1
-                              ? idx === 0
-                                ? 'Ida'
-                                : 'Vuelta'
-                              : 'Vuelo'}
-                          </span>
-                          <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {first.carrier} {first.flightNumber}
-                          </span>
-                        </div>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            it.stops === 0
-                              ? 'bg-green-50 text-green-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}
-                        >
-                          {it.stops === 0
-                            ? 'Directo'
-                            : `${it.stops} escala${it.stops > 1 ? 's' : ''}${
-                                stopAirports.length ? ` · ${stopAirports.join(', ')}` : ''
-                              }`}
-                        </span>
+          {crmNote && (
+            <p
+              role="status"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]"
+            >
+              {crmNote}
+            </p>
+          )}
+
+          {/*
+            El formulario vuelve SÓLO si no quedó nada reservado. Con `PARTIAL` o `PENDING` hay PNR
+            en el proveedor: reofrecer "reservar" ahí es invitar a crear una segunda reserva encima
+            de una que ya existe.
+          */}
+          {showForm ? (
+            <div className="space-y-3">
+              {/* Se puede reservar igual —sirve para probar el flujo—, pero quien lo hace lo sabe
+                  antes de cargar a un pasajero real. */}
+              {testFare ? <TestContentNotice>{TEST_BOOKING_NOTICE}</TestContentNotice> : null}
+              {offerSeats ? (
+                <Card>
+                  <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <Armchair
+                        aria-hidden="true"
+                        className="mt-0.5 size-4 shrink-0 text-[var(--color-primary)]"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--color-fg)]">
+                          {seatLine ?? 'Sin asientos elegidos'}
+                        </p>
+                        <p className="text-xs text-[var(--color-fg-muted)]">
+                          Opcional. Sólo asientos sin cargo; se confirman al reservar.
+                        </p>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <p className="font-mono text-base font-semibold tabular-nums text-[var(--color-fg)]">
-                            {flightTime(first.departureAt)}
-                          </p>
-                          <p className="text-xs text-[var(--color-fg-muted)]">{first.origin}</p>
-                          <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {flightDate(first.departureAt)}
-                          </p>
-                        </div>
-                        <div className="flex flex-1 flex-col items-center gap-0.5">
-                          <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {formatDuration(it.totalDurationMinutes)}
-                          </p>
-                          <div className="flex w-full items-center">
-                            <span className="h-px flex-1 bg-[var(--color-border-strong)]" />
-                            <ArrowRight className="mx-1 size-3 text-[var(--color-fg-subtle)]" />
-                            <span className="h-px flex-1 bg-[var(--color-border-strong)]" />
-                          </div>
-                          <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {it.stops === 0
-                              ? 'Directo'
-                              : `${it.stops} escala${it.stops > 1 ? 's' : ''}`}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-mono text-base font-semibold tabular-nums text-[var(--color-fg)]">
-                            {flightTime(last.arrivalAt)}
-                          </p>
-                          <p className="text-xs text-[var(--color-fg-muted)]">{last.destination}</p>
-                          <p className="text-[10px] text-[var(--color-fg-subtle)]">
-                            {flightDate(last.arrivalAt)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {faresForLeg.length > 0 && (
-                        <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
-                          {faresForLeg.map((fare) => (
-                            <div
-                              key={fare.key}
-                              className="rounded-md bg-[var(--color-surface-muted)] px-2.5 py-2 text-xs"
-                            >
-                              <p className="font-semibold text-[var(--color-fg)]">
-                                {fare.name}{' '}
-                                <span className="font-normal text-[var(--color-fg-muted)]">
-                                  · {fare.route}
-                                </span>
-                              </p>
-                              {fare.details.length > 0 && (
-                                <p className="mt-0.5 text-[10px] text-[var(--color-fg-subtle)]">
-                                  {fare.details.join(' · ')}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Detalle de tramos y escalas */}
-                      {it.stops > 0 && (
-                        <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
-                          {it.segments.map((seg, sIdx) => {
-                            const next = it.segments[sIdx + 1];
-                            const layoverMin = next
-                              ? Math.max(
-                                  0,
-                                  Math.round(
-                                    (new Date(next.departureAt).getTime() -
-                                      new Date(seg.arrivalAt).getTime()) /
-                                      60000,
-                                  ),
-                                )
-                              : null;
-                            return (
-                              <div key={sIdx}>
-                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono font-medium text-[var(--color-fg)]">
-                                      {seg.origin}
-                                    </span>
-                                    <span className="text-[var(--color-fg-subtle)]">
-                                      {flightTime(seg.departureAt)}
-                                    </span>
-                                    <ArrowRight className="size-3 text-[var(--color-fg-subtle)]" />
-                                    <span className="font-mono font-medium text-[var(--color-fg)]">
-                                      {seg.destination}
-                                    </span>
-                                    <span className="text-[var(--color-fg-subtle)]">
-                                      {flightTime(seg.arrivalAt)}
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] text-[var(--color-fg-subtle)]">
-                                    {seg.carrier} {seg.flightNumber} ·{' '}
-                                    {formatDuration(seg.durationMinutes)}
-                                  </span>
-                                </div>
-                                {layoverMin != null && (
-                                  <div className="my-1 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800">
-                                    <Clock className="size-3" />
-                                    Escala en {seg.destination} · {formatDuration(layoverMin)}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Baggage & policies */}
-              {(hasAnyBaggageInfo(selectedOffer.baggage) || selectedOffer.policies) && (
-                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
-                  {hasAnyBaggageInfo(selectedOffer.baggage) && (
-                    <>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-[var(--color-fg-subtle)]">
-                          Carry-on
-                        </p>
-                        {/* Un `—` se lee como «nada»: el vendedor tiene que poder distinguir que
-                            el proveedor no informó de que la tarifa no lo incluye. */}
-                        <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {describeBaggage(selectedOffer.baggage?.carryOn)}
-                        </p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-[var(--color-fg-subtle)]">
-                          Maleta
-                        </p>
-                        <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {describeBaggage(selectedOffer.baggage?.checked)}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                  {selectedOffer.policies && (
-                    <>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-[var(--color-fg-subtle)]">
-                          Cambios
-                        </p>
-                        <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {describePolicy(
-                            policyState(selectedOffer.policies, 'change'),
-                            'change',
-                            formatMoney,
-                          )}
-                        </p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-[var(--color-fg-subtle)]">
-                          Reembolso
-                        </p>
-                        <p className="text-sm font-medium text-[var(--color-fg)]">
-                          {describePolicy(
-                            policyState(selectedOffer.policies, 'refund'),
-                            'refund',
-                            formatMoney,
-                          )}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Con la reserva ya creada, «Facturación» queda aquí para enviar la cotización. */}
-          {!shouldShowBookingForm(bookingResult) && (
+                    <div className="flex gap-2">
+                      {seatChoices.length > 0 ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-10 flex-1 sm:h-9 sm:flex-none"
+                          onClick={() => setSeatChoices([])}
+                        >
+                          Quitar asientos
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-10 flex-1 gap-2 sm:h-9 sm:flex-none"
+                        onClick={() => setSeatSheetOpen(true)}
+                      >
+                        <Armchair aria-hidden="true" className="size-4" />
+                        {seatChoices.length > 0 ? 'Cambiar asientos' : 'Elegir asientos (opcional)'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              <PassengerForm
+                paxCount={searchCriteria.paxCount}
+                contactEmail={contactEmail || undefined}
+                contactPhone={contactPhone || undefined}
+                billingSection={({ attempted }) => renderBilling(attempted)}
+                billingProblems={billingProblems(billingDraft.mode, resolvedBilling.missing)}
+                saveToCrm={saveToCrm}
+                onSaveToCrmChange={setSaveToCrm}
+                onPassengersChange={handlePassengersChange}
+                priceChangeTotal={priceChangeTotal}
+                onSubmit={handleCreateOrder}
+                onGivenNamesChange={setPassengerNames}
+                submitRef={submitRef}
+                onSubmittingChange={setSubmitting}
+              />
+            </div>
+          ) : (
+            // Con la reserva ya creada, «Facturación» queda aquí para enviar la cotización.
             <Card>
               <CardContent className="p-5">{renderBilling(false)}</CardContent>
             </Card>
           )}
         </div>
 
-        {/* Right sidebar */}
-        <div className="space-y-5">
-          {/* Price summary */}
+        {/* Resumen: fijo a la vista en escritorio. En el teléfono baja a la barra inferior. */}
+        <aside aria-labelledby="checkout-resumen" className="hidden lg:sticky lg:top-6 lg:block">
           <Card>
             <CardContent className="p-5">
-              <h3 className="mb-3 text-sm font-semibold text-[var(--color-fg)]">Resumen</h3>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                  <span>Ruta</span>
-                  <span className="font-medium text-[var(--color-fg)]">
-                    {searchCriteria.origin} → {searchCriteria.destination}
-                    {searchCriteria.tripType === 'roundtrip' ? ' (ida y vuelta)' : ''}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                  <span>Pasajeros</span>
-                  <span className="font-medium text-[var(--color-fg)]">{totalPax}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                  <span>Cabina</span>
-                  <span className="font-medium capitalize text-[var(--color-fg)]">
-                    {searchCriteria.cabin.replace('_', ' ')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="my-3 border-t border-[var(--color-border)]" />
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                  <span>Base</span>
-                  <span>{formatMoney(venta.baseMinor, venta.currency)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-[var(--color-fg-muted)]">
-                  <span>Impuestos</span>
-                  <span>{formatMoney(venta.taxesMinor, venta.currency)}</span>
-                </div>
-                <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-2 text-sm font-semibold text-[var(--color-fg)]">
-                  <span>Total</span>
-                  <span className="font-mono tabular-nums">
-                    {formatMoney(venta.sellMinor, venta.currency)}
-                  </span>
-                </div>
-                {/* Sólo para el vendedor: lo que paga su agencia y lo que gana. El neto del
-                    proveedor no se enseña (ver lib/sale-breakdown.ts). */}
-                {venta.ownMarginMinor !== undefined && venta.costMinor !== undefined && (
-                  <div className="flex items-center justify-between pt-1 text-[11px] text-[var(--color-fg-subtle)]">
-                    <span>Tu costo {formatMoney(venta.costMinor, venta.currency)}</span>
-                    <span>Margen {formatMoney(venta.ownMarginMinor, venta.currency)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 space-y-1.5 text-[11px]">
-                <TicketingDeadlineBadge raw={quotation.selectedOffer.provider.raw} />
-                <p className="flex items-center gap-1.5 text-[var(--color-fg-subtle)]">
-                  {priceFromProvider
-                    ? `${isExpired ? 'Precio vencido el' : 'Precio garantizado hasta el'} ${new Date(
-                        quotation.expiresAt,
-                      ).toLocaleString('es-CO', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}`
-                    : 'Precio sujeto a revalidación al reservar'}
-                </p>
-                {/* Región viva siempre presente: el lector de pantalla anuncia el cambio de estado
-                    aunque la revalidación termine mientras se mira otra parte de la página. */}
-                <div role="status" aria-live="polite" className="min-h-4">
-                  {priceLine && (
-                    <p
-                      className={`flex items-start gap-1.5 ${
-                        priceLine.tone === 'error'
-                          ? 'text-red-700'
-                          : priceLine.tone === 'warning'
-                            ? 'text-amber-700'
-                            : priceLine.tone === 'ok'
-                              ? 'text-emerald-700'
-                              : 'text-[var(--color-fg-muted)]'
-                      }`}
-                    >
-                      {priceLine.tone === 'pending' ? (
-                        <RefreshCw
-                          aria-hidden="true"
-                          className="mt-px size-3 shrink-0 animate-spin"
-                        />
-                      ) : priceLine.tone === 'ok' ? (
-                        <CheckCircle2 aria-hidden="true" className="mt-px size-3 shrink-0" />
-                      ) : null}
-                      <span>
-                        {priceLine.text}
-                        {priceLine.retry && (
-                          <>
-                            {' '}
-                            <button
-                              type="button"
-                              onClick={() => void revalidatePrice()}
-                              className="font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
-                            >
-                              Reintentar
-                            </button>
-                          </>
-                        )}
-                      </span>
-                    </p>
-                  )}
-                </div>
-              </div>
+              <h2
+                id="checkout-resumen"
+                className="mb-4 text-sm font-semibold text-[var(--color-fg)]"
+              >
+                Resumen del precio
+              </h2>
+              {renderSummaryBody()}
             </CardContent>
           </Card>
-
-          {/* Actions */}
-          <Card>
-            <CardContent className="space-y-2 p-5">
-              <h3 className="mb-3 text-sm font-semibold text-[var(--color-fg)]">Acciones</h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full gap-2"
-                disabled={!isValidEmail(contactEmail) || emailSending}
-                onClick={() => void handleSendEmail()}
-              >
-                <Mail className="size-4" /> {emailSending ? 'Enviando…' : 'Enviar por email'}
-              </Button>
-              {emailResult && (
-                <div
-                  className={`rounded-lg border px-3 py-2 text-xs ${
-                    emailResult.ok
-                      ? 'border-green-200 bg-green-50 text-green-800'
-                      : 'border-red-200 bg-red-50 text-red-800'
-                  }`}
-                >
-                  {emailResult.text}
-                </div>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full gap-2"
-                disabled={!contactPhone}
-                onClick={() => {
-                  if (contactPhone) {
-                    const phone = contactPhone.replace(/\D/g, '');
-                    const text = `Hola ${contactName || ''}! Te envío cotización #${quotation.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
-                    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
-                  }
-                }}
-              >
-                <Send className="size-4" /> Enviar por WhatsApp
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full gap-2"
-                onClick={handleCopyLink}
-              >
-                {copied ? (
-                  <>
-                    <CheckCircle2 className="size-4" /> Copiado
-                  </>
-                ) : (
-                  <>
-                    <Copy className="size-4" /> Copiar enlace
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full gap-2"
-                onClick={() => window.open(`/api/quotations/${quotation.id}/pdf`, '_blank')}
-              >
-                <Download className="size-4" /> Descargar PDF
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        </aside>
       </div>
 
-      {/* Reserva — ancho completo para dar más espacio a los datos de pasajeros */}
-      {bookingResult && (
-        <div
-          className={`mt-5 rounded-xl border p-4 ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].box}`}
+      {showForm ? (
+        <MobileCheckoutBar
+          total={totalText}
+          caption={priceLine?.tone === 'pending' ? 'Verificando precio…' : `Total · ${paxText}`}
+          reserveLabel={priceChangeTotal ? 'Aceptar y reservar' : 'Reservar'}
+          reserving={submitting}
+          onReserve={reserveFromBar}
         >
-          <div className="space-y-1">
-            <p
-              className={`text-sm font-semibold ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
-            >
-              {BOOKING_OUTCOME_STYLE[bookingResult.outcome].title}
-            </p>
-            {bookingResult.pnr && (
-              <p className="font-mono text-lg font-bold text-[var(--color-fg)]">
-                PNR: {bookingResult.pnr}
-              </p>
-            )}
-            {bookingResult.orderId && (
-              <p className="font-mono text-xs text-[var(--color-fg-muted)]">
-                Reserva local: {bookingResult.orderId}
-              </p>
-            )}
-            {bookingResult.error && (
-              <p className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}>
-                {bookingResult.error}
-              </p>
-            )}
-            {bookingResult.seatNotices?.map((notice) => (
-              <p
-                key={notice}
-                className={`text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
-              >
-                {notice}
-              </p>
-            ))}
-            {bookingResult.funding && (
-              <div
-                role="alert"
-                className={`space-y-1 text-sm ${BOOKING_OUTCOME_STYLE[bookingResult.outcome].text}`}
-              >
-                <p className="font-medium">{bookingResult.funding.title}</p>
-                <p>{bookingResult.funding.detail}</p>
-                <p>No se hizo ninguna reserva con la aerolínea ni se retuvo saldo.</p>
-                {bookingResult.funding.action === 'portfolios' && (
-                  <Link
-                    href={PORTFOLIOS_HREF}
-                    className="inline-flex font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
-                  >
-                    {PORTFOLIOS_LINK_LABEL}
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+          <h2 className="mb-3 text-sm font-semibold text-[var(--color-fg)]">Resumen del precio</h2>
+          {renderSummaryBody()}
+        </MobileCheckoutBar>
+      ) : null}
 
-      {crmNote && (
-        <p
-          role="status"
-          className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-xs text-[var(--color-fg-muted)]"
-        >
-          {crmNote}
-        </p>
-      )}
-
-      {/*
-        El formulario vuelve SÓLO si no quedó nada reservado. Con `PARTIAL` o `PENDING` hay PNR
-        en el proveedor: reofrecer "reservar" ahí es invitar a crear una segunda reserva encima
-        de una que ya existe.
-      */}
-      {shouldShowBookingForm(bookingResult) && (
-        <div className="mt-5">
-          {/* Se puede reservar igual —sirve para probar el flujo—, pero quien lo hace lo sabe
-              antes de cargar a un pasajero real. */}
-          {testFare ? (
-            <TestContentNotice className="mb-3">{TEST_BOOKING_NOTICE}</TestContentNotice>
-          ) : null}
-          {offerSeats ? (
-            <Card className="mb-3">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-start gap-2.5">
-                  <Armchair
-                    aria-hidden="true"
-                    className="mt-0.5 size-4 shrink-0 text-[var(--color-primary)]"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-[var(--color-fg)]">
-                      {seatLine ?? 'Sin asientos elegidos'}
-                    </p>
-                    <p className="text-xs text-[var(--color-fg-muted)]">
-                      Opcional. Sólo asientos sin cargo; se confirman al reservar.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {seatChoices.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-10 flex-1 sm:h-9 sm:flex-none"
-                      onClick={() => setSeatChoices([])}
-                    >
-                      Quitar asientos
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="h-10 flex-1 gap-2 sm:h-9 sm:flex-none"
-                    onClick={() => setSeatSheetOpen(true)}
-                  >
-                    <Armchair aria-hidden="true" className="size-4" />
-                    {seatChoices.length > 0 ? 'Cambiar asientos' : 'Elegir asientos (opcional)'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-          <PassengerForm
-            paxCount={searchCriteria.paxCount}
-            contactEmail={contactEmail || undefined}
-            contactPhone={contactPhone || undefined}
-            billingSection={({ attempted }) => renderBilling(attempted)}
-            billingProblems={billingProblems(billingDraft.mode, resolvedBilling.missing)}
-            saveToCrm={saveToCrm}
-            onSaveToCrmChange={setSaveToCrm}
-            onPassengersChange={handlePassengersChange}
-            priceChangeTotal={
-              priceStatus?.kind === 'acceptance-required' ? priceStatus.newTotal : undefined
-            }
-            onSubmit={handleCreateOrder}
-            onGivenNamesChange={setPassengerNames}
-          />
-        </div>
-      )}
       {seatSheetOpen ? (
         <SeatMapSheet
           offer={quotation.selectedOffer}

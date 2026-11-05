@@ -136,7 +136,7 @@ function fareSelectionIdentity(offer: Offer): string {
 
 /**
  * Cuánto vale una confirmación de precio para reservar sin volver a preguntar. Pasado esto, el
- * clic en «Crear reserva» revalida primero: el servidor lo haría igual, pero un 409 a mitad de la
+ * clic en «Reservar» revalida primero: el servidor lo haría igual, pero un 409 a mitad de la
  * reserva es peor experiencia que un segundo más de espera antes de enviarla.
  */
 export const PRICE_CHECK_FRESH_MS = 5 * 60_000;
@@ -151,7 +151,7 @@ export function shouldAutoVerifyPrice(status: string): boolean {
 }
 
 /**
- * Qué hace el clic en «Crear reserva» según el último estado del precio:
+ * Qué hace el clic en «Reservar» según el último estado del precio:
  *
  * - `go`: confirmación fresca, se crea la reserva en el mismo clic.
  * - `revalidate`: sin confirmación, con error o vieja; se revalida primero y se espera.

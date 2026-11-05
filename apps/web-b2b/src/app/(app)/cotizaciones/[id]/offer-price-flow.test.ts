@@ -221,7 +221,7 @@ describe('revalidación automática al abrir la cotización', () => {
   });
 });
 
-describe('reserveDecision — qué hace el clic en «Crear reserva»', () => {
+describe('reserveDecision — qué hace el clic en «Reservar»', () => {
   const now = 1_000_000_000;
 
   it('sin revalidación, con error o con una vieja: revalida primero', () => {

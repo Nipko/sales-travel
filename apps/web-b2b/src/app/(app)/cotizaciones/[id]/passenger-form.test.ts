@@ -81,12 +81,12 @@ describe('PassengerForm — el checkout de vuelos no pide tarjeta (D1)', () => {
     );
   });
 
-  it('dice que la reserva sale sin cobro y que el pago y la emisión se hacen en Reservas', () => {
+  it('dice que la reserva sale sin cobro y que el pago y la emisión se hacen en el detalle de la reserva', () => {
     const html = renderCheckout({ adults: 1, children: 0, infants: 0 });
     expect(html).toContain('Pago y emisión');
     expect(html).toContain('Reserva sin cobro');
     expect(html).toContain('El pago y la emisión se hacen después desde');
-    expect(html).toMatch(/<button[^>]*>.*Crear reserva<\/button>/);
+    expect(html).toMatch(/<button[^>]*>.*Reservar<\/button>/);
     expect(html).not.toContain('BNPL');
   });
 
@@ -251,11 +251,11 @@ describe('PassengerForm — sólo lo necesario', () => {
     expect(html).toMatch(/<input[^>]*id="pax-ADT_1-doc-number"/);
   });
 
-  it('con un precio nuevo pregunta junto al botón en vez de ofrecer «Crear reserva»', () => {
+  it('con un precio nuevo pregunta junto al botón en vez de ofrecer «Reservar»', () => {
     const html = render({ priceChangeTotal: 'USD 1.250,00' });
     expect(html).toContain('El precio cambió a USD 1.250,00. ¿Reservar con el nuevo precio?');
     expect(html).toMatch(/<button[^>]*>.*Reservar con el nuevo precio<\/button>/);
-    expect(html).not.toMatch(/Crear reserva<\/button>/);
+    expect(html).not.toMatch(/>Reservar<\/button>/);
   });
 
   it('sin cambio de precio el formulario no está deshabilitado esperando una verificación', () => {

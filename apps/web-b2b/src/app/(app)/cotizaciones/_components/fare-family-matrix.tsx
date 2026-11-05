@@ -26,9 +26,9 @@ import { legFare, type Leg } from './leg-selection';
 import { TicketingDeadlineBadge } from './ticketing-deadline-badge';
 
 /**
- * Cómo se usa la matriz. Por defecto, cada tarjeta es una combinación completa y su botón guarda
- * la cotización. Con `leg`, cada tarjeta es la tarifa de UN trayecto (ida o vuelta) y el botón lo
- * elige — es el flujo de ida y vuelta por trayecto (docs/sabre/15 §5).
+ * Cómo se usa la matriz. Por defecto, cada tarjeta es una combinación completa y su botón la elige
+ * y lleva a reservarla. Con `leg`, cada tarjeta es la tarifa de UN trayecto (ida o vuelta) y el
+ * botón lo elige — es el flujo de ida y vuelta por trayecto (docs/sabre/15 §5).
  */
 export interface FareChoiceMode {
   /** Trayecto cuya tarifa se compara: el nombre y los componentes de la tarjeta son los suyos. */
@@ -37,7 +37,10 @@ export interface FareChoiceMode {
   actionLabel: string;
   /** Rótulo del precio: «Ida y vuelta desde», «Total ida y vuelta». */
   priceLabel: string;
-  /** `false` cuando el botón sólo elige y no guarda nada: no hay «Cotización Guardada» que mostrar. */
+  /**
+   * `true` cuando el botón lleva a reservar (la página navega): queda en «Abriendo reserva…» hasta
+   * que se vaya. `false` cuando sólo elige un trayecto y la pantalla sigue.
+   */
   confirmsSave: boolean;
 }
 
@@ -152,8 +155,12 @@ function QuoteButton({
   function handleClick() {
     if (!onQuote || loading || done) return;
     setLoading(true);
+    // Si no se pudo elegir, la pantalla ya dice por qué: el botón vuelve a quedar disponible.
     void onQuote(fare)
-      .then(() => setDone(mode?.confirmsSave ?? true))
+      .then(
+        () => setDone(mode?.confirmsSave ?? true),
+        () => undefined,
+      )
       .finally(() => setLoading(false));
   }
 
@@ -162,10 +169,10 @@ function QuoteButton({
       <Button
         variant="primary"
         size="sm"
-        className="mt-5 w-full bg-[var(--color-success)] text-white hover:bg-[var(--color-success)] border border-[var(--color-success)]/10 font-bold text-xs gap-1.5 shadow-[var(--shadow-sm)] animate-fade-in-up"
+        className="mt-5 w-full gap-1.5 text-xs font-bold shadow-[var(--shadow-sm)]"
         disabled
       >
-        <Check className="size-3.5" strokeWidth={2.5} /> Cotización Guardada
+        <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> Abriendo reserva…
       </Button>
     );
   }
@@ -180,11 +187,11 @@ function QuoteButton({
     >
       {loading ? (
         <>
-          <Loader2 className="size-3.5 animate-spin" />
-          Procesando...
+          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+          Procesando…
         </>
       ) : (
-        (mode?.actionLabel ?? 'Guardar Cotización')
+        (mode?.actionLabel ?? 'Elegir')
       )}
     </Button>
   );

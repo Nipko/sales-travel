@@ -17,10 +17,10 @@ import {
   RefreshCw,
   Search,
   Ticket,
-  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
@@ -55,7 +55,7 @@ import {
 import { operationStatusView, operationTypeLabel } from './order-operations-view';
 import { pendingOrderReconciliationMessage } from './pending-order-reconciliation';
 import { FlightDeadlineBadge, FlightOrderTracking } from './_components/flight-order-tracking';
-import { isDueSoonOrder, parseFlightTracking, retrieveNotice } from './flight-order-view';
+import { isDueSoonOrder } from './flight-order-view';
 import { HotelCancelDialog } from './_components/hotel-cancel-dialog';
 import { walletReleaseNote } from './wallet-hold-view';
 import { IssueTicketDialog } from './_components/issue-ticket-dialog';
@@ -70,129 +70,23 @@ import { HotelOrderDetail } from './_components/hotel-order-detail';
 import { HotelOrderStatusChip } from './_components/hotel-order-status';
 import { TestOrderTag } from './_components/test-order-tag';
 import { TicketConditions } from './_components/ticket-conditions';
+import { ConfirmDialog } from './_components/confirm-dialog';
 import { isTestOrder, TEST_ORDER_EMAIL_NOTICE } from '../../../lib/test-content';
-
-interface Segment {
-  carrier: string;
-  flightNumber: string;
-  origin: string;
-  destination: string;
-  departureAt: string;
-  arrivalAt: string;
-  durationMinutes: number;
-}
-
-interface Passenger {
-  givenName: string;
-  surname: string;
-  paxType: string;
-  birthdate?: string;
-  /**
-   * El API nunca manda el número entero del documento: sólo sus últimos caracteres (`numberLast4`),
-   * nunca más de la mitad. La pantalla lo muestra para reconocerlo, no para copiarlo.
-   */
-  identityDoc?: { type?: string; numberLast4?: string };
-}
-
-interface Order {
-  id: string;
-  pnr: string | null;
-  status: string;
-  orderNumber: number;
-  provider?: string;
-  capabilities?: Partial<OrderCapabilities>;
-  // searchCriteria es polimórfico por vertical: vuelos traen origin/destination/departureDate,
-  // autos traen vertical:'cars' + campos de pickup/dropoff, hoteles vertical:'hotels' + la estadía.
-  // Todo opcional para no romper render.
-  searchCriteria: {
-    // vuelos
-    origin?: string;
-    destination?: string;
-    departureDate?: string;
-    returnDate?: string;
-    tripType?: string;
-    // autos
-    vertical?: string;
-    pickUpLocation?: string;
-    dropOffLocation?: string;
-    pickUpDate?: string;
-    dropOffDate?: string;
-    pickUpHour?: string;
-    dropOffHour?: string;
-  };
-  selectedOffer?: {
-    // vuelos
-    itineraries?: { segments: Segment[]; totalDurationMinutes: number; stops: number }[];
-    provider?: { raw?: Record<string, unknown> };
-    fareFamily?: { name: string };
-    // autos
-    category?: string;
-    carModel?: string;
-    companyName?: string;
-    sippCode?: string;
-  };
-  passengers: Passenger[];
-  contactInfo?: { email?: string; phone?: string };
-  totalAmount: number;
-  currency: string;
-  errorMessage?: string | null;
-  /** `true` = se reservó con la cuenta de pruebas del proveedor: no es un tiquete válido. */
-  testContent?: boolean;
-  /** Sólo en hoteles: subestado, estado del proveedor y HCN, sin PII (RF-26). */
-  providerTracking?: unknown;
-  /** Sólo en vuelos: localizadores de la aerolínea, tiquetes y plazo guardados (0082). */
-  flightTracking?: unknown;
-  /** Saldo retenido en la cartera que cancelar libera (SAB-10); `null` si no hay nada que liberar. */
-  walletHold?: 'held' | 'captured' | null;
-  createdAt: string;
-}
-
-interface ServiceItem {
-  offerItemId: string;
-  serviceId: string;
-  description: string;
-  journeyRefId?: string;
-  paxRefIds: string[];
-  price: { amount: number; currency: string };
-  cancellable: boolean;
-}
-
-function formatMoney(amountMinor: number, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100);
-}
-
-function formatRelativeDate(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Hace un momento';
-  if (minutes < 60) return `Hace ${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Hace ${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Ayer';
-  if (days < 7) return `Hace ${days} días`;
-  return new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
-}
-
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: 'Pendiente', className: 'bg-amber-50 text-amber-700' },
-  confirmed: { label: 'Confirmada', className: 'bg-blue-50 text-blue-700' },
-  ticketed: { label: 'Emitida', className: 'bg-green-50 text-green-700' },
-  cancelled: { label: 'Cancelada', className: 'bg-red-50 text-red-700' },
-  failed: { label: 'Fallida', className: 'bg-red-50 text-red-700' },
-};
-
-const PAX_LABEL: Record<string, string> = {
-  ADT: 'Adulto',
-  CHD: 'Niño',
-  INF: 'Infante',
-  DRIVER: 'Conductor',
-};
+import {
+  ORDER_STATUS_CONFIG as STATUS_CONFIG,
+  PAX_TYPE_LABEL as PAX_LABEL,
+  formatOrderMoney as formatMoney,
+  formatRelativeDate,
+  type Order,
+  type ServiceItem,
+} from './order-model';
+import {
+  cancelOrder,
+  checkCancellation,
+  retrieveOrder,
+  retryCancelOperation,
+  sendOrderConfirmation,
+} from './order-actions';
 
 function fmtDuration(min: number): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
@@ -375,44 +269,20 @@ export default function ReservasPage() {
     setActionLoading(order.id);
     setActionResult(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/retrieve`, { method: 'POST' });
-      const data = (await res.json()) as {
-        found?: boolean;
-        status?: unknown;
-        flightTracking?: unknown;
-        error?: string;
-      };
-      if (data.found) {
+      const result = await retrieveOrder(order);
+      if (result.found) {
         // Lo que la consulta trajo queda en la fila (localizadores, tiquetes y plazo), no en un
         // aviso que se pierde al cerrarlo. `null` es "no se pudo leer lo guardado": la fila se
         // queda con lo que ya mostraba en vez de vaciarse.
-        if (data.flightTracking === undefined) void loadOrders(false);
-        else if (data.flightTracking !== null) applyFlightTracking(order.id, data.flightTracking);
-        const notice = retrieveNotice(
-          parseFlightTracking(data.flightTracking),
-          data.status,
-          order.status,
-        );
-        setActionResult({
-          orderId: order.id,
-          type: 'retrieve',
-          success: !notice.alert,
-          message: notice.message,
-        });
-      } else {
-        setActionResult({
-          orderId: order.id,
-          type: 'retrieve',
-          success: false,
-          message: humanizeOrderError(data.error ?? 'No encontramos la reserva en el proveedor.'),
-        });
+        if (result.flightTracking === undefined) void loadOrders(false);
+        else if (result.flightTracking !== null)
+          applyFlightTracking(order.id, result.flightTracking);
       }
-    } catch {
       setActionResult({
         orderId: order.id,
         type: 'retrieve',
-        success: false,
-        message: 'Error de conexión',
+        success: result.success,
+        message: result.message,
       });
     } finally {
       setActionLoading(null);
@@ -424,38 +294,13 @@ export default function ReservasPage() {
     setActionLoading(order.id);
     setActionResult(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/cancel`, { method: 'POST' });
-      const data = (await res.json()) as {
-        success?: boolean;
-        error?: string;
-        message?: string | string[];
-      };
-      if (data.success) {
+      const result = await cancelOrder(order.id);
+      if (result.success) {
         setOrders((prev) =>
           prev.map((o) => (o.id === order.id ? { ...o, status: 'cancelled' } : o)),
         );
-        setActionResult({
-          orderId: order.id,
-          type: 'cancel',
-          success: true,
-          message: 'Reserva cancelada exitosamente',
-        });
-      } else {
-        const detail = Array.isArray(data.message) ? data.message.join('. ') : data.message;
-        setActionResult({
-          orderId: order.id,
-          type: 'cancel',
-          success: false,
-          message: humanizeOrderError(detail ?? data.error ?? 'No se pudo cancelar'),
-        });
       }
-    } catch {
-      setActionResult({
-        orderId: order.id,
-        type: 'cancel',
-        success: false,
-        message: 'Error de conexión',
-      });
+      setActionResult({ orderId: order.id, type: 'cancel', ...result });
     } finally {
       setActionLoading(null);
     }
@@ -469,37 +314,18 @@ export default function ReservasPage() {
     setActionLoading(order.id);
     setActionResult(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/operations`);
-      const data = (await res.json()) as { operations?: OrderOperationView[]; error?: string };
-      if (!res.ok) {
-        setActionResult({
-          orderId: order.id,
-          type: 'cancel',
-          success: false,
-          message: data.error ?? 'No pudimos comprobar si existe una cancelación anterior.',
-        });
+      const check = await checkCancellation(order.id);
+      if (check.allowed) {
+        setConfirmCancel(order);
         return;
       }
-      const block = directCancellationBlock(data.operations ?? []);
-      if (block) {
-        setActionResult({
-          orderId: order.id,
-          type: 'cancel',
-          success: false,
-          message: block,
-        });
-        setDetailOrder(order);
-        return;
-      }
-      setConfirmCancel(order);
-    } catch {
       setActionResult({
         orderId: order.id,
         type: 'cancel',
         success: false,
-        message:
-          'No pudimos comprobar el historial de cancelación. Por seguridad no se enviará la operación.',
+        message: check.message,
       });
+      if (check.blockedByHistory) setDetailOrder(order);
     } finally {
       setActionLoading(null);
     }
@@ -804,14 +630,23 @@ export default function ReservasPage() {
 
                 {/* Actions */}
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setDetailOrder(order)}
-                    className="gap-1.5 text-xs"
-                  >
-                    <Eye className="size-3.5" /> Ver detalle
-                  </Button>
+                  {/* Un vuelo abre su página (se puede compartir y recargar); hotel y auto, su panel. */}
+                  {isHotel || isCar ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setDetailOrder(order)}
+                      className="gap-1.5 text-xs"
+                    >
+                      <Eye aria-hidden="true" className="size-3.5" /> Ver detalle
+                    </Button>
+                  ) : (
+                    <Button asChild variant="secondary" size="sm" className="gap-1.5 text-xs">
+                      <Link href={`/reservas/${encodeURIComponent(order.id)}`}>
+                        <Eye aria-hidden="true" className="size-3.5" /> Ver detalle
+                      </Link>
+                    </Button>
+                  )}
                   {isHotel ? (
                     <>
                       {hotelVoucherAvailable(order) && (
@@ -1278,19 +1113,8 @@ function OrderDetailModal({
     setSending(true);
     setSendMsg(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/send-confirmation`, { method: 'POST' });
-      const data = (await res.json()) as { sent?: boolean; to?: string; error?: string };
-      if (!res.ok) {
-        setSendMsg({ ok: false, text: data.error ?? 'No se pudo enviar.' });
-        return;
-      }
-      setSendMsg(
-        data.sent
-          ? { ok: true, text: `Confirmación enviada a ${data.to ?? ''}` }
-          : { ok: false, text: 'No hay correo configurado para enviar.' },
-      );
-    } catch {
-      setSendMsg({ ok: false, text: 'Error de conexión.' });
+      const result = await sendOrderConfirmation(order.id);
+      setSendMsg({ ok: result.success, text: result.message });
     } finally {
       setSending(false);
     }
@@ -1331,30 +1155,9 @@ function OrderDetailModal({
     setRetrying(operation.id);
     setRetryMessage(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/operations/${operation.id}/retry`, {
-        method: 'POST',
-      });
-      const data = (await res.json()) as {
-        success?: boolean;
-        error?: string;
-        message?: string | string[];
-      };
-      if (!res.ok || data.success !== true) {
-        const detail = Array.isArray(data.message) ? data.message.join('. ') : data.message;
-        setRetryMessage({
-          ok: false,
-          text: detail ?? data.error ?? 'No se pudo reintentar la cancelación.',
-        });
-        await reloadOps();
-        return;
-      }
-      setRetryMessage({ ok: true, text: 'La cancelación se completó correctamente.' });
+      const result = await retryCancelOperation(order.id, operation.id);
+      setRetryMessage({ ok: result.success, text: result.message });
       await reloadOps();
-    } catch {
-      setRetryMessage({
-        ok: false,
-        text: 'No pudimos comprobar el resultado. No vuelvas a enviarlo; revisa el historial.',
-      });
     } finally {
       setRetrying(null);
     }
@@ -1687,7 +1490,14 @@ function OrderDetailModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] p-4">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] p-4">
+          {!isCar && (
+            <Button asChild variant="ghost" size="sm" className="mr-auto gap-1.5 text-xs">
+              <Link href={`/reservas/${encodeURIComponent(order.id)}`}>
+                <Eye aria-hidden="true" className="size-3.5" /> Ver página de la reserva
+              </Link>
+            </Button>
+          )}
           {canCancel && (
             <Button
               variant="secondary"
@@ -1768,67 +1578,5 @@ function FilterChip({
     >
       {children}
     </button>
-  );
-}
-
-function ConfirmDialog({
-  title,
-  message,
-  note,
-  confirmLabel,
-  danger,
-  loading,
-  onConfirm,
-  onClose,
-}: {
-  title: string;
-  message: string;
-  /** Un aviso aparte, debajo del mensaje (p. ej. el saldo retenido que se libera). */
-  note?: string | undefined;
-  confirmLabel: string;
-  danger?: boolean;
-  loading?: boolean;
-  onConfirm: () => void | Promise<void>;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xl">
-        <div className="mb-2 flex items-center gap-2.5">
-          <span
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-full',
-              danger
-                ? 'bg-red-50 text-red-600'
-                : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]',
-            )}
-          >
-            <AlertTriangle className="size-4" />
-          </span>
-          <h2 className="text-sm font-semibold text-[var(--color-fg)]">{title}</h2>
-        </div>
-        <p className="mb-4 text-xs leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
-        {note ? (
-          <p className="mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2.5 text-xs leading-relaxed text-[var(--color-fg)]">
-            <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>{note}</span>
-          </p>
-        ) : null}
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" disabled={loading} onClick={onClose}>
-            No, volver
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={loading}
-            onClick={() => void onConfirm()}
-            className={cn('gap-1.5', danger && 'bg-red-600 hover:bg-red-700')}
-          >
-            {loading ? 'Procesando…' : confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }

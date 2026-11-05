@@ -19,6 +19,8 @@ interface Segment {
   durationMinutes: number;
   cabin: string;
   bookingClass: string;
+  /** Código del equipo («320», «788»). Opcional en el canónico. */
+  aircraft?: string;
 }
 
 interface Itinerary {
