@@ -273,6 +273,11 @@ export function sabreErrorStatus(err: unknown): number {
   }
   // La reserva no admite servicios por este carril: no es una caída, y repetir no cambia nada.
   if (err instanceof SabreAncillaryLaneError) return HttpStatus.CONFLICT;
+  // Sabre contestó y rechazó lo pedido: no es una caída. Con 502 la web decía «el servidor no
+  // responde» y el vendedor reintentaba lo mismo (como LATAM, ver `LatamBusinessError`).
+  if (err instanceof SabreApiError && err.failure.kind === 'BUSINESS') {
+    return HttpStatus.UNPROCESSABLE_ENTITY;
+  }
   return HttpStatus.BAD_GATEWAY;
 }
 

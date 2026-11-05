@@ -320,6 +320,26 @@ describe('SabreExceptionFilter', () => {
     expect(cuerpo.message).toContain('problema interno');
   });
 
+  it('un rechazo de negocio de Sabre es 422, no la caída 502', () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { host, status } = hostFalso();
+    const err = new SabreApiError(200, '{}', '/v1/offers/flightCheck', {
+      failure: {
+        kind: 'BUSINESS',
+        retry: 'NO_RETRY',
+        circuit: 'IGNORE',
+        disableAccount: false,
+        operatorAlert: false,
+        reason: 'test',
+      },
+    });
+
+    new SabreExceptionFilter().catch(err, host);
+
+    expect(sabreErrorStatus(err)).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+    expect(status).toHaveBeenCalledWith(422);
+  });
+
   it('también atrapa la config inválida, que si no saldría como 500 genérico', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const { host, status, json } = hostFalso();

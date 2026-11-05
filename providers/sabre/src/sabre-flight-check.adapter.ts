@@ -7,7 +7,7 @@ import type {
   SearchContext,
 } from '@sales-travel/domain';
 import { sabreConversationIdPrefix, type SabreConfig } from './config';
-import type { SabreIssue } from './errors';
+import { SabreApiError, type SabreIssue } from './errors';
 import type { SabreHttpClient, SabreResult } from './http/sabre-http.client';
 import { logRedacted, type SabreLogLevel } from './redaction';
 import {
@@ -17,6 +17,7 @@ import {
 } from './flight-check/request.builder';
 import {
   mapSabreFlightCheckResponse,
+  SabreFlightCheckRejectedError,
   type SabreFlightCheckHandles,
   type SabreFlightCheckMappedOffer,
   type SabreFlightCheckPriceChange,
@@ -119,16 +120,32 @@ export class SabreFlightCheckAdapter implements OfferPricePort {
     const request = buildSabreFlightCheckRequest(offer, criteria, {
       pseudoCityCode: this.cfg.homePcc,
     });
-    const result: SabreResult<unknown> = await this.http.postJson<unknown>(
-      SABRE_FLIGHT_CHECK_PATH,
-      request,
-      {
+    let result: SabreResult<unknown>;
+    try {
+      result = await this.http.postJson<unknown>(SABRE_FLIGHT_CHECK_PATH, request, {
         idempotent: true,
         ...(ctx.requestId === undefined
           ? {}
           : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
-      },
-    );
+      });
+    } catch (err) {
+      // El cliente HTTP lanza ANTES del mapper cuando el sobre trae `errors[]`: un rechazo de negocio
+      // de Flight Check (tarifa o clase que ya no se confirma) salía como `SabreApiError` genérico y
+      // la API lo devolvía 502, que el vendedor lee «el servidor no responde». Es el mismo caso que
+      // el mapper ya tipa como rechazo de la revalidación.
+      if (err instanceof SabreApiError && err.failure.kind === 'BUSINESS') {
+        throw new SabreFlightCheckRejectedError(
+          err.issues
+            .filter((issue) => issue.severity === 'error')
+            .map((issue) => ({
+              category: issue.category ?? 'UNPUBLISHED',
+              type: issue.type ?? 'UNPUBLISHED',
+              ...(issue.fieldPath === undefined ? {} : { fieldPath: issue.fieldPath }),
+            })),
+        );
+      }
+      throw err;
+    }
 
     const mapped = mapSabreFlightCheckResponse(result.data, {
       basis: offer,

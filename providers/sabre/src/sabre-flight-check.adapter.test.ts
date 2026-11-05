@@ -7,7 +7,11 @@ import {
   SABRE_FLIGHT_CHECK_PATH,
   SabreFlightCheckRequestError,
 } from './flight-check/request.builder';
-import { SABRE_FLIGHT_CHECK_RAW_KEYS } from './flight-check/response.mapper';
+import { SabreApiError } from './errors';
+import {
+  SABRE_FLIGHT_CHECK_RAW_KEYS,
+  SabreFlightCheckRejectedError,
+} from './flight-check/response.mapper';
 import {
   SabreFlightCheckAdapter,
   SabreFlightCheckNoMatchedOfferError,
@@ -303,6 +307,36 @@ describe('SabreFlightCheckAdapter', () => {
       postJson,
     } as unknown as SabreHttpClient);
     await expect(adapter.checkOffer(searchOffer(), CRITERIA, CTX)).rejects.toBe(providerError);
+  });
+
+  it('un rechazo de negocio del sobre sale como rechazo de la revalidación, no como caída', async () => {
+    const providerError = new SabreApiError(200, '{"errors":[]}', SABRE_FLIGHT_CHECK_PATH, {
+      failure: {
+        kind: 'BUSINESS',
+        retry: 'NO_RETRY',
+        circuit: 'IGNORE',
+        disableAccount: false,
+        operatorAlert: false,
+        reason: 'test',
+      },
+      issues: [
+        { source: 'application', severity: 'error', category: 'FREE_TEXT_REDACTED' },
+        { source: 'application', severity: 'warning', type: 'W' },
+      ],
+    });
+    const adapter = new SabreFlightCheckAdapter(config(), {
+      postJson: vi.fn().mockRejectedValue(providerError),
+    } as unknown as SabreHttpClient);
+    let thrown: unknown;
+    try {
+      await adapter.checkOffer(searchOffer(), CRITERIA, CTX);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(SabreFlightCheckRejectedError);
+    expect((thrown as SabreFlightCheckRejectedError).providerIssues).toEqual([
+      { category: 'FREE_TEXT_REDACTED', type: 'UNPUBLISHED' },
+    ]);
   });
 
   it('sin requestId deja que SabreHttpClient genere Conversation-ID', async () => {
