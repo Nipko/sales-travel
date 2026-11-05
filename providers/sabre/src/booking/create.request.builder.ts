@@ -1196,6 +1196,13 @@ export const SabreCreateBookingOptionsSchema = z
       .default(SABRE_ASYNC_UPDATE_WAIT_MS_DEFAULT),
     /** Reservar sin bloque `payment`, el caso mayoritario de la colección (docs/sabre/04 §7.4d). */
     omitPayment: z.boolean().default(false),
+    /**
+     * El `targetPcc` viaja en una sesión (token) aparte que sólo reserva, así que el cambio de
+     * contexto que el API no revierte no alcanza a búsquedas ni lecturas: no hace falta el grupo.
+     * Probado en CERT el 2026-11-05 (H-07, docs/sabre/12): sin `sabreGroup` la reserva quedó en la
+     * oficina destino y la oficina propia la leyó y la canceló.
+     */
+    isolatedTargetPccSession: z.boolean().default(false),
   })
   .strict();
 
@@ -1289,7 +1296,7 @@ export function buildSabreCreateBookingRequest(
     ...(parsed.retentionLabel === undefined ? {} : { retentionLabel: parsed.retentionLabel }),
   };
 
-  assertTargetPccIsAddressable(body.targetPcc, cfg);
+  if (!opts.isolatedTargetPccSession) assertTargetPccIsAddressable(body.targetPcc, cfg);
 
   const carriers = resolveCarriers(parsed);
   const missing = findMissingAirlineRequirements(carriers, body, {

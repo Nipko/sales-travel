@@ -383,6 +383,17 @@ const SABRE: ProviderForm = {
       ],
       help: 'Nunca con tarjeta: la plataforma no envía datos de tarjeta a Sabre. El cobro al cliente va por el checkout de pagos.',
     },
+    // ⚠️ Rodeo temporal de H-07 (docs/sabre/12): lo lee `sabreBookOnTicketingPcc` en la API.
+    {
+      key: 'bookOnTicketingPcc',
+      label: 'Reservar a nombre del PCC de emisión (temporal)',
+      defaultValue: 'false',
+      options: [
+        { value: 'false', label: 'No, reserva la oficina propia (recomendado)' },
+        { value: 'true', label: 'Sí, mientras Sabre no active el tipo de pasajero' },
+      ],
+      help: 'Solo si Sabre rechaza las reservas con «Store Passenger Type In PNR» sin activar en la oficina de reserva. Las reservas quedan a nombre del PCC de emisión. Apágalo cuando Sabre lo active.',
+    },
     {
       key: 'pccTimeZone',
       label: 'Zona horaria del PCC',

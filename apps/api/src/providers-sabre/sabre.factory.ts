@@ -353,6 +353,11 @@ interface SabreAdapterSet {
    * mismo cliente: el alta vuelve a consultar el catálogo y comparte token y cupo.
    */
   readonly ancillaries: AncillaryPort;
+  /**
+   * ⚠️ Rodeo TEMPORAL de H-07 (docs/sabre/12): la oficina de emisión a la que se reserva con
+   * `targetPcc`, en la sesión aislada de `create`. Sin valor, la reserva es de la oficina propia.
+   */
+  readonly bookingTargetPcc?: string;
 }
 
 /**
@@ -428,6 +433,19 @@ export class SabreOfferRevalidationRouter {
  * modo no existe —el ACL no se construye sin credenciales usables— así que un adapter que llega
  * hasta aquí reserva contra Sabre o falla, y no hay tercer camino que cerrar.
  */
+const bookingWorkaroundLogger = new Logger('Sabre');
+
+/**
+ * ⚠️ Rodeo TEMPORAL de H-07. `bookOnTicketingPcc: true` en la config de la cuenta reserva a nombre de
+ * la oficina de emisión (`ticketingPcc`), que sí tiene «Store Passenger Type In PNR». Se apaga en
+ * cuanto Sabre lo active en la oficina de reserva. Ver docs/sabre/12 H-07.
+ */
+export function sabreBookOnTicketingPcc(config: Readonly<Record<string, unknown>>): boolean {
+  // El panel guarda los selectores como texto ('true'/'false').
+  const value = config['bookOnTicketingPcc'];
+  return value === true || value === 'true';
+}
+
 export class SabreFlightProviderAdapter
   implements FlightProviderAdapter, TicketingPort, SeatMapPort, AncillaryPort, OrderModifyPort
 {
@@ -484,7 +502,19 @@ export class SabreFlightProviderAdapter
 
   /** Lo que toda reserva de esta cuenta lleva además del pedido: su política de emisión y su firma. */
   private bookingOptions(): SabreOrderCreateOptions {
-    return { ticketing: this.inner.ticketing, receivedFrom: SABRE_RECEIVED_FROM };
+    const target = this.inner.bookingTargetPcc;
+    if (target !== undefined) {
+      // Se avisa en CADA reserva: es un rodeo, y tiene que seguir viéndose hasta que Sabre active
+      // «Store Passenger Type In PNR» en la oficina de reserva y se apague `bookOnTicketingPcc`.
+      bookingWorkaroundLogger.warn(
+        'sabre.createBooking.h07_workaround: reserva a nombre de la oficina de emisión (targetPcc). Temporal hasta que Sabre active «Store Passenger Type In PNR» en la oficina de reserva — docs/sabre/12 H-07',
+      );
+    }
+    return {
+      ticketing: this.inner.ticketing,
+      receivedFrom: SABRE_RECEIVED_FROM,
+      ...(target === undefined ? {} : { targetPcc: target, isolatedTargetPccSession: true }),
+    };
   }
 
   /**
@@ -1119,6 +1149,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         `configuración de emisión de Sabre inválida para ${ownerTenantId}: campos [${ticketing.invalidFields.join(', ')}] — se aplican los valores por defecto`,
       );
     }
+    const booking = this.bookingLane(cfg, ownerTenantId, config, http, logger);
     const ndcPrice = new SabreOfferPriceAdapter(cfg, http, { cardBinPricing });
     const atpcoPrice = new SabreFlightCheckAdapter(cfg, http, { logger });
     const manage = new SabreOrderManageAdapter(cfg, http, { logger });
@@ -1156,13 +1187,53 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       // Con logger, como los demás: sin él `sabre.createBooking`, `sabre.getBooking` y
       // `sabre.cancelBooking` no se emitían nunca, y son las únicas trazas de una reserva con su
       // desenlace, la política pedida y los conteos. Llevan códigos y conteos, nunca PNR ni PII.
-      create: new SabreOrderCreateAdapter(cfg, http, { logger }),
+      create: booking.create,
+      ...(booking.targetPcc === undefined ? {} : { bookingTargetPcc: booking.targetPcc }),
       manage,
       ticketing: ticketing.settings,
       issue,
       operations: this.operations,
       seats: new SabreSeatMapAdapter(cfg, http, { logger }),
       ancillaries: new SabreAncillaryAdapter(cfg, http, { logger }),
+    };
+  }
+
+  /**
+   * Quién crea las reservas. Por defecto, la oficina propia sobre el cliente compartido.
+   *
+   * ⚠️ Rodeo TEMPORAL de H-07 (`bookOnTicketingPcc`): la reserva sale con `targetPcc` = oficina de
+   * emisión, en un token y un cliente PROPIOS. `targetPcc` cambia el contexto de la sesión y el API
+   * no lo revierte; en la sesión compartida, las búsquedas siguientes correrían en la otra oficina.
+   * Aislado, sólo `createBooking` usa esa sesión: leer, cancelar y emitir siguen en la oficina
+   * propia, que lee y cancela la reserva sin problema (probado en CERT el 2026-11-05).
+   */
+  private bookingLane(
+    cfg: SabreConfig,
+    ownerTenantId: string,
+    config: Record<string, unknown>,
+    http: SabreHttpClient,
+    logger: LoggerPort,
+  ): { create: SabreOrderCreateAdapter; targetPcc?: string } {
+    const shared = { create: new SabreOrderCreateAdapter(cfg, http, { logger }) };
+    if (!sabreBookOnTicketingPcc(config)) return shared;
+    const target = cfg.ticketingPcc?.trim().toUpperCase();
+    if (
+      target === undefined ||
+      !SABRE_PCC_PATTERN.test(target) ||
+      target === cfg.homePcc?.trim().toUpperCase()
+    ) {
+      this.logger.warn(
+        `bookOnTicketingPcc encendido para ${ownerTenantId} sin un PCC de emisión válido y distinto del de reserva: se reserva con la oficina propia`,
+      );
+      return shared;
+    }
+    const tokens = new SabreTokenService(cfg, {
+      cacheNamespace: `${ownerTenantId}:reserva-oficina-emision`,
+    });
+    const laneHttp = new SabreHttpClient(cfg, tokens, { logger });
+    return {
+      create: new SabreOrderCreateAdapter(cfg, laneHttp, { logger }),
+      targetPcc: target,
     };
   }
 

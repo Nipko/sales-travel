@@ -1426,6 +1426,43 @@ describe('SabreProviderFactory — política de emisión por cuenta', () => {
     },
   );
 
+  describe('rodeo temporal de H-07: reservar a nombre del PCC de emisión', () => {
+    const conEmision = { epr: EPR, password: PASSWORD, homePcc: HOME_PCC, ticketingPcc: 'Z9Y8' };
+
+    it.each([
+      ['encendido como texto del panel', 'true'],
+      ['encendido como booleano', true],
+    ] as const)('%s, la reserva sale con targetPcc = oficina de emisión', async (_c, flag) => {
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const { body } = await bookingBodyFor(
+        { credentials: conEmision, config: { bookOnTicketingPcc: flag } },
+        true,
+      );
+      expect(body['targetPcc']).toBe('Z9Y8');
+    });
+
+    it('apagado, o sin un PCC de emisión distinto, reserva la oficina propia', async () => {
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      expect((await bookingBodyFor({ credentials: conEmision }, false)).body).not.toHaveProperty(
+        'targetPcc',
+      );
+      expect(
+        (await bookingBodyFor({ config: { bookOnTicketingPcc: 'true' } }, false)).body,
+      ).not.toHaveProperty('targetPcc');
+      expect(
+        (
+          await bookingBodyFor(
+            {
+              credentials: { ...conEmision, ticketingPcc: HOME_PCC },
+              config: { bookOnTicketingPcc: 'true' },
+            },
+            false,
+          )
+        ).body,
+      ).not.toHaveProperty('targetPcc');
+    });
+  });
+
   it('el margen y la zona de la cuenta llegan al plazo, y el evento cita la política', async () => {
     const { body, audit } = await bookingBodyFor(
       { config: { ticketingLeadHours: '0', pccTimeZone: 'America/Sao_Paulo' } },

@@ -14,6 +14,12 @@ Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenci
 
 ---
 
+## 🚨 Pendientes urgentes (recordarlos al founder en cada sesión hasta cerrarlos)
+
+- **Sabre H-07 (desde 2026-11-05):** la oficina de reserva no tiene «Store Passenger Type In PNR». Las reservas salen por un rodeo temporal (`bookOnTicketingPcc` → `targetPcc` = PCC de emisión). Falta que Sabre lo active, apagar el rodeo y quitarlo del código. Detalle y pasos: `docs/sabre/12-hallazgos-sandbox.md` (aviso al inicio).
+
+---
+
 ## 📚 Antes de cualquier cambio: leer la fuente de verdad
 
 | Pregunta                                                                      | Documento                                        |

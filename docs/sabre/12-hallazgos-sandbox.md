@@ -4,6 +4,26 @@
 > (`apps/api/src/providers-sabre/cert-run/`, SAB-11). Cómo correrlo y dónde quedan las capturas:
 > [`evidence/README.md`](./evidence/README.md#arnés-de-certificación-contra-cert-sab-11).
 
+> ## 🚨 URGENTE — H-07 abierto, con rodeo temporal en producción
+>
+> **Qué falta (lo hace Sabre, no es código):** activar «Store Passenger Type In PNR» en el TJR de la **oficina de
+> reserva** (`homePcc`). Sin eso, toda reserva con tipo de pasajero falla con
+> `UNABLE_TO_ADD_TRAVELER_PASSENGER_TYPE_NOT_ENABLED`, y el tipo es obligatorio (`passengerCode is required`).
+>
+> **Rodeo activo desde el 2026-11-05:** con `bookOnTicketingPcc: true` en la config de la cuenta (panel: «Reservar
+> a nombre del PCC de emisión (temporal)»), `createBooking` sale con `targetPcc` = oficina de emisión
+> (`ticketingPcc`), que sí tiene la opción. Va en un token y un cliente propios (`bookingLane` en
+> `apps/api/src/providers-sabre/sabre.factory.ts`) para que el cambio de contexto no alcance a búsquedas ni
+> lecturas. Probado en CERT: PNR `QZPKXT` y `QPLVBP` creados y cancelados; la oficina propia los lee y cancela. Sin
+> rodeo: «passengerCode is required» si se omite el tipo, y 401 al autenticar directamente en la oficina de emisión.
+> Cada reserva con rodeo deja en el log `sabre.createBooking.h07_workaround`.
+>
+> **Para cerrarlo:** (1) pedir a Sabre la activación en la oficina de reserva; (2) cuando confirme, apagar
+> `bookOnTicketingPcc` en la cuenta y repetir `sab-12` con el arnés; (3) si pasa, quitar el rodeo del código
+> (`bookingLane`, `sabreBookOnTicketingPcc`, `isolatedTargetPccSession`, el campo del panel) y este aviso.
+> Mientras siga abierto, las reservas quedan a nombre de la oficina de emisión: revisar que la emisión, la
+> comisión y la cartera de esa oficina sean las esperadas.
+
 Éste es el entregable que decide ([11 §4.3 y §4.5](./11-plan-implementacion.md#43-entregables)): los JSON son la
 prueba, pero lo que cuenta es lo que aquí se concluye con su número. Los paquetes que certifican contra CERT
 (SAB-12, SAB-13, SAB-21, SAB-22 y SAB-24) escriben sus hallazgos aquí, cada uno en su sección, en vez de abrir un

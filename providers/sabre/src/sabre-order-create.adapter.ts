@@ -184,6 +184,8 @@ export interface SabreOrderCreateOptions {
   readonly omitPayment?: boolean;
   /** BYOC: reservar bajo el PCC de la sub-agencia. Exige `sabreGroup`/`sabreCurrentCity`. */
   readonly targetPcc?: string;
+  /** `targetPcc` en una sesión propia que sólo reserva: no exige grupo (ver el builder). */
+  readonly isolatedTargetPccSession?: boolean;
   readonly receivedFrom?: string;
   readonly agency?: SabreAgencyInput;
   /**
@@ -447,6 +449,7 @@ export class SabreOrderCreateAdapter implements OrderCreatePort {
         ? {}
         : { asynchronousUpdateWaitTimeMs: options.asynchronousUpdateWaitTimeMs }),
       ...(options.omitPayment === undefined ? {} : { omitPayment: options.omitPayment }),
+      ...(options.isolatedTargetPccSession === true ? { isolatedTargetPccSession: true } : {}),
     });
     return {
       ...built,

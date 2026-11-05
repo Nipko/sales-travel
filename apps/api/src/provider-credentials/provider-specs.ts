@@ -261,6 +261,8 @@ const SABRE: ProviderSpec = {
     'ticketingLeadHours',
     'ticketingFormOfPayment',
     'pccTimeZone',
+    // ⚠️ Rodeo temporal de H-07 (`sabreBookOnTicketingPcc`, docs/sabre/12).
+    'bookOnTicketingPcc',
   ],
   accountIssues: sabreAccountIssues,
   // Un PNR vive en la oficina (PCC) y en el sistema (CERT o producción, o el host que lo
