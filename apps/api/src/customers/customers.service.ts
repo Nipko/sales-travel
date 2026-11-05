@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type UpdateObject } from 'kysely';
+import { sql, type UpdateObject } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { type DB } from '../database/database.types.js';
 import { blindIndex, decryptPii, encryptPii } from './pii-cipher.js';
@@ -30,21 +30,29 @@ function toCustomerRow(raw: RawCustomer): CustomerRow {
 }
 
 export interface CreateCustomerDto {
+  customerType?: 'person' | 'company';
   firstName: string;
   lastName: string;
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
   email?: string | null;
   phone?: string | null;
   documentType: string;
   documentNumber: string;
   documentIssuingCountry: string;
-  birthdate: string | Date;
-  gender: string;
-  nationality: string;
+  birthdate?: string | Date | null;
+  gender?: string | null;
+  nationality?: string | null;
   passportExpiry?: string | Date | null;
   preferences?: unknown;
 }
 
 export interface UpdateCustomerDto {
+  customerType?: 'person' | 'company';
+  address?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
   firstName?: string;
   lastName?: string;
   email?: string | null;
@@ -52,9 +60,9 @@ export interface UpdateCustomerDto {
   documentType?: string;
   documentNumber?: string;
   documentIssuingCountry?: string;
-  birthdate?: string | Date;
-  gender?: string;
-  nationality?: string;
+  birthdate?: string | Date | null;
+  gender?: string | null;
+  nationality?: string | null;
   passportExpiry?: string | Date | null;
   preferences?: unknown;
 }
@@ -69,9 +77,13 @@ export interface CustomerRow {
   document_type: string;
   document_number: string;
   document_issuing_country: string;
-  birthdate: Date;
-  gender: string;
-  nationality: string;
+  birthdate: Date | null;
+  gender: string | null;
+  nationality: string | null;
+  customer_type: 'person' | 'company';
+  address: string | null;
+  city: string | null;
+  country_code: string | null;
   passport_expiry: Date | null;
   preferences: unknown;
   created_at: Date;
@@ -98,9 +110,13 @@ export class CustomersService {
           document_number_enc: encryptPii(dto.documentNumber),
           document_number_hash: blindIndex(dto.documentNumber),
           document_issuing_country: dto.documentIssuingCountry,
-          birthdate: new Date(dto.birthdate),
-          gender: dto.gender,
-          nationality: dto.nationality,
+          birthdate: dto.birthdate ? new Date(dto.birthdate) : null,
+          gender: dto.gender ?? null,
+          nationality: dto.nationality ?? null,
+          customer_type: dto.customerType ?? 'person',
+          address: dto.address ?? null,
+          city: dto.city ?? null,
+          country_code: dto.countryCode ?? null,
           passport_expiry: dto.passportExpiry ? new Date(dto.passportExpiry) : null,
           preferences: dto.preferences ? JSON.stringify(dto.preferences) : '{}',
         })
@@ -120,6 +136,60 @@ export class CustomersService {
         .execute();
       return rows.map((r) => toCustomerRow(r));
     });
+  }
+
+  /**
+   * Clientes registrados que coinciden con `q`: por nombre o email (contiene, sin mayúsculas), o por
+   * número de documento EXACTO —el documento va cifrado y sólo se puede buscar por su índice ciego—.
+   */
+  async search(tenantId: string, q: string, limit: number): Promise<CustomerRow[]> {
+    // Los comodines de ILIKE que escriba el vendedor se buscan literales.
+    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    const hash = blindIndex(q);
+    return this.db.withTenant(tenantId, async (trx) => {
+      const rows = await trx
+        .selectFrom('customers')
+        .selectAll()
+        .where((eb) =>
+          eb.or([
+            eb('document_number_hash', '=', hash),
+            eb(sql<string>`first_name || ' ' || last_name`, 'ilike', like),
+            eb('email', 'ilike', like),
+          ]),
+        )
+        .orderBy('updated_at', 'desc')
+        .limit(limit)
+        .execute();
+      return rows.map((r) => toCustomerRow(r));
+    });
+  }
+
+  /**
+   * Alta o actualización por documento (tipo + número) dentro del tenant: lo usa la reserva para
+   * guardar en Clientes al pasajero o al facturador que el vendedor escribió. Si ya existe, se
+   * actualizan sólo los campos que llegan con valor (no se borra nada que el CRM ya tenía).
+   */
+  async upsertByDocument(
+    tenantId: string,
+    dto: CreateCustomerDto,
+  ): Promise<{ customer: CustomerRow; created: boolean }> {
+    const hash = blindIndex(dto.documentNumber);
+    const existing = await this.db.withTenant(tenantId, (trx) =>
+      trx
+        .selectFrom('customers')
+        .select('id')
+        .where('document_type', '=', dto.documentType)
+        .where('document_number_hash', '=', hash)
+        .orderBy('updated_at', 'desc')
+        .executeTakeFirst(),
+    );
+    if (!existing) return { customer: await this.create(tenantId, dto), created: true };
+    const patch: UpdateCustomerDto = {};
+    for (const [k, v] of Object.entries(dto)) {
+      if (v !== undefined && v !== null && v !== '') (patch as Record<string, unknown>)[k] = v;
+    }
+    const updated = await this.update(tenantId, existing.id, patch);
+    return { customer: updated!, created: false };
   }
 
   async findById(tenantId: string, id: string): Promise<CustomerRow | undefined> {
@@ -152,7 +222,12 @@ export class CustomersService {
       }
       if (dto.documentIssuingCountry !== undefined)
         updateData.document_issuing_country = dto.documentIssuingCountry;
-      if (dto.birthdate !== undefined) updateData.birthdate = new Date(dto.birthdate);
+      if (dto.birthdate !== undefined)
+        updateData.birthdate = dto.birthdate ? new Date(dto.birthdate) : null;
+      if (dto.customerType !== undefined) updateData.customer_type = dto.customerType;
+      if (dto.address !== undefined) updateData.address = dto.address;
+      if (dto.city !== undefined) updateData.city = dto.city;
+      if (dto.countryCode !== undefined) updateData.country_code = dto.countryCode;
       if (dto.gender !== undefined) updateData.gender = dto.gender;
       if (dto.nationality !== undefined) updateData.nationality = dto.nationality;
       if (dto.passportExpiry !== undefined)

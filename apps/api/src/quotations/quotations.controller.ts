@@ -1,3 +1,4 @@
+import { decodeBilling, type Billing } from './billing.js';
 import {
   BadRequestException,
   Body,
@@ -130,6 +131,7 @@ export class QuotationsController {
       customerEmail?: string | null;
       customerPhone?: string | null;
       notes?: string | null;
+      billing?: Billing | null;
     },
   ) {
     if (!userId) throw new ForbiddenException();
@@ -148,6 +150,7 @@ export class QuotationsController {
     customer_email: string | null;
     customer_phone: string | null;
     notes: string | null;
+    billing?: unknown;
     quote_number: number;
     expires_at: Date;
     created_at: Date;
@@ -162,6 +165,7 @@ export class QuotationsController {
       customerEmail: row.customer_email,
       customerPhone: row.customer_phone,
       notes: row.notes,
+      billing: decodeBilling(row.billing ?? null),
       expiresAt: row.expires_at,
       createdAt: row.created_at,
     };

@@ -478,6 +478,8 @@ export interface QuotationsTable {
   customer_email: string | null;
   customer_phone: string | null;
   notes: string | null;
+  /** 0091: a nombre de quién se factura (JSONB, documento cifrado). */
+  billing: unknown;
   quote_number: number;
   expires_at: Timestamp;
   created_at: Generated<Timestamp>;
@@ -688,10 +690,15 @@ export interface CustomersTable {
   document_number_enc: Buffer | null;
   document_number_hash: string | null;
   document_issuing_country: string;
-  birthdate: ColumnType<Date, Date | string, Date | string>;
-  gender: string;
-  nationality: string;
+  birthdate: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  gender: string | null;
+  nationality: string | null;
   passport_expiry: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  /** 0091: persona o empresa. */
+  customer_type: Generated<'person' | 'company'>;
+  address: string | null;
+  city: string | null;
+  country_code: string | null;
   preferences: Generated<unknown>;
   frequent_flyer_program: Generated<unknown>;
   travel_preferences: Generated<unknown>;

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { QuotationStatus } from '../database/database.types.js';
+import { encodeBilling, type Billing } from './billing.js';
 
 export interface CreateQuotationDto {
   searchCriteria: unknown;
@@ -24,6 +25,7 @@ export interface QuotationRow {
   customer_email: string | null;
   customer_phone: string | null;
   notes: string | null;
+  billing?: unknown;
   quote_number: number;
   expires_at: Date;
   created_at: Date;
@@ -110,6 +112,7 @@ export class QuotationsService {
       customerEmail?: string | null;
       customerPhone?: string | null;
       notes?: string | null;
+      billing?: Billing | null;
     },
   ): Promise<QuotationRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
@@ -120,6 +123,9 @@ export class QuotationsService {
           customer_email: data.customerEmail ?? null,
           customer_phone: data.customerPhone ?? null,
           notes: data.notes ?? null,
+          ...(data.billing === undefined
+            ? {}
+            : { billing: data.billing === null ? null : encodeBilling(data.billing) }),
         })
         .where('id', '=', id)
         .returningAll()

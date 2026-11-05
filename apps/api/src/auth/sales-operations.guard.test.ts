@@ -267,6 +267,8 @@ const ENTRADAS: [string, Clase][] = [
     'clientes y CRM: gestionan la cartera de clientes, no cotizan ni reservan',
     'POST /customers',
     'GET /customers',
+    'GET /customers/search',
+    'POST /customers/upsert',
     'GET /customers/:id',
     'PATCH /customers/:id',
     'DELETE /customers/:id',

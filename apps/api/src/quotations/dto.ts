@@ -1,4 +1,5 @@
 import { z } from '@sales-travel/validation';
+import { BillingSchema } from './billing.js';
 
 /** Objeto JSON arbitrario que se persiste verbatim: passthrough para NO perder claves anidadas. */
 const jsonObject = z.record(z.unknown());
@@ -28,5 +29,7 @@ export const UpdateQuotationCustomerSchema = z.object({
   customerEmail: z.string().trim().email().max(200).nullish(),
   customerPhone: z.string().trim().max(40).nullish(),
   notes: z.string().max(4000).nullish(),
+  /** 0091: a nombre de quién se factura. Ausente = no se toca; `null` = se borra. */
+  billing: BillingSchema.nullish(),
 });
 export type UpdateQuotationCustomerInput = z.infer<typeof UpdateQuotationCustomerSchema>;
