@@ -415,7 +415,13 @@ d('seed-superadmin contra Postgres', () => {
       expect(
         await q('SELECT role, status FROM memberships WHERE id = $1', [membership!.id]),
       ).toEqual([{ role: 'superadmin', status: 'active' }]);
-      expect((await eventsOf(membership!.id)).map((e) => e.payload)).toEqual([
+      // El seed escribe fuera de la API, así que 0092 también deja `db.direct_change` sobre la
+      // membership de plataforma: es auditoría buscada, se comprueba aparte.
+      const events = await eventsOf(membership!.id);
+      expect(events.some((e) => e.event_type === 'db.direct_change')).toBe(true);
+      expect(
+        events.filter((e) => e.event_type !== 'db.direct_change').map((e) => e.payload),
+      ).toEqual([
         {
           targetUserId: operator,
           newRole: 'superadmin',
