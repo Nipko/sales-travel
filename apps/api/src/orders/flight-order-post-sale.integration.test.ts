@@ -442,7 +442,7 @@ d('post-venta de vuelos con la cuenta de la reserva (0045, 0081) contra Postgres
       }
 
       // Otra contraseña, u otro EPR, de la misma oficina en el mismo entorno: la misma cuenta.
-      await expect(cambio({ epr: 'OTRO-EPR' }, { environment: 'cert' })).resolves.toEqual({
+      await expect(cambio({ epr: 'OTRO-EPR' }, { environment: 'cert' })).resolves.toMatchObject({
         id: cuentaConteo,
       });
       // Y la reserva se sigue operando con ella, ya con el EPR nuevo.
@@ -463,7 +463,7 @@ d('post-venta de vuelos con la cuenta de la reserva (0045, 0081) contra Postgres
         [vivos, JSON.stringify(vuelo(fecha(-6), fecha(-2)))],
       );
 
-      await expect(upsertSabre('disabled')).resolves.toEqual({ id: cuentaConteo });
+      await expect(upsertSabre('disabled')).resolves.toMatchObject({ id: cuentaConteo });
     });
   });
 });

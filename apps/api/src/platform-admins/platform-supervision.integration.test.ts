@@ -104,7 +104,7 @@ d('Superadmins plenos y supervisados (0092) contra Postgres', () => {
     platform = await platformRootId(pool);
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
-       VALUES ($1, $1, 'CO', 'COP', 'consolidator', $2) RETURNING id`,
+       VALUES ($1::text, $1::text, 'CO', 'COP', 'consolidator', $2) RETURNING id`,
       [`sup-ca-${sfx}`, platform],
     );
     consA = rows[0]!.id;

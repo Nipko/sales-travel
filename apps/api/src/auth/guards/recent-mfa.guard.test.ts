@@ -226,9 +226,14 @@ describe('dónde corre y qué rutas la llevan', () => {
       { route: 'GET /admin/orders/export', minutes: 10 },
       { route: 'GET /tenants/:id/members-export', minutes: 10 },
       { route: 'PATCH /admin/users/status', minutes: 10 },
+      // 0092: dar, quitar o supervisar un superadmin y aprobar un cambio pendiente.
+      { route: 'POST /admin/change-requests/:id/approve', minutes: 10 },
       { route: 'POST /admin/legacy-passwords/require-reset', minutes: 10 },
+      { route: 'POST /admin/platform-admins', minutes: 10 },
+      { route: 'POST /admin/platform-admins/:userId/revoke', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/require-password-reset', minutes: 10 },
       { route: 'POST /tenants/:id/members/:userId/reset-mfa', minutes: 10 },
+      { route: 'PUT /admin/platform-admins/:userId/supervision', minutes: 10 },
     ]);
   });
 });

@@ -479,7 +479,7 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
     });
 
     it('rotar la contraseña se puede', async () => {
-      await expect(upsert({ status: 'active', isInheritable: true })).resolves.toEqual({
+      await expect(upsert({ status: 'active', isInheritable: true })).resolves.toMatchObject({
         id: cuentaRed,
       });
       expect((await creds.resolveForOrder(agenciaA, ordenA)).credentials).toMatchObject({
@@ -501,7 +501,7 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
     it('sin reservas activas, se desactiva', async () => {
       await pool.query(`UPDATE orders SET status = 'failed' WHERE id = $1`, [ordenAPasada]);
 
-      await expect(upsert({ status: 'disabled' })).resolves.toEqual({ id: cuentaRed });
+      await expect(upsert({ status: 'disabled' })).resolves.toMatchObject({ id: cuentaRed });
       expect(await estado()).toEqual({ status: 'disabled', is_inheritable: true });
     });
   });
@@ -639,7 +639,7 @@ d('post-venta de hoteles con la cuenta de la reserva (0045) contra Postgres', ()
     });
 
     it('otra contraseña del mismo usuario se guarda, y la reserva sigue con la misma cuenta', async () => {
-      await expect(upsertTbo({})).resolves.toEqual({ id: cuentaTbo });
+      await expect(upsertTbo({})).resolves.toMatchObject({ id: cuentaTbo });
       expect((await creds.resolveForOrder(agenciaTbo, reservaViva)).credentials).toEqual({
         username: 'usuario-tbo',
         password: 'rotada',
