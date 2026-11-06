@@ -1,135 +1,35 @@
 # Sales-Travel
 
-> Plataforma consolidadora de turismo B2B/B2C para LATAM (Colombia, Brasil, Perú).
-> Multi-tenant white-label con IA omnicanal (WhatsApp, web, voz) y constructor visual de paquetes (drag-and-drop).
+> Plataforma consolidadora de turismo B2B2B/B2B/B2C para LATAM (Colombia, Brasil, Perú).
+> Multi-tenant white-label: un consolidador da acceso a su red de agencias y sub-agencias, cada una con sus
+> credenciales de proveedor propias (BYOC) o heredadas, y un pricing en cascada.
 
-**Estado:** Sprint 0 cerrado. Ola 1 en progreso — búsqueda de vuelos LATAM NDC funcionando en producción.
-**Repositorio:** privado.
-**Stack confirmado:** ver `docs/platform/10-mapa-completo-plataforma.md`.
+**Estado (2026-11-05):** Ola 1 en curso, en producción en `app.planetour.cloud`. Vuelos (LATAM NDC y Sabre),
+hoteles (TBO y Despegar) y autos (AgentCars) con búsqueda, reserva y postventa; red de agencias multinivel,
+gobierno de proveedores y formas de pago, y consola de plataforma para superadmins.
+**Repositorio:** privado. **Versión:** ver [`CHANGELOG.md`](./CHANGELOG.md) (release-please).
 
----
-
-## 📚 Documentación
-
-Toda la documentación de discovery, research y diseño de plataforma está en `/docs/`.
-
-### Discovery (decisiones del founder y planificación)
-
-| Documento                                                                 | Propósito                                                 |
-| ------------------------------------------------------------------------- | --------------------------------------------------------- |
-| [`01-preguntas.md`](./docs/discovery/01-preguntas.md)                     | 28 preguntas de discovery con respuestas del founder      |
-| [`02-decisiones.md`](./docs/discovery/02-decisiones.md)                   | Decisiones cerradas en segunda ronda + defaults aceptados |
-| [`06-documento-maestro.md`](./docs/discovery/06-documento-maestro.md)     | Visión, misión, módulos, modelo de datos macro, riesgos   |
-| [`07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md)               | Roadmap mes a mes en 3 olas (Mes 6 / 10 / 14) con DoD     |
-| [`08-organizacion-equipo.md`](./docs/discovery/08-organizacion-equipo.md) | Perfiles, salarios LATAM, plan de contratación, cultura   |
-
-### Research (investigaciones técnicas y de mercado)
-
-| Documento                                                                          | Propósito                                                                       |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [`03-integraciones-ecosistema.md`](./docs/research/03-integraciones-ecosistema.md) | Mapa de proveedores: GDS, NDC, hoteles, actividades, asistencias, autos, pagos  |
-| [`04-regulacion-fiscal-latam.md`](./docs/research/04-regulacion-fiscal-latam.md)   | Regulación, fiscal y protección de datos en CO/BR/PE                            |
-| [`05-arquitectura-referencia.md`](./docs/research/05-arquitectura-referencia.md)   | Arquitectura de referencia (fase Hostinger → AWS), 15 abstracciones cloud-ready |
-| [`06-competencia-latam.md`](./docs/research/06-competencia-latam.md)               | Análisis competitivo: Ideas Fractal, Wooba, Sakura + tier-1 internacionales     |
-| [`07-skills-uiux-claude-code.md`](./docs/research/07-skills-uiux-claude-code.md)   | Stack frontend + skills Claude Code recomendados                                |
-
-### Plataforma (mapa técnico exhaustivo)
-
-| Documento                                                                          | Propósito                                                                                                                                  |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) | **Fuente de verdad técnica.** 17 módulos, modelo de datos, sitemap UI, endpoints API, flujos críticos, design system, estructura del repo. |
+> 🚨 **Pendiente urgente — Sabre H-07:** las reservas Sabre salen por un rodeo temporal (`bookOnTicketingPcc` →
+> `targetPcc`). Ver [`docs/sabre/12-hallazgos-sandbox.md`](./docs/sabre/12-hallazgos-sandbox.md).
 
 ---
 
-## 🎯 Posicionamiento
+## Qué hay construido
 
-**"El primer consolidador conversacional de LATAM."**
+| Área                      | Estado                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Vuelos**                | LATAM NDC y Sabre (BFM, Flight Check, marcas por trayecto, niños/infantes, reserva, emisión, postventa). Multi-proveedor.   |
+| **Hoteles**               | TBO y Despegar: catálogo e inventario sincronizados, búsqueda, prebook, reserva, cancelación y verificación.                |
+| **Autos**                 | AgentCars: búsqueda, oficinas, reserva y reporte.                                                                           |
+| **Cotizaciones/reservas** | Cotizaciones guardadas, pasajeros y facturación con datos fiscales, reservas con seguimiento y alertas de plazos.           |
+| **Red consolidadora**     | Jerarquía multinivel, credenciales por nodo con herencia, pricing waterfall, carteras por moneda, puestos y resumen de red. |
+| **Gobierno**              | Perfiles de gobierno: proveedores y formas de pago habilitadas por nodo, kill-switch por proveedor.                         |
+| **Plataforma**            | Consola de superadmins (plenos y supervisados), usuarios, actividad, auditoría, anuncios del sistema.                       |
+| **Seguridad**             | RLS forzada, 2FA obligatorio para todo rol admin, invitaciones, recuperación de contraseña, audit log.                      |
+| **CRM**                   | Clientes (personas y empresas) con PII cifrada.                                                                             |
 
-Tres ángulos diferenciadores:
-
-- **Conversacional first**: WhatsApp Business como canal de venta de primera clase, no add-on.
-- **Package Studio**: constructor visual drag-and-drop de paquetes dinámicos.
-- **Multi-país andino-brasileño**: única plataforma diseñada para CO + PE + BR desde día 1.
-
-Detalle en [`docs/research/06-competencia-latam.md`](./docs/research/06-competencia-latam.md).
-
----
-
-## 🛠️ Stack técnico (resumen)
-
-- **Backend:** NestJS + TypeScript (Modular Monolith hexagonal con Anti-Corruption Layer por proveedor)
-- **IA sidecar:** FastAPI + LangGraph
-- **Frontend web:** Next.js 15 (App Router) + Tailwind CSS v4 + shadcn/ui v4
-- **Mobile:** React Native + Expo (vendedor + cliente final)
-- **Datos:** PostgreSQL 16 + TimescaleDB + pgvector + Redis 7
-- **Search:** Typesense → OpenSearch (fase 2)
-- **Workflows:** Temporal.io self-hosted → Temporal Cloud
-- **Object storage:** MinIO → S3 (mismo SDK)
-- **Pagos:** Stripe + Mercado Pago (hosted checkout, SAQ-A)
-- **IA:** multi-LLM router (Claude / GPT / Haiku) vía LiteLLM
-- **Infra fase 1:** Hostinger VPS + Cloudflare. **Fase 2:** AWS multi-región (sa-east-1 + us-east-1).
-
-Detalle completo en [`docs/research/05-arquitectura-referencia.md`](./docs/research/05-arquitectura-referencia.md) y [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md).
-
----
-
-## 🗺️ Roadmap por olas (resumen)
-
-| Ola       | Mes   | Foco                                                                                                                                                  |
-| --------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Ola 1** | 0–6   | B2B Colombia + Brasil. Aéreo (Travelport+Amadeus+LATAM NDC), hoteles (HotelDo+Hotelbeds), asistencia. WhatsApp cotización con IA. White-label básico. |
-| **Ola 2** | 6–10  | Actividades, autos, Perú. App vendedor móvil. IA omnicanal (IG+TG+webchat+voz). Dry-run AWS.                                                          |
-| **Ola 3** | 10–14 | B2C completo. App cliente final. IA con reserva+cobro autónomo. Migración productiva AWS. CNPJ propio BR.                                             |
-
-Detalle en [`docs/discovery/07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md).
-
----
-
-## 👥 Equipo
-
-Headcount objetivo:
-
-- **Mes 0:** founder + CTO + PM + UX (4)
-- **Mes 6:** 12 personas (cierre Ola 1)
-- **Mes 10:** 20 personas (cierre Ola 2)
-- **Mes 14:** 30 personas (cierre Ola 3)
-
-Modalidad: 100% remoto LATAM (CO/AR/UY) + cumbre presencial trimestral.
-
-Detalle en [`docs/discovery/08-organizacion-equipo.md`](./docs/discovery/08-organizacion-equipo.md).
-
----
-
-## 🚀 Estado actual (mayo 2026)
-
-### Completado
-
-- **Sprint 0** — Monorepo, auth, DB multi-tenant, CI/CD, deploy a VPS con Docker
-- **LATAM NDC** — Integración AirShopping v192 conectada y respondiendo con ofertas reales
-- **Modelo canónico** — `packages/canonical` con schemas Offer, Itinerary, Segment, Money + campos fareFamily, baggage, policies
-- **Búsqueda de vuelos** (`app.planetour.cloud/cotizaciones`) — UI premium con:
-  - Formulario de búsqueda (ida/vuelta, pasajeros, cabina, moneda)
-  - Airport autocomplete (8.803 aeropuertos, lazy-loaded)
-  - Resultados agrupados por vuelo con fare families expandibles (BASIC/LIGHT/FULL/PREMIUM)
-  - Comparación visual de equipaje, cambios y reembolso por tarifa
-  - Soporte round-trip (ida + vuelta en la misma card)
-  - Logos de aerolíneas (CDN con fallback)
-  - Ordenamiento por precio/duración/salida/mejor
-  - Skeleton loading animado
-  - Responsive (mobile + desktop)
-
-### En progreso
-
-- Flujo "Cotizar" — guardar selección como cotización, generar PDF, compartir
-- Más endpoints LATAM NDC — OfferPrice, SeatAvailability, ServiceList, OrderCreate
-- Multi-proveedor — Amadeus, Travelport, Sabre
-
-### Pendiente
-
-- Tenant CRUD desde superadmin
-- Package Studio (drag-and-drop)
-- WhatsApp IA — cotización conversacional
-- Manual operativo (legal, fiscal, comercial)
+Pendiente de olas siguientes: Package Studio (drag-and-drop), WhatsApp/IA conversacional, B2C, app móvil,
+facturación electrónica (DIAN/SUNAT/NF-e). Ver [`docs/discovery/07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md).
 
 ---
 
@@ -137,32 +37,63 @@ Detalle en [`docs/discovery/08-organizacion-equipo.md`](./docs/discovery/08-orga
 
 ```
 sales-travel/
-├── README.md
-├── CLAUDE.md                  # instrucciones permanentes para Claude Code
-├── docs/                      # documentación viva
-├── .claude/                   # config Claude Code (skills/plugins)
-├── packages/
-│   ├── core/                  # ports + errores tipados (CJS)
-│   ├── canonical/             # modelo canónico Zod (Offer, Itinerary, Segment, Money)
-│   └── validation/            # schemas Zod compartidos
-├── providers/
-│   └── latam-ndc/             # ACL LATAM NDC v192 (AirShopping, auth OAuth2)
 ├── apps/
-│   ├── api/                   # NestJS modular monolith (auth, search, tenants)
-│   └── web-b2b/               # Next.js 15 panel agencia (cotizaciones, dashboard)
-├── infrastructure/
-│   └── hostinger/             # provision.sh, Caddyfile, docker-compose
-└── tools/                     # seed-superadmin, migrations
+│   ├── api/                 # NestJS modular monolith (auth, red, búsqueda, reservas, gobierno, consola…)
+│   └── web-b2b/             # Next.js 15 panel de agencia y consola de plataforma
+├── packages/
+│   ├── canonical/           # modelo canónico Zod (Offer, Itinerary, Segment, HotelOffer, Ancillary, SeatMap…)
+│   ├── core/                # ports + errores tipados
+│   ├── domain/              # lógica de dominio sin I/O (gobierno)
+│   └── validation/          # schemas Zod compartidos (ISO-3166, nombres de persona)
+├── providers/               # Anti-Corruption Layer por proveedor
+│   ├── latam-ndc/  sabre/  tbo-hotels/  despegar-hotels/  agent-cars/
+├── db/migrations/           # SQL versionado (RLS, jerarquía, órdenes, gobierno…)
+├── infrastructure/hostinger # docker compose prod + CERT, Caddy, provisión del VPS
+├── tools/                   # migraciones, seeds, sync de aeropuertos/hoteles, arneses de certificación
+└── docs/                    # documentación viva (ver abajo)
 ```
 
-Detalle en [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) §10. Providers y apps adicionales se irán agregando conforme avance Ola 1.
+## 🛠️ Desarrollo
+
+Requisitos: Node 20.18 (`.nvmrc`), pnpm 9.15.
+
+```bash
+pnpm install
+pnpm build        # turbo, respeta dependencias entre paquetes
+pnpm typecheck
+pnpm lint
+pnpm test         # algunos tests de integración necesitan Postgres (variables PG* en turbo.json)
+pnpm format:check
+```
+
+CI (`.github/workflows/ci.yml`) corre formato, build, lint, typecheck y tests en cada push a `main`.
+El deploy (`deploy.yml`) construye las imágenes, despliega al VPS, migra y hace smoke test.
+Trabajamos trunk-based sobre `main`.
 
 ---
 
-## 🤝 Para equipo nuevo (onboarding rápido)
+## 📚 Documentación
 
-1. Lee este README.
-2. Lee [`CLAUDE.md`](./CLAUDE.md) — los principios y convenciones que aplican a TODO.
-3. Lee [`docs/discovery/06-documento-maestro.md`](./docs/discovery/06-documento-maestro.md) para visión y módulos.
-4. Lee [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md) para el detalle técnico.
-5. Lee la sección que toque tu rol en [`docs/discovery/08-organizacion-equipo.md`](./docs/discovery/08-organizacion-equipo.md).
+| Pregunta                                          | Documento                                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mapa técnico: módulos, endpoints, modelo de datos | [`docs/platform/10-mapa-completo-plataforma.md`](./docs/platform/10-mapa-completo-plataforma.md)                                                                 |
+| Modelo consolidador / BYOC y plan                 | [`docs/platform/12-modelo-consolidador-y-plan.md`](./docs/platform/12-modelo-consolidador-y-plan.md)                                                             |
+| Usuarios, roles y superadmins                     | [`docs/platform/15-gestion-de-usuarios.md`](./docs/platform/15-gestion-de-usuarios.md), [`16-roles-y-superadmins.md`](./docs/platform/16-roles-y-superadmins.md) |
+| Integración Sabre                                 | [`docs/sabre/`](./docs/sabre/) (plan en `11-plan-implementacion.md`, hallazgos en `12-hallazgos-sandbox.md`)                                                     |
+| Integración LATAM NDC                             | [`docs/latam-ndc/01-estado-y-plan.md`](./docs/latam-ndc/01-estado-y-plan.md)                                                                                     |
+| Integración TBO hoteles                           | [`docs/tbo/`](./docs/tbo/) (plan en `09-plan-implementacion.md`)                                                                                                 |
+| Integración AgentCars                             | [`docs/cars/agentcars-api-reference.md`](./docs/cars/agentcars-api-reference.md)                                                                                 |
+| Arquitectura y decisiones                         | [`docs/research/05-arquitectura-referencia.md`](./docs/research/05-arquitectura-referencia.md)                                                                   |
+| Visión, módulos y roadmap                         | [`docs/discovery/06-documento-maestro.md`](./docs/discovery/06-documento-maestro.md), [`07-roadmap-olas.md`](./docs/discovery/07-roadmap-olas.md)                |
+| Proveedores del ecosistema, fiscal, competencia   | [`docs/research/`](./docs/research/)                                                                                                                             |
+| Infra y operación del VPS                         | [`infrastructure/hostinger/README.md`](./infrastructure/hostinger/README.md)                                                                                     |
+
+Principios, stack y convenciones para todo cambio: [`CLAUDE.md`](./CLAUDE.md).
+
+---
+
+## 🎯 Posicionamiento
+
+**"El primer consolidador conversacional de LATAM."** Red de agencias self-service con credenciales propias,
+WhatsApp como canal de venta de primera clase, Package Studio visual y cobertura CO + PE + BR.
+Detalle en [`docs/research/06-competencia-latam.md`](./docs/research/06-competencia-latam.md).

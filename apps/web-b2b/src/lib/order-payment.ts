@@ -1,6 +1,6 @@
 /*
  * Pagar una reserva sin pagar con las formas de pago que el superadmin habilitó para la red
- * (`docs/platform/14-opciones-de-pago.md`). La pantalla sólo ofrece lo que devuelve
+ * (`docs/platform/17-opciones-de-pago.md`). La pantalla sólo ofrece lo que devuelve
  * `GET /orders/:id/payment-options`; el API vuelve a comprobarlo al pagar (403 si no está habilitada).
  *
  * Aquí vive lo que no depende de React: leer la respuesta, ordenar y elegir la forma por defecto,

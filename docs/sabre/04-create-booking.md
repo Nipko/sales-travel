@@ -23,7 +23,7 @@ colección), **VERIFICADO-SPEC** (contrato OpenAPI oficial; se cita `archivo.yml
    **no derivar afirmaciones de ausencia desde un extracto**. Esas 4 respuestas se usan en §6.5.
 2. **El front-matter citaba `EXTERNAL_AGENCY.postman_collection.json`. Es FALSO**: ese archivo es
    la colección de **LATAM NDC** (160 requests, `sandbox.api.latam.com/ndc/v192/*`). La fuente
-   Sabre es `sabre/Booking Management API v2026.04.postman_collection.json` (1.077 requests).
+   Sabre es `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json` (1.077 requests).
    Corregido: toda procedencia vive ahora en `00-fuentes.md`.
 3. **La primera pasada ignoró el carril SOAP/LLS stateful** (243 de 1.077 requests). Se añade
    §9. El título "contrato completo" sólo era cierto para el carril REST.

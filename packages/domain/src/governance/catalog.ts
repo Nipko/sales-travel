@@ -4,7 +4,7 @@
  * Es la única lista. La base guarda reglas y perfiles con estos códigos
  * (`db/migrations/0089_governance_profiles.sql`) y el API rechaza cualquier otro. Un proveedor o
  * una forma de pago nueva entra aquí con un PR y nace APAGADA: nada se vende ni se cobra si un
- * superadmin no lo encendió (`docs/platform/14-opciones-de-pago.md`).
+ * superadmin no lo encendió (`docs/platform/17-opciones-de-pago.md`).
  *
  * La cartera de la red (`network-wallet`) no es una forma de pago elegible, es cómo se liquida con el
  * proveedor; el cupo `Limit` de TBO tampoco. Por eso no aparecen.

@@ -6,6 +6,16 @@ estado: borrador
 
 # TBO Hotels — Requisitos maestro de integración
 
+> **Estado al 2026-11-05 (VERIFICADO-CODIGO, `main`).** Los requisitos RF, RNF y RC de este documento están
+> implementados en `providers/tbo-hotels`, `apps/api` (`providers-tbo/`, `hotels/`, `provider-payloads/`,
+> `reconciliation/`) y `apps/web-b2b` (`hoteles/`, `hoteles/checkout`, `reservas/`); la rama `feat/tbo-hotels` se
+> fusionó en `main` el 2026-10-13. Quedan abiertos: **RC-01** (no hay envío ni sign-off archivado en
+> [evidence/cert/](./evidence/cert/README.md)), **RC-10/RC-11** (pase a live y Production Process Form, PR-8.1), la
+> fila `tbo-hotels` de `provider_catalog` (M4) y la verificación con Playwright de RF-39 (PR-6.6). **RC-08 ya se
+> cumple**: `git check-ignore .env.tbo .tbo-cert/x` devuelve `.gitignore:110` y `:111`. Las citas `ruta:línea` de
+> abajo son del commit `8972c6a` o de la rama `feat/tbo-hotels` y pueden no coincidir con `main`. Estado por PR:
+> [09](./09-plan-implementacion.md), bloque inicial.
+
 > **Cómo leer este documento.** Consolida los documentos [01](./01-autenticacion-conectividad-y-errores.md) a
 > [07](./07-certificacion.md) en requisitos verificables, riesgos y decisiones. No repite su contenido: cada requisito
 > enlaza la sección que lo desarrolla. Las fuentes, sus hashes y la convención de citas están en

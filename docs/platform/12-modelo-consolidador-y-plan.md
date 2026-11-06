@@ -1,7 +1,7 @@
 # 12 — Modelo Consolidador (B2B2B / BYOC), Diagnóstico de Gaps y Plan de Implementación
 
-**Versión:** 1.3
-**Fecha:** 2026-06-03 · **Actualizado:** 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); tarifas no reembolsables, [§11](#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29); retención en cascada, [§14](#14--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
+**Versión:** 1.4
+**Fecha:** 2026-06-03 · **Actualizado:** 2026-11-05 (estado del plan y de los gaps, [§0](#0-estado-al-2026-11-05)); 2026-09-29 (carteras por moneda, [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29); tarifas no reembolsables, [§11](#11--tarifas-no-reembolsables-aviso-confirmación-obligatoria-y-control-por-agencia-2026-09-29); retención en cascada, [§14](#14--retención-en-cascada-opción-1)); 2026-09-28 (modelo de red validado, §3.0)
 **Propósito:** Tres cosas en un solo documento: (1) incorporar formalmente el **modelo consolidador con credenciales propias (BYOC)** al target de la plataforma; (2) un **diagnóstico honesto** de dónde estamos vs. la visión y vs. el mercado; (3) un **plan secuenciado** para construirlo y pulirlo con UX limpia y mejores prácticas.
 
 > Este doc es la fuente de verdad para el modelo consolidador. El target ya quedó reflejado en `CLAUDE.md`, `docs/discovery/06-documento-maestro.md` §1.1 y `docs/platform/10-mapa-completo-plataforma.md` (entidad TENANT + jerarquía M8.1).
@@ -11,6 +11,65 @@
 > **Actualización 2026-09-29: carteras por moneda.** La cartera de cada agencia la establece **quien la financia** (opción A del founder): Planetour, por su superadmin, para lo que cuelga de la plataforma; el consolidador para sus agencias; la agencia para sus sub-agencias. Hay una cartera por moneda, con su cupo. La agencia sólo ve sus carteras e informa depósitos, que quedan pendientes hasta que quien la financia los aprueba. Una reserva se retiene en la cartera de la moneda de la tarifa, y sin ella se rechaza (en hoteles, antes de llamar al proveedor). Cierra la brecha crítica de carteras de la auditoría. Detalle en [§10](#10--carteras-por-moneda-y-quién-las-establece-2026-09-29) y [13 §4.1](./13-validacion-modelo-red.md#41-confidencialidad); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), pasos 7 a 9.
 
 > **Actualización 2026-09-29: retención en cascada ("opción 1" del founder).** El cupo ya no puede crecer sin tope a lo largo de la red. Una reserva retiene en la cartera del nodo que vende y, además, en la de cada nivel que lo financia, en la moneda de la tarifa, hasta el dueño de la credencial con que se reserva. El que vende retiene el precio de venta y cada ancestro su costo. Si un nivel no alcanza, no se retiene en ninguno y no se llama al proveedor. Lo decide la base desde la orden (0060). Detalle en [§14](#14--retención-en-cascada-opción-1); runbook en [13 §5](./13-validacion-modelo-red.md#5-runbook-del-vps), paso 14.
+
+---
+
+## 0. Estado al 2026-11-05
+
+> Resumen vivo de qué está hecho. §2 y §4 son el diagnóstico de junio y se dejan como estaban; esta
+> tabla dice cómo está cada cosa hoy, verificado contra el código (`apps/api/src`, `db/migrations`
+> hasta 0093). El mapa de módulos y endpoints está en [10](./10-mapa-completo-plataforma.md).
+
+**Fases del plan (§6):**
+
+| Fase                            | Estado | Qué hay / qué falta                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — Fundación consolidador      | ✅     | Jerarquía de 4 niveles con raíz `platform` (0011, 0049–0051), BYOC con herencia y cifrado (0012), roles ampliados y JWT con `tid` + `switch-tenant`, RLS jerárquica y tests de aislamiento en CI, `domain_events` (0015), waterfall (0016–0017) aplicado en la búsqueda de vuelos y en hoteles. Falta la confidencialidad del waterfall: G-02 (neto) y G-01 (simulador), [13 §4.1](./13-validacion-modelo-red.md#41-confidencialidad).                                                      |
+| 1 — Operar de verdad            | ◐      | Hecho: carteras por moneda y retención en cascada (§10, §14), post-venta durable con cola BullMQ y barrido cada 15 min (no Temporal), emisión, void, servicios y reshop de vuelos con una sola escritura pendiente por orden (0083), seguimiento de reservas y avisos de plazo de emisión (0081–0085), conciliación con el proveedor (0047). Falta: pasarela propia (Stripe/MP), recarga real y extractos, reembolsos y cambios como flujo completo, saga multi-proveedor con compensación. |
+| 2 — UX + panel consolidador     | ◐      | Hecho: _Mi Red_, _Gestión de Agencias_ con ficha por nodo, marca heredable y dominio propio (0030, 0033), consola de la plataforma (Resumen, Reservas de la red, Actividad, Sistema, Anuncios, Carteras; 0075–0079), reportes de ventas reales por moneda (G-16). Falta: "entrar como" (G-17, D5), wizard de onboarding, reporte de comisiones real (hoy `available: false`), simulador de reglas.                                                                                          |
+| 3 — Verticales + Package Studio | ◐      | Hecho: hoteles TBO y Despegar con catálogo y mapeo propios (0041–0046, 0054, 0070), autos AgentCars, ancillaries/EMD en vuelos (0086). Falta: asistencias y actividades, Package Studio (la API `/packages` existe, sin pantalla).                                                                                                                                                                                                                                                          |
+| 4 — Multi-source aéreo + fiscal | ◐      | Hecho: vuelos con Sabre y LATAM NDC a la vez (`provider_catalog`, 0035), ida y vuelta con tarifa por trayecto, tarifas en otra moneda para pruebas (0087), facturador con datos fiscales en la cotización y clientes empresa (0091). Falta: colas tipo GDS, facturación electrónica (DIAN/SUNAT/NF-e), contabilidad y conciliación BSP.                                                                                                                                                     |
+| 5 — IA + seguridad avanzada     | ◐      | Hecho: 2FA obligatorio para todo rol que administra y reconfirmación en acciones de alto impacto, correos transaccionales (BYO-email), apagado de emergencia por proveedor desde el panel (0077) y circuito por proveedor. Falta: WhatsApp nativo (hoy sólo `wa.me`), copiloto IA, feature flags (Unleash).                                                                                                                                                                                 |
+
+**Gobierno de la plataforma (nuevo desde octubre, no estaba en el plan de junio):**
+
+- **Proveedores y formas de pago gobernados por el superadmin**, con perfiles enlazados y herencia (0089–0090): [17](./17-opciones-de-pago.md). Nada se vende ni se cobra si el superadmin no lo encendió.
+- **Superadmins plenos y supervisados**, con solicitudes que aprueba un pleno y auditoría de cambios hechos fuera del panel (0092): [16](./16-roles-y-superadmins.md).
+- **`platform_admin` sin acceso** (0093): ya no es sólo "no asignable"; no da ningún permiso.
+
+**Gaps de §4, hoy:**
+
+| Gap (§4)                                        | Prioridad | Estado al 2026-11-05                                                                                                                         |
+| ----------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Emisión con cola + reintentos                   | P0        | ◐ Cola de post-venta (BullMQ) + barrido; emisión y relectura del tiquete en Sabre y LATAM. Sin "robotic ticketing" automático.               |
+| Post-venta: reemisión, reembolso, void, cambios | P0        | ◐ Cancelar, void, reshop (LATAM), servicios. Reembolso y cambios involuntarios, no.                                                          |
+| Fare rules visibles                             | P0        | ◐ Condiciones y qué incluye cada tarifa por trayecto (Sabre `ReturnBrandAncillaries`, multas de LATAM).                                      |
+| EMD / ancillaries                               | P1        | ✅ 0086 (agregar y quitar antes de emitir; la retención de la red acompaña).                                                                 |
+| Multi-GDS / multi-source                        | P1        | ◐ Sabre + LATAM NDC. Sin dedupe ni "mejor precio" entre fuentes verificado.                                                                  |
+| Colas tipo GDS                                  | P1        | ❌                                                                                                                                           |
+| Hoteles + mapping                               | P1        | ✅ TBO y Despegar, mapeo propio (`hotel_match`), no Giata.                                                                                   |
+| Asistencias, autos, actividades                 | P1/P2     | ◐ Autos (AgentCars). Asistencias y actividades, no.                                                                                          |
+| Package Studio                                  | P1        | ❌ Sólo API y tablas (0010).                                                                                                                 |
+| Gateway real (Stripe/MP)                        | P0        | ❌ Lo único alojado es el enlace de pago de LATAM (SAQ-A del lado de LATAM).                                                                 |
+| Wallet / depósitos con extracto                 | P0        | ◐ Carteras por moneda, depósitos informados y aprobados, retención en cascada. Faltan recarga real, extractos y el invariante saldo = libro. |
+| Split / payout por nodo                         | P1        | ❌                                                                                                                                           |
+| Métodos locales                                 | P1        | ❌                                                                                                                                           |
+| Antifraude / 3DS                                | P2        | ❌                                                                                                                                           |
+| Conciliación BSP/financiera                     | P0        | ◐ Conciliación de reservas contra el proveedor (0047, corrida diaria). BSP, no.                                                              |
+| Contabilidad                                    | P1        | ❌                                                                                                                                           |
+| Facturación electrónica                         | P1        | ❌ Sólo los datos del facturador (0091).                                                                                                     |
+| Reporting por nodo                              | P1        | ◐ Ventas reales por moneda; consola de la plataforma; comisiones sin fuente.                                                                 |
+| Audit log inmutable                             | P0        | ✅ `domain_events` + Actividad de la plataforma (0078) + cambios directos en la base (0092).                                                 |
+| WhatsApp nativo                                 | P1        | ❌                                                                                                                                           |
+| Copiloto IA                                     | P2        | ❌                                                                                                                                           |
+| Tests de aislamiento en CI                      | P0        | ✅                                                                                                                                           |
+| Cifrado de credenciales + redacción             | P0        | ✅                                                                                                                                           |
+| MFA admins                                      | P1        | ✅ Todo rol que administra (`admin` y superiores).                                                                                           |
+| White-label real                                | P1        | ◐ Logo, colores y dominio propio heredables; sin editor de tema completo.                                                                    |
+| Notificaciones email                            | P1        | ✅ Cotización, confirmación, avisos de seguridad y de plazo de emisión.                                                                      |
+| Feature flags + kill-switch por proveedor       | P1        | ◐ Kill-switch y circuito por proveedor desde el panel (0077); feature flags, no.                                                             |
+
+**Decisiones abiertas:** D2, D3 y D5 de la auditoría de red ([§3.0](#30-modelo-de-red-validado-2026-09-28)) siguen abiertas.
 
 ---
 
@@ -31,6 +90,8 @@
 ## 2. Estado real hoy: código vs. visión (diagnóstico honesto)
 
 > Inventario verificado leyendo el código (no los docs). La visión documentada es ambiciosa y correcta; el objetivo de esta sección es que no confundamos "documentado" con "construido".
+
+> Diagnóstico de **junio de 2026**: se deja como registro. El estado de hoy está en [§0](#0-estado-al-2026-11-05).
 
 ### 2.1 Lo que SÍ existe y funciona
 
@@ -110,7 +171,7 @@ En esta etapa ser sucursal no cambia ni el pricing ni las carteras: una sucursal
 | D1  | ¿Cómo vende Planetour a nombre propio?                                      | ✅ **Sucursales**: agencias hijas de Planetour con `is_branch`, cada una con sus vendedores. La raíz provee y administra.                                                                                                                                                                                                                                              | Migración 0050; _Gestión de Agencias_.                                                           |
 | D4  | ¿Qué tipo de nodo puede colgar de cuál?                                     | ✅ **A, jerarquía estricta.** Un solo `platform` y es la raíz. Bajo `platform`: `consolidator` y `agency` (las sucursales incluidas). Bajo `consolidator`: `agency`. Bajo `agency`: `subagency`. Máximo 4 niveles. La sucursal sólo cuelga de `platform`.                                                                                                              | Índice único y trigger de 0050, en toda escritura de `tenants`. La API deriva el tipo del padre. |
 | D6  | ¿Qué pasa al mover un nodo de padre?                                        | ✅ **A.** Lo histórico (órdenes, movimientos de cartera) queda como está; desde el cambio rigen las credenciales, reglas y marca del nuevo padre. Se rechazan ciclos, más de 4 niveles y lo que viole D4. Se bloquea si el nodo o su subárbol tiene reservas abiertas pagadas con cartera, o reservas abiertas hechas con una cuenta de un ancestro que deja de serlo. | `move_tenant_subtree` (0051), sólo superadmin; `POST /admin/tenants/:id/move`.                   |
-| D7  | Rol `platform_admin`                                                        | ✅ **B, retirado como rol asignable.** Sigue en el enum por compatibilidad, pero ni la API ni la web lo asignan.                                                                                                                                                                                                                                                       | `ASSIGNABLE_ROLES` y los Zod de la API; aceptar una invitación.                                  |
+| D7  | Rol `platform_admin`                                                        | ✅ **B, retirado.** Ni la API ni la web lo asignan y, desde 0093 (2026-11-05), no da ningún acceso: se quitaron sus memberships y salió de las funciones que lo contaban. Quien necesite ver la plataforma sin aprobar: superadmin supervisado ([16](./16-roles-y-superadmins.md)).                                                                                    | `ASSIGNABLE_ROLES` y los Zod de la API; aceptar una invitación.                                  |
 | D2  | ¿Planetour cobra margen a un consolidador que vende con su propio contrato? | Abierta. Recomendada: B, fee de plataforma aparte, arranca en 0.                                                                                                                                                                                                                                                                                                       | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
 | D3  | ¿Dónde viven las credenciales de Planetour?                                 | Abierta. Recomendada: A, todas en la bóveda y sin respaldo de variables del servidor.                                                                                                                                                                                                                                                                                  | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
 | D5  | ¿Quién puede "entrar como" otro nodo?                                       | Abierta. Recomendada: A ahora (sólo el superadmin, auditado) y B cuando exista el primer consolidador real.                                                                                                                                                                                                                                                            | [13 §4.3](./13-validacion-modelo-red.md#43-decisiones-que-faltan)                                |
@@ -206,7 +267,7 @@ El JWT actual sólo lleva `sub`; el tenant se infiere del "primer membership". P
 - **Roles ampliados:** añadir `consolidator_admin` (gestiona su red, agencias, credenciales, override) y `agency_admin` distinto de `subagency`. Mapear los actuales (`tenant_admin`/`admin`) a la nueva jerarquía con migración.
 - **Visibilidad jerárquica:** un `consolidator_admin` puede ver/administrar sus descendientes; una agencia **no** ve hacia arriba ni lateral. Se implementa en RLS (§3.5) + guards ABAC.
 - **Superadmin (2026-09-28):** administra toda la red pero **no vende**. Las rutas de venta (`@SalesOperation()`: búsquedas, PreBook, Book, órdenes nuevas, pago/emisión, cotizaciones, paquetes y reservas con cartera) responden 403 `PLATFORM_ROLE_CANNOT_SELL` a los roles de plataforma, en cualquier nodo. Planetour vende con usuarios de sus sucursales ([§3.0](#30-modelo-de-red-validado-2026-09-28)).
-- **`platform_admin` retirado (D7 B):** sigue en el enum de roles por compatibilidad, pero ni la API ni la web lo asignan.
+- **`platform_admin` retirado (D7 B):** sigue en el tipo `Role` por compatibilidad, pero nadie lo asigna y desde 0093 no da acceso. El superadmin puede ser **pleno** o **supervisado** ([16](./16-roles-y-superadmins.md)).
 - **Anti-escalada (G-06):** el rango se mide sobre el nodo destino y nadie asigna un rol igual o superior al propio.
 
 ### 3.5 RLS jerárquica
@@ -329,6 +390,8 @@ Principio rector ya definido (Linear/Stripe/Notion). Aplicado al consolidador:
 
 > Trunk-based, feature flags, cada fase es entregable y verificable. Las fases 0-2 son secuenciales; 3-5 pueden solaparse. Estimaciones en "tallas" (S/M/L) no en fechas (dependen del equipo).
 
+> Cómo va cada fase al 2026-11-05: [§0](#0-estado-al-2026-11-05).
+
 ### Fase 0 — Fundación consolidador (BLOQUEANTE, va primero) — **L**
 
 Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con aislamiento probado.
@@ -402,6 +465,8 @@ Objetivo: el núcleo soporta jerarquía + BYOC + waterfall + auth correcto, con 
 ---
 
 ## 8. Próximos pasos inmediatos
+
+> Lista de septiembre. Lo que sigue abierto al 2026-11-05 está en [§0](#0-estado-al-2026-11-05).
 
 1. **Validar** §3 (arquitectura), §6 (orden de fases). Decisiones D1–D5 ✅ cerradas (§7).
 2. ✅ **Fase 0, paso 1-2 implementado** en la rama `feat/consolidator-foundation` (ver §9).
@@ -486,7 +551,7 @@ Auditoría transversal de seguridad sobre la app desplegada (sesiones, auditorí
 **Pendiente (Tier 3, opcional):**
 
 - Backfill de PII legacy de clientes (cifrar filas existentes).
-- (Opcional) refresh tokens / revocación de sesión y MFA para roles admin+.
+- ~~(Opcional) refresh tokens / revocación de sesión y MFA para roles admin+.~~ Hecho: sesiones revocables (0026, 0055) y 2FA obligatorio para todo rol que administra (2026-11-05, [16](./16-roles-y-superadmins.md) H6).
 
 ## §7 — Notificaciones por email (BYO-email) + verificación
 

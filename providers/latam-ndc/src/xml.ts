@@ -107,7 +107,3 @@ export function latamWarnings(response: unknown): LatamMessage[] {
     desc: text(pick(n, 'DescText')) ?? '',
   }));
 }
-
-export function describeErrors(errors: readonly LatamMessage[]): string {
-  return errors.map((e) => `${e.code}: ${e.desc}`).join(' | ');
-}

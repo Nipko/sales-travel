@@ -11,7 +11,7 @@ import { loadProfiles } from '../../../../../lib/governance-client';
 import type { Loaded } from '../../../../../lib/provider-enablement-client';
 
 /**
- * «Perfil de gobierno» en el alta de un nodo (docs/platform/14-opciones-de-pago.md §3.4). Sólo lo
+ * «Perfil de gobierno» en el alta de un nodo (docs/platform/17-opciones-de-pago.md §3.4). Sólo lo
  * ve el superadmin. Arranca en el perfil marcado como predeterminado para nodos nuevos, si hay;
  * «Heredar del padre» no manda nada y el nodo hereda lo que gobierna a su padre.
  */

@@ -2,7 +2,10 @@
 
 > Estado: implementado el 2026-11-05 (migración `0092_platform_supervision.sql`). Diseño acordado
 > con el founder ese mismo día: **superadmin pleno + superadmin supervisado con aprobación**, y
-> **alta y baja de superadmins desde el panel**.
+> **alta y baja de superadmins desde el panel**. Después, ese mismo día: 2FA para todo rol que
+> administra, `platform_admin` sin acceso (`0093_retire_platform_admin.sql`) y las listas de roles
+> desde una sola fuente (`aeae03e`). Este doc es la fuente de verdad de los roles; si otro doc dice
+> otra cosa, manda éste.
 
 ## 1. Inventario de roles (cómo está hoy)
 
@@ -29,8 +32,12 @@ plataforma pasan salvo en `@SalesOperation()`: el superadmin no vende) → `Rece
 de alto impacto, 2FA de los últimos 10 minutos) → `SuperadminGuard` por controlador en la consola.
 La base lo vuelve a exigir con RLS y funciones como `is_platform_superadmin()`.
 
-La web muestra «Plataforma» a quien tiene `role === 'superadmin'` en el nodo activo
-(`lib/nav.ts`, `admin/plataforma/layout.tsx`).
+La web muestra «Plataforma» a la **persona** superadmin, esté en el nodo que esté (H12; `lib/nav.ts`,
+`admin/plataforma/layout.tsx`); el API autoriza por identidad, no por el nodo activo.
+
+Otras pantallas que dependen del rol: el 2FA (`MfaEnforcementGuard`, todo rol que administra), el
+gobierno de proveedores y formas de pago ([17](./17-opciones-de-pago.md), sólo superadmin) y la
+gestión de personas ([15](./15-gestion-de-usuarios.md)).
 
 ## 2. Huecos encontrados
 

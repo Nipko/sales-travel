@@ -1,11 +1,52 @@
 ---
 titulo: 'Sabre — Requisitos maestro de integración'
 fecha: 2026-08-26
-estado: reconciliado-contra-spec; D1 y D9 cerradas (§9)
+estado: 'reconciliado-contra-spec; D1 y D9 cerradas (§9); estado por RF actualizado al 2026-11-05'
 Fuentes: ver 00-fuentes.md
 ---
 
 # Sabre — Requisitos maestro de integración
+
+## Estado al 2026-11-05
+
+> **Cómo leer este documento hoy.** Los requisitos se escribieron el 2026-08-26, antes del código. Esta tabla dice
+> si cada RF está construido, contrastado con el código de `main`; el texto de §3 en adelante no se reescribió. Lo
+> que se vio en CERT está en [12-hallazgos-sandbox.md](./12-hallazgos-sandbox.md) y el estado por fase en
+> [11 §Estado al 2026-11-05](./11-plan-implementacion.md#estado-al-2026-11-05).
+>
+> 🚨 **H-07 sigue abierto:** sin «Store Passenger Type In PNR» en la oficina de reserva, las reservas salen por el
+> rodeo `bookOnTicketingPcc` → `targetPcc` = PCC de emisión
+> ([12-hallazgos-sandbox.md](./12-hallazgos-sandbox.md), aviso al inicio).
+
+Leyenda: ✅ hecho · 🟡 código hecho y sin certificar en CERT, o parcial · ❌ falta · ❓ sin verificar · — fuera de
+alcance.
+«Apagado» = detrás de `SABRE_OPERATIONS` (`apps/api/src/providers-sabre/sabre.factory.ts`), que nace vacío.
+
+| RF    | Estado | Dónde está / qué falta                                                                                                                                                                                                                      |
+| ----- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RF-01 | ✅     | `providers/sabre/src/auth/token.service.ts`. En CERT el token dura 7 días (P-08)                                                                                                                                                            |
+| RF-02 | ✅     | Bóveda BYOC con herencia (`apps/api/src/provider-credentials/`) y `sabre.factory.ts`                                                                                                                                                        |
+| RF-03 | ✅     | `shop/request.builder.ts` (BFM v5). NDC va apagado salvo `config.ndcContent` (SAB-18)                                                                                                                                                       |
+| RF-04 | 🟡     | ATPCO hecho, con marcas por trayecto ([15](./15-marcas-por-trayecto.md)) y tarifas por tipo de pasajero ([16](./16-tarifas-por-tipo-de-pasajero.md)). Falta el mapper NDC (`ndc-content-skipped`) y el equipaje de mano y los cargos (H-03) |
+| RF-05 | ✅     | `apps/api/src/search/provider-fanout.ts`, `circuit-breaker.service.ts`                                                                                                                                                                      |
+| RF-06 | ✅     | `apps/api/src/search/offer-dedupe.ts`                                                                                                                                                                                                       |
+| RF-07 | 🟡     | `offers/price` para NDC (`sabre-offer-price.adapter.ts`, sin certificar) y Flight Check para ATPCO (`sabre-flight-check.adapter.ts`, probado en CERT: H-04)                                                                                 |
+| RF-08 | 🟡     | `booking/create.*`, `sabre-order-create.adapter.ts`. Ninguna reserva sale sin el rodeo de H-07; con él, PNR `QZPKXT` y `QPLVBP` en CERT                                                                                                     |
+| RF-09 | ✅     | `booking/get.*` (`retrieveForDisplay` / `retrieveForModification`)                                                                                                                                                                          |
+| RF-10 | ✅     | `booking/cancel.*`. En CERT, probado sólo sobre las reservas del rodeo                                                                                                                                                                      |
+| RF-11 | 🟡     | `ticketing/fulfill.*` (SAB-08), apagado (`issue`). Sin certificar (SAB-13)                                                                                                                                                                  |
+| RF-12 | 🟡     | `checkFlightTickets` en `sabre-order-manage.adapter.ts` (SAB-09). Sin certificar                                                                                                                                                            |
+| RF-13 | 🟡     | Void por `cancelBooking` con `cancelAll` (SAB-09), apagado (`void`). Sin certificar (SAB-13)                                                                                                                                                |
+| RF-14 | ❌     | El reembolso existe sólo en el ACL para el arnés (`sab-24`); la plataforma no lo cablea (SAB-23) y D9 pide Temporal antes del primero real, que no está en el repo                                                                          |
+| RF-15 | ✅     | `ticketing/document-status.ts`                                                                                                                                                                                                              |
+| RF-16 | 🟡     | Asientos al reservar (SAB-16, `seats`) y servicios ATPCO por Stateless Ancillaries (SAB-19/20, `services`), apagados. Sin certificar (SAB-21). NDC no (P-12)                                                                                |
+| RF-17 | 🟡     | `booking/modify.*` cambia viajeros, documento, viajero frecuente y SSR (SAB-25, `modify`). Asientos sobre una reserva existente: no                                                                                                         |
+| RF-18 | 🟡     | `targetPcc`/`ticketingPcc` en la cuenta; el rodeo de H-07 reserva con `targetPcc` en un carril aislado (`bookingLane`). Branch access por agencia: Fase C, sin empezar                                                                      |
+| RF-19 | ✅     | `capabilities` en cada factory (`sabre.factory.ts`)                                                                                                                                                                                         |
+| RF-20 | 🟡     | La orden guarda la cuenta (`orders.provider_account_id`) y los `domain_events`. No se estampa marca de agencia en el PNR (el builder no manda remarks)                                                                                      |
+| RF-21 | ❓     | No verificado en este repaso: el carril fiscal no es del ACL de Sabre                                                                                                                                                                       |
+| RF-22 | —      | Fuera de alcance ([11 §11.3](./11-plan-implementacion.md))                                                                                                                                                                                  |
+| RF-23 | ✅     | Localizador de la aerolínea en la lectura, la emisión y la pantalla de Reservas                                                                                                                                                             |
 
 > **Qué cambió respecto de la primera pasada.** Este documento se escribió cuando la única fuente era la
 > colección Postman y **8 de los 10 análisis daban la forma de las respuestas por desconocida**. Ya no es así:

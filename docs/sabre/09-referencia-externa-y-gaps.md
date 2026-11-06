@@ -68,7 +68,7 @@ Tres consecuencias que hay que propagar al resto del corpus:
 
 Este body debe recuperarse como **fixture** de test del ACL (`providers/sabre/src/fixtures/orders-view-200.json`, anonimizado) — es la única evidencia de respuesta real que salió de la colección.
 
-**(b) Front-matter con fuente falsa — corregido.** La 1ª pasada citaba `EXTERNAL_AGENCY.postman_collection.json` como fuente. Ese archivo es la colección de **LATAM NDC** (160 requests, `sandbox.api.latam.com/ndc/v192/*`) y no tiene nada que ver con Sabre. La fuente Sabre es `sabre/Booking Management API v2026.04.postman_collection.json` (1.077 requests). El front-matter ahora remite a `00-fuentes.md`, como el resto del corpus.
+**(b) Front-matter con fuente falsa — corregido.** La 1ª pasada citaba `EXTERNAL_AGENCY.postman_collection.json` como fuente. Ese archivo es la colección de **LATAM NDC** (160 requests, `sandbox.api.latam.com/ndc/v192/*`) y no tiene nada que ver con Sabre. La fuente Sabre es `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json` (1.077 requests). El front-matter ahora remite a `00-fuentes.md`, como el resto del corpus.
 
 **(c) El carril SOAP/LLS existe y la 1ª pasada lo ignoró.** **VERIFICADO** — 243 de los 1.077 requests van a `{{soap_endpoint}}`. Recuento propio por tipo de mensaje sobre `requests.jsonl` (primer elemento `*RQ` del body):
 

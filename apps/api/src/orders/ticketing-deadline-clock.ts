@@ -150,7 +150,9 @@ export function offsetLabel(at: Date, timeZone: string): string {
     const name = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' })
       .formatToParts(at)
       .find((p) => p.type === 'timeZoneName')?.value;
-    return name === undefined || name.length === 0 ? timeZone : name;
+    if (name === undefined || name.length === 0) return timeZone;
+    // ICU de Node 20 escribe «GMT» para UTC y el de Node 22+ «GMT+0»: el aviso no puede cambiar con el runtime.
+    return name === 'GMT+0' ? 'GMT' : name;
   } catch {
     return timeZone;
   }

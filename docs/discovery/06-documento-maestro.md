@@ -4,6 +4,8 @@
 **Fecha:** 2026-04-24
 **Estado:** Borrador para validación del founder antes de pasar a roadmap detallado
 
+> **Nota 2026-11-05.** La visión, el posicionamiento y los módulos (§1-§3) siguen siendo la referencia de producto. La arquitectura (§4), el roadmap (§5) y el equipo (§6) se desviaron: proveedores y stack reales en «Estado real al 2026-11-05» de [07-roadmap-olas.md](./07-roadmap-olas.md) y en las notas de `docs/research/05-arquitectura-referencia.md`.
+
 ---
 
 ## 1. Visión y Posicionamiento
@@ -316,18 +318,18 @@ Año 2 (post-AWS, B2C, expansión PE/MX/AR): **1.500.000 – 2.500.000 USD** acu
 
 ## 8. Riesgos del Proyecto
 
-| #   | Riesgo                                                             | Probabilidad | Impacto | Mitigación                                                                                    |
-| --- | ------------------------------------------------------------------ | ------------ | ------- | --------------------------------------------------------------------------------------------- |
-| R1  | Hostinger no soporta volumen/PCI antes de AWS                      | Alta         | Alto    | Triggers de migración objetivos + diseño cloud-ready día 1 (`02-decisiones-segunda-ronda.md`) |
-| R2  | Timeline de 6 meses optimista para Ola 1                           | Alta         | Alto    | Esquema por olas + alcance Ola 1 acotado a B2B CO/BR                                          |
-| R3  | Homologación GDS/NDC más lenta que estimado                        | Alta         | Alto    | Empezar con consolidador existente + Duffel como acelerador NDC                               |
-| R4  | Compliance fiscal BR sin CNPJ → fricción B2C                       | Alta         | Alto    | dLocal/Ebanx como MoR fase inicial; CNPJ en Ola 3                                             |
-| R5  | Equipo no se contrata a tiempo                                     | Alta         | Crítico | CTO mes 0, headhunter con red LATAM, salarios competitivos LATAM                              |
-| R6  | Competencia reacciona agresivamente (Wooba, Sakura, Ideas Fractal) | Media        | Medio   | Diferenciación clara: drag-and-drop + IA omnicanal nativa                                     |
-| R7  | LLM cost runaway con omnicanal                                     | Media        | Medio   | Hard limits, budget por tenant, cache de respuestas, modelo router por costo                  |
-| R8  | Filtración cross-tenant                                            | Baja         | Crítico | RLS forzada, tests de aislamiento en CI, fuzz testing                                         |
-| R9  | Vendor lock o cambio de términos GDS/PSP                           | Media        | Alto    | Anti-Corruption Layer, multi-provider con failover                                            |
-| R10 | Founder/equipo abrumado por alcance                                | Media        | Alto    | Disciplina de olas, cero scope creep, retros mensuales                                        |
+| #   | Riesgo                                                             | Probabilidad | Impacto | Mitigación                                                                      |
+| --- | ------------------------------------------------------------------ | ------------ | ------- | ------------------------------------------------------------------------------- |
+| R1  | Hostinger no soporta volumen/PCI antes de AWS                      | Alta         | Alto    | Triggers de migración objetivos + diseño cloud-ready día 1 (`02-decisiones.md`) |
+| R2  | Timeline de 6 meses optimista para Ola 1                           | Alta         | Alto    | Esquema por olas + alcance Ola 1 acotado a B2B CO/BR                            |
+| R3  | Homologación GDS/NDC más lenta que estimado                        | Alta         | Alto    | Empezar con consolidador existente + Duffel como acelerador NDC                 |
+| R4  | Compliance fiscal BR sin CNPJ → fricción B2C                       | Alta         | Alto    | dLocal/Ebanx como MoR fase inicial; CNPJ en Ola 3                               |
+| R5  | Equipo no se contrata a tiempo                                     | Alta         | Crítico | CTO mes 0, headhunter con red LATAM, salarios competitivos LATAM                |
+| R6  | Competencia reacciona agresivamente (Wooba, Sakura, Ideas Fractal) | Media        | Medio   | Diferenciación clara: drag-and-drop + IA omnicanal nativa                       |
+| R7  | LLM cost runaway con omnicanal                                     | Media        | Medio   | Hard limits, budget por tenant, cache de respuestas, modelo router por costo    |
+| R8  | Filtración cross-tenant                                            | Baja         | Crítico | RLS forzada, tests de aislamiento en CI, fuzz testing                           |
+| R9  | Vendor lock o cambio de términos GDS/PSP                           | Media        | Alto    | Anti-Corruption Layer, multi-provider con failover                              |
+| R10 | Founder/equipo abrumado por alcance                                | Media        | Alto    | Disciplina de olas, cero scope creep, retros mensuales                          |
 
 ---
 

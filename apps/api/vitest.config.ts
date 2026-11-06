@@ -22,8 +22,7 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'lcov'],
       reportsDirectory: './coverage',
 
-      // Sólo código fuente de la API. Los scripts sueltos de la raíz del paquete
-      // (`search-logs.js`, `test-db-connection.js`) son herramientas de diagnóstico manual.
+      // Sólo código fuente de la API.
       include: ['src/**/*.ts'],
       exclude: [
         '**/*.test.ts',

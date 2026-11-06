@@ -2,7 +2,7 @@
  * Generates the static airports.json for the web-b2b frontend.
  *
  * Source: OurAirports (public domain)
- * Output: apps/web-b2b/public/data/airports.json
+ * Output: apps/web-b2b/src/data/airports-full.json (lo carga lib/airports.ts con import() dinámico)
  *
  * Run: pnpm --filter @sales-travel/generate-airports-json generate
  */
@@ -12,8 +12,8 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUTPUT_DIR = resolve(__dirname, '../../../apps/web-b2b/public/data');
-const OUTPUT_PATH = resolve(OUTPUT_DIR, 'airports.json');
+const OUTPUT_DIR = resolve(__dirname, '../../../apps/web-b2b/src/data');
+const OUTPUT_PATH = resolve(OUTPUT_DIR, 'airports-full.json');
 
 const AIRPORTS_URL =
   'https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';

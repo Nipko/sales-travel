@@ -1,5 +1,10 @@
 # 14 — Alta de usuarios sólo por invitación
 
+> Estado al 2026-11-05: **vigente** y cumplido en el código. Los superadmins no se invitan por aquí:
+> se dan y se quitan desde Plataforma → Superadmins ([16](./16-roles-y-superadmins.md)), y una
+> invitación nunca concede un rol de plataforma. El alta de un nodo además puede llevar su perfil de
+> gobierno (`governanceProfileId`, sólo el superadmin; [17 §3.4](./17-opciones-de-pago.md#34-nodos-nuevos)).
+
 ## Decisión del founder (2026-09-29)
 
 **Sólo invitación.** Nadie fija la contraseña de otro, tampoco el superadmin: no hay onboarding

@@ -5,6 +5,15 @@
 **Ramas:** tanda 1 en `feat/network-model`, desde `main` 19c6e3f, mergeada con #6 (`fb25713`). Carteras por moneda en `feat/wallets-per-currency`, desde `main` 5de126d, mergeada con #10 (`7f9f011`). Rediseño de hoteles en `feat/hotels-redesign`, encima de las carteras, mergeado con #11. Retención en cascada en `feat/wallets-credit-cascade`, desde `main` 7f9f011.
 **Propósito:** Dejar por escrito cuatro cosas: (1) la auditoría del modelo de red del 2026-09-28, resumida; (2) qué quedó arreglado en la primera tanda; (3) qué queda para la siguiente, con las decisiones abiertas; (4) el runbook para ponerlo en producción.
 
+> **Documento histórico (nota del 2026-11-05).** Es el expediente de la auditoría del 2026-09-28 y su
+> runbook hasta el paso 14; no se actualiza más. Lo que dice de roles, superadmin y "entrar como" lo
+> reemplazan [16 — Roles y superadmins](./16-roles-y-superadmins.md) y la consola de la plataforma
+> ([10 §6](./10-mapa-completo-plataforma.md#admin-superadmin)); el gobierno de proveedores está en
+> [17](./17-opciones-de-pago.md); el estado vivo de cada brecha, en
+> [12 §0](./12-modelo-consolidador-y-plan.md#0-estado-al-2026-11-05). No todas sus brechas están
+> cerradas: G-02, G-01, G-17 (como "entrar como"), las decisiones D2, D3 y D5 y varias medias de §2.4
+> siguen abiertas al 2026-11-05.
+
 > El modelo firmado está en [12 §3.0](./12-modelo-consolidador-y-plan.md#30-modelo-de-red-validado-2026-09-28). Este documento es el expediente de cómo se validó y qué falta. Las decisiones D1–D7 de aquí son las de la auditoría, no las D1–D5 de junio de [12 §7](./12-modelo-consolidador-y-plan.md#7-riesgos-y-decisiones-abiertas).
 
 ---

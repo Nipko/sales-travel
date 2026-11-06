@@ -25,14 +25,3 @@ export function bool(v: unknown): boolean {
   }
   return false;
 }
-
-/** Convierte hora militar HHMM a display "HH:MM". */
-export function militaryToDisplay(hhmm: string): string {
-  const padded = hhmm.padStart(4, '0');
-  return `${padded.slice(0, 2)}:${padded.slice(2)}`;
-}
-
-/** Convierte hora HH:MM a formato militar HHMM. */
-export function displayToMilitary(time: string): string {
-  return time.replace(':', '');
-}

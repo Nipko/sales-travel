@@ -31,7 +31,7 @@ type PanelState =
     };
 
 /**
- * Plataforma → Gobierno (docs/platform/14-opciones-de-pago.md): nada se vende ni se cobra si el
+ * Plataforma → Gobierno (docs/platform/17-opciones-de-pago.md): nada se vende ni se cobra si el
  * superadmin no lo encendió. Los perfiles se asignan a nodos; las reglas globales valen donde
  * ningún nodo decida.
  */

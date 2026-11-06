@@ -6,6 +6,28 @@ Fecha: 2026-04-24
 
 ---
 
+## Estado real al 2026-11-05
+
+> Este documento es **historia de decisiones**: se conserva tal cual. Esta sección dice qué se construyó de verdad
+> (verificado contra `providers/`, `apps/api/src/` y `apps/web-b2b/src/` en `main`).
+
+| Vertical      | Lo que recomendaba este documento (Ola 1)             | Lo que existe en código                                                                                                                                                   |
+| ------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aéreo         | Consolidador aéreo + Amadeus / Travelport             | **Sabre** (`providers/sabre`, reserva y emisión, certificación en curso: `docs/sabre/`) y **LATAM NDC** (`providers/latam-ndc`). Ni Amadeus ni Travelport tienen ACL      |
+| Hoteles       | HotelDo + Hotelbeds (RateHawk como alternativa)       | **Despegar** (`providers/despegar-hotels`) y **TBO Hotels** (`providers/tbo-hotels`, en certificación con TBO: `docs/tbo/`). Ni HotelDo, Hotelbeds ni RateHawk tienen ACL |
+| Autos         | CarTrawler                                            | **AgentCars** (`providers/agent-cars`, flujo completo: `docs/cars/agentcars-api-reference.md`)                                                                            |
+| Asistencias   | Assist Card / Universal Assistance                    | No construido. `assistcard` y `hoteldo` solo aparecen como etiquetas en `apps/api/src/reports/reports.service.ts`                                                         |
+| Actividades   | Civitatis / GetYourGuide                              | No construido                                                                                                                                                             |
+| Pagos         | Stripe + Mercado Pago (hosted checkout)               | No construido. El cobro a agencias es con **carteras y cupo** (`apps/api/src/portfolios/`, `apps/web-b2b/.../carteras`) y TBO se paga con `PaymentMode: "Limit"`          |
+| Fiscal        | Alegra / Focus NFe / Nubefact                         | No construido (no hay facturación electrónica; sí datos de facturación del cliente, migración `0091`)                                                                     |
+| Mensajería/IA | WhatsApp Cloud, Twilio, Deepgram, ElevenLabs, LiteLLM | No construido. "WhatsApp" solo existe como tipo de interacción del CRM (`apps/api/src/crm/`). No hay `apps/ai-sidecar`                                                    |
+
+Las carpetas `providers/` que lista `CLAUDE.md` para Amadeus, Travelport, HotelDo, Hotelbeds, Civitatis, Assist Card,
+CarTrawler, Stripe, Mercado Pago, Alegra, WhatsApp y demás **no existen**; los cinco ACL reales son `latam-ndc`,
+`sabre`, `tbo-hotels`, `despegar-hotels` y `agent-cars`.
+
+---
+
 ## 1. Aéreo (NDC + GDS)
 
 ### GDS Tradicionales

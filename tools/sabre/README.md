@@ -6,16 +6,18 @@ validación contra el sandbox de certificación.
 Para reservar, emitir, anular o reembolsar en CERT con la cuenta de la bóveda y por el mismo código que producción,
 está el arnés de certificación de la API (SAB-11): ver [`docs/sabre/evidence/README.md`](../../docs/sabre/evidence/README.md#arnés-de-certificación-contra-cert-sab-11).
 
-| Script              | Qué hace                                                                                                                                             |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `audit-postman.mjs` | Recalcula los conteos que citan los documentos de `docs/sabre/` sobre la colección Postman. Sirve para verificar que un documento no inventa cifras. |
-| `cert-probe.mjs`    | Ejecuta la **Fase 0** contra el sandbox CERT: autenticación, entitlements, captura de shop, aporte incremental, latencia y capturas negativas.       |
+| Script              | Qué hace                                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `audit-postman.mjs` | Recalcula los conteos que citan los documentos de `docs/sabre/` sobre la colección Postman y su environment (`docs/sabre/evidence/postman/`). Sirve para verificar que un documento no inventa cifras. |
+| `cert-probe.mjs`    | Ejecuta la **Fase 0** contra el sandbox CERT: autenticación, entitlements, captura de shop, aporte incremental, latencia y capturas negativas.                                                         |
 
 ## cert-probe.mjs
 
 Implementa los pasos de [`docs/sabre/11-plan-implementacion.md`](../../docs/sabre/11-plan-implementacion.md) §4.2
-que **no crean reservas**. Reservar y emitir quedan deliberadamente fuera: dependen de la decisión D1 (con qué
-forma de pago se reserva) y generan PNR reales aunque sea en certificación.
+que **no crean reservas**. Desde SAB-11 (2026-10) lo que reserva, emite o anula en CERT lo hace el arnés de la API
+(arriba), con la cuenta de la bóveda; este script queda para las preguntas sin PNR, en especial `value`: el aporte
+incremental (P-04) sigue sin medirse ([12 §2.1](../../docs/sabre/12-hallazgos-sandbox.md)). Reservar y emitir
+quedan deliberadamente fuera de este script: generan PNR reales aunque sea en certificación.
 
 ### Antes de ejecutarlo
 
@@ -58,7 +60,7 @@ partir de ellos y que debe cerrar con una recomendación Go / No-Go **con su nú
 ### Por qué clasifica las respuestas en vez de mirar `response.ok`
 
 Sabre transporta fallos de negocio dentro de HTTP `200`, y 14 de los 21 contratos oficiales declaran únicamente
-`200` ([`12-cierre-auditoria.md`](../../docs/sabre/12-cierre-auditoria.md) §3.1). Un cliente que mire el código
-HTTP da reservas fallidas por confirmadas. La función `classify()` de este script es el borrador de la regla de
-éxito que el ACL tendrá que implementar de verdad, e incluye el caso más traicionero: un `200` con
+`200` ([`13-cierre-auditoria.md`](../../docs/sabre/13-cierre-auditoria.md) §3.1). Un cliente que mire el código
+HTTP da reservas fallidas por confirmadas. La función `classify()` de este script fue el borrador de esa regla; la
+de verdad ya está en el ACL (`providers/sabre/src/errors.ts`) y es la que manda si difieren. El borrador incluye el caso más traicionero: un `200` con
 `category: UNAUTHORIZED` dentro, que es un entitlement parcial y que el vendedor vería como datos vacíos.

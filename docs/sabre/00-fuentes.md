@@ -10,18 +10,18 @@ Todo documento de `docs/sabre/` cita sus fuentes por referencia a este archivo. 
 
 ## 1. Colección Postman de Sabre — fuente primaria de _requests_
 
-| Dato                                                         | Valor                                                                                                              |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Archivo                                                      | `sabre/Booking Management API v2026.04.postman_collection.json`                                                    |
-| SHA-256 fuente original (primeros 16)                        | `ffa47f6d2b58d9ec`                                                                                                 |
-| SHA-256 copia versionada y saneada (primeros 16)             | `0a0fd3c905ccde12`                                                                                                 |
-| Requests totales                                             | **1.077**                                                                                                          |
-| Endpoints REST distintos                                     | 24                                                                                                                 |
-| Requests SOAP/LLS (`{{soap_endpoint}}` / `{{lls_endpoint}}`) | **243**                                                                                                            |
-| Respuestas guardadas **con cuerpo**                          | **4**, de 16.479 bytes cada una (todas `/v1/orders/view`, en `ModifyBooking`)                                      |
-| Entorno                                                      | `sabre/BM API TEST CERT - EPR.postman_environment.json` — 425 variables, **sin credenciales embebidas por diseño** |
+| Dato                                                         | Valor                                                                                                                                    |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Archivo                                                      | `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json`                                                    |
+| SHA-256 fuente original (primeros 16)                        | `ffa47f6d2b58d9ec`                                                                                                                       |
+| SHA-256 copia versionada y saneada (primeros 16)             | `0a0fd3c905ccde12`                                                                                                                       |
+| Requests totales                                             | **1.077**                                                                                                                                |
+| Endpoints REST distintos                                     | 24                                                                                                                                       |
+| Requests SOAP/LLS (`{{soap_endpoint}}` / `{{lls_endpoint}}`) | **243**                                                                                                                                  |
+| Respuestas guardadas **con cuerpo**                          | **4**, de 16.479 bytes cada una (todas `/v1/orders/view`, en `ModifyBooking`)                                                            |
+| Entorno                                                      | `docs/sabre/evidence/postman/BM API TEST CERT - EPR.postman_environment.json` — 425 variables, **sin credenciales embebidas por diseño** |
 
-> **NO confundir** con `EXTERNAL_AGENCY.postman_collection.json` en la raíz del repo: esa es la colección de **LATAM NDC** (160 requests, endpoints `sandbox.api.latam.com/ndc/v192/*`), no tiene nada que ver con Sabre.
+> **NO confundir** con `EXTERNAL_AGENCY.postman_collection.json`: esa es la colección de **LATAM NDC** (160 requests, endpoints `sandbox.api.latam.com/ndc/v192/*`), no tiene nada que ver con Sabre. Al 2026-11-05 ese archivo **no está versionado** en el repo; la colección LATAM que sí está es [`docs/latam-ndc/API_LATAM_V2.json`](../latam-ndc/API_LATAM_V2.json) (20 requests).
 
 ## 2. Contratos oficiales OpenAPI — fuente primaria de _respuestas_
 

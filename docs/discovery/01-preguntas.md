@@ -1,5 +1,7 @@
 # Discovery — Preguntas a Responder
 
+> **Histórico (revisado el 2026-11-05).** Cuestionario de discovery del 2026-04-24 con las respuestas del founder; se conserva como registro de origen. Las decisiones que salieron de aquí están en [02-decisiones.md](./02-decisiones.md) y [06-documento-maestro.md](./06-documento-maestro.md); el estado real de proveedores, en `docs/research/03-integraciones-ecosistema.md` («Estado real al 2026-11-05»).
+
 **Proyecto:** Plataforma de turismo B2B/B2C (NDC, GDS, hoteles, actividades, asistencias, autos)
 **Mercado inicial:** Colombia, Brasil, Perú
 **Idiomas:** Español, Portugués, Inglés

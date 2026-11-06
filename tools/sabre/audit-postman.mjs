@@ -3,12 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..', '..');
+const postmanDir = resolve(root, 'docs', 'sabre', 'evidence', 'postman');
 const collectionPath = resolve(
-  root,
-  'sabre',
+  postmanDir,
   'Booking Management API v2026.04.postman_collection.json',
 );
-const environmentPath = resolve(root, 'sabre', 'BM API TEST CERT - EPR.postman_environment.json');
+const environmentPath = resolve(postmanDir, 'BM API TEST CERT - EPR.postman_environment.json');
 
 const collectionRaw = await readFile(collectionPath, 'utf8');
 const collection = JSON.parse(collectionRaw);
@@ -41,14 +41,17 @@ const fulfill = matching(/fulfillFlightTickets/i);
 const shop = matching(/\/offers\/shop/i);
 const envValues = Array.isArray(environment.values) ? environment.values : [];
 const isTemplate = (value) => /^\{\{[^{}]+\}\}$/.test(String(value ?? '').trim());
-const sensitiveEnvironmentKey = /^(?:epr|username|password|secret|auth_secret|token|encrypted_token|pcc)$/i;
+const sensitiveEnvironmentKey =
+  /^(?:epr|username|password|secret|auth_secret|token|encrypted_token|pcc)$/i;
 const embeddedEnvironmentCredentials = envValues.filter(
   (entry) =>
     sensitiveEnvironmentKey.test(String(entry.key ?? '')) &&
     String(entry.value ?? '').trim() &&
     !isTemplate(entry.value),
 );
-const hardcodedSoapSecrets = [...collectionRaw.matchAll(/<ClientSecret[^>]*>([^<]+)<\/ClientSecret>/gi)]
+const hardcodedSoapSecrets = [
+  ...collectionRaw.matchAll(/<ClientSecret[^>]*>([^<]+)<\/ClientSecret>/gi),
+]
   .map((match) => match[1].trim())
   .filter((value) => value && !isTemplate(value));
 

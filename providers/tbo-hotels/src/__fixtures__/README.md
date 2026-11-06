@@ -15,7 +15,9 @@ revisión de estos fixtures (→ Q-01, canal de avisos de cambios).
 | `docs/tbo/TBOH_Hotel_API_Specifications(V2.1).pdf` (71 páginas)    | `bb406ac31c5def12863b040d306f10a32e83f4ddaa3620ebe1f20693c277511a` |
 | `docs/tbo/HotelAPI_Client.postman_collection 7.json` (10 requests) | `d5ec68fccf57d80859a259dbcd188bc9fd07122498208190675979ed1eb398d4` |
 
-Reproducir: `sha256sum docs/tbo/*` (o `certutil -hashfile <archivo> SHA256` en Windows).
+Reproducir: `sha256sum docs/tbo/*` (o `certutil -hashfile <archivo> SHA256` en Windows). Desde el 2026-09-28 esos
+originales **no se versionan** (`.gitignore:113-117`, decisión del founder): hay que tener la copia local que entregó
+TBO; en un clon limpio `docs/tbo/` no los trae.
 
 ## Regla
 

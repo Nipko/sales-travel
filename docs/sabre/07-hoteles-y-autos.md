@@ -16,7 +16,7 @@ Se usa la convención de marcado de `00-fuentes.md` (§4): **VERIFICADO** (colec
 ### 0.1 Tres correcciones de procedencia respecto de la primera pasada
 
 1. **Las 4 respuestas guardadas de la colección NO están vacías.** Pesan 16.479 bytes cada una y están extraídas en `evidence/responses/*.json`. **Pero no sirven para esta vertical:** las 4 son `POST /v1/orders/view` de un **Order NDC de aire** (`order.pnrLocator: "TOSGCZ"`, 1 `orderItem`, `fareDetails`, `journeys`, `segments`). Un grep sobre ellas devuelve **0 apariciones** de `hotel`, y las 10 de `car` son `carrierCode` / `carrierName` / `marketingCarrier`. **VERIFICADO.** Conclusión: la colección sigue sin aportar ni una respuesta de hotel ni de auto — pero eso ya **no** es un bloqueante, porque los contratos oficiales sí las especifican (§2.1.6, §4.1.1).
-2. **La fuente Sabre es** `sabre/Booking Management API v2026.04.postman_collection.json` (1.077 requests). `EXTERNAL_AGENCY.postman_collection.json` es la colección de **LATAM NDC** y no tiene relación. Ver `00-fuentes.md` §1.
+2. **La fuente Sabre es** `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json` (1.077 requests). `EXTERNAL_AGENCY.postman_collection.json` es la colección de **LATAM NDC** y no tiene relación. Ver `00-fuentes.md` §1.
 3. **El carril SOAP/LLS stateful es central en esta vertical, no marginal.** De los 243 requests SOAP de la colección, **54 son de hotel/auto**: `GetHotelAvailRQ` 26, `HotelPriceCheckRQ` 25, `GetVehAvailRQ` 2, `VehPriceCheckRQ` 1. Se documenta en §1.2 y §6.3.
 
 ### 0.2 Volumen real de material
@@ -37,7 +37,7 @@ Se usa la convención de marcado de `00-fuentes.md` (§4): **VERIFICADO** (colec
 
 ## 1. Entornos, autenticación y transporte
 
-**VERIFICADO** (`sabre/BM API TEST CERT - EPR.postman_environment.json`, 425 variables, sólo 6 con valor):
+**VERIFICADO** (`docs/sabre/evidence/postman/BM API TEST CERT - EPR.postman_environment.json`, 425 variables, sólo 6 con valor):
 
 | Variable        | Valor                                         |
 | --------------- | --------------------------------------------- |

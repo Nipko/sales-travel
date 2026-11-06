@@ -40,7 +40,7 @@ Tres afirmaciones de la primera pasada eran falsas y quedan retiradas:
    "update birthdate". Es decir: **prueban la forma de la respuesta de `/v1/orders/view`, no el efecto de cada
    modificacion.** Se explotan en §3.
 2. **`EXTERNAL_AGENCY.postman_collection.json` NO es la fuente.** Esa es la coleccion de LATAM NDC. La fuente Sabre
-   es `sabre/Booking Management API v2026.04.postman_collection.json`. Todo front-matter de fuente se sustituye por
+   es `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json`. Todo front-matter de fuente se sustituye por
    la remision a `00-fuentes.md`.
 3. **El carril SOAP/LLS stateful existe y es grande.** 243 de 1.077 requests van a `{{soap_endpoint}}`. La primera
    pasada solo documento los 15 que caen dentro de la carpeta `Workflows`. Los otros 228 estan en `ModifyBooking`,

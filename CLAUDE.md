@@ -58,6 +58,8 @@ Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenci
 
 **Infra fase 1:** Hostinger VPS + Cloudflare. **Fase 2:** AWS multi-región `sa-east-1` (São Paulo) + `us-east-1`.
 
+**Realidad al 2026-11-05 (lo de arriba es el objetivo):** en código hay NestJS, Next 15 + Tailwind v4, PG16, Redis + BullMQ, Kysely, Zod. Aún **no** existen: Temporal (sagas vía BullMQ, decisión D9), Typesense (búsqueda con `pg_trgm`), MinIO (disco local), Unleash (kill-switch en el panel de superadmin), BetterAuth/Prisma (auth propia bcrypt+jose+MFA; SQL plano en `db/migrations`), OpenTelemetry, LiteLLM, IA sidecar, mobile, Stripe/Mercado Pago. Ver nota de divergencias en `docs/research/05-arquitectura-referencia.md`. No introducir ninguno sin decidirlo con el founder.
+
 ---
 
 ## 🧱 Principios NO negociables
@@ -69,7 +71,7 @@ Posicionamiento: **"El primer consolidador conversacional de LATAM."** Diferenci
 5. **Conversacional first.** WhatsApp es ciudadano de primera, no add-on.
 6. **Multi-tenant white-label nativo.** Cada decisión técnica respeta aislamiento de tenant. RLS forzada en Postgres.
 7. **Cloud-ready día 1.** 15 abstracciones de infra (`packages/core/ports/`) detrás de interfaces. Nunca importar AWS-SDK ni Redis directamente desde dominio.
-8. **Eventos antes que estado.** Todo cambio de negocio relevante emite domain event a `domain_events` (TimescaleDB hypertable, append-only).
+8. **Eventos antes que estado.** Todo cambio de negocio relevante emite domain event a `domain_events` (append-only; hoy tabla plana, hypertable de TimescaleDB cuando el volumen lo pida).
 9. **Fail loud, recover gracefully.** Circuit breakers, sagas Temporal con compensación, kill-switches por proveedor (feature flags).
 10. **Accesibilidad WCAG AA mínimo.** Contraste, keyboard nav, screen readers.
 
@@ -111,6 +113,8 @@ sales-travel/
 ```
 
 Detalle en `docs/platform/10-mapa-completo-plataforma.md` §10.
+
+**Existe hoy (2026-11-05):** `apps/api`, `apps/web-b2b`; `packages/{canonical,core,domain,validation}`; `providers/{latam-ndc,sabre,tbo-hotels,despegar-hotels,agent-cars}`; `db/migrations`; `infrastructure/hostinger`; `tools/*`. El resto del árbol es objetivo, no código.
 
 ---
 

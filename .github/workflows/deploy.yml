@@ -194,7 +194,6 @@ jobs:
           LATAM_AGENCY_NAME=${{ vars.LATAM_AGENCY_NAME || secrets.LATAM_AGENCY_NAME }}
           LATAM_TRAVEL_AGENT_ID=${{ secrets.LATAM_TRAVEL_AGENT_ID || vars.LATAM_TRAVEL_AGENT_ID }}
           LATAM_COUNTRY=${{ vars.LATAM_COUNTRY || secrets.LATAM_COUNTRY }}
-          LATAM_FORCE_MOCK=${{ vars.LATAM_FORCE_MOCK || 'false' }}
           DESPEGAR_API_KEY=${{ secrets.DESPEGAR_API_KEY || vars.DESPEGAR_API_KEY }}
           DESPEGAR_BASE_URL=${{ vars.DESPEGAR_BASE_URL || 'https://api-dev.despegar.com/v3' }}
           DESPEGAR_LANGUAGE=${{ vars.DESPEGAR_LANGUAGE || 'ES' }}

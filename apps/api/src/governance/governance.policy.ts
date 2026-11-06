@@ -6,7 +6,7 @@ import {
 } from '@sales-travel/domain';
 
 /*
- * Gobierno de proveedores y formas de pago: el plegado, sin I/O (docs/platform/14-opciones-de-pago.md).
+ * Gobierno de proveedores y formas de pago: el plegado, sin I/O (docs/platform/17-opciones-de-pago.md).
  *
  * Para un tenant y un elemento (proveedor, o proveedor + forma de pago):
  *   1. gana el nodo MÁS CERCANO de la cadena que diga algo;

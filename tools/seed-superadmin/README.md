@@ -19,6 +19,13 @@ Todo en una transacción: o queda todo, o nada.
 | Membership del usuario en la plataforma            | Pasa a `superadmin` activa (en producción era `consolidator_admin`), o se crea. Sus memberships en otros nodos no se tocan.                                                                                                                                                                    |
 | Auditoría (`domain_events`)                        | Un evento por cambio, sin actor y con `payload.source = "seed-superadmin"`: `tenant.type.changed` (como 0049), `TenantCreated`, `UserCreated` y `MembershipRoleChanged` con el antes y el después (como la API). Ni el correo ni la contraseña en el payload. Si nada cambió, no escribe nada. |
 
+> **Superadmins plenos y supervisados (0092, 2026-11-05).** El seed no toca `memberships.platform_supervised`: una
+> membership que crea queda **plena** (el valor por defecto) y una que ya existía conserva lo que tenía, así que correrlo
+> sobre un superadmin supervisado no lo vuelve pleno (sale con `"membership": "unchanged"`). Lo normal ahora es dar y
+> quitar superadmins desde _Plataforma → Superadmins_; el seed queda para el primero y como respaldo por el VPS
+> (`docs/platform/16-roles-y-superadmins.md`). Desde 0092 fija `app.direct_change_audited` en su transacción para que
+> el trigger de cambios directos no duplique sus eventos como `db.direct_change`.
+
 ## Se niega cuando
 
 Sale con `1` y una línea JSON con `reason`. No escribe nada.

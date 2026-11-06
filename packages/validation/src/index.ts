@@ -4,7 +4,6 @@ export { z };
 
 // Identificadores comunes
 export const TenantIdSchema = z.string().uuid();
-export const UserIdSchema = z.string().uuid();
 export const CurrencyCodeSchema = z
   .string()
   .length(3)
@@ -26,11 +25,3 @@ export {
   normalizePersonName,
   personNameProblem,
 } from './person-name';
-
-// Paginación
-export const PaginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  perPage: z.coerce.number().int().min(1).max(100).default(20),
-});
-
-export type Pagination = z.infer<typeof PaginationSchema>;

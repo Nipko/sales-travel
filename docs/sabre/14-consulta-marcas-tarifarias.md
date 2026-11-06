@@ -1,5 +1,9 @@
 # Consulta abierta: varias tarifas por itinerario en BFM v5
 
+> **Histórico (2026-08-27)** — la verdad actual está en [15-marcas-por-trayecto.md](./15-marcas-por-trayecto.md).
+> La consulta quedó resuelta por la escalera de exclusión (§-1) y el diseño se implementó (15 §6). La línea
+> «Estado» de abajo es la de agosto. Se conserva porque §A y §B sirven tal cual si hubiera que escribirle a Sabre.
+
 **Estado:** las marcas EXISTEN y el terminal de agente las ve; falta el permiso de API. Ver §0.
 **Continúa en:** [`15-marcas-por-trayecto.md`](15-marcas-por-trayecto.md) — Anchored Search, reserva con marca por vuelo y elección por trayecto.
 **Fecha:** 2026-08-27.

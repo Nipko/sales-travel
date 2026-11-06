@@ -9,6 +9,36 @@
 
 ---
 
+## Estado real al 2026-11-05
+
+> El roadmap de abajo es el plan del 2026-04-24 y se conserva como historia de decisiones. La ejecución no siguió
+> el orden por meses ni los proveedores elegidos; esta sección resume qué hay en `main` (verificado contra el código).
+
+**Construido (en producción en el VPS de Hostinger, despliegue por `.github/workflows/deploy.yml`):**
+
+- **Plataforma:** NestJS (`apps/api`) + Next.js (`apps/web-b2b`) + PostgreSQL/TimescaleDB con RLS, 93 migraciones
+  (`db/migrations/0001`–`0093`). Multi-tenant con jerarquía de consolidador y red (`network/`, `red/`), bóveda de
+  credenciales BYOC (`provider-credentials/`), habilitación y kill-switch de proveedores por el superadmin
+  (`provider-enablement/`, `governance/`), cascada de precios (`pricing/`), carteras con cupo (`portfolios/`),
+  white-label (`branding/`), auditoría, MFA para administradores, CRM y clientes, cotizaciones, cotización
+  multi-producto (`packages/`), órdenes y reservas, reportes y conciliación.
+- **Aéreo:** Sabre (reserva y emisión; certificación con Sabre en curso, pendiente H-07) y LATAM NDC. **No** el
+  "consolidador existente + Amadeus" que planeaba la Ola 1.
+- **Hoteles:** Despegar y TBO Hotels (TBO construido, pendiente de certificación y credenciales live:
+  `docs/tbo/09-plan-implementacion.md`). **No** HotelDo ni Hotelbeds.
+- **Autos:** AgentCars (adelantado: el roadmap ponía autos en la Ola 2 con CarTrawler).
+
+**No construido de la Ola 1:** asistencia (Assist Card), cobro con Stripe + Mercado Pago, facturación electrónica
+CO/BR, WhatsApp con IA y el Package Studio drag-and-drop (lo que existe es cotización multi-producto, sin lienzo
+visual). Tampoco hay nada de las Olas 2 y 3: app móvil, B2C (`apps/web-b2c`), sidecar de IA, voz, actividades, Perú
+fiscal ni AWS. El superadmin vive dentro de `apps/web-b2b` (`/admin`), no en una `apps/web-admin` aparte.
+
+**Fechas:** el soft launch de noviembre de 2026 (Mes 6) no se cumple en los términos de este documento (sin pagos,
+fiscal ni WhatsApp); la plataforma sí está desplegada en producción con los proveedores de arriba. Los "Próximos pasos
+inmediatos" del final (headhunter, contactar Travelport/Amadeus/HotelDo) están superados.
+
+---
+
 ## 🌊 Ola 1 — Mes 0 a 6 — "B2B Colombia + Brasil con aéreo, hotel y asistencia"
 
 **Objetivo:** Lanzar la plataforma B2B operando con 5-10 agencias piloto en Colombia y Brasil, vendiendo aéreo (consolidador existente + Amadeus), hoteles (HotelDo + Hotelbeds), asistencia (Assist Card), con cobro Stripe+MP, facturación electrónica CO+BR, white-label básico y WhatsApp para cotización con IA.

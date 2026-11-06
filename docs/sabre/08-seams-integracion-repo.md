@@ -7,6 +7,12 @@ Fuentes: ver 00-fuentes.md
 
 # Seams de integración: qué hay que tocar para que entre un segundo proveedor de vuelos
 
+> **Histórico (2026-08-25)** — la verdad actual está en el código (`providers/sabre/`,
+> `apps/api/src/providers-sabre/`, `apps/api/src/search/`) y en
+> [11 §Estado al 2026-11-05](./11-plan-implementacion.md#estado-al-2026-11-05). Este análisis describe el repo
+> **antes** de que existiera Sabre: los seams ya se construyeron y las citas `ruta:línea` apuntan a código que
+> cambió.
+
 Este documento **no analiza Sabre**. Analiza **nuestro repo** para responder una sola pregunta:
 _¿qué exactamente hay que cambiar para que `providers/sabre/` conviva con `providers/latam-ndc/`
 en la vertical de vuelos?_
@@ -977,16 +983,16 @@ son los de los ejemplos del propio contrato (`dx369rfr7jt8dnd2i0-1` = 20,
 Espejo de las `LATAM_*` (`infrastructure/hostinger/docker-compose.prod.yml:103-111` y
 `.github/workflows/deploy.yml:130-137`):
 
-| Variable                            | Tipo       | Default propuesto                             | Notas                                                                                                                                             |
-| ----------------------------------- | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SABRE_REST_URL`                    | var        | `https://api.cert.platform.sabre.com`         | **VERIFICADO** (ya no `[INFERIDO]`): es el valor literal de `rest_endpoint` en `sabre/BM API TEST CERT - EPR.postman_environment.json`            |
-| `SABRE_SOAP_URL`                    | var        | `https://webservices.cert.platform.sabre.com` | **VERIFICADO**: `soap_endpoint` y `lls_endpoint` en el mismo environment tienen **el mismo valor**. Sólo hace falta si se activa el carril del §8 |
-| `SABRE_EPR`                         | var        | —                                             | Usuario/EPR. **VERIFICADO**: el environment define `username = {{epr}}`                                                                           |
-| `SABRE_PASSWORD`                    | **secret** | —                                             | Ver la corrección de abajo: el secreto Basic se **deriva**, no se guarda                                                                          |
-| `SABRE_PCC`                         | var        | —                                             | Pseudo-city / `POS.Source[].PseudoCityCode`. **Entra en la derivación del secreto**                                                               |
-| `SABRE_FORCE_MOCK`                  | var        | `false`                                       | Espejo de `LATAM_FORCE_MOCK`                                                                                                                      |
-| `PLATFORM_DEFAULT_FLIGHT_PROVIDERS` | var        | `latam-ndc`                                   | **Nueva y transversal.** CSV de codes con fallback a env. Ver §2.2                                                                                |
-| `PROVIDERS_DISABLED`                | var        | `''`                                          | **Ya existe** (`circuit-breaker.service.ts:35`), no está declarada en compose ni deploy. Habría que declararla                                    |
+| Variable                            | Tipo       | Default propuesto                             | Notas                                                                                                                                                        |
+| ----------------------------------- | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SABRE_REST_URL`                    | var        | `https://api.cert.platform.sabre.com`         | **VERIFICADO** (ya no `[INFERIDO]`): es el valor literal de `rest_endpoint` en `docs/sabre/evidence/postman/BM API TEST CERT - EPR.postman_environment.json` |
+| `SABRE_SOAP_URL`                    | var        | `https://webservices.cert.platform.sabre.com` | **VERIFICADO**: `soap_endpoint` y `lls_endpoint` en el mismo environment tienen **el mismo valor**. Sólo hace falta si se activa el carril del §8            |
+| `SABRE_EPR`                         | var        | —                                             | Usuario/EPR. **VERIFICADO**: el environment define `username = {{epr}}`                                                                                      |
+| `SABRE_PASSWORD`                    | **secret** | —                                             | Ver la corrección de abajo: el secreto Basic se **deriva**, no se guarda                                                                                     |
+| `SABRE_PCC`                         | var        | —                                             | Pseudo-city / `POS.Source[].PseudoCityCode`. **Entra en la derivación del secreto**                                                                          |
+| `SABRE_FORCE_MOCK`                  | var        | `false`                                       | Espejo de `LATAM_FORCE_MOCK`                                                                                                                                 |
+| `PLATFORM_DEFAULT_FLIGHT_PROVIDERS` | var        | `latam-ndc`                                   | **Nueva y transversal.** CSV de codes con fallback a env. Ver §2.2                                                                                           |
+| `PROVIDERS_DISABLED`                | var        | `''`                                          | **Ya existe** (`circuit-breaker.service.ts:35`), no está declarada en compose ni deploy. Habría que declararla                                               |
 
 **Corrección respecto a la primera pasada.** El documento decía que `SABRE_CLIENT_SECRET` es
 _"un credential compuesto ya codificado, no user/pass sueltos"_. Eso es cierto a medias y la mitad
@@ -1055,7 +1061,7 @@ y el conteo exacto importa porque decide si el cliente HTTP lo pone siempre o no
 | Requests REST **sin** el header       | **475 de 808**                                                                                                                                      | idem                                                                                                                       |
 | Valor en runtime de `{{conv_id}}`     | `2021.01.DevStudio`                                                                                                                                 | VERIFICADO: `pm.environment.set('conv_id', "2021.01.DevStudio")`, línea 25 del `prerequest` de la **raíz** de la colección |
 | `<ConversationId>` del sobre SOAP     | `2021.01.DevStudio` cuando se arma con `{{header}}`; pero **73 requests lo llevan hardcodeado**: `2019.09.DevStudio` (46) y `STX_2019_Postman` (27) | Tally de `<ConversationId>` sobre los bodies                                                                               |
-| `conv_id` en el environment           | `""` — **vacío**; lo puebla el script, no el archivo                                                                                                | `sabre/BM API TEST CERT - EPR.postman_environment.json`                                                                    |
+| `conv_id` en el environment           | `""` — **vacío**; lo puebla el script, no el archivo                                                                                                | `docs/sabre/evidence/postman/BM API TEST CERT - EPR.postman_environment.json`                                              |
 
 Es decir: la afirmación _"constante para toda la colección"_ también era falsa. El valor de runtime
 sí es único (`2021.01.DevStudio`), pero conviven **tres literales distintos** en la colección porque

@@ -5,7 +5,7 @@ import type { GovernanceSource } from './governance.store.js';
 
 /**
  * La habilitación de proveedores que leen los registries de vuelos y hoteles, ya con el gobierno
- * (docs/platform/14-opciones-de-pago.md).
+ * (docs/platform/17-opciones-de-pago.md).
  *
  * Para un proveedor del catálogo, una vez sembrado el gobierno, decide SIEMPRE: reglas a mano y
  * perfiles por la cadena del tenant, y apagado si nadie dice nada. Se acaba el «encendido por

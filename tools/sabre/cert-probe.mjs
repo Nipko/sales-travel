@@ -7,7 +7,7 @@
  * de pago se manda) y crean PNR reales, aunque sea en certificación.
  *
  * Las credenciales se leen SIEMPRE del entorno. Nunca se imprimen, nunca se guardan en las
- * capturas y nunca entran a Git — ver `docs/sabre/12-cierre-auditoria.md` §1.
+ * capturas y nunca entran a Git — ver `docs/sabre/13-cierre-auditoria.md` §1.
  *
  *   node tools/sabre/cert-probe.mjs auth
  *   node tools/sabre/cert-probe.mjs entitlements
@@ -167,7 +167,7 @@ async function call(cfg, path, body, { label } = {}) {
 
 /**
  * Sabre transporta fallos de negocio dentro de HTTP 200 — 14 de 21 contratos declaran sólo `200`
- * (`docs/sabre/12-cierre-auditoria.md` §3.1). Mirar `res.ok` da reservas fallidas por confirmadas.
+ * (`docs/sabre/13-cierre-auditoria.md` §3.1). Mirar `res.ok` da reservas fallidas por confirmadas.
  * Esta es la regla de éxito que el ACL tendrá que implementar de verdad.
  */
 function classify(result) {

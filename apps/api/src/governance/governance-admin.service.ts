@@ -92,7 +92,7 @@ export interface ProfileInput {
 }
 
 /**
- * Administración del gobierno de proveedores y formas de pago (docs/platform/14-opciones-de-pago.md):
+ * Administración del gobierno de proveedores y formas de pago (docs/platform/17-opciones-de-pago.md):
  * perfiles enlazados, su asignación a nodos, reglas a mano y la vista efectiva.
  *
  * La AUTORIZACIÓN (sólo superadmin) la valida el controlador; la base la vuelve a exigir (RLS de

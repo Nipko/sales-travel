@@ -4,6 +4,8 @@
 
 Fecha: 2026-04-24
 
+> **Estado al 2026-11-05.** Investigación vigente como referencia, pero nada de esto está implementado: no hay facturación electrónica (DIAN/SUNAT/NF-e) ni integración con Alegra, Nubefact o Focus NFe en el código. Lo único fiscal que existe son los datos de facturación del cliente y la parte que factura (migración `0091_billing_party_and_company_customers.sql`).
+
 ---
 
 ## 1. COLOMBIA

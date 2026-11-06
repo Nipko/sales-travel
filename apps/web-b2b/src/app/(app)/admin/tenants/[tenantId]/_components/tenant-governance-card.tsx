@@ -37,7 +37,7 @@ type CardState =
     };
 
 /**
- * El gobierno de UN nodo (docs/platform/14-opciones-de-pago.md §5): el perfil asignado, las reglas
+ * El gobierno de UN nodo (docs/platform/17-opciones-de-pago.md §5): el perfil asignado, las reglas
  * a mano que lo pisan y, bajo cada celda, lo que queda efectivo y de dónde sale.
  */
 export function TenantGovernanceCard({ tenantId }: { tenantId: string }) {

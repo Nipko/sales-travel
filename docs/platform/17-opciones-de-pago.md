@@ -1,4 +1,6 @@
-# Gobierno de proveedores y formas de pago, con perfiles
+# 17 — Gobierno de proveedores y formas de pago, con perfiles
+
+> Antes se llamaba `14-opciones-de-pago.md` (dos docs compartían el prefijo 14; renombrado el 2026-11-05).
 
 > Estado: **implementado** (2026-11-04). Decisiones del founder:
 >
@@ -27,7 +29,7 @@
 
 ## 1. Reglas
 
-1. **Nada se vende ni se cobra si el superadmin no lo encendió.** Vale para proveedores y para formas de pago. Desaparece el «encendido por defecto» actual: hoy LATAM, Sabre y Despegar quedan prendidos si nadie dice nada (`callPolicy: 'always'`, `apps/api/src/providers/provider.types.ts:589-594`).
+1. **Nada se vende ni se cobra si el superadmin no lo encendió.** Vale para proveedores y para formas de pago. Se acabó el «encendido por defecto» de `callPolicy: 'always'` con el que LATAM, Sabre y Despegar quedaban prendidos si nadie decía nada: para un proveedor del catálogo, una vez sembrado el gobierno, decide siempre el gobierno (`apps/api/src/governance/governed-provider-flags.ts`). Antes de la siembra (una base nueva, los tests) y para códigos fuera del catálogo decide el decisor anterior (0048, variable legado, `callPolicy`).
 2. **Una forma de pago cuelga de su proveedor.** Encender «LATAM: enlace de pago» con LATAM apagado no habilita nada.
 3. **Solo el superadmin escribe.** Consolidadores y agencias leen su configuración efectiva y su origen, pero no la cambian. Las credenciales BYOC siguen siendo de cada nodo: el gobierno dice qué se puede usar, la bóveda dice con qué cuenta.
 4. **Todo cambio queda auditado** en `domain_events`, con antes, después y alcance.
@@ -65,9 +67,12 @@ governance_profile_items   (profile_id, provider_code, payment_method NULL, enab
 ### 3.2 Asignación a un nodo
 
 ```text
-tenant_governance   (tenant_id PK, profile_id NULL, updated_by, …)
-governance_rules    (tenant_id NULL = plataforma, provider_code, payment_method NULL, enabled, reason, …)
+tenant_governance_profiles  (tenant_id PK, profile_id, updated_by, …)   -- asignado a `platform` = global
+provider_enablement (0048)  (tenant_id NULL = plataforma, provider_code, enabled, reason, …)
+payment_method_rules        (tenant_id NULL = plataforma, provider_code, payment_method, enabled, reason, …)
 ```
+
+Las reglas a mano de **proveedores** siguen en `provider_enablement` (0048); las de **formas de pago** están en `payment_method_rules` (0089). `governance_state` marca que la configuración vigente ya se sembró.
 
 Cada nodo tiene, opcionalmente:
 
@@ -118,12 +123,12 @@ Se reutiliza el patrón de `provider_enablement` (0048): una función SQL `gover
 
 ## 6. Transición sin cortar producción
 
-- La migración crea el perfil **«Configuración vigente»**, con lo que hoy está encendido de hecho:
+- El API, **al arrancar y una sola vez en la vida de la base** (`governance_bootstrap`, marcado en `governance_state`), crea el perfil **«Configuración vigente»** con lo que estaba encendido de hecho. No lo hace la migración porque depende de variables de entorno que una migración no ve:
   - LATAM, Sabre y Despegar, por su `callPolicy: always`;
   - TBO, solo donde hoy hay fila `provider_enablement` encendida;
   - las formas de pago que hoy se usan: LATAM `card`, Sabre la de cada cuenta y autos ambas.
 - Ese perfil se **asigna a la plataforma** (global), de modo que el día del deploy nada cambia.
-- Las filas actuales de `provider_enablement` se convierten en reglas a mano de su nodo.
+- Las filas de `provider_enablement` siguen siendo las reglas a mano de su nodo (no se copian a otra tabla).
 - Desde ese momento, el superadmin apaga o cambia lo que quiera. Ningún proveedor ni forma de pago nuevo se enciende solo.
 
 ## 7. Enlace de pago LATAM
@@ -133,7 +138,9 @@ Se reutiliza el patrón de `provider_enablement` (0048): una función SQL `gover
 3. **Detectar el pago.** La orden sigue `confirmed` hasta que LATAM la cierre. La relectura la pasa a `ticketed` cuando LATAM responde `CLOSED`.
 4. **Avisar del vencimiento.** El plazo de pago (`PaymentTimeLimitDateTime`) se muestra y alerta con lo que ya existe.
 
-## 8. Estimación
+## 8. Estimación (original, antes de construir)
+
+Se entregó completo el 2026-11-04 (commits `5bfd35e`, `259f3bd`, `64eaaa8` y `e28c6ea`). Desde 0092 los cambios de gobierno de un superadmin **supervisado** quedan como solicitud hasta que un pleno los apruebe ([16 §3](./16-roles-y-superadmins.md#3-diseño-acordado-pleno--supervisado)).
 
 | Pieza                                                                                              | Est.    |
 | -------------------------------------------------------------------------------------------------- | ------- |

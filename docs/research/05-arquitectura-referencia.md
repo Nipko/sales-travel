@@ -131,6 +131,22 @@ Auth:                BetterAuth/Lucia → Cognito o Clerk
 Observabilidad:      OpenTelemetry → Grafana stack → Datadog (fase 2)
 ```
 
+> **Nota — dónde diverge la realidad (al 2026-11-05, verificado en los `package.json` y en
+> `infrastructure/hostinger/docker-compose.prod.yml`).** La decisión de arriba se conserva como historia. Lo que
+> corre hoy:
+>
+> - **Sí, como se decidió:** NestJS 10 (`apps/api`), Next.js 15 + Tailwind v4 (`apps/web-b2b`), PostgreSQL 16 +
+>   TimescaleDB + pgvector (imagen `timescale/timescaledb-ha:pg16`), Redis 7, BullMQ (sagas y post-venta: decisión D9 de
+>   `docs/sabre/10-requisitos-maestro.md` §9 sustituye a Temporal), Kysely, Zod, Caddy + Cloudflare.
+> - **No existe en código ni en el compose:** Temporal, Typesense (la búsqueda de destinos y hoteles es Postgres con
+>   `pg_trgm`/`unaccent`), MinIO (los assets de marca van a disco local, `apps/api/src/storage/local-disk-storage.adapter.ts`),
+>   Unleash (proveedores y kill-switch se gobiernan desde el panel del superadmin, tablas `0048`, `0077`, `0089`, más la
+>   variable `PROVIDERS_DISABLED`), BetterAuth/Lucia (auth propia con `bcrypt` + `jose` y MFA en `apps/api/src/auth/`),
+>   Prisma (las migraciones son SQL plano aplicado por `tools/db-migrate`), OpenTelemetry/Grafana, FastAPI/LangGraph
+>   (no hay sidecar de IA) y React Native/Expo (no hay app móvil).
+> - **Puertos:** `packages/core/src/ports/` define 14 interfaces, pero solo `BlobStoragePort` tiene implementación
+>   (`LocalDiskStorageAdapter`); la cola usa `bullmq` directamente en `apps/api/src/queue/`.
+
 ---
 
 ## 3. Multi-Tenancy
@@ -413,6 +429,12 @@ Optimizaciones aplicables: Savings Plans (-25%), Graviton (-20% en compute), res
 - **Deploy:** **Blue-green** via Caddy/nginx upstream switch en fase 1; **canary 5/25/100** con CodeDeploy + ECS en fase 2.
 - **Migrations:** Prisma Migrate con `--create-only` + revisión humana, nunca `db push` en prod.
 - **DB seeds y test data:** Snapshots scrubbed para staging.
+
+> **Nota 2026-11-05 — lo que se hizo en vez de esto.** No hay ramas `develop` ni entorno `staging`: push a `main` →
+> `.github/workflows/deploy.yml` construye las imágenes en GHCR, entra por SSH al VPS, migra y corre un smoke test.
+> El único entorno además de producción es el stack de certificación de TBO (`docker-compose.cert.yml`, job
+> `deploy-cert`). Versionado con release-please (`release.yml`). Sin Unleash ni blue-green; migraciones en SQL plano
+> con `tools/db-migrate`, no Prisma Migrate.
 
 ---
 

@@ -78,26 +78,6 @@ const CABIN_MAP: Record<string, string> = {
   first: 'J',
 };
 
-/** Maps ISO currency code to LATAM POS country code */
-export function currencyToCountry(currency?: string): string | undefined {
-  if (!currency) return undefined;
-  return CURRENCY_COUNTRY_MAP[currency.toUpperCase()];
-}
-
-const CURRENCY_COUNTRY_MAP: Record<string, string> = {
-  COP: 'CO',
-  BRL: 'BR',
-  CLP: 'CL',
-  PEN: 'PE',
-  ARS: 'AR',
-  USD: 'US',
-  EUR: 'ES',
-  MXN: 'MX',
-  UYU: 'UY',
-  BOB: 'BO',
-  PYG: 'PY',
-};
-
 /**
  * Códigos de ciudad con varios aeropuertos que no son a la vez un aeropuerto, con el que LATAM
  * opera como principal.

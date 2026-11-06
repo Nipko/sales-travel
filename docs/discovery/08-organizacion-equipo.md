@@ -1,5 +1,7 @@
 # Estructura Organizacional y Plan de Contratación — Sales-Travel
 
+> **Histórico (revisado el 2026-11-05).** Plan de equipo y contratación del 2026-04-24. No refleja la dotación real: el código se construyó sin el equipo descrito aquí. Se conserva porque `docs/sabre/11-plan-implementacion.md` y `docs/tbo/09-plan-implementacion.md` lo citan como supuesto de dotación; los salarios y headhunters no están revisados.
+
 **Versión:** 1.0
 **Fecha:** 2026-04-24
 **Geografía base:** Colombia, Argentina, Uruguay (núcleo). Brasil + Perú al escalar Ola 2-3.

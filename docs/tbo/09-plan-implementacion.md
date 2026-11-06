@@ -6,6 +6,31 @@ estado: borrador
 
 # TBO Hotels — Plan de implementación por fases
 
+> **Estado al 2026-11-05 (VERIFICADO-CODIGO, `main`).** La rama `feat/tbo-hotels` se fusionó en `main` el 2026-10-13
+> y el plan está **construido casi entero**. El resto del documento es el plan original con sus revisiones y se
+> conserva como historia de decisiones; sus "hoy no existe" y "Estado al 2026-09-23" ya no describen el repo.
+>
+> - **Fases 0 a 5: hechas.** ACL en `providers/tbo-hotels/src/` (`search/`, `prebook/`, `booking/`, `detail/`,
+>   `cancel/`, `reports/`, `static/`, `http/`); wiring en `apps/api/src/providers-tbo/` y `apps/api/src/hotels/`
+>   (saga, verificación del Book, cancelación con estados intermedios, HCN), bóveda de payloads
+>   (`apps/api/src/provider-payloads/`), conciliación (`apps/api/src/reconciliation/`) y apagado ordenado
+>   (`stop_grace_period: 130s` en `infrastructure/hostinger/docker-compose.prod.yml`). Migraciones `0041`–`0048` (§3.3).
+> - **Fase 3: hecha.** `tools/sync-tbo-hotel-inventory/` con su workflow `.github/workflows/sync-tbo-hotel-inventory.yml`;
+>   contenido y fotos bajo demanda (`0054`, `0070`). PR-3.7 (medición informativa) no dejó rastro en el repo.
+> - **Fase 6: hecha salvo PR-6.6.** Búsqueda, detalle (`hoteles/[hotelKey]`), checkout (`hoteles/checkout`) y
+>   reservas/cancelación (`reservas/`) existen en `apps/web-b2b`. **No hay Playwright** en ningún `package.json`:
+>   PR-6.6 sigue pendiente.
+> - **Fase 7: código hecho, envío sin archivar.** Arnés `tools/tbo/cert-cases.mjs` (PR-1.6 y PR-7.1), stack de
+>   certificación (`infrastructure/hostinger/docker-compose.cert.yml`, job `deploy-cert` de `deploy.yml`,
+>   `tools/seed-tbo-cert-tenant/`) y entregables (Anexos de [07](./07-certificacion.md)). `docs/tbo/evidence/cert/`
+>   solo tiene su README: **no hay ningún envío a TBO archivado**, así que JSON Verification, Portal Verification y
+>   sign-off no constan como cumplidos.
+> - **Fase 8: pendiente.** No existe la M4: `provider_catalog` no tiene fila `tbo-hotels`, y la `0049` la tomó
+>   `0049_platform_root.sql`, así que M4 tomará la siguiente libre (hoy, la `0094`). El encendido por tenant ya existe
+>   (D-TBO-18, `0048`; ampliado en `0077_provider_kill_switch.sql` y `0089_governance_profiles.sql`).
+> - **El calendario de §0 punto 3 y §2 quedó superado**: la construcción no fue el cuello de botella; ahora lo es el
+>   proceso de TBO (certificación y credenciales live).
+
 Los requisitos están en [08-requisitos-maestro.md](./08-requisitos-maestro.md). Este documento dice **en qué orden se
 construyen, en qué PRs, con qué tests se cierran, cuánto esfuerzo cuestan, cuánto calendario ocupan y qué depende de
 TBO**. No repite el contrato ni el diseño: cada PR enlaza la sección que lo desarrolla.

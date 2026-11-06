@@ -1,7 +1,7 @@
 ---
 titulo: 'Sabre — Plan de implementación por fases'
 fecha: 2026-08-26
-estado: reconciliado-contra-spec; Fases 2.b y 3 con código completo, sin verificar contra CERT
+estado: 'actualizado 2026-11-05: 2.a, 1 (ATPCO) y 2.b hechas; 3 y 4.a con código, sin reserva limpia en CERT (H-07); 4.b parcial; 5 y C sin empezar'
 Fuentes: ver 00-fuentes.md
 ---
 
@@ -10,6 +10,39 @@ Fuentes: ver 00-fuentes.md
 Los requisitos están en [10-requisitos-maestro.md](./10-requisitos-maestro.md). Este documento dice **en qué
 orden se construyen, con qué entregables, con cuánto esfuerzo, en cuánto calendario y cuándo se puede decir que
 una fase terminó**.
+
+## Estado al 2026-11-05
+
+> **Cómo leer este documento hoy.** El plan se escribió el 2026-08-26, antes del código. Esta sección dice qué
+> quedó construido, contrastado con el código de `main`; el resto conserva el razonamiento y las estimaciones
+> originales sin reescribir. Lo que se vio contra CERT está en
+> [12-hallazgos-sandbox.md](./12-hallazgos-sandbox.md). El estado por requisito (RF) está en
+> [10 §Estado al 2026-11-05](./10-requisitos-maestro.md#estado-al-2026-11-05).
+>
+> 🚨 **H-07 sigue abierto:** la oficina de reserva no tiene «Store Passenger Type In PNR» y las reservas salen
+> con el rodeo `bookOnTicketingPcc` → `targetPcc` = PCC de emisión. Pasos para cerrarlo en
+> [12-hallazgos-sandbox.md](./12-hallazgos-sandbox.md) (aviso al inicio).
+
+Leyenda: ✅ hecho · 🟡 código hecho y sin certificar en CERT, o parcial · ❌ no empezado · ⏳ fuera del código.
+
+| Fase            | Estado  | Qué hay en el código                                                                                                                                                                                                                                                                                                                                   | Qué falta                                                                                                                                                                                                                                                                            |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **2.a**         | ✅      | Fan-out con degradación parcial, circuit breaker, kill-switch y dedupe: `apps/api/src/search/provider-fanout.ts`, `circuit-breaker.service.ts`, `offer-dedupe.ts`; capacidades declarativas en cada factory                                                                                                                                            | —                                                                                                                                                                                                                                                                                    |
+| **0**           | 🟡      | Arnés de certificación (SAB-11): `apps/api/src/providers-sabre/cert-run/`, `.github/workflows/sabre-cert-run.yml`, `tools/sabre/cert-probe.mjs`. Seis corridas el 2026-10-19: token de 7 días (P-08), entitlements de BFM v5, Flight Check y Booking Management (P-06), 49-50 ofertas ATPCO por ruta                                                   | Reserva limpia (H-07). Emisión con CASH (SAB-13). Aporte incremental frente a LATAM NDC directo (P-04): falta la búsqueda equivalente en LATAM. NDC (SAB-22), asientos y servicios (SAB-21), reembolso (SAB-24)                                                                      |
+| **⛔ GO/NO-GO** | ⏳      | —                                                                                                                                                                                                                                                                                                                                                      | Sin registro en el repo de P-01, P-02 ni P-04. [12 §4](./12-hallazgos-sandbox.md#4-recomendación-go--no-go) sigue vacío                                                                                                                                                              |
+| **1**           | ✅ / 🟡 | ATPCO completo: `providers/sabre/src/auth/token.service.ts`, `shop/*` (BFM v5), marcas por trayecto con escalera de exclusión y `ReturnBrandAncillaries` ([15](./15-marcas-por-trayecto.md)), adulto/niño/infante con edad ([16](./16-tarifas-por-tipo-de-pasajero.md))                                                                                | Mapper NDC: hoy las ofertas NDC se descartan (`ndc-content-skipped`) y NDC va apagado salvo `config.ndcContent` (SAB-18). Equipaje de mano y cargos (`utaDescs`/`baggageChargeDescs`, H-03)                                                                                          |
+| **2.b**         | ✅      | `apps/api/src/providers-sabre/sabre.factory.ts` y `sabre.module.ts`, credenciales BYOC con herencia (`provider-credentials`), formulario de la cuenta en el panel (`ndcContent`, `pccTimeZone`, `bookOnTicketingPcc`…)                                                                                                                                 | Se construyó sin contrato firmado, al revés de lo que pedía §7 (ver nota abajo)                                                                                                                                                                                                      |
+| **3**           | 🟡      | Revalidación con Flight Check (`sabre-flight-check.adapter.ts`) y `offers/price` para NDC; reserva ATPCO por `flightDetails` con la clase de Flight Check (`a7ca59a`), marca y fare basis por vuelo (`c3e0dc5`), niños e infantes (`28d1d4c`, `f15ad20`); `getBooking` en dos modos, `cancelBooking`, localizador de aerolínea; rodeo H-07 (`04c3263`) | Que Sabre active la opción del TJR y `sab-12` pase sin rodeo. Con rodeo, en CERT: PNR `QZPKXT` y `QPLVBP` creados y cancelados                                                                                                                                                       |
+| **4.a**         | 🟡      | Emisión (`ticketing/fulfill.*`, SAB-08), `checkFlightTickets` y void por `cancelBooking` (SAB-09), `ticketing/document-status.ts`, aviso de plazo de emisión (SAB-14), retención de cartera (SAB-10). Todo detrás de `SABRE_OPERATIONS` (`issue`, `void`), apagado                                                                                     | Certificar en CERT (SAB-13, `--allow-money`)                                                                                                                                                                                                                                         |
+| **4.b**         | 🟡      | Asientos al reservar (SAB-16, `seats`), maletas y servicios por Stateless Ancillaries (SAB-19/20, `services`), modificar viajeros, documento, viajero frecuente y SSR (SAB-25, `modify`). Todo apagado por defecto                                                                                                                                     | Reembolso en producto: el ACL lo tiene sólo para el arnés (`sab-24`) y la plataforma no lo cablea (SAB-23). D9 exige Temporal antes del primer reembolso real, y Temporal no está en el repo. Asientos sobre una reserva existente (`modifyBooking`) no existen. Certificar (SAB-21) |
+| **5**           | ❌      | — (`providers/sabre` no tiene hoteles)                                                                                                                                                                                                                                                                                                                 | Los tres gates de negocio de §8.5                                                                                                                                                                                                                                                    |
+| **C**           | ❌ / ⏳ | Nada: no hay alta productiva documentada; todo lo probado es contra CERT                                                                                                                                                                                                                                                                               | Contrato, alta productiva y branch access por agencia (§9)                                                                                                                                                                                                                           |
+
+**Desvío del plan que hay que tener presente.** El plan ponía las Fases 1 y 2.b después de la compuerta comercial,
+y la 3 en Ola 2. El código las adelantó: las fases 1 a 4.b tienen código, aunque la compuerta (§5) no tiene ninguna
+de sus cuatro entradas registradas. Las operaciones que mueven dinero o cambian la reserva nacen apagadas
+(`SABRE_OPERATIONS`) y lo de pruebas se distingue por los hosts de CERT, que es lo que hoy mantiene el riesgo
+acotado. Las estimaciones de §2 ya no sirven como plan: son registro histórico.
 
 > ### Qué cambió respecto de la primera pasada
 >
@@ -39,7 +72,7 @@ una fase terminó**.
 >    [10 §8 y §9](./10-requisitos-maestro.md).
 > 8. **Cierre del 25 de agosto.** Las credenciales de CERT ya están disponibles fuera de Git; queda cargarlas en el
 >    almacén cifrado y ejecutar el smoke test. Amadeus Self-Service fue descontinuado el 17 de julio de 2026, por
->    lo que dejó de ser una alternativa ejecutable. Véase [12-cierre-auditoria.md](./12-cierre-auditoria.md).
+>    lo que dejó de ser una alternativa ejecutable. Véase [13-cierre-auditoria.md](./13-cierre-auditoria.md).
 > 9. **Trazabilidad requisito → fase (§11).** La auditoría encontró **cinco RF del maestro sin fase asignada**
 >    —RF-17, RF-18, RF-20, RF-22 y RF-23— y esta pasada añadió un sexto por contenido, **RF-06**. Ahora **los 23 RF
 >    tienen fase, o un motivo escrito para no tenerla** (§11). El caso grave eran RF-18 y RF-20: el modelo
@@ -213,6 +246,9 @@ Fase 2"_. **No es defendible; es acotada**, y sólo lo es porque su alcance es c
   aparecen ahí son **órdenes de magnitud para dimensionar la decisión de invertir**, no compromisos.
 
 ### 2.3 Mapa de fases: esfuerzo, calendario, bloqueo
+
+> **2026-11-05:** el estado real de cada fase está en [Estado al 2026-11-05](#estado-al-2026-11-05). Esta tabla es
+> la planificación original.
 
 | Fase            | Entrega                                                                                | Esfuerzo           | Calendario (1 pers.)                    | ¿Bloqueada?                                   | Ola                   |
 | --------------- | -------------------------------------------------------------------------------------- | ------------------ | --------------------------------------- | --------------------------------------------- | --------------------- |
@@ -1121,6 +1157,9 @@ ofertas del primero **más** un aviso de degradación; `grep -r assertSupportsLa
 
 ## 11. Trazabilidad: cada requisito funcional tiene fase, o tiene un motivo escrito para no tenerla
 
+> **2026-11-05:** si cada RF está hecho o pendiente lo dice
+> [10 §Estado al 2026-11-05](./10-requisitos-maestro.md#estado-al-2026-11-05). Esta tabla sólo asigna fase.
+
 **Por qué esta tabla vive aquí y no en el maestro.** La matriz de [10 §7](./10-requisitos-maestro.md) es
 **requisito → evidencia**: dice de dónde salió cada RF y con qué marca de verificación. No dice **quién lo
 construye ni cuándo**, y ése es el único sitio donde puede quedarse un requisito huérfano sin que nadie lo note.
@@ -1223,7 +1262,7 @@ ni localizador único ni cancelación atómica.
 > **Nota de fixture para RF-23, que ahorra una espera.** [10 RF-23 CA-5](./10-requisitos-maestro.md) pide un test
 > de contrato contra `evidence/responses/01-Add_phone_Orders_View.json`. **Ese directorio no está versionado**, pero
 > el dato sí: las cuatro respuestas guardadas viven dentro de la colección versionada
-> (`sabre/Booking Management API v2026.04.postman_collection.json`, donde `L4D79U` y `bookingReferences` aparecen
+> (`docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json`, donde `L4D79U` y `bookingReferences` aparecen
 > **4 veces cada uno**). **El mapper y su test se escriben sin credenciales**; lo que espera a CERT es sólo la
 > CA-6 (si `getBooking` puebla `flights[].confirmationId` en NDC sin una segunda llamada). Conviene reconciliar la
 > ruta en `00-fuentes.md` §1.

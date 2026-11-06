@@ -5,6 +5,14 @@
 > 2026-09-30 (§9).
 > Entorno inicial: **desarrollo**
 
+> **Estado de implementación al 2026-11-05 (verificado contra el código).** Todas las operaciones de §3 están
+> implementadas: ACL en `providers/agent-cars/src/` (las rutas que llama coinciden con §8, incluidas
+> `/release-reservation` y `/get-daily-report`, que allí figuran como "verificar"), adapter y factory BYOC en
+> `apps/api/src/providers-agent-cars/`, REST propio en `apps/api/src/cars/` (§8.bis, las 11 rutas coinciden con
+> `cars.controller.ts`) y pantallas en `apps/web-b2b/src/app/(app)/autos` (búsqueda, `oficinas/`, `reporte/`). El
+> token va en el query (`access-token`), como dice §1. §7 es el orden de construcción original y quedó cumplido.
+> Las variables de entorno reales llevan guion bajo (`AGENT_CARS_*`, ver §6).
+
 ---
 
 ## 1. Configuración base
@@ -444,6 +452,12 @@ GET https://www.agentcars.com/subsite/{lang}/site/get-url/
 
 ## 6. Variables de entorno (Postman → `.env`)
 
+> **Nota 2026-11-05.** El bloque de abajo son los nombres de la colección Postman, no los que lee la API. La API
+> (`apps/api/src/providers-agent-cars/agent-cars.factory.ts`) y `infrastructure/hostinger/docker-compose.prod.yml`
+> usan `AGENT_CARS_BASE_URL`, `AGENT_CARS_SUGGEST_URL`, `AGENT_CARS_ACCESS_TOKEN`, `AGENT_CARS_SOURCE` y
+> `AGENT_CARS_LANGUAGE`. Sin `AGENT_CARS_BASE_URL`, la API usa la URL de desarrollo (constante `AGENT_CARS_BASE_URLS`). Los valores "default para testing" no existen
+> en el código. Con BYOC, la cuenta del tenant en la bóveda manda sobre las variables.
+
 ```bash
 # Dev
 AGENTCARS_BASE_URL=https://api.dev.agentcars.com/v2/sites
@@ -519,7 +533,7 @@ El filtro de excepciones devuelve `502` con un mensaje en español ("tú") segú
   no está con esa tarifa.
 - "Not found" en `/my-reservation`, `/cancel`, `/release-reservation` → revisar apellido y código.
 
-El log guarda la URL llamada sin query (el token viaja en cabecera) y, de una página HTML, sólo su
+El log guarda la URL llamada sin query (el token viaja en el query `access-token` desde el 2026-09-30, §1) y, de una página HTML, sólo su
 título y su motivo.
 
 ## 8.quater Pantalla de autos (`apps/web-b2b/src/app/(app)/autos`)

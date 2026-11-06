@@ -1,7 +1,14 @@
 # LATAM Airlines API v192 (NDC) — Referencia
 
 Documento operativo de la colección Postman provista por LATAM. Basado en la
-exportación `API_LATAM_V2.json` (ya en el repo).
+exportación [`API_LATAM_V2.json`](../latam-ndc/API_LATAM_V2.json) (20 requests; desde
+2026-11-05 en `docs/latam-ndc/`, antes en la raíz del repo).
+
+> **Vigencia (2026-11-05).** Sigue describiendo la API que usa `providers/latam-ndc`: los mismos
+> endpoints `/ndc/v192/*` y el mismo host de sandbox. Pero la colección es de ejemplo y la guía oficial
+> del portal de LATAM la corrige en varios puntos (headers, duración del token, estados de la orden); donde
+> difieren, manda la guía. El estado del carril, sus hallazgos y el plan están en
+> [`docs/latam-ndc/01-estado-y-plan.md`](../latam-ndc/01-estado-y-plan.md).
 
 **Base URL:** `https://sandbox.api.latam.com` (sandbox).
 **Prod URL:** la entrega LATAM cuando aprueban certificación.
@@ -37,23 +44,24 @@ grant_type=client_credentials
 
 **Cuándo refrescar:** cuando faltan menos de 60s para `expires_in`. Implementado
 en `LatamTokenService` con cache en memoria + coalescing de fetches concurrentes.
+El `1800` es el del ejemplo; según la guía del portal (`/ndc/headers`) el token dura 59 minutos.
 
 ---
 
 ## 2. Headers obligatorios (en todos los `/ndc/*`)
 
-| Header                     | Valor                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| `Authorization`            | `Bearer {access_token}`                                                                    |
-| `X-latam-api-key`          | tu `ApiKey`                                                                                |
-| `Content-Type`             | `application/xml`                                                                          |
-| `X-latam-Track-Id`         | UUID v4 — agrupa requests del mismo flujo (búsqueda + price + create deberían compartirlo) |
-| `x-latam-request-id`       | UUID v4 nuevo por cada request — para correlación en logs                                  |
-| `X-latam-Application-Name` | nombre comercial de la agencia                                                             |
-| `X-latam-client-name`      | mismo valor que el anterior                                                                |
-| `X-latam-Country`          | `CO` / `CL` / `BR` / `PE` / `AR` ... — país del POS                                        |
-| `X-latam-Lang`             | `EN` / `ES` / `PT`                                                                         |
-| `x-latam-api-version`      | `V2`                                                                                       |
+| Header                     | Valor                                                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Authorization`            | `Bearer {access_token}`                                                                                                                                                       |
+| `X-latam-api-key`          | tu `ApiKey`                                                                                                                                                                   |
+| `Content-Type`             | `application/xml`                                                                                                                                                             |
+| `X-latam-Track-Id`         | UUID v4 **único por request** (guía del portal). La colección lo reutilizaba en todo el flujo; el código ya no, y lo deja en el log porque es lo que pide el soporte de LATAM |
+| `x-latam-request-id`       | UUID v4 nuevo por cada request — para correlación en logs                                                                                                                     |
+| `X-latam-Application-Name` | nombre de **la app registrada en el portal** (`config.applicationName`); si falta, el de la agencia                                                                           |
+| `X-latam-client-name`      | mismo valor que el anterior                                                                                                                                                   |
+| `X-latam-Country`          | `CO` / `CL` / `BR` / `PE` / `AR` ... — país del POS: siempre el `country` de la cuenta, nunca el de la moneda                                                                 |
+| `X-latam-Lang`             | `EN` / `ES` / `PT`, según el país (`langForCountry` en `latam-http.client.ts`)                                                                                                |
+| `x-latam-api-version`      | `V2`                                                                                                                                                                          |
 
 ---
 
@@ -414,6 +422,12 @@ dashboards. **Distinta base path** (`/api-b2b-reporting/v1` en vez de
 
 `EN` / `ES` / `PT`.
 
+### Estados de la orden y códigos de error
+
+La colección no los trae. Los estados reales son `OPENED`, `FROZEN` y `CLOSED`, y los códigos de error de
+AirShopping y OfferPrice están en la guía del portal; cómo los traduce el ACL está en
+[`docs/latam-ndc/01-estado-y-plan.md`](../latam-ndc/01-estado-y-plan.md) §3.
+
 ---
 
 ## 6. Errores comunes y manejo
@@ -449,20 +463,40 @@ dashboards. **Distinta base path** (`/api-b2b-reporting/v1` en vez de
 
 ## 8. Implementación en este repo
 
-| Capa                        | Archivo                                                  | Estado                     |
-| --------------------------- | -------------------------------------------------------- | -------------------------- |
-| Token + cache               | `providers/latam-ndc/src/auth/token.service.ts`          | ✅                         |
-| HTTP client + headers       | `providers/latam-ndc/src/http/latam-http.client.ts`      | ✅                         |
-| AirShopping request builder | `providers/latam-ndc/src/airshopping/request.builder.ts` | ✅                         |
+Estado al 2026-11-05. El detalle por operación está en
+[`docs/latam-ndc/01-estado-y-plan.md`](../latam-ndc/01-estado-y-plan.md) §2 y §Estado al 2026-11-05.
+
+| Capa                                 | Archivo (`providers/latam-ndc/src/`)              | Estado                                                |
+| ------------------------------------ | ------------------------------------------------- | ----------------------------------------------------- |
+| Token + cache                        | `auth/token.service.ts`                           | ✅                                                    |
+| HTTP client + headers                | `http/latam-http.client.ts`                       | ✅                                                    |
+| AirShopping                          | `airshopping/*`                                   | ✅ solo ida e ida y vuelta; sin multidestino          |
+| OfferPrice                           | `offerprice/*`                                    | ✅                                                    |
+| OrderCreate (sin pago)               | `ordercreate/*`                                   | 🟡 falta aceptar la recotización 70K (Change Booking) |
+| OrderRetrieve / Cancel / Cancel BNPL | `ordermanage/*`, `latam-flight-search.adapter.ts` | ✅                                                    |
+| OrderChange (pago) y enlace de pago  | `orderchange/*`                                   | 🟡 el carril con tarjeta todavía manda PAN y CVV      |
+| ServiceList                          | `servicelist/*`                                   | 🟡 solo lectura de equipaje                           |
+| Tiquetes sin usar (`/order/requote`) | `orderreshop/*`                                   | 🟡 mal usado desde la UI (ver doc 01)                 |
+| Refund / Exchange / VOID de emitido  | —                                                 | ❌                                                    |
+| Installments / Seats                 | —                                                 | ❌                                                    |
+
+--------------------------- | -------------------------------------------------------- | -------------------------- |
+| Token + cache | `providers/latam-ndc/src/auth/token.service.ts` | ✅ |
+| HTTP client + headers | `providers/latam-ndc/src/http/latam-http.client.ts` | ✅ |
+| AirShopping request builder | `providers/latam-ndc/src/airshopping/request.builder.ts` | ✅ |
 | AirShopping response mapper | `providers/latam-ndc/src/airshopping/response.mapper.ts` | ✅ tolerante a variaciones |
-| OfferPrice                  | —                                                        | 📅 Fase 2                  |
-| OrderCreate                 | —                                                        | 📅 Fase 3                  |
-| Cancel/Refund/Exchange      | —                                                        | 📅 Fase 4                  |
-| Installments/Seats/Services | —                                                        | 📅 según necesidad         |
+| OfferPrice | — | 📅 Fase 2 |
+| OrderCreate | — | 📅 Fase 3 |
+| Cancel/Refund/Exchange | — | 📅 Fase 4 |
+| Installments/Seats/Services | — | 📅 según necesidad |
 
 ---
 
 ## 9. Variables de entorno consumidas por el adapter
+
+Primero manda la cuenta BYOC de la bóveda (`provider_accounts`, con `country`, `posCity`, `applicationName`,
+`environment`…). Estas variables son el respaldo de plataforma
+(`apps/api/src/providers-latam/latam-ndc.factory.ts`).
 
 | Var                     | Tipo   | Default                         |
 | ----------------------- | ------ | ------------------------------- |
@@ -474,8 +508,7 @@ dashboards. **Distinta base path** (`/api-b2b-reporting/v1` en vez de
 | `LATAM_AGENCY_NAME`     | string | —                               |
 | `LATAM_TRAVEL_AGENT_ID` | secret | — (opcional)                    |
 | `LATAM_COUNTRY`         | string | — (`CO`/`CL`/`BR`/`PE`/`AR`)    |
-| `LATAM_FORCE_MOCK`      | bool   | `false`                         |
 
-Si falta cualquiera de las 5 críticas (`apiKey`, `apiSecret`, `agencyId`,
-`agencyIata`, `country`), el adapter cae en modo MOCK y loguea cuáles faltan
-al iniciar.
+Ya no hay modo simulado: si faltan credenciales usables, LATAM queda **fuera** de la búsqueda y el factory lo
+informa como «no habilitado» (`providers/latam-ndc/src/config.ts`). `LATAM_FORCE_MOCK` ya no se lee, aunque
+`.github/workflows/deploy.yml` todavía la pasa.

@@ -86,8 +86,11 @@ Zona `planetour.cloud`, registros **proxied (orange cloud)**:
 | Tipo | Nombre      | Apunta a                  | Cuándo                             |
 | ---- | ----------- | ------------------------- | ---------------------------------- |
 | A    | `@` y `www` | `apps/web-b2c`            | cuando exista el sitio público B2C |
-| A    | `admin`     | `apps/web-admin`          | cuando exista el panel superadmin  |
+| A    | `admin`     | `apps/web-admin`          | si el panel superadmin se separa   |
 | A    | `*.tenants` | `apps/web-b2b` (wildcard) | white-label dinámico               |
+
+> El panel superadmin ya existe, pero dentro de `apps/web-b2b` (`https://app.planetour.cloud/admin`); hoy no hay
+> `apps/web-admin` ni hace falta el registro `admin`.
 
 > Para `*.tenants` se requiere cambiar Caddy a DNS-01 challenge (Cloudflare API token con permiso `Zone:DNS:Edit`); HTTP-01 no soporta wildcards.
 
@@ -112,6 +115,15 @@ y wildcard de tenants comentados — basta descomentar cuando llegue el momento.
 | `APP_USER_PASSWORD`       | `openssl rand -base64 32` — rol runtime de `apps/api`, respeta RLS                                                                        |
 | `REDIS_PASSWORD`          | `openssl rand -base64 32`                                                                                                                 |
 | `JWT_SECRET`              | `openssl rand -base64 64` (mínimo 32 chars; el código lo valida)                                                                          |
+
+> **Nota 2026-11-05.** La tabla de arriba es la del primer despliegue. `deploy.yml` lee además estos secrets: la
+> bóveda (`PROVIDER_CREDENTIALS_KEY`, `PROVIDER_PAYLOADS_KEY` y, al rotarla, `PROVIDER_PAYLOADS_KEY_PREVIOUS`), el
+> correo (`MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM`), las cuentas de plataforma de proveedores
+> (`LATAM_API_URL`, `LATAM_API_KEY`, `LATAM_API_SECRET`, `LATAM_AGENCY_*`, `LATAM_TRAVEL_AGENT_ID`, `LATAM_COUNTRY`,
+> `DESPEGAR_API_KEY`, `AGENT_CARS_ACCESS_TOKEN`, que también se aceptan como variables) y los `CERT_*` del stack de
+> certificación (§9.2). La lista completa de variables (`DESPEGAR_*`, `AGENT_CARS_*`, `SABRE_OPERATIONS`,
+> `APP_WEB_URL`, `MAIL_*`, `PROVIDER_PAYLOADS_RETENTION_DAYS`, `TBO_SYNC_*`) está en el paso que escribe el `.env` de
+> `.github/workflows/deploy.yml`.
 
 #### Variables (opcionales)
 
@@ -213,8 +225,9 @@ estado de un proveedor para una agencia sale de lo primero que opine, en este or
    ese proveedor para esa agencia, sus ancestros ni global.
 5. La política del proveedor: `opt-in` apagado (TBO), `always` encendido (Despegar, LATAM, Sabre).
 
-**Lo normal: el panel.** En `https://app.planetour.cloud`, con un usuario `superadmin` (§7; `platform_admin` no
-alcanza):
+**Lo normal: el panel.** En `https://app.planetour.cloud`, con un usuario `superadmin` (§7; el rol `platform_admin`
+dejó de dar acceso con la migración `0093`). Si el superadmin es _supervisado_ (`0092`), cambiar la habilitación o levantar
+un apagado queda como solicitud que aprueba otro superadmin pleno (`docs/platform/16-roles-y-superadmins.md`):
 
 - _Proveedores de la plataforma_ (`/admin/plataforma/proveedores`): por proveedor, el interruptor _Todos los tenants_ y
   las excepciones por agencia (_Heredar_, _Habilitado_, _Deshabilitado_), con motivo y confirmación antes de apagar.
@@ -312,7 +325,9 @@ red, pero **no vende**: las búsquedas, reservas, órdenes y carteras le respond
 cualquier nodo donde también sea miembro. Planetour vende a nombre propio con **sucursales**: agencias hijas de
 Planetour, con sus propios vendedores.
 
-Lo asigna la imagen `seed-superadmin`. Es one-shot e idempotente, y su comportamiento y sus negativas están en
+Desde el 2026-11-05 (migración `0092`) puede haber varios superadmins, plenos o supervisados, y el que ya es pleno los
+da, cambia y quita desde _Plataforma → Superadmins_ (`/admin/plataforma/superadmins`), con 2FA reciente. Lo que sigue
+es el arranque y el respaldo por el VPS. El primero lo asigna la imagen `seed-superadmin`. Es one-shot e idempotente, y su comportamiento y sus negativas están en
 [`tools/seed-superadmin`](../../tools/seed-superadmin/README.md). En resumen:
 
 - Promueve `platform` a tipo `platform` si hace falta, sin renombrarlo.
@@ -427,7 +442,8 @@ con `"passwordIgnored": true`. Para cambiar una contraseña está _Olvidé mi co
 
 ## 8. Cuándo migrar a AWS
 
-Triggers en `docs/discovery/02-decisiones-segunda-ronda.md`:
+Triggers en [`docs/discovery/02-decisiones.md`](../../docs/discovery/02-decisiones.md) (antes citado como
+`02-decisiones-segunda-ronda.md`, que no existe):
 
 - > 500 reservas/día sostenido
 - SLA contractual > 99.5%
@@ -435,7 +451,8 @@ Triggers en `docs/discovery/02-decisiones-segunda-ronda.md`:
 - > 100 k USD/mes en pagos procesados
 
 Stack diseñado portable: las mismas imágenes corren en ECS/Fargate. Postgres → RDS,
-MinIO → S3, Redis → ElastiCache. Sin cambios de código en `apps/`.
+Redis → ElastiCache. MinIO no existe: los assets de marca van a disco local
+(`apps/api/src/storage/local-disk-storage.adapter.ts`), así que pasar a S3 sí exige escribir el adaptador.
 
 ---
 

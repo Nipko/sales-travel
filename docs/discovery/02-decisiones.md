@@ -1,5 +1,7 @@
 # Decisiones — Segunda Ronda
 
+> **Histórico (revisado el 2026-11-05).** Decisiones de la segunda ronda de discovery (2026-04-24). Siguen vigentes Hostinger + Cloudflare, el diseño cloud-ready y el SAQ-A; **no** se cumplieron el esquema de olas R3 (proveedores y meses: ver «Estado real» en [07-roadmap-olas.md](./07-roadmap-olas.md)) ni el equipo de R6. Las decisiones posteriores viven en `docs/sabre/`, `docs/tbo/` y `docs/platform/`.
+
 **Fecha:** 2026-04-24
 **Estado:** Confirmado por el usuario + defaults recomendados aceptados implícitamente
 

@@ -6,7 +6,7 @@ Este directorio congela las fuentes técnicas usadas para reconciliar el anális
 - `specs/`: 21 contratos OpenAPI/YAML y 81 capturas de páginas oficiales de Sabre Developer Portal.
 - Procedencia: <https://developer.sabre.com/rest-api/booking-management-api/v1/index.html> y páginas enlazadas del
   catálogo oficial.
-- La colección Postman analizada está en `sabre/`; sus métricas se reproducen con
+- La colección Postman analizada y su environment están en [`postman/`](./postman/); sus métricas se reproducen con
   `node tools/sabre/audit-postman.mjs`. La copia versionada reemplaza 23 valores fijos de ejemplo
   `<ClientSecret>` por `{{soap_client_secret}}`; `docs/sabre/00-fuentes.md` conserva ambos hashes.
 - No se almacenan EPR, PCC, passwords, tokens ni claves operativas en esta evidencia.

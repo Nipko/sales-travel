@@ -6,6 +6,23 @@ estado: borrador
 
 # TBO Hotels — Certificación y arnés de captura
 
+> **Estado al 2026-11-05 (VERIFICADO-CODIGO, `main`).** Varios puntos del Resumen (§1) ya no describen el repo:
+>
+> - **§1 punto 3 (portal = producción):** resuelto con DC-1/D-TBO-35 (A). Existe el stack de certificación sin
+>   credenciales reales (`infrastructure/hostinger/docker-compose.cert.yml`, job `deploy-cert` en
+>   `.github/workflows/deploy.yml`, tenant sembrado por `tools/seed-tbo-cert-tenant/`).
+> - **§1 punto 4 (la web solo busca):** superado. `apps/web-b2b` tiene detalle (`hoteles/[hotelKey]`), checkout con
+>   huéspedes (`hoteles/checkout`) y reservas con cancelación (`reservas/`). Falta la Playwright del checklist §8
+>   (PR-6.6 de [09](./09-plan-implementacion.md)).
+> - **§1 punto 6 (`.env.tbo` no ignorado):** resuelto, `.gitignore:110-111` ignora `.env.tbo` y `.tbo-cert/`.
+> - **Arnés (§6):** existe `tools/tbo/cert-cases.mjs` con `check`, `run`, `verify`, `zip` y sondas
+>   ([tools/tbo/README.md](../../tools/tbo/README.md)).
+> - **Proceso con TBO:** [evidence/cert/](./evidence/cert/README.md) no tiene ningún envío archivado. Si el zip ya se
+>   mandó, falta archivarlo; si no, la fase 1 del proceso (§2.4) sigue abierta.
+>
+> Las citas `ruta:línea` del documento son de la rama `feat/tbo-hotels` (fusionada en `main` el 2026-10-13) y pueden
+> haberse movido.
+
 Qué cubre: el proceso de certificación de TBO completo, los 8 casos con su ocupación exacta y lo que creemos que TBO revisa en cada uno, el diseño del arnés `tools/tbo/cert-cases.mjs` que genera el zip, el entorno de pruebas que le damos a TBO para la verificación de portal y el checklist de UI. Al final están los entregables que envía el founder, en inglés y revisados contra el código de la rama `feat/tbo-hotels` al 2026-09-27: el documento de workflow (Anexo A), la guía de recorrido del portal (Anexo B), el email del zip (Anexo C) y el borrador del formulario "Client's Details" (Anexo D), más los datos a preparar para el "Production Process Form" (Anexo E). El archivo de lo enviado está en [evidence/cert/](./evidence/cert/README.md).
 
 Fuentes y convención de citas: [00-fuentes.md](./00-fuentes.md) §9. El documento de certificación se cita "(Cert, <sección>)" con los nombres de sección de [00](./00-fuentes.md) §4. Los checkpoints de TBO no se publican: toda la lista de §3 es una **reconstrucción nuestra** (INFERIDO) a partir de los Key Points y de las reglas del PDF.

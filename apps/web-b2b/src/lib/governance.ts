@@ -2,7 +2,7 @@ import type { EnablementChangeDialog } from './provider-enablement';
 
 /**
  * Gobierno de proveedores y formas de pago — lado del navegador, sólo superadmin
- * (docs/platform/14-opciones-de-pago.md).
+ * (docs/platform/17-opciones-de-pago.md).
  *
  * La regla (el nodo más cercano que diga algo; en el mismo nodo la regla a mano le gana al perfil;
  * después la global; si nadie dice nada, apagado) la resuelve el API (`/admin/governance`). Acá

@@ -22,7 +22,7 @@ export class PaymentMethodNotEnabledError extends ForbiddenException {
 }
 
 /**
- * Qué formas de pago puede usar un tenant, según el gobierno (docs/platform/14-opciones-de-pago.md).
+ * Qué formas de pago puede usar un tenant, según el gobierno (docs/platform/17-opciones-de-pago.md).
  * Lo consultan el pago y el enlace de pago de una orden, la emisión de Sabre y las reservas de autos.
  *
  * Antes de la siembra del gobierno (una base nueva, los tests) no restringe nada, como era antes.

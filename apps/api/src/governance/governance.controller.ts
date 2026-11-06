@@ -69,7 +69,7 @@ function ruleTarget(dto: SetRuleDto): string {
 }
 
 /**
- * Gobierno de proveedores y formas de pago (docs/platform/14-opciones-de-pago.md): catálogo,
+ * Gobierno de proveedores y formas de pago (docs/platform/17-opciones-de-pago.md): catálogo,
  * perfiles enlazados, asignación a nodos, reglas a mano y la vista efectiva de un nodo.
  *
  * Sólo el superadmin, como el panel de proveedores: `@Roles` deja fuera a todo rol de nodo,

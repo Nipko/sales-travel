@@ -209,7 +209,7 @@ las clases reservadas, que **puede no ser la marca elegida** (dos marcas pueden 
 
 Contrato (`booking-management-v1.yml:4911-4930`, `:5838`): `PricingQualifiers.brandedFares[]` →
 `BrandedFare{brandCode, flightIndices[]}` (índices desde 1; no pueden repetirse). Ejemplo oficial
-de la colección, _"createBooking - Branded fares"_ (`sabre/Booking Management API
+de la colección, _"createBooking - Branded fares"_ (`docs/sabre/evidence/postman/Booking Management API
 v2026.04.postman_collection.json`):
 
 ```json
@@ -328,7 +328,7 @@ Solo ida: igual, sin el paso 3. Móvil primero: pasos apilados con la selección
 - `docs/sabre/evidence/specs/bargain-finder-max-v5.yml` — líneas citadas en cada tabla.
 - `docs/sabre/evidence/specs/flightcheck-api-v1.yml:5`, `:404-470`, `:1299-1316`.
 - `docs/sabre/evidence/specs/booking-management-v1.yml:4911-4930`, `:5838`.
-- `sabre/Booking Management API v2026.04.postman_collection.json` — _"createBooking - Branded
+- `docs/sabre/evidence/postman/Booking Management API v2026.04.postman_collection.json` — _"createBooking - Branded
   fares"_ y _"createBooking - Air with multi pricing (per flight)"_.
 - `docs/sabre/14-consulta-marcas-tarifarias.md` — rechazo `MIP/PROCESS`, escalera, prueba en host.
 - `docs/sabre/12-hallazgos-sandbox.md` — P-04 (marcas en 86-100 % de ofertas), H-04, H-07.

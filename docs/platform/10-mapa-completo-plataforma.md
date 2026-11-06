@@ -1,13 +1,14 @@
 # Mapa Completo de la Plataforma — Sales-Travel
 
-**Versión:** 1.0
-**Fecha:** 2026-04-24 · **Actualizado:** 2026-09-29 (carteras B2B por moneda y retención en cascada: M5.5, §4.3 y §6)
+**Versión:** 1.1
+**Fecha:** 2026-04-24 · **Actualizado:** 2026-11-05 (estado real de módulos, tablas, pantallas y endpoints: §0, §4.5, §5, §6, §10); 2026-09-29 (carteras B2B por moneda y retención en cascada: M5.5, §4.3 y §6)
 **Propósito:** Vista única y exhaustiva de TODO lo que se construye. Es la fuente de verdad técnica para Sprint 0 en adelante. Todo lo que no es construcción de plataforma vive en `11-manual-operativo.md`.
 
 ---
 
 ## Índice
 
+0. [Estado al 2026-11-05](#0-estado-al-2026-11-05)
 1. [Principios de diseño](#1-principios-de-diseño-no-negociables)
 2. [Mapa jerárquico de módulos](#2-mapa-jerárquico-de-módulos)
 3. [Módulo de Identidad y Seguridad](#3-módulo-de-identidad-y-seguridad-detalle)
@@ -18,6 +19,44 @@
 8. [Sistema de diseño (Design System)](#8-sistema-de-diseño-design-system)
 9. [Matriz módulo × ola](#9-matriz-módulo--ola)
 10. [Estructura del repositorio](#10-estructura-del-repositorio)
+
+---
+
+## 0. Estado al 2026-11-05
+
+Este mapa nació en abril como el **diseño completo**. Mucho de lo que describe todavía no existe, y
+parte de lo que existe se construyó distinto (por ejemplo, `orders` en vez de `BOOKING`, una cola
+BullMQ en vez de Temporal). Para no confundir "documentado" con "construido":
+
+- **✅ hecho** · **◐ parcial** · **❌ pendiente** (sólo diseño).
+- Lo que está construido se verificó contra los controladores de `apps/api/src` y las migraciones
+  `db/migrations` 0001–0093. Las tablas reales están en [§4.5](#45-tablas-reales-migraciones-00010093);
+  las rutas reales, en [§6](#6-endpoints-api-por-dominio); el avance del plan, en
+  [12 §0](./12-modelo-consolidador-y-plan.md#0-estado-al-2026-11-05).
+
+| Módulo                        | Estado | Qué hay hoy                                                                                                                                                                                                                                         | Dónde                                                                                                                                              |
+| ----------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 Identidad y seguridad      | ✅     | Login, sesiones revocables, puestos por nodo, 2FA TOTP obligatorio para todo rol que administra, reconfirmación a los 10 min en acciones de alto impacto, alta sólo por invitación, auditoría. Sin magic link, SSO ni passkeys.                     | `auth/`, `me/`, `tenants/`, `audit/`; docs [14](./14-alta-por-invitacion.md), [15](./15-gestion-de-usuarios.md), [16](./16-roles-y-superadmins.md) |
+| M1 Búsqueda                   | ◐      | Vuelos Sabre + LATAM NDC (ida, vuelta con tarifa por trayecto, seat map, niños e infantes con edad), hoteles TBO + Despegar con catálogo propio, autos AgentCars, aeropuertos (OurAirports). Sin caché distribuida ni Giata.                        | `search/`, `hotels/`, `cars/`, `airports/`, `providers-*`, `providers/`                                                                            |
+| M2 Package Studio             | ❌     | API `/packages` y tablas (0010); sin pantalla.                                                                                                                                                                                                      | `packages/`                                                                                                                                        |
+| M3 Cotizador                  | ◐      | Cotizaciones de vuelos con pasajeros, facturador con datos fiscales (0091), envío por correo y WhatsApp (`wa.me`). Sin IA ni link público.                                                                                                          | `quotations/`                                                                                                                                      |
+| M4 Reservas y emisión         | ◐      | Órdenes de vuelo, hotel y auto; emisión, void, reshop, servicios/EMD (0086), seguimiento y avisos de plazo de emisión (0081–0085), post-venta con cola y barrido. Sin saga multi-proveedor.                                                         | `orders/`, `queue/`, `hotels/`, `cars/`                                                                                                            |
+| M5 Pagos y cobranza           | ◐      | Carteras B2B por moneda con retención en cascada (M5.5), formas de pago gobernadas (pago de LATAM, enlace de pago LATAM, forma de pago de emisión Sabre, autos). Sin Stripe/MP, métodos locales ni split.                                           | `portfolios/`, `governance/`, `orders/`                                                                                                            |
+| M6 Pricing                    | ◐      | Reglas de markup en cascada por la red, aplicadas en vuelos y hoteles; simulador `POST /pricing/waterfall`. Sin versionado, comisión del vendedor ni confidencialidad del neto (G-01, G-02).                                                        | `pricing/`                                                                                                                                         |
+| M7 Multi-tenant y white-label | ◐      | RLS forzada, marca heredable (logo, colores), dominio propio (0033), correo propio por nodo (BYO-email). Sin editor de tema ni PWA.                                                                                                                 | `tenants/`, `branding/`, `storage/`, `mail/`                                                                                                       |
+| M8 Roles y equipos            | ✅     | Red de 4 niveles, roles desde una sola fuente (`auth/roles.ts`), superadmin pleno y supervisado (0092), `platform_admin` sin acceso (0093). Sin ABAC configurable ni squads.                                                                        | `auth/roles.ts`, `network/`, `platform-admins/`                                                                                                    |
+| M9 IA omnicanal               | ❌     | Nada (WhatsApp sólo como enlace `wa.me`).                                                                                                                                                                                                           | —                                                                                                                                                  |
+| M10 Contabilidad              | ❌     | —                                                                                                                                                                                                                                                   | —                                                                                                                                                  |
+| M11 Facturación electrónica   | ❌     | Sólo los datos del facturador en la cotización (0091).                                                                                                                                                                                              | —                                                                                                                                                  |
+| M12 Reporting                 | ◐      | Reportes de ventas reales por moneda; consola de la plataforma (Resumen, Agencias en números). Comisiones sin fuente (`available: false`).                                                                                                          | `reports/`, `admin-console/`                                                                                                                       |
+| M13 Apps móviles              | ❌     | Panel web responsive; sin app.                                                                                                                                                                                                                      | —                                                                                                                                                  |
+| M14 Soporte                   | ❌     | Anuncios de la plataforma a la red (0079). Sin tickets.                                                                                                                                                                                             | `announcements/`                                                                                                                                   |
+| M15 Integraciones             | ◐      | Registry de vuelos y hoteles, BYOC con herencia, habilitación por nodo (0048), gobierno con perfiles (0089), apagado de emergencia y circuito por proveedor (0077), payloads de proveedor (0043), conciliación (0047). Sin feature flags (Unleash). | `providers/`, `provider-*`, `governance/`, `reconciliation/`                                                                                       |
+| M16 Operacional               | ◐      | CI/CD en GitHub Actions con deploy a VPS, migraciones, smoke test, crones de catálogos. Sin Unleash, Sentry ni Datadog.                                                                                                                             | `.github/workflows/`, `infrastructure/`                                                                                                            |
+
+**Proveedores conectados:** `sabre` y `latam-ndc` (vuelos), `tbo-hotels` y `despegar-hotels`
+(hoteles), `agent-cars` (autos). Cada uno es un paquete en `providers/` con su ACL y su módulo en
+`apps/api/src/providers-*`. Ninguno de los demás de §10 (Amadeus, Hotelbeds, Stripe, Alegra…) existe.
 
 ---
 
@@ -40,6 +79,8 @@ Toda decisión de construcción se valida contra estos:
 
 ## 2. Mapa Jerárquico de Módulos
 
+> Es el mapa objetivo. Qué está construido: [§0](#0-estado-al-2026-11-05).
+
 ```
 SALES-TRAVEL PLATFORM
 │
@@ -50,7 +91,8 @@ SALES-TRAVEL PLATFORM
 │   ├── M0.4 Audit log (event sourcing parcial)
 │   ├── M0.5 Secrets vault (cifrado credenciales proveedores)
 │   ├── M0.6 Rate limiting y abuse protection
-│   └── M0.7 Compliance helpers (PCI SAQ-A, LGPD, Ley 1581 export/delete)
+│   ├── M0.7 Compliance helpers (PCI SAQ-A, LGPD, Ley 1581 export/delete)
+│   └── M0.8 Consola de la plataforma (resumen, reservas de la red, actividad, sistema, anuncios; superadmins plenos y supervisados)
 │
 ├── 🔍 M1 — Búsqueda y Catálogo
 │   ├── M1.1 Buscador unificado (form universal pax/fechas/destino)
@@ -90,7 +132,9 @@ SALES-TRAVEL PLATFORM
 │   ├── M4.6 Cola de tickets pendientes + reintentos
 │   ├── M4.7 Modificaciones (cambio pax/fecha/ruta)
 │   ├── M4.8 Cancelaciones (recálculo de penalidades)
-│   └── M4.9 Trazabilidad completa (audit log por reserva)
+│   ├── M4.9 Trazabilidad completa (audit log por reserva)
+│   ├── M4.10 Seguimiento de reservas y avisos de plazo de emisión
+│   └── M4.11 Servicios adicionales / EMD sobre una reserva (equipaje, comidas)
 │
 ├── 💰 M5 — Pagos y Cobranza
 │   ├── M5.1 Payment Router (Stripe / MP por tenant/país/moneda/BIN)
@@ -124,7 +168,7 @@ SALES-TRAVEL PLATFORM
 │   └── M7.8 Tenant lifecycle (onboarding, suspensión, baja)
 │
 ├── 👥 M8 — Roles, Permisos y Equipos
-│   ├── M8.1 Jerarquía (D4 A, doc 12 §3.0, máx. 4 niveles): Planetour (platform) → consolidadores, agencias y sucursales; consolidador → agencias; agencia → sub-agencias. En cada nodo: vendedor → cliente final. El superadmin de Planetour cuadra la red y no vende; platform_admin retirado (D7 B)
+│   ├── M8.1 Jerarquía (D4 A, doc 12 §3.0, máx. 4 niveles): Planetour (platform) → consolidadores, agencias y sucursales; consolidador → agencias; agencia → sub-agencias. En cada nodo: vendedor → cliente final. El superadmin de Planetour (pleno o supervisado) cuadra la red y no vende; platform_admin retirado y sin acceso (0093)
 │   ├── M8.2 RBAC granular (acciones por recurso)
 │   ├── M8.3 ABAC (reglas dinámicas: "vendedor solo ve sus clientes")
 │   ├── M8.4 Equipos / squads dentro de agencia
@@ -202,7 +246,8 @@ SALES-TRAVEL PLATFORM
 │   ├── M15.3 Circuit breakers + kill switches (feature flags)
 │   ├── M15.4 Retry policies + DLQ
 │   ├── M15.5 Latency budget enforcement
-│   └── M15.6 Sandbox/prod toggle por tenant
+│   ├── M15.6 Sandbox/prod toggle por tenant
+│   └── M15.7 Gobierno de proveedores y formas de pago (perfiles; sólo superadmin, doc 17)
 │
 └── 🔧 M16 — Plataforma Operacional (DevEx + Ops)
     ├── M16.1 CI/CD (GitHub Actions, dev/staging/prod)
@@ -229,7 +274,7 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - **Passkeys/WebAuthn** (Ola 2+, biométrico nativo)
 - **OAuth/SSO** (Google, Microsoft, Apple — para B2C)
 - **SAML 2.0** (Ola 3+, para tenants enterprise)
-- **MFA obligatorio** para roles admin+ (TOTP via apps tipo Authy / Google Authenticator)
+- **MFA obligatorio** para todo rol que administra: `admin` y superiores (TOTP via apps tipo Authy / Google Authenticator)
 - **Session management** con refresh tokens rotatorios (15min access / 30d refresh)
 - Detección de **anomalías** (login desde nueva geo/dispositivo → email + reto MFA)
 
@@ -238,8 +283,10 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 - **2FA TOTP** con QR escaneable (`uqr`, sin servicios externos), auto-envío al 6º dígito,
   códigos de recuperación `XXXXX-XXXXX` (copiar/descargar/imprimir/regenerar) y "Cambiar de
   teléfono" sin apagar el factor activo (`users.mfa_pending_secret`).
-- **2FA obligatorio exigido por la API** (`MfaEnforcementGuard`) para `MFA_REQUIRED_ROLES`:
-  `403 MFA_ENROLLMENT_REQUIRED` hasta enrolar; la web muestra el enrolamiento a pantalla completa.
+- **2FA obligatorio exigido por la API** (`MfaEnforcementGuard`) para `MFA_REQUIRED_ROLES`
+  (`superadmin`, `consolidator_admin`, `tenant_admin`, `agency_admin`, `admin`; los dos últimos desde
+  el 2026-11-05, doc 16 H6): `403 MFA_ENROLLMENT_REQUIRED` hasta enrolar; la web muestra el
+  enrolamiento a pantalla completa.
 - **Desafío MFA con estado** (`mfa_challenges`): 5 intentos por desafío y por cuenta (mismo bloqueo
   de 15 min que la contraseña); tokens de un solo uso en `consumed_tokens`.
 - **Recordar este equipo** 30 días (`trusted_devices`, cookie `st_trusted`): se invalida al cambiar
@@ -267,17 +314,24 @@ Sub-módulo crítico que el usuario destacó. Por eso lo expando aquí.
 
 ### 3.2 M0.2 — Roles y Permisos
 
-**Modelo:** RBAC + ABAC.
+**Modelo:** RBAC + ABAC. Los roles reales, sus rangos y quién administra qué están en
+[16 §1](./16-roles-y-superadmins.md#1-inventario-de-roles-cómo-está-hoy); la fuente única en código es
+`apps/api/src/auth/roles.ts`.
 
 ```
-RBAC (rol → conjunto de permisos):
-  - superadmin           → toda la red, salvo vender (Planetour vende por sus sucursales; doc 12 §3.0)
-  - platform_admin       → retirado como rol asignable (D7 B, 2026-09-28); queda en el enum por compatibilidad
-  - tenant_admin         → su tenant: usuarios, branding, pricing, reportes
-  - tenant_supervisor    → ver todas las cotizaciones/reservas del tenant
-  - tenant_seller        → solo sus clientes/cotizaciones/reservas
-  - tenant_accountant    → solo módulos contable, pagos, facturación
-  - end_customer         → solo sus reservas/itinerarios/perfil
+RBAC real (memberships.role, una por usuario y nodo; rango entre paréntesis):
+  - superadmin (100)          → sólo en el nodo platform; toda la red, salvo vender. Pleno o
+                                supervisado (0092): el supervisado deja lo sensible como solicitud
+  - platform_admin (90)       → retirado: nadie lo asigna y desde 0093 no da acceso
+  - consolidator_admin (70)   → su subárbol (usuarios por debajo de 70, BYOC, markup, carteras)
+  - tenant_admin (60)         → su subárbol, por debajo de 60
+  - agency_admin (50)         → su subárbol, por debajo de 50
+  - admin / "Manager" (40)    → su subárbol, por debajo de 40
+  - vendedor (20)             → vende en su nodo
+  - cliente_final (10)        → sin panel de administración
+
+Diseño de abril que NO se construyó así: tenant_supervisor, tenant_seller, tenant_accountant,
+end_customer.
 
 ABAC (políticas dinámicas evaluadas en runtime):
   - "tenant_seller puede ver cotización X solo si X.assigned_seller_id = current_user.id"
@@ -285,7 +339,7 @@ ABAC (políticas dinámicas evaluadas en runtime):
   - "todo usuario solo puede acceder a recursos de su tenant_id"
 ```
 
-**Implementación:** middleware de Express/NestJS que carga `current_tenant + current_user + roles + policies` en cada request. Tests de aislamiento cross-tenant en CI.
+**Implementación:** (ABAC configurable por tenant: pendiente). Middleware de NestJS que carga `current_tenant + current_user + roles + policies` en cada request. Tests de aislamiento cross-tenant en CI.
 
 ### 3.3 Hardening de Seguridad
 
@@ -318,7 +372,7 @@ ABAC (políticas dinámicas evaluadas en runtime):
 
 ## 4. Modelo de Datos Completo
 
-> Diagrama lógico. El esquema físico (índices, particiones, FKs exactas) se diseña en Sprint 0 con el equipo de backend.
+> Diagrama lógico de abril. Las entidades de §4.1–§4.4 sin migración siguen siendo diseño; las tablas que existen de verdad están en [§4.5](#45-tablas-reales-migraciones-00010093).
 
 ### 4.1 Core entities
 
@@ -381,8 +435,9 @@ MEMBERSHIP
   id (pk)
   user_id (fk)
   tenant_id (fk)
-  role (superadmin|platform_admin|tenant_admin|tenant_supervisor|tenant_seller|tenant_accountant|end_customer)
-  status (active|invited|suspended)
+  role (superadmin|consolidator_admin|tenant_admin|agency_admin|admin|vendedor|cliente_final; platform_admin sin acceso desde 0093)
+  status (active|invited|suspended|removed)   -- removed = baja blanda (0067)
+  platform_supervised (bool)          -- superadmin supervisado (0092)
   unique(user_id, tenant_id)
 
 ROLE_POLICY (ABAC overrides)
@@ -621,7 +676,7 @@ CONVERSATION (IA)
   └── 1:N MESSAGE
   └── 1:N TOOL_CALL              -- log de tool-calling de la IA
 
-DOMAIN_EVENT (TimescaleDB hypertable, append-only)
+DOMAIN_EVENT (append-only; hoy tabla plana `domain_events`, 0015 — hypertable cuando haga falta)
   id (uuid, pk)
   timestamp (time, partition key, mes)
   tenant_id (fk)
@@ -634,11 +689,53 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
   -- nunca update/delete: audit inmutable
 ```
 
+### 4.5 Tablas reales (migraciones 0001–0093)
+
+Lo que existe en la base hoy, agrupado. Entre paréntesis, la migración que crea la tabla o le da su
+forma actual. Todas las tablas con datos de un nodo tienen RLS forzada.
+
+| Dominio               | Tablas                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Red e identidad       | `tenants` (0001; jerarquía 0011, 0049–0051; marca 0006, 0030; dominio 0033; `foreign_currency_fares` 0087) · `users` · `memberships` (`removed` 0067, `platform_supervised` 0092) · `sessions` (0026) · `mfa_recovery_codes` (0027) · `mfa_challenges`, `trusted_devices`, `consumed_tokens` (0055) · `password_reset_tokens`, `user_invitations` (0028) |
+| Gobierno y plataforma | `provider_catalog` (0035) · `provider_enablement` (0048) · `provider_kill_switches` (0077) · `governance_profiles`, `governance_profile_items`, `tenant_governance_profiles`, `payment_method_rules`, `governance_state` (0089) · `platform_change_requests` (0092) · `system_announcements` (0079)                                                      |
+| Proveedores           | `provider_accounts` (0012, BYOC) · `provider_payloads` (0043) · `provider_reconciliation_runs`, `provider_reconciliation_items` (0047) · `search_logs` (0032)                                                                                                                                                                                            |
+| Venta                 | `quotations` (0004; facturador 0091) · `orders` (0005; reemplaza a `BOOKING`/`BOOKING_ITEM`) · `order_operations` (0021) · `hotel_order_tracking` (0042) · `flight_order_tracking`, `order_flight_documents` (0082) · `order_ancillary_lines` (0086) · `package_quotations`, `package_items` (0010) · `tenant_booking_permissions` (0055)                |
+| Clientes y CRM        | `customers` (0010; PII cifrada 0018; empresas 0091) · `customer_passengers`, `customer_documents_vault`, `crm_opportunities`, `crm_interactions` (0024) · `crm_tasks` (0034)                                                                                                                                                                             |
+| Dinero                | `agency_portfolios`, `portfolio_transactions` (0010, 0052) · `portfolio_deposit_reports` (0052) · `wallet_hold_policy`, `wallet_hold_groups`, `wallet_hold_levels` (0060) · `wallet_hold_adjustments` (0086) · `markup_rules` (0010, 0016)                                                                                                               |
+| Catálogo              | `airports` (0003) · `hotel_inventory` (0022) · `hotel_provider_city`, `hotel_destination_map`, `hotel_match`, `hotel_content`, `hotel_room_content` (0041) · `hotel_room_content_fetch` (0070)                                                                                                                                                           |
+| Auditoría             | `domain_events` (0015; lecturas de la consola 0075–0078; cambios directos en la base 0092)                                                                                                                                                                                                                                                               |
+
+**Del diagrama de §4.1–§4.4 sin tabla:** `BRANDING_CONFIG` (son columnas de `tenants`),
+`ROLE_POLICY`, `PROVIDER` y `PROVIDER_HEALTH` (el catálogo vive en código y la salud se lee en vivo:
+`GET /admin/providers/health`), `PAYMENT_INTENT`, `REFUND`, `CHART_OF_ACCOUNTS`, `JOURNAL_ENTRY`,
+`INVOICE`, `CONVERSATION`.
+
 ---
 
 ## 5. Mapa de Pantallas (Sitemap UI)
 
 ### 5.1 Web B2B (panel agencia)
+
+**Rutas reales hoy** (`apps/web-b2b/src/app`; menú en `lib/nav.ts`):
+
+```
+/login · /olvide-password · /restablecer · /verificar · /invitacion   -- públicas
+/                                -- Inicio
+/cotizaciones                    -- «Vuelos»: buscar, elegir ida y vuelta, cotizar y reservar
+/cotizaciones/:id · /cotizaciones/guardadas
+/hoteles · /hoteles/:hotelKey · /hoteles/checkout
+/autos · /autos/oficinas · /autos/reporte
+/reservas · /reservas/:id        -- Mis Reservas: detalle, post-venta, pago, emisión, servicios
+/clientes                        -- clientes y CRM
+/carteras                        -- Cartera B2B
+/reportes
+/red · /red/:tenantId/carteras   -- Mi Red (admins)
+/admin/proveedores               -- Proveedores (GDS): cuentas BYOC del nodo
+/admin/usuarios                  -- Equipo
+/configuracion · /configuracion/perfil · /configuracion/seguridad
+```
+
+**Diseño original** (lo que no está arriba sigue pendiente):
 
 ```
 /login
@@ -694,7 +791,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /help/tickets/:id
 ```
 
-### 5.2 Web B2C (cliente final, marca única)
+### 5.2 Web B2C (cliente final, marca única) — ❌ pendiente
 
 ```
 /                                -- landing pública
@@ -715,25 +812,36 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 /help (24/7 chat + KB)
 ```
 
-### 5.3 Web superadmin / platform admin
+### 5.3 Web superadmin (consola de la plataforma)
+
+Vive dentro de `web-b2b` (no hay `web-admin`), en la sección «Plataforma» del menú, que ve la persona
+superadmin esté en el nodo que esté. Marcadas con ❌, las que siguen siendo diseño.
 
 ```
-/admin/tenants                   -- lista tenants
+/admin/plataforma/resumen        -- Resumen de la plataforma (0075)
+/admin/plataforma/reservas       -- Reservas de la red: búsqueda, ficha y post-venta del superadmin (0076)
+/admin/plataforma/carteras       -- cola de depósitos informados de toda la red
+/admin/plataforma/proveedores    -- habilitación, apagado de emergencia y circuito por proveedor (0048, 0077)
+/admin/plataforma/gobierno       -- perfiles de gobierno y reglas globales (0089, doc 17)
+/admin/plataforma/superadmins    -- dar y quitar superadmins, pleno o supervisado; solicitudes (0092, doc 16)
+/admin/plataforma/sistema        -- procesos que corren solos
+/admin/plataforma/sistema/anuncios -- anuncios a la red (0079)
+/admin/tenants                   -- Agencias: árbol de la red
 /admin/tenants/:id/resumen       -- la ficha de cada nodo, primera pestaña (ventas 30 d por moneda, atención,
                                  -- puestos, personas, carteras, proveedores y actividad reciente; ADM-13)
 /admin/tenants/:id               -- Proveedores del nodo (se queda en la raíz para no romper enlaces);
                                  -- /carteras y /puestos son las otras pestañas; Usuarios abre Equipo
-/admin/tenants/new               -- creación manual de tenant (Ola 1)
-/admin/billing                   -- facturación a tenants
-/admin/providers                 -- gestión global de proveedores
-/admin/incidents                 -- monitoreo + status page
+/admin/tenants/:id/puestos       -- puestos e inactividad del nodo
+                                 -- el alta de un nodo es un diálogo en /admin/tenants, con su perfil de gobierno
+/admin/billing                   -- ❌ facturación a tenants
+/admin/incidents                 -- ❌ monitoreo + status page
 /admin/plataforma/usuarios       -- directorio de personas de toda la red, filtros y suspensión global (doc 15; el alta es por invitación, ver 14)
-/admin/feature-flags             -- Unleash UI embed
+/admin/feature-flags             -- ❌ Unleash UI embed
 /admin/plataforma/actividad      -- quién hizo qué, dónde y cuándo en toda la plataforma: filtros, detalle y CSV auditado (0078)
-/admin/reports                   -- métricas de plataforma
+/admin/reports                   -- ❌ (las métricas de plataforma están en el Resumen)
 ```
 
-### 5.4 App Vendedor (móvil)
+### 5.4 App Vendedor (móvil) — ❌ pendiente
 
 ```
 [Splash] → [Login + biometric]
@@ -752,7 +860,7 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 [Perfil + ajustes]
 ```
 
-### 5.5 App Cliente Final (móvil)
+### 5.5 App Cliente Final (móvil) — ❌ pendiente
 
 ```
 [Splash] → [Login con magic link / biometric]
@@ -771,8 +879,14 @@ DOMAIN_EVENT (TimescaleDB hypertable, append-only)
 ## 6. Endpoints API por Dominio
 
 > REST principal + WebSocket para search/cotización en vivo. GraphQL gateway opcional Ola 2 para B2C.
+>
+> Al 2026-11-05 no hay WebSocket ni GraphQL: todo es REST. En cada dominio, los bloques marcados
+> **Diseño original** son el plan de abril y **no existen con esas rutas**; los marcados
+> **Implementado** salen de los controladores de `apps/api/src` (`*.controller.ts`).
 
 ### Auth & Identity
+
+Diseño original:
 
 ```
 POST   /auth/signup
@@ -815,7 +929,7 @@ Suspensión por nodo e invitaciones con respaldo (2026-09-29, `0056_membership_s
 ```
 PATCH  /admin/memberships/status         -- suspender cierra sólo las sesiones de ese subárbol; devuelve revokedSessions y revokedInvitations
 PATCH  /admin/memberships/role           -- degradar revoca las invitaciones que ya no podría emitir; devuelve revokedInvitations
-PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes · 404 USER_NOT_FOUND · 409 LAST_SUPERADMIN (doc 15)
+PATCH  /admin/users/status               -- suspender cierra todas sus sesiones y revoca todas sus invitaciones pendientes · 404 USER_NOT_FOUND · 409 LAST_SUPERADMIN (último superadmin pleno) · 409 CHANGE_REQUEST_PENDING si lo pide un supervisado (doc 15, 16)
 GET    /admin/users                      -- directorio (sólo superadmin): ?q&status&role&tenantId&mfa&locked&neverLoggedIn&cursor&limit → { users, nextCursor } (0063, doc 15)
 GET    /admin/users/:userId              -- la ficha de cualquier cuenta, sin acotar a un subárbol (sólo superadmin) · 404 USER_NOT_FOUND (0064, doc 15)
 GET    /admin/users/:userId/impact       -- { activeMemberships, liveSessions, invitationsToRevoke } de suspender la cuenta (se simula y se deshace)
@@ -830,7 +944,39 @@ POST   /invitations/:id/resend?tenantId= -- { id, expiresAt, emailSent }: enlace
 POST   /invitations/:id/revoke?tenantId= -- 403 ROLE_NOT_GRANTABLE si el rol invitado no es menor al del actor · 404 INVITATION_NOT_PENDING
 ```
 
+Implementado además:
+
+```
+POST   /auth/register                    -- alta pública, apagada por defecto (ALLOW_PUBLIC_SIGNUP)
+POST   /auth/forgot-password · /auth/reset-password
+POST   /auth/step-up                     -- reconfirmar el 2FA (acciones de alto impacto, USR-13)
+POST   /auth/verify-email · /auth/resend-verification
+GET    /me                               -- la cuenta de la sesión
+GET    /invitations                      -- invitaciones del nodo
+POST   /tenants/:id/members/:userId/require-password-reset   -- USR-3
+GET    /tenants/:id/members/:userId/audit · GET /admin/users/:userId/audit   -- historial (USR-6)
+GET    /admin/invitations                -- invitaciones de toda la red (USR-15)
+GET    /admin/legacy-passwords · POST /admin/legacy-passwords/require-reset   -- USR-14
+POST   /admin/users                      -- 410 USER_CREATION_RETIRED (alta sólo por invitación, doc 14)
+POST   /admin/memberships/remove         -- baja blanda de una persona en un nodo (USR-11)
+```
+
 ### Tenant
+
+Implementado:
+
+```
+GET    /tenants/network · /tenants/network/sales · /tenants/network/audit · /tenants/network/users   -- Mi Red
+GET    /tenants/:id/config · PATCH /tenants/:id/config
+GET    /tenants/:id/branding · /tenants/:id/branding/own · PATCH /tenants/:id/branding
+POST   /tenants/:id/brand-assets                     -- logo (disco local; MinIO no está aprovisionado)
+GET    /tenants/:tenantId/booking-permissions · PUT  -- tarifas no reembolsables (0055)
+GET    /provider-disclosure · PATCH                  -- si la red ve de qué proveedor viene cada oferta
+POST   /admin/tenants · PATCH /admin/tenants/:id · POST /admin/tenants/:id/move   -- superadmin
+GET    /admin/tenants/:id/foreign-currency-fares · PATCH   -- tarifas en otra moneda, por nodo (0087)
+```
+
+Diseño original:
 
 ```
 GET    /tenants/me                       -- mi tenant info
@@ -843,6 +989,30 @@ PATCH  /tenants/me/users/:id/role
 
 ### Search
 
+Implementado (sin sesiones de búsqueda ni stream; cada búsqueda responde entera):
+
+```
+POST   /search/flights                   -- vuelos de todos los proveedores habilitados (Sabre, LATAM NDC)
+POST   /search/flights/returns           -- la vuelta, después de elegir la ida y su tarifa
+POST   /search/offer-price               -- revalidar una oferta
+POST   /search/seat-map
+GET    /airports                         -- origen y destino por ciudad (OurAirports)
+
+GET    /hotels/suggestions · /hotels/currencies · /hotels/booking-permissions
+POST   /hotels/availability · /hotels/availability/more · /hotels/detail
+GET    /hotels/content/:providerCode/:hotelId · .../rooms · POST /hotels/content/batch
+POST   /hotels/prebook · /hotels/book
+GET    /hotels/payments · /hotels/reservations/:id
+POST   /hotels/reservations/:id/cancel · /hotels/reservations/:id/recovery
+GET    /admin/hotels/readiness           -- superadmin: catálogos listos por proveedor
+
+GET    /cars/suggestions · /cars/offices · /cars/rates · /cars/rate-detail · /cars/daily-report
+POST   /cars/search · /cars/selection · /cars/book · /cars/reservation
+POST   /cars/reservations/cancel · /cars/reservations/release
+```
+
+Diseño original:
+
 ```
 POST   /search/flights                   -- crea search session, devuelve session_id
 POST   /search/hotels
@@ -854,6 +1024,18 @@ WS     /search/sessions/:id/stream       -- stream de resultados llegando
 ```
 
 ### Quote (Package Studio)
+
+Implementado:
+
+```
+POST   /quotations · GET /quotations · GET /quotations/:id   -- con pasajeros y facturador (0091)
+PATCH  /quotations/:id/status · /quotations/:id/customer
+POST   /quotations/:id/send-email
+POST   /packages · GET /packages · GET /packages/:id         -- paquetes: API sin pantalla
+POST   /packages/:id/items · DELETE /packages/:id/items/:itemId
+```
+
+Diseño original:
 
 ```
 POST   /quotes                           -- crea draft
@@ -869,6 +1051,22 @@ POST   /quotes/:id/ai/suggest            -- pide sugerencia IA
 
 ### Booking
 
+Implementado (`/orders`, sin saga Temporal; la post-venta pasa por la cola BullMQ y el barrido):
+
+```
+POST   /orders · GET /orders · GET /orders/:id
+POST   /orders/:id/retrieve · /orders/:id/cancel · GET /orders/:id/cancellation-estimate
+GET    /orders/:id/operations · POST /orders/:id/operations/:opId/retry
+POST   /orders/:id/issue · GET /orders/:id/ticket-check · POST /orders/:id/void
+POST   /orders/:id/services · /orders/:id/services/add · /orders/:id/services/remove   -- EMD (0086)
+GET    /orders/:id/travelers · PATCH /orders/:id/travelers
+POST   /orders/:id/reshop
+POST   /orders/:id/send-confirmation
+GET    /provider-payloads/requests/:requestId · /provider-payloads/orders/:orderId   -- bóveda de payloads (0043)
+```
+
+Diseño original:
+
 ```
 POST   /bookings                         -- crea booking (inicia saga)
 GET    /bookings/:id
@@ -880,6 +1078,16 @@ GET    /bookings/:id/audit               -- timeline de eventos
 ```
 
 ### Payment
+
+Implementado (sin pasarela propia; las formas de pago las gobierna el superadmin, doc 17):
+
+```
+GET    /orders/:id/payment-options       -- lo que la orden admite y está encendido
+POST   /orders/:id/pay                   -- con la forma de pago elegida (método gobernado)
+POST   /orders/:id/payment-link          -- enlace de pago de LATAM NDC
+```
+
+Diseño original (Stripe/MP, webhooks y wallet: pendientes; la wallet es `/portfolios`, abajo):
 
 ```
 POST   /payments/intents                 -- crea payment intent
@@ -934,6 +1142,9 @@ GET    /admin/deposit-reports/pending-count     -- { total, platform, network }:
 
 ### Pricing
 
+Implementado: `GET /pricing/rules` · `POST /pricing/rules` · `DELETE /pricing/rules/:id` ·
+`POST /pricing/waterfall` (simulador de la cascada). Diseño original:
+
 ```
 GET    /pricing/rules
 POST   /pricing/rules
@@ -944,6 +1155,8 @@ GET    /pricing/preview                  -- aplica reglas a una oferta
 ```
 
 ### Conversation (IA)
+
+❌ Nada implementado. Diseño original:
 
 ```
 POST   /webhooks/whatsapp                -- inbound de Meta Cloud API
@@ -959,6 +1172,10 @@ POST   /conversations/:id/escalate
 
 ### Reporting / BI
 
+Implementado: `GET /reports/dashboard` · `GET /reports/sales-metrics` (ventas confirmadas por moneda,
+vertical, mes y vendedor) · `GET /reports/commissions` (`available: false` hasta tener una fuente real
+de márgenes, G-16). Diseño original:
+
 ```
 GET    /reports/dashboards/:slug         -- dashboard pre-armado
 POST   /reports/queries                  -- query ad-hoc (con guardrails)
@@ -966,7 +1183,50 @@ GET    /reports/exports/:id              -- estado export
 POST   /reports/subscriptions            -- suscribir a reporte recurrente
 ```
 
+### Clientes y CRM (implementado)
+
+```
+POST   /customers · GET /customers · GET /customers/search · POST /customers/upsert
+GET    /customers/:id · PATCH /customers/:id · DELETE /customers/:id    -- persona o empresa (0091)
+POST   /crm/opportunities · GET /crm/opportunities · GET /crm/opportunities/:id · PATCH /crm/opportunities/:id
+POST   /crm/interactions · GET /crm/interactions/customer/:customerId
+POST   /crm/tasks · GET /crm/tasks · POST /crm/tasks/:id/complete · POST /crm/tasks/reassign
+```
+
+### Proveedores del nodo (implementado)
+
+```
+POST   /provider-accounts · GET /provider-accounts · GET /provider-accounts/resolve   -- BYOC, nunca devuelve el secreto
+POST   /provider-accounts/:accountId/reconciliation · GET   -- conciliación con el proveedor (0047)
+```
+
 ### Admin (superadmin)
+
+Implementado y sin el detalle de abajo (cada uno con su doc):
+
+```
+-- Gobierno de proveedores y formas de pago (0089, doc 17). Escrituras: solicitud si el superadmin es supervisado.
+GET    /admin/governance/catalog · /profiles · /rules · /tenants/:tenantId
+POST   /admin/governance/profiles · /profiles/:id/duplicate · /profiles/:id/archive
+PUT    /admin/governance/profiles/:id · /profiles/:id/default · /rules · /tenants/:tenantId/profile
+
+-- Proveedores de la plataforma (0048, 0077)
+GET    /admin/providers · /admin/providers/health · /admin/providers/tenants/:tenantId
+PUT    /admin/providers/:code/kill-switch · POST /admin/providers/:code/kill-switch/clear
+POST   /admin/providers/:code/circuit/reset
+PUT    /admin/providers/:code/global · DELETE · PUT /admin/providers/:code/tenants/:tenantId · DELETE
+
+-- Superadmins y solicitudes (0092, doc 16)
+GET    /admin/platform-admins · /admin/platform-admins/me
+POST   /admin/platform-admins · PUT /admin/platform-admins/:userId/supervision · POST /admin/platform-admins/:userId/revoke
+GET    /admin/change-requests · POST /admin/change-requests/:id/approve · /reject · /cancel
+
+-- Otros
+GET    /admin/deposit-reports · /admin/deposit-reports/pending-count   -- ver Carteras B2B
+POST   /mail/test · GET /health                                         -- health expone la versión (sha)
+```
+
+Detalle de la consola:
 
 ```
 GET    /admin/overview?from&to&tenantId  -- Plataforma → Resumen (implementado, 0075). Días de Bogotá,
@@ -1157,7 +1417,8 @@ POST   /admin/orders/:id/cancel          -- `{ reason, orderNumber }`: cancela e
                                          -- (emitida no; intento fallido → reintento). La retención de
                                          -- cartera se libera como en una cancelación de la agencia.
 -- Las rutas de la consola llevan @Roles(...PLATFORM_ROLES) y @UseGuards(SuperadminGuard)
--- (apps/api/src/network): platform_admin (retirado) y los roles de nodo reciben 403.
+-- (apps/api/src/network): sólo la persona superadmin (pleno o supervisado); platform_admin no da
+-- acceso desde 0093 y los roles de nodo reciben 403.
 GET    /admin/tenants
 GET    /admin/tenants/stats              -- Agencias en números (implementado, sin migración):
                                          -- admin_node_stats() (0075) por nodo + las ventas de 30
@@ -1198,9 +1459,10 @@ GET    /admin/tenants/:id/summary        -- La pestaña Resumen de cada nodo (im
                                          -- (?nodo&desde&hasta) y a cada pestaña. El nombre de cada
                                          -- nodo en Agencias y en "Nodos con más ventas" del
                                          -- Resumen lleva a esta pestaña.
-POST   /admin/tenants                    -- creación manual
-PATCH  /admin/tenants/:id/status
-GET    /admin/incidents
+POST   /admin/tenants                    -- alta de un nodo: invita al admin inicial y, si es el
+                                         -- superadmin, puede asignar perfil de gobierno
+PATCH  /admin/tenants/:id                -- estado, sucursal y tipo (solicitud si es supervisado)
+GET    /admin/incidents                  -- ❌ no implementado
 GET    /admin/audit?from&to&category&eventType&actorEmail&tenantId&includePlatform&aggregateType&aggregateId&cursor&limit
                                          -- Plataforma → Actividad (implementado, 0078): quién hizo
                                          -- qué, dónde y cuándo, en toda la plataforma.
@@ -1256,13 +1518,15 @@ GET    /admin/audit/export?<los mismos filtros>
                                          -- salvo el correo; la ficha de una reserva enlaza con
                                          -- ?entidad=order&id= y usa los mismos nombres de evento
                                          -- (lib/audit-format).
-GET    /admin/feature-flags
-PATCH  /admin/feature-flags/:key
+GET    /admin/feature-flags              -- ❌ no implementado (sin Unleash)
+PATCH  /admin/feature-flags/:key         -- ❌ no implementado
 ```
 
 ---
 
 ## 7. Flujos críticos end-to-end
+
+> Flujos de diseño. Hoy la venta va búsqueda → cotización → orden (`POST /orders`, o `/hotels/book` y `/cars/book`) → retención de cartera → pago con la forma gobernada o emisión, sin saga Temporal, sin pasarela propia y sin facturación; la IA por WhatsApp (7.2) y la contabilidad (7.3) no existen.
 
 ### 7.1 Search → Quote → Booking → Payment → Emission (B2B)
 
@@ -1423,6 +1687,8 @@ sequenceDiagram
 
 ## 9. Matriz Módulo × Ola
 
+> Es el **alcance planificado** por ola (el ✅ dice "entra en esa ola", no "está hecho"). Lo hecho al 2026-11-05: [§0](#0-estado-al-2026-11-05).
+
 | Módulo                       | Ola 1 (Mes 0-6)                                                        | Ola 2 (Mes 6-10)                | Ola 3 (Mes 10-14)                       |
 | ---------------------------- | ---------------------------------------------------------------------- | ------------------------------- | --------------------------------------- |
 | M0 Identidad/Seguridad       | ✅ Auth + RBAC + MFA + Audit + Hardening                               | ✅ Passkeys + SSO Google        | ✅ SAML enterprise + Bug bounty         |
@@ -1446,6 +1712,32 @@ sequenceDiagram
 ---
 
 ## 10. Estructura del Repositorio
+
+**Hoy:**
+
+```
+sales-travel/
+├── apps/
+│   ├── api/                   # NestJS: un módulo por carpeta en src/ (auth, tenants, network, orders,
+│   │                          # search, hotels, cars, portfolios, governance, platform-admins, audit,
+│   │                          # admin-console, providers-sabre, providers-latam, providers-tbo, …)
+│   └── web-b2b/               # Next.js: panel de agencias y consola de la plataforma
+├── packages/
+│   ├── canonical/             # modelo canónico
+│   ├── core/                  # ports (interfaces)
+│   ├── domain/                # lógica sin I/O (p. ej. governance/catalog.ts)
+│   └── validation/            # Zod compartido
+├── providers/                 # ACL por proveedor: sabre, latam-ndc, tbo-hotels, despegar-hotels, agent-cars
+├── db/migrations/             # SQL 0001–0093, aplicadas por tools/db-migrate
+├── tools/                     # db-migrate, seed-superadmin, sync-airports, sync-hotel-inventory, sabre, tbo, …
+├── infrastructure/            # Hostinger VPS + Cloudflare
+└── docs/
+```
+
+No existen todavía: `apps/ai-sidecar`, `apps/temporal-worker`, `apps/web-b2c`, `apps/web-admin` (la
+consola vive en `web-b2b`), `apps/mobile`, `packages/ui`, `packages/i18n`, `packages/sdk`.
+
+**Objetivo (abril):**
 
 ```
 sales-travel/
@@ -1535,6 +1827,8 @@ sales-travel/
 ---
 
 ## 11. Próximos pasos
+
+> Lista de abril, ya superada: el Sprint 0 se hizo. Lo que sigue al 2026-11-05 está en [12 §0](./12-modelo-consolidador-y-plan.md#0-estado-al-2026-11-05).
 
 1. **Revisar este mapa con el founder** y ajustar si algo falta.
 2. **Esperar reporte de skills UI/UX** (en curso) para cerrar el design stack definitivo.

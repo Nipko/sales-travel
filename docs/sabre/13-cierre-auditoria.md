@@ -1,10 +1,15 @@
 ---
 titulo: Sabre — cierre y auditoría del expediente
 fecha: 2026-08-25
-estado: cerrado-documentalmente
+estado: histórico (cerrado-documentalmente; ver 11 §Estado al 2026-11-05)
 ---
 
 # Sabre — cierre y auditoría del expediente
+
+> **Histórico (2026-08-25)** — la verdad actual está en [11 §Estado al 2026-11-05](./11-plan-implementacion.md#estado-al-2026-11-05)
+> y en [12-hallazgos-sandbox.md](./12-hallazgos-sandbox.md). La Fase 0 que este documento dejaba pendiente ya
+> corre con el arnés de CERT; las decisiones D0-D4 siguen vigentes como registro. Antes se llamaba
+> `12-cierre-auditoria.md`: se renumeró el 2026-11-05 porque chocaba con `12-hallazgos-sandbox.md`.
 
 Este documento cierra la investigación documental iniciada sobre la colección Postman de Booking Management.
 No declara terminada la integración ni sustituye las pruebas contra CERT. Registra qué conclusiones se conservan,

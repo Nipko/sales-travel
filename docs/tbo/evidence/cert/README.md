@@ -5,7 +5,9 @@ el zip con los 8 casos, el workflow, el registro de cada envío y la tabla de si
 probada. Es lo que decide D-TBO-33 (A) ([08](../../08-requisitos-maestro.md#registro-de-decisiones)) y lo que piden
 [07](../../07-certificacion.md) §2.7 y §6.9, RC-01 y RNF-15.
 
-**Estado al 2026-09-27:** no se envió nada todavía. La carpeta solo tiene este README.
+**Estado al 2026-11-05:** la carpeta sigue teniendo solo este README; no hay ningún envío archivado. El arnés y el
+stack de certificación ya existen en `main`, así que si el zip se envió a TBO, falta archivarlo aquí con el
+procedimiento de abajo. (Antes: "Estado al 2026-09-27: no se envió nada todavía".)
 
 ## Qué va en cada carpeta
 
