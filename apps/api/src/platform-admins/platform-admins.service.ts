@@ -116,8 +116,7 @@ export class PlatformAdminsService {
       if (user === undefined) throw new PlatformAdminCandidateNotFoundError();
       if (user.id === actor) throw new SelfPlatformAdminChangeError();
 
-      const platformId = await platformTenantId(trx);
-      if (platformId === null) throw new PlatformAdminNotFoundError();
+      const platformId = await enterPlatformTenant(trx);
 
       const current = await trx
         .selectFrom('memberships')
@@ -195,6 +194,7 @@ export class PlatformAdminsService {
   ): Promise<PlatformAdminView[]> {
     if (input.userId === actor) throw new SelfPlatformAdminChangeError();
     await this.db.withRequestContext({ userId: actor }, async (trx) => {
+      await enterPlatformTenant(trx);
       const current = await lockPlatformAdmin(trx, input.userId);
       if (current.status !== 'active') throw new PlatformAdminNotFoundError();
       if (current.platform_supervised === input.supervised) return;
@@ -229,6 +229,7 @@ export class PlatformAdminsService {
   ): Promise<PlatformAdminView[]> {
     if (input.userId === actor) throw new SelfPlatformAdminChangeError();
     await this.db.withRequestContext({ userId: actor }, async (trx) => {
+      await enterPlatformTenant(trx);
       const current = await lockPlatformAdmin(trx, input.userId);
       if (current.status === 'active' && !current.platform_supervised) {
         await assertAnotherFullSuperadmin(trx, input.userId);
@@ -269,6 +270,18 @@ export class PlatformAdminsService {
     });
     return this.list(actor);
   }
+}
+
+/**
+ * Fija `app.current_tenant_id` en la plataforma. Las escrituras en memberships sólo pasan por
+ * memberships_tenant_isolation (0001; memberships_self es FOR SELECT desde 0029): sin esto el INSERT
+ * de grant choca con la RLS y los UPDATE de revoke y setSupervised tocan 0 filas sin error.
+ */
+async function enterPlatformTenant(trx: Transaction<DB>): Promise<string> {
+  const platformId = await platformTenantId(trx);
+  if (platformId === null) throw new PlatformAdminNotFoundError();
+  await sql`SELECT set_config('app.current_tenant_id', ${platformId}, true)`.execute(trx);
+  return platformId;
 }
 
 async function lockPlatformAdmin(trx: Transaction<DB>, userId: string) {

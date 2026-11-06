@@ -249,6 +249,32 @@ d('Superadmins plenos y supervisados (0092) contra Postgres', () => {
     );
   });
 
+  it('el pleno da, supervisa y quita acceso, y cada paso queda escrito en la base', async () => {
+    // Un UPDATE que la RLS no deja pasar toca 0 filas sin error: se mira la fila, no la respuesta.
+    const nueva = await user('ciclo');
+    const fila = async () =>
+      (
+        await pool.query<{ status: string; platform_supervised: boolean }>(
+          `SELECT status, platform_supervised FROM memberships
+            WHERE user_id = $1 AND tenant_id = $2 AND role = 'superadmin'`,
+          [nueva, platform],
+        )
+      ).rows;
+
+    await admins.grant(pleno, {
+      email: `sup-ciclo-${sfx}@test.local`,
+      supervised: false,
+      reason: null,
+    });
+    expect(await fila()).toEqual([{ status: 'active', platform_supervised: false }]);
+
+    await admins.setSupervised(pleno, { userId: nueva, supervised: true, reason: null });
+    expect(await fila()).toEqual([{ status: 'active', platform_supervised: true }]);
+
+    await admins.revoke(pleno, { userId: nueva, reason: null });
+    expect(await fila()).toEqual([{ status: 'removed', platform_supervised: true }]);
+  });
+
   it('un cambio directo en la base deja db.direct_change con antes y después, sin el secreto', async () => {
     await pool.query(
       `UPDATE provider_accounts
