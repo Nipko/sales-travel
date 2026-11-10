@@ -1,5 +1,5 @@
 import type { CabinClass } from '@sales-travel/canonical';
-import type { FlightSearchCriteria } from '@sales-travel/domain';
+import { searchLegs, type FlightSearchCriteria } from '@sales-travel/domain';
 import { z } from 'zod';
 import { SabreConfigError } from '../errors';
 import type { SabreConfig } from '../config';
@@ -830,25 +830,15 @@ function buildPos(pseudoCityCode: string, maxPccs: number | undefined): SabrePos
 function buildOriginDestinations(
   criteria: FlightSearchCriteria,
 ): SabreOriginDestinationInformation[] {
-  const origin = tripLocation(criteria.origin, criteria.originKind);
-  const destination = tripLocation(criteria.destination, criteria.destinationKind);
-  const outbound: SabreOriginDestinationInformation = {
-    RPH: '1',
-    DepartureDateTime: `${criteria.departureDate}${SABRE_MIDNIGHT_SUFFIX}`,
-    OriginLocation: origin,
-    DestinationLocation: destination,
-  };
-  if (criteria.returnDate === undefined) return [outbound];
-
-  return [
-    outbound,
-    {
-      RPH: '2',
-      DepartureDateTime: `${criteria.returnDate}${SABRE_MIDNIGHT_SUFFIX}`,
-      OriginLocation: destination,
-      DestinationLocation: origin,
-    },
-  ];
+  // Solo ida, ida y vuelta o multidestino: los tramos salen de `searchLegs`, una sola regla para
+  // todos los proveedores. Verificado en CERT el 2026-11-10: BOG-MIA, MIA-MEX, MEX-BOG dio 7
+  // ofertas de 3 tramos.
+  return searchLegs(criteria).map((leg, index) => ({
+    RPH: String(index + 1),
+    DepartureDateTime: `${leg.departureDate}${SABRE_MIDNIGHT_SUFFIX}`,
+    OriginLocation: tripLocation(leg.origin, leg.originKind),
+    DestinationLocation: tripLocation(leg.destination, leg.destinationKind),
+  }));
 }
 
 /** Sin `kind` no se manda `LocationType`: queda el default de BFM, como antes. */

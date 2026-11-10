@@ -16,18 +16,110 @@ import { CurrencyCodeSchema, z } from '@sales-travel/validation';
 export const LocationKindSchema = z.enum(['city', 'airport']);
 export type LocationKind = z.infer<typeof LocationKindSchema>;
 
-export const FlightSearchCriteriaSchema = z.object({
+/** Un tramo de la búsqueda: de dónde, a dónde y cuándo sale. */
+export const FlightSearchLegSchema = z.object({
   origin: IataAirportCodeSchema,
   destination: IataAirportCodeSchema,
   originKind: LocationKindSchema.optional(),
   destinationKind: LocationKindSchema.optional(),
   departureDate: z.string().date(),
-  returnDate: z.string().date().optional(),
-  paxCount: PaxCountSchema,
-  cabin: CabinClassSchema.optional(),
-  currency: CurrencyCodeSchema.default('USD'),
 });
+export type FlightSearchLeg = z.infer<typeof FlightSearchLegSchema>;
+
+/**
+ * Tramos de un multidestino. Sabre BFM acepta hasta 10 (`OriginDestinationInformation`,
+ * `bargain-finder-max-v5.yml`) y LATAM NDC varios `OriginDestCriteria` (desde 17/10/2025); 6 es
+ * el tope de producto: más tramos no los arma un vendedor en una cotización.
+ */
+export const FLIGHT_SEARCH_MAX_LEGS = 6;
+
+export const FlightSearchCriteriaSchema = z
+  .object({
+    origin: IataAirportCodeSchema,
+    destination: IataAirportCodeSchema,
+    originKind: LocationKindSchema.optional(),
+    destinationKind: LocationKindSchema.optional(),
+    departureDate: z.string().date(),
+    returnDate: z.string().date().optional(),
+    /**
+     * Multidestino: TODOS los tramos, en orden. Ausente = solo ida o ida y vuelta, como siempre.
+     * `origin`/`destination`/`departureDate` siguen siendo los del primer tramo, para que lo que
+     * los lee (caché, cotización, PDF) no cambie de forma.
+     */
+    legs: z.array(FlightSearchLegSchema).min(2).max(FLIGHT_SEARCH_MAX_LEGS).optional(),
+    paxCount: PaxCountSchema,
+    cabin: CabinClassSchema.optional(),
+    currency: CurrencyCodeSchema.default('USD'),
+  })
+  .superRefine((value, ctx) => {
+    const legs = value.legs;
+    if (legs === undefined) return;
+    if (value.returnDate !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['returnDate'],
+        message: 'multicity has no returnDate',
+      });
+    }
+    const first = legs[0]!;
+    if (
+      first.origin !== value.origin ||
+      first.destination !== value.destination ||
+      first.departureDate !== value.departureDate
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['legs', 0],
+        message: 'first leg must match origin/destination/departureDate',
+      });
+    }
+    legs.forEach((leg, index) => {
+      if (leg.origin === leg.destination) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['legs', index],
+          message: 'origin equals destination',
+        });
+      }
+      const previous = legs[index - 1];
+      if (previous !== undefined && leg.departureDate < previous.departureDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['legs', index, 'departureDate'],
+          message: 'legs must be in date order',
+        });
+      }
+    });
+  });
 export type FlightSearchCriteria = z.infer<typeof FlightSearchCriteriaSchema>;
+
+/**
+ * Los tramos que pide la búsqueda, en orden, en una sola forma para todo proveedor: el multidestino
+ * tal cual; la ida y vuelta, ida + vuelta invertida; la solo ida, un tramo.
+ */
+export function searchLegs(criteria: FlightSearchCriteria): FlightSearchLeg[] {
+  if (criteria.legs !== undefined && criteria.legs.length > 0) return [...criteria.legs];
+  const outbound: FlightSearchLeg = {
+    origin: criteria.origin,
+    destination: criteria.destination,
+    ...(criteria.originKind === undefined ? {} : { originKind: criteria.originKind }),
+    ...(criteria.destinationKind === undefined
+      ? {}
+      : { destinationKind: criteria.destinationKind }),
+    departureDate: criteria.departureDate,
+  };
+  if (criteria.returnDate === undefined) return [outbound];
+  return [
+    outbound,
+    {
+      origin: criteria.destination,
+      destination: criteria.origin,
+      ...(criteria.destinationKind === undefined ? {} : { originKind: criteria.destinationKind }),
+      ...(criteria.originKind === undefined ? {} : { destinationKind: criteria.originKind }),
+      departureDate: criteria.returnDate,
+    },
+  ];
+}
 
 export interface FlightSearchPort {
   /**

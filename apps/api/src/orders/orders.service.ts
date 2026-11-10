@@ -14,6 +14,7 @@ import { sql, type Transaction } from 'kysely';
 import {
   OrderCreateDeclinedError,
   OrderCreateNotSentError,
+  searchLegs,
   type BookingContactInfo,
   type FlightSearchCriteria,
   type HotelCancelRequestOptions,
@@ -888,19 +889,13 @@ export class OrdersService {
       );
     };
 
-    const outboundMatches = itineraryMatches(
-      0,
-      dto.searchCriteria.origin,
-      dto.searchCriteria.destination,
-      dto.searchCriteria.departureDate,
+    // Un itinerario por tramo pedido —solo ida, ida y vuelta o multidestino—, en el mismo orden.
+    const legs = searchLegs(dto.searchCriteria);
+    const legsMatch = legs.every((leg, index) =>
+      itineraryMatches(index, leg.origin, leg.destination, leg.departureDate),
     );
-    const returnDate = dto.searchCriteria.returnDate;
-    const expectedLegs = returnDate === undefined ? 1 : 2;
-    const inboundMatches =
-      returnDate === undefined ||
-      itineraryMatches(1, dto.searchCriteria.destination, dto.searchCriteria.origin, returnDate);
 
-    if (itineraries.length !== expectedLegs || !outboundMatches || !inboundMatches) {
+    if (itineraries.length !== legs.length || !legsMatch) {
       throw new BadRequestException(
         'La ruta, las fechas o el tipo de viaje de la oferta no coinciden con la búsqueda.',
       );

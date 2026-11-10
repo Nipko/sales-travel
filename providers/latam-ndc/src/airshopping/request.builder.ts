@@ -1,10 +1,9 @@
-import type { FlightSearchCriteria } from '@sales-travel/domain';
+import { searchLegs, type FlightSearchCriteria } from '@sales-travel/domain';
 import { posCityFor, type LatamNdcConfig } from '../config';
 
 /**
  * Arma el XML IATA_AirShoppingRQ para LATAM v192.
- * - Si hay returnDate → genera 2 OriginDestCriteria (RT).
- * - Si no → 1 OriginDestCriteria (OW).
+ * - Un OriginDestCriteria por tramo (`searchLegs`): solo ida, ida y vuelta o multidestino.
  * - Pax: ADT_1..N, CHD_1..N, INF_1..N según el PaxCount.
  */
 export function buildAirShoppingRequest(
@@ -112,39 +111,29 @@ export function latamLocationCode(code: string): string {
 }
 
 function buildOriginDestList(criteria: FlightSearchCriteria): string {
-  const c = {
-    ...criteria,
-    origin: latamLocationCode(criteria.origin),
-    destination: latamLocationCode(criteria.destination),
-  };
-  const cabinCode = c.cabin ? CABIN_MAP[c.cabin] : undefined;
+  const cabinCode = criteria.cabin ? CABIN_MAP[criteria.cabin] : undefined;
   const cabinXml = cabinCode
-    ? `\n          <PreferredCabinType>\n            <CabinTypeCode>${cabinCode}</CabinTypeCode>\n          </PreferredCabinType>`
+    ? `
+          <PreferredCabinType>
+            <CabinTypeCode>${cabinCode}</CabinTypeCode>
+          </PreferredCabinType>`
     : '';
-
-  const outbound = `
+  // Un OriginDestCriteria por tramo: solo ida, ida y vuelta o multidestino (LATAM lo habilitó el
+  // 17/10/2025, docs/latam-ndc/01). Los tramos salen de `searchLegs`, la misma regla que Sabre.
+  return searchLegs(criteria)
+    .map(
+      (leg) => `
         <OriginDestCriteria>
           <DestArrivalCriteria>
-            <IATA_LocationCode>${c.destination}</IATA_LocationCode>
+            <IATA_LocationCode>${latamLocationCode(leg.destination)}</IATA_LocationCode>
           </DestArrivalCriteria>
           <OriginDepCriteria>
-            <Date>${c.departureDate}</Date>
-            <IATA_LocationCode>${c.origin}</IATA_LocationCode>
+            <Date>${leg.departureDate}</Date>
+            <IATA_LocationCode>${latamLocationCode(leg.origin)}</IATA_LocationCode>
           </OriginDepCriteria>${cabinXml}
-        </OriginDestCriteria>`;
-  if (!c.returnDate) return outbound;
-
-  const inbound = `
-        <OriginDestCriteria>
-          <DestArrivalCriteria>
-            <IATA_LocationCode>${c.origin}</IATA_LocationCode>
-          </DestArrivalCriteria>
-          <OriginDepCriteria>
-            <Date>${c.returnDate}</Date>
-            <IATA_LocationCode>${c.destination}</IATA_LocationCode>
-          </OriginDepCriteria>${cabinXml}
-        </OriginDestCriteria>`;
-  return outbound + inbound;
+        </OriginDestCriteria>`,
+    )
+    .join('');
 }
 
 function buildPaxList(c: FlightSearchCriteria): string {

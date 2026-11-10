@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { FlightSearchCriteria } from '@sales-travel/domain';
+import { FlightSearchCriteriaSchema, type FlightSearchCriteria } from '@sales-travel/domain';
 import { describe, expect, it } from 'vitest';
 import { SABRE_HOSTS, type SabreConfig } from '../config';
 import { SabreConfigError } from '../errors';
@@ -750,5 +750,55 @@ describe('tipos de pasajero: edad del niño e infante con asiento (docs/sabre/16
       { code: 'C11', quantity: 1, kind: 'child' },
       { code: 'INS', quantity: 1, kind: 'seat-infant' },
     ]);
+  });
+});
+
+describe('multidestino: un OriginDestinationInformation por tramo', () => {
+  const tramos = [
+    { origin: 'BOG', destination: 'MIA', departureDate: '2026-12-10' },
+    { origin: 'MIA', destination: 'MEX', departureDate: '2026-12-15' },
+    { origin: 'MEX', destination: 'BOG', departureDate: '2026-12-20' },
+  ];
+
+  it('tres tramos, en orden, con RPH 1..3 (CERT 2026-11-10: 7 ofertas de 3 tramos)', () => {
+    const body = build({
+      origin: 'BOG',
+      destination: 'MIA',
+      departureDate: '2026-12-10',
+      legs: tramos,
+    });
+    expect(
+      body.OriginDestinationInformation.map(
+        (odi) =>
+          `${odi.RPH} ${odi.OriginLocation.LocationCode}-${odi.DestinationLocation.LocationCode} ${odi.DepartureDateTime}`,
+      ),
+    ).toEqual([
+      '1 BOG-MIA 2026-12-10T00:00:00',
+      '2 MIA-MEX 2026-12-15T00:00:00',
+      '3 MEX-BOG 2026-12-20T00:00:00',
+    ]);
+  });
+
+  it('el criterio no admite multidestino con vuelta, tramos desordenados ni un primer tramo distinto', () => {
+    const base = {
+      origin: 'BOG',
+      destination: 'MIA',
+      departureDate: '2026-12-10',
+      paxCount: { adults: 1, children: 0, infants: 0 },
+    };
+    expect(FlightSearchCriteriaSchema.safeParse({ ...base, legs: tramos }).success).toBe(true);
+    expect(
+      FlightSearchCriteriaSchema.safeParse({ ...base, returnDate: '2026-12-20', legs: tramos })
+        .success,
+    ).toBe(false);
+    expect(
+      FlightSearchCriteriaSchema.safeParse({
+        ...base,
+        legs: [tramos[0], { ...tramos[1]!, departureDate: '2026-12-01' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      FlightSearchCriteriaSchema.safeParse({ ...base, origin: 'LIM', legs: tramos }).success,
+    ).toBe(false);
   });
 });
