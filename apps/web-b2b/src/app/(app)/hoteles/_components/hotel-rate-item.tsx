@@ -2,7 +2,8 @@ import { Ban, BedDouble, Gift, Receipt, ShieldAlert, ShieldCheck, Wallet } from 
 import type { ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import { formatMoney } from './hotel-format';
-import type { HotelRateRow } from './hotel-rate-view';
+import { HotelPriceDetailView } from './hotel-price-detail';
+import { hotelPriceDetail, type HotelRateRow } from './hotel-rate-view';
 import {
   rateRefundability,
   refundLine,
@@ -239,6 +240,7 @@ export function RateItem({
         ) : null}
         <RateExtras row={row} />
         <AtHotelCharges row={row} />
+        <HotelPriceDetailView detail={hotelPriceDetail(row.pack)} />
         {row.extraGuest ? (
           <p className="text-[11px] text-[var(--color-fg-muted)]">
             Cargo por huésped adicional: {formatMoney(row.extraGuest)}. Informativo, no está en el

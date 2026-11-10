@@ -111,7 +111,9 @@ describe('PrebookSummary — los servicios de la habitación (TBO-12)', () => {
   it('con 8 o menos, todas a la vista y sin botón', () => {
     const out = resumen(ROOMPACK, [SERVICIOS.slice(0, 3)]);
     expect(chips(out)).toEqual(SERVICIOS.slice(0, 3));
-    expect(out).not.toContain('aria-expanded');
+    // Sólo la sección de servicios: el «Detalles del precio» de la tarifa sí es desplegable.
+    const servicios = out.slice(out.indexOf('Servicios de la habitación'));
+    expect(servicios).not.toContain('aria-expanded');
   });
 
   it('dos habitaciones con servicios distintos: un bloque por habitación, «Habitación 2» con su nombre', () => {

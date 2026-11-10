@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { HotelRoompack } from '../actions';
 import {
   atHotelCharges,
+  hotelPriceDetail,
+  hotelTaxLabel,
   hotelCardView,
   hotelRateRows,
   ownMarginOf,
@@ -271,5 +273,61 @@ describe('hotelRateRows — orden y contenido de cada fila', () => {
 
   it('un hotel sin tarifas no tiene "desde"', () => {
     expect(hotelCardView({ roompacks: [] }, true).from).toBeUndefined();
+  });
+});
+
+describe('hotelPriceDetail — alojamiento, impuestos y total, como en los sitios de venta', () => {
+  const usd = (amountMinor: number) => ({ amountMinor, currency: 'USD' });
+
+  it('Despegar: cada impuesto por código, y el markup queda en el alojamiento', () => {
+    const pack = tarifa('A', 100_00, 'despegar-hotels', {
+      ...conVenta(130_00, 110_00, 20_00),
+      price: {
+        total: usd(100_00),
+        taxes: usd(19_00),
+        taxesDetail: [
+          { code: 'VAT', amount: usd(16_00) },
+          { code: 'CITY_TAX', amount: usd(3_00) },
+        ],
+        nightly: [[usd(50_00), usd(50_00)]],
+      },
+    });
+    const detail = hotelPriceDetail(pack);
+    expect(detail.total).toEqual(usd(130_00));
+    expect(detail.lodging).toEqual(usd(111_00));
+    expect(detail.taxes).toEqual(usd(19_00));
+    expect(detail.taxLines.map((l) => l.label)).toEqual([
+      'IVA (VAT)',
+      'Impuesto municipal (CITY_TAX)',
+    ]);
+    expect(detail.nights).toBe(2);
+    expect(detail.perNight).toEqual(usd(65_00));
+  });
+
+  it('TBO: sólo el total de impuestos, sin líneas', () => {
+    const pack = tarifa('B', 100_00, 'tbo-hotels', {
+      price: { total: usd(100_00), taxes: usd(12_00), taxesDetail: [] },
+    });
+    const detail = hotelPriceDetail(pack);
+    expect(detail.taxes).toEqual(usd(12_00));
+    expect(detail.taxLines).toEqual([]);
+    expect(detail.lodging).toEqual(usd(88_00));
+  });
+
+  it('un desglose que no suma el total no se muestra; sin impuestos, todo es alojamiento', () => {
+    const descuadrado = tarifa('C', 100_00, 'despegar-hotels', {
+      price: {
+        total: usd(100_00),
+        taxes: usd(19_00),
+        taxesDetail: [{ code: 'VAT', amount: usd(1_00) }],
+      },
+    });
+    expect(hotelPriceDetail(descuadrado).taxLines).toEqual([]);
+    expect(hotelPriceDetail(tarifa('D', 100_00, undefined)).lodging).toEqual(usd(100_00));
+    expect(hotelPriceDetail(tarifa('D', 100_00, undefined)).taxes).toBeUndefined();
+  });
+
+  it('un código desconocido se lee igual, con su código', () => {
+    expect(hotelTaxLabel('resort_fee')).toBe('Resort fee (RESORT_FEE)');
   });
 });

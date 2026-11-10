@@ -14,7 +14,8 @@ import {
 import { formatMoney, rateBoardLabel } from '../../hoteles/_components/hotel-format';
 import { encodeHotelKey } from '../../hoteles/_components/hotel-key';
 import { RefundTag } from '../../hoteles/_components/hotel-rate-item';
-import { atHotelCharges } from '../../hoteles/_components/hotel-rate-view';
+import { HotelPriceDetailView } from '../../hoteles/_components/hotel-price-detail';
+import { atHotelCharges, hotelPriceDetail } from '../../hoteles/_components/hotel-rate-view';
 import { CancelPolicy } from '../../hoteles/checkout/_components/cancel-policy';
 import { NonRefundableNotice } from '../../hoteles/checkout/_components/non-refundable-notice';
 import { RateConditions } from '../../hoteles/checkout/_components/rate-conditions';
@@ -469,6 +470,23 @@ export function HotelOrderDetail({
               ))}
             </ul>
           </Section>
+
+          {pack ? (
+            // El total que quedó GUARDADO en la reserva manda: el desglose se arma sobre él, con
+            // los impuestos que informó el proveedor al reservar.
+            <HotelPriceDetailView
+              defaultOpen
+              detail={hotelPriceDetail({
+                price: pack.price,
+                pricing: {
+                  costMinor: order.totalAmount,
+                  finalMinor: order.totalAmount,
+                  ownMarkupMinor: 0,
+                  currency: order.currency,
+                },
+              })}
+            />
+          ) : null}
 
           {atHotel.length > 0 ? (
             <div className="rounded-md border border-[var(--color-warning)]/50 bg-[var(--color-warning)]/10 px-3 py-2 text-[11px] text-[var(--color-fg)]">

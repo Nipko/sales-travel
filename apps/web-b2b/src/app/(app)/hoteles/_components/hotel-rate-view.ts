@@ -38,6 +38,83 @@ export function ownMarginOf(
   };
 }
 
+/** Un impuesto del alojamiento, en la moneda del total. */
+export interface HotelTaxLine {
+  readonly label: string;
+  readonly amount: Money;
+}
+
+/** El precio de venta de una tarifa de hotel, desglosado como en los sitios de venta. */
+export interface HotelPriceDetail {
+  readonly total: Money;
+  /** Alojamiento: el total de venta menos los impuestos. El markup de la red va aquí. */
+  readonly lodging: Money;
+  /** Ausente = el proveedor no los informa; el total ya los incluye igual. */
+  readonly taxes?: Money;
+  /** Cada impuesto por código, sólo si suman exacto `taxes`. */
+  readonly taxLines: readonly HotelTaxLine[];
+  readonly nights?: number;
+  /** Venta por noche, promedio, cuando se conocen las noches. */
+  readonly perNight?: Money;
+}
+
+const HOTEL_TAX_NAMES: Readonly<Record<string, string>> = {
+  VAT: 'IVA',
+  IVA: 'IVA',
+  CITY_TAX: 'Impuesto municipal',
+  TOURIST_TAX: 'Impuesto turístico',
+  SERVICE_CHARGE: 'Cargo por servicio',
+  FEE: 'Cargo',
+};
+
+/** `CITY_TAX` → «Impuesto municipal (CITY_TAX)»; un código desconocido, legible y con su código. */
+export function hotelTaxLabel(code: string): string {
+  const upper = code.trim().toUpperCase();
+  const known = HOTEL_TAX_NAMES[upper];
+  if (known) return `${known} (${upper})`;
+  const words = upper.replace(/_/g, ' ').toLowerCase();
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)} (${upper})`;
+}
+
+/**
+ * Tarifa de alojamiento, impuestos y total de VENTA de una tarifa.
+ *
+ * Los impuestos van TAL CUAL los informa el proveedor y el markup queda en el alojamiento, la
+ * misma regla que vuelos: lo que se ve suma el total y no deja inferir el margen restando. Con
+ * TBO llega sólo el total de impuestos; con Despegar, cada uno por código. Un desglose que no suma
+ * el total, o en otra moneda, no se muestra: sólo queda el total de impuestos.
+ */
+export function hotelPriceDetail(pack: Pick<HotelRoompack, 'price' | 'pricing'>): HotelPriceDetail {
+  const total = saleTotal(pack);
+  const currency = total.currency;
+  const lines = (pack.price.taxesDetail ?? []).filter((t) => t.amount.currency === currency);
+  const linesSum = lines.reduce((sum, t) => sum + t.amount.amountMinor, 0);
+  const declared =
+    pack.price.taxes?.currency === currency ? pack.price.taxes.amountMinor : undefined;
+  const taxesMinor =
+    declared ??
+    (lines.length > 0 && lines.length === (pack.price.taxesDetail ?? []).length
+      ? linesSum
+      : undefined);
+  const usable = taxesMinor !== undefined && taxesMinor >= 0 && taxesMinor <= total.amountMinor;
+  const nights = pack.price.nightly?.[0]?.length;
+  return {
+    total,
+    lodging: { amountMinor: total.amountMinor - (usable ? taxesMinor : 0), currency },
+    ...(usable ? { taxes: { amountMinor: taxesMinor, currency } } : {}),
+    taxLines:
+      usable && lines.length > 0 && linesSum === taxesMinor
+        ? lines.map((t) => ({ label: hotelTaxLabel(t.code), amount: t.amount }))
+        : [],
+    ...(nights !== undefined && nights > 0
+      ? {
+          nights,
+          perNight: { amountMinor: Math.round(total.amountMinor / nights), currency },
+        }
+      : {}),
+  };
+}
+
 /** Un cargo que se paga en el hotel, ya formateado en SU moneda. */
 export interface AtHotelCharge {
   readonly amount: string;
