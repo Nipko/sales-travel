@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '../app/(app)/cotizaciones/actions';
-import { saleBreakdown, salePerPax } from './sale-breakdown';
+import { isCarrierCharge, saleBreakdown, salePerPax, taxLineLabel } from './sale-breakdown';
 
 function offer(pricing?: Offer['pricing']): Offer {
   return {
@@ -72,9 +72,9 @@ describe('salePerPax: lo que se cobra a cada adulto, niño e infante', () => {
 
   it('sin markup, el neto de cada uno', () => {
     expect(salePerPax(familia())).toEqual([
-      { paxType: 'ADT', paxCount: 2, sellPerPaxMinor: 64_889 },
-      { paxType: 'CHD', paxCount: 1, sellPerPaxMinor: 49_769 },
-      { paxType: 'INF', paxCount: 1, sellPerPaxMinor: 16_579 },
+      { paxType: 'ADT', paxCount: 2, sellPerPaxMinor: 64_889, taxesPerPaxMinor: 25_289 },
+      { paxType: 'CHD', paxCount: 1, sellPerPaxMinor: 49_769, taxesPerPaxMinor: 20_069 },
+      { paxType: 'INF', paxCount: 1, sellPerPaxMinor: 16_579, taxesPerPaxMinor: 12_579 },
     ]);
   });
 
@@ -89,5 +89,41 @@ describe('salePerPax: lo que se cobra a cada adulto, niño e infante', () => {
   it('sin desglose, o con uno que no suma el neto, no inventa nada', () => {
     expect(salePerPax(offer())).toEqual([]);
     expect(salePerPax({ ...familia(), total: { amountMinor: 1, currency: 'USD' } })).toEqual([]);
+  });
+});
+
+describe('impuestos con su código', () => {
+  it('se leen como en los sitios de venta: nombre y código', () => {
+    const amount = { amountMinor: 16_350_000, currency: 'COP' };
+    expect(taxLineLabel({ code: 'CO', name: 'AIRPORT TAX', amount })).toBe('Airport tax (CO)');
+    expect(taxLineLabel({ code: 'XF', amount })).toBe('XF');
+  });
+
+  it('YQ y YR son cargos de la aerolínea, no impuestos de un gobierno', () => {
+    expect(isCarrierCharge('YQF')).toBe(true);
+    expect(isCarrierCharge('YRI')).toBe(true);
+    expect(isCarrierCharge('YS')).toBe(false);
+  });
+
+  it('el markup no toca los impuestos: va a la tarifa base', () => {
+    const conMarkup = salePerPax({
+      ...offer({
+        costMinor: 100_000,
+        finalMinor: 110_000,
+        ownMarkupMinor: 10_000,
+        currency: 'USD',
+      }),
+      fareBreakdown: [
+        {
+          paxType: 'ADT',
+          paxCount: 1,
+          basePerPax: { amountMinor: 60_000, currency: 'USD' },
+          taxesPerPax: { amountMinor: 40_000, currency: 'USD' },
+        },
+      ],
+    });
+    expect(conMarkup).toEqual([
+      { paxType: 'ADT', paxCount: 1, sellPerPaxMinor: 110_000, taxesPerPaxMinor: 40_000 },
+    ]);
   });
 });

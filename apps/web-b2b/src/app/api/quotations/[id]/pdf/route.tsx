@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 import { api } from '../../../../../lib/api';
 import { describeBaggage, hasAnyBaggageInfo } from '../../../../../lib/baggage';
 import { isValidHex } from '../../../../../lib/brand-tokens';
+import { isCarrierCharge, salePerPax, taxLineLabel } from '../../../../../lib/sale-breakdown';
+import type { Offer, TaxLine } from '../../../../(app)/cotizaciones/actions';
 import { getActiveTenant } from '../../../../../lib/session';
 
 /**
@@ -50,6 +52,8 @@ interface Quotation {
     total: { amountMinor: number; currency: string };
     baseFare: { amountMinor: number; currency: string };
     taxes: { amountMinor: number; currency: string };
+    /** Neto por tipo de pasajero, con cada impuesto por código cuando el proveedor lo da. */
+    fareBreakdown?: Offer['fareBreakdown'];
     /**
      * Pricing waterfall del consolidador. Ausente si el tenant no tiene reglas de markup
      * aplicables (SearchService.withPricing devuelve la oferta sin tocar), en cuyo caso
@@ -153,6 +157,23 @@ const s = StyleSheet.create({
     marginTop: 10,
   },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
+  paxSection: {
+    marginTop: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 4,
+  },
+  paxTitle: { fontSize: 10, fontWeight: 'bold', marginBottom: 6 },
+  paxBlock: { marginBottom: 8 },
+  paxName: { fontSize: 9, fontWeight: 'bold' },
+  taxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    marginBottom: 1,
+  },
+  taxLabel: { fontSize: 8, color: '#6b7280' },
   priceLabel: { fontSize: 9, color: '#6b7280' },
   priceValue: { fontSize: 9 },
   totalRow: {
@@ -209,6 +230,9 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
   const finalMinor = selectedOffer.pricing?.finalMinor ?? netMinor;
   const displayBaseFareMinor = selectedOffer.baseFare.amountMinor + (finalMinor - netMinor);
   const currency = selectedOffer.total.currency;
+  // El mismo reparto que la pantalla: impuestos tal cual, markup en la tarifa base.
+  const porPasajero = salePerPax(selectedOffer as unknown as Offer);
+  const PAX_NAME = { ADT: 'Adulto', CHD: 'Niño', INF: 'Infante' } as const;
 
   return (
     <Document>
@@ -383,6 +407,51 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
             <Text style={[s.totalValue, { color }]}>{formatMoney(finalMinor, currency)}</Text>
           </View>
         </View>
+
+        {/* Detalle por pasajero: lo que paga cada uno y cada impuesto con su código. */}
+        {porPasajero.length > 0 && (
+          <View style={s.paxSection}>
+            <Text style={s.paxTitle}>Detalle del precio por pasajero</Text>
+            {porPasajero.map((sale, index) => {
+              const lines: readonly TaxLine[] = sale.taxLines ?? [];
+              return (
+                <View key={`${sale.paxType}-${index}`} style={s.paxBlock} wrap={false}>
+                  <View style={s.priceRow}>
+                    <Text style={s.paxName}>
+                      {PAX_NAME[sale.paxType]} ({sale.paxType})
+                      {sale.paxCount > 1 ? ` × ${sale.paxCount}` : ''}
+                    </Text>
+                    <Text style={s.paxName}>
+                      {formatMoney(sale.sellPerPaxMinor, currency)}
+                      {sale.paxCount > 1 ? ' c/u' : ''}
+                    </Text>
+                  </View>
+                  <View style={s.priceRow}>
+                    <Text style={s.priceLabel}>Tarifa base</Text>
+                    <Text style={s.priceValue}>
+                      {formatMoney(sale.sellPerPaxMinor - sale.taxesPerPaxMinor, currency)}
+                    </Text>
+                  </View>
+                  <View style={s.priceRow}>
+                    <Text style={s.priceLabel}>Impuestos, tasas y cargos</Text>
+                    <Text style={s.priceValue}>{formatMoney(sale.taxesPerPaxMinor, currency)}</Text>
+                  </View>
+                  {lines.map((line, lineIndex) => (
+                    <View key={`${line.code}-${lineIndex}`} style={s.taxRow}>
+                      <Text style={s.taxLabel}>
+                        {isCarrierCharge(line.code) ? 'Cargo de la aerolínea · ' : ''}
+                        {taxLineLabel(line)}
+                      </Text>
+                      <Text style={s.taxLabel}>
+                        {formatMoney(line.amount.amountMinor, line.amount.currency)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Footer */}
         <View style={s.footer}>

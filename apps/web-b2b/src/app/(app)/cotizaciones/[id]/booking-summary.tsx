@@ -20,8 +20,9 @@ import { describeBaggage } from '../../../../lib/baggage';
 import { cn } from '../../../../lib/cn';
 import { describePolicy, policyState } from '../../../../lib/fare-policy';
 import { formatMoney } from '../../../../lib/flight-format';
-import { saleBreakdown, salePerPax, type PaxSale } from '../../../../lib/sale-breakdown';
+import { saleBreakdown, salePerPax } from '../../../../lib/sale-breakdown';
 import type { Offer } from '../actions';
+import { PaxPriceDetail } from '../_components/pax-price-detail';
 import type { PriceStatusLine } from './offer-price-flow';
 
 /*
@@ -29,12 +30,6 @@ import type { PriceStatusLine } from './offer-price-flow';
  * estado del precio y «Compartir cotización». El detalle de la reserva reusa el desglose y las
  * condiciones, para que lo que se vio al reservar sea lo mismo que se ve después.
  */
-
-const PAX_NAMES: Readonly<Record<PaxSale['paxType'], readonly [string, string]>> = {
-  ADT: ['Adulto', 'Adultos'],
-  CHD: ['Niño', 'Niños'],
-  INF: ['Infante', 'Infantes'],
-};
 
 function Row({
   label,
@@ -83,23 +78,11 @@ export function PriceBreakdown({
   const total = totalMinorOverride ?? venta.sellMinor;
   return (
     <dl className="space-y-1.5">
-      {porPasajero.length > 0
-        ? porPasajero.map((sale, index) => {
-            const [uno, varios] = PAX_NAMES[sale.paxType];
-            return (
-              <Row
-                key={`${sale.paxType}-${index}`}
-                label={sale.paxCount === 1 ? uno : `${varios} × ${sale.paxCount}`}
-                value={
-                  <>
-                    {formatMoney(sale.sellPerPaxMinor, venta.currency)}
-                    {sale.paxCount > 1 ? <span className="font-sans"> c/u</span> : null}
-                  </>
-                }
-              />
-            );
-          })
-        : null}
+      {porPasajero.length > 0 ? (
+        <div className="pb-1.5">
+          <PaxPriceDetail sales={porPasajero} currency={venta.currency} formatMoney={formatMoney} />
+        </div>
+      ) : null}
       <Row label="Tarifa base" value={formatMoney(venta.baseMinor, venta.currency)} />
       <Row label="Impuestos y tasas" value={formatMoney(venta.taxesMinor, venta.currency)} />
       <Row

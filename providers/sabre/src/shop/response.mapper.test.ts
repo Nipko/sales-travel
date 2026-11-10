@@ -1072,3 +1072,31 @@ describe('atributos de marca por componente (`ReturnBrandAncillaries`, docs/sabr
     expect(brandFeatureKind(group, name)).toBe(kind);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Impuestos por código, por pasajero (taxSummaryDescs)
+// ---------------------------------------------------------------------------
+
+describe('taxLines: cada impuesto del pasajero, con su código', () => {
+  it('sale una línea por código y suman exacto el total de impuestos del pasajero', () => {
+    const offer = onlyOffer(run(clone(adultFixture)));
+    const adt = (offer.fareBreakdown ?? [])[0];
+    expect(adt?.taxLines?.map((line) => line.code)).toEqual(['HR', 'MI', 'ND', 'XW', 'YQ']);
+    const sum = (adt?.taxLines ?? []).reduce((total, line) => total + line.amount.amountMinor, 0);
+    expect(sum).toBe(adt?.taxesPerPax.amountMinor);
+    expect(adt?.taxLines?.[0]?.amount.currency).toBe('USD');
+  });
+
+  it('si no cuadran con el total, no se mandan: un desglose que no suma no se puede explicar', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    const summaries = (payload['groupedItineraryResponse'] as Json)['taxSummaryDescs'] as Json[];
+    const first = summaries[0] as Json;
+    first['amount'] = Number(first['amount']) + 1;
+
+    const result = run(payload);
+    const adt = (onlyOffer(result).fareBreakdown ?? [])[0];
+    expect(adt?.taxLines).toBeUndefined();
+    expect(adt?.taxesPerPax.amountMinor).toBe(7380);
+    expect(codes(result.warnings)).toContain('tax-lines-mismatch');
+  });
+});

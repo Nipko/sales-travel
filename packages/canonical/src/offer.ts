@@ -108,12 +108,35 @@ export const ProviderRefSchema = z.object({
 });
 export type ProviderRef = z.infer<typeof ProviderRefSchema>;
 
+/**
+ * Un impuesto, tasa o cargo de la aerolínea, tal como lo declara el proveedor.
+ *
+ * `code` es el código IATA del impuesto (`CO`, `DG`, `YS`, `US2`, `YQ`…); `name` la descripción
+ * del proveedor (`AIRPORT TAX`). Los cargos `YQ`/`YR` NO son impuestos de un gobierno sino de la
+ * aerolínea (combustible, misceláneos): viajan aquí igual porque así los cobra el tiquete, y la
+ * pantalla los puede agrupar aparte por el código.
+ */
+export const TaxLineSchema = z.object({
+  code: z.string().min(1).max(10),
+  name: z.string().min(1).max(160).optional(),
+  /** País que lo cobra (ISO-2), cuando el proveedor lo informa. */
+  country: z.string().length(2).optional(),
+  amount: MoneySchema,
+});
+export type TaxLine = z.infer<typeof TaxLineSchema>;
+
 /** Desglose de precio por pax type (ADT/CHD/INF). */
 export const FareBreakdownEntrySchema = z.object({
   paxType: PaxTypeSchema,
   paxCount: z.number().int().min(1),
   basePerPax: MoneySchema,
   taxesPerPax: MoneySchema,
+  /**
+   * Los impuestos de UN pasajero de este tipo, uno por código. OPCIONAL: hay proveedores que sólo
+   * informan el total (LATAM NDC). Cuando están, suman `taxesPerPax`; si el proveedor no cuadra,
+   * el ACL no los manda —un desglose que no suma el total es una factura que no se puede explicar.
+   */
+  taxLines: z.array(TaxLineSchema).max(60).optional(),
 });
 export type FareBreakdownEntry = z.infer<typeof FareBreakdownEntrySchema>;
 

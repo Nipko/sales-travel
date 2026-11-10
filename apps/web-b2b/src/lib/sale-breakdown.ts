@@ -1,4 +1,4 @@
-import type { Offer } from '../app/(app)/cotizaciones/actions';
+import type { Offer, TaxLine } from '../app/(app)/cotizaciones/actions';
 
 /**
  * El desglose de una oferta tal como lo puede ver la agencia.
@@ -42,6 +42,14 @@ export interface PaxSale {
   readonly paxCount: number;
   /** Lo que se le vende a cada uno de los `paxCount`. */
   readonly sellPerPaxMinor: number;
+  /**
+   * Impuestos y tasas de cada uno, TAL CUAL los cobra la aerolínea: el markup no los toca. La
+   * tarifa base de venta es lo que queda (`sellPerPaxMinor - taxesPerPaxMinor`), la misma regla de
+   * `saleBreakdown`.
+   */
+  readonly taxesPerPaxMinor: number;
+  /** Cada impuesto con su código, si el proveedor lo desglosa. Suman `taxesPerPaxMinor`. */
+  readonly taxLines?: readonly TaxLine[];
 }
 
 /**
@@ -65,6 +73,8 @@ export function salePerPax(offer: Offer): PaxSale[] {
     paxType: e.paxType,
     paxCount: e.paxCount,
     sellPerPaxMinor: Math.round((net[i]! * sellTotal) / netTotal),
+    taxesPerPaxMinor: e.taxesPerPax.amountMinor,
+    ...(e.taxLines?.length ? { taxLines: e.taxLines } : {}),
   }));
   const assigned = sales.reduce((sum, s) => sum + s.sellPerPaxMinor * s.paxCount, 0);
   const remainder = sellTotal - assigned;
@@ -84,4 +94,20 @@ export function salePerPax(offer: Offer): PaxSale[] {
     }
   }
   return sales;
+}
+
+/** Cargos de la aerolínea, no de un gobierno: `YQ` (combustible) y `YR` (misceláneos). */
+export function isCarrierCharge(code: string): boolean {
+  return /^Y[QR]/.test(code.toUpperCase());
+}
+
+/**
+ * Cómo se lee un impuesto: el nombre del proveedor en minúsculas con mayúscula inicial y el código
+ * entre paréntesis, como en los sitios de venta («Airport tax (CO)»). Sin nombre, sólo el código.
+ */
+export function taxLineLabel(line: TaxLine): string {
+  const name = line.name?.trim();
+  if (!name) return line.code;
+  const sentence = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+  return `${sentence} (${line.code})`;
 }

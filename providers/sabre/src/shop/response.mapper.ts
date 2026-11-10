@@ -12,6 +12,7 @@ import {
   type Offer,
   type ProviderRawValue,
   type Segment,
+  type TaxLine,
 } from '@sales-travel/canonical';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -221,8 +222,25 @@ const SabreBrandFeatureDescSchema = z.object({
   subCode: z.string().optional(),
 });
 
+/**
+ * Un impuesto agregado por código (`taxSummaryDescs`, CERT 2026-11-10: `CO` AIRPORT TAX,
+ * `DG` RESIDENT EXIT TAX, `YS` SALES TAX IVA, `YQF` fuel…). Se usan los RESÚMENES y no
+ * `taxDescs`: éstos parten un mismo código por tramo (`US2` salida y `US2` llegada), y al
+ * pasajero se le explica una línea por concepto.
+ */
+const SabreTaxSummaryDescSchema = z.object({
+  id: z.number(),
+  code: z.string().optional(),
+  amount: z.number().optional(),
+  currency: z.string().optional(),
+  description: z.string().optional(),
+  country: z.string().optional(),
+});
+
 const SabrePassengerInfoSchema = z.object({
   passengerType: z.string().optional(),
+  /** Referencias a `taxSummaryDescs`: los impuestos de UN pasajero de este tipo. */
+  taxSummaries: z.array(z.object({ ref: z.number() })).optional(),
   /** CANTIDAD, no ordinal (docs/sabre/02 §7.2). */
   passengerNumber: z.number().int().optional(),
   nonRefundable: z.boolean().optional(),
@@ -370,6 +388,7 @@ export const SabreGroupedItineraryResponseSchema = z.object({
     fareComponentDescs: z.array(SabreFareComponentDescSchema).optional(),
     /** Sólo con `ReturnBrandAncillaries` (`v5.yml:3821`). */
     brandFeatureDescs: z.array(SabreBrandFeatureDescSchema).optional(),
+    taxSummaryDescs: z.array(SabreTaxSummaryDescSchema).optional(),
     itineraryGroups: z.array(SabreItineraryGroupSchema).optional(),
   }),
 });
@@ -408,7 +427,8 @@ export type SabreMapWarningCode =
   | 'baggage-not-mapped'
   | 'currency-mismatch'
   | 'provider-message'
-  | 'provider-degraded';
+  | 'provider-degraded'
+  | 'tax-lines-mismatch';
 
 /** Un problema de mapeo. Sin texto libre del proveedor y sin PII: esto se loguea. */
 export interface SabreMapWarning {
@@ -494,6 +514,7 @@ export function mapSabreShopResponse(raw: unknown, ctx: SabreShopMapContext): Sa
     baggage: indexById(body.baggageAllowanceDescs),
     fareComponents: indexById(body.fareComponentDescs),
     brandFeatures: indexById(body.brandFeatureDescs),
+    taxSummaries: indexById(body.taxSummaryDescs),
   };
 
   const offers: Offer[] = [];
@@ -574,6 +595,7 @@ interface Dictionaries {
   readonly baggage: ReadonlyMap<number, z.infer<typeof SabreBaggageAllowanceDescSchema>>;
   readonly fareComponents: ReadonlyMap<number, z.infer<typeof SabreFareComponentDescSchema>>;
   readonly brandFeatures: ReadonlyMap<number, z.infer<typeof SabreBrandFeatureDescSchema>>;
+  readonly taxSummaries: ReadonlyMap<number, z.infer<typeof SabreTaxSummaryDescSchema>>;
 }
 
 function indexById<T extends { id?: number | undefined }>(
@@ -691,7 +713,7 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
   });
   if (!itineraries) return null;
 
-  const fareBreakdown = buildFareBreakdown(passengers, path, warnings);
+  const fareBreakdown = buildFareBreakdown(passengers, path, warnings, dicts);
   const expiry = resolveOfferExpiry(pricing, args.fetchedAt, args.ttlSeconds);
   const fees = resolveFees(totalFare, currency);
   const policies = resolvePolicies(pricing, passengers);
@@ -878,6 +900,7 @@ function buildFareBreakdown(
   passengers: readonly SabrePassengerInfo[],
   path: string,
   warnings: SabreMapWarning[],
+  dicts: Dictionaries,
 ): FareBreakdownEntry[] {
   const grouped = new Map<string, FareBreakdownEntry>();
 
@@ -925,7 +948,13 @@ function buildFareBreakdown(
       key,
       existing
         ? { ...existing, paxCount: existing.paxCount + paxCount }
-        : { paxType, paxCount, basePerPax, taxesPerPax },
+        : {
+            paxType,
+            paxCount,
+            basePerPax,
+            taxesPerPax,
+            ...taxLinesOf(info, taxesPerPax, dicts, entryPath, warnings),
+          },
     );
   }
 
@@ -933,6 +962,52 @@ function buildFareBreakdown(
 }
 
 /** `null` = código ATPCO que no sabemos encajar. Nunca se fuerza a ADT. */
+/**
+ * Los impuestos de un pasajero, uno por código, desde `taxSummaryDescs`.
+ *
+ * Sólo salen si suman EXACTO el total de impuestos del pasajero, en su moneda: un desglose que no
+ * cuadra con el total es una factura que el vendedor no puede explicarle al cliente, y mostrarlo
+ * sería peor que mostrar sólo el total. Si no cuadra, warning y sin líneas.
+ */
+function taxLinesOf(
+  info: SabrePassengerInfo,
+  taxesPerPax: Money,
+  dicts: Dictionaries,
+  path: string,
+  warnings: SabreMapWarning[],
+): { taxLines?: TaxLine[] } {
+  const refs = info.taxSummaries ?? [];
+  if (refs.length === 0) return {};
+  const lines: TaxLine[] = [];
+  for (const ref of refs) {
+    const desc = dicts.taxSummaries.get(ref.ref);
+    const code = desc?.code?.trim().toUpperCase();
+    const currency = normalizeCurrency(desc?.currency);
+    if (desc?.amount === undefined || !code || currency !== taxesPerPax.currency) {
+      warnings.push({ code: 'tax-lines-mismatch', path: `${path}.taxSummaries`, detail: 'ref' });
+      return {};
+    }
+    const name = desc.description?.replace(/\s+/g, ' ').trim();
+    const country = desc.country?.trim().toUpperCase();
+    lines.push({
+      code: code.slice(0, 10),
+      ...(name ? { name: name.slice(0, 160) } : {}),
+      ...(country && country.length === 2 ? { country } : {}),
+      amount: Money.fromMajor(desc.amount, currency),
+    });
+  }
+  const sum = lines.reduce((total, line) => total + line.amount.amountMinor, 0);
+  if (sum !== taxesPerPax.amountMinor) {
+    warnings.push({
+      code: 'tax-lines-mismatch',
+      path: `${path}.taxSummaries`,
+      detail: String(sum - taxesPerPax.amountMinor),
+    });
+    return {};
+  }
+  return { taxLines: lines };
+}
+
 export function canonicalPaxType(code: string | undefined): 'ADT' | 'CHD' | 'INF' | null {
   if (code === undefined) return null;
   const upper = code.trim().toUpperCase();

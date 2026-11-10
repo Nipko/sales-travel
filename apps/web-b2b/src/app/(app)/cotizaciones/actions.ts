@@ -8,6 +8,14 @@ interface Money {
   currency: string;
 }
 
+/** Un impuesto o cargo del tiquete, con su código IATA (`CO`, `DG`, `YS`, `YQ`…). */
+export interface TaxLine {
+  code: string;
+  name?: string;
+  country?: string;
+  amount: Money;
+}
+
 interface Segment {
   carrier: string;
   operatingCarrier?: string;
@@ -89,6 +97,8 @@ export interface Offer {
     paxCount: number;
     basePerPax: Money;
     taxesPerPax: Money;
+    /** Los impuestos de UN pasajero de este tipo, uno por código (cuando el proveedor los da). */
+    taxLines?: TaxLine[];
   }[];
   itineraries?: Itinerary[];
   fareFamily?: { name: string; cabin: string };
