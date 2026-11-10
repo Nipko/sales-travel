@@ -18,6 +18,7 @@ import {
 } from './actions';
 import { CarBookingDone } from './_components/car-booking-done';
 import { CarCheckout } from './_components/car-checkout';
+import { priceBreakdown } from './_components/car-checkout-model';
 import { CarResultSkeleton } from './_components/car-result-card';
 import { CarResults } from './_components/car-results';
 import { CarSearchForm } from './_components/car-search-form';
@@ -206,7 +207,17 @@ export default function AutosPage() {
     setBooking(true);
     setCheckoutError('');
     try {
-      const res = await bookCarAction(criteria.values, selected.selection, driver, options);
+      // Los cargos de mostrador que se le mostraron al vendedor, para que la reserva los guarde.
+      const paymentType = criteria.values.paymentType ?? selected.selection.paymentOption;
+      const { counterCharges } = priceBreakdown(
+        selected.selection,
+        selected.rateDetail,
+        paymentType,
+      );
+      const res = await bookCarAction(criteria.values, selected.selection, driver, {
+        ...options,
+        ...(counterCharges.length > 0 ? { counterCharges } : {}),
+      });
       if (!res.ok || !res.result) {
         setCheckoutError(res.error ?? 'No se pudo confirmar la reserva.');
         return;

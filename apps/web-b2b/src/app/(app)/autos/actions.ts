@@ -326,6 +326,8 @@ export interface BookOptions {
   flightNumber?: string;
   /** Crea la reserva en estado ON HOLD (hay que activarla ≥48h antes del pickup). */
   onHold?: boolean;
+  /** Cargos de mostrador que informó la arrendadora: la reserva los guarda para su detalle. */
+  counterCharges?: readonly { name: string; amount: Money }[];
 }
 
 /** Confirma la reserva. Convierte los Money de la selección a montos mayores para el API. */
@@ -374,6 +376,11 @@ export async function bookCarAction(
   if (selection.rateIdentifier) body.rateIdentifier = selection.rateIdentifier;
   if (options.flightNumber?.trim()) body.flightNumber = options.flightNumber.trim();
   if (options.onHold) body.onHold = true;
+  if (options.counterCharges?.length) {
+    body.counterCharges = options.counterCharges
+      .slice(0, 20)
+      .map((charge) => ({ name: charge.name.slice(0, 80), amount: major(charge.amount) }));
+  }
   const extras: Record<string, boolean> = {};
   if (options.gps) extras.gps = true;
   if (options.childToddlerSeat) extras.childToddlerSeat = true;

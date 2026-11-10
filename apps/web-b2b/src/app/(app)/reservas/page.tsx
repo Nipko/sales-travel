@@ -87,6 +87,53 @@ import {
   retryCancelOperation,
   sendOrderConfirmation,
 } from './order-actions';
+import { carOrderPrice, type CarOrderPriceInput } from './car-order-price';
+
+/** Lo que se pagó al reservar y lo que se paga en el mostrador, como lo vio el vendedor. */
+function CarOrderPriceView({ order }: { order: CarOrderPriceInput }) {
+  const price = carOrderPrice(order);
+  const money = (m: { amountMinor: number; currency: string }) =>
+    formatMoney(m.amountMinor, m.currency);
+  return (
+    <dl className="mt-3 space-y-1.5 rounded-lg border border-[var(--color-border)] p-3 text-xs">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">
+        Detalles del precio
+      </p>
+      {price.payNow ? (
+        <div className="flex justify-between gap-3">
+          <dt className="text-[var(--color-fg-muted)]">Se pagó al reservar</dt>
+          <dd className="font-medium tabular-nums text-[var(--color-fg)]">{money(price.payNow)}</dd>
+        </div>
+      ) : null}
+      {price.atCounter ? (
+        <div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-[var(--color-fg-muted)]">Se paga en el mostrador</dt>
+            <dd className="font-medium tabular-nums text-[var(--color-fg)]">
+              {money(price.atCounter)}
+            </dd>
+          </div>
+          {price.counterCharges.length > 0 ? (
+            <ul className="mt-1 space-y-0.5 border-l border-[var(--color-border)] pl-2.5 text-[11px] text-[var(--color-fg-muted)]">
+              {price.counterCharges.map((charge, index) => (
+                <li key={index} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate" title={charge.name}>
+                    {charge.name}
+                  </span>
+                  <span className="tabular-nums">{money(charge.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex justify-between gap-3 border-t border-[var(--color-border)] pt-1.5">
+        <dt className="font-semibold text-[var(--color-fg)]">Total</dt>
+        <dd className="font-semibold tabular-nums text-[var(--color-fg)]">{money(price.total)}</dd>
+      </div>
+    </dl>
+  );
+}
 
 function fmtDuration(min: number): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
@@ -1245,6 +1292,7 @@ function OrderDetailModal({
                   )}
                 </div>
               </div>
+              <CarOrderPriceView order={order} />
               {order.pnr ? (
                 <div className="mt-3">
                   {voucher ? (

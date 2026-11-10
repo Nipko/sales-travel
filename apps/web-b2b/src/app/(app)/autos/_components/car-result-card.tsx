@@ -67,6 +67,10 @@ export function CarResultCard({
   const fuel = fuelOf(offer.sippCode);
   const perDay = Math.round(sale.amountMinor / Math.max(1, days));
   const margin = offer.pricing && offer.pricing.ownMarkupMinor > 0 ? offer.pricing : undefined;
+  const taxesMinor =
+    offer.tax.currency === sale.currency
+      ? Math.min(Math.max(0, offer.tax.amountMinor), sale.amountMinor)
+      : 0;
 
   return (
     <article className="@container overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]">
@@ -179,6 +183,18 @@ export function CarResultCard({
                     </>
                   ) : null}
                 </p>
+                {taxesMinor > 0 ? (
+                  // Los impuestos tal cual los informa la arrendadora; el markup queda en la base.
+                  <p className="mt-0.5 text-[11px] tabular-nums text-[var(--color-fg-muted)]">
+                    <span className="whitespace-nowrap">
+                      Base {formatMinor(sale.amountMinor - taxesMinor, sale.currency)}
+                    </span>
+                    {' · '}
+                    <span className="whitespace-nowrap">
+                      Impuestos {formatMinor(taxesMinor, sale.currency)}
+                    </span>
+                  </p>
+                ) : null}
                 {margin ? (
                   <p className="mt-0.5 text-[11px] tabular-nums text-[var(--color-fg-muted)]">
                     <span className="whitespace-nowrap">

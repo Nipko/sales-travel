@@ -237,6 +237,19 @@ export class CarsService {
         sippCode: result.sippCode,
         companyCode: input.companyCode,
         rateAmount,
+        // El reparto que informó la arrendadora: base y lo que se cobra en el mostrador (`tax`),
+        // para que el detalle de la reserva lo muestre igual que el checkout.
+        base: Money.fromMajor(input.realBase, input.currency),
+        tax: Money.fromMajor(input.realTax, input.currency),
+        paymentType: input.paymentType,
+        ...(input.counterCharges?.length
+          ? {
+              counterCharges: input.counterCharges.map((charge) => ({
+                name: charge.name,
+                amount: Money.fromMajor(charge.amount, input.currency),
+              })),
+            }
+          : {}),
         pricing: {
           finalMinor: waterfall.finalMinor,
           netMinor: waterfall.netMinor,

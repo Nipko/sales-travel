@@ -126,6 +126,15 @@ export const ConfirmInputSchema = z.object({
     .length(3)
     .regex(/^[A-Za-z]{3}$/)
     .transform((c) => c.toUpperCase()),
+  // Los cargos que la arrendadora informó para el mostrador (get-rate-information), sólo para
+  // que el detalle de la reserva diga qué se cobra ahí. Informativos: no se envían al proveedor y
+  // no tocan el total.
+  counterCharges: z
+    .array(
+      z.object({ name: z.string().trim().min(1).max(80), amount: z.coerce.number().nonnegative() }),
+    )
+    .max(20)
+    .optional(),
   // Datos legibles de la selección, sólo para persistir en la orden (no se envían al proveedor).
   category: z.string().min(1).optional(),
   carModel: z.string().min(1).optional(),
