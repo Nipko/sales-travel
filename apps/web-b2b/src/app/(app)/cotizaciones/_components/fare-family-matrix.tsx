@@ -385,7 +385,7 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
       </div>
       {attrs.extras.length > 0 ? (
         <ul aria-label="También incluye" className="mt-2 flex flex-wrap gap-1">
-          {attrs.extras.slice(0, 4).map((extra) => (
+          {attrs.extras.slice(0, 6).map((extra) => (
             <li
               key={extra}
               className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-fg-muted)]"
@@ -393,6 +393,14 @@ function FareCard({ fare, solo, formatMoney, onQuote, mode }: FareCardProps) {
               {extra}
             </li>
           ))}
+          {attrs.extras.length > 6 ? (
+            <li
+              title={attrs.extras.slice(6).join(', ')}
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-fg-subtle)]"
+            >
+              +{attrs.extras.length - 6} más
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </div>

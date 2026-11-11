@@ -25,7 +25,7 @@ export function BaggageIcons({
   size = 'md',
   className,
 }: {
-  attributes: Pick<FareAttributes, 'personalItem' | 'carryOn' | 'checked'>;
+  attributes: Pick<FareAttributes, 'personalItem' | 'carryOn' | 'checked' | 'checkedPieces'>;
   size?: 'sm' | 'md';
   className?: string;
 }) {
@@ -45,7 +45,7 @@ export function BaggageIcons({
             data-baggage={key}
             data-state={state.value}
             className={cn(
-              'flex items-center justify-center rounded-md',
+              'relative flex items-center justify-center rounded-md',
               size === 'sm' ? 'size-6' : 'size-8',
               state.value === 'yes' && 'bg-[var(--color-fg)]/[0.06] text-[var(--color-fg)]',
               state.value === 'partial' &&
@@ -65,6 +65,15 @@ export function BaggageIcons({
               }
               strokeWidth={state.value === 'yes' ? 2.25 : 1.75}
             />
+            {/* Dos maletas no son una: el número va sobre la de bodega (Business: «2»). */}
+            {key === 'checked' && state.value === 'yes' && (attributes.checkedPieces ?? 0) > 1 ? (
+              <span
+                aria-hidden="true"
+                className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-[var(--color-fg)] text-[9px] font-bold leading-none text-[var(--color-bg)]"
+              >
+                {attributes.checkedPieces}
+              </span>
+            ) : null}
           </span>
         );
       })}

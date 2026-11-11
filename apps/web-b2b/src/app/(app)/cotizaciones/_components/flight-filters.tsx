@@ -27,6 +27,8 @@ interface FlightFiltersProps {
   leg?: number;
   /** Nombre de cada tramo visible para los horarios: «Tramo 1», «Ida»… */
   slotLabel?: (slot: number) => string;
+  /** Moneda de venta de la agencia: los precios «desde» van en ella. */
+  saleCurrency?: string;
 }
 
 function Section({
@@ -74,7 +76,7 @@ function CheckRow({
   return (
     <label
       className={cn(
-        'flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-[var(--color-surface-muted)]',
+        'flex cursor-pointer items-start gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-[var(--color-surface-muted)]',
         empty && !checked && 'opacity-55',
       )}
     >
@@ -83,13 +85,19 @@ function CheckRow({
         name={name}
         checked={checked}
         onChange={onChange}
-        className="size-4 shrink-0 accent-[var(--color-primary)]"
+        className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]"
       />
-      <span className="min-w-0 flex-1 truncate text-[var(--color-fg)]">{label}</span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block text-[var(--color-fg)]">{label}</span>
+        {stat && stat.minPriceMinor !== null && stat.count > 0 ? (
+          <span className="block text-xs tabular-nums text-[var(--color-fg-muted)]">
+            desde {formatPrice(stat.minPriceMinor)}
+          </span>
+        ) : null}
+      </span>
       {stat ? (
-        <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-fg-muted)]">
-          {stat.minPriceMinor !== null && stat.count > 0 ? formatPrice(stat.minPriceMinor) : ''}
-          <span className="ml-1.5 text-[var(--color-fg-subtle)]">{stat.count}</span>
+        <span className="shrink-0 self-start text-xs tabular-nums text-[var(--color-fg-subtle)]">
+          {stat.count}
         </span>
       ) : null}
     </label>
@@ -108,7 +116,7 @@ function WindowChips({
   return (
     <div>
       <p className="mb-1 text-xs text-[var(--color-fg-muted)]">{label}</p>
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-2 gap-1">
         {HOUR_WINDOWS.map((w) => {
           const active = value?.[0] === w.range[0] && value[1] === w.range[1];
           return (
@@ -119,14 +127,14 @@ function WindowChips({
               title={`${w.label}: ${String(w.range[0]).padStart(2, '0')}:00 a ${String(w.range[1]).padStart(2, '0')}:00`}
               onClick={() => onToggle(w.range)}
               className={cn(
-                'rounded-md border px-1 py-1 text-[11px] font-medium leading-tight transition-colors',
+                'flex items-baseline justify-between gap-1 rounded-md border px-2 py-1 text-xs font-medium leading-tight transition-colors',
                 active
                   ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
                   : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
               )}
             >
               {w.label}
-              <span className="block tabular-nums opacity-80">
+              <span className="tabular-nums opacity-75">
                 {w.range[0]}–{w.range[1]}h
               </span>
             </button>
@@ -149,8 +157,9 @@ export function FlightFilters({
   formatDuration,
   leg,
   slotLabel = (slot) => `Tramo ${String(slot + 1)}`,
+  saleCurrency,
 }: FlightFiltersProps) {
-  const options = deriveFilterOptions(groups, value, leg);
+  const options = deriveFilterOptions(groups, value, leg, saleCurrency);
   const price = (minor: number) => formatMoney(minor, options.currency);
   const radioName = useId();
   const dirty = activeFilterCount(value) > 0;

@@ -47,6 +47,11 @@ import { SELLING_ROLES } from '../auth/roles.js';
  */
 export interface FlightSearchEnvelope extends FlightSearchResponse {
   showProviderInResults: boolean;
+  /**
+   * La moneda en que vende la agencia. Con tarifas en otra moneda en la lista (LATAM NDC en BRL),
+   * la pantalla compara precios y elige «Más barato» en ésta, no en la que más ofertas trajo.
+   */
+  saleCurrency: string;
 }
 
 /**
@@ -140,7 +145,7 @@ export class SearchController {
       this.disclosure.effective(tenantId),
     ]);
 
-    return { ...result, showProviderInResults };
+    return { ...result, showProviderInResults, saleCurrency: criteria.currency };
   }
 
   /**

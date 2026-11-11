@@ -66,7 +66,8 @@ describe('fareAttributes — lo que incluye ESA tarifa en ESE trayecto', () => {
     expect(a.carryOn).toEqual({ value: 'yes', detail: '1 cabin bag up to 10kg' });
     expect(a.checked).toEqual({ value: 'partial', detail: 'Con cargo' });
     expect(a.refund).toEqual({ value: 'no' });
-    expect(a.extras).toEqual(['Miles accrual']);
+    // Los extras van en español: «Miles accrual» de la aerolínea se lee «Acumula millas».
+    expect(a.extras).toEqual(['Acumula millas']);
   });
 
   it('«no informado» no es «no incluye»: el tipo que la marca no lista queda unknown', () => {
@@ -90,8 +91,39 @@ describe('fareAttributes — lo que incluye ESA tarifa en ESE trayecto', () => {
     expect(a.seat).toBeUndefined();
   });
 
-  it('sin trayecto elegido es siempre la oferta entera', () => {
-    expect(fareAttributes(oferta(LIGHT, FULL), undefined, fmt).source).toBe('offer');
+  it('sin trayecto elegido usa las marcas de TODOS los componentes (solo ida, multidestino)', () => {
+    // Antes caía al equipaje genérico de la oferta y todas las familias se pintaban iguales.
+    const a = fareAttributes(oferta(LIGHT, FULL), undefined, fmt);
+    expect(a.source).toBe('leg');
+    // Se promete lo que cumplen los dos trayectos: la vuelta FULL tiene maleta, la ida LIGHT no.
+    expect(a.checked.value).not.toBe('yes');
+  });
+
+  it('cuenta las maletas incluidas y ordena los extras por lo que más pesa', () => {
+    const o = oferta(LIGHT, FULL);
+    o.fareComponents = [
+      {
+        segmentRefs: [0, 1],
+        includes: [
+          { kind: 'checked-bag', status: 'included', label: 'FIRST CHECKED BAG' },
+          { kind: 'checked-bag', status: 'included', label: 'SECOND CHECKED BAG' },
+          { kind: 'checked-bag', status: 'charge', label: 'THIRD CHECKED BAG' },
+          { kind: 'other', status: 'included', label: 'WI FI' },
+          { kind: 'other', status: 'included', label: 'ADMIRALS CLUB' },
+          { kind: 'other', status: 'included', label: 'PRIORITY BOARDING' },
+        ],
+      },
+    ];
+    const a = fareAttributes(o, undefined, fmt);
+    expect(a.checked).toEqual({ value: 'yes', detail: '2 maletas' });
+    expect(a.checkedPieces).toBe(2);
+    expect(a.extras).toEqual(['Sala VIP', 'Embarque prioritario', 'Wi-Fi']);
+  });
+
+  it('sin atributos de marca cae a la oferta entera, rotulada', () => {
+    const o = oferta(LIGHT, FULL);
+    o.fareComponents = [];
+    expect(fareAttributes(o, undefined, fmt).source).toBe('offer');
   });
 
   it('dos vuelos en un trayecto: se promete sólo lo que ambos cumplen', () => {

@@ -17,7 +17,12 @@ export function groupCurrency(group: FlightGroup): string | undefined {
  * mientras Sabre cotiza en COP): las cifras de monedas distintas no se comparan, así que el
  * «Más barato» y el orden por precio se deciden dentro de ésta y el resto va después.
  */
-export function mainCurrency(groups: readonly FlightGroup[]): string | undefined {
+export function mainCurrency(
+  groups: readonly FlightGroup[],
+  preferred?: string,
+): string | undefined {
+  // La moneda de venta de la agencia manda si hay vuelos en ella.
+  if (preferred && groups.some((g) => groupCurrency(g) === preferred)) return preferred;
   const counts = new Map<string, number>();
   for (const group of groups) {
     const currency = groupCurrency(group);
@@ -69,8 +74,12 @@ export interface ResultHighlights {
   readonly fastest?: FlightGroup;
 }
 
-export function findHighlights(groups: readonly FlightGroup[], leg?: number): ResultHighlights {
-  const currency = mainCurrency(groups);
+export function findHighlights(
+  groups: readonly FlightGroup[],
+  leg?: number,
+  preferred?: string,
+): ResultHighlights {
+  const currency = mainCurrency(groups, preferred);
   const cheapest = minBy(
     groups.filter((g) => groupCurrency(g) === currency),
     groupPrice,

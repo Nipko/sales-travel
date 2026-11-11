@@ -168,9 +168,14 @@ function groupOffersByFlight(offers: Offer[]): FlightGroup[] {
  * Ordena por precio de VENTA y por duración del viaje entero (o de un tramo, si la lista elige
  * por trayecto): los mismos números que pintan la tarjeta y las tarjetas de orden.
  */
-function sortGroups(groups: FlightGroup[], sort: SortKey, leg?: number): FlightGroup[] {
+function sortGroups(
+  groups: FlightGroup[],
+  sort: SortKey,
+  leg?: number,
+  preferred?: string,
+): FlightGroup[] {
   const sorted = [...groups];
-  const currency = mainCurrency(groups);
+  const currency = mainCurrency(groups, preferred);
   sorted.sort((a, b) => {
     // Precios en otra moneda no se comparan con los de la principal: van detrás.
     if (sort === 'price' || sort === 'best') {
@@ -456,8 +461,9 @@ export default function CotizacionesPage() {
         roundTrip ? groupByLeg(offers, 0) : groupOffersByFlight(offers),
         sort,
         roundTrip ? 0 : undefined,
+        result.saleCurrency,
       ),
-    [offers, sort, roundTrip],
+    [offers, sort, roundTrip, result.saleCurrency],
   );
   const flightGroups = useMemo(
     () => applyFlightFilters(allGroups, filters, roundTrip ? 0 : undefined),
@@ -781,14 +787,18 @@ function SearchResultsBody({
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
   const leg = roundTrip !== null ? 0 : undefined;
-  const highlights = useMemo(() => findHighlights(flightGroups, leg), [flightGroups, leg]);
+  const saleCurrency = result.saleCurrency;
+  const highlights = useMemo(
+    () => findHighlights(flightGroups, leg, saleCurrency),
+    [flightGroups, leg, saleCurrency],
+  );
   const tags = useMemo(() => highlightTags(flightGroups, highlights), [flightGroups, highlights]);
   const sortHighlights = useMemo<SortHighlights>(() => {
     const priceText = (group: FlightGroup | undefined) => {
       const offer = group?.offers[0];
       return offer ? formatMoney(groupPrice(group), offer.total.currency) : undefined;
     };
-    const best = sortGroups(flightGroups, 'best', leg)[0];
+    const best = sortGroups(flightGroups, 'best', leg, saleCurrency)[0];
     const out: Record<string, { price: string; detail?: string }> = {};
     const bestPrice = priceText(best);
     if (bestPrice) out['best'] = { price: bestPrice };
@@ -802,12 +812,13 @@ function SearchResultsBody({
       };
     }
     return out;
-  }, [flightGroups, highlights, leg]);
+  }, [flightGroups, highlights, leg, saleCurrency]);
   // En el paso 2 de ida y vuelta la lista son vueltas: los filtros de la ida no aplican y se ocultan.
   const [step, setStep] = useState<1 | 2>(1);
   const filtersPanel = (
     <FlightFilters
       groups={allGroups}
+      {...(saleCurrency ? { saleCurrency } : {})}
       value={filters}
       onChange={onFiltersChange}
       formatMoney={formatMoney}

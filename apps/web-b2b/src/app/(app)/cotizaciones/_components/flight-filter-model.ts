@@ -201,8 +201,9 @@ export function deriveFilterOptions(
   groups: readonly FlightGroup[],
   f: FlightFilterState,
   leg?: number,
+  preferredCurrency?: string,
 ): FilterOptions {
-  const currency = mainCurrency(groups);
+  const currency = mainCurrency(groups, preferredCurrency);
   const without = (rule: Rule) => groups.filter((g) => passes(g, f, leg, rule));
 
   const byStops = without('stops');

@@ -31,6 +31,8 @@ export interface FareAttributes {
   readonly refund: AttrState;
   /** Sólo con `source: 'leg'`: la oferta entera no informa asiento. */
   readonly seat?: AttrState;
+  /** Cuántas maletas facturadas incluye la marca, si los atributos lo dicen. */
+  readonly checkedPieces?: number;
   /** Otros atributos INCLUIDOS de la marca (embarque prioritario, millas…), con su etiqueta. */
   readonly extras: readonly string[];
 }
@@ -81,6 +83,17 @@ export function legInclusions(offer: Offer, leg: number): FareInclusion[][] | nu
   return porComponente;
 }
 
+/**
+ * Los atributos de marca de TODOS los componentes (solo ida, multidestino, o la combinación
+ * entera), o `null` si alguno no los trae. Sin esto la tarjeta caía al equipaje genérico de la
+ * oferta, que sólo informa la maleta facturada, y todas las familias se pintaban iguales.
+ */
+export function offerInclusions(offer: Offer): FareInclusion[][] | null {
+  const porComponente = (offer.fareComponents ?? []).map((component) => component.includes ?? []);
+  if (porComponente.length === 0 || porComponente.some((items) => items.length === 0)) return null;
+  return porComponente;
+}
+
 const RANGO: Record<FareInclusion['status'], number> = { included: 2, charge: 1, 'not-offered': 0 };
 
 /** «CHECKED BAG 23KG» → «Checked bag 23kg»: la etiqueta de la aerolínea, legible. */
@@ -127,7 +140,7 @@ export function fareAttributes(
   leg: number | undefined,
   formatMoney: FormatMoney,
 ): FareAttributes {
-  const componentes = leg === undefined ? null : legInclusions(offer, leg);
+  const componentes = leg === undefined ? offerInclusions(offer) : legInclusions(offer, leg);
   if (componentes === null) {
     const baggage = offer.baggage;
     return {
@@ -137,26 +150,82 @@ export function fareAttributes(
       ),
       carryOn: attrDeEquipaje(baggage?.carryOn),
       checked: attrDeEquipaje(baggage?.checked),
+      ...((baggage?.checked?.qty ?? 0) > 0 ? { checkedPieces: baggage!.checked!.qty } : {}),
       change: attrDePolitica(policyState(offer.policies, 'change'), formatMoney),
       refund: attrDePolitica(policyState(offer.policies, 'refund'), formatMoney),
       extras: [],
     };
   }
 
-  const extras = new Set<string>();
+  const extras = new Map<string, number>();
   for (const items of componentes) {
     for (const item of items) {
-      if (item.kind === 'other' && item.status === 'included') extras.add(etiqueta(item.label));
+      if (item.kind !== 'other' || item.status !== 'included') continue;
+      const { label, rank } = extraLabel(item.label);
+      extras.set(label, Math.min(rank, extras.get(label) ?? rank));
     }
   }
+  const piezas = checkedPieces(componentes);
+  const checked = attrDeInclusion(porTipo(componentes, 'checked-bag'), true);
   return {
     source: 'leg',
     personalItem: attrDeInclusion(porTipo(componentes, 'personal-item'), false),
     carryOn: attrDeInclusion(porTipo(componentes, 'carry-on'), true),
-    checked: attrDeInclusion(porTipo(componentes, 'checked-bag'), true),
+    checked:
+      checked.value === 'yes' && piezas > 1
+        ? { value: 'yes', detail: `${String(piezas)} maletas` }
+        : checked,
+    ...(piezas > 0 ? { checkedPieces: piezas } : {}),
     change: attrDeInclusion(porTipo(componentes, 'change'), false),
     refund: attrDeInclusion(porTipo(componentes, 'refund'), false),
     seat: attrDeInclusion(porTipo(componentes, 'seat'), false),
-    extras: [...extras],
+    extras: [...extras].sort((a, b) => a[1] - b[1]).map(([label]) => label),
   };
+}
+
+/**
+ * Cuántas maletas facturadas incluye la marca: las filas `CHECKED BAG` incluidas («FIRST», «SECOND»)
+ * de cada componente; entre componentes, la menor (se promete lo que todos cumplen).
+ */
+function checkedPieces(componentes: FareInclusion[][]): number {
+  let menor = Number.POSITIVE_INFINITY;
+  for (const items of componentes) {
+    const n = items.filter((i) => i.kind === 'checked-bag' && i.status === 'included').length;
+    menor = Math.min(menor, n);
+  }
+  return Number.isFinite(menor) ? menor : 0;
+}
+
+/**
+ * Los extras de una marca, en español y por lo que más pesa al elegir entre familias: la sala VIP
+ * y el embarque prioritario primero, el wifi y las millas después. Lo que no se reconoce va con la
+ * etiqueta de la aerolínea, al final.
+ */
+const EXTRAS: readonly { readonly re: RegExp; readonly label: string }[] = [
+  { re: /LOUNGE|ADMIRALS|SALA ?VIP|SALON|SALAS/, label: 'Sala VIP' },
+  { re: /LIE ?FLAT|FLAT ?BED|CAMA/, label: 'Asiento cama' },
+  {
+    re: /PRIORITY BOARD|EMBARQUE PRIORIT|BOARDING PRIORIT|PRIORIDAD.*EMBARQUE/,
+    label: 'Embarque prioritario',
+  },
+  {
+    re: /PRIORITY CHECK|CHECK ?IN PRIORIT|FAST ?TRACK|PRIORITY SECURITY/,
+    label: 'Check-in prioritario',
+  },
+  { re: /EXTRA LEG|LEGROOM|ESPACIO|MORE SPACE/, label: 'Más espacio para piernas' },
+  { re: /PRIORITY BAG|EQUIPAJE PRIORIT/, label: 'Equipaje prioritario' },
+  { re: /MEAL|SNACK|COMIDA|FOOD/, label: 'Comida a bordo' },
+  { re: /BEVERAGE|DRINK|BEBIDA/, label: 'Bebidas' },
+  { re: /STANDBY/, label: 'Standby el mismo día' },
+  { re: /WI ?-?FI|INTERNET/, label: 'Wi-Fi' },
+  { re: /ENTERTAINMENT|STREAMING|ENTRETENIMIENTO|\bIFE\b/, label: 'Entretenimiento' },
+  { re: /MILES|MILLAS|AADVANTAGE|LATAM ?PASS|LIFEMILES|POINTS|PUNTOS/, label: 'Acumula millas' },
+];
+
+function extraLabel(raw: string): { label: string; rank: number } {
+  const upper = raw.toUpperCase();
+  const index = EXTRAS.findIndex((extra) => extra.re.test(upper));
+  return index === -1
+    ? { label: etiqueta(raw), rank: EXTRAS.length }
+    : { label: EXTRAS[index]!.label, rank: index };
 }

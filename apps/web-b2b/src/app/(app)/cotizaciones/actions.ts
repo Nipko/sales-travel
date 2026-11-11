@@ -172,6 +172,8 @@ export interface SearchResult {
    * es el lado seguro: no nombrar al proveedor es un ajuste comercial de la casa.
    */
   showProviderInResults: boolean;
+  /** La moneda en que vende la agencia: en ella se comparan precios con monedas mezcladas. */
+  saleCurrency?: string;
 }
 
 /**
@@ -183,6 +185,7 @@ interface FlightSearchEnvelope {
   simulated?: boolean;
   providers?: ProviderOutcome[];
   showProviderInResults?: boolean;
+  saleCurrency?: string;
 }
 
 /**
@@ -400,6 +403,7 @@ export async function searchFlightsAction(
     simulated: res.data.simulated === true,
     providers: res.data.providers ?? [],
     showProviderInResults: res.data.showProviderInResults === true,
+    ...(res.data.saleCurrency ? { saleCurrency: res.data.saleCurrency } : {}),
   };
 }
 
