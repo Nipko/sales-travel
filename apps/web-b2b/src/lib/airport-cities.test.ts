@@ -93,6 +93,14 @@ describe('las ciudades con varios aeropuertos se agrupan', () => {
     expect(search('nyc')[0]).toBe('city:NYC');
   });
 
+  it('«ORL» es Orlando (MCO + SFB), no Orlando Executive, que no tiene vuelos regulares', () => {
+    const r = search('ORL');
+    expect(r.slice(0, 3)).toEqual(['city:ORL', 'MCO', 'SFB']);
+    expect(r.filter((c) => c === 'ORL')).toHaveLength(0);
+    expect(search('orlando').slice(0, 3)).toEqual(['city:ORL', 'MCO', 'SFB']);
+    expect(search('MCO').slice(0, 3)).toEqual(['city:ORL', 'MCO', 'SFB']);
+  });
+
   it('buscar un aeropuerto de la ciudad muestra la ciudad entera alrededor', () => {
     expect(search('GRU').slice(0, 4)).toEqual(['city:SAO', 'GRU', 'CGH', 'VCP']);
   });

@@ -187,6 +187,20 @@ export const CITY_AREAS: readonly CityArea[] = [
     aliases: [],
   },
   {
+    // ORL es el código metropolitano y a la vez Orlando Executive, una pista de aviación general
+    // sin vuelos regulares. Elegido como aeropuerto, Sabre rechaza la búsqueda entera
+    // (CERT, 2026-11-11: «ERR/ERR: Error during Processing»); como ciudad trae MCO y SFB.
+    code: 'ORL',
+    city: 'Orlando',
+    country: 'Estados Unidos',
+    countryCode: 'US',
+    airports: [
+      { code: 'MCO', name: 'Orlando International' },
+      { code: 'SFB', name: 'Sanford' },
+    ],
+    aliases: ['sanford', 'disney'],
+  },
+  {
     code: 'DFW',
     city: 'Dallas',
     country: 'Estados Unidos',
@@ -396,7 +410,12 @@ export function groupByCity(
   const known = new Map(ranked.map((a) => [a.code, a] as const));
   const named = CITY_AREAS.filter((area) => areaMatches(area, query));
   const inList = new Set(ranked.map((a) => areaOfAirport(a.code)).filter(Boolean));
-  const first = named.filter((area) => !inList.has(area));
+  // La ciudad cuyo código se escribió va primero aunque sus aeropuertos vengan en la lista: con
+  // «ORL» lo primero tiene que ser Orlando, no la pista sin vuelos regulares que comparte código.
+  const q = normalizeSearchText(query);
+  const first = named.filter(
+    (area) => !inList.has(area) || (q.length === 3 && area.code.toLowerCase() === q),
+  );
 
   const emitted = new Set<string>();
   const out: LocationOption[] = [];
@@ -424,6 +443,9 @@ export function groupByCity(
     if (out.length >= maxRows) break;
     if (emitted.has(airport.code)) continue;
     const area = areaOfAirport(airport.code);
+    // Un aeropuerto sin vuelos regulares que comparte código con una ciudad (Orlando Executive
+    // = ORL) no se ofrece: con el mismo código, la ciudad ya está y es lo que se vende.
+    if (!area && airport.scheduled === false && AREA_BY_CODE.has(airport.code)) continue;
     if (area) {
       emitArea(area);
     } else {
