@@ -88,6 +88,7 @@ import {
   sendOrderConfirmation,
 } from './order-actions';
 import { carOrderPrice, type CarOrderPriceInput } from './car-order-price';
+import { legLabel } from '../../../lib/flight-legs';
 
 /** Lo que se pagó al reservar y lo que se paga en el mostrador, como lo vio el vendedor. */
 function CarOrderPriceView({ order }: { order: CarOrderPriceInput }) {
@@ -1323,9 +1324,7 @@ function OrderDetailModal({
                 {itineraries.map((it, idx) => (
                   <div key={idx} className="rounded-lg border border-[var(--color-border)] p-3">
                     <div className="mb-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-[var(--color-fg-subtle)]">
-                      <span>
-                        {itineraries.length > 1 ? (idx === 0 ? 'Ida' : 'Vuelta') : 'Vuelo'}
-                      </span>
+                      <span>{legLabel(itineraries, idx) ?? 'Vuelo'}</span>
                       <span>
                         {it.stops === 0
                           ? 'Directo'

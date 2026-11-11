@@ -17,6 +17,7 @@ interface QuotationSummary {
     destination: string;
     departureDate: string;
     returnDate?: string;
+    legs?: { origin: string; destination: string; departureDate: string }[];
     tripType: string;
     cabin: string;
     currency: string;
@@ -203,7 +204,12 @@ export default function QuotationsListPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-sm font-medium text-[var(--color-fg)]">
-                      #{q.quoteNumber} · {q.searchCriteria.origin} → {q.searchCriteria.destination}
+                      #{q.quoteNumber} ·{' '}
+                      {q.searchCriteria.legs?.length
+                        ? q.searchCriteria.legs
+                            .map((leg) => `${leg.origin} → ${leg.destination}`)
+                            .join(' · ')
+                        : `${q.searchCriteria.origin} → ${q.searchCriteria.destination}`}
                     </p>
                     {q.searchCriteria.tripType === 'roundtrip' && (
                       <span className="rounded-full bg-[var(--color-primary)]/8 px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary)]">

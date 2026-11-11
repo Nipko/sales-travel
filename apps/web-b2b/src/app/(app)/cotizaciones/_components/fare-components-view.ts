@@ -1,4 +1,5 @@
 import type { Offer } from '../actions';
+import { isRoundTripLegs, legLabel } from '../../../../lib/flight-legs';
 
 export interface FareComponentView {
   readonly key: string;
@@ -64,7 +65,7 @@ export function fareComponentsForDisplay(
     return {
       key: `${component.segmentRefs.join('-')}:${String(componentIndex)}`,
       itineraryIndexes,
-      legLabel: legLabel(itineraryIndexes, offer.itineraries?.length ?? 0),
+      legLabel: componentLegLabel(itineraryIndexes, offer.itineraries ?? []),
       route: origin && destination ? `${origin} → ${destination}` : 'Trayecto sin ruta informada',
       name,
       details,
@@ -83,12 +84,15 @@ export function fareFamilySummary(
   return clean(offer.fareFamily?.name);
 }
 
-function legLabel(indexes: readonly number[], itineraryCount: number): string {
-  if (indexes.length !== 1) return indexes.length > 1 ? 'Ida y vuelta' : 'Componente';
-  if (itineraryCount <= 1) return 'Trayecto';
-  if (indexes[0] === 0) return 'Ida';
-  if (indexes[0] === 1) return 'Vuelta';
-  return `Trayecto ${String((indexes[0] ?? 0) + 1)}`;
+function componentLegLabel(
+  indexes: readonly number[],
+  itineraries: NonNullable<Offer['itineraries']>,
+): string {
+  if (indexes.length !== 1) {
+    if (indexes.length === 0) return 'Componente';
+    return isRoundTripLegs(itineraries) ? 'Ida y vuelta' : 'Varios tramos';
+  }
+  return legLabel(itineraries, indexes[0] ?? 0) ?? 'Trayecto';
 }
 
 function distinctCode(code: string | undefined, name: string): string | undefined {

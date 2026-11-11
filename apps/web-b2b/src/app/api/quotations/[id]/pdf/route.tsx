@@ -42,6 +42,7 @@ interface Quotation {
     destination: string;
     departureDate: string;
     returnDate?: string;
+    legs?: { origin: string; destination: string; departureDate: string }[];
     tripType: string;
     paxCount: { adults: number; children: number; infants: number };
     cabin: string;
@@ -272,8 +273,11 @@ function QuotationPDF({ q, branding }: { q: Quotation; branding: TenantBranding 
           <View style={s.row}>
             <Text style={s.label}>Ruta</Text>
             <Text style={s.value}>
-              {searchCriteria.origin} → {searchCriteria.destination}
-              {searchCriteria.tripType === 'roundtrip' ? ' (ida y vuelta)' : ' (solo ida)'}
+              {searchCriteria.legs?.length
+                ? `${searchCriteria.legs.map((leg) => `${leg.origin} → ${leg.destination}`).join(' · ')} (multidestino)`
+                : `${searchCriteria.origin} → ${searchCriteria.destination}${
+                    searchCriteria.tripType === 'roundtrip' ? ' (ida y vuelta)' : ' (solo ida)'
+                  }`}
             </Text>
           </View>
           <View style={s.row}>

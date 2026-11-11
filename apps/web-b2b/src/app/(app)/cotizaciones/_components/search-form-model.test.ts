@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addLeg,
   adjustInfantsWithSeat,
   adjustPax,
   cabinLabel,
   completeChildAges,
+  DEFAULT_PAX,
+  initialLegs,
+  removeLeg,
+  updateLeg,
   canAddPax,
   canRemovePax,
-  DEFAULT_PAX,
   paxComposition,
   paxLabel,
   paxTotal,
@@ -310,5 +314,43 @@ describe('edad de cada niño e infante con asiento (docs/sabre/16)', () => {
       '2026-10-19',
     );
     expect(problem?.field).toBe('pax');
+  });
+});
+
+describe('multidestino en el buscador', () => {
+  const seed = { origin: 'BOG', destination: 'MIA', departureDate: '2099-01-10' };
+
+  it('abre con dos tramos: el que estaba y uno que sale de donde llega', () => {
+    const legs = initialLegs(seed);
+    expect(legs.map((l) => `${l.origin}-${l.destination}`)).toEqual(['BOG-MIA', 'MIA-']);
+  });
+
+  it('agregar sale del destino del último; no pasa de 6 ni quita por debajo de 2', () => {
+    let legs = initialLegs(seed);
+    legs = updateLeg(legs, legs[1]!.id, { destination: 'MEX' });
+    legs = addLeg(legs);
+    expect(legs[2]?.origin).toBe('MEX');
+    for (let i = 0; i < 8; i += 1) legs = addLeg(legs);
+    expect(legs).toHaveLength(6);
+    expect(removeLeg(initialLegs(seed), initialLegs(seed)[0]!.id)).toHaveLength(2);
+  });
+
+  it('valida cada tramo y que vayan en orden de fechas', () => {
+    const legs = [
+      { id: 'a', origin: 'BOG', destination: 'MIA', date: '2099-01-10' },
+      { id: 'b', origin: 'MIA', destination: 'MEX', date: '2099-01-05' },
+    ];
+    const draft = { ...seed, returnDate: '', mode: 'multicity' as const, pax: DEFAULT_PAX, legs };
+    expect(validateSearch(draft, '2026-11-10')).toMatchObject({
+      field: 'legs',
+      legIndex: 1,
+      part: 'date',
+    });
+    expect(
+      validateSearch(
+        { ...draft, legs: [legs[0]!, { ...legs[1]!, date: '2099-01-15' }] },
+        '2026-11-10',
+      ),
+    ).toBeNull();
   });
 });

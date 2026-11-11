@@ -3,6 +3,7 @@ import {
   type IsoDate,
   type TripMode,
 } from '../../../../components/ui/date-range-picker';
+import type { LocationKind } from '../../../../lib/airport-cities';
 
 /* =============================================================================================
    MODELO DEL BUSCADOR
@@ -212,21 +213,112 @@ export function returnDateForMode(returnDate: string, mode: TripMode): string {
    Validación
    ------------------------------------------------------------------------------------------- */
 
+/** Solo ida, ida y vuelta, o varios tramos. */
+export type SearchTripMode = TripMode | 'multicity';
+
+/** Un tramo del multidestino tal como lo edita el formulario. */
+export interface MultiCityLeg {
+  /** Estable entre ediciones: la clave de React y el id de sus campos. */
+  readonly id: string;
+  readonly origin: string;
+  readonly originKind?: LocationKind;
+  readonly destination: string;
+  readonly destinationKind?: LocationKind;
+  readonly date: string;
+  /** Sube cuando el origen se rellena desde afuera (del destino anterior): remonta su campo. */
+  readonly originRev?: number;
+}
+
+/** Tope de tramos: el mismo que acepta el API (`FLIGHT_SEARCH_MAX_LEGS`). */
+export const MULTICITY_MAX_LEGS = 6;
+export const MULTICITY_MIN_LEGS = 2;
+
+let legSeq = 0;
+function legId(): string {
+  legSeq += 1;
+  return `leg-${String(legSeq)}`;
+}
+
+/**
+ * Los tramos con que se abre el multidestino: el primero es lo que ya estaba en el buscador y el
+ * segundo sale de donde llega el primero, que es lo que escribe casi todo el mundo después.
+ */
+export function initialLegs(seed: {
+  origin: string;
+  originKind?: LocationKind;
+  destination: string;
+  destinationKind?: LocationKind;
+  departureDate: string;
+}): MultiCityLeg[] {
+  return [
+    {
+      id: legId(),
+      origin: seed.origin,
+      ...(seed.originKind ? { originKind: seed.originKind } : {}),
+      destination: seed.destination,
+      ...(seed.destinationKind ? { destinationKind: seed.destinationKind } : {}),
+      date: seed.departureDate,
+    },
+    {
+      id: legId(),
+      origin: seed.destination,
+      ...(seed.destinationKind ? { originKind: seed.destinationKind } : {}),
+      destination: '',
+      date: '',
+    },
+  ];
+}
+
+/** Agrega un tramo que sale de donde llega el último. Sin cambios en el tope. */
+export function addLeg(legs: readonly MultiCityLeg[]): MultiCityLeg[] {
+  if (legs.length >= MULTICITY_MAX_LEGS) return [...legs];
+  const last = legs[legs.length - 1];
+  return [
+    ...legs,
+    {
+      id: legId(),
+      origin: last?.destination ?? '',
+      ...(last?.destinationKind ? { originKind: last.destinationKind } : {}),
+      destination: '',
+      date: '',
+    },
+  ];
+}
+
+/** Quita un tramo, sin bajar del mínimo de dos. */
+export function removeLeg(legs: readonly MultiCityLeg[], id: string): MultiCityLeg[] {
+  if (legs.length <= MULTICITY_MIN_LEGS) return [...legs];
+  return legs.filter((leg) => leg.id !== id);
+}
+
+export function updateLeg(
+  legs: readonly MultiCityLeg[],
+  id: string,
+  patch: Partial<Omit<MultiCityLeg, 'id'>>,
+): MultiCityLeg[] {
+  return legs.map((leg) => (leg.id === id ? { ...leg, ...patch } : leg));
+}
+
 export interface SearchDraft {
   readonly origin: string;
   readonly destination: string;
   readonly departureDate: string;
   readonly returnDate: string;
-  readonly mode: TripMode;
+  readonly mode: SearchTripMode;
   readonly pax: PaxCounts;
+  /** Sólo en multidestino. */
+  readonly legs?: readonly MultiCityLeg[];
 }
 
 /** Qué control tiene la culpa. La página lo traduce a un id para llevar el foco ahí. */
-export type SearchField = 'origin' | 'destination' | 'dates' | 'pax';
+export type SearchField = 'origin' | 'destination' | 'dates' | 'pax' | 'legs';
 
 export interface SearchProblem {
   readonly field: SearchField;
   readonly message: string;
+  /** Multidestino: qué tramo y qué campo, para llevar el foco ahí. */
+  readonly legIndex?: number;
+  readonly part?: 'origin' | 'destination' | 'date';
 }
 
 /**
@@ -236,6 +328,7 @@ export interface SearchProblem {
  * encontrado. Quien no eligió origen no necesita enterarse además de que le falta la vuelta.
  */
 export function validateSearch(draft: SearchDraft, today: IsoDate): SearchProblem | null {
+  if (draft.mode === 'multicity') return validateMultiCity(draft, today);
   const origin = draft.origin.toUpperCase().trim();
   const destination = draft.destination.toUpperCase().trim();
 
@@ -280,7 +373,85 @@ export function validateSearch(draft: SearchDraft, today: IsoDate): SearchProble
  * busca vuelos). Repetir el criterio sirve para algo concreto: el vendedor que dictó las fechas
  * de memoria las ve escritas mientras espera, y corta antes si se equivocó de mes.
  */
+/** Multidestino: cada tramo completo, distinto en sus dos puntas y en orden de fechas. */
+function validateMultiCity(draft: SearchDraft, today: IsoDate): SearchProblem | null {
+  const legs = draft.legs ?? [];
+  if (legs.length < MULTICITY_MIN_LEGS) {
+    return {
+      field: 'legs',
+      legIndex: 0,
+      part: 'origin',
+      message: 'Un multidestino tiene al menos dos tramos.',
+    };
+  }
+  for (let index = 0; index < legs.length; index += 1) {
+    const leg = legs[index]!;
+    const n = index + 1;
+    const origin = leg.origin.toUpperCase().trim();
+    const destination = leg.destination.toUpperCase().trim();
+    if (!IATA_RE.test(origin)) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'origin',
+        message: `Elige el origen del tramo ${n}.`,
+      };
+    }
+    if (!IATA_RE.test(destination)) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'destination',
+        message: `Elige el destino del tramo ${n}.`,
+      };
+    }
+    if (origin === destination) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'destination',
+        message: `El tramo ${n} tiene el mismo origen y destino.`,
+      };
+    }
+    if (!DATE_RE.test(leg.date)) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'date',
+        message: `Elige la fecha del tramo ${n}.`,
+      };
+    }
+    if (leg.date < today) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'date',
+        message: `La fecha del tramo ${n} ya pasó.`,
+      };
+    }
+    const previous = legs[index - 1];
+    if (previous && DATE_RE.test(previous.date) && leg.date < previous.date) {
+      return {
+        field: 'legs',
+        legIndex: index,
+        part: 'date',
+        message: `El tramo ${n} no puede salir antes que el tramo ${index}.`,
+      };
+    }
+  }
+  if (completeChildAges(draft.pax) === null) {
+    return { field: 'pax', message: 'Elige la edad de cada niño: cambia el precio de su tarifa.' };
+  }
+  return null;
+}
+
 export function searchEcho(draft: SearchDraft): string {
+  if (draft.mode === 'multicity' && draft.legs?.length) {
+    const route = draft.legs
+      .map((leg) => `${leg.origin.toUpperCase()} → ${leg.destination.toUpperCase()}`)
+      .join(' · ');
+    return `${route} · ${draft.legs.length} tramos · ${paxLabel(draft.pax)}`;
+  }
   const route = `${draft.origin.toUpperCase()} → ${draft.destination.toUpperCase()}`;
   const dates =
     draft.mode === 'roundtrip' && draft.returnDate

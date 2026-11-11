@@ -2,9 +2,9 @@
 
 import { Check, ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { TripMode } from '../../../../components/ui/date-range-picker';
+
 import { cn } from '../../../../lib/cn';
-import { CABINS, cabinLabel } from './search-form-model';
+import { CABINS, cabinLabel, type SearchTripMode } from './search-form-model';
 
 /* =============================================================================================
    LA LÍNEA DE AJUSTES
@@ -16,14 +16,15 @@ import { CABINS, cabinLabel } from './search-form-model';
    desplegable del mismo tamaño que el destino le estaba disputando la atención al destino.
    ============================================================================================= */
 
-const MODES: readonly { readonly value: TripMode; readonly label: string }[] = [
+const MODES: readonly { readonly value: SearchTripMode; readonly label: string }[] = [
   { value: 'roundtrip', label: 'Ida y vuelta' },
   { value: 'oneway', label: 'Solo ida' },
+  { value: 'multicity', label: 'Multidestino' },
 ];
 
 export interface TripModeSwitchProps {
-  readonly value: TripMode;
-  readonly onChange: (mode: TripMode) => void;
+  readonly value: SearchTripMode;
+  readonly onChange: (mode: SearchTripMode) => void;
 }
 
 /**

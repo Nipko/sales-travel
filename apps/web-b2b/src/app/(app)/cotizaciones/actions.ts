@@ -216,17 +216,90 @@ function asLocationKind(value: unknown): LocationKind | undefined {
 }
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Un tramo como lo manda el formulario de multidestino. */
+interface FormLeg {
+  origin: string;
+  destination: string;
+  originKind?: 'city' | 'airport';
+  destinationKind?: 'city' | 'airport';
+  departureDate: string;
+}
+
+/** `legs` del formulario → tramos, o `null` si no tiene la forma (nunca se confía en el JSON). */
+function parseLegs(raw: string): FormLeg[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(value) || value.length < 2 || value.length > 6) return null;
+  const legs: FormLeg[] = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) return null;
+    const record = item as Record<string, unknown>;
+    const origin =
+      typeof record['origin'] === 'string' ? record['origin'].toUpperCase().trim() : '';
+    const destination =
+      typeof record['destination'] === 'string' ? record['destination'].toUpperCase().trim() : '';
+    const departureDate =
+      typeof record['departureDate'] === 'string' ? record['departureDate'] : '';
+    const kind = (v: unknown) => (v === 'city' || v === 'airport' ? v : undefined);
+    const originKind = kind(record['originKind']);
+    const destinationKind = kind(record['destinationKind']);
+    legs.push({
+      origin,
+      destination,
+      ...(originKind ? { originKind } : {}),
+      ...(destinationKind ? { destinationKind } : {}),
+      departureDate,
+    });
+  }
+  return legs;
+}
+
+/** Lo primero que está mal en los tramos, dicho para el vendedor; `null` si están bien. */
+function legsProblem(legs: readonly FormLeg[], today: string): string | null {
+  for (let index = 0; index < legs.length; index += 1) {
+    const leg = legs[index]!;
+    const n = index + 1;
+    if (!IATA_RE.test(leg.origin)) return `Elige el origen del tramo ${n}.`;
+    if (!IATA_RE.test(leg.destination)) return `Elige el destino del tramo ${n}.`;
+    if (leg.origin === leg.destination) return `El tramo ${n} tiene el mismo origen y destino.`;
+    if (!DATE_RE.test(leg.departureDate)) return `Elige la fecha del tramo ${n}.`;
+    if (leg.departureDate < today) return `La fecha del tramo ${n} ya pasó.`;
+    const previous = legs[index - 1];
+    if (previous && leg.departureDate < previous.departureDate) {
+      return `El tramo ${n} no puede salir antes que el tramo ${index}.`;
+    }
+  }
+  return null;
+}
+
 export async function searchFlightsAction(
   _prev: SearchResult,
   formData: FormData,
 ): Promise<SearchResult> {
-  const origin = asString(formData.get('origin')).toUpperCase().trim();
-  const destination = asString(formData.get('destination')).toUpperCase().trim();
-  const originKind = asLocationKind(formData.get('originKind'));
-  const destinationKind = asLocationKind(formData.get('destinationKind'));
-  const departureDate = asString(formData.get('departureDate'));
-  const returnDate = asString(formData.get('returnDate'));
   const tripType = asString(formData.get('tripType')) || 'roundtrip';
+  // Multidestino: los tramos llegan juntos en `legs` (JSON) y el primero hace de origen, destino
+  // y fecha de ida, como pide el criterio del API.
+  const legs = tripType === 'multicity' ? parseLegs(asString(formData.get('legs'))) : null;
+  if (tripType === 'multicity') {
+    const problem =
+      legs === null ? 'Revisa los tramos del multidestino.' : legsProblem(legs, todayISO());
+    if (problem) return fallo(problem);
+  }
+  const firstLeg = legs?.[0];
+  const origin = (firstLeg?.origin ?? asString(formData.get('origin'))).toUpperCase().trim();
+  const destination = (firstLeg?.destination ?? asString(formData.get('destination')))
+    .toUpperCase()
+    .trim();
+  const originKind = firstLeg ? firstLeg.originKind : asLocationKind(formData.get('originKind'));
+  const destinationKind = firstLeg
+    ? firstLeg.destinationKind
+    : asLocationKind(formData.get('destinationKind'));
+  const departureDate = firstLeg?.departureDate ?? asString(formData.get('departureDate'));
+  const returnDate = asString(formData.get('returnDate'));
   const cabin = asString(formData.get('cabin')) || 'economy';
   const adults = asInt(formData.get('adults'), 1);
   const children = asInt(formData.get('children'), 0);
@@ -298,6 +371,7 @@ export async function searchFlightsAction(
     cabin,
   };
   if (isRoundtrip) body.returnDate = returnDate;
+  if (legs) body.legs = legs;
 
   let res: Awaited<ReturnType<typeof api<FlightSearchEnvelope>>>;
   try {

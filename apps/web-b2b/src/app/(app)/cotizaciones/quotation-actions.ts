@@ -29,6 +29,14 @@ export async function createQuotationAction(
     destinationKind?: LocationKind;
     departureDate: string;
     returnDate?: string;
+    /** Multidestino: todos los tramos, en orden. */
+    legs?: {
+      origin: string;
+      destination: string;
+      originKind?: 'city' | 'airport';
+      destinationKind?: 'city' | 'airport';
+      departureDate: string;
+    }[];
     tripType: string;
     paxCount: {
       adults: number;

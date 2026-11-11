@@ -1,4 +1,5 @@
 import type { Offer } from '../actions';
+import { legLabel as sharedLegLabel } from '../../../../lib/flight-legs';
 import { fareAttributes, type AttrState, type AttrValue } from '../../../../lib/fare-attributes';
 import { flightDate, flightTime } from '../../../../lib/flight-format';
 import { airlineName } from './airline-names';
@@ -178,12 +179,6 @@ export function connectionAlerts(connection: TimelineConnectionView): string[] {
   return alerts;
 }
 
-function legLabel(index: number, count: number): string {
-  if (count <= 1) return 'Vuelo';
-  if (count === 2) return index === 0 ? 'Ida' : 'Vuelta';
-  return `Trayecto ${index + 1}`;
-}
-
 function point(iso: string, airport: string): TimelinePoint {
   return { time: flightTime(iso), date: flightDate(iso), airport };
 }
@@ -345,7 +340,7 @@ export function buildTimeline(
     return [
       {
         index,
-        label: legLabel(index, legs.length),
+        label: sharedLegLabel(legs, index) ?? 'Vuelo',
         origin: first.origin,
         destination: last.destination,
         departure: point(first.departureAt, first.origin),

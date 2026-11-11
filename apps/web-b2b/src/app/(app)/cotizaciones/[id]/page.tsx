@@ -112,6 +112,13 @@ interface Quotation {
     destination: string;
     departureDate: string;
     returnDate?: string;
+    legs?: {
+      origin: string;
+      destination: string;
+      originKind?: 'city' | 'airport';
+      destinationKind?: 'city' | 'airport';
+      departureDate: string;
+    }[];
     tripType: string;
     paxCount: { adults: number; children: number; infants: number };
     cabin: string;

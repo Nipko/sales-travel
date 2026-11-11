@@ -19,6 +19,7 @@ import { BaggageIcons } from './baggage-icons';
 import { FareFamilyMatrix, type FareChoiceMode } from './fare-family-matrix';
 import { fareFamilySummary } from './fare-components-view';
 import { faresForLeg, legFare } from './leg-selection';
+import { isRoundTripLegs, legLabel } from '../../../../lib/flight-legs';
 import {
   buildItineraryView,
   codeshareOperators,
@@ -392,7 +393,7 @@ export function FlightRow({
               <ItineraryLeg
                 key={i}
                 itinerary={it}
-                label={isRoundtrip ? (i === 0 ? 'Ida' : 'Vuelta') : undefined}
+                label={legLabel(allItineraries, i)}
                 formatTime={formatTime}
                 formatDate={formatDate}
                 formatDuration={formatDuration}
@@ -409,7 +410,7 @@ export function FlightRow({
                 attributes={fareAttributes(cheapest, fareChoice?.leg, formatMoney)}
                 size="sm"
               />
-              {isRoundtrip && fareChoice === undefined ? (
+              {isRoundTripLegs(allItineraries) && fareChoice === undefined ? (
                 <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-fg)]">
                   Ida y vuelta
                 </span>

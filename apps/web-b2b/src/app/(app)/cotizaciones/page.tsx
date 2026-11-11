@@ -13,7 +13,6 @@ import {
   DateRangePicker,
   todayIso,
   type DateRange,
-  type TripMode,
 } from '../../../components/ui/date-range-picker';
 import { SearchButtonLabel, SearchLoading } from '../../../components/ui/search-loading';
 import {
@@ -39,14 +38,18 @@ import {
   completeChildAges,
   DEFAULT_CABIN,
   DEFAULT_PAX,
+  initialLegs,
   returnDateForMode,
   searchEcho,
   validateSearch,
+  type MultiCityLeg,
   type PaxCounts,
   type SearchDraft,
   type SearchField,
   type SearchProblem,
+  type SearchTripMode,
 } from './_components/search-form-model';
+import { legFieldId, MultiCityFields } from './_components/multi-city-fields';
 import { CabinSelect, TripModeSwitch } from './_components/search-options';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import type { SortKey } from './_components/sort-toggle';
@@ -64,6 +67,7 @@ const FIELD_ID: Readonly<Record<SearchField, string>> = {
   destination: 'search-destination',
   dates: 'search-dates',
   pax: 'search-pax',
+  legs: 'search-leg-0-origin',
 };
 const PAX_ID = FIELD_ID.pax;
 
@@ -197,7 +201,9 @@ export default function CotizacionesPage() {
   const [filters, setFilters] = useState<FlightFilterState>(EMPTY_FILTERS);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const [tripMode, setTripMode] = useState<TripMode>('roundtrip');
+  const [tripMode, setTripMode] = useState<SearchTripMode>('roundtrip');
+  /** Los tramos del multidestino; vacío mientras no se elija ese modo. */
+  const [legs, setLegs] = useState<MultiCityLeg[]>([]);
   const [departureDate, setDepartureDate] = useState('');
   const [returnDate, setReturnDate] = useState('');
   const [originCode, setOriginCode] = useState('');
@@ -225,8 +231,9 @@ export default function CotizacionesPage() {
       returnDate,
       mode: tripMode,
       pax,
+      ...(tripMode === 'multicity' ? { legs } : {}),
     }),
-    [originCode, destinationCode, departureDate, returnDate, tripMode, pax],
+    [originCode, destinationCode, departureDate, returnDate, tripMode, pax, legs],
   );
 
   function handleSwap() {
@@ -237,9 +244,21 @@ export default function CotizacionesPage() {
     setProblem(null);
   }
 
-  function handleTripMode(mode: TripMode) {
+  function handleTripMode(mode: SearchTripMode) {
     setTripMode(mode);
-    setReturnDate((current) => returnDateForMode(current, mode));
+    // Al entrar a multidestino, el primer tramo es lo que ya estaba escrito.
+    if (mode === 'multicity' && legs.length === 0) {
+      setLegs(
+        initialLegs({
+          origin: originCode,
+          ...(originKind ? { originKind } : {}),
+          destination: destinationCode,
+          ...(destinationKind ? { destinationKind } : {}),
+          departureDate,
+        }),
+      );
+    }
+    setReturnDate((current) => returnDateForMode(current, mode === 'multicity' ? 'oneway' : mode));
     setProblem(null);
   }
 
@@ -288,19 +307,44 @@ export default function CotizacionesPage() {
     if (found) {
       e.preventDefault();
       setProblem(found);
-      focusField(FIELD_ID[found.field]);
+      focusField(
+        found.field === 'legs' && found.legIndex !== undefined && found.part
+          ? legFieldId(found.legIndex, found.part)
+          : FIELD_ID[found.field],
+      );
       return;
     }
 
     setProblem(null);
     setEcho(searchEcho(draft));
+    // Multidestino: el primer tramo va también en origin/destination/departureDate, como pide el
+    // criterio del API, y todos en `legs`.
+    const firstLeg = tripMode === 'multicity' ? legs[0] : undefined;
     setSearched({
-      origin: originCode,
-      destination: destinationCode,
-      ...(originKind ? { originKind } : {}),
-      ...(destinationKind ? { destinationKind } : {}),
-      departureDate,
+      origin: firstLeg ? firstLeg.origin : originCode,
+      destination: firstLeg ? firstLeg.destination : destinationCode,
+      ...(firstLeg
+        ? {
+            ...(firstLeg.originKind ? { originKind: firstLeg.originKind } : {}),
+            ...(firstLeg.destinationKind ? { destinationKind: firstLeg.destinationKind } : {}),
+          }
+        : {
+            ...(originKind ? { originKind } : {}),
+            ...(destinationKind ? { destinationKind } : {}),
+          }),
+      departureDate: firstLeg ? firstLeg.date : departureDate,
       ...(tripMode === 'roundtrip' && returnDate ? { returnDate } : {}),
+      ...(firstLeg
+        ? {
+            legs: legs.map((leg) => ({
+              origin: leg.origin,
+              destination: leg.destination,
+              ...(leg.originKind ? { originKind: leg.originKind } : {}),
+              ...(leg.destinationKind ? { destinationKind: leg.destinationKind } : {}),
+              departureDate: leg.date,
+            })),
+          }
+        : {}),
       tripType: tripMode,
       paxCount: {
         adults: pax.adults,
@@ -411,36 +455,54 @@ export default function CotizacionesPage() {
             valor grande abajo— en el orden en que se dicta un viaje por teléfono: de dónde a
             dónde, cuándo, cuántos. En móvil se apilan; el botón queda último y a lo ancho.
           */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_auto] xl:items-start">
-            <div className="sm:col-span-2 xl:col-span-1">
-              <RouteField
-                originCode={originCode}
-                destinationCode={destinationCode}
-                originKind={originKind}
-                destinationKind={destinationKind}
-                onOriginChange={handleOriginChange}
-                onDestinationChange={handleDestinationChange}
-                onSwap={handleSwap}
-                originInputId={FIELD_ID.origin}
-                destinationInputId={FIELD_ID.destination}
-                autoFocus
+          {tripMode === 'multicity' ? (
+            // Multidestino: una fila por tramo, y pasajeros y buscar debajo.
+            <div className="space-y-3">
+              <MultiCityFields
+                legs={legs}
+                onChange={(next) => {
+                  setLegs(next);
+                  setProblem(null);
+                }}
+                min={today}
               />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
+                <SubmitButton />
+              </div>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_auto] xl:items-start">
+              <div className="sm:col-span-2 xl:col-span-1">
+                <RouteField
+                  originCode={originCode}
+                  destinationCode={destinationCode}
+                  originKind={originKind}
+                  destinationKind={destinationKind}
+                  onOriginChange={handleOriginChange}
+                  onDestinationChange={handleDestinationChange}
+                  onSwap={handleSwap}
+                  originInputId={FIELD_ID.origin}
+                  destinationInputId={FIELD_ID.destination}
+                  autoFocus
+                />
+              </div>
 
-            <DateRangePicker
-              mode={tripMode}
-              value={{ start: departureDate || null, end: returnDate || null }}
-              onChange={handleDates}
-              min={today}
-              triggerId={FIELD_ID.dates}
-            />
+              <DateRangePicker
+                mode={tripMode === 'oneway' ? 'oneway' : 'roundtrip'}
+                value={{ start: departureDate || null, end: returnDate || null }}
+                onChange={handleDates}
+                min={today}
+                triggerId={FIELD_ID.dates}
+              />
 
-            <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
+              <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
 
-            <div className="sm:col-span-2 xl:col-span-1">
-              <SubmitButton />
+              <div className="sm:col-span-2 xl:col-span-1">
+                <SubmitButton />
+              </div>
             </div>
-          </div>
+          )}
 
           {displayError ? (
             <p
