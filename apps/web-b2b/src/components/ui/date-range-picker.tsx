@@ -1226,13 +1226,19 @@ function NavButton({
   readonly onClick: () => void;
   readonly disabled?: boolean;
 }) {
+  // `aria-disabled`, NO `disabled`. Volver de diciembre a noviembre deja «Mes anterior» en el tope
+  // (no hay meses pasados): un botón que pasa a `disabled` con el foco encima lo pierde, el foco
+  // cae al `body` y el `onBlur` del control lo lee como «salió» y cierra el calendario sin dejar
+  // elegir el día. Así el botón conserva el foco y sólo ignora el clic.
   return (
     <button
       type="button"
       aria-label={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)] disabled:pointer-events-none disabled:opacity-30"
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)] aria-disabled:cursor-not-allowed aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
     >
       {icon}
     </button>
