@@ -131,6 +131,9 @@ export interface SearchLogsTable {
   error_code: string | null;
   /** Criterio REDUCIDO (ruta, fechas, pax). Nunca PII. */
   criteria: Generated<unknown>;
+  /** Precio de venta más bajo de este proveedor en esta búsqueda (0094). */
+  min_price_minor: Generated<string | number | null>;
+  price_currency: Generated<string | null>;
 }
 
 export interface ProviderAccountsTable {

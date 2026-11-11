@@ -16,8 +16,10 @@ import {
 } from '../../../components/ui/date-range-picker';
 import { SearchButtonLabel, SearchLoading } from '../../../components/ui/search-loading';
 import {
+  priceCalendarAction,
   searchFlightsAction,
   searchMoreFaresAction,
+  type PriceCalendarDay,
   type Offer,
   type ProviderOutcome,
   type SearchResult,
@@ -58,6 +60,7 @@ import { CabinSelect, TripModeSwitch } from './_components/search-options';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import { SearchSummary } from './_components/search-summary';
 import { mergeOffers, singleCarrier } from './_components/more-fares';
+import { PriceCalendar } from './_components/price-calendar';
 import type { SortKey } from './_components/sort-toggle';
 import {
   findHighlights,
@@ -231,6 +234,7 @@ export default function CotizacionesPage() {
   const [sort, setSort] = useState<SortKey>('best');
   const [filters, setFilters] = useState<FlightFilterState>(EMPTY_FILTERS);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [tripMode, setTripMode] = useState<SearchTripMode>('roundtrip');
   /** Los tramos del multidestino; vacío mientras no se elija ese modo. */
@@ -391,6 +395,7 @@ export default function CotizacionesPage() {
     });
     setHasSearched(true);
     setCollapsed(true);
+    setCalendar(null);
     // El loader y los resultados aparecen debajo del formulario, fuera del viewport.
     setTimeout(
       () => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -470,6 +475,61 @@ export default function CotizacionesPage() {
     [allGroups, filters, roundTrip],
   );
 
+  /**
+   * Calendario de precios ±3 días (docs/platform/18): se pide al llegar los resultados y sale de lo
+   * que la agencia ya buscó, sin llamar al proveedor. No hay para multidestino.
+   */
+  const [calendar, setCalendar] = useState<{ days: PriceCalendarDay[]; currency: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    setCalendar(null);
+    if (searched === null || searched.legs || result.offers.length === 0) return;
+    let vigente = true;
+    void priceCalendarAction(searched).then((res) => {
+      if (vigente && res.ok && res.currency)
+        setCalendar({ days: res.days, currency: res.currency });
+    });
+    return () => {
+      vigente = false;
+    };
+    // Sólo con resultados nuevos: `searched` cambia en el mismo envío.
+  }, [result.offers]);
+
+  const currentMinPrice = useMemo(() => {
+    const currency = mainCurrency(allGroups, result.saleCurrency);
+    const prices = allGroups.filter((g) => groupCurrency(g) === currency).map(groupPrice);
+    return prices.length > 0 ? Math.min(...prices) : null;
+  }, [allGroups, result.saleCurrency]);
+
+  /** Elegir otro día del calendario: la misma búsqueda corrida a esa fecha (la vuelta también). */
+  function pickCalendarDate(date: string) {
+    if (searched === null) return;
+    const shift = (iso: string, days: number) =>
+      new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    const delta = Math.round(
+      (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${searched.departureDate}T00:00:00Z`)) /
+        86_400_000,
+    );
+    setDepartureDate(date);
+    if (searched.returnDate) setReturnDate(shift(searched.returnDate, delta));
+    // Los campos ocultos del formulario toman las fechas nuevas en el próximo render.
+    setTimeout(() => formRef.current?.requestSubmit(), 60);
+  }
+
+  const calendarNode =
+    calendar && searched ? (
+      <PriceCalendar
+        days={calendar.days}
+        selected={searched.departureDate}
+        currentMinPriceMinor={currentMinPrice}
+        currency={calendar.currency}
+        today={today}
+        formatMoney={formatMoney}
+        onPick={pickCalendarDate}
+      />
+    ) : null;
+
   useEffect(() => {
     setFilters(EMPTY_FILTERS);
   }, [result.offers]);
@@ -504,7 +564,7 @@ export default function CotizacionesPage() {
         </Link>
       </header>
 
-      <form action={formAction} onSubmit={handleSubmit}>
+      <form ref={formRef} action={formAction} onSubmit={handleSubmit}>
         {/* Un solo plano elevado, con el tinte de marca apenas perceptible: separa el formulario
             del fondo sin bordes gruesos ni decoración. */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-surface)_0%,color-mix(in_oklab,var(--color-primary)_3%,var(--color-surface))_100%)] p-4 shadow-[var(--shadow-md)] sm:p-6">
@@ -614,6 +674,7 @@ export default function CotizacionesPage() {
             onQuote={handleQuote}
             onLoadMoreFares={handleMoreFares}
             allOffers={offers}
+            calendar={calendarNode}
             roundTrip={roundTrip && searched !== null ? searched : null}
           />
         </div>
@@ -706,6 +767,7 @@ function SearchResults({
   onQuote,
   onLoadMoreFares,
   allOffers,
+  calendar,
   roundTrip,
 }: {
   hasSearched: boolean;
@@ -721,6 +783,8 @@ function SearchResults({
   onLoadMoreFares: (group: FlightGroup, leg: number) => Promise<'ok' | 'error'>;
   /** Las ofertas de la búsqueda más las tarifas pedidas al abrir vuelos. */
   allOffers: Offer[];
+  /** El calendario de precios ±3 días, si hay datos. */
+  calendar?: React.ReactNode;
   /** Los criterios de una búsqueda de ida y vuelta: se elige por trayecto. `null` = una sola lista. */
   roundTrip: QuoteCriteria | null;
 }) {
@@ -762,6 +826,7 @@ function SearchResults({
           onQuote={onQuote}
           onLoadMoreFares={onLoadMoreFares}
           allOffers={allOffers}
+          calendar={calendar}
           roundTrip={roundTrip}
         />
       )}
@@ -783,6 +848,7 @@ function SearchResultsBody({
   onQuote,
   onLoadMoreFares,
   allOffers,
+  calendar,
   roundTrip,
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
@@ -834,6 +900,7 @@ function SearchResultsBody({
           {filtersPanel}
         </MobileFilters>
       </div>
+      {calendar}
       <ResultsHeader
         count={flightGroups.length}
         sort={sort}

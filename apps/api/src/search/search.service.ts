@@ -172,9 +172,30 @@ function currencyMismatchReason(rejected: readonly Offer[], expected: string): s
  * nada, y anotarlos como `empty` diría que respondieron sin vuelos, que es lo contrario de lo
  * que pasó. Además `search_logs.outcome` no conoce esos valores.
  */
+/**
+ * El precio de venta más bajo de cada proveedor, en la moneda de venta: lo que el calendario de
+ * precios (0094) muestra para ese día. Las ofertas en otra moneda no cuentan.
+ */
+function minPricesByProvider(
+  offers: readonly Offer[],
+  currency: string | undefined,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (currency === undefined) return out;
+  for (const offer of offers) {
+    if (offer.total.currency !== currency) continue;
+    const price = offer.pricing?.finalMinor ?? offer.total.amountMinor;
+    const current = out.get(offer.provider.name);
+    if (current === undefined || price < current) out.set(offer.provider.name, price);
+  }
+  return out;
+}
+
 function telemetrySlices(
   outcomes: readonly ProviderOutcome[],
   durations: ReadonlyMap<string, number>,
+  prices: ReadonlyMap<string, number> = new Map(),
+  currency?: string,
 ): ProviderSearchSlice[] {
   return outcomes.flatMap((o): ProviderSearchSlice[] => {
     // `'simulated'` está en la lista por una razón distinta a las otras dos: no se emite nunca
@@ -193,6 +214,9 @@ function telemetrySlices(
         // contar fallos por tipo, y meterle texto libre del proveedor lo haría inagrupable.
         // El motivo legible ya viaja en la respuesta y en el log del fan-out.
         ...(o.status === 'error' ? { errorCode: 'ProviderCallError' } : {}),
+        ...(prices.has(o.code) && currency !== undefined
+          ? { minPriceMinor: prices.get(o.code)!, priceCurrency: currency }
+          : {}),
       },
     ];
   });
@@ -290,6 +314,11 @@ export class SearchService {
           departureDate: criteria.departureDate,
           returnDate: criteria.returnDate,
           cabin: criteria.cabin,
+          // Conteos, no datos del pasajero: el calendario compara búsquedas de los mismos pax.
+          adults: criteria.paxCount.adults,
+          children: criteria.paxCount.children,
+          infants: criteria.paxCount.infants,
+          ...(criteria.legs && criteria.legs.length > 0 ? { legs: criteria.legs.length } : {}),
         },
       },
       () => this.runFanOut(criteria, tenantId, active, skipped, unavailable, durations, policy),
@@ -297,7 +326,13 @@ export class SearchService {
       // Sin `simulatedOf`: ninguna búsqueda puede ser simulada, así que no hay nada que
       // decirle a la telemetría. Pasar `() => false` sería escribir la misma nada dos veces.
       undefined,
-      (r) => telemetrySlices(r.providers, durations),
+      (r) =>
+        telemetrySlices(
+          r.providers,
+          durations,
+          minPricesByProvider(r.offers, policy.home),
+          policy.home,
+        ),
     );
 
     // Un resultado DEGRADADO no se cachea: congelaría 90 s la ausencia de un proveedor que
@@ -709,6 +744,14 @@ export class SearchService {
       await this.cache.set(key, priced, MORE_FARES_CACHE_TTL_SECONDS);
       return priced;
     });
+  }
+
+  /** Calendario de precios ±3 días desde lo ya buscado: cero llamadas al proveedor (0094). */
+  priceCalendar(
+    tenantId: string,
+    q: Parameters<SearchTelemetryService['priceCalendar']>[1],
+  ): ReturnType<SearchTelemetryService['priceCalendar']> {
+    return this.telemetry.priceCalendar(tenantId, q);
   }
 
   /**

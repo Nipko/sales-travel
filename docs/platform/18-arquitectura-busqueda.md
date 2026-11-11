@@ -56,3 +56,16 @@ máxima, aeropuertos (búsqueda por ciudad) y precio, cada opción con su conteo
 - Filtrar llamando al proveedor.
 - Precalentar rutas populares: sería pagar búsquedas que nadie pidió.
 - Cachear resultados degradados (un proveedor caído o ausente): congelaría la ausencia.
+
+## 5. Calendario de precios ±3 días (2026-11-11)
+
+Como el de los sitios de venta, pero **sin llamar al proveedor**: cada búsqueda guarda en
+`search_logs` el precio de venta más bajo por proveedor en la moneda de la agencia (0094), y
+`POST /search/flights/price-calendar` devuelve el mínimo por día de salida de lo que **esa agencia**
+buscó en las últimas 72 h, con los mismos pasajeros, cabina, ruta y (en ida y vuelta) la misma
+cantidad de noches. Lo lee la función `flight_price_calendar()` (SECURITY DEFINER, sólo agregados
+de la agencia pedida), porque la lectura de `search_logs` está acotada a quien administra la red.
+
+La pantalla los rotula como estimados; el día buscado muestra el precio real de la búsqueda y
+elegir otro día lanza la búsqueda de verdad. No hay calendario para multidestino. Con poco uso, los
+días vecinos salen sin precio («Ver»): el calendario se llena solo a medida que la agencia busca.

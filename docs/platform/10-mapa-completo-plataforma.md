@@ -995,6 +995,7 @@ Implementado (sin sesiones de búsqueda ni stream; cada búsqueda responde enter
 POST   /search/flights                   -- vuelos de todos los proveedores habilitados (Sabre, LATAM NDC)
 POST   /search/flights/returns           -- la vuelta, después de elegir la ida y su tarifa
 POST   /search/flights/fares             -- las otras tarifas (marcas) de un vuelo, al abrirlo (docs/platform/18)
+POST   /search/flights/price-calendar    -- precios ±3 días desde lo ya buscado por la agencia, sin proveedor (0094)
 POST   /search/offer-price               -- revalidar una oferta
 POST   /search/seat-map
 GET    /airports                         -- origen y destino por ciudad (OurAirports)

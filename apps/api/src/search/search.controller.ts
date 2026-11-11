@@ -15,6 +15,8 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   MoreFaresBodySchema,
   OfferPriceBodySchema,
+  PriceCalendarBodySchema,
+  type PriceCalendarBody,
   ReturnSearchBodySchema,
   type MoreFaresBody,
   SeatMapBodySchema,
@@ -205,6 +207,31 @@ export class SearchController {
       tenantId,
       venta.home ?? body.searchCriteria.currency,
     );
+  }
+
+  /**
+   * Calendario de precios ±3 días (docs/platform/18, 0094): mínimos de lo que la agencia ya buscó.
+   * No consulta a ningún proveedor ni cuenta para la cuota: es una lectura de la telemetría.
+   */
+  @SalesOperation()
+  @SellerRateLimit({ bucket: 'flights-price-calendar', limit: 60, ttlMs: 60_000 })
+  @Post('flights/price-calendar')
+  async flightPriceCalendar(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(PriceCalendarBodySchema)) body: PriceCalendarBody,
+  ): Promise<{ currency: string; days: { date: string; minPriceMinor: number | null }[] }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
+    const venta = await this.ventaDelTenant(tenantId);
+    return this.search.priceCalendar(tenantId, {
+      origin: body.origin,
+      destination: body.destination,
+      departureDate: body.departureDate,
+      ...(body.returnDate === undefined ? {} : { returnDate: body.returnDate }),
+      cabin: body.cabin,
+      currency: venta.home ?? 'COP',
+      paxCount: body.paxCount,
+    });
   }
 
   @SalesOperation()

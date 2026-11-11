@@ -11,6 +11,11 @@ export type SearchOutcome = 'ok' | 'empty' | 'error' | 'simulated';
 const DEFAULT_QUOTA_PER_HOUR = 600;
 const QUOTA_WINDOW_MINUTES = 60;
 
+/** Días a cada lado de la fecha buscada en el calendario de precios. */
+const PRICE_CALENDAR_SPAN_DAYS = 3;
+/** Un precio de hace más de 3 días ya no orienta: las tarifas se mueven. */
+const PRICE_CALENDAR_MAX_AGE_HOURS = 72;
+
 /**
  * Código con el que se deja constancia de una búsqueda que no llegó a consultar a nadie
  * (el tenant no tiene ningún proveedor activo). Sin fila, esa búsqueda no contaría para la
@@ -31,6 +36,9 @@ export interface ProviderSearchSlice {
   resultCount: number;
   outcome: SearchOutcome;
   errorCode?: string;
+  /** El precio de venta más bajo que trajo, en `priceCurrency` (calendario de precios, 0094). */
+  minPriceMinor?: number;
+  priceCurrency?: string;
 }
 
 export interface SearchRecord {
@@ -124,6 +132,9 @@ export class SearchTelemetryService {
             outcome: slice.outcome,
             error_code: slice.errorCode ?? null,
             criteria,
+            ...(slice.minPriceMinor === undefined || slice.priceCurrency === undefined
+              ? {}
+              : { min_price_minor: slice.minPriceMinor, price_currency: slice.priceCurrency }),
           })),
         )
         .execute();
@@ -132,6 +143,59 @@ export class SearchTelemetryService {
         `no se pudo registrar la búsqueda (${rec.vertical}, ${slices.length} proveedor/es)`,
       );
     }
+  }
+
+  /**
+   * Calendario de precios ±3 días (docs/platform/18, 0094): el mínimo de venta por día de salida
+   * de lo que ESTA agencia buscó en las últimas 72 h. Cero llamadas al proveedor; son precios
+   * estimados y la pantalla lo dice. Días sin búsquedas vuelven sin precio.
+   */
+  async priceCalendar(
+    tenantId: string,
+    q: {
+      origin: string;
+      destination: string;
+      departureDate: string;
+      returnDate?: string;
+      cabin: string;
+      currency: string;
+      paxCount: { adults: number; children: number; infants: number };
+    },
+  ): Promise<{ currency: string; days: { date: string; minPriceMinor: number | null }[] }> {
+    const center = Date.parse(`${q.departureDate}T00:00:00Z`);
+    const day = (offset: number) =>
+      new Date(center + offset * 86_400_000).toISOString().slice(0, 10);
+    const stay =
+      q.returnDate === undefined
+        ? null
+        : Math.round((Date.parse(`${q.returnDate}T00:00:00Z`) - center) / 86_400_000);
+    const from = day(-PRICE_CALENDAR_SPAN_DAYS);
+    const to = day(PRICE_CALENDAR_SPAN_DAYS);
+
+    const res = await sql<{ departure_date: string | Date; min_price_minor: string | number }>`
+      SELECT departure_date, min_price_minor
+      FROM flight_price_calendar(
+        ${tenantId}::uuid, ${q.origin}, ${q.destination}, ${q.cabin}, ${q.currency},
+        ${from}::date, ${to}::date, ${stay}::int,
+        ${q.paxCount.adults}::int, ${q.paxCount.children}::int, ${q.paxCount.infants}::int,
+        ${PRICE_CALENDAR_MAX_AGE_HOURS}::int
+      )
+    `.execute(this.db.db);
+
+    const byDate = new Map(
+      res.rows.map((row) => [
+        typeof row.departure_date === 'string'
+          ? row.departure_date.slice(0, 10)
+          : row.departure_date.toISOString().slice(0, 10),
+        Number(row.min_price_minor),
+      ]),
+    );
+    const days = [];
+    for (let i = -PRICE_CALENDAR_SPAN_DAYS; i <= PRICE_CALENDAR_SPAN_DAYS; i += 1) {
+      const date = day(i);
+      days.push({ date, minPriceMinor: byDate.get(date) ?? null });
+    }
+    return { currency: q.currency, days };
   }
 
   /**

@@ -55,3 +55,24 @@ export const MoreFaresBodySchema = z
   })
   .strict();
 export type MoreFaresBody = z.infer<typeof MoreFaresBodySchema>;
+
+const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Calendario de precios ±3 días (0094): la búsqueda reducida, sin pasajeros ni moneda. */
+export const PriceCalendarBodySchema = z
+  .object({
+    origin: z.string().regex(/^[A-Z]{3}$/),
+    destination: z.string().regex(/^[A-Z]{3}$/),
+    departureDate: IsoDate,
+    returnDate: IsoDate.optional(),
+    cabin: z.string().min(1).max(20),
+    paxCount: z
+      .object({
+        adults: z.number().int().min(1).max(9),
+        children: z.number().int().min(0).max(9),
+        infants: z.number().int().min(0).max(9),
+      })
+      .strip(),
+  })
+  .strict();
+export type PriceCalendarBody = z.infer<typeof PriceCalendarBodySchema>;

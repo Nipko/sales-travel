@@ -547,3 +547,53 @@ export async function searchMoreFaresAction(request: {
   if (!res.ok) return { ok: false, supported: false, offers: [], error: res.error.message };
   return { ok: true, supported: res.data.supported, offers: res.data.offers };
 }
+
+/** Un día del calendario de precios: el mínimo estimado de lo que la agencia ya buscó. */
+export interface PriceCalendarDay {
+  date: string;
+  minPriceMinor: number | null;
+}
+
+export interface PriceCalendarResult {
+  ok: boolean;
+  currency?: string;
+  days: PriceCalendarDay[];
+}
+
+/**
+ * Calendario de precios ±3 días (docs/platform/18): sale de la telemetría de la agencia, no del
+ * proveedor. Si falla, la pantalla simplemente no lo muestra.
+ */
+export async function priceCalendarAction(criteria: {
+  origin: string;
+  destination: string;
+  departureDate: string;
+  returnDate?: string;
+  cabin: string;
+  paxCount: { adults: number; children: number; infants: number };
+}): Promise<PriceCalendarResult> {
+  try {
+    const res = await api<{ currency: string; days: PriceCalendarDay[] }>(
+      '/search/flights/price-calendar',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          origin: criteria.origin,
+          destination: criteria.destination,
+          departureDate: criteria.departureDate,
+          ...(criteria.returnDate ? { returnDate: criteria.returnDate } : {}),
+          cabin: criteria.cabin,
+          paxCount: {
+            adults: criteria.paxCount.adults,
+            children: criteria.paxCount.children,
+            infants: criteria.paxCount.infants,
+          },
+        }),
+      },
+    );
+    if (!res.ok) return { ok: false, days: [] };
+    return { ok: true, currency: res.data.currency, days: res.data.days };
+  } catch {
+    return { ok: false, days: [] };
+  }
+}
