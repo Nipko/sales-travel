@@ -626,20 +626,61 @@ export class SearchService {
     tenantId: string,
     homeCurrency: string = criteria.currency,
   ): Promise<{ supported: boolean; offers: Offer[] }> {
-    const first = request.known[0];
-    if (first === undefined) return { supported: true, offers: [] };
+    if (request.known.length === 0) return { supported: true, offers: [] };
     const ajenas = [...request.known, ...(request.outbound ? [request.outbound] : [])].some(
       (offer) => offer.tenantId !== tenantId,
     );
     if (ajenas) throw new BadRequestException('La oferta no pertenece a la agencia activa.');
-    if (request.known.some((offer) => offer.provider.name !== first.provider.name)) {
-      throw new BadRequestException('Las tarifas de un vuelo vienen de un solo proveedor.');
+
+    // El mismo vuelo puede venir de dos proveedores (Sabre y LATAM NDC venden el mismo LA 4117):
+    // se reparte por proveedor y sólo se consulta a los que saben pedir más tarifas.
+    const porProveedor = new Map<string, Offer[]>();
+    for (const offer of request.known) {
+      porProveedor.set(offer.provider.name, [
+        ...(porProveedor.get(offer.provider.name) ?? []),
+        offer,
+      ]);
     }
 
-    const provider = await this.registry.byCodeForOffer(tenantId, first.provider.name);
-    const searchMoreFares = provider.adapter.searchMoreFares?.bind(provider.adapter);
-    if (searchMoreFares === undefined) return { supported: false, offers: [] };
+    let supported = false;
+    const offers: Offer[] = [];
+    const errores: unknown[] = [];
+    for (const [code, known] of porProveedor) {
+      const provider = await this.registry.byCodeForOffer(tenantId, code);
+      const searchMoreFares = provider.adapter.searchMoreFares?.bind(provider.adapter);
+      if (searchMoreFares === undefined) continue;
+      supported = true;
+      // Cada proveedor en la moneda en que cotizó sus ofertas, no en la del primero de la lista.
+      const providerCriteria = { ...criteria, currency: known[0]!.total.currency };
+      const providerRequest = { ...request, known };
+      try {
+        offers.push(
+          ...(await this.moreFaresOf(
+            provider,
+            providerCriteria,
+            providerRequest,
+            tenantId,
+            homeCurrency,
+            searchMoreFares,
+          )),
+        );
+      } catch (err) {
+        errores.push(err);
+      }
+    }
+    // Si todos los que sabían fallaron, el error sube; si alguno trajo, se devuelve lo que hay.
+    if (errores.length > 0 && offers.length === 0) throw errores[0];
+    return { supported, offers };
+  }
 
+  private async moreFaresOf(
+    provider: ResolvedProvider<FlightProviderAdapter>,
+    criteria: FlightSearchCriteria,
+    request: FlightMoreFaresRequest,
+    tenantId: string,
+    homeCurrency: string,
+    searchMoreFares: NonNullable<FlightProviderAdapter['searchMoreFares']>,
+  ): Promise<Offer[]> {
     const digest = createHash('sha256')
       .update(
         JSON.stringify({
@@ -656,17 +697,17 @@ export class SearchService {
       .slice(0, 24);
     const key = `search:fares:${tenantId}:${provider.code}:${digest}`;
     const cached = await this.cache.get<Offer[]>(key);
-    if (cached) return { supported: true, offers: cached };
+    if (cached) return cached;
 
     return this.singleFlight(key, async () => {
       await this.telemetry.assertWithinQuota(tenantId);
-      const offers = await this.breaker.execute(provider.code, () =>
+      const found = await this.breaker.execute(provider.code, () =>
         searchMoreFares(criteria, request, { tenantId }),
       );
-      const stamped = offers.map((offer) => stampProviderEnvironment(offer, provider.environment));
+      const stamped = found.map((offer) => stampProviderEnvironment(offer, provider.environment));
       const priced = await this.withPricing(stamped, tenantId, 'flights', homeCurrency);
       await this.cache.set(key, priced, MORE_FARES_CACHE_TTL_SECONDS);
-      return { supported: true, offers: priced };
+      return priced;
     });
   }
 
