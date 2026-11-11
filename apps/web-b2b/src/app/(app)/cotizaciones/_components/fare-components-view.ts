@@ -90,9 +90,17 @@ function componentLegLabel(
 ): string {
   if (indexes.length !== 1) {
     if (indexes.length === 0) return 'Componente';
-    return isRoundTripLegs(itineraries) ? 'Ida y vuelta' : 'Varios tramos';
+    if (isRoundTripLegs(itineraries)) return 'Ida y vuelta';
+    return legNumbersLabel(indexes);
   }
   return legLabel(itineraries, indexes[0] ?? 0) ?? 'Trayecto';
+}
+
+/** «Tramos 1 y 2», «Tramos 1, 2 y 3»: una tarifa que Sabre construyó sobre varios tramos. */
+export function legNumbersLabel(indexes: readonly number[]): string {
+  const numbers = [...new Set(indexes)].sort((a, b) => a - b).map((index) => String(index + 1));
+  if (numbers.length === 1) return `Tramo ${numbers[0] ?? ''}`;
+  return `Tramos ${numbers.slice(0, -1).join(', ')} y ${numbers.at(-1) ?? ''}`;
 }
 
 function distinctCode(code: string | undefined, name: string): string | undefined {

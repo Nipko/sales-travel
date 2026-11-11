@@ -69,7 +69,7 @@ export function MultiCityFields({
                   </button>
                 ) : null}
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
                 <div className="rounded-lg border border-[var(--color-border)] px-3 py-1.5">
                   <AirportCombobox
                     // El origen de un tramo nuevo sale del destino del anterior: la clave lo
@@ -129,6 +129,7 @@ export function MultiCityFields({
                   triggerId={legFieldId(index, 'date')}
                   startName={`leg${String(index)}Date`}
                   startLabel="Fecha"
+                  className="sm:col-span-2 md:col-span-1"
                 />
               </div>
             </li>

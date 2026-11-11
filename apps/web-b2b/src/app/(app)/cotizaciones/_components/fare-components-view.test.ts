@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '../actions';
-import { fareComponentsForDisplay, fareFamilySummary } from './fare-components-view';
+import {
+  fareComponentsForDisplay,
+  fareFamilySummary,
+  legNumbersLabel,
+} from './fare-components-view';
 
 function roundTrip(): Pick<Offer, 'fareComponents' | 'fareFamily' | 'itineraries'> {
   return {
@@ -77,5 +81,13 @@ describe('fareComponentsForDisplay', () => {
     expect(
       fareFamilySummary({ fareFamily: { name: 'Basic', cabin: 'economy' }, itineraries: [] }),
     ).toBe('Basic');
+  });
+});
+
+describe('legNumbersLabel', () => {
+  it('nombra los tramos que cubre una tarifa de multidestino', () => {
+    expect(legNumbersLabel([1, 0])).toBe('Tramos 1 y 2');
+    expect(legNumbersLabel([0, 1, 2])).toBe('Tramos 1, 2 y 3');
+    expect(legNumbersLabel([2])).toBe('Tramo 3');
   });
 });
