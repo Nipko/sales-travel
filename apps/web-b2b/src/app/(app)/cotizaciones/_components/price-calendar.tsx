@@ -13,7 +13,12 @@ const DAY_MONTH = new Intl.DateTimeFormat('es-CO', {
 
 function parts(date: string): { weekday: string; dayMonth: string } {
   const d = new Date(`${date}T12:00:00Z`);
-  return { weekday: WEEKDAY.format(d).replace('.', ''), dayMonth: DAY_MONTH.format(d) };
+  const weekday = WEEKDAY.format(d).replace('.', '');
+  // Sólo el día de la semana va con mayúscula, y sin el «de» entre el día y el mes.
+  return {
+    weekday: weekday.charAt(0).toUpperCase() + weekday.slice(1),
+    dayMonth: DAY_MONTH.format(d).replace(' de ', ' ').replace('.', ''),
+  };
 }
 
 /**
@@ -86,7 +91,7 @@ export function PriceCalendar({
                 cell.past && 'cursor-not-allowed opacity-40',
               )}
             >
-              <span className="text-[11px] font-medium capitalize text-[var(--color-fg-muted)]">
+              <span className="text-[11px] font-medium text-[var(--color-fg-muted)]">
                 {weekday} <span className="hidden sm:inline">{dayMonth}</span>
               </span>
               <span

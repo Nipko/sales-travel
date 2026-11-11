@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Offer } from '../actions';
 import type { FlightGroup } from './flight-row';
-import { findHighlights, groupDuration, highlightTags } from './result-highlights';
+import {
+  findHighlights,
+  groupDuration,
+  highlightTags,
+  preferSaleCurrency,
+} from './result-highlights';
 
 function group(key: string, amountMinor: number, durations: number[]): FlightGroup {
   const offer = {
@@ -53,5 +58,15 @@ describe('con monedas mezcladas', () => {
     (brl.offers[0] as { taxes: { currency: string } }).taxes.currency = 'BRL';
     const groups = [cop('a', 258983000), cop('b', 300000000), brl];
     expect(findHighlights(groups).cheapest?.key).toBe('a');
+  });
+});
+
+describe('tarifas de un mismo vuelo en dos monedas', () => {
+  it('primero la de la moneda de venta, aunque la cifra en otra moneda sea menor', () => {
+    const cop = group('cop', 113870000, [100]).offers[0]!;
+    const brl = group('brl', 173443, [100]).offers[0]!;
+    (brl as { total: { currency: string } }).total.currency = 'BRL';
+    const [g] = preferSaleCurrency([{ key: 'LA4117', offers: [brl, cop] }], 'COP');
+    expect(g!.offers[0]!.total.currency).toBe('COP');
   });
 });

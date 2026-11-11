@@ -69,6 +69,7 @@ import {
   groupPrice,
   highlightTags,
   mainCurrency,
+  preferSaleCurrency,
 } from './_components/result-highlights';
 import type { SortHighlights } from './_components/results-header';
 
@@ -463,7 +464,10 @@ export default function CotizacionesPage() {
   const allGroups = useMemo(
     () =>
       sortGroups(
-        roundTrip ? groupByLeg(offers, 0) : groupOffersByFlight(offers),
+        preferSaleCurrency(
+          roundTrip ? groupByLeg(offers, 0) : groupOffersByFlight(offers),
+          result.saleCurrency,
+        ),
         sort,
         roundTrip ? 0 : undefined,
         result.saleCurrency,

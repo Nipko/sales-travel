@@ -106,3 +106,26 @@ export function highlightTags(
   add(highlights.fastest, 'Más rápido');
   return tags;
 }
+
+/**
+ * Ordena las tarifas DENTRO de cada vuelo: primero las de la moneda de venta, y por precio de venta.
+ *
+ * El mismo vuelo llega por Sabre en COP y por LATAM NDC en BRL; ordenadas por la cifra, «1.734»
+ * (BRL) le ganaba a «1.138.700» (COP) y la tarjeta mostraba el precio en reales escondiendo la
+ * tarifa en pesos, que era la más barata de toda la búsqueda.
+ */
+export function preferSaleCurrency(
+  groups: readonly FlightGroup[],
+  currency: string | undefined,
+): FlightGroup[] {
+  if (currency === undefined) return [...groups];
+  return groups.map((group) => ({
+    ...group,
+    offers: [...group.offers].sort((a, b) => {
+      const offA = a.total.currency === currency ? 0 : 1;
+      const offB = b.total.currency === currency ? 0 : 1;
+      if (offA !== offB) return offA - offB;
+      return saleBreakdown(a).sellMinor - saleBreakdown(b).sellMinor;
+    }),
+  }));
+}
