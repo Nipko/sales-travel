@@ -2,13 +2,14 @@
 
 import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { searchReturnsAction, type Offer } from '../actions';
+import { searchMoreFaresAction, searchReturnsAction, type Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { airlineName } from './airline-names';
 import type { FareChoiceMode } from './fare-family-matrix';
 import { AirlineLogo, FlightRow, type FlightGroup } from './flight-row';
 import { groupByLeg, legFare, mergeReturns, returnsFromSearch } from './leg-selection';
+import { mergeOffers, singleCarrier } from './more-fares';
 
 /** Los criterios de la búsqueda que produjo los resultados (los mismos de la cotización). */
 export interface RoundTripCriteria {
@@ -25,6 +26,10 @@ interface RoundTripFlowProps {
   outboundGroups: FlightGroup[];
   /** Todas las combinaciones de la búsqueda: la red si no se pueden consultar las vueltas. */
   allOffers: Offer[];
+  /** Cambia con cada búsqueda nueva (y sólo entonces): ahí se vuelve a empezar por la ida. */
+  searchKey: unknown;
+  /** Más tarifas de una ida, al abrirla (docs/platform/18). */
+  onLoadMoreFares?: (group: FlightGroup, leg: number) => Promise<'ok' | 'error'>;
   criteria: RoundTripCriteria;
   showProvider: boolean;
   /** Filtros y cabecera de la lista de idas: sólo tienen sentido en el paso 1. */
@@ -70,6 +75,8 @@ type Returns = { status: 'loading' } | { status: 'ready'; offers: Offer[]; notic
 export function RoundTripFlow({
   outboundGroups,
   allOffers,
+  searchKey,
+  onLoadMoreFares,
   criteria,
   showProvider,
   outboundHeader,
@@ -88,12 +95,39 @@ export function RoundTripFlow({
   // Una respuesta que llega tarde de una ida ya cambiada no puede pisar la de la ida actual.
   const pedido = useRef(0);
 
-  // Una búsqueda nueva empieza otra vez por la ida.
+  // Una búsqueda nueva empieza otra vez por la ida. NO las tarifas que se suman al abrir un vuelo:
+  // por eso la clave es la búsqueda y no la lista de ofertas.
   useEffect(() => {
     pedido.current += 1;
     setOutbound(null);
     setReturns({ status: 'loading' });
-  }, [allOffers]);
+  }, [searchKey]);
+
+  /** Más tarifas de una vuelta, con la ida elegida fija. */
+  const loadMoreReturnFares = useCallback(
+    async (group: FlightGroup): Promise<'ok' | 'error'> => {
+      const carrier = singleCarrier(group.offers[0]);
+      if (outbound === null) return 'error';
+      if (carrier === null) return 'ok';
+      const res = await searchMoreFaresAction({
+        known: group.offers,
+        carrier,
+        leg: 1,
+        criteria,
+        outbound,
+      });
+      if (!res.ok) return 'error';
+      if (res.offers.length > 0) {
+        setReturns((current) =>
+          current.status === 'ready'
+            ? { ...current, offers: mergeOffers(current.offers, res.offers) }
+            : current,
+        );
+      }
+      return 'ok';
+    },
+    [outbound, criteria],
+  );
 
   const chooseOutbound = useCallback(
     async (offer: Offer) => {
@@ -158,6 +192,7 @@ export function RoundTripFlow({
                   {...(tagsFor?.(group) ? { tags: tagsFor(group) } : {})}
                   fareChoice={OUTBOUND_CHOICE}
                   onQuote={chooseOutbound}
+                  {...(onLoadMoreFares ? { onLoadMoreFares } : {})}
                 />
               </div>
             ))}
@@ -209,6 +244,7 @@ export function RoundTripFlow({
                       {...rowProps}
                       fareChoice={RETURN_CHOICE}
                       onQuote={onQuote}
+                      onLoadMoreFares={loadMoreReturnFares}
                     />
                   ))}
                 </div>

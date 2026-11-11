@@ -269,6 +269,19 @@ export const SABRE_BRAND_LADDER_DEFAULT = 2;
 export const SABRE_BRAND_LADDER_MAX = 4;
 
 /**
+ * Cuándo corre la escalera de marcas (docs/platform/18).
+ *
+ * `on-demand` (por defecto desde el 2026-11-11, decisión del founder): la búsqueda hace sólo la
+ * llamada base y las otras marcas de un vuelo se piden al abrir sus tarifas
+ * (`searchMoreFares`), acotadas a esa aerolínea. La mayoría de las búsquedas no se venden: con la
+ * escalera en cada búsqueda se pagaban hasta 13 consultas antes de saber si alguien iba a abrir
+ * una tarjeta. `eager` deja la escalera completa en la búsqueda, como antes.
+ */
+export const SABRE_BRAND_LADDER_MODES = ['on-demand', 'eager'] as const;
+export type SabreBrandLadderMode = (typeof SABRE_BRAND_LADDER_MODES)[number];
+export const SABRE_BRAND_LADDER_MODE_DEFAULT: SabreBrandLadderMode = 'on-demand';
+
+/**
  * ¿Se piden los atributos de la marca (`ReturnBrandAncillaries`, ATPCO Table 166, `v5.yml:7972`)?
  *
  * Es lo que dice qué incluye la tarifa de CADA trayecto —maleta, cambios, reembolso, asiento—
@@ -590,6 +603,8 @@ export const SabreShopOptionsSchema = z.object({
     .min(0)
     .max(SABRE_BRAND_LADDER_MAX)
     .default(SABRE_BRAND_LADDER_DEFAULT),
+  /** Ver {@link SABRE_BRAND_LADDER_MODE_DEFAULT}. Lo consume el adapter, como las rondas. */
+  brandLadder: z.enum(SABRE_BRAND_LADDER_MODES).default(SABRE_BRAND_LADDER_MODE_DEFAULT),
   upsellLimit: z.number().int().min(0).default(SABRE_DEFAULT_UPSELL_LIMIT),
   /** Ver {@link SABRE_BRAND_ANCILLARIES_DEFAULT}. Lo apaga el adapter si Sabre lo rechaza. */
   brandAncillaries: z.boolean().default(SABRE_BRAND_ANCILLARIES_DEFAULT),

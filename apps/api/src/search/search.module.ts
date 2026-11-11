@@ -8,6 +8,7 @@ import { SearchService } from './search.service.js';
 import { SearchTelemetryService } from './search-telemetry.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { MemoryCacheAdapter } from './memory-cache.adapter.js';
+import { SEARCH_CACHE, SearchCacheAdapter } from './search-cache.adapter.js';
 
 /**
  * `ProviderEnablementModule` por el almacén de los apagados de emergencia del panel (0077), que el
@@ -16,7 +17,14 @@ import { MemoryCacheAdapter } from './memory-cache.adapter.js';
 @Module({
   imports: [ProvidersModule, PricingModule, ProviderDisclosureModule, ProviderEnablementModule],
   controllers: [SearchController],
-  providers: [SearchService, SearchTelemetryService, CircuitBreakerService, MemoryCacheAdapter],
+  providers: [
+    SearchService,
+    SearchTelemetryService,
+    CircuitBreakerService,
+    MemoryCacheAdapter,
+    SearchCacheAdapter,
+    { provide: SEARCH_CACHE, useExisting: SearchCacheAdapter },
+  ],
   exports: [SearchTelemetryService, CircuitBreakerService, MemoryCacheAdapter],
 })
 export class SearchModule {}

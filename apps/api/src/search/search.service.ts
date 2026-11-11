@@ -1,7 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import type { CachePort } from '@sales-travel/core';
 import { createHash } from 'node:crypto';
 import type { Offer, SeatMap } from '@sales-travel/canonical';
-import type { FlightSearchCriteria, OfferPriceResult } from '@sales-travel/domain';
+import type {
+  FlightMoreFaresRequest,
+  FlightSearchCriteria,
+  OfferPriceResult,
+} from '@sales-travel/domain';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import {
   AllFlightProvidersFailedError,
@@ -19,12 +24,20 @@ import { isTestOffer, stampProviderEnvironment } from '../providers/provider-env
 import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService, type ProviderSearchSlice } from './search-telemetry.service.js';
-import { MemoryCacheAdapter } from './memory-cache.adapter.js';
+import { SEARCH_CACHE } from './search-cache.adapter.js';
 import { dedupeFlightOffers } from './offer-dedupe.js';
 import { fanOut, type ProviderRun } from './provider-fanout.js';
 
 /** Ventana de conveniencia. Corta a proposito: las tarifas cambian. */
-const SEARCH_CACHE_TTL_SECONDS = 90;
+/**
+ * 10 minutos (docs/platform/18). Es seguro porque el precio se revalida con el proveedor al elegir
+ * la tarifa (`offer-price`) antes de reservar: la caché sólo evita repetir la BÚSQUEDA, que es lo
+ * que se paga y casi nunca se vende. Antes eran 90 s en memoria y se perdían en cada deploy.
+ */
+const SEARCH_CACHE_TTL_SECONDS = 600;
+
+/** Más tarifas de un vuelo: misma ventana que la búsqueda de la que salen. */
+const MORE_FARES_CACHE_TTL_SECONDS = 600;
 
 /**
  * Por debajo de esta cantidad de ofertas, la primera ola se considera insuficiente y se
@@ -194,8 +207,22 @@ export class SearchService {
     private readonly pricing: PricingService,
     private readonly telemetry: SearchTelemetryService,
     private readonly breaker: CircuitBreakerService,
-    private readonly cache: MemoryCacheAdapter,
+    @Inject(SEARCH_CACHE) private readonly cache: CachePort,
   ) {}
+
+  /**
+   * Búsquedas en vuelo por clave de caché: dos idénticas a la vez (dos vendedores, un doble clic)
+   * esperan la misma respuesta en vez de salir dos veces al proveedor (docs/platform/18).
+   */
+  private readonly inFlight = new Map<string, Promise<unknown>>();
+
+  private singleFlight<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const pending = this.inFlight.get(key);
+    if (pending) return pending as Promise<T>;
+    const started = run().finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, started);
+    return started;
+  }
 
   /**
    * Búsqueda de vuelos con fan-out por proveedor.
@@ -230,6 +257,20 @@ export class SearchService {
     const cached = await this.cache.get<FlightSearchResponse>(cacheKey);
     if (cached) return cached;
 
+    return this.singleFlight(cacheKey, () =>
+      this.searchAndCache(criteria, tenantId, policy, cacheKey, active, skipped, unavailable),
+    );
+  }
+
+  private async searchAndCache(
+    criteria: FlightSearchCriteria,
+    tenantId: string,
+    policy: SaleCurrencyPolicy,
+    cacheKey: string,
+    active: ResolvedProvider<FlightProviderAdapter>[],
+    skipped: SkippedProvider[],
+    unavailable: UnavailableProvider[],
+  ): Promise<FlightSearchResponse> {
     // Latencia POR PROVEEDOR. Vive acá, en el ámbito de esta búsqueda, y no en un campo del
     // servicio: dos búsquedas concurrentes del mismo tenant se pisarían las medidas.
     const durations = new Map<string, number>();
@@ -569,6 +610,64 @@ export class SearchService {
       supported: true,
       offers: await this.withPricing(stamped, tenantId, 'flights', homeCurrency),
     };
+  }
+
+  /**
+   * Más tarifas de UN vuelo, al abrir sus tarifas (docs/platform/18).
+   *
+   * La búsqueda trae sólo la tarifa base de cada vuelo; las otras marcas se pagan cuando el
+   * vendedor abre ese vuelo, acotadas a su aerolínea. Enruta por el proveedor de las
+   * ofertas de partida; un proveedor sin la capacidad devuelve `supported: false` y la pantalla se
+   * queda con lo que ya tiene. Misma caché de 10 minutos y llamada única que la búsqueda.
+   */
+  async searchMoreFares(
+    criteria: FlightSearchCriteria,
+    request: FlightMoreFaresRequest,
+    tenantId: string,
+    homeCurrency: string = criteria.currency,
+  ): Promise<{ supported: boolean; offers: Offer[] }> {
+    const first = request.known[0];
+    if (first === undefined) return { supported: true, offers: [] };
+    const ajenas = [...request.known, ...(request.outbound ? [request.outbound] : [])].some(
+      (offer) => offer.tenantId !== tenantId,
+    );
+    if (ajenas) throw new BadRequestException('La oferta no pertenece a la agencia activa.');
+    if (request.known.some((offer) => offer.provider.name !== first.provider.name)) {
+      throw new BadRequestException('Las tarifas de un vuelo vienen de un solo proveedor.');
+    }
+
+    const provider = await this.registry.byCodeForOffer(tenantId, first.provider.name);
+    const searchMoreFares = provider.adapter.searchMoreFares?.bind(provider.adapter);
+    if (searchMoreFares === undefined) return { supported: false, offers: [] };
+
+    const digest = createHash('sha256')
+      .update(
+        JSON.stringify({
+          criteria,
+          carrier: request.carrier,
+          leg: request.leg,
+          known: request.known.map((o) => o.id).sort(),
+          outbound: request.outbound?.id ?? null,
+          env: provider.environment,
+          home: homeCurrency,
+        }),
+      )
+      .digest('hex')
+      .slice(0, 24);
+    const key = `search:fares:${tenantId}:${provider.code}:${digest}`;
+    const cached = await this.cache.get<Offer[]>(key);
+    if (cached) return { supported: true, offers: cached };
+
+    return this.singleFlight(key, async () => {
+      await this.telemetry.assertWithinQuota(tenantId);
+      const offers = await this.breaker.execute(provider.code, () =>
+        searchMoreFares(criteria, request, { tenantId }),
+      );
+      const stamped = offers.map((offer) => stampProviderEnvironment(offer, provider.environment));
+      const priced = await this.withPricing(stamped, tenantId, 'flights', homeCurrency);
+      await this.cache.set(key, priced, MORE_FARES_CACHE_TTL_SECONDS);
+      return { supported: true, offers: priced };
+    });
   }
 
   /**

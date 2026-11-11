@@ -39,3 +39,19 @@ export const ReturnSearchBodySchema = z
   })
   .strict();
 export type ReturnSearchBody = z.infer<typeof ReturnSearchBodySchema>;
+
+/**
+ * Más tarifas de UN vuelo (docs/platform/18): las ofertas que la pantalla ya tiene de ese vuelo
+ * (pocas: las de un solo itinerario), su aerolínea y el trayecto cuya marca se mueve. Con
+ * `leg: 1`, la ida elegida.
+ */
+export const MoreFaresBodySchema = z
+  .object({
+    searchCriteria: FlightSearchCriteriaSchema,
+    carrier: z.string().regex(/^[A-Z0-9]{2,3}$/),
+    leg: z.number().int().min(0).max(1),
+    known: z.array(OfferSchema).min(1).max(20),
+    outbound: OfferSchema.optional(),
+  })
+  .strict();
+export type MoreFaresBody = z.infer<typeof MoreFaresBodySchema>;

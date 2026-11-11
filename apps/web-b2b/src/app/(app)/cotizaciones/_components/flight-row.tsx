@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
@@ -59,6 +59,11 @@ interface FlightRowProps {
   fareChoice?: FareChoiceMode;
   /** Lo que la lista destaca de este vuelo: «Más barato», «Más rápido». */
   tags?: readonly string[];
+  /**
+   * Pide las otras tarifas de este vuelo al proveedor (docs/platform/18): la búsqueda trae sólo la
+   * base y las marcas se pagan al abrir la tarjeta. Resuelve cuando la pantalla ya sumó lo nuevo.
+   */
+  onLoadMoreFares?: (group: FlightGroup, leg: number) => Promise<'ok' | 'error'>;
 }
 
 /* ---------------------------------------------------------------------------
@@ -532,7 +537,16 @@ function PricePanel({
 }
 
 /** El llamado a la acción de la tarjeta. Es un `span`: toda la cabecera ya es el botón. */
-function OpenFaresCue({ fares, expanded }: { fares: number; expanded: boolean }) {
+function OpenFaresCue({
+  fares,
+  expanded,
+  mayHaveMore,
+}: {
+  fares: number;
+  expanded: boolean;
+  /** Todavía no se pidieron las otras marcas: no se puede decir cuántas tarifas hay. */
+  mayHaveMore: boolean;
+}) {
   return (
     <span
       className={cn(
@@ -542,7 +556,13 @@ function OpenFaresCue({ fares, expanded }: { fares: number; expanded: boolean })
           : 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)]',
       )}
     >
-      {expanded ? 'Ocultar tarifas' : fares > 1 ? `Ver ${fares} tarifas` : 'Ver tarifa'}
+      {expanded
+        ? 'Ocultar tarifas'
+        : mayHaveMore
+          ? 'Ver tarifas'
+          : fares > 1
+            ? `Ver ${fares} tarifas`
+            : 'Ver tarifa'}
       <ChevronDown
         aria-hidden="true"
         className={cn('size-4 transition-transform', expanded && 'rotate-180')}
@@ -561,8 +581,10 @@ export function FlightRow({
   showProvider = false,
   fareChoice,
   tags,
+  onLoadMoreFares,
 }: FlightRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [moreFares, setMoreFares] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const panelId = useId();
   const cheapest = group.offers[0];
   const allItineraries = cheapest?.itineraries ?? [];
@@ -606,7 +628,17 @@ export function FlightRow({
           `:focus-visible` es la única señal de quien navega con teclado. */}
       <button
         type="button"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          const next = !expanded;
+          setExpanded(next);
+          // Se pagan las otras marcas sólo al abrir, y una sola vez por tarjeta.
+          if (next && onLoadMoreFares && moreFares === 'idle') {
+            setMoreFares('loading');
+            void onLoadMoreFares(group, fareChoice?.leg ?? 0).then((r) =>
+              setMoreFares(r === 'ok' ? 'done' : 'error'),
+            );
+          }
+        }}
         aria-expanded={expanded}
         aria-controls={panelId}
         className="block w-full cursor-pointer text-left"
@@ -692,7 +724,11 @@ export function FlightRow({
               {...(fareChoice ? { fareChoice } : {})}
             />
             {/* «Elegir» sólo está dentro: la invitación va siempre, también con una sola tarifa. */}
-            <OpenFaresCue fares={fares.length} expanded={expanded} />
+            <OpenFaresCue
+              fares={fares.length}
+              expanded={expanded}
+              mayHaveMore={onLoadMoreFares !== undefined && moreFares === 'idle'}
+            />
           </div>
         </div>
       </button>
@@ -700,6 +736,19 @@ export function FlightRow({
       <div id={panelId} hidden={!expanded}>
         {expanded ? (
           <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 p-4 sm:p-5">
+            {moreFares === 'loading' ? (
+              <p
+                role="status"
+                className="mb-3 flex items-center gap-2 text-xs font-medium text-[var(--color-fg-muted)]"
+              >
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                Buscando más tarifas de este vuelo…
+              </p>
+            ) : moreFares === 'error' ? (
+              <p role="status" className="mb-3 text-xs font-medium text-[var(--color-fg-muted)]">
+                No se pudieron consultar más tarifas: se muestran las que ya hay.
+              </p>
+            ) : null}
             <FareFamilyMatrix
               fares={fares}
               formatMoney={formatMoney}

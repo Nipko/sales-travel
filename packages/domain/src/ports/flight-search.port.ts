@@ -144,6 +144,28 @@ export interface FlightReturnSearchPort {
   ): Promise<Offer[]>;
 }
 
+/**
+ * Más tarifas de UN vuelo, pedidas cuando el vendedor abre sus tarifas (docs/platform/18).
+ *
+ * `known` son las ofertas de ese vuelo que ya tiene la pantalla: el proveedor excluye sus marcas y
+ * trae las siguientes, acotado a `carrier`. Con `leg: 1`, `outbound` es la ida elegida, fija.
+ * Devuelve sólo ofertas NUEVAS; vacío si el proveedor no tiene más.
+ */
+export interface FlightMoreFaresRequest {
+  readonly carrier: string;
+  readonly leg: number;
+  readonly known: readonly Offer[];
+  readonly outbound?: Offer;
+}
+
+export interface FlightMoreFaresPort {
+  searchMoreFares(
+    criteria: FlightSearchCriteria,
+    request: FlightMoreFaresRequest,
+    ctx: SearchContext,
+  ): Promise<Offer[]>;
+}
+
 export interface SearchContext {
   tenantId: string;
   /** Para distinguir solicitudes en logs/tracing. */

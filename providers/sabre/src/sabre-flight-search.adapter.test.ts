@@ -1050,19 +1050,22 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     return json(payload);
   }
 
-  it('por defecto escala (2 rondas, docs/sabre/15 D1) y para en cuanto una ronda no trae nada nuevo', async () => {
+  it('en modo eager escala 2 rondas por defecto (docs/sabre/15 D1) y para en cuanto una ronda no trae nada nuevo', async () => {
     const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
-    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandLadder: 'eager' } }).search(
+      CRITERIA,
+      CTX,
+    );
     // La base y UNA ronda: la ronda devolvió la misma marca, así que la segunda no se paga.
     expect(spy.calls).toHaveLength(2);
   });
 
   it('con 0 rondas en la cuenta NO escala: cada ronda es una llamada y Sabre cobra por consulta', async () => {
     const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
-    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandLadderRounds: 0 } }).search(
-      CRITERIA,
-      CTX,
-    );
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 0 },
+    }).search(CRITERIA, CTX);
     expect(spy.calls).toHaveLength(1);
   });
 
@@ -1073,7 +1076,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 1 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 1 },
     }).search(CRITERIA, CTX);
 
     expect(spy.calls).toHaveLength(2);
@@ -1095,10 +1098,10 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
       n === 1 ? conMarca('MAIN', 'MAIN CABIN') : conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'),
     );
 
-    await adapter(config(), { fetch: spy.fetch, shopOptions: { brandLadderRounds: 1 } }).search(
-      CRITERIA,
-      CTX,
-    );
+    await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 1 },
+    }).search(CRITERIA, CTX);
 
     const rq = peticion(spy.calls[1]!.init);
     // Verificado en CERT: excluir LIGHT en la ida dio STANDARD/LIGHT (docs/sabre/15 §2.5).
@@ -1125,7 +1128,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 1 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 1 },
     }).search(CRITERIA, CTX);
 
     expect(spy.calls).toHaveLength(3);
@@ -1152,7 +1155,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 3 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 3 },
     }).search(CRITERIA, CTX);
 
     expect(spy.calls).toHaveLength(1);
@@ -1166,7 +1169,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
     await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 3 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 3 },
     }).search(CRITERIA, CTX);
 
     expect(spy.calls).toHaveLength(2);
@@ -1190,7 +1193,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandLadderRounds: 2 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 2 },
     }).search(CRITERIA, CTX);
 
     expect(offers.length).toBeGreaterThan(0);
@@ -1210,7 +1213,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     const offers = await adapter(config(), {
       fetch: spy.fetch,
       logger,
-      shopOptions: { brandLadderRounds: 3 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 3 },
     }).search(CRITERIA, CTX);
 
     const marcas = new Set(offers.map((offer) => offer.fareFamily?.name));
@@ -1228,7 +1231,7 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
     const spy = spyFetch(() => json(adultFixture));
     await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 3 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 3 },
     }).search(CRITERIA, CTX);
     expect(spy.calls).toHaveLength(1);
   });
@@ -1245,13 +1248,52 @@ describe('escalera de marcas: pedir la siguiente excluyendo la que ya tenemos', 
 
       await adapter(config(), {
         fetch: spy.fetch,
-        shopOptions: { brandLadderRounds: 1, ...ndc },
+        shopOptions: { brandLadder: 'eager', brandLadderRounds: 1, ...ndc },
       }).search(CRITERIA, CTX);
 
       expect(spy.calls).toHaveLength(2);
       expect(spy.calls.map((c) => fuentesPedidas(c.init).NDC)).toEqual([esperado, esperado]);
     },
   );
+  it('por defecto (por demanda) la búsqueda hace UNA llamada: las marcas se piden al abrir el vuelo', async () => {
+    const spy = spyFetch(() => conMarca('MAIN', 'MAIN CABIN'));
+    await adapter(config(), { fetch: spy.fetch }).search(CRITERIA, CTX);
+    expect(spy.calls).toHaveLength(1);
+  });
+
+  it('searchMoreFares: excluye las marcas de la pantalla, acota a la aerolínea y devuelve sólo lo nuevo', async () => {
+    const base = await adapter(config(), {
+      fetch: spyFetch(() => conMarca('MAIN', 'MAIN CABIN')).fetch,
+    }).search(CRITERIA, CTX);
+    const spy = spyFetch(() => conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'));
+
+    const nuevas = await adapter(config(), {
+      fetch: spy.fetch,
+      shopOptions: { brandLadderRounds: 1 },
+    }).searchMoreFares(CRITERIA, { carrier: 'LO', leg: 0, known: base }, CTX);
+
+    expect(spy.calls).toHaveLength(1);
+    const rq = peticion(spy.calls[0]!.init);
+    expect(rq.OriginDestinationInformation[0]?.TPA_Extensions?.BrandFilters).toEqual({
+      Brand: [{ Code: 'MAIN', PreferLevel: 'Unacceptable' }],
+    });
+    expect(nuevas.length).toBeGreaterThan(0);
+    expect(nuevas.every((o) => !base.some((b) => b.id === o.id))).toBe(true);
+  });
+
+  it('searchMoreFares: sin ofertas de esa aerolínea no llama a Sabre', async () => {
+    const base = await adapter(config(), {
+      fetch: spyFetch(() => conMarca('MAIN', 'MAIN CABIN')).fetch,
+    }).search(CRITERIA, CTX);
+    const spy = spyFetch(() => conMarca('MAINFL', 'MAIN CABIN FLEXIBLE'));
+    const nuevas = await adapter(config(), { fetch: spy.fetch }).searchMoreFares(
+      CRITERIA,
+      { carrier: 'DL', leg: 0, known: base },
+      CTX,
+    );
+    expect(nuevas).toEqual([]);
+    expect(spy.calls).toHaveLength(0);
+  });
 });
 
 /** `DataSources` tal como salió por el cable, leído del cuerpo serializado. */
@@ -1360,7 +1402,7 @@ describe('searchReturns: Anchored Search con la ida elegida', () => {
 
     await adapter(config(), {
       fetch: spy.fetch,
-      shopOptions: { brandLadderRounds: 1 },
+      shopOptions: { brandLadder: 'eager', brandLadderRounds: 1 },
     }).searchReturns(CRITERIA, outbound, CTX);
 
     expect(spy.calls).toHaveLength(2);

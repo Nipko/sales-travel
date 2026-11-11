@@ -1,6 +1,11 @@
 import type { CachePort, LoggerPort } from '@sales-travel/core';
 import type { Offer, Segment } from '@sales-travel/canonical';
-import type { FlightSearchCriteria, FlightSearchPort, SearchContext } from '@sales-travel/domain';
+import type {
+  FlightMoreFaresRequest,
+  FlightSearchCriteria,
+  FlightSearchPort,
+  SearchContext,
+} from '@sales-travel/domain';
 import { SabreTokenService, type SabreFetch, type SabreTokenProvider } from './auth/token.service';
 import { missingSabreCredentials, sabreConversationIdPrefix, type SabreConfig } from './config';
 import { SabreApiError, SabreConfigError } from './errors';
@@ -12,6 +17,7 @@ import {
   type SabreBrandedFaresMode,
   type SabreMultipleFaresMode,
   SABRE_BRAND_LADDER_DEFAULT,
+  SABRE_BRAND_LADDER_MODE_DEFAULT,
   SABRE_MULTIPLE_FARES_DEFAULT,
   SABRE_BRAND_ANCILLARIES_DEFAULT,
   SABRE_NDC_CONTENT_DEFAULT,
@@ -511,7 +517,9 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       criteria,
       ctx,
       opciones,
-      modo: modoActual,
+      // Por demanda, la búsqueda se queda con la llamada base: las otras marcas se piden al
+      // abrir las tarifas de un vuelo (`searchMoreFares`). Ver docs/platform/18.
+      modo: this.escaleraEnBusqueda(opciones) ? modoActual : 'off',
       multi: multiActual,
       ancillaries: atributosActual,
       httpOptions: opciones_http,
@@ -559,30 +567,13 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     if (outbound.tenantId !== ctx.tenantId) {
       throw new SabreConfigError('la ida elegida es de otro tenant');
     }
-    const ida = outbound.itineraries?.[0];
-    if (ida === undefined || ida.segments.length === 0) {
-      throw new SabreConfigError('la ida elegida no trae vuelos que fijar');
-    }
-    const fixedOutbound = ida.segments.map(vueloFijo);
-    const claveIda = claveDeTramo(outbound, 0);
     const opciones = this.deps.shopOptions ?? {};
-    const pedido = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
-    const modo =
-      this.brandedFaresTecho === null ? pedido : menorModo(pedido, this.brandedFaresTecho);
-    const marcaIda = modo === 'off' ? null : marcaDeTramo(outbound, 0);
+    const modo = this.modoDeMarcas(opciones);
+    const { scope, deLaIda } = this.anclaDeIda(outbound, modo);
     // Sin degradación propia: si la búsqueda inicial ya aprendió que el PCC los rechaza, aquí no
     // se piden; si esta llamada falla, el llamador cae a las combinaciones de la primera búsqueda.
     const atributos = this.pedirAtributosDeMarca(opciones);
-    const scope: SabreShopRequestScope = {
-      fixedOutbound,
-      ...(marcaIda === null ? {} : { legBrandFilters: [{ leg: 0, preferred: [marcaIda] }] }),
-    };
-    const httpOptions = {
-      idempotent: true as const,
-      ...(ctx.requestId === undefined
-        ? {}
-        : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
-    };
+    const httpOptions = this.httpOptionsDe(ctx);
 
     const result = await this.http.postJson<unknown>(
       SABRE_SHOP_PATH,
@@ -595,9 +586,6 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       httpOptions,
     );
     const mapped = this.mapear(result, criteria, ctx);
-    const deLaIda = (offer: Offer): boolean =>
-      claveDeTramo(offer, 0) === claveIda &&
-      (marcaIda === null || marcaDeTramo(offer, 0) === marcaIda);
     const base = mapped.offers.filter(deLaIda);
 
     const ofertas = await this.escaleraDeMarcas({
@@ -605,7 +593,7 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
       criteria,
       ctx,
       opciones,
-      modo,
+      modo: this.escaleraEnBusqueda(opciones) ? modo : 'off',
       multi: 'off',
       ancillaries: atributos,
       httpOptions,
@@ -614,6 +602,106 @@ export class SabreFlightSearchAdapter implements FlightSearchPort {
     });
     this.logMapping(mapped, result, ctx, { pidioMarcas: modo !== 'off', pidioNdc: false });
     return ofertas.filter(deLaIda);
+  }
+
+  /**
+   * Más tarifas de UN vuelo, al abrir sus tarifas (docs/platform/18).
+   *
+   * Es la escalera de siempre, pero acotada a la aerolínea de ese vuelo y pagada sólo cuando el
+   * vendedor mostró interés: excluye las marcas que la pantalla ya tiene (`known`) y trae las
+   * siguientes, hasta `brandLadderRounds` rondas. Con `leg: 1` la ida elegida va fija, como en
+   * {@link searchReturns}. Devuelve sólo lo nuevo; vacío si el PCC no publica marcas.
+   */
+  async searchMoreFares(
+    criteria: FlightSearchCriteria,
+    request: FlightMoreFaresRequest,
+    ctx: SearchContext,
+  ): Promise<Offer[]> {
+    if (request.known.some((offer) => offer.tenantId !== ctx.tenantId)) {
+      throw new SabreConfigError('las tarifas de partida son de otro tenant');
+    }
+    if (request.leg !== 0 && request.leg !== 1) {
+      throw new SabreConfigError('sólo se piden más tarifas de la ida o de la vuelta');
+    }
+    const opciones = this.deps.shopOptions ?? {};
+    const modo = this.modoDeMarcas(opciones);
+    if (modo === 'off') return [];
+
+    let scope: SabreShopRequestScope | undefined;
+    let deLaIda: (offer: Offer) => boolean = () => true;
+    if (request.leg === 1) {
+      if (criteria.returnDate === undefined || request.outbound === undefined) {
+        throw new SabreConfigError('las tarifas de la vuelta exigen la ida elegida');
+      }
+      if (request.outbound.tenantId !== ctx.tenantId) {
+        throw new SabreConfigError('la ida elegida es de otro tenant');
+      }
+      const ancla = this.anclaDeIda(request.outbound, modo);
+      scope = ancla.scope;
+      deLaIda = ancla.deLaIda;
+    }
+
+    const base = request.known.filter((offer) => carrierUnico(offer) === request.carrier);
+    if (base.length === 0) return [];
+    const vistas = new Set(base.map((offer) => offer.id));
+    const ofertas = await this.escaleraDeMarcas({
+      base,
+      criteria,
+      ctx,
+      opciones,
+      modo,
+      multi: 'off',
+      ancillaries: this.pedirAtributosDeMarca(opciones),
+      httpOptions: this.httpOptionsDe(ctx),
+      leg: request.leg,
+      ...(scope === undefined ? {} : { scope }),
+    });
+    return ofertas.filter((offer) => !vistas.has(offer.id) && deLaIda(offer));
+  }
+
+  /** ¿La escalera corre dentro de la búsqueda (`eager`) o por demanda? */
+  private escaleraEnBusqueda(opciones: SabreShopOptions): boolean {
+    return (opciones.brandLadder ?? SABRE_BRAND_LADDER_MODE_DEFAULT) === 'eager';
+  }
+
+  /** El modo de marcas de esta cuenta: lo pedido, recortado por lo que el PCC ya rechazó. */
+  private modoDeMarcas(opciones: SabreShopOptions): SabreBrandedFaresMode {
+    const pedido = opciones.brandedFares ?? SABRE_BRANDED_FARES_DEFAULT;
+    return this.brandedFaresTecho === null ? pedido : menorModo(pedido, this.brandedFaresTecho);
+  }
+
+  private httpOptionsDe(ctx: SearchContext): { idempotent: true; conversationId?: string } {
+    return {
+      idempotent: true as const,
+      ...(ctx.requestId === undefined
+        ? {}
+        : { conversationId: `${sabreConversationIdPrefix(this.cfg)}-${ctx.requestId}` }),
+    };
+  }
+
+  /**
+   * La ida elegida, fija para Anchored Search, con su marca como preferida; y el filtro que deja
+   * sólo las ofertas con exactamente esa ida (y esa marca): «Preferred» es una preferencia.
+   */
+  private anclaDeIda(
+    outbound: Offer,
+    modo: SabreBrandedFaresMode,
+  ): { scope: SabreShopRequestScope; deLaIda: (offer: Offer) => boolean } {
+    const ida = outbound.itineraries?.[0];
+    if (ida === undefined || ida.segments.length === 0) {
+      throw new SabreConfigError('la ida elegida no trae vuelos que fijar');
+    }
+    const claveIda = claveDeTramo(outbound, 0);
+    const marcaIda = modo === 'off' ? null : marcaDeTramo(outbound, 0);
+    return {
+      scope: {
+        fixedOutbound: ida.segments.map(vueloFijo),
+        ...(marcaIda === null ? {} : { legBrandFilters: [{ leg: 0, preferred: [marcaIda] }] }),
+      },
+      deLaIda: (offer) =>
+        claveDeTramo(offer, 0) === claveIda &&
+        (marcaIda === null || marcaDeTramo(offer, 0) === marcaIda),
+    };
   }
 
   /**

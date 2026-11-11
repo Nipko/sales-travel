@@ -17,6 +17,7 @@ import {
 import { SearchButtonLabel, SearchLoading } from '../../../components/ui/search-loading';
 import {
   searchFlightsAction,
+  searchMoreFaresAction,
   type Offer,
   type ProviderOutcome,
   type SearchResult,
@@ -56,6 +57,7 @@ import { legFieldId, MultiCityFields } from './_components/multi-city-fields';
 import { CabinSelect, TripModeSwitch } from './_components/search-options';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
 import { SearchSummary } from './_components/search-summary';
+import { mergeOffers, singleCarrier } from './_components/more-fares';
 import type { SortKey } from './_components/sort-toggle';
 import {
   findHighlights,
@@ -418,15 +420,44 @@ export default function CotizacionesPage() {
   // derivarlas de la lista ya filtrada haria desaparecer las opciones al usarlas.
   // Ida y vuelta se elige por trayecto (docs/sabre/15 §5): la lista del paso 1 son vuelos de IDA,
   // cada uno con sus tarifas de ida. Solo ida sigue agrupando por itinerario completo.
+  /**
+   * Las tarifas que se pidieron al abrir un vuelo (docs/platform/18). Se suman a las de la búsqueda
+   * y se olvidan con la búsqueda siguiente.
+   */
+  const [extraOffers, setExtraOffers] = useState<Offer[]>([]);
+  useEffect(() => {
+    setExtraOffers([]);
+  }, [result.offers]);
+  const offers = useMemo(() => mergeOffers(result.offers, extraOffers), [result, extraOffers]);
+
+  const handleMoreFares = useCallback(
+    async (group: FlightGroup, leg: number): Promise<'ok' | 'error'> => {
+      const carrier = singleCarrier(group.offers[0]);
+      if (searched === null) return 'error';
+      // Interline: no se puede escalar con honestidad; se queda con lo de la búsqueda.
+      if (carrier === null) return 'ok';
+      const res = await searchMoreFaresAction({
+        known: group.offers,
+        carrier,
+        leg,
+        criteria: searched,
+      });
+      if (!res.ok) return 'error';
+      if (res.offers.length > 0) setExtraOffers((prev) => mergeOffers(prev, res.offers));
+      return 'ok';
+    },
+    [searched],
+  );
+
   const roundTrip = searched?.returnDate !== undefined && isRoundTripResult(result.offers);
   const allGroups = useMemo(
     () =>
       sortGroups(
-        roundTrip ? groupByLeg(result.offers, 0) : groupOffersByFlight(result.offers),
+        roundTrip ? groupByLeg(offers, 0) : groupOffersByFlight(offers),
         sort,
         roundTrip ? 0 : undefined,
       ),
-    [result.offers, sort, roundTrip],
+    [offers, sort, roundTrip],
   );
   const flightGroups = useMemo(
     () => applyFlightFilters(allGroups, filters, roundTrip ? 0 : undefined),
@@ -575,6 +606,8 @@ export default function CotizacionesPage() {
             sort={sort}
             onSortChange={setSort}
             onQuote={handleQuote}
+            onLoadMoreFares={handleMoreFares}
+            allOffers={offers}
             roundTrip={roundTrip && searched !== null ? searched : null}
           />
         </div>
@@ -665,6 +698,8 @@ function SearchResults({
   sort,
   onSortChange,
   onQuote,
+  onLoadMoreFares,
+  allOffers,
   roundTrip,
 }: {
   hasSearched: boolean;
@@ -677,6 +712,9 @@ function SearchResults({
   sort: SortKey;
   onSortChange: (key: SortKey) => void;
   onQuote: (offer: Offer) => Promise<void>;
+  onLoadMoreFares: (group: FlightGroup, leg: number) => Promise<'ok' | 'error'>;
+  /** Las ofertas de la búsqueda más las tarifas pedidas al abrir vuelos. */
+  allOffers: Offer[];
   /** Los criterios de una búsqueda de ida y vuelta: se elige por trayecto. `null` = una sola lista. */
   roundTrip: QuoteCriteria | null;
 }) {
@@ -716,6 +754,8 @@ function SearchResults({
           sort={sort}
           onSortChange={onSortChange}
           onQuote={onQuote}
+          onLoadMoreFares={onLoadMoreFares}
+          allOffers={allOffers}
           roundTrip={roundTrip}
         />
       )}
@@ -735,6 +775,8 @@ function SearchResultsBody({
   sort,
   onSortChange,
   onQuote,
+  onLoadMoreFares,
+  allOffers,
   roundTrip,
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
@@ -821,7 +863,9 @@ function SearchResultsBody({
           <RoundTripFlow
             onStepChange={setStep}
             outboundGroups={flightGroups}
-            allOffers={result.offers}
+            allOffers={allOffers}
+            searchKey={result.offers}
+            onLoadMoreFares={onLoadMoreFares}
             criteria={roundTrip}
             showProvider={result.showProviderInResults}
             rowNotice={simulatedBadge}
@@ -897,6 +941,7 @@ function SearchResultsBody({
                       formatDate={flightDate}
                       formatDuration={formatDuration}
                       onQuote={onQuote}
+                      onLoadMoreFares={onLoadMoreFares}
                     />
                   </div>
                 ))}

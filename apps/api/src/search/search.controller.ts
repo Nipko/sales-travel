@@ -13,8 +13,10 @@ import { ActiveTenantService } from '../request-context/active-tenant.service.js
 import { SellerRateLimit } from '../throttler/seller-rate-limit.guard.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
+  MoreFaresBodySchema,
   OfferPriceBodySchema,
   ReturnSearchBodySchema,
+  type MoreFaresBody,
   SeatMapBodySchema,
   type OfferPriceBody,
   type ReturnSearchBody,
@@ -163,6 +165,38 @@ export class SearchController {
     return this.search.searchReturns(
       body.outbound,
       body.searchCriteria,
+      tenantId,
+      venta.home ?? body.searchCriteria.currency,
+    );
+  }
+
+  /**
+   * Más tarifas de un vuelo, al abrir sus tarifas (docs/platform/18). La búsqueda ya no recorre
+   * las marcas de todas las aerolíneas: se paga esta llamada sólo por el vuelo que interesa.
+   */
+  @SalesOperation()
+  @SellerRateLimit({ bucket: 'flights-fares', limit: 60, ttlMs: 60_000 })
+  @Post('flights/fares')
+  async flightMoreFares(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(MoreFaresBodySchema)) body: MoreFaresBody,
+  ): Promise<ReturnSearchEnvelope> {
+    if (!userId) throw new ForbiddenException();
+
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
+    const venta = await this.ventaDelTenant(tenantId);
+    const first = body.known[0];
+    const moneda = first === undefined ? undefined : monedaDeLaOferta(venta, first);
+    if (moneda !== undefined) body.searchCriteria.currency = moneda;
+
+    return this.search.searchMoreFares(
+      body.searchCriteria,
+      {
+        carrier: body.carrier,
+        leg: body.leg,
+        known: body.known,
+        ...(body.outbound === undefined ? {} : { outbound: body.outbound }),
+      },
       tenantId,
       venta.home ?? body.searchCriteria.currency,
     );

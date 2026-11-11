@@ -15,6 +15,7 @@ import {
   type AncillarySelection,
   type FlightSearchCriteria,
   type OfferPriceResult,
+  type FlightMoreFaresRequest,
   type OrderCancelResult,
   type OrderCreateRequest,
   type OrderCreateResult,
@@ -466,6 +467,15 @@ export class SabreFlightProviderAdapter
     ctx: SearchContext,
   ): Promise<Offer[]> {
     return this.inner.search.searchReturns(criteria, outbound, ctx);
+  }
+
+  /** Más tarifas de un vuelo, por demanda (docs/platform/18). */
+  searchMoreFares(
+    criteria: FlightSearchCriteria,
+    request: FlightMoreFaresRequest,
+    ctx: SearchContext,
+  ): Promise<Offer[]> {
+    return this.inner.search.searchMoreFares(criteria, request, ctx);
   }
 
   priceOffer(

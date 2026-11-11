@@ -467,3 +467,79 @@ export async function searchReturnsAction(
   if (!res.ok) return { ok: false, supported: false, offers: [], error: res.error.message };
   return { ok: true, supported: res.data.supported, offers: res.data.offers };
 }
+
+/** Lo que la pantalla sabe de la búsqueda que produjo las ofertas: el mismo criterio de la cotización. */
+export interface MoreFaresCriteria {
+  origin: string;
+  destination: string;
+  originKind?: LocationKind;
+  destinationKind?: LocationKind;
+  departureDate: string;
+  returnDate?: string;
+  legs?: {
+    origin: string;
+    destination: string;
+    originKind?: LocationKind;
+    destinationKind?: LocationKind;
+    departureDate: string;
+  }[];
+  paxCount: {
+    adults: number;
+    children: number;
+    infants: number;
+    childAges?: number[];
+    infantsWithSeat?: number;
+  };
+  cabin: string;
+}
+
+/**
+ * Más tarifas de UN vuelo, al abrir sus tarifas (docs/platform/18): la búsqueda ya no trae las
+ * marcas de todas las aerolíneas. Se mandan sólo las ofertas de ese vuelo (pocas).
+ */
+export async function searchMoreFaresAction(request: {
+  known: Offer[];
+  carrier: string;
+  leg: number;
+  criteria: MoreFaresCriteria;
+  outbound?: Offer;
+}): Promise<ReturnSearchResult> {
+  const first = request.known[0];
+  if (!first) return { ok: true, supported: true, offers: [] };
+  const c = request.criteria;
+  const searchCriteria = {
+    origin: c.origin,
+    destination: c.destination,
+    ...(c.originKind ? { originKind: c.originKind } : {}),
+    ...(c.destinationKind ? { destinationKind: c.destinationKind } : {}),
+    departureDate: c.departureDate,
+    ...(c.returnDate ? { returnDate: c.returnDate } : {}),
+    ...(c.legs && c.legs.length > 0 ? { legs: c.legs } : {}),
+    paxCount: c.paxCount,
+    cabin: c.cabin,
+    currency: first.total.currency,
+  };
+
+  let res: Awaited<ReturnType<typeof api<{ supported: boolean; offers: Offer[] }>>>;
+  try {
+    res = await api<{ supported: boolean; offers: Offer[] }>('/search/flights/fares', {
+      method: 'POST',
+      body: JSON.stringify({
+        searchCriteria,
+        carrier: request.carrier,
+        leg: request.leg,
+        known: request.known.slice(0, 20),
+        ...(request.outbound ? { outbound: request.outbound } : {}),
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      supported: false,
+      offers: [],
+      error: 'No se pudieron consultar más tarifas.',
+    };
+  }
+  if (!res.ok) return { ok: false, supported: false, offers: [], error: res.error.message };
+  return { ok: true, supported: res.data.supported, offers: res.data.offers };
+}

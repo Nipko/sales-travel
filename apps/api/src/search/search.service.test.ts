@@ -239,18 +239,28 @@ describe('SearchService.searchFlights', () => {
       expect(res.offers).toHaveLength(2);
     });
 
-    it('el TTL de caché de búsqueda es de 90 s', async () => {
+    it('el TTL de caché de búsqueda es de 10 minutos (docs/platform/18)', async () => {
       vi.useFakeTimers();
       const b = banco();
 
       await b.service.searchFlights(criteria(), TENANT);
-      vi.advanceTimersByTime(89_999);
+      vi.advanceTimersByTime(599_999);
       await b.service.searchFlights(criteria(), TENANT);
       expect(b.llamadas()).toBe(1);
 
       vi.advanceTimersByTime(1);
       await b.service.searchFlights(criteria(), TENANT);
       expect(b.llamadas()).toBe(2);
+    });
+
+    it('dos búsquedas idénticas a la vez salen UNA sola vez al proveedor', async () => {
+      const b = banco();
+      const [a, c] = await Promise.all([
+        b.service.searchFlights(criteria(), TENANT),
+        b.service.searchFlights(criteria(), TENANT),
+      ]);
+      expect(b.llamadas()).toBe(1);
+      expect(c).toEqual(a);
     });
 
     it('un resultado con un proveedor AUSENTE no se cachea nunca', async () => {
