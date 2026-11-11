@@ -5,7 +5,8 @@ import { useId, useState } from 'react';
 import type { Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
 import { providerTagFor } from '../../../../lib/provider-disclosure';
-import { saleBreakdown } from '../../../../lib/sale-breakdown';
+import { saleBreakdown, salePerPax } from '../../../../lib/sale-breakdown';
+import { getAirportByCode } from '../../../../lib/airports';
 import {
   SOME_TEST_FARES_DESCRIPTION,
   TEST_FARE_DESCRIPTION,
@@ -56,6 +57,8 @@ interface FlightRowProps {
    * marca. Sin esto, la fila es la combinación completa de siempre.
    */
   fareChoice?: FareChoiceMode;
+  /** Lo que la lista destaca de este vuelo: «Más barato», «Más rápido». */
+  tags?: readonly string[];
 }
 
 /* ---------------------------------------------------------------------------
@@ -76,37 +79,57 @@ interface FlightRowProps {
    siempre con el significado escrito al lado, para no cargar información sólo en el color.
    --------------------------------------------------------------------------- */
 
+const LOGO_SIZE = {
+  sm: { box: 'size-7 rounded-md', text: 'text-[11px]', px: 28 },
+  md: { box: 'size-10 rounded-lg', text: 'text-xs', px: 40 },
+  lg: { box: 'size-12 rounded-xl', text: 'text-sm', px: 48 },
+} as const;
+
 /**
  * Logo de la aerolínea con el código siempre debajo.
  *
- * `pics.avs.io` es un tercero: puede tardar o no tener el código. Antes eso dejaba un hueco
- * en blanco hasta que fallara. Acá el código es la capa base y la imagen se revela sólo
- * cuando carga, así que el hueco no existe en ningún estado.
+ * `pics.avs.io` es un tercero: puede tardar o no tener el código. El código es la capa base y la
+ * imagen se revela sólo cuando carga, así que nunca queda un hueco en blanco.
  *
- * El estado no se reinicia solo: montarlo con `key={carrier}` es lo que garantiza que una
- * fila reordenada no herede el "cargado" de otra aerolínea.
+ * El estado no se reinicia solo: montarlo con `key={carrier}` es lo que garantiza que una fila
+ * reordenada no herede el "cargado" de otra aerolínea.
  */
-function AirlineLogo({ carrier }: { carrier: string }) {
+export function AirlineLogo({
+  carrier,
+  size = 'lg',
+  className,
+}: {
+  carrier: string;
+  size?: keyof typeof LOGO_SIZE;
+  className?: string;
+}) {
   const [loaded, setLoaded] = useState(false);
+  const dims = LOGO_SIZE[size];
 
   return (
-    <div className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <div
+      className={cn(
+        'relative flex shrink-0 items-center justify-center overflow-hidden border border-[var(--color-border)] bg-white',
+        dims.box,
+        className,
+      )}
+    >
       <span
         aria-hidden="true"
-        className="font-mono text-xs font-bold tracking-wide text-[var(--color-fg-muted)]"
+        className={cn('font-mono font-bold tracking-wide text-slate-500', dims.text)}
       >
         {carrier}
       </span>
       <img
-        src={`https://pics.avs.io/60/60/${carrier}.png`}
+        src={`https://pics.avs.io/120/120/${carrier}.png`}
         alt=""
-        width={44}
-        height={44}
+        width={dims.px}
+        height={dims.px}
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
         className={cn(
-          'absolute inset-0 size-full bg-[var(--color-surface)] object-contain p-1.5',
+          'absolute inset-0 size-full bg-white object-contain p-1',
           loaded ? 'opacity-100' : 'opacity-0',
         )}
       />
@@ -115,40 +138,85 @@ function AirlineLogo({ carrier }: { carrier: string }) {
 }
 
 /**
- * Identidad de la oferta: quién vuela. Visible en TODOS los anchos.
- *
- * Antes vivía en `hidden … lg:block`, o sea que en móvil y tablet —donde el vendedor
- * trabaja— la aerolínea no aparecía, y donde aparecía era una pastilla de 10 px.
+ * Logo principal y, si el viaje combina aerolíneas, el de la segunda montado en la esquina: se
+ * ve que son dos sin leer el nombre. El fondo del logo es blanco también en el tema oscuro porque
+ * los logos de las aerolíneas están dibujados para fondo claro.
+ */
+function AirlineMark({ carriers, size = 'lg' }: { carriers: string[]; size?: 'md' | 'lg' }) {
+  const [main, second] = carriers;
+  if (!main) return null;
+  if (!second) return <AirlineLogo key={main} carrier={main} size={size} />;
+  return (
+    <div className={cn('relative shrink-0', size === 'lg' ? 'size-12' : 'size-10')}>
+      <AirlineLogo
+        key={main}
+        carrier={main}
+        size="md"
+        className={size === 'lg' ? 'absolute left-0 top-0' : 'absolute left-0 top-0 size-8'}
+      />
+      <AirlineLogo
+        key={second}
+        carrier={second}
+        size="sm"
+        className="absolute -bottom-1 -right-1 ring-2 ring-[var(--color-surface)]"
+      />
+    </div>
+  );
+}
+
+function carrierTitle(carriers: string[]): { main: string; others: string } {
+  const [main = '', ...rest] = carriers;
+  return { main: airlineName(main), others: rest.map(airlineName).join(', ') };
+}
+
+/** Los vuelos de la oferta, como los dicta el vendedor: «AA 2168 · AA 1520». */
+function flightNumbers(itineraries: ItineraryInput[]): string {
+  return itineraries
+    .flatMap((it) => it.segments)
+    .map((s) => `${s.carrier} ${s.flightNumber}`)
+    .join(' · ');
+}
+
+/**
+ * Identidad de la oferta: quién vuela, con el logo grande y el nombre completo. Visible en todos
+ * los anchos: en el teléfono es donde trabaja el vendedor.
  */
 function AirlineIdentity({
   itineraries,
   providerLabel,
   testFares = 'none',
+  size = 'lg',
+  tags = [],
 }: {
   itineraries: ItineraryInput[];
   providerLabel?: string;
   /** Tarifas del entorno de pruebas del proveedor en este vuelo: la fila lo dice siempre. */
   testFares?: TestFareShare;
+  size?: 'md' | 'lg';
+  /** «Más barato», «Más rápido»: lo que la lista destaca de este vuelo. */
+  tags?: readonly string[];
 }) {
-  const { main, carriers, firstFlight } = summarizeCarriers(itineraries);
-  const extraCarriers = carriers.length - 1;
+  const { carriers } = summarizeCarriers(itineraries);
+  const title = carrierTitle(carriers);
 
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <AirlineLogo key={main} carrier={main} />
+      <AirlineMark carriers={carriers} size={size} />
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-[var(--color-fg)]">
-          {airlineName(main)}
-          {extraCarriers > 0 ? (
-            <span className="font-normal text-[var(--color-fg-muted)]">
-              {' '}
-              + {extraCarriers} {extraCarriers === 1 ? 'aerolínea' : 'aerolíneas'}
-            </span>
+        <p
+          className={cn(
+            'truncate font-semibold text-[var(--color-fg)]',
+            size === 'lg' ? 'text-base' : 'text-sm',
+          )}
+        >
+          {title.main}
+          {title.others ? (
+            <span className="font-normal text-[var(--color-fg-muted)]"> + {title.others}</span>
           ) : null}
         </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="font-mono text-xs tabular-nums text-[var(--color-fg-subtle)]">
-            {firstFlight}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate font-mono text-xs tabular-nums text-[var(--color-fg-muted)]">
+            {flightNumbers(itineraries)}
           </span>
           {providerLabel ? (
             <span className="rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-px text-xs font-medium text-[var(--color-fg-muted)]">
@@ -164,6 +232,14 @@ function AirlineIdentity({
               }
             />
           )}
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-[var(--color-success)]/14 px-2 py-px text-xs font-semibold text-[var(--color-fg)]"
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       </div>
     </div>
@@ -240,7 +316,109 @@ function LayoverChips({
   );
 }
 
-function ItineraryLeg({
+/** La ciudad del código, si el catálogo la tiene: «CTG» se lee mejor con «Cartagena» debajo. */
+function cityOf(code: string): string | undefined {
+  const city = getAirportByCode(code)?.city;
+  return city && city.toUpperCase() !== code.toUpperCase() ? city : undefined;
+}
+
+/**
+ * Salida, línea de tiempo con duración y escalas, llegada. Es el corazón de cada renglón; con
+ * `wide` las horas crecen y debajo del código va la ciudad (un solo tramo en pantalla).
+ */
+function LegTimes({
+  itinerary,
+  wide,
+  formatTime,
+  formatDuration,
+}: {
+  itinerary: ItineraryInput;
+  wide: boolean;
+  formatTime: (iso: string) => string;
+  formatDuration: (minutes: number) => string;
+}) {
+  const first = itinerary.segments[0];
+  const last = itinerary.segments[itinerary.segments.length - 1];
+  if (!first || !last) return null;
+  const view = buildItineraryView(itinerary);
+  const originCity = wide ? cityOf(first.origin) : undefined;
+  const destinationCity = wide ? cityOf(last.destination) : undefined;
+  const timeClass = cn(
+    'font-semibold leading-tight tabular-nums text-[var(--color-fg)]',
+    wide ? 'text-xl' : 'text-lg',
+  );
+
+  return (
+    <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 sm:gap-5">
+      <div className="min-w-[3.5rem]">
+        <p className={timeClass}>{formatTime(first.departureAt)}</p>
+        <p className="text-sm font-semibold leading-tight text-[var(--color-fg-muted)]">
+          {first.origin}
+        </p>
+        {originCity ? (
+          <p className="hidden max-w-[9rem] truncate text-xs text-[var(--color-fg-muted)] sm:block">
+            {originCity}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="flex min-w-0 flex-col items-center gap-1 pt-1">
+        <p className="text-xs font-medium tabular-nums text-[var(--color-fg-muted)]">
+          {formatDuration(itinerary.totalDurationMinutes)}
+        </p>
+        <StopsTrack layovers={view.layovers} />
+        <LayoverChips view={view} formatDuration={formatDuration} />
+      </div>
+
+      <div className="min-w-[3.5rem] text-right">
+        <p className={timeClass}>
+          {formatTime(last.arrivalAt)}
+          {/* "+1" es la convención de la industria; el lector de pantalla recibe la frase entera. */}
+          {view.arrivalDayOffset > 0 ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="ml-0.5 align-super text-xs font-bold text-[var(--color-fg-muted)]"
+              >
+                +{view.arrivalDayOffset}
+              </span>
+              <span className="sr-only">
+                {' '}
+                (llega {view.arrivalDayOffset} {view.arrivalDayOffset === 1 ? 'día' : 'días'}{' '}
+                después)
+              </span>
+            </>
+          ) : null}
+        </p>
+        <p className="text-sm font-semibold leading-tight text-[var(--color-fg-muted)]">
+          {last.destination}
+        </p>
+        {destinationCity ? (
+          <p className="ml-auto hidden max-w-[9rem] truncate text-xs text-[var(--color-fg-muted)] sm:block">
+            {destinationCity}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function OperatedBy({ itinerary }: { itinerary: ItineraryInput }) {
+  const operadoras = codeshareOperators(itinerary);
+  if (operadoras.length === 0) return null;
+  return (
+    <p className="mt-1 text-xs font-medium text-[var(--color-fg-muted)]">
+      Operado por {operadoras.map(airlineName).join(', ')}
+    </p>
+  );
+}
+
+/**
+ * Un tramo de varios: etiqueta y fecha a la izquierda, el logo de quien lo vuela y las horas.
+ * Todos los renglones comparten columnas, así los tramos se comparan de un vistazo; en el
+ * teléfono la etiqueta sube encima.
+ */
+function LegRow({
   itinerary,
   label,
   formatTime,
@@ -254,76 +432,122 @@ function ItineraryLeg({
   formatDuration: (minutes: number) => string;
 }) {
   const first = itinerary.segments[0];
-  const last = itinerary.segments[itinerary.segments.length - 1];
-  if (!first || !last) return null;
-
-  const view = buildItineraryView(itinerary);
-  const operadoras = codeshareOperators(itinerary);
-
+  if (!first) return null;
   return (
-    <div>
-      {/* Cabecera del tramo: la fecha vive acá, una sola vez, y no debajo de cada aeropuerto
-          en 10 px. Con ida y vuelta además dice cuál es cuál en todos los anchos. */}
-      <p className="mb-1.5 flex items-center gap-2 text-xs font-medium text-[var(--color-fg-muted)]">
-        {label ? (
-          <span className="font-semibold uppercase tracking-wide text-[var(--color-fg)]">
-            {label}
-          </span>
-        ) : null}
-        <span>{formatDate(first.departureAt)}</span>
-      </p>
-
-      <div className="flex items-start gap-3 sm:gap-5">
-        <div className="min-w-[3.5rem]">
-          <p className="text-lg font-semibold leading-tight tabular-nums text-[var(--color-fg)]">
-            {formatTime(first.departureAt)}
-          </p>
-          <p className="text-sm font-semibold leading-tight text-[var(--color-fg-muted)]">
-            {first.origin}
+    <div className="border-t border-[var(--color-border)] py-3 first:border-t-0 first:pt-0 last:pb-0">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex items-center gap-2 sm:w-24 sm:shrink-0 sm:flex-col sm:items-start sm:gap-0">
+          {label ? (
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-fg)]">
+              {label}
+            </p>
+          ) : null}
+          <p className="text-xs font-medium text-[var(--color-fg-muted)]">
+            {formatDate(first.departureAt)}
           </p>
         </div>
-
-        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 pt-1">
-          <p className="text-xs font-medium tabular-nums text-[var(--color-fg-muted)]">
-            {formatDuration(itinerary.totalDurationMinutes)}
-          </p>
-          <StopsTrack layovers={view.layovers} />
-          <LayoverChips view={view} formatDuration={formatDuration} />
-        </div>
-
-        <div className="min-w-[3.5rem] text-right">
-          <p className="text-lg font-semibold leading-tight tabular-nums text-[var(--color-fg)]">
-            {formatTime(last.arrivalAt)}
-            {/* "+1" es la convención de la industria y ocupa lo que puede ocupar al lado de
-                la hora; el lector de pantalla recibe la frase entera, que un `title` no
-                garantiza que se anuncie. */}
-            {view.arrivalDayOffset > 0 ? (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="ml-0.5 align-super text-xs font-bold text-[var(--color-fg-muted)]"
-                >
-                  +{view.arrivalDayOffset}
-                </span>
-                <span className="sr-only">
-                  {' '}
-                  (llega {view.arrivalDayOffset} {view.arrivalDayOffset === 1 ? 'día' : 'días'}{' '}
-                  después)
-                </span>
-              </>
-            ) : null}
-          </p>
-          <p className="text-sm font-semibold leading-tight text-[var(--color-fg-muted)]">
-            {last.destination}
-          </p>
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+          <AirlineLogo key={first.carrier} carrier={first.carrier} size="sm" />
+          <LegTimes
+            itinerary={itinerary}
+            wide={false}
+            formatTime={formatTime}
+            formatDuration={formatDuration}
+          />
         </div>
       </div>
-      {operadoras.length > 0 ? (
-        <p className="mt-1.5 text-xs font-medium text-[var(--color-fg-muted)]">
-          Operado por {operadoras.map(airlineName).join(', ')}
+      <div className="sm:pl-28">
+        <OperatedBy itinerary={itinerary} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * El precio como lo pregunta el cliente: cuánto por adulto, cuánto de eso son impuestos y cuánto
+ * es el total. Si el desglose por pasajero no cuadra con el total (`salePerPax` vacío), va sólo
+ * el total: nunca un desglose que no suma.
+ */
+function PricePanel({
+  offer,
+  fares,
+  fareChoice,
+  formatMoney,
+}: {
+  offer: Offer;
+  fares: number;
+  fareChoice?: FareChoiceMode;
+  formatMoney: (amountMinor: number, currency: string) => string;
+}) {
+  const venta = saleBreakdown(offer);
+  const perPax = fareChoice === undefined ? salePerPax(offer) : [];
+  const adult = perPax.find((p) => p.paxType === 'ADT') ?? perPax[0];
+  const travelers = perPax.reduce((n, p) => n + p.paxCount, 0);
+  const label = fareChoice?.priceLabel ?? (fares > 1 ? 'Desde' : 'Total');
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {adult ? (
+        <dl className="space-y-1 text-xs text-[var(--color-fg-muted)]">
+          <dt className="font-medium text-[var(--color-fg)]">
+            Precio por {adult.paxType === 'ADT' ? 'adulto' : 'pasajero'}
+          </dt>
+          <div className="flex justify-between gap-3">
+            <dd>Tarifa</dd>
+            <dd className="tabular-nums">
+              {formatMoney(adult.sellPerPaxMinor - adult.taxesPerPaxMinor, venta.currency)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dd>Impuestos y tasas</dd>
+            <dd className="tabular-nums">{formatMoney(adult.taxesPerPaxMinor, venta.currency)}</dd>
+          </div>
+        </dl>
+      ) : null}
+      <div
+        className={cn(
+          'flex items-baseline justify-between gap-3',
+          adult && 'mt-1 border-t border-[var(--color-border)] pt-2',
+        )}
+      >
+        <p className="text-xs font-medium text-[var(--color-fg-muted)]">
+          {label}
+          {travelers > 1 ? (
+            <span className="block text-[var(--color-fg-subtle)]">{travelers} pasajeros</span>
+          ) : null}
+        </p>
+        <p className="text-xl font-bold leading-tight tabular-nums text-[var(--color-fg)]">
+          {formatMoney(venta.sellMinor, venta.currency)}
+        </p>
+      </div>
+      {/* El costo de la AGENCIA, nunca el neto del proveedor: para una sub-agencia la diferencia
+          entre los dos es el margen del consolidador. */}
+      {venta.ownMarginMinor !== undefined && venta.costMinor !== undefined ? (
+        <p className="text-right text-xs tabular-nums text-[var(--color-fg-muted)]">
+          tu costo {formatMoney(venta.costMinor, venta.currency)}
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** El llamado a la acción de la tarjeta. Es un `span`: toda la cabecera ya es el botón. */
+function OpenFaresCue({ fares, expanded }: { fares: number; expanded: boolean }) {
+  return (
+    <span
+      className={cn(
+        'mt-2 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg text-sm font-semibold transition-colors',
+        expanded
+          ? 'border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-fg)]'
+          : 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)]',
+      )}
+    >
+      {expanded ? 'Ocultar tarifas' : fares > 1 ? `Ver ${fares} tarifas` : 'Ver tarifa'}
+      <ChevronDown
+        aria-hidden="true"
+        className={cn('size-4 transition-transform', expanded && 'rotate-180')}
+      />
+    </span>
   );
 }
 
@@ -336,6 +560,7 @@ export function FlightRow({
   onQuote,
   showProvider = false,
   fareChoice,
+  tags,
 }: FlightRowProps) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
@@ -350,15 +575,23 @@ export function FlightRow({
 
   if (!cheapest || !firstItinerary?.segments[0]) return null;
 
-  const isRoundtrip = allItineraries.length > 1;
   const fares = fareChoice === undefined ? group.offers : faresForLeg(group.offers, fareChoice.leg);
-  const hasMultipleFares = fares.length > 1;
-  // Precio de venta = neto + cascada de markup (si hay reglas configuradas); si no, el neto.
-  const venta = saleBreakdown(cheapest);
   const familySummary =
     fareChoice === undefined
       ? fareFamilySummary(cheapest)
       : fares.map((fare) => legFare(fare, fareChoice.leg).name).join(' · ');
+  // Un solo tramo en pantalla (solo ida, o un paso de ida y vuelta): un renglón, sin cabecera
+  // aparte; la identidad va en la misma línea que las horas.
+  const single = shown.length === 1;
+  const identity = (
+    <AirlineIdentity
+      itineraries={itineraries}
+      providerLabel={providerTagFor(cheapest.provider.name, showProvider)?.label}
+      testFares={testFareShare(group.offers)}
+      size={single ? 'md' : 'lg'}
+      {...(tags ? { tags } : {})}
+    />
+  );
 
   return (
     <article
@@ -370,8 +603,7 @@ export function FlightRow({
       )}
     >
       {/* Toda la cabecera abre el detalle. Sin `focus:outline-none`: el anillo global de
-          `:focus-visible` es la única señal que tiene quien navega con teclado, y abrir esto
-          es el paso obligado para cotizar. */}
+          `:focus-visible` es la única señal de quien navega con teclado. */}
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -381,31 +613,58 @@ export function FlightRow({
       >
         <div className="flex flex-col md:flex-row md:items-stretch">
           <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
-            {/* El color de la pastilla lo decide `providerTagFor` con clases de paleta fija;
-                acá se toma sólo la etiqueta y se pinta con los tokens del design system,
-                que son los únicos que siguen al tema oscuro. */}
-            <AirlineIdentity
-              itineraries={itineraries}
-              providerLabel={providerTagFor(cheapest.provider.name, showProvider)?.label}
-              testFares={testFareShare(group.offers)}
-            />
-            {shown.map(({ itinerary: it, index: i }) => (
-              <ItineraryLeg
-                key={i}
-                itinerary={it}
-                label={legLabel(allItineraries, i)}
-                formatTime={formatTime}
-                formatDate={formatDate}
-                formatDuration={formatDuration}
-              />
-            ))}
+            {single ? (
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+                <div className="lg:w-56 lg:shrink-0">{identity}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1 text-xs font-medium text-[var(--color-fg-muted)]">
+                    {legLabel(allItineraries, shown[0]!.index) ? (
+                      <span className="mr-1.5 font-semibold uppercase tracking-wide text-[var(--color-fg)]">
+                        {legLabel(allItineraries, shown[0]!.index)}
+                      </span>
+                    ) : null}
+                    {formatDate(firstItinerary.segments[0].departureAt)}
+                  </p>
+                  <LegTimes
+                    itinerary={firstItinerary}
+                    wide
+                    formatTime={formatTime}
+                    formatDuration={formatDuration}
+                  />
+                  <OperatedBy itinerary={firstItinerary} />
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  {identity}
+                  {familySummary ? (
+                    <span className="hidden max-w-[14rem] shrink-0 truncate rounded-full border border-[var(--color-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-fg-muted)] sm:inline-block">
+                      {familySummary}
+                    </span>
+                  ) : null}
+                </div>
+                <div>
+                  {shown.map(({ itinerary: it, index: i }) => (
+                    <LegRow
+                      key={i}
+                      itinerary={it}
+                      label={legLabel(allItineraries, i)}
+                      formatTime={formatTime}
+                      formatDate={formatDate}
+                      formatDuration={formatDuration}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Un solo bloque de precio para los dos layouts: barra inferior en móvil,
-              columna derecha en escritorio. Antes había dos copias del precio en el DOM. */}
-          <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/30 px-4 py-3 sm:px-5 md:w-48 md:shrink-0 md:flex-col md:items-end md:justify-center md:gap-3 md:border-l md:border-t-0 md:bg-transparent md:p-5">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:order-2 md:justify-end">
-              {/* Las maletas de la tarifa más barata, la del precio que se muestra al lado. */}
+          {/* Un solo bloque de precio: barra inferior en el teléfono, columna derecha en
+              escritorio. */}
+          <div className="flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface-muted)]/40 px-4 py-3 sm:px-5 md:w-60 md:shrink-0 md:justify-center md:border-l md:border-t-0 md:p-5">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {/* Las maletas de la tarifa más barata, la del precio que se muestra abajo. */}
               <BaggageIcons
                 attributes={fareAttributes(cheapest, fareChoice?.leg, formatMoney)}
                 size="sm"
@@ -416,37 +675,24 @@ export function FlightRow({
                 </span>
               ) : null}
               {familySummary ? (
-                <span className="truncate rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium text-[var(--color-fg-muted)]">
+                <span
+                  className={cn(
+                    'max-w-full truncate rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium text-[var(--color-fg-muted)]',
+                    !single && 'sm:hidden',
+                  )}
+                >
                   {familySummary}
                 </span>
               ) : null}
             </div>
-
-            <div className="shrink-0 text-right md:order-1 md:w-full">
-              <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                {fareChoice?.priceLabel ?? (hasMultipleFares ? 'Desde' : 'Total')}
-              </p>
-              <p className="text-xl font-bold leading-tight tabular-nums text-[var(--color-fg)]">
-                {formatMoney(venta.sellMinor, venta.currency)}
-              </p>
-              {/* El costo de la AGENCIA, nunca el neto del proveedor: para una sub-agencia la
-                  diferencia entre los dos es el margen del consolidador. */}
-              {venta.ownMarginMinor !== undefined && venta.costMinor !== undefined ? (
-                <p className="mt-0.5 text-xs tabular-nums text-[var(--color-fg-muted)]">
-                  tu costo {formatMoney(venta.costMinor, venta.currency)}
-                </p>
-              ) : null}
-              {/* La única puerta a «Elegir» es abrir esta tarjeta, así que la
-                  invitación va siempre — también cuando hay una sola tarifa, que antes no
-                  mostraba nada y dejaba la venta escondida. */}
-              <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-fg-muted)]">
-                {hasMultipleFares ? `${fares.length} tarifas` : 'Ver tarifa'}
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
-                />
-              </span>
-            </div>
+            <PricePanel
+              offer={cheapest}
+              fares={fares.length}
+              formatMoney={formatMoney}
+              {...(fareChoice ? { fareChoice } : {})}
+            />
+            {/* «Elegir» sólo está dentro: la invitación va siempre, también con una sola tarifa. */}
+            <OpenFaresCue fares={fares.length} expanded={expanded} />
           </div>
         </div>
       </button>

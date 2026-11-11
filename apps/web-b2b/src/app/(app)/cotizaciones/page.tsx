@@ -52,7 +52,15 @@ import {
 import { legFieldId, MultiCityFields } from './_components/multi-city-fields';
 import { CabinSelect, TripModeSwitch } from './_components/search-options';
 import { SkeletonFlightRow } from './_components/skeleton-flight-row';
+import { SearchSummary } from './_components/search-summary';
 import type { SortKey } from './_components/sort-toggle';
+import {
+  findHighlights,
+  groupDuration,
+  groupPrice,
+  highlightTags,
+} from './_components/result-highlights';
+import type { SortHighlights } from './_components/results-header';
 
 const initialState: SearchResult = {
   ok: true,
@@ -149,31 +157,35 @@ function groupOffersByFlight(offers: Offer[]): FlightGroup[] {
   }));
 }
 
-function sortGroups(groups: FlightGroup[], sort: SortKey): FlightGroup[] {
+/**
+ * Ordena por precio de VENTA y por duración del viaje entero (o de un tramo, si la lista elige
+ * por trayecto): los mismos números que pintan la tarjeta y las tarjetas de orden.
+ */
+function sortGroups(groups: FlightGroup[], sort: SortKey, leg?: number): FlightGroup[] {
   const sorted = [...groups];
   sorted.sort((a, b) => {
-    const offerA = a.offers[0]!;
-    const offerB = b.offers[0]!;
-    const itA = offerA.itineraries?.[0];
-    const itB = offerB.itineraries?.[0];
+    const priceA = groupPrice(a);
+    const priceB = groupPrice(b);
+    const durA = groupDuration(a, leg);
+    const durB = groupDuration(b, leg);
+    const itA = a.offers[0]?.itineraries?.[leg ?? 0];
+    const itB = b.offers[0]?.itineraries?.[leg ?? 0];
     switch (sort) {
       case 'price':
-        return offerA.total.amountMinor - offerB.total.amountMinor;
+        return priceA - priceB;
       case 'duration':
-        return (itA?.totalDurationMinutes ?? 0) - (itB?.totalDurationMinutes ?? 0);
+        return durA - durB;
       case 'departure': {
         const depA = itA?.segments[0]?.departureAt ?? '';
         const depB = itB?.segments[0]?.departureAt ?? '';
         return depA.localeCompare(depB);
       }
       case 'best': {
-        const priceScore =
-          (offerA.total.amountMinor - offerB.total.amountMinor) /
-          Math.max(offerA.total.amountMinor, 1);
-        const durScore =
-          ((itA?.totalDurationMinutes ?? 0) - (itB?.totalDurationMinutes ?? 0)) /
-          Math.max(itA?.totalDurationMinutes ?? 1, 1);
-        const stopScore = (itA?.stops ?? 0) - (itB?.stops ?? 0);
+        const priceScore = (priceA - priceB) / Math.max(priceA, 1);
+        const durScore = (durA - durB) / Math.max(durA, 1);
+        const stopsOf = (g: FlightGroup) =>
+          (g.offers[0]?.itineraries ?? []).reduce((n, it) => n + it.stops, 0);
+        const stopScore = stopsOf(a) - stopsOf(b);
         return priceScore * 0.5 + durScore * 0.3 + stopScore * 0.2;
       }
       default:
@@ -222,6 +234,8 @@ export default function CotizacionesPage() {
    * después de buscar dejaba una cotización de 2 adultos con precio de 1, y así se reservaba.
    */
   const [searched, setSearched] = useState<QuoteCriteria | null>(null);
+  /** Con resultados en pantalla el formulario se pliega a una línea; «Modificar» lo abre. */
+  const [collapsed, setCollapsed] = useState(false);
 
   const draft = useMemo<SearchDraft>(
     () => ({
@@ -357,6 +371,7 @@ export default function CotizacionesPage() {
       cabin,
     });
     setHasSearched(true);
+    setCollapsed(true);
     // El loader y los resultados aparecen debajo del formulario, fuera del viewport.
     setTimeout(
       () => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -397,6 +412,7 @@ export default function CotizacionesPage() {
       sortGroups(
         roundTrip ? groupByLeg(result.offers, 0) : groupOffersByFlight(result.offers),
         sort,
+        roundTrip ? 0 : undefined,
       ),
     [result.offers, sort, roundTrip],
   );
@@ -440,70 +456,87 @@ export default function CotizacionesPage() {
         {/* Un solo plano elevado, con el tinte de marca apenas perceptible: separa el formulario
             del fondo sin bordes gruesos ni decoración. */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-surface)_0%,color-mix(in_oklab,var(--color-primary)_3%,var(--color-surface))_100%)] p-4 shadow-[var(--shadow-md)] sm:p-6">
-          {/* Ajustes: se tocan pocas veces, muestran su valor y se cambian en un clic. */}
-          <div className="mb-3 flex flex-wrap items-center gap-x-1 gap-y-1">
-            <TripModeSwitch value={tripMode} onChange={handleTripMode} />
-            <span
-              aria-hidden="true"
-              className="mx-1 hidden h-4 w-px bg-[var(--color-border-strong)] sm:block"
+          {collapsed && searched ? (
+            <SearchSummary
+              trip={searched}
+              onEdit={() => {
+                setCollapsed(false);
+                setTimeout(
+                  () =>
+                    focusField(
+                      tripMode === 'multicity' ? legFieldId(0, 'origin') : FIELD_ID.origin,
+                    ),
+                  30,
+                );
+              }}
             />
-            <CabinSelect value={cabin} onChange={setCabin} />
-          </div>
+          ) : null}
+          {/* Plegado se oculta, no se desmonta: los campos guardan lo escrito y siguen en el form. */}
+          <div hidden={collapsed && searched !== null}>
+            {/* Ajustes: se tocan pocas veces, muestran su valor y se cambian en un clic. */}
+            <div className="mb-3 flex flex-wrap items-center gap-x-1 gap-y-1">
+              <TripModeSwitch value={tripMode} onChange={handleTripMode} />
+              <span
+                aria-hidden="true"
+                className="mx-1 hidden h-4 w-px bg-[var(--color-border-strong)] sm:block"
+              />
+              <CabinSelect value={cabin} onChange={setCabin} />
+            </div>
 
-          {/*
+            {/*
             La franja. Cuatro piezas del mismo alto y el mismo idioma —etiqueta chica arriba,
             valor grande abajo— en el orden en que se dicta un viaje por teléfono: de dónde a
             dónde, cuándo, cuántos. En móvil se apilan; el botón queda último y a lo ancho.
           */}
-          {tripMode === 'multicity' ? (
-            // Multidestino: una fila por tramo, y pasajeros y buscar debajo.
-            <div className="space-y-3">
-              <MultiCityFields
-                legs={legs}
-                onChange={(next) => {
-                  setLegs(next);
-                  setProblem(null);
-                }}
-                min={today}
-              />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
-                <SubmitButton />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_auto] xl:items-start">
-              <div className="sm:col-span-2 xl:col-span-1">
-                <RouteField
-                  originCode={originCode}
-                  destinationCode={destinationCode}
-                  originKind={originKind}
-                  destinationKind={destinationKind}
-                  onOriginChange={handleOriginChange}
-                  onDestinationChange={handleDestinationChange}
-                  onSwap={handleSwap}
-                  originInputId={FIELD_ID.origin}
-                  destinationInputId={FIELD_ID.destination}
-                  autoFocus
+            {tripMode === 'multicity' ? (
+              // Multidestino: una fila por tramo, y pasajeros y buscar debajo.
+              <div className="space-y-3">
+                <MultiCityFields
+                  legs={legs}
+                  onChange={(next) => {
+                    setLegs(next);
+                    setProblem(null);
+                  }}
+                  min={today}
                 />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                  <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
+                  <SubmitButton />
+                </div>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_auto] xl:items-start">
+                <div className="sm:col-span-2 xl:col-span-1">
+                  <RouteField
+                    originCode={originCode}
+                    destinationCode={destinationCode}
+                    originKind={originKind}
+                    destinationKind={destinationKind}
+                    onOriginChange={handleOriginChange}
+                    onDestinationChange={handleDestinationChange}
+                    onSwap={handleSwap}
+                    originInputId={FIELD_ID.origin}
+                    destinationInputId={FIELD_ID.destination}
+                    autoFocus
+                  />
+                </div>
 
-              <DateRangePicker
-                mode={tripMode === 'oneway' ? 'oneway' : 'roundtrip'}
-                value={{ start: departureDate || null, end: returnDate || null }}
-                onChange={handleDates}
-                min={today}
-                triggerId={FIELD_ID.dates}
-              />
+                <DateRangePicker
+                  mode={tripMode === 'oneway' ? 'oneway' : 'roundtrip'}
+                  value={{ start: departureDate || null, end: returnDate || null }}
+                  onChange={handleDates}
+                  min={today}
+                  triggerId={FIELD_ID.dates}
+                />
 
-              <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
+                <PaxField value={pax} onChange={setPax} triggerId={PAX_ID} />
 
-              <div className="sm:col-span-2 xl:col-span-1">
-                <SubmitButton />
+                <div className="sm:col-span-2 xl:col-span-1">
+                  <SubmitButton />
+                </div>
               </div>
-            </div>
-          )}
-
+            )}
+          </div>
           {displayError ? (
             <p
               role="alert"
@@ -690,6 +723,37 @@ function SearchResultsBody({
   roundTrip,
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
+  const leg = roundTrip !== null ? 0 : undefined;
+  const highlights = useMemo(() => findHighlights(flightGroups, leg), [flightGroups, leg]);
+  const tags = useMemo(() => highlightTags(flightGroups, highlights), [flightGroups, highlights]);
+  const sortHighlights = useMemo<SortHighlights>(() => {
+    const priceText = (group: FlightGroup | undefined) => {
+      const offer = group?.offers[0];
+      return offer ? formatMoney(groupPrice(group), offer.total.currency) : undefined;
+    };
+    const best = sortGroups(flightGroups, 'best', leg)[0];
+    const out: Record<string, { price: string; detail?: string }> = {};
+    const bestPrice = priceText(best);
+    if (bestPrice) out['best'] = { price: bestPrice };
+    const cheapPrice = priceText(highlights.cheapest);
+    if (cheapPrice) out['price'] = { price: cheapPrice };
+    const fastPrice = priceText(highlights.fastest);
+    if (fastPrice && highlights.fastest) {
+      out['duration'] = {
+        price: fastPrice,
+        detail: formatDuration(groupDuration(highlights.fastest, leg)),
+      };
+    }
+    return out;
+  }, [flightGroups, highlights, leg]);
+  const header = (
+    <ResultsHeader
+      count={flightGroups.length}
+      sort={sort}
+      onSortChange={onSortChange}
+      highlights={sortHighlights}
+    />
+  );
 
   const simulatedBadge = (group: FlightGroup) =>
     group.offers.some((offer) => isSimulatedOffer(offer, simulated)) ? (
@@ -710,6 +774,7 @@ function SearchResultsBody({
           criteria={roundTrip}
           showProvider={result.showProviderInResults}
           rowNotice={simulatedBadge}
+          tagsFor={(group) => tags.get(group.key)}
           formatMoney={formatMoney}
           formatTime={flightTime}
           formatDate={flightDate}
@@ -723,7 +788,7 @@ function SearchResultsBody({
                 onChange={onFiltersChange}
                 formatMoney={formatMoney}
               />
-              <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
+              {header}
               {flightGroups.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
                   <p className="text-sm font-medium text-[var(--color-fg)]">
@@ -756,7 +821,7 @@ function SearchResultsBody({
           onChange={onFiltersChange}
           formatMoney={formatMoney}
         />
-        <ResultsHeader count={flightGroups.length} sort={sort} onSortChange={onSortChange} />
+        {header}
         {flightGroups.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
             <p className="text-sm font-medium text-[var(--color-fg)]">
@@ -782,6 +847,7 @@ function SearchResultsBody({
                 )}
                 <FlightRow
                   group={group}
+                  {...(tags.get(group.key) ? { tags: tags.get(group.key) } : {})}
                   showProvider={result.showProviderInResults}
                   formatMoney={formatMoney}
                   formatTime={flightTime}

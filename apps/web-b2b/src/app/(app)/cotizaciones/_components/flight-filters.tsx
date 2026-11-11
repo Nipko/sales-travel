@@ -2,6 +2,7 @@
 
 import { SlidersHorizontal, X } from 'lucide-react';
 import { cn } from '../../../../lib/cn';
+import { airlineName } from './airline-names';
 import type { FlightGroup } from './flight-row';
 
 /**
@@ -136,107 +137,91 @@ export function FlightFilters({
     });
   }
 
+  const label = 'mr-0.5 text-xs font-medium text-[var(--color-fg-subtle)]';
   return (
     <section
       aria-label="Filtros de resultados"
-      className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+      className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-[var(--color-border)] pb-4"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-fg-muted)]">
-          <SlidersHorizontal className="size-3.5" />
-          Filtros
-        </h3>
-        {isDirty ? (
-          <button
-            type="button"
-            onClick={() => onChange(EMPTY_FILTERS)}
-            className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
-          >
-            <X className="size-3" />
-            Limpiar
-          </button>
-        ) : null}
+      <SlidersHorizontal aria-hidden="true" className="size-4 text-[var(--color-fg-subtle)]" />
+      <div role="group" aria-label="Escalas" className="flex flex-wrap items-center gap-1.5">
+        <span className={label}>Escalas</span>
+        <Chip
+          active={value.maxStops === 0}
+          onClick={() => onChange({ ...value, maxStops: value.maxStops === 0 ? null : 0 })}
+        >
+          Sin escalas
+        </Chip>
+        <Chip
+          active={value.maxStops === 1}
+          onClick={() => onChange({ ...value, maxStops: value.maxStops === 1 ? null : 1 })}
+        >
+          Hasta 1
+        </Chip>
       </div>
 
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-        <div>
-          <p className="mb-1.5 text-xs text-[var(--color-fg-subtle)]">Escalas</p>
-          <div className="flex flex-wrap gap-1.5">
+      <div role="group" aria-label="Salida" className="flex flex-wrap items-center gap-1.5">
+        <span className={label}>Salida</span>
+        {WINDOWS.map((w) => {
+          const active =
+            value.departureWindow?.[0] === w.range[0] && value.departureWindow[1] === w.range[1];
+          return (
             <Chip
-              active={value.maxStops === 0}
-              onClick={() => onChange({ ...value, maxStops: value.maxStops === 0 ? null : 0 })}
+              key={w.label}
+              active={active}
+              onClick={() => onChange({ ...value, departureWindow: active ? null : w.range })}
             >
-              Sin escalas
+              {w.label}
             </Chip>
-            <Chip
-              active={value.maxStops === 1}
-              onClick={() => onChange({ ...value, maxStops: value.maxStops === 1 ? null : 1 })}
-            >
-              Hasta 1
-            </Chip>
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-1.5 text-xs text-[var(--color-fg-subtle)]">Salida</p>
-          <div className="flex flex-wrap gap-1.5">
-            {WINDOWS.map((w) => {
-              const active =
-                value.departureWindow?.[0] === w.range[0] &&
-                value.departureWindow[1] === w.range[1];
-              return (
-                <Chip
-                  key={w.label}
-                  active={active}
-                  onClick={() => onChange({ ...value, departureWindow: active ? null : w.range })}
-                >
-                  {w.label}
-                </Chip>
-              );
-            })}
-          </div>
-        </div>
-
-        {carriers.length > 1 ? (
-          <div>
-            <p className="mb-1.5 text-xs text-[var(--color-fg-subtle)]">Aerolínea</p>
-            <div className="flex flex-wrap gap-1.5">
-              {carriers.map((c) => (
-                <Chip key={c} active={value.carriers.includes(c)} onClick={() => toggleCarrier(c)}>
-                  {c}
-                </Chip>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {maxPriceMinor > 0 ? (
-          <div className="min-w-[190px] flex-1">
-            <label
-              htmlFor="price-filter"
-              className="mb-1.5 block text-xs text-[var(--color-fg-subtle)]"
-            >
-              Precio hasta{' '}
-              <span className="font-semibold text-[var(--color-fg)]">
-                {formatMoney(value.maxPriceMinor ?? maxPriceMinor, currency)}
-              </span>
-            </label>
-            <input
-              id="price-filter"
-              type="range"
-              min={0}
-              max={maxPriceMinor}
-              step={Math.max(1, Math.round(maxPriceMinor / 50))}
-              value={value.maxPriceMinor ?? maxPriceMinor}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                onChange({ ...value, maxPriceMinor: v >= maxPriceMinor ? null : v });
-              }}
-              className="w-full accent-[var(--color-primary)]"
-            />
-          </div>
-        ) : null}
+          );
+        })}
       </div>
+
+      {carriers.length > 1 ? (
+        <div role="group" aria-label="Aerolínea" className="flex flex-wrap items-center gap-1.5">
+          <span className={label}>Aerolínea</span>
+          {carriers.map((c) => (
+            <Chip key={c} active={value.carriers.includes(c)} onClick={() => toggleCarrier(c)}>
+              {airlineName(c)}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
+
+      {maxPriceMinor > 0 ? (
+        <div className="flex min-w-[220px] flex-1 items-center gap-2">
+          <label htmlFor="price-filter" className={cn(label, 'shrink-0')}>
+            Hasta{' '}
+            <span className="font-semibold tabular-nums text-[var(--color-fg)]">
+              {formatMoney(value.maxPriceMinor ?? maxPriceMinor, currency)}
+            </span>
+          </label>
+          <input
+            id="price-filter"
+            type="range"
+            min={0}
+            max={maxPriceMinor}
+            step={Math.max(1, Math.round(maxPriceMinor / 50))}
+            value={value.maxPriceMinor ?? maxPriceMinor}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              onChange({ ...value, maxPriceMinor: v >= maxPriceMinor ? null : v });
+            }}
+            className="w-full min-w-24 accent-[var(--color-primary)]"
+          />
+        </div>
+      ) : null}
+
+      {isDirty ? (
+        <button
+          type="button"
+          onClick={() => onChange(EMPTY_FILTERS)}
+          className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+        >
+          <X className="size-3" aria-hidden="true" />
+          Limpiar
+        </button>
+      ) : null}
     </section>
   );
 }

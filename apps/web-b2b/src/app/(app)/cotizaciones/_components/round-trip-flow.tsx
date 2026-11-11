@@ -1,13 +1,13 @@
 'use client';
 
-import { ArrowLeft, Check, Loader2, Plane } from 'lucide-react';
+import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { searchReturnsAction, type Offer } from '../actions';
 import { cn } from '../../../../lib/cn';
 import { saleBreakdown } from '../../../../lib/sale-breakdown';
 import { airlineName } from './airline-names';
 import type { FareChoiceMode } from './fare-family-matrix';
-import { FlightRow, type FlightGroup } from './flight-row';
+import { AirlineLogo, FlightRow, type FlightGroup } from './flight-row';
 import { groupByLeg, legFare, mergeReturns, returnsFromSearch } from './leg-selection';
 
 /** Los criterios de la búsqueda que produjo los resultados (los mismos de la cotización). */
@@ -31,6 +31,8 @@ interface RoundTripFlowProps {
   outboundHeader: React.ReactNode;
   /** Aviso por vuelo (tarifa simulada, etc.) que la pantalla quiera pintar sobre cada fila. */
   rowNotice?: (group: FlightGroup) => React.ReactNode;
+  /** «Más barato», «Más rápido» de cada ida, calculados por la pantalla sobre la lista filtrada. */
+  tagsFor?: (group: FlightGroup) => readonly string[] | undefined;
   formatMoney: (amountMinor: number, currency: string) => string;
   formatTime: (iso: string) => string;
   formatDate: (iso: string) => string;
@@ -70,6 +72,7 @@ export function RoundTripFlow({
   showProvider,
   outboundHeader,
   rowNotice,
+  tagsFor,
   formatMoney,
   formatTime,
   formatDate,
@@ -133,7 +136,7 @@ export function RoundTripFlow({
 
   return (
     <div ref={topRef} className="scroll-mt-6">
-      <Steps step={outbound === null ? 1 : 2} />
+      <Steps step={outbound === null ? 1 : 2} criteria={criteria} formatDate={formatDate} />
 
       {outbound === null ? (
         <>
@@ -145,6 +148,7 @@ export function RoundTripFlow({
                 <FlightRow
                   group={group}
                   {...rowProps}
+                  {...(tagsFor?.(group) ? { tags: tagsFor(group) } : {})}
                   fareChoice={OUTBOUND_CHOICE}
                   onQuote={chooseOutbound}
                 />
@@ -210,42 +214,69 @@ export function RoundTripFlow({
   );
 }
 
-function Steps({ step }: { step: 1 | 2 }) {
+function Steps({
+  step,
+  criteria,
+  formatDate,
+}: {
+  step: 1 | 2;
+  criteria: RoundTripCriteria;
+  formatDate: (iso: string) => string;
+}) {
+  const day = (date: string | undefined) => (date ? formatDate(`${date}T12:00:00`) : '');
   const items = [
-    { n: 1, label: 'Elige la ida' },
-    { n: 2, label: 'Elige la vuelta' },
+    {
+      n: 1,
+      label: 'Ida',
+      detail: `${criteria.origin} → ${criteria.destination} · ${day(criteria.departureDate)}`,
+    },
+    {
+      n: 2,
+      label: 'Vuelta',
+      detail: `${criteria.destination} → ${criteria.origin} · ${day(criteria.returnDate)}`,
+    },
   ] as const;
   return (
-    <ol aria-label="Pasos de ida y vuelta" className="mb-4 flex items-center gap-2 text-sm">
+    <ol aria-label="Pasos de ida y vuelta" className="mb-4 flex items-center gap-3 text-sm">
       {items.map((item, index) => {
         const done = item.n < step;
         const current = item.n === step;
         return (
-          <li key={item.n} className="flex items-center gap-2">
+          <li key={item.n} className={cn('flex min-w-0 items-center gap-3', index > 0 && 'flex-1')}>
             {index > 0 ? (
-              <span aria-hidden="true" className="h-px w-6 bg-[var(--color-border-strong)]" />
+              <span
+                aria-hidden="true"
+                className="h-px min-w-4 flex-1 bg-[var(--color-border-strong)]"
+              />
             ) : null}
             <span
               aria-current={current ? 'step' : undefined}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1 font-medium',
-                current
-                  ? 'bg-[var(--color-primary)]/10 text-[var(--color-fg)] ring-1 ring-inset ring-[var(--color-primary)]/25'
-                  : 'text-[var(--color-fg-muted)]',
-              )}
+              className="flex min-w-0 items-center gap-2"
             >
               <span
                 aria-hidden="true"
                 className={cn(
-                  'flex size-5 items-center justify-center rounded-full text-xs font-semibold',
+                  'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
                   done || current
                     ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-                    : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
+                    : 'border border-[var(--color-border-strong)] text-[var(--color-fg-muted)]',
                 )}
               >
-                {done ? <Check className="size-3" strokeWidth={3} /> : item.n}
+                {done ? <Check className="size-3.5" strokeWidth={3} /> : item.n}
               </span>
-              {item.label}
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    'block font-semibold',
+                    current ? 'text-[var(--color-fg)]' : 'text-[var(--color-fg-muted)]',
+                  )}
+                >
+                  {item.label}
+                </span>
+                <span className="block truncate text-xs text-[var(--color-fg-muted)]">
+                  {item.detail}
+                </span>
+              </span>
             </span>
           </li>
         );
@@ -278,12 +309,7 @@ function ChosenOutbound({
       className="mb-4 flex flex-col gap-3 rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex min-w-0 items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
-        >
-          <Plane className="size-4" />
-        </span>
+        <AirlineLogo key={first.carrier} carrier={first.carrier} size="md" />
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-fg-muted)]">
             Ida · {formatDate(first.departureAt)}
