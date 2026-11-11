@@ -22,13 +22,16 @@ import {
   type SearchResult,
 } from './actions';
 import { createQuotationAction } from './quotation-actions';
+import { cn } from '../../../lib/cn';
 import { FlightRow, type FlightGroup } from './_components/flight-row';
 import {
   applyFlightFilters,
   EMPTY_FILTERS,
   FlightFilters,
+  MobileFilters,
   type FlightFilterState,
 } from './_components/flight-filters';
+import { activeFilterCount } from './_components/flight-filter-model';
 import { groupByLeg, isRoundTripResult } from './_components/leg-selection';
 import { PaxField } from './_components/pax-field';
 import { ResultsHeader } from './_components/results-header';
@@ -425,7 +428,10 @@ export default function CotizacionesPage() {
       ),
     [result.offers, sort, roundTrip],
   );
-  const flightGroups = useMemo(() => applyFlightFilters(allGroups, filters), [allGroups, filters]);
+  const flightGroups = useMemo(
+    () => applyFlightFilters(allGroups, filters, roundTrip ? 0 : undefined),
+    [allGroups, filters, roundTrip],
+  );
 
   useEffect(() => {
     setFilters(EMPTY_FILTERS);
@@ -755,13 +761,47 @@ function SearchResultsBody({
     }
     return out;
   }, [flightGroups, highlights, leg]);
-  const header = (
-    <ResultsHeader
-      count={flightGroups.length}
-      sort={sort}
-      onSortChange={onSortChange}
-      highlights={sortHighlights}
+  // En el paso 2 de ida y vuelta la lista son vueltas: los filtros de la ida no aplican y se ocultan.
+  const [step, setStep] = useState<1 | 2>(1);
+  const filtersPanel = (
+    <FlightFilters
+      groups={allGroups}
+      value={filters}
+      onChange={onFiltersChange}
+      formatMoney={formatMoney}
+      formatDuration={formatDuration}
+      {...(leg === undefined ? {} : { leg })}
+      slotLabel={(slot) => `Tramo ${String(slot + 1)}`}
     />
+  );
+  const header = (
+    <>
+      <div className="mb-3">
+        <MobileFilters count={activeFilterCount(filters)} resultCount={flightGroups.length}>
+          {filtersPanel}
+        </MobileFilters>
+      </div>
+      <ResultsHeader
+        count={flightGroups.length}
+        sort={sort}
+        onSortChange={onSortChange}
+        highlights={sortHighlights}
+      />
+    </>
+  );
+  const withSidebar = (body: React.ReactNode, showFilters = true) => (
+    <div
+      className={cn(
+        showFilters && 'lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-6',
+      )}
+    >
+      {showFilters ? (
+        <aside className="hidden lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          {filtersPanel}
+        </aside>
+      ) : null}
+      <div className="min-w-0">{body}</div>
+    </div>
   );
 
   const simulatedBadge = (group: FlightGroup) =>
@@ -777,40 +817,38 @@ function SearchResultsBody({
       <section className="animate-fade-in-up mt-8">
         <DegradedProvidersNotice providers={result.providers} />
         <SimulatedFaresNotice result={result} />
-        <RoundTripFlow
-          outboundGroups={flightGroups}
-          allOffers={result.offers}
-          criteria={roundTrip}
-          showProvider={result.showProviderInResults}
-          rowNotice={simulatedBadge}
-          tagsFor={(group) => tags.get(group.key)}
-          formatMoney={formatMoney}
-          formatTime={flightTime}
-          formatDate={flightDate}
-          formatDuration={formatDuration}
-          onQuote={onQuote}
-          outboundHeader={
-            <>
-              <FlightFilters
-                groups={allGroups}
-                value={filters}
-                onChange={onFiltersChange}
-                formatMoney={formatMoney}
-              />
-              {header}
-              {flightGroups.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
-                  <p className="text-sm font-medium text-[var(--color-fg)]">
-                    Ningún vuelo coincide con los filtros
-                  </p>
-                  <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-                    Prueba quitando algún filtro.
-                  </p>
-                </div>
-              ) : null}
-            </>
-          }
-        />
+        {withSidebar(
+          <RoundTripFlow
+            onStepChange={setStep}
+            outboundGroups={flightGroups}
+            allOffers={result.offers}
+            criteria={roundTrip}
+            showProvider={result.showProviderInResults}
+            rowNotice={simulatedBadge}
+            tagsFor={(group) => tags.get(group.key)}
+            formatMoney={formatMoney}
+            formatTime={flightTime}
+            formatDate={flightDate}
+            formatDuration={formatDuration}
+            onQuote={onQuote}
+            outboundHeader={
+              <>
+                {header}
+                {flightGroups.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
+                    <p className="text-sm font-medium text-[var(--color-fg)]">
+                      Ningún vuelo coincide con los filtros
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+                      Prueba quitando algún filtro.
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            }
+          />,
+          step === 1,
+        )}
       </section>
     );
   }
@@ -824,49 +862,47 @@ function SearchResultsBody({
       <section className="animate-fade-in-up mt-8">
         <DegradedProvidersNotice providers={result.providers} />
         <SimulatedFaresNotice result={result} />
-        <FlightFilters
-          groups={allGroups}
-          value={filters}
-          onChange={onFiltersChange}
-          formatMoney={formatMoney}
-        />
-        {header}
-        {flightGroups.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
-            <p className="text-sm font-medium text-[var(--color-fg)]">
-              Ningún vuelo coincide con los filtros
-            </p>
-            <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
-              Hay {allGroups.length} {allGroups.length === 1 ? 'resultado' : 'resultados'} en total.
-              Prueba quitando algún filtro.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {flightGroups.map((group) => (
-              <div key={group.key}>
-                {/* El badge acompaña a las tarifas de ESTE vuelo, no a la búsqueda entera:
+        {withSidebar(
+          <>
+            {header}
+            {flightGroups.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[var(--color-border-strong)]/60 bg-[var(--color-surface)] px-6 py-12 text-center">
+                <p className="text-sm font-medium text-[var(--color-fg)]">
+                  Ningún vuelo coincide con los filtros
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+                  Hay {allGroups.length} {allGroups.length === 1 ? 'resultado' : 'resultados'} en
+                  total. Prueba quitando algún filtro.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {flightGroups.map((group) => (
+                  <div key={group.key}>
+                    {/* El badge acompaña a las tarifas de ESTE vuelo, no a la búsqueda entera:
                     con dos proveedores, uno real y otro sin credenciales, el aviso global
                     o mentía sobre las tarifas buenas o callaba sobre las falsas. */}
-                {group.offers.some((offer) => isSimulatedOffer(offer, simulated)) && (
-                  <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--color-fg)]">
-                    <AlertTriangle className="size-3 shrink-0 text-[var(--color-warning)]" />
-                    Tarifa simulada · no cotizable
+                    {group.offers.some((offer) => isSimulatedOffer(offer, simulated)) && (
+                      <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1 text-[10px] font-bold text-[var(--color-fg)]">
+                        <AlertTriangle className="size-3 shrink-0 text-[var(--color-warning)]" />
+                        Tarifa simulada · no cotizable
+                      </div>
+                    )}
+                    <FlightRow
+                      group={group}
+                      {...(tags.get(group.key) ? { tags: tags.get(group.key) } : {})}
+                      showProvider={result.showProviderInResults}
+                      formatMoney={formatMoney}
+                      formatTime={flightTime}
+                      formatDate={flightDate}
+                      formatDuration={formatDuration}
+                      onQuote={onQuote}
+                    />
                   </div>
-                )}
-                <FlightRow
-                  group={group}
-                  {...(tags.get(group.key) ? { tags: tags.get(group.key) } : {})}
-                  showProvider={result.showProviderInResults}
-                  formatMoney={formatMoney}
-                  formatTime={flightTime}
-                  formatDate={flightDate}
-                  formatDuration={formatDuration}
-                  onQuote={onQuote}
-                />
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>,
         )}
       </section>
     );

@@ -33,6 +33,8 @@ interface RoundTripFlowProps {
   rowNotice?: (group: FlightGroup) => React.ReactNode;
   /** «Más barato», «Más rápido» de cada ida, calculados por la pantalla sobre la lista filtrada. */
   tagsFor?: (group: FlightGroup) => readonly string[] | undefined;
+  /** Avisa en qué paso está: la pantalla oculta los filtros de la ida mientras se elige la vuelta. */
+  onStepChange?: (step: 1 | 2) => void;
   formatMoney: (amountMinor: number, currency: string) => string;
   formatTime: (iso: string) => string;
   formatDate: (iso: string) => string;
@@ -73,6 +75,7 @@ export function RoundTripFlow({
   outboundHeader,
   rowNotice,
   tagsFor,
+  onStepChange,
   formatMoney,
   formatTime,
   formatDate,
@@ -124,6 +127,10 @@ export function RoundTripFlow({
     setReturns({ status: 'loading' });
     setTimeout(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
   }
+
+  useEffect(() => {
+    onStepChange?.(outbound === null ? 1 : 2);
+  }, [outbound, onStepChange]);
 
   const returnGroups = useMemo(() => {
     if (returns.status !== 'ready') return [];

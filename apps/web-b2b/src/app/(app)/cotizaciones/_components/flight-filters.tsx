@@ -1,132 +1,159 @@
 'use client';
 
-import { SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, SlidersHorizontal, X } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { airlineName } from './airline-names';
+import {
+  activeFilterCount,
+  deriveFilterOptions,
+  EMPTY_FILTERS,
+  HOUR_WINDOWS,
+  toggleWindow,
+  type FlightFilterState,
+  type OptionStat,
+} from './flight-filter-model';
 import type { FlightGroup } from './flight-row';
 
-/**
- * Filtros de resultados de vuelo.
- *
- * Hasta ahora la pantalla sólo tenía ORDEN: con veinte tarifas en pantalla no había
- * forma de decir "sin escalas" o "sólo Avianca", que es lo primero que hace un vendedor
- * con el cliente al teléfono. Se filtra en cliente sobre los resultados ya traídos: no
- * cuesta un round-trip al proveedor y el feedback es inmediato.
- */
-export interface FlightFilterState {
-  maxStops: number | null;
-  carriers: string[];
-  /** Franja de salida del primer tramo, en horas locales [desde, hasta). */
-  departureWindow: [number, number] | null;
-  maxPriceMinor: number | null;
+export { applyFlightFilters, EMPTY_FILTERS, type FlightFilterState } from './flight-filter-model';
+
+interface FlightFiltersProps {
+  groups: FlightGroup[];
+  value: FlightFilterState;
+  onChange: (next: FlightFilterState) => void;
+  formatMoney: (minor: number, currency: string) => string;
+  formatDuration: (minutes: number) => string;
+  /** El tramo que muestra la lista (paso de ida y vuelta); sin él, todos. */
+  leg?: number;
+  /** Nombre de cada tramo visible para los horarios: «Tramo 1», «Ida»… */
+  slotLabel?: (slot: number) => string;
 }
 
-export const EMPTY_FILTERS: FlightFilterState = {
-  maxStops: null,
-  carriers: [],
-  departureWindow: null,
-  maxPriceMinor: null,
-};
-
-const WINDOWS: { label: string; range: [number, number] }[] = [
-  { label: 'Madrugada', range: [0, 6] },
-  { label: 'Mañana', range: [6, 12] },
-  { label: 'Tarde', range: [12, 18] },
-  { label: 'Noche', range: [18, 24] },
-];
-
-/** Precio de venta si hay markup aplicado; si no, el neto. Igual criterio que la grilla. */
-function priceOf(group: FlightGroup): number {
-  const cheapest = group.offers[0];
-  return cheapest?.pricing?.finalMinor ?? cheapest?.total.amountMinor ?? 0;
-}
-
-function stopsOf(group: FlightGroup): number {
-  const it = group.offers[0]?.itineraries?.[0];
-  return it?.stops ?? 0;
-}
-
-function carriersOf(group: FlightGroup): string[] {
-  const it = group.offers[0]?.itineraries?.[0];
-  return [...new Set((it?.segments ?? []).map((s) => s.carrier))];
-}
-
-function departureHourOf(group: FlightGroup): number | null {
-  const dep = group.offers[0]?.itineraries?.[0]?.segments[0]?.departureAt;
-  return dep ? new Date(dep).getHours() : null;
-}
-
-export function applyFlightFilters(groups: FlightGroup[], f: FlightFilterState): FlightGroup[] {
-  return groups.filter((g) => {
-    if (f.maxStops !== null && stopsOf(g) > f.maxStops) return false;
-    if (f.carriers.length > 0 && !carriersOf(g).some((c) => f.carriers.includes(c))) return false;
-    if (f.maxPriceMinor !== null && priceOf(g) > f.maxPriceMinor) return false;
-    if (f.departureWindow) {
-      const h = departureHourOf(g);
-      if (h === null || h < f.departureWindow[0] || h >= f.departureWindow[1]) return false;
-    }
-    return true;
-  });
-}
-
-/** Opciones disponibles derivadas de los resultados, para no ofrecer filtros vacíos. */
-export function deriveFilterOptions(groups: FlightGroup[]): {
-  carriers: string[];
-  maxPriceMinor: number;
-  currency: string;
-} {
-  const carriers = [...new Set(groups.flatMap(carriersOf))].sort();
-  const prices = groups.map(priceOf);
-  return {
-    carriers,
-    maxPriceMinor: prices.length > 0 ? Math.max(...prices) : 0,
-    currency: groups[0]?.offers[0]?.total.currency ?? 'COP',
-  };
-}
-
-function Chip({
-  active,
-  onClick,
+function Section({
+  title,
   children,
+  defaultOpen = true,
 }: {
-  active: boolean;
-  onClick: () => void;
+  title: string;
   children: React.ReactNode;
+  defaultOpen?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-          : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
-      )}
-    >
-      {children}
-    </button>
+    <details open={defaultOpen} className="group border-b border-[var(--color-border)] py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-[var(--color-fg)] [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown
+          aria-hidden="true"
+          className="size-4 text-[var(--color-fg-subtle)] transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <div className="mt-2.5 space-y-1.5">{children}</div>
+    </details>
   );
 }
 
+/** Una opción con casilla, su conteo y su precio desde. Sin vuelos, queda tenue pero marcable. */
+function CheckRow({
+  checked,
+  onChange,
+  label,
+  stat,
+  type = 'checkbox',
+  name,
+  formatPrice,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: React.ReactNode;
+  stat?: OptionStat;
+  type?: 'checkbox' | 'radio';
+  name?: string;
+  formatPrice: (minor: number) => string;
+}) {
+  const empty = stat !== undefined && stat.count === 0;
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-[var(--color-surface-muted)]',
+        empty && !checked && 'opacity-55',
+      )}
+    >
+      <input
+        type={type}
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        className="size-4 shrink-0 accent-[var(--color-primary)]"
+      />
+      <span className="min-w-0 flex-1 truncate text-[var(--color-fg)]">{label}</span>
+      {stat ? (
+        <span className="shrink-0 text-right text-xs tabular-nums text-[var(--color-fg-muted)]">
+          {stat.minPriceMinor !== null && stat.count > 0 ? formatPrice(stat.minPriceMinor) : ''}
+          <span className="ml-1.5 text-[var(--color-fg-subtle)]">{stat.count}</span>
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
+function WindowChips({
+  label,
+  value,
+  onToggle,
+}: {
+  label: string;
+  value: readonly [number, number] | null | undefined;
+  onToggle: (range: readonly [number, number]) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-xs text-[var(--color-fg-muted)]">{label}</p>
+      <div className="grid grid-cols-4 gap-1">
+        {HOUR_WINDOWS.map((w) => {
+          const active = value?.[0] === w.range[0] && value[1] === w.range[1];
+          return (
+            <button
+              key={w.label}
+              type="button"
+              aria-pressed={active}
+              title={`${w.label}: ${String(w.range[0]).padStart(2, '0')}:00 a ${String(w.range[1]).padStart(2, '0')}:00`}
+              onClick={() => onToggle(w.range)}
+              className={cn(
+                'rounded-md border px-1 py-1 text-[11px] font-medium leading-tight transition-colors',
+                active
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
+                  : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]',
+              )}
+            >
+              {w.label}
+              <span className="block tabular-nums opacity-80">
+                {w.range[0]}–{w.range[1]}h
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * El panel de filtros: columna izquierda en escritorio, hoja inferior en el teléfono. Todo se
+ * calcula en el navegador sobre lo ya traído: filtrar nunca llama al proveedor.
+ */
 export function FlightFilters({
   groups,
   value,
   onChange,
   formatMoney,
-}: {
-  groups: FlightGroup[];
-  value: FlightFilterState;
-  onChange: (next: FlightFilterState) => void;
-  formatMoney: (minor: number, currency: string) => string;
-}) {
-  const { carriers, maxPriceMinor, currency } = deriveFilterOptions(groups);
-  const isDirty =
-    value.maxStops !== null ||
-    value.carriers.length > 0 ||
-    value.departureWindow !== null ||
-    value.maxPriceMinor !== null;
+  formatDuration,
+  leg,
+  slotLabel = (slot) => `Tramo ${String(slot + 1)}`,
+}: FlightFiltersProps) {
+  const options = deriveFilterOptions(groups, value, leg);
+  const price = (minor: number) => formatMoney(minor, options.currency);
+  const radioName = useId();
+  const dirty = activeFilterCount(value) > 0;
 
   function toggleCarrier(code: string) {
     onChange({
@@ -137,91 +164,290 @@ export function FlightFilters({
     });
   }
 
-  const label = 'mr-0.5 text-xs font-medium text-[var(--color-fg-subtle)]';
+  function toggleAirport(code: string) {
+    onChange({
+      ...value,
+      excludedAirports: value.excludedAirports.includes(code)
+        ? value.excludedAirports.filter((c) => c !== code)
+        : [...value.excludedAirports, code],
+    });
+  }
+
+  const durationStep = 30;
+  const durationMax = options.duration
+    ? Math.ceil(options.duration.max / durationStep) * durationStep
+    : 0;
+  const durationMin = options.duration
+    ? Math.floor(options.duration.min / durationStep) * durationStep
+    : 0;
+
   return (
-    <section
-      aria-label="Filtros de resultados"
-      className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-[var(--color-border)] pb-4"
-    >
-      <SlidersHorizontal aria-hidden="true" className="size-4 text-[var(--color-fg-subtle)]" />
-      <div role="group" aria-label="Escalas" className="flex flex-wrap items-center gap-1.5">
-        <span className={label}>Escalas</span>
-        <Chip
-          active={value.maxStops === 0}
-          onClick={() => onChange({ ...value, maxStops: value.maxStops === 0 ? null : 0 })}
-        >
-          Sin escalas
-        </Chip>
-        <Chip
-          active={value.maxStops === 1}
-          onClick={() => onChange({ ...value, maxStops: value.maxStops === 1 ? null : 1 })}
-        >
-          Hasta 1
-        </Chip>
+    <section aria-label="Filtros de resultados" className="text-sm">
+      <div className="flex items-center justify-between pb-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-fg)]">
+          <SlidersHorizontal className="size-4 text-[var(--color-fg-subtle)]" aria-hidden="true" />
+          Filtros
+        </h2>
+        {dirty ? (
+          <button
+            type="button"
+            onClick={() => onChange(EMPTY_FILTERS)}
+            className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+          >
+            <X className="size-3" aria-hidden="true" />
+            Limpiar
+          </button>
+        ) : null}
       </div>
 
-      <div role="group" aria-label="Salida" className="flex flex-wrap items-center gap-1.5">
-        <span className={label}>Salida</span>
-        {WINDOWS.map((w) => {
-          const active =
-            value.departureWindow?.[0] === w.range[0] && value.departureWindow[1] === w.range[1];
-          return (
-            <Chip
-              key={w.label}
-              active={active}
-              onClick={() => onChange({ ...value, departureWindow: active ? null : w.range })}
-            >
-              {w.label}
-            </Chip>
-          );
-        })}
-      </div>
+      <Section title="Escalas">
+        <CheckRow
+          type="radio"
+          name={radioName}
+          checked={value.maxStops === null}
+          onChange={() => onChange({ ...value, maxStops: null })}
+          label="Cualquiera"
+          formatPrice={price}
+        />
+        <CheckRow
+          type="radio"
+          name={radioName}
+          checked={value.maxStops === 0}
+          onChange={() => onChange({ ...value, maxStops: 0 })}
+          label="Directo"
+          stat={options.stops.direct}
+          formatPrice={price}
+        />
+        <CheckRow
+          type="radio"
+          name={radioName}
+          checked={value.maxStops === 1}
+          onChange={() => onChange({ ...value, maxStops: 1 })}
+          label="Hasta 1 escala"
+          stat={options.stops.upToOne}
+          formatPrice={price}
+        />
+      </Section>
 
-      {carriers.length > 1 ? (
-        <div role="group" aria-label="Aerolínea" className="flex flex-wrap items-center gap-1.5">
-          <span className={label}>Aerolínea</span>
-          {carriers.map((c) => (
-            <Chip key={c} active={value.carriers.includes(c)} onClick={() => toggleCarrier(c)}>
-              {airlineName(c)}
-            </Chip>
+      {options.carriers.length > 1 ? (
+        <Section title="Aerolíneas">
+          {options.carriers.map((c) => (
+            <CheckRow
+              key={c.code}
+              checked={value.carriers.includes(c.code)}
+              onChange={() => toggleCarrier(c.code)}
+              label={airlineName(c.code)}
+              stat={c}
+              formatPrice={price}
+            />
           ))}
-        </div>
+        </Section>
       ) : null}
 
-      {maxPriceMinor > 0 ? (
-        <div className="flex min-w-[220px] flex-1 items-center gap-2">
-          <label htmlFor="price-filter" className={cn(label, 'shrink-0')}>
+      <Section title="Equipaje">
+        <CheckRow
+          checked={value.baggage.carryOn}
+          onChange={() =>
+            onChange({ ...value, baggage: { ...value.baggage, carryOn: !value.baggage.carryOn } })
+          }
+          label="Equipaje de mano"
+          stat={options.baggage.carryOn}
+          formatPrice={price}
+        />
+        <CheckRow
+          checked={value.baggage.checked}
+          onChange={() =>
+            onChange({ ...value, baggage: { ...value.baggage, checked: !value.baggage.checked } })
+          }
+          label="Maleta facturada"
+          stat={options.baggage.checked}
+          formatPrice={price}
+        />
+      </Section>
+
+      <Section title="Horarios">
+        <div className="space-y-3">
+          {Array.from({ length: options.legSlots }, (_, slot) => (
+            <div key={slot} className="space-y-1.5">
+              {options.legSlots > 1 ? (
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-fg)]">
+                  {slotLabel(slot)}
+                </p>
+              ) : null}
+              <WindowChips
+                label="Salida"
+                value={value.departure[slot]}
+                onToggle={(range) =>
+                  onChange({ ...value, departure: toggleWindow(value.departure, slot, range) })
+                }
+              />
+              <WindowChips
+                label="Llegada"
+                value={value.arrival[slot]}
+                onToggle={(range) =>
+                  onChange({ ...value, arrival: toggleWindow(value.arrival, slot, range) })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {options.duration && durationMax > durationMin ? (
+        <Section title="Duración" defaultOpen={false}>
+          <label
+            htmlFor={`${radioName}-dur`}
+            className="block text-xs text-[var(--color-fg-muted)]"
+          >
             Hasta{' '}
             <span className="font-semibold tabular-nums text-[var(--color-fg)]">
-              {formatMoney(value.maxPriceMinor ?? maxPriceMinor, currency)}
+              {formatDuration(value.maxDurationMinutes ?? durationMax)}
             </span>
           </label>
           <input
-            id="price-filter"
+            id={`${radioName}-dur`}
             type="range"
-            min={0}
-            max={maxPriceMinor}
-            step={Math.max(1, Math.round(maxPriceMinor / 50))}
-            value={value.maxPriceMinor ?? maxPriceMinor}
+            min={durationMin}
+            max={durationMax}
+            step={durationStep}
+            value={value.maxDurationMinutes ?? durationMax}
             onChange={(e) => {
               const v = Number(e.target.value);
-              onChange({ ...value, maxPriceMinor: v >= maxPriceMinor ? null : v });
+              onChange({ ...value, maxDurationMinutes: v >= durationMax ? null : v });
             }}
-            className="w-full min-w-24 accent-[var(--color-primary)]"
+            className="w-full accent-[var(--color-primary)]"
           />
-        </div>
+        </Section>
       ) : null}
 
-      {isDirty ? (
-        <button
-          type="button"
-          onClick={() => onChange(EMPTY_FILTERS)}
-          className="flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
-        >
-          <X className="size-3" aria-hidden="true" />
-          Limpiar
-        </button>
+      {options.airports.length > 0 ? (
+        <Section title="Aeropuertos">
+          {options.airports.map((a) => (
+            <CheckRow
+              key={a.code}
+              checked={!value.excludedAirports.includes(a.code)}
+              onChange={() => toggleAirport(a.code)}
+              label={<span className="font-mono">{a.code}</span>}
+              stat={a}
+              formatPrice={price}
+            />
+          ))}
+        </Section>
+      ) : null}
+
+      {options.maxPriceMinor > 0 ? (
+        <Section title="Precio" defaultOpen={false}>
+          <label
+            htmlFor={`${radioName}-price`}
+            className="block text-xs text-[var(--color-fg-muted)]"
+          >
+            Hasta{' '}
+            <span className="font-semibold tabular-nums text-[var(--color-fg)]">
+              {price(value.maxPriceMinor ?? options.maxPriceMinor)}
+            </span>
+          </label>
+          <input
+            id={`${radioName}-price`}
+            type="range"
+            min={0}
+            max={options.maxPriceMinor}
+            step={Math.max(1, Math.round(options.maxPriceMinor / 50))}
+            value={value.maxPriceMinor ?? options.maxPriceMinor}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              onChange({ ...value, maxPriceMinor: v >= options.maxPriceMinor ? null : v });
+            }}
+            className="w-full accent-[var(--color-primary)]"
+          />
+        </Section>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * En el teléfono: un botón «Filtros (n)» que abre el mismo panel como hoja inferior. El panel es
+ * un diálogo de verdad (`role=dialog`, Escape cierra) y el fondo no se desplaza mientras está.
+ */
+export function MobileFilters({
+  count,
+  resultCount,
+  children,
+}: {
+  count: number;
+  resultCount: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = overflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="lg:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-semibold text-[var(--color-fg)] hover:border-[var(--color-border-strong)]"
+      >
+        <SlidersHorizontal className="size-4" aria-hidden="true" />
+        Filtros
+        {count > 0 ? (
+          <span className="rounded-full bg-[var(--color-primary)] px-1.5 text-xs font-bold text-[var(--color-primary-fg)]">
+            {count}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[85vh] w-full flex-col rounded-t-2xl bg-[var(--color-surface)] shadow-[var(--shadow-lg)]"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+              <p id={titleId} className="text-base font-semibold text-[var(--color-fg)]">
+                Filtros
+              </p>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Cerrar filtros"
+                className="flex size-8 items-center justify-center rounded-md text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-4">{children}</div>
+            <div className="border-t border-[var(--color-border)] p-3">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="h-11 w-full rounded-lg bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-fg)]"
+              >
+                Ver {resultCount} {resultCount === 1 ? 'vuelo' : 'vuelos'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
