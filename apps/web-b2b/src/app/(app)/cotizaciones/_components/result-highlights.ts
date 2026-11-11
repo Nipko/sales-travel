@@ -8,6 +8,32 @@ import type { FlightGroup } from './flight-row';
  * tarjetas de orden dijeran el neto, el «Más barato» no coincidiría con ningún precio visible.
  */
 
+export function groupCurrency(group: FlightGroup): string | undefined {
+  return group.offers[0]?.total.currency;
+}
+
+/**
+ * La moneda en la que vienen más vuelos. Un proveedor puede cotizar en otra (LATAM NDC en BRL
+ * mientras Sabre cotiza en COP): las cifras de monedas distintas no se comparan, así que el
+ * «Más barato» y el orden por precio se deciden dentro de ésta y el resto va después.
+ */
+export function mainCurrency(groups: readonly FlightGroup[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const group of groups) {
+    const currency = groupCurrency(group);
+    if (currency) counts.set(currency, (counts.get(currency) ?? 0) + 1);
+  }
+  let best: string | undefined;
+  let bestCount = 0;
+  for (const [currency, count] of counts) {
+    if (count > bestCount) {
+      best = currency;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
 /** Precio de venta de la tarifa más barata del vuelo. */
 export function groupPrice(group: FlightGroup): number {
   const cheapest = group.offers[0];
@@ -44,7 +70,11 @@ export interface ResultHighlights {
 }
 
 export function findHighlights(groups: readonly FlightGroup[], leg?: number): ResultHighlights {
-  const cheapest = minBy(groups, groupPrice);
+  const currency = mainCurrency(groups);
+  const cheapest = minBy(
+    groups.filter((g) => groupCurrency(g) === currency),
+    groupPrice,
+  );
   const fastest = minBy(groups, (g) => groupDuration(g, leg));
   return { ...(cheapest ? { cheapest } : {}), ...(fastest ? { fastest } : {}) };
 }

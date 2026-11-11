@@ -14,7 +14,7 @@ import {
   type TestFareShare,
 } from '../../../../lib/test-content';
 import { TestContentBadge } from '../../../../components/test-content-badge';
-import { airlineName } from './airline-names';
+import { airlineLogoUrl, airlineName } from './airline-names';
 import { fareAttributes } from '../../../../lib/fare-attributes';
 import { BaggageIcons } from './baggage-icons';
 import { FareFamilyMatrix, type FareChoiceMode } from './fare-family-matrix';
@@ -88,7 +88,7 @@ const LOGO_SIZE = {
 /**
  * Logo de la aerolínea con el código siempre debajo.
  *
- * `pics.avs.io` es un tercero: puede tardar o no tener el código. El código es la capa base y la
+ * El servicio de logos es un tercero: puede tardar o no tener el código. El código es la capa base y la
  * imagen se revela sólo cuando carga, así que nunca queda un hueco en blanco.
  *
  * El estado no se reinicia solo: montarlo con `key={carrier}` es lo que garantiza que una fila
@@ -121,7 +121,7 @@ export function AirlineLogo({
         {carrier}
       </span>
       <img
-        src={`https://pics.avs.io/120/120/${carrier}.png`}
+        src={airlineLogoUrl(carrier)}
         alt=""
         width={dims.px}
         height={dims.px}
@@ -129,7 +129,7 @@ export function AirlineLogo({
         decoding="async"
         onLoad={() => setLoaded(true)}
         className={cn(
-          'absolute inset-0 size-full bg-white object-contain p-1',
+          'absolute inset-0 size-full bg-white object-cover',
           loaded ? 'opacity-100' : 'opacity-0',
         )}
       />

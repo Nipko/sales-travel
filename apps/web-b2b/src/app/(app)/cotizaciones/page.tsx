@@ -56,9 +56,11 @@ import { SearchSummary } from './_components/search-summary';
 import type { SortKey } from './_components/sort-toggle';
 import {
   findHighlights,
+  groupCurrency,
   groupDuration,
   groupPrice,
   highlightTags,
+  mainCurrency,
 } from './_components/result-highlights';
 import type { SortHighlights } from './_components/results-header';
 
@@ -163,7 +165,14 @@ function groupOffersByFlight(offers: Offer[]): FlightGroup[] {
  */
 function sortGroups(groups: FlightGroup[], sort: SortKey, leg?: number): FlightGroup[] {
   const sorted = [...groups];
+  const currency = mainCurrency(groups);
   sorted.sort((a, b) => {
+    // Precios en otra moneda no se comparan con los de la principal: van detrás.
+    if (sort === 'price' || sort === 'best') {
+      const offA = groupCurrency(a) === currency ? 0 : 1;
+      const offB = groupCurrency(b) === currency ? 0 : 1;
+      if (offA !== offB) return offA - offB;
+    }
     const priceA = groupPrice(a);
     const priceB = groupPrice(b);
     const durA = groupDuration(a, leg);

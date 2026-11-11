@@ -1,5 +1,7 @@
 'use client';
 
+import { airlineLogoUrl } from './airline-names';
+
 import {
   Armchair,
   Briefcase,
@@ -72,7 +74,7 @@ function CarrierMark({ carrier }: { carrier: string }) {
         {carrier}
       </span>
       <img
-        src={`https://pics.avs.io/60/60/${carrier}.png`}
+        src={airlineLogoUrl(carrier)}
         alt=""
         width={32}
         height={32}

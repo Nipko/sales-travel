@@ -63,3 +63,12 @@ export function airlineName(carrier: string): string {
   const code = carrier.trim().toUpperCase();
   return AIRLINE_NAMES[code] ?? code;
 }
+
+/**
+ * Logo cuadrado de la aerolínea (la cola o el isotipo), legible aun a 28 px. pics.avs.io servía
+ * el nombre escrito a lo ancho, que en un cuadro chico quedaba como una raya. La CSP ya admite
+ * imágenes `https:`; si el código no tiene logo, el servicio devuelve un avión genérico.
+ */
+export function airlineLogoUrl(carrier: string): string {
+  return `https://images.kiwi.com/airlines/128x128/${encodeURIComponent(carrier.toUpperCase())}.png`;
+}

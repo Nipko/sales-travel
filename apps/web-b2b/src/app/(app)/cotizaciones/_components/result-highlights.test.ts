@@ -44,3 +44,14 @@ describe('destacados de la lista', () => {
     expect(highlightTags([solo], findHighlights([solo])).size).toBe(0);
   });
 });
+
+describe('con monedas mezcladas', () => {
+  it('el más barato se busca en la moneda principal, no comparando cifras de otra', () => {
+    const cop = (key: string, amount: number) => group(key, amount, [100]);
+    const brl = group('brl', 314083, [100]);
+    (brl.offers[0] as { total: { currency: string } }).total.currency = 'BRL';
+    (brl.offers[0] as { taxes: { currency: string } }).taxes.currency = 'BRL';
+    const groups = [cop('a', 258983000), cop('b', 300000000), brl];
+    expect(findHighlights(groups).cheapest?.key).toBe('a');
+  });
+});

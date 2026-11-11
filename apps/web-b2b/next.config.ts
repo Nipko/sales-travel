@@ -18,8 +18,8 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
-  // pics.avs.io sirve los logos de aerolínea en los resultados de vuelo.
-  "img-src 'self' data: blob: https://pics.avs.io https:",
+  // images.kiwi.com sirve los logos de aerolínea en los resultados de vuelo.
+  "img-src 'self' data: blob: https://images.kiwi.com https:",
   "font-src 'self' data:",
   "connect-src 'self'",
   "frame-ancestors 'none'",
