@@ -3,7 +3,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { PLATFORM_ROLES } from '../auth/roles.js';
 import { SuperadminGuard } from '../network/superadmin.guard.js';
-import { AdminSystemService, type AdminSystemJobsView } from './admin-system.service.js';
+import {
+  AdminSystemService,
+  type AdminProviderHealthView,
+  type AdminSystemJobsView,
+} from './admin-system.service.js';
 
 /**
  * Plataforma → Sistema: lo que corre solo. Hoy, Procesos (`GET /admin/system/jobs`): el barrido de
@@ -21,5 +25,11 @@ export class AdminSystemController {
   @Get('jobs')
   async jobs(@CurrentUser() userId: string): Promise<AdminSystemJobsView> {
     return this.system.jobs(userId);
+  }
+
+  /** Plataforma → Salud: cómo respondieron los proveedores a las búsquedas (0095). */
+  @Get('providers')
+  async providers(@CurrentUser() userId: string): Promise<AdminProviderHealthView> {
+    return this.system.providerHealth(userId);
   }
 }

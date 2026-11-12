@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Building2,
   Calendar,
@@ -75,33 +76,86 @@ export const accountNav: NavItem[] = [
 ];
 
 /**
- * La consola de la plataforma, sólo del superadmin: la sección Plataforma del menú. Las consolas que
- * se sumen se agregan a este mismo arreglo.
+ * La consola de la plataforma, sólo del superadmin, agrupada por TAREA (founder 2026-11-12): antes
+ * era una lista de diez entradas más la Administración de la agencia, con dobles que confundían
+ * («Proveedores» y «Proveedores (GDS)», «Usuarios» y «Equipo»). Salud va primero: es lo que dice si
+ * algo está roto (un proveedor que dejó de traer resultados).
  */
-export const superAdminNav: NavItem[] = [
-  { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
-  { label: 'Agencias', href: '/admin/tenants', icon: Building2 },
-  // Las reservas de toda la red. Mis Reservas no: la plataforma no vende y no tiene reservas propias.
-  { label: 'Reservas', href: '/admin/plataforma/reservas', icon: CalendarCheck },
+export const platformGroups: readonly NavSection[] = [
   {
-    label: 'Carteras',
-    href: '/admin/plataforma/carteras',
-    icon: Wallet,
-    badge: 'pendingDeposits',
+    label: 'Plataforma',
+    items: [
+      { label: 'Salud', href: '/admin/plataforma/salud', icon: Activity },
+      { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
+      // Quién hizo qué, dónde y cuándo, en toda la plataforma.
+      { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },
+      // Lo que corre solo: el barrido de post-venta, la conciliación y los catálogos.
+      { label: 'Sistema', href: '/admin/plataforma/sistema', icon: Settings2 },
+    ],
   },
-  // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
-  // la de las credenciales de la agencia (adminNav).
-  { label: 'Proveedores', href: '/admin/plataforma/proveedores', icon: Plug },
-  // Qué proveedores y formas de pago puede usar cada nodo: perfiles y reglas globales.
-  { label: 'Gobierno', href: '/admin/plataforma/gobierno', icon: Scale },
-  { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
-  // Quién es superadmin (pleno o supervisado) y las solicitudes que esperan a un pleno.
-  { label: 'Superadmins', href: '/admin/plataforma/superadmins', icon: ShieldCheck },
-  // Quién hizo qué, dónde y cuándo, en toda la plataforma.
-  { label: 'Actividad', href: '/admin/plataforma/actividad', icon: History },
-  // Lo que corre solo: el barrido de post-venta, la conciliación y los catálogos.
-  { label: 'Sistema', href: '/admin/plataforma/sistema', icon: Settings2 },
+  {
+    label: 'Red',
+    items: [
+      { label: 'Agencias', href: '/admin/tenants', icon: Building2 },
+      // Las reservas de toda la red. Mis Reservas no: la plataforma no vende y no tiene reservas propias.
+      { label: 'Reservas', href: '/admin/plataforma/reservas', icon: CalendarCheck },
+      {
+        label: 'Carteras',
+        href: '/admin/plataforma/carteras',
+        icon: Wallet,
+        badge: 'pendingDeposits',
+      },
+    ],
+  },
+  {
+    label: 'Proveedores',
+    items: [
+      // Fuera de `/admin/proveedores` a propósito: el sidebar marca activo por prefijo y esa ruta es
+      // la de las credenciales (abajo, con la plataforma activa).
+      { label: 'Activación', href: '/admin/plataforma/proveedores', icon: Plug },
+      // Qué proveedores y formas de pago puede usar cada nodo: perfiles y reglas globales.
+      { label: 'Gobierno', href: '/admin/plataforma/gobierno', icon: Scale },
+    ],
+  },
+  {
+    label: 'Acceso',
+    items: [
+      { label: 'Usuarios', href: '/admin/plataforma/usuarios', icon: UserCog },
+      // Quién es superadmin (pleno o supervisado) y las solicitudes que esperan a un pleno.
+      { label: 'Superadmins', href: '/admin/plataforma/superadmins', icon: ShieldCheck },
+    ],
+  },
 ];
+
+/** Todas las pantallas de la consola, en orden: la paleta (⌘K) y los contadores las leen planas. */
+export const superAdminNav: NavItem[] = platformGroups.flatMap((group) => group.items);
+
+/**
+ * Con la plataforma ACTIVA, lo de «Administración» que sí sirve se integra a la consola y lo demás
+ * se va: «Mi Red» y «Equipo» repetían Agencias y Usuarios. Las credenciales de la plataforma
+ * (sus cuentas de Sabre, TBO…) van con los proveedores, y sus ajustes con la plataforma.
+ */
+function platformConsole(platformActive: boolean): NavSection[] {
+  if (!platformActive) return platformGroups.map((g) => ({ ...g, items: [...g.items] }));
+  return platformGroups.map((group) => {
+    if (group.label === 'Proveedores') {
+      return {
+        ...group,
+        items: [
+          ...group.items,
+          { label: 'Credenciales', href: '/admin/proveedores', icon: KeyRound },
+        ],
+      };
+    }
+    if (group.label === 'Plataforma') {
+      return {
+        ...group,
+        items: [...group.items, { label: 'Ajustes', href: '/configuracion', icon: Settings }],
+      };
+    }
+    return { ...group, items: [...group.items] };
+  });
+}
 
 /** ¿Ve la sección Administración (Mi Red, Mi Agencia, Equipo…) con este rol en la agencia activa? */
 export function seesAdministration(role: string | undefined): boolean {
@@ -134,10 +188,11 @@ export function navSections(role: string | undefined, viewer: Viewer): NavSectio
     { label: 'Operaciones', items: operations },
     // La plataforma va primero entre lo suyo; Gestión (Clientes, Cartera B2B, Reportes) mostraría
     // los datos del tenant de la plataforma, que no vende: vacíos.
-    ...(seesConsole ? [{ label: 'Plataforma', items: superAdminNav }] : []),
+    ...(seesConsole ? platformConsole(platform) : []),
     ...(platform ? [] : [{ label: 'Gestión', items: managementNav }]),
   ];
-  if (seesAdministration(role)) {
+  // Con la plataforma activa, su Administración ya está dentro de la consola (Credenciales, Ajustes).
+  if (seesAdministration(role) && !platform) {
     sections.push({ label: 'Administración', items: adminNav });
   }
   // La seguridad de la propia cuenta no es administración: la ve cualquiera.

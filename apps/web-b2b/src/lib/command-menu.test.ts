@@ -115,10 +115,13 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
   it('el superadmin: Plataforma después de Operaciones, sin Gestión ni las pantallas de venta', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     // Gestión mostraría los datos del tenant de la plataforma, que no vende.
+    // Agrupada por tarea; su Administración (Credenciales, Ajustes) vive dentro de la consola.
     expect(sections.map((s) => s.label)).toEqual([
       'Operaciones',
       'Plataforma',
-      'Administración',
+      'Red',
+      'Proveedores',
+      'Acceso',
       'Mi cuenta',
     ]);
     const operations = sections.find((s) => s.label === 'Operaciones')?.items.map((i) => i.href);
@@ -137,21 +140,45 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(sections.map((s) => s.label)).toContain('Gestión');
   });
 
-  it('Plataforma: Resumen, Agencias, Reservas, Carteras, Proveedores, Gobierno, Usuarios, Superadmins, Actividad y Sistema', () => {
+  it('la consola por tarea: Salud primero, y sin los dobles de la Administración', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
-    const platform = sections.find((s) => s.label === 'Plataforma')?.items ?? [];
-    expect(platform.map((i) => [i.label, i.href])).toEqual([
+    const group = (label: string) =>
+      sections.find((s) => s.label === label)?.items.map((i) => [i.label, i.href]);
+    expect(group('Plataforma')).toEqual([
+      ['Salud', '/admin/plataforma/salud'],
       ['Resumen', '/admin/plataforma/resumen'],
+      ['Actividad', '/admin/plataforma/actividad'],
+      ['Sistema', '/admin/plataforma/sistema'],
+      ['Ajustes', '/configuracion'],
+    ]);
+    expect(group('Red')).toEqual([
       ['Agencias', '/admin/tenants'],
       ['Reservas', '/admin/plataforma/reservas'],
       ['Carteras', '/admin/plataforma/carteras'],
-      ['Proveedores', '/admin/plataforma/proveedores'],
+    ]);
+    expect(group('Proveedores')).toEqual([
+      ['Activación', '/admin/plataforma/proveedores'],
       ['Gobierno', '/admin/plataforma/gobierno'],
+      ['Credenciales', '/admin/proveedores'],
+    ]);
+    expect(group('Acceso')).toEqual([
       ['Usuarios', '/admin/plataforma/usuarios'],
       ['Superadmins', '/admin/plataforma/superadmins'],
-      ['Actividad', '/admin/plataforma/actividad'],
-      ['Sistema', '/admin/plataforma/sistema'],
     ]);
+    const hrefs = sections.flatMap((s) => s.items.map((i) => i.href));
+    // «Mi Red» y «Equipo» repetían Agencias y Usuarios.
+    expect(hrefs).not.toContain('/red');
+    expect(hrefs).not.toContain('/admin/usuarios');
+  });
+
+  it('un superadmin operando otra agencia ve la consola sin las credenciales de la plataforma', () => {
+    const sections = navSections('agency_admin', { platformUser: true, superadmin: true });
+    const proveedores = sections.find((s) => s.label === 'Proveedores')?.items.map((i) => i.href);
+    expect(proveedores).not.toContain('/admin/proveedores');
+    // Las de la agencia siguen en su Administración.
+    expect(sections.find((s) => s.label === 'Administración')?.items.map((i) => i.href)).toContain(
+      '/admin/proveedores',
+    );
   });
 
   it('en la paleta del superadmin, "actividad" lleva a la de toda la plataforma', () => {

@@ -1,3 +1,9 @@
+import {
+  foldProviderHealth,
+  sortProviderHealth,
+  type ProviderHealth,
+  type ProviderSearchHealthRow,
+} from './provider-health.fold.js';
 import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
@@ -318,9 +324,49 @@ export async function readCatalogFreshness(
 
 // ─────────────────────────── El servicio ───────────────────────────
 
+/** Ventana de Salud: 7 días de historia y 24 h para el estado de ahora. */
+const PROVIDER_HEALTH_DAYS = 7;
+const PROVIDER_HEALTH_RECENT_HOURS = 24;
+
+export interface AdminProviderHealthView {
+  generatedAt: string;
+  periodDays: number;
+  recentHours: number;
+  providers: ProviderHealth[];
+}
+
 @Injectable()
 export class AdminSystemService {
   constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * Plataforma → Salud (0095): cómo respondieron los proveedores a las búsquedas en los últimos
+   * 7 días, y en las últimas 24 h para decidir si un proveedor está caído.
+   */
+  async providerHealth(
+    actorUserId: string,
+    now: Date = new Date(),
+  ): Promise<AdminProviderHealthView> {
+    const since = new Date(now.getTime() - PROVIDER_HEALTH_DAYS * DAY_MS);
+    const recent = new Date(now.getTime() - PROVIDER_HEALTH_RECENT_HOURS * 3_600_000);
+    try {
+      return await this.db.withRequestContext({ userId: actorUserId }, async (trx) => {
+        const res = await sql<ProviderSearchHealthRow>`
+          SELECT * FROM admin_provider_search_health(${since}::timestamptz, ${recent}::timestamptz)
+        `.execute(trx);
+        return {
+          generatedAt: now.toISOString(),
+          periodDays: PROVIDER_HEALTH_DAYS,
+          recentHours: PROVIDER_HEALTH_RECENT_HOURS,
+          providers: sortProviderHealth(
+            res.rows.map((row) => foldProviderHealth(row, PROVIDER_HEALTH_RECENT_HOURS, now)),
+          ),
+        };
+      });
+    } catch (err) {
+      rethrowAdminDbError(err);
+    }
+  }
 
   async jobs(actorUserId: string, now: Date = new Date()): Promise<AdminSystemJobsView> {
     const runsSince = new Date(now.getTime() - SYSTEM_RECONCILIATION_DAYS * DAY_MS);
