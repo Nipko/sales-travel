@@ -383,6 +383,23 @@ const SABRE: ProviderForm = {
       ],
       help: 'Nunca con tarjeta: la plataforma no envía datos de tarjeta a Sabre. El cobro al cliente va por el checkout de pagos.',
     },
+    // Las impresoras de la emisión: las lee `sabrePrintersFromAccountConfig` en la API.
+    {
+      key: 'ticketPrinterCountry',
+      label: 'País de los tiquetes (impresora de emisión)',
+      placeholder: 'CO',
+      minLength: 2,
+      maxLength: 2,
+      help: 'El país del stock de tiquetes de la oficina que emite. Sin impresora, Sabre no emite (PRINTER_NOT_ASSIGNED).',
+    },
+    {
+      key: 'hardcopyPrinter',
+      label: 'Impresora de copia (LNIATA, opcional)',
+      placeholder: 'A1B2C3',
+      minLength: 6,
+      maxLength: 6,
+      help: 'La dirección de 6 caracteres que Sabre le asignó a la oficina. Si no la tienes, déjala vacía.',
+    },
     // ⚠️ Rodeo temporal de H-07 (docs/sabre/12): lo lee `sabreBookOnTicketingPcc` en la API.
     {
       key: 'bookOnTicketingPcc',

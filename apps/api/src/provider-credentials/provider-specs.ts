@@ -261,6 +261,9 @@ const SABRE: ProviderSpec = {
     'ticketingLeadHours',
     'ticketingFormOfPayment',
     'pccTimeZone',
+    // Las impresoras de la emisión (`sabrePrintersFromAccountConfig`).
+    'ticketPrinterCountry',
+    'hardcopyPrinter',
     // ⚠️ Rodeo temporal de H-07 (`sabreBookOnTicketingPcc`, docs/sabre/12).
     'bookOnTicketingPcc',
   ],

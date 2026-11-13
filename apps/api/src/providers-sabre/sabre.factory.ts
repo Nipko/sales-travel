@@ -62,6 +62,7 @@ import {
   sabreEnvironmentOfHosts,
   type SabreCancelOptions,
   type SabreCardBinPricingPolicy,
+  type SabreFulfillPrinters,
   type SabreConfig,
   type SabreEnvironment,
   type SabreOrderCreateOptions,
@@ -305,6 +306,46 @@ export function sabreTicketingSettingsFromAccountConfig(
   return {
     settings: retried.success ? retried.data : SabreTicketingSettingsSchema.parse({}),
     invalidFields: [...invalid].sort(),
+  };
+}
+
+const TICKET_PRINTER_COUNTRY = /^[A-Z1][A-Z1]$/;
+const PRINTER_LNIATA = /^[A-Z0-9]{6}$/;
+
+export interface SabreAccountPrintersResult {
+  readonly printers?: SabreFulfillPrinters;
+  /** Claves de `config` inválidas, nunca sus valores. */
+  readonly invalidFields: readonly string[];
+}
+
+/**
+ * `config.ticketPrinterCountry` y `config.hardcopyPrinter` → `designatePrinters` de la emisión.
+ *
+ * La emisión es sin estado: la oficina no conserva la impresora designada entre llamadas y, sin
+ * decirla, Sabre responde `PRINTER_NOT_ASSIGNED` y no emite (visto en CERT el 2026-11-12). Un
+ * valor inválido se descarta solo, y se informa el nombre del campo.
+ */
+export function sabrePrintersFromAccountConfig(
+  config: Readonly<Record<string, unknown>>,
+): SabreAccountPrintersResult {
+  const invalidFields: string[] = [];
+  const read = (key: string, pattern: RegExp): string | undefined => {
+    const raw = config[key];
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const value = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+    if (pattern.test(value)) return value;
+    invalidFields.push(key);
+    return undefined;
+  };
+  const ticketCountryCode = read('ticketPrinterCountry', TICKET_PRINTER_COUNTRY);
+  const hardcopyAddress = read('hardcopyPrinter', PRINTER_LNIATA);
+  if (ticketCountryCode === undefined && hardcopyAddress === undefined) return { invalidFields };
+  return {
+    printers: {
+      ...(ticketCountryCode === undefined ? {} : { ticketCountryCode }),
+      ...(hardcopyAddress === undefined ? {} : { hardcopyAddress }),
+    },
+    invalidFields,
   };
 }
 
@@ -1159,6 +1200,12 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         `configuración de emisión de Sabre inválida para ${ownerTenantId}: campos [${ticketing.invalidFields.join(', ')}] — se aplican los valores por defecto`,
       );
     }
+    const printers = sabrePrintersFromAccountConfig(config);
+    if (printers.invalidFields.length > 0) {
+      this.logger.warn(
+        `impresoras de emisión de Sabre inválidas para ${ownerTenantId}: campos [${printers.invalidFields.join(', ')}] — se ignoran`,
+      );
+    }
     const booking = this.bookingLane(cfg, ownerTenantId, config, http, logger);
     const ndcPrice = new SabreOfferPriceAdapter(cfg, http, { cardBinPricing });
     const atpcoPrice = new SabreFlightCheckAdapter(cfg, http, { logger });
@@ -1179,6 +1226,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         ...(ticketingPcc !== undefined && SABRE_PCC_PATTERN.test(ticketingPcc)
           ? { ticketingPcc }
           : {}),
+        ...(printers.printers === undefined ? {} : { printers: printers.printers }),
         // Lo agregado antes de emitir sale como EMD en la misma emisión (SAB-20). Sin `services`
         // la emisión sigue siendo sólo de tiquetes, como antes.
         issueAncillaryEmds: this.operations.has('services'),
