@@ -25,6 +25,7 @@ import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.s
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService, type ProviderSearchSlice } from './search-telemetry.service.js';
 import { SEARCH_CACHE } from './search-cache.adapter.js';
+import { foldProviderStatus, type ProviderStatus } from './provider-status.fold.js';
 import { dedupeFlightOffers } from './offer-dedupe.js';
 import { fanOut, type ProviderRun } from './provider-fanout.js';
 
@@ -38,6 +39,9 @@ const SEARCH_CACHE_TTL_SECONDS = 600;
 
 /** Más tarifas de un vuelo: misma ventana que la búsqueda de la que salen. */
 const MORE_FARES_CACHE_TTL_SECONDS = 600;
+
+/** Ventana del estado de proveedores que ve la agencia. */
+const PROVIDER_STATUS_WINDOW_HOURS = 6;
 
 /**
  * Por debajo de esta cantidad de ofertas, la primera ola se considera insuficiente y se
@@ -744,6 +748,18 @@ export class SearchService {
       await this.cache.set(key, priced, MORE_FARES_CACHE_TTL_SECONDS);
       return priced;
     });
+  }
+
+  /**
+   * El estado de los proveedores para la agencia (0096): si fallan y de quién depende. Las últimas
+   * 6 h de toda la red y los apagados del panel. Sin llamar a ningún proveedor.
+   */
+  async providerStatus(tenantId: string, now: Date = new Date()): Promise<ProviderStatus[]> {
+    const since = new Date(now.getTime() - PROVIDER_STATUS_WINDOW_HOURS * 3_600_000);
+    const rows = await this.telemetry.providerStatusRows(tenantId, since);
+    return rows.map((row) =>
+      foldProviderStatus(row, this.breaker.pausedByPlatform(row.provider_code) ? {} : undefined),
+    );
   }
 
   /** Calendario de precios ±3 días desde lo ya buscado: cero llamadas al proveedor (0094). */

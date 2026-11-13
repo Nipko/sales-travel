@@ -241,6 +241,11 @@ export class CircuitBreakerService {
    * Los de cuenta no están y no pueden estar: publicarían sin autenticar cuántas cuentas tienen la
    * credencial rechazada o bloqueada.
    */
+  /** ¿La plataforma pausó este proveedor desde el panel (apagado de emergencia vigente)? */
+  pausedByPlatform(providerCode: string): boolean {
+    return this.killSwitches?.active(providerCode) !== undefined;
+  }
+
   snapshot(): Record<string, { state: State; failures: number }> {
     const out: Record<string, { state: State; failures: number }> = {};
     for (const [code, c] of this.circuits) out[code] = { state: c.state, failures: c.failures };

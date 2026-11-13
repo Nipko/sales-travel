@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { currentContext } from '../request-context/request-context.js';
+import type { ProviderStatusRow } from './provider-status.fold.js';
 
 export type SearchVertical = 'flights' | 'hotels' | 'cars';
 export type SearchOutcome = 'ok' | 'empty' | 'error' | 'simulated';
@@ -196,6 +197,17 @@ export class SearchTelemetryService {
       days.push({ date, minPriceMinor: byDate.get(date) ?? null });
     }
     return { currency: q.currency, days };
+  }
+
+  /**
+   * De los proveedores que usó la agencia en 7 días, cómo respondieron a toda la red desde
+   * `since` (0096). Sólo agregados de la red; nunca cifras de otra agencia.
+   */
+  async providerStatusRows(tenantId: string, since: Date): Promise<ProviderStatusRow[]> {
+    const res = await sql<ProviderStatusRow>`
+      SELECT * FROM provider_search_status(${tenantId}::uuid, ${since}::timestamptz)
+    `.execute(this.db.db);
+    return res.rows;
   }
 
   /**

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { accountDisplay } from './account-display';
 import { AgencyTrigger, CommandMenuButton } from './agency-switcher';
 import { MobileNav } from './mobile-nav';
+import { ProviderStatusPill } from './provider-status-pill';
 import { logout } from './session-sync';
 import { ThemeToggle } from './theme-toggle';
 
@@ -51,6 +52,7 @@ export function Topbar({
 
       {/* Right side: Search & User Controls */}
       <div className="flex shrink-0 items-center gap-3 pl-3">
+        <ProviderStatusPill />
         <ThemeToggle />
         {/* Paleta de comandos (⌘K / Ctrl+K): pantallas y "Cambiar de agencia". */}
         <CommandMenuButton />

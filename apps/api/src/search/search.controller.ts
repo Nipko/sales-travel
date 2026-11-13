@@ -1,4 +1,12 @@
-import { Body, Controller, ForbiddenException, Logger, Post, UseFilters } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Logger,
+  Post,
+  UseFilters,
+} from '@nestjs/common';
 import type { Offer } from '@sales-travel/canonical';
 import {
   FlightSearchCriteriaSchema,
@@ -33,6 +41,7 @@ import {
 import { LatamNdcExceptionFilter } from '../providers-latam/latam-ndc-exception.filter.js';
 import { SabreExceptionFilter } from '../providers-sabre/sabre-exception.filter.js';
 import { currentTenantId } from '../request-context/request-context.js';
+import type { ProviderStatus } from './provider-status.fold.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
 import { SELLING_ROLES } from '../auth/roles.js';
@@ -122,6 +131,19 @@ export class SearchController {
     private readonly activeTenant: ActiveTenantService,
     private readonly disclosure: ProviderDisclosureService,
   ) {}
+
+  /**
+   * El estado de los proveedores que usa la agencia (0096): un indicador que dice si alguno falla
+   * y si depende del proveedor o de nosotros. Sólo lectura, sin llamar a nadie: no es venta.
+   */
+  @Get('provider-status')
+  async providerStatus(
+    @CurrentUser() userId: string | undefined,
+  ): Promise<{ providers: ProviderStatus[] }> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = currentTenantId() ?? (await this.activeTenant.resolve(userId));
+    return { providers: await this.search.providerStatus(tenantId) };
+  }
 
   /** El sobre CRECE, no cambia: `{ offers, simulated, providers }` sigue igual. */
   @SalesOperation()

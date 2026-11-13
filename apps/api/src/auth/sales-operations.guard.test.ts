@@ -395,6 +395,14 @@ const ENTRADAS: [string, Clase][] = [
     'GET /admin/system/jobs',
   ),
   ...noVenta(
+    'Salud de proveedores: cómo respondieron a las búsquedas de toda la red (sólo lectura)',
+    'GET /admin/system/providers',
+  ),
+  ...noVenta(
+    'el estado de los proveedores para la agencia: agregados de la red, sin llamar a nadie (sólo lectura)',
+    'GET /search/provider-status',
+  ),
+  ...noVenta(
     'Actividad de la plataforma: quién hizo qué en toda la red, y su exportación auditada (sólo lectura)',
     'GET /admin/audit',
     'GET /admin/audit/export',
