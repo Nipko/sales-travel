@@ -46,9 +46,7 @@ export function foldProviderStatus(
   const providerErrors = n(row.provider_errors);
   const internalErrors = n(row.internal_errors);
   const lastResultAt =
-    row.last_result_at === null
-      ? null
-      : new Date(row.last_result_at as string | Date).toISOString();
+    row.last_result_at === null ? null : new Date(row.last_result_at).toISOString();
 
   const base = { providerCode: row.provider_code, vertical: row.vertical, lastResultAt };
   if (paused) {
