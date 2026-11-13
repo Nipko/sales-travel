@@ -87,6 +87,9 @@ export function grantPlatformAdmin(input: {
   email: string;
   supervised: boolean;
   reason: string;
+  /** Sin cuenta con ese correo: crearla y enviarle el correo para activar su acceso. */
+  createAccount?: boolean;
+  name?: string;
 }): Mutation<PlatformAdmin[]> {
   return withStepUp(() =>
     call('/api/admin/platform-admins', json('POST', input), parsePlatformAdmins),

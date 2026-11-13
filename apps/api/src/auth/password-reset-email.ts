@@ -10,7 +10,7 @@ import type { MailMessage } from '../mail/mailer.service.js';
  * parezca un aviso falso. El texto cambia porque quien no lo pidió tiene que saber de dónde salió y
  * qué hacer.
  */
-export type ResetEmailVariant = 'self' | 'admin' | 'required' | 'legacy';
+export type ResetEmailVariant = 'self' | 'admin' | 'required' | 'legacy' | 'activation';
 
 const BUTTON = 'Elegir contraseña nueva';
 
@@ -25,6 +25,15 @@ const RESET_HEADING = 'Restablece tu contraseña';
 const REQUIRED_HEADING = 'Elige una contraseña nueva';
 
 function copyFor(variant: ResetEmailVariant, ttlMinutes: number, nodeName: string): ResetEmailCopy {
+  if (variant === 'activation') {
+    // Una cuenta que creó un superadmin para esta persona: todavía no tiene contraseña.
+    return {
+      subject: 'Activa tu cuenta · PlaneTour',
+      heading: 'Activa tu cuenta',
+      body: `Te dieron acceso a ${nodeName}. Elige tu contraseña para entrar; al ingresar vas a configurar la verificación en dos pasos. El enlace vence en ${ttlMinutes} minutos: si vence, en la pantalla de ingreso usa «¿Olvidaste tu contraseña?» con este mismo correo.`,
+      footer: 'Si no esperabas este acceso, ignora este correo y avísale a quien te lo dio.',
+    };
+  }
   if (variant === 'legacy') {
     return {
       subject: `${REQUIRED_HEADING} · PlaneTour`,

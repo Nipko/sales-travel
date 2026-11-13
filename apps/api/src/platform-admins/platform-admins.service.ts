@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { platformTenantId } from '../audit/admin-audit.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PasswordResetService } from '../auth/password-reset.service.js';
 import { SessionService } from '../auth/session.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, MembershipStatus } from '../database/database.types.js';
@@ -59,6 +60,7 @@ export class PlatformAdminsService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   async list(viewer: string): Promise<PlatformAdminView[]> {
@@ -104,15 +106,53 @@ export class PlatformAdminsService {
    */
   async grant(
     actor: string,
-    input: { email: string; supervised: boolean; reason: string | null },
+    input: {
+      email: string;
+      supervised: boolean;
+      reason: string | null;
+      createAccount?: boolean;
+      name?: string | undefined;
+    },
   ): Promise<PlatformAdminView[]> {
+    let activation: { userId: string; token: string } | null = null;
     await this.db.withRequestContext({ userId: actor }, async (trx) => {
-      const user = await trx
+      let user = await trx
         .selectFrom('users')
         .select('id')
         .where('email', '=', input.email)
         .where('status', '=', 'active')
         .executeTakeFirst();
+      if (user === undefined && input.createAccount === true) {
+        // Sin contraseña: la elige la persona con el enlace del correo, y el 2FA se le exige al
+        // entrar (MFA_REQUIRED_ROLES). Si el correo ya existe pero suspendido, no se reactiva acá.
+        const exists = await trx
+          .selectFrom('users')
+          .select('id')
+          .where('email', '=', input.email)
+          .executeTakeFirst();
+        if (exists === undefined) {
+          user = await trx
+            .insertInto('users')
+            .values({
+              email: input.email,
+              name: input.name ?? null,
+              password_hash: null,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          const { token } = await this.passwordReset.issueToken(trx, user.id, {
+            invalidatePrevious: false,
+          });
+          activation = { userId: user.id, token };
+          await this.audit.emitWithin(trx, {
+            eventType: 'platform.superadmin.account_created',
+            actorUserId: actor,
+            aggregateType: 'user',
+            aggregateId: user.id,
+            payload: { targetUserId: user.id },
+          });
+        }
+      }
       if (user === undefined) throw new PlatformAdminCandidateNotFoundError();
       if (user.id === actor) throw new SelfPlatformAdminChangeError();
 
@@ -184,6 +224,26 @@ export class PlatformAdminsService {
         },
       });
     });
+    // Después del commit: el correo no puede salir para una cuenta que no quedó creada.
+    const created = activation as { userId: string; token: string } | null;
+    if (created !== null) {
+      const sent = await this.passwordReset.sendResetEmail(
+        null,
+        input.email,
+        this.passwordReset.resetLink(created.token),
+        'activation',
+        'la plataforma de Planetour',
+      );
+      if (!sent) {
+        await this.audit.emit({
+          eventType: 'auth.password_reset.email_failed',
+          actorUserId: actor,
+          aggregateType: 'user',
+          aggregateId: created.userId,
+          payload: { targetUserId: created.userId, via: 'activation' },
+        });
+      }
+    }
     return this.list(actor);
   }
 

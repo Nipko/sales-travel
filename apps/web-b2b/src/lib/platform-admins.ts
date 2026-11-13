@@ -166,10 +166,21 @@ export function grantPlan(raw: unknown): TenantAdminProxyPlan {
   }
   const reason = reasonValue(r['reason']);
   if (reason === undefined) return { ok: false, error: REASON_ERROR };
+  // Crear la cuenta se pide a propósito (la pantalla lo pregunta); el nombre es opcional.
+  const createAccount = r['createAccount'] === true;
+  const name = typeof r['name'] === 'string' ? r['name'].trim() : '';
+  if (createAccount && name !== '' && (name.length < 2 || name.length > 120)) {
+    return { ok: false, error: 'El nombre tiene que tener entre 2 y 120 caracteres.' };
+  }
   return {
     ok: true,
     path: '/admin/platform-admins',
-    body: { email, supervised: r['supervised'], reason },
+    body: {
+      email,
+      supervised: r['supervised'],
+      reason,
+      ...(createAccount ? { createAccount: true, ...(name !== '' ? { name } : {}) } : {}),
+    },
   };
 }
 

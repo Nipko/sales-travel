@@ -126,7 +126,7 @@ export class PlatformAdminCandidateNotFoundError extends NotFoundException {
 
   constructor() {
     super(
-      'No hay ninguna cuenta activa con ese correo: primero tiene que existir en la plataforma.',
+      'No hay ninguna cuenta activa con ese correo. Puedes crearla y enviarle el correo para que active su acceso.',
     );
     this.name = 'PlatformAdminCandidateNotFoundError';
   }

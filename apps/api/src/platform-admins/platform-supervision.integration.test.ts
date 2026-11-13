@@ -1,3 +1,4 @@
+import type { PasswordResetService } from '../auth/password-reset.service.js';
 import { randomBytes } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import pg from 'pg';
@@ -56,13 +57,15 @@ class ComoAppUser extends DatabaseService {
 
 /** Las sesiones no importan acá: quitar el acceso las cierra, y eso lo prueban los de auth. */
 const sessions = { revokeForTenant: () => Promise.resolve(0) } as unknown as SessionService;
+/** El correo de activación no se prueba acá: sólo se crea la cuenta cuando se pide. */
+const passwordReset = {} as unknown as PasswordResetService;
 
 d('Superadmins plenos y supervisados (0092) contra Postgres', () => {
   const pool = new pg.Pool();
   const database = new ComoAppUser();
   const audit = new AuditService(database);
   const supervision = new SupervisionService(database, audit);
-  const admins = new PlatformAdminsService(database, audit, sessions);
+  const admins = new PlatformAdminsService(database, audit, sessions, passwordReset);
   const adminAudit = new AdminAuditService(database, audit);
   const sfx = randomBytes(4).toString('hex');
 

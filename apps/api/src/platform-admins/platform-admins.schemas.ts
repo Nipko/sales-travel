@@ -24,6 +24,14 @@ export const GrantPlatformAdminSchema = z
       .email({ message: 'escribe el correo completo de la cuenta' }),
     supervised: z.boolean({ required_error: 'di si es supervisado o pleno' }),
     reason: Reason,
+    /**
+     * Sin cuenta con ese correo: crearla y enviarle el correo para que elija su contraseña. Tiene que
+     * pedirse a propósito (la pantalla lo pregunta): sin esto, un correo mal escrito crearía una
+     * cuenta superadmin para un buzón ajeno.
+     */
+    createAccount: z.boolean().optional().default(false),
+    /** El nombre de la persona, sólo al crear la cuenta. */
+    name: z.string().trim().min(2).max(120).optional(),
   })
   .strict();
 export type GrantPlatformAdminDto = z.infer<typeof GrantPlatformAdminSchema>;

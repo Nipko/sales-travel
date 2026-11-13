@@ -119,6 +119,25 @@ describe('Superadmins: el BFF', () => {
     expect(grantPlan({ email: 'ana@x.co', supervised: false, reason: 'ok' }).ok).toBe(false);
   });
 
+  it('crear la cuenta sólo si se pide, con el nombre si viene', () => {
+    expect(
+      grantPlan({
+        email: 'nueva@x.co',
+        supervised: true,
+        reason: '',
+        createAccount: true,
+        name: ' Ana Ruiz ',
+      }),
+    ).toMatchObject({
+      ok: true,
+      body: { email: 'nueva@x.co', createAccount: true, name: 'Ana Ruiz' },
+    });
+    const sinPedir = grantPlan({ email: 'nueva@x.co', supervised: true, name: 'Ana' });
+    expect(sinPedir.ok && 'body' in sinPedir ? sinPedir.body : {}).not.toHaveProperty(
+      'createAccount',
+    );
+  });
+
   it('cambiar el tipo y quitar acceso: sólo con un id válido', () => {
     expect(supervisionPlan(UID, { supervised: false, reason: 'ya no' })).toMatchObject({
       ok: true,

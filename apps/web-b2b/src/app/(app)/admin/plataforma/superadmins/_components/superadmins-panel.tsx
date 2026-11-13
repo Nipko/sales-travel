@@ -220,10 +220,25 @@ export function SuperadminsPanel() {
 
           <GrantSection
             onGrant={async (input) => {
+              const result = await grantPlatformAdmin(input);
+              // Sin cuenta con ese correo: la sección ofrece crearla, sin un aviso de error.
+              if (
+                !isStepUpCancelled(result) &&
+                'ok' in result &&
+                !result.ok &&
+                'reason' in result &&
+                result.reason === USER_NOT_FOUND
+              ) {
+                return 'not-found';
+              }
+              const standing = standingLabel(input.supervised).toLowerCase();
               await settle(
-                await grantPlatformAdmin(input),
-                `${input.email} ahora es superadmin ${standingLabel(input.supervised).toLowerCase()}.`,
+                result,
+                input.createAccount === true
+                  ? `Creamos la cuenta de ${input.email} y le enviamos el correo para activar su acceso de superadmin ${standing}.`
+                  : `${input.email} ahora es superadmin ${standing}.`,
               );
+              return 'ok' in result && result.ok ? 'ok' : 'other';
             }}
           />
         </div>
@@ -418,27 +433,60 @@ function AdminsSection({
   );
 }
 
+/** La API responde esto cuando no hay cuenta activa con ese correo (PlatformAdminCandidateNotFoundError). */
+const USER_NOT_FOUND = 'USER_NOT_FOUND';
+
+type GrantOutcome = 'ok' | 'not-found' | 'other';
+
 function GrantSection({
   onGrant,
 }: {
-  onGrant: (input: { email: string; supervised: boolean; reason: string }) => Promise<void>;
+  onGrant: (input: {
+    email: string;
+    supervised: boolean;
+    reason: string;
+    createAccount?: boolean;
+    name?: string;
+  }) => Promise<GrantOutcome>;
 }) {
   const [email, setEmail] = useState('');
   const [supervised, setSupervised] = useState<'full' | 'supervised'>('supervised');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  /** El correo sin cuenta: se ofrece crearla e invitar, en vez de un error sin salida. */
+  const [missing, setMissing] = useState<string | null>(null);
+  const [name, setName] = useState('');
 
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function send(createAccount: boolean): Promise<void> {
     if (busy) return;
     setBusy(true);
     try {
-      await onGrant({ email: email.trim(), supervised: supervised === 'supervised', reason });
-      setEmail('');
-      setReason('');
+      const outcome = await onGrant({
+        email: email.trim(),
+        supervised: supervised === 'supervised',
+        reason,
+        ...(createAccount
+          ? { createAccount: true, ...(name.trim() ? { name: name.trim() } : {}) }
+          : {}),
+      });
+      if (outcome === 'not-found') {
+        setMissing(email.trim());
+        return;
+      }
+      if (outcome === 'ok') {
+        setEmail('');
+        setReason('');
+        setName('');
+        setMissing(null);
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await send(missing !== null && missing === email.trim());
   }
 
   return (
@@ -453,7 +501,7 @@ function GrantSection({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Correo de la cuenta"
-            hint="La cuenta tiene que existir y estar activa."
+            hint="Si todavía no tiene cuenta, te ofrecemos crearla e invitarla."
             required
           >
             {(props) => (
@@ -497,9 +545,34 @@ function GrantSection({
             />
           )}
         </Field>
+        {missing !== null && missing === email.trim() ? (
+          <div className="space-y-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/8 p-3">
+            <p className="text-sm text-[var(--color-fg)]">
+              <strong className="font-semibold">{missing}</strong> todavía no tiene cuenta. Podemos
+              crearla y enviarle un correo para que elija su contraseña; al entrar va a configurar
+              la verificación en dos pasos.
+            </p>
+            <Field label="Nombre de la persona" hint="Opcional: así aparece en la lista.">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  autoComplete="off"
+                  value={name}
+                  maxLength={120}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Nombre y apellido"
+                />
+              )}
+            </Field>
+          </div>
+        ) : null}
         <div className="flex justify-end">
           <Button type="submit" disabled={busy || email.trim() === ''}>
-            {busy ? 'Guardando…' : 'Dar acceso'}
+            {busy
+              ? 'Guardando…'
+              : missing !== null && missing === email.trim()
+                ? 'Crear cuenta y dar acceso'
+                : 'Dar acceso'}
           </Button>
         </div>
       </form>
