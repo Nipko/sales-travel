@@ -241,7 +241,7 @@ describe('PassengerForm — sólo lo necesario', () => {
       'Tipo de documento',
       'Número de documento',
       'Nacionalidad',
-      'País emisor doc.',
+      'País que emitió el documento',
     ]) {
       expect(visible, campo).toContain(campo);
     }

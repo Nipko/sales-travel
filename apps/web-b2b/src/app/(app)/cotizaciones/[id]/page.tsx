@@ -35,6 +35,7 @@ import {
 import {
   PassengerForm,
   passengerLabel,
+  type PassengerFormStatus as FormStatus,
   type ReservationContact,
   type ReservationPassenger,
   type ReservationSubmitOptions,
@@ -59,7 +60,7 @@ import {
   upsertedCustomerId,
   type CustomerUpsertBody,
 } from '../../../../lib/billing-crm';
-import { humanizeProviderError } from '../../../../lib/provider-errors';
+import { humanizeBookingFailure } from '../../../../lib/provider-errors';
 import { isTestFare, TEST_BOOKING_NOTICE } from '../../../../lib/test-content';
 import { TestContentBadge, TestContentNotice } from '../../../../components/test-content-badge';
 import type { Offer } from '../actions';
@@ -143,9 +144,9 @@ function formatDate(iso: string): string {
   });
 }
 
-/** Traduce errores crudos del proveedor a mensajes claros (helper compartido). */
+/** El error de una reserva, en palabras del vendedor: nunca el texto crudo de un validador. */
 function humanizeBookingError(raw: string): string {
-  return humanizeProviderError(raw);
+  return humanizeBookingFailure(raw);
 }
 
 const ERROR_DESCONOCIDO = 'Error desconocido';
@@ -311,6 +312,12 @@ export default function QuotationDetailPage() {
   const [passengerNames, setPassengerNames] = useState<readonly string[]>([]);
   // La barra inferior del teléfono reserva con el mismo envío que el botón del formulario.
   const submitRef = useRef<((acceptNewPrice?: boolean) => void) | null>(null);
+  const focusProblemRef = useRef<(() => void) | null>(null);
+  const [formStatus, setFormStatus] = useState<FormStatus>({
+    attempted: false,
+    problems: [],
+    error: null,
+  });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -805,12 +812,58 @@ export default function QuotationDetailPage() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
   }
 
+  /**
+   * «Reservar» desde el botón fijo (columna derecha o barra del teléfono). Si falta algo, el
+   * formulario lleva la vista al primer campo marcado; si el servidor falla, a su mensaje.
+   */
   function reserveFromBar() {
     submitRef.current?.(priceChangeTotal !== undefined);
-    // Lo que falte o falle se dice junto al botón del formulario: se lleva la vista hasta ahí.
-    document
-      .getElementById('checkout-reservar')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const missingCount = formStatus.attempted ? formStatus.problems.length : 0;
+  const barCaption =
+    formStatus.error !== null
+      ? 'No se pudo reservar: mira el mensaje'
+      : missingCount > 0
+        ? `Faltan ${String(missingCount)} ${missingCount === 1 ? 'dato' : 'datos'} por completar`
+        : null;
+
+  /** Lo que falta o falló, junto al botón fijo: el formulario es largo y su final no se ve. */
+  function renderReserveStatus() {
+    if (formStatus.error !== null) {
+      return (
+        <div
+          role="alert"
+          className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/8 px-3 py-2.5 text-xs text-[var(--color-fg)]"
+        >
+          <p className="font-semibold">No se pudo reservar</p>
+          <p className="mt-0.5">{formStatus.error}</p>
+        </div>
+      );
+    }
+    if (missingCount === 0) return null;
+    return (
+      <div className="rounded-lg border border-[var(--color-warning)]/45 bg-[var(--color-warning)]/12 px-3 py-2.5 text-xs text-[var(--color-fg)]">
+        <p className="font-semibold">
+          Faltan {missingCount} {missingCount === 1 ? 'dato' : 'datos'} para reservar
+        </p>
+        <ul className="ml-4 mt-1 list-disc space-y-0.5">
+          {formStatus.problems.slice(0, 3).map((problem) => (
+            <li key={problem}>{problem}</li>
+          ))}
+        </ul>
+        {missingCount > 3 ? (
+          <p className="mt-1 text-[var(--color-fg-muted)]">y {missingCount - 3} más.</p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => focusProblemRef.current?.()}
+          className="mt-1.5 font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline"
+        >
+          Ir al primero
+        </button>
+      </div>
+    );
   }
 
   function renderBilling(attempted: boolean) {
@@ -1088,6 +1141,8 @@ export default function QuotationDetailPage() {
                 onGivenNamesChange={setPassengerNames}
                 submitRef={submitRef}
                 onSubmittingChange={setSubmitting}
+                onStatusChange={setFormStatus}
+                focusProblemRef={focusProblemRef}
               />
             </div>
           ) : (
@@ -1111,13 +1166,37 @@ export default function QuotationDetailPage() {
               {renderSummaryBody()}
             </CardContent>
           </Card>
+          {/* El botón queda siempre a la vista en escritorio, con lo que falta o falló al lado. */}
+          {showForm ? (
+            <Card className="mt-3">
+              <CardContent className="space-y-3 p-4">
+                {renderReserveStatus()}
+                <Button
+                  variant="primary"
+                  onClick={reserveFromBar}
+                  aria-disabled={submitting || undefined}
+                  className="h-11 w-full gap-2 text-sm"
+                >
+                  <Plane className="size-4" aria-hidden="true" />
+                  {submitting
+                    ? 'Reservando…'
+                    : priceChangeTotal
+                      ? 'Aceptar y reservar'
+                      : 'Reservar'}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
         </aside>
       </div>
 
       {showForm ? (
         <MobileCheckoutBar
           total={totalText}
-          caption={priceLine?.tone === 'pending' ? 'Verificando precio…' : `Total · ${paxText}`}
+          caption={
+            barCaption ??
+            (priceLine?.tone === 'pending' ? 'Verificando precio…' : `Total · ${paxText}`)
+          }
           reserveLabel={priceChangeTotal ? 'Aceptar y reservar' : 'Reservar'}
           reserving={submitting}
           onReserve={reserveFromBar}

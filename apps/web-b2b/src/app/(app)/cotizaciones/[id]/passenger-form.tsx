@@ -1,7 +1,9 @@
 'use client';
 
 import { AlertCircle, CheckCircle2, ChevronDown, Plane, UserPlus, Wallet } from 'lucide-react';
-import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
+import { humanizeBookingFailure } from '../../../../lib/provider-errors';
+import { duplicatePassengerProblems } from './passenger-duplicates';
 import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Label } from '../../../../components/ui/label';
@@ -109,6 +111,19 @@ interface PassengerFormProps {
   submitRef?: MutableRefObject<((acceptNewPrice?: boolean) => void) | null>;
   /** Avisa cuando empieza y termina el envío, para que la barra inferior lo refleje. */
   onSubmittingChange?: (submitting: boolean) => void;
+  /**
+   * Lo que falta y el último error, para que el botón fijo de la página (columna derecha y barra del
+   * teléfono) los diga al lado: el formulario es largo y su final suele quedar fuera de la vista.
+   */
+  onStatusChange?: (status: PassengerFormStatus) => void;
+  /** El formulario deja aquí cómo llevar la vista al primer dato que falta. */
+  focusProblemRef?: MutableRefObject<(() => void) | null>;
+}
+
+export interface PassengerFormStatus {
+  readonly attempted: boolean;
+  readonly problems: readonly string[];
+  readonly error: string | null;
 }
 
 export function buildEmptyPassengers(paxCount: PaxCount): Passenger[] {
@@ -282,7 +297,11 @@ export function PassengerForm({
   onGivenNamesChange,
   submitRef,
   onSubmittingChange,
+  onStatusChange,
+  focusProblemRef,
 }: PassengerFormProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const [passengers, setPassengers] = useState<Passenger[]>(() => buildEmptyPassengers(paxCount));
   // La ficha del CRM de la que salió cada pasajero, por `paxId`.
   const [links, setLinks] = useState<Record<string, CrmLink>>({});
@@ -375,6 +394,9 @@ export function PassengerForm({
     return out;
   }
 
+  const duplicates = duplicatePassengerProblems(passengers, passengerLabel);
+  const duplicateFields = new Map(duplicates.map((d) => [d.paxId, d.fields as readonly string[]]));
+
   function validationMessages(): string[] {
     const m: string[] = [];
     passengers.forEach((p) => {
@@ -382,13 +404,37 @@ export function PassengerForm({
       if (!issues.length) return;
       m.push(`${passengerLabel(p)}: completa ${issues.join(', ')}.`);
     });
+    m.push(...duplicates.map((d) => d.message));
     // El email y el teléfono de contacto son los de «Facturación», que reclama los suyos.
     m.push(...(billingProblems ?? []));
     return m;
   }
 
+  /** Lleva la vista y el foco al primer campo marcado, no al resumen del final del formulario. */
+  function focusFirstProblem() {
+    requestAnimationFrame(() => {
+      const first = containerRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+      const target = first ?? document.getElementById('checkout-faltan');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (first) first.focus({ preventScroll: true });
+    });
+  }
+
   const problems = validationMessages();
   const canSubmit = problems.length === 0;
+
+  const statusKey = JSON.stringify({ attempted, problems, error });
+  useEffect(() => {
+    onStatusChange?.(JSON.parse(statusKey) as PassengerFormStatus);
+  }, [statusKey, onStatusChange]);
+
+  useEffect(() => {
+    if (!focusProblemRef) return;
+    focusProblemRef.current = focusFirstProblem;
+    return () => {
+      focusProblemRef.current = null;
+    };
+  });
 
   useEffect(() => {
     onSubmittingChange?.(submitting);
@@ -405,7 +451,10 @@ export function PassengerForm({
 
   async function handleSubmit(acceptNewPrice = false) {
     setAttempted(true);
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      focusFirstProblem();
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -421,7 +470,11 @@ export function PassengerForm({
         acceptNewPrice ? { acceptNewPrice: true, customerIds } : { customerIds },
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear la reserva');
+      setError(humanizeBookingFailure(err instanceof Error ? err.message : ''));
+      // El error va junto al botón del formulario, que puede estar fuera de la vista.
+      requestAnimationFrame(() =>
+        errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -429,7 +482,7 @@ export function PassengerForm({
 
   return (
     <Card>
-      <CardContent className="relative p-5">
+      <CardContent ref={containerRef} className="relative p-5">
         {submitting && <BookingOverlay />}
         <fieldset
           disabled={submitting}
@@ -440,13 +493,20 @@ export function PassengerForm({
             <h2 className="text-sm font-semibold text-[var(--color-fg)]">Pasajeros</h2>
           </div>
           <p className="mb-4 text-xs text-[var(--color-fg-muted)]">
-            Sólo lo que pide el billete. Si el pasajero ya es cliente, búscalo y se rellena solo.
+            Escribe los nombres{' '}
+            <strong className="font-medium text-[var(--color-fg)]">
+              tal como aparecen en el documento
+            </strong>{' '}
+            con el que viaja cada persona: la aerolínea los compara en el aeropuerto. Si el pasajero
+            ya es cliente, búscalo y se rellena solo. Los campos con * son obligatorios.
           </p>
 
           {/* Passengers */}
           <div className="space-y-4">
             {passengers.map((pax, idx) => {
-              const issues = attempted ? paxIssues(pax) : [];
+              const issues = attempted
+                ? [...paxIssues(pax), ...(duplicateFields.get(pax.paxId) ?? [])]
+                : [];
               const bad = (field: string) => issues.includes(field);
               const id = (field: string) => `pax-${pax.paxId}-${field}`;
               const linked = customerIds[idx] !== null;
@@ -587,7 +647,7 @@ export function PassengerForm({
                       </div>
                     )}
                     <div className="space-y-1">
-                      <Label htmlFor={id('nationality')}>Nacionalidad</Label>
+                      <Label htmlFor={id('nationality')}>Nacionalidad (código país)</Label>
                       <input
                         id={id('nationality')}
                         type="text"
@@ -601,7 +661,7 @@ export function PassengerForm({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor={id('doc-country')}>País emisor doc.</Label>
+                      <Label htmlFor={id('doc-country')}>País que emitió el documento</Label>
                       <input
                         id={id('doc-country')}
                         type="text"
@@ -705,7 +765,10 @@ export function PassengerForm({
 
           {/* Resumen de validación: qué falta, en claro */}
           {attempted && problems.length > 0 && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            <div
+              id="checkout-faltan"
+              className="mt-4 scroll-mt-24 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"
+            >
               <div className="mb-1 flex items-center gap-1.5 font-medium">
                 <AlertCircle className="size-3.5" />
                 Faltan datos para crear la reserva
@@ -720,6 +783,7 @@ export function PassengerForm({
 
           {error && (
             <div
+              ref={errorRef}
               role="alert"
               className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
             >
