@@ -25,15 +25,38 @@ export const UpsertProviderAccountSchema = z
       .max(60)
       .regex(/^[a-z0-9-]+$/, 'providerCode must be lowercase alphanumeric with hyphens'),
     label: z.string().trim().min(1).max(60).optional(),
-    credentials: z.record(z.unknown()).refine((o) => Object.keys(o).length > 0, {
-      message: 'credentials must not be empty',
-    }),
+    credentials: z.record(z.unknown()).optional(),
+    /**
+     * Editar sin volver a cargar los secretos: la cuenta conserva las credenciales guardadas y sólo
+     * cambia lo demás. El servicio valida la cuenta con las guardadas, que este borde no ve.
+     */
+    keepCredentials: z.boolean().optional(),
     config: z.record(z.unknown()).optional(),
     isInheritable: z.boolean().optional(),
     status: z.enum(['active', 'sandbox', 'disabled']).optional(),
   })
   .superRefine((input, ctx) => {
-    for (const issue of providerAccountIssues(input)) {
+    const credentials = input.credentials ?? {};
+    const sent = Object.keys(credentials).length > 0;
+    if (input.keepCredentials === true) {
+      if (sent) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['credentials'],
+          message: 'Con keepCredentials no se mandan credenciales: se conservan las guardadas.',
+        });
+      }
+      return;
+    }
+    if (!sent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentials'],
+        message: 'credentials must not be empty',
+      });
+      return;
+    }
+    for (const issue of providerAccountIssues({ ...input, credentials })) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...issue.path],

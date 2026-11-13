@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { ConflictException, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   DummyDriver,
@@ -536,6 +536,63 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
     expect(lectura).toBeGreaterThanOrEqual(0);
     expect(conteo).toBeGreaterThan(lectura);
     expect(escritura).toBeGreaterThan(conteo);
+  });
+
+  describe('editar sin volver a cargar las credenciales (keepCredentials)', () => {
+    it('conserva las guardadas, cambia la config y no cuenta como cambio de secreto', async () => {
+      const { service, consultas } = servicioConCuenta(
+        { status: 'active', is_inheritable: true },
+        { own_orders: 3, inherited_orders: 0 },
+      );
+      const res = await service.upsert({
+        tenantId: DUENO,
+        providerCode: 'tbo-hotels',
+        credentials: 'keep',
+        config: { environment: 'test', otraCosa: 'x' },
+        status: 'active',
+        isInheritable: true,
+      });
+      expect(res.id).toBe(CUENTA);
+      expect(res.change.credentialsChanged).toBe(false);
+      expect(res.change.after.config).toEqual({ environment: 'test', otraCosa: 'x' });
+      expect(actualizo(consultas)).toBe(true);
+      // Mismo usuario y mismo entorno: no cambia la identidad, no hace falta contar reservas.
+      expect(consultas.some((q) => q.includes('provider_account_active_orders'))).toBe(false);
+    });
+
+    it('si a las guardadas les falta algo obligatorio, 400 con el motivo y no escribe', async () => {
+      const { service, consultas } = servicioConCuenta(
+        { status: 'active', is_inheritable: true, credentials: { username: 'u' } },
+        { own_orders: 0, inherited_orders: 0 },
+      );
+      const error = await service
+        .upsert({
+          tenantId: DUENO,
+          providerCode: 'tbo-hotels',
+          credentials: 'keep',
+          config: { environment: 'test' },
+          status: 'active',
+        })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(actualizo(consultas)).toBe(false);
+    });
+
+    it('si las guardadas no se pueden leer, pide cargarlas', async () => {
+      const { service } = servicioConCuenta(
+        { status: 'active', is_inheritable: true, credentials: 'ilegible' },
+        { own_orders: 0, inherited_orders: 0 },
+      );
+      await expect(
+        service.upsert({
+          tenantId: DUENO,
+          providerCode: 'tbo-hotels',
+          credentials: 'keep',
+          config: { environment: 'test' },
+          status: 'active',
+        }),
+      ).rejects.toThrow(/Vuelve a cargarlas/);
+    });
   });
 
   describe('pendiente b: apuntarla a otra cuenta del proveedor también la saca de servicio', () => {

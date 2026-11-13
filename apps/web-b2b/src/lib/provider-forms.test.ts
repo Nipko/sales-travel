@@ -19,6 +19,7 @@ import {
   providerFormsForNode,
   statusEnablesProvider,
   statusNotice,
+  keepsStoredCredentials,
   validateProviderDraft,
   type AccountEditorDraft,
   type AccountSubmission,
@@ -150,6 +151,26 @@ describe('catálogo de proveedores', () => {
   it('el PCC de emisión explica cuándo emite', () => {
     const ticketing = sabre().credentials.find((field) => field.key === 'ticketingPcc');
     expect(ticketing?.help).toContain('PCC que emite cuando la política es emisión futura');
+  });
+});
+
+describe('editar una cuenta sin volver a cargar las credenciales', () => {
+  const soloConfig = { credentials: {}, config: { ticketPrinterCountry: 'CO' } };
+
+  it('al editar, credenciales vacías se conservan: valida sólo la configuración', () => {
+    expect(keepsStoredCredentials(sabre(), soloConfig, true)).toBe(true);
+    expect(validateProviderDraft(sabre(), soloConfig, { editing: true }).ok).toBe(true);
+  });
+
+  it('al conectar, vacías siguen sin poder guardarse', () => {
+    expect(keepsStoredCredentials(sabre(), soloConfig, false)).toBe(false);
+    expect(validateProviderDraft(sabre(), soloConfig).ok).toBe(false);
+  });
+
+  it('con una credencial tecleada al editar, se cargan todas como al conectar', () => {
+    const draft = { credentials: { epr: '1234567' }, config: {} };
+    expect(keepsStoredCredentials(sabre(), draft, true)).toBe(false);
+    expect(validateProviderDraft(sabre(), draft, { editing: true }).ok).toBe(false);
   });
 });
 
@@ -286,18 +307,18 @@ describe('validateProviderDraft — los proveedores que ya existían', () => {
 });
 
 describe('validateProviderDraft — el cuerpo vacío que el API rechaza', () => {
-  it('corta el guardado sin ninguna credencial antes de mandarlo', () => {
-    // `UpsertProviderAccountSchema` exige `credentials` NO VACÍO. Sin este corte, abrir una cuenta
-    // sólo para cambiarle el estado —el caso más común de la edición— manda `credentials: {}` y
-    // vuelve un 400 crudo del API.
+  it('al conectar, corta el guardado sin ninguna credencial antes de mandarlo', () => {
+    // Una cuenta nueva no tiene credenciales guardadas que conservar: `{}` sería un 400 del API.
     const form = providerFormFor('latam-ndc');
     if (!form) throw new Error('latam-ndc tiene que seguir en el catálogo');
 
     const result = validateProviderDraft(form, { credentials: {}, config: {} });
     expect(result.ok).toBe(false);
     expect(result.summary).toContain('al menos una credencial');
-    // Y explica por qué no alcanza con las que ya están guardadas.
-    expect(result.summary).toContain('no se devuelven');
+    // Al editar, en cambio, vacías se conservan (keepCredentials).
+    expect(validateProviderDraft(form, { credentials: {}, config: {} }, { editing: true }).ok).toBe(
+      true,
+    );
   });
 
   it('un campo con sólo espacios sigue siendo un cuerpo vacío', () => {

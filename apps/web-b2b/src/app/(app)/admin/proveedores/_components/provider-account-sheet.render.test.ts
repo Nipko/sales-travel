@@ -151,9 +151,9 @@ describe('ProviderAccountSheet — un solo patrón para todos los proveedores', 
     expect(html).toContain('Se guardan cifradas y no se vuelven a mostrar.');
   });
 
-  it('al editar dice que las credenciales se vuelven a cargar completas', () => {
+  it('al editar dice que las credenciales vacías se conservan', () => {
     expect(render('latam-ndc')).toContain(
-      'Las guardadas no se muestran: vuelve a cargarlas completas para guardar.',
+      'Las guardadas no se muestran. Déjalas vacías para conservarlas, o cárgalas todas para cambiarlas.',
     );
   });
 

@@ -741,9 +741,16 @@ function fieldIssue(field: ProviderField, value: string): string | null {
  * Valida el borrador contra la forma declarada del proveedor. Es la puerta que evita que una
  * credencial inservible se guarde cifrada y falle recién en la primera cotización.
  */
-export function validateProviderDraft(form: ProviderForm, draft: DraftSections): DraftValidation {
+export function validateProviderDraft(
+  form: ProviderForm,
+  draft: DraftSections,
+  options: { readonly editing?: boolean } = {},
+): DraftValidation {
   const fieldErrors: Record<string, string> = {};
-  const sections: readonly ProviderSection[] = ['credentials', 'config'];
+  // Al editar, credenciales vacías = conservar las guardadas: sólo se valida la configuración, y el
+  // API valida la cuenta entera con las guardadas.
+  const keep = keepsStoredCredentials(form, draft, options.editing === true);
+  const sections: readonly ProviderSection[] = keep ? ['config'] : ['credentials', 'config'];
 
   for (const section of sections) {
     for (const field of providerFields(form, section)) {
@@ -753,7 +760,10 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
   }
 
   // Las reglas entre campos van después y no pisan: el problema propio del campo es más concreto.
-  const crossField = form.draftIssues?.(buildProviderAccountPayload(form, draft)) ?? {};
+  // Con las credenciales conservadas las reglas no las ven: las aplica el API.
+  const crossField = keep
+    ? {}
+    : (form.draftIssues?.(buildProviderAccountPayload(form, draft)) ?? {});
   for (const [key, message] of Object.entries(crossField)) {
     fieldErrors[key] ??= message;
   }
@@ -766,12 +776,12 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
     // estado y no tocar nada más— sale de viaje y vuelve como un 400 crudo del API. Se mira el
     // PAYLOAD y no el borrador porque es literalmente lo que se manda: un campo con sólo espacios
     // pasa el borrador y llega al API como cuerpo vacío igual.
-    if (Object.keys(buildProviderAccountPayload(form, draft).credentials).length === 0) {
+    if (!keep && Object.keys(buildProviderAccountPayload(form, draft).credentials).length === 0) {
       return {
         ok: false,
         fieldErrors: {},
         summary:
-          'Carga al menos una credencial: el API no acepta guardar una cuenta con las credenciales vacías, y las que ya están guardadas no se pueden reutilizar porque no se devuelven.',
+          'Carga al menos una credencial: una cuenta nueva no se puede guardar con las credenciales vacías.',
       };
     }
     return { ok: true, fieldErrors: {}, summary: null };
@@ -783,6 +793,18 @@ export function validateProviderDraft(form: ProviderForm, draft: DraftSections):
     summary:
       messages.length === 1 ? first : `Revisa ${messages.length} campos antes de guardar. ${first}`,
   };
+}
+
+/**
+ * ¿Se guarda conservando las credenciales que ya tiene la cuenta? Sólo al editar y con TODAS las
+ * credenciales vacías: con una sola tecleada se cargan completas, como al conectar.
+ */
+export function keepsStoredCredentials(
+  form: ProviderForm,
+  draft: DraftSections,
+  editing: boolean,
+): boolean {
+  return editing && Object.keys(buildProviderAccountPayload(form, draft).credentials).length === 0;
 }
 
 /**

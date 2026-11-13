@@ -27,7 +27,8 @@ interface UpsertProviderAccountBody {
   tenantId: string;
   providerCode: string;
   label?: string;
-  credentials: Record<string, unknown>;
+  credentials?: Record<string, unknown>;
+  keepCredentials?: boolean;
   config?: Record<string, unknown>;
   isInheritable?: boolean;
   status?: ProviderAccountStatus;
@@ -61,7 +62,7 @@ export class ProviderCredentialsController {
       tenantId: body.tenantId,
       providerCode: body.providerCode,
       label: body.label,
-      credentials: body.credentials,
+      credentials: body.keepCredentials === true ? 'keep' : (body.credentials ?? {}),
       config: body.config,
       isInheritable: body.isInheritable,
       status: body.status,

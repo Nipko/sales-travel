@@ -126,6 +126,28 @@ describe('POST /provider-accounts — el borde exige la forma DECLARADA del prov
  * `environment` contradice sus hosts no se guarda. Es la misma regla del ACL
  * (`sabreHostEnvironment`), un paso antes, con el motivo en el 400.
  */
+describe('POST /provider-accounts — editar conservando las credenciales guardadas', () => {
+  it('keepCredentials sin credenciales pasa el borde: la cuenta la valida el servicio', () => {
+    const out = pipe.transform({
+      tenantId: TENANT,
+      providerCode: 'sabre',
+      keepCredentials: true,
+      config: { ticketPrinterCountry: 'CO' },
+    }) as { credentials?: unknown };
+    expect(out.credentials).toBeUndefined();
+  });
+
+  it('keepCredentials con credenciales se rechaza: o se conservan o se cargan', () => {
+    const { fields } = rejection({ ...body(), keepCredentials: true } as UpsertBody);
+    expect(fields.some((f) => f.field === 'credentials')).toBe(true);
+  });
+
+  it('sin keepCredentials y sin credenciales sigue siendo 400', () => {
+    const { fields } = rejection({ ...body(), credentials: {} });
+    expect(fields.some((f) => f.field === 'credentials')).toBe(true);
+  });
+});
+
 describe('POST /provider-accounts — Sabre: el entorno tiene que coincidir con los hosts', () => {
   const PROD_REST = 'https://api.platform.sabre.com';
   const PROD_SOAP = 'https://webservices.platform.sabre.com';
@@ -231,7 +253,7 @@ describe('POST /provider-accounts — cuenta de TBO Holidays', () => {
   });
 
   it('la contraseña pasa el borde tal cual llegó: no se recorta', () => {
-    expect(pipe.transform(tbo()).credentials['password']).toBe(TBO_PASSWORD);
+    expect(pipe.transform(tbo()).credentials?.['password']).toBe(TBO_PASSWORD);
   });
 
   it('sin `password` se rechaza con el motivo, no con "campo requerido"', () => {

@@ -40,6 +40,7 @@ import {
   type AccountEditorDraft,
   type Notice,
   type ProviderAccountStatus,
+  keepsStoredCredentials,
   validateProviderDraft,
 } from '../../../../lib/provider-forms';
 import { networkRoot, nodeKindLabel, treeOrder } from '../../../../lib/tenant-network';
@@ -385,7 +386,9 @@ export default function ProveedoresPage() {
     setError('');
     setFieldErrors({});
 
-    const validation = validateProviderDraft(provider, { credentials, config });
+    const editing = editor?.kind === 'edit';
+    const validation = validateProviderDraft(provider, { credentials, config }, { editing });
+    const keepCredentials = keepsStoredCredentials(provider, { credentials, config }, editing);
     if (!validation.ok) {
       setFieldErrors(validation.fieldErrors);
       setError(validation.summary ?? 'Revisa los campos marcados.');
@@ -402,7 +405,9 @@ export default function ProveedoresPage() {
           tenantId: selectedTenant.id,
           providerCode,
           label: submission.label,
-          credentials: submission.payload.credentials,
+          ...(keepCredentials
+            ? { keepCredentials: true }
+            : { credentials: submission.payload.credentials }),
           config: submission.payload.config,
           isInheritable,
           status,

@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB, ProviderAccountStatus, TenantType } from '../database/database.types.js';
@@ -6,6 +12,7 @@ import { decryptCredentials, encryptCredentials } from './credentials-cipher.js'
 import {
   accountIdentityChanged,
   accountReadiness,
+  providerAccountIssues,
   safeConfigView,
   type ProviderAccountReadiness,
 } from './provider-specs.js';
@@ -327,13 +334,13 @@ export class ProviderCredentialsService {
     tenantId: string;
     providerCode: string;
     label?: string;
-    credentials: Record<string, unknown>;
+    /** `'keep'`: editar sin volver a cargar los secretos; la cuenta tiene que existir. */
+    credentials: Record<string, unknown> | 'keep';
     config?: Record<string, unknown>;
     isInheritable?: boolean;
     status?: ProviderAccountStatus;
   }): Promise<{ id: string; change: ProviderAccountChange }> {
     const label = input.label ?? 'default';
-    const enc = encryptCredentials(JSON.stringify(input.credentials));
     const status = input.status ?? 'sandbox';
     const isInheritable = input.isInheritable ?? true;
 
@@ -351,11 +358,20 @@ export class ProviderCredentialsService {
         .forUpdate()
         .executeTakeFirst();
 
+      const credentials =
+        input.credentials === 'keep'
+          ? this.keptCredentials(existing, input.providerCode, input.config ?? {})
+          : input.credentials;
+      const enc =
+        input.credentials === 'keep' && existing
+          ? existing.credentials_enc
+          : encryptCredentials(JSON.stringify(credentials));
+
       if (existing) {
         await this.assertReleasable(trx, input.providerCode, existing, {
           status,
           isInheritable,
-          credentials: input.credentials,
+          credentials,
           config: input.config ?? {},
         });
         await trx
@@ -377,7 +393,7 @@ export class ProviderCredentialsService {
               config: asConfig(existing.config),
             },
             after: { status, isInheritable, config: input.config ?? {} },
-            credentialsChanged: credentialsDiffer(existing.credentials_enc, input.credentials),
+            credentialsChanged: credentialsDiffer(existing.credentials_enc, credentials),
           },
         };
       }
@@ -481,6 +497,34 @@ export class ProviderCredentialsService {
   }
 
   /** El blob guardado, para comparar la identidad de la cuenta. `null` si no se puede leer. */
+  /**
+   * Las credenciales guardadas, para editar una cuenta sin volver a cargarlas. Se valida la cuenta
+   * entera —guardadas más la config nueva— igual que si llegaran por el borde. Los mensajes llevan
+   * nombres de campo, nunca valores.
+   */
+  private keptCredentials(
+    existing: { id: string; credentials_enc: Buffer } | undefined,
+    providerCode: string,
+    config: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!existing) {
+      throw new BadRequestException(
+        'No hay credenciales guardadas que conservar: es una cuenta nueva, cárgalas.',
+      );
+    }
+    const stored = this.storedCredentials(existing.credentials_enc, existing.id, providerCode);
+    if (stored === null) {
+      throw new BadRequestException(
+        'Las credenciales guardadas no se pueden leer. Vuelve a cargarlas.',
+      );
+    }
+    const issues = providerAccountIssues({ providerCode, credentials: stored, config });
+    if (issues.length > 0) {
+      throw new BadRequestException(issues.map((i) => i.message));
+    }
+    return stored;
+  }
+
   private storedCredentials(
     blob: Buffer,
     accountId: string,

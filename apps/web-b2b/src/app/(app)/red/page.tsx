@@ -43,6 +43,7 @@ import {
   providerFormFor,
   providerFormsForNode,
   statusEnablesProvider,
+  keepsStoredCredentials,
   validateProviderDraft,
   type AccountEditorDraft,
   type Notice,
@@ -938,7 +939,9 @@ function CredentialsModal({
       return;
     }
 
-    const validation = validateProviderDraft(provider, { credentials, config });
+    const editing = editor?.kind === 'edit';
+    const validation = validateProviderDraft(provider, { credentials, config }, { editing });
+    const keepCredentials = keepsStoredCredentials(provider, { credentials, config }, editing);
     if (!validation.ok) {
       setFieldErrors(validation.fieldErrors);
       setError(validation.summary ?? 'Revisa los campos marcados.');
@@ -956,7 +959,9 @@ function CredentialsModal({
           providerCode,
           // La etiqueta del aviso, no otra: es la misma que decidió qué decía la cartelería.
           label: submission.label,
-          credentials: submission.payload.credentials,
+          ...(keepCredentials
+            ? { keepCredentials: true }
+            : { credentials: submission.payload.credentials }),
           config: submission.payload.config,
           isInheritable,
           status,

@@ -151,13 +151,6 @@ export function ProviderAccountSheet(props: ProviderAccountSheetProps) {
   const showPicker = providerPicker !== undefined && mode === 'create';
   const hasAccountSection = showPicker || labelField !== undefined;
   const hasIntro = Boolean(editNotice || provider.note || ownershipNotice);
-  // Al editar se viene a recargar las credenciales: el foco va a la primera aunque arriba haya una
-  // etiqueta editable.
-  const firstCredential = provider.credentials[0];
-  const initialFocus =
-    mode === 'edit' && firstCredential
-      ? `[data-sheet-body] #${providerFieldId('credentials', firstCredential.key)}`
-      : undefined;
 
   return (
     <FormSheet
@@ -172,7 +165,6 @@ export function ProviderAccountSheet(props: ProviderAccountSheetProps) {
       }
       icon={<Icon />}
       describedBy={editNotice ? noticeId : undefined}
-      initialFocus={initialFocus}
       dirty={dirty}
       busy={saving}
       onClose={props.onClose}
@@ -298,7 +290,7 @@ export function ProviderAccountSheet(props: ProviderAccountSheetProps) {
           title="Credenciales"
           description={
             mode === 'edit'
-              ? 'Las guardadas no se muestran: vuelve a cargarlas completas para guardar.'
+              ? 'Las guardadas no se muestran. Déjalas vacías para conservarlas, o cárgalas todas para cambiarlas.'
               : 'Se guardan cifradas y no se vuelven a mostrar.'
           }
           meta={
