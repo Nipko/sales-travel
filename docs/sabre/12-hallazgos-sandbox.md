@@ -24,6 +24,23 @@
 > Mientras siga abierto, las reservas quedan a nombre de la oficina de emisión: revisar que la emisión, la
 > comisión y la cartera de esa oficina sean las esperadas.
 
+## Emisión en CERT (SAB-13), 2026-11-12
+
+Cuatro corridas de `sab-13` (`--allow-money`), 1ADT, sólo ida a +30 días. Evidencia en el contenedor, en
+`/tmp/sabre-cert-run/sab13-20261112{,b,c,d}` (sin versionar).
+
+| Corrida | Commit    | Qué pasó                                                                                                                                                                                                                                                                                                | PNR                                                                                   |
+| ------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| (base)  | `6ae7ef6` | BOG-LIM: JetSMART (JA BOG-MDE-LIM, clase U) no confirma en CERT: `UNABLE_TO_BOOK_FLIGHTS_WRONG_STATUS_CODE`. Inventario de la aerolínea en el sandbox, no código. Igual le pasó a una reserva desde la app con Avianca AV9696 BOG-LET clase H                                                           | ninguno                                                                               |
+| `b`     | `6ae7ef6` | BOG-MIA, LATAM LA4400 directo: reserva con rodeo OK. Emisión: `PRINTER_NOT_ASSIGNED`. Arreglado en `3071111`: la cuenta declara `ticketPrinterCountry` (y opcional `hardcopyPrinter`)                                                                                                                   | `STFENJ`, cancelado                                                                   |
+| `c`     | `15f4ce2` | Con impresora (`CO`): `DOWNLINE_SERVICE_ERROR`. Se emitía desde la oficina propia y el PNR es de la oficina de emisión (rodeo). Arreglado en `66c3590`: con el rodeo emite la oficina de emisión, en la sesión aislada                                                                                  | `STECKS`, **vivo sin emitir**: cerrar en Sabre Red                                    |
+| `d`     | `66c3590` | Emisión con `targetPcc` = oficina de emisión: 200 con el warning `UNABLE_TO_RETRIEVE_TICKETS` (ghost ticket, `commitTicketToBookingWaitTime` 3000 ms). `getBooking` y `checkFlightTickets` 3 s después: sin emitir (`BOOKING_NOT_FULFILLED`). El ACL lo dejó en `NEEDS_HUMAN` sin reintentar, como debe | `SXGFHO`, **en duda**: revisar en Sabre Red (DQB) si tiene tiquete; anular y cancelar |
+
+**Siguiente paso:** mirar `SXGFHO` en Sabre Red. Si tiene tiquete, la emisión funciona y lo que falta es leerlo:
+`getBooking`/`checkFlightTickets` corren desde la oficina propia y quizá no ven los documentos de la otra oficina
+(probar leer con `targetPcc`). Si no tiene, pedir a Sabre el detalle por Conversation-ID
+`sales-travel-sabre-cert-run-sab13-20261112d`.
+
 Éste es el entregable que decide ([11 §4.3 y §4.5](./11-plan-implementacion.md#43-entregables)): los JSON son la
 prueba, pero lo que cuenta es lo que aquí se concluye con su número. Los paquetes que certifican contra CERT
 (SAB-12, SAB-13, SAB-21, SAB-22 y SAB-24) escriben sus hallazgos aquí, cada uno en su sección, en vez de abrir un
