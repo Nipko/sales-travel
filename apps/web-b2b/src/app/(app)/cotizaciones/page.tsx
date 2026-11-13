@@ -218,6 +218,14 @@ function sortGroups(
   return sorted;
 }
 
+/** Un tramo de un multidestino tal como se buscó. */
+type SearchedLeg = NonNullable<QuoteCriteria['legs']>[number];
+
+/** ¿Algún tramo sale de una ciudad distinta a donde llegó el anterior? (tramo abierto) */
+function isOpenJaw(legs: readonly SearchedLeg[]): boolean {
+  return legs.some((leg, i) => i > 0 && leg.origin !== legs[i - 1]!.destination);
+}
+
 type QuoteCriteria = Omit<Parameters<typeof createQuotationAction>[1], 'currency'>;
 
 export default function CotizacionesPage() {
@@ -521,6 +529,21 @@ export default function CotizacionesPage() {
     setTimeout(() => formRef.current?.requestSubmit(), 60);
   }
 
+  /**
+   * Un tramo de un multidestino buscado SOLO, como solo ida: la salida cuando la combinación no se
+   * vende en un tiquete (tramo abierto: el segundo sale de otra ciudad que donde llegó el primero).
+   */
+  function searchLegAlone(leg: SearchedLeg) {
+    setTripMode('oneway');
+    setOriginCode(leg.origin);
+    setDestinationCode(leg.destination);
+    setOriginKind(leg.originKind);
+    setDestinationKind(leg.destinationKind);
+    setDepartureDate(leg.departureDate);
+    setReturnDate('');
+    setTimeout(() => formRef.current?.requestSubmit(), 60);
+  }
+
   const calendarNode =
     calendar && searched ? (
       <PriceCalendar
@@ -679,6 +702,8 @@ export default function CotizacionesPage() {
             onLoadMoreFares={handleMoreFares}
             allOffers={offers}
             calendar={calendarNode}
+            searchedLegs={searched?.legs}
+            onSearchLegAlone={searchLegAlone}
             roundTrip={roundTrip && searched !== null ? searched : null}
           />
         </div>
@@ -772,6 +797,8 @@ function SearchResults({
   onLoadMoreFares,
   allOffers,
   calendar,
+  searchedLegs,
+  onSearchLegAlone,
   roundTrip,
 }: {
   hasSearched: boolean;
@@ -789,6 +816,9 @@ function SearchResults({
   allOffers: Offer[];
   /** El calendario de precios ±3 días, si hay datos. */
   calendar?: React.ReactNode;
+  /** Los tramos de un multidestino buscado (para ofrecer buscarlos por separado si no hay nada). */
+  searchedLegs?: readonly SearchedLeg[] | undefined;
+  onSearchLegAlone?: (leg: SearchedLeg) => void;
   /** Los criterios de una búsqueda de ida y vuelta: se elige por trayecto. `null` = una sola lista. */
   roundTrip: QuoteCriteria | null;
 }) {
@@ -831,6 +861,8 @@ function SearchResults({
           onLoadMoreFares={onLoadMoreFares}
           allOffers={allOffers}
           calendar={calendar}
+          searchedLegs={searchedLegs}
+          {...(onSearchLegAlone ? { onSearchLegAlone } : {})}
           roundTrip={roundTrip}
         />
       )}
@@ -853,6 +885,8 @@ function SearchResultsBody({
   onLoadMoreFares,
   allOffers,
   calendar,
+  searchedLegs,
+  onSearchLegAlone,
   roundTrip,
 }: Parameters<typeof SearchResults>[0]) {
   const simulated = useMemo(() => simulatedProviders(result), [result]);
@@ -1046,10 +1080,34 @@ function SearchResultsBody({
           <p className="text-sm font-semibold text-[var(--color-fg)]">
             Ningún vuelo disponible para {echo || 'esta búsqueda'}
           </p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
-            Prueba corriendo las fechas un día, un aeropuerto alternativo de la misma ciudad, o
-            cambiando la cabina.
-          </p>
+          {searchedLegs && isOpenJaw(searchedLegs) ? (
+            <>
+              <p className="mx-auto mt-1 max-w-lg text-xs text-[var(--color-fg-muted)]">
+                Un tramo sale de una ciudad distinta a donde llegó el anterior, y las aerolíneas
+                casi nunca venden esa combinación en un solo tiquete. Puedes buscar cada tramo por
+                separado, como solo ida, y cotizarlos juntos.
+              </p>
+              {onSearchLegAlone ? (
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {searchedLegs.map((leg, index) => (
+                    <button
+                      key={`${leg.origin}-${leg.destination}-${leg.departureDate}`}
+                      type="button"
+                      onClick={() => onSearchLegAlone(leg)}
+                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-semibold text-[var(--color-fg)] hover:border-[var(--color-border-strong)]"
+                    >
+                      Buscar tramo {index + 1}: {leg.origin} → {leg.destination}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-fg-muted)]">
+              Prueba corriendo las fechas un día, un aeropuerto alternativo de la misma ciudad, o
+              cambiando la cabina.
+            </p>
+          )}
         </div>
       </div>
     );
