@@ -1212,13 +1212,16 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     const manage = new SabreOrderManageAdapter(cfg, http, { logger });
     // La oficina de emisión sólo si la reserva quedó para ella: con la emisión futura y un PCC
     // válido, como lo decide la creación. Sin eso emite la oficina propia.
+    // ⚠️ Con el rodeo H-07 la reserva es de la oficina de emisión: emite ella, en la sesión aislada
+    // de la reserva. Desde la oficina propia Sabre responde DOWNLINE_SERVICE_ERROR (CERT 2026-11-12).
     const ticketingPcc =
-      ticketing.settings.policy === 'FUTURE_TICKETING'
+      booking.targetPcc ??
+      (ticketing.settings.policy === 'FUTURE_TICKETING'
         ? cfg.ticketingPcc?.trim().toUpperCase()
-        : undefined;
+        : undefined);
     const issue = new SabreTicketingAdapter(
       cfg,
-      http,
+      booking.http ?? http,
       { logger, orderManage: manage },
       {
         // D1: la forma de pago es la de la cuenta (CASH, ON_ACCOUNT o INVOICE), nunca tarjeta.
@@ -1226,6 +1229,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
         ...(ticketingPcc !== undefined && SABRE_PCC_PATTERN.test(ticketingPcc)
           ? { ticketingPcc }
           : {}),
+        ...(booking.targetPcc === undefined ? {} : { isolatedTargetPccSession: true }),
         ...(printers.printers === undefined ? {} : { printers: printers.printers }),
         // Lo agregado antes de emitir sale como EMD en la misma emisión (SAB-20). Sin `services`
         // la emisión sigue siendo sólo de tiquetes, como antes.
@@ -1262,8 +1266,9 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
    * ⚠️ Rodeo TEMPORAL de H-07 (`bookOnTicketingPcc`): la reserva sale con `targetPcc` = oficina de
    * emisión, en un token y un cliente PROPIOS. `targetPcc` cambia el contexto de la sesión y el API
    * no lo revierte; en la sesión compartida, las búsquedas siguientes correrían en la otra oficina.
-   * Aislado, sólo `createBooking` usa esa sesión: leer, cancelar y emitir siguen en la oficina
-   * propia, que lee y cancela la reserva sin problema (probado en CERT el 2026-11-05).
+   * Aislado, sólo `createBooking` y la emisión usan esa sesión: leer y cancelar siguen en la oficina
+   * propia, que lee y cancela la reserva sin problema (probado en CERT el 2026-11-05). Emitir desde
+   * la propia da DOWNLINE_SERVICE_ERROR (CERT 2026-11-12).
    */
   private bookingLane(
     cfg: SabreConfig,
@@ -1271,7 +1276,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     config: Record<string, unknown>,
     http: SabreHttpClient,
     logger: LoggerPort,
-  ): { create: SabreOrderCreateAdapter; targetPcc?: string } {
+  ): { create: SabreOrderCreateAdapter; targetPcc?: string; http?: SabreHttpClient } {
     const shared = { create: new SabreOrderCreateAdapter(cfg, http, { logger }) };
     if (!sabreBookOnTicketingPcc(config)) return shared;
     const target = cfg.ticketingPcc?.trim().toUpperCase();
@@ -1292,6 +1297,7 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
     return {
       create: new SabreOrderCreateAdapter(cfg, laneHttp, { logger }),
       targetPcc: target,
+      http: laneHttp,
     };
   }
 

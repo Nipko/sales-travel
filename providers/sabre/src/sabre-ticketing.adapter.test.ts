@@ -314,6 +314,18 @@ describe('issueTickets — lee la reserva antes de emitir, y emite una sola vez'
     expect(call?.headers['X-Sabre-Group']).toBe('GRP1');
   });
 
+  it('en una sesión aislada (rodeo H-07) el PCC de emisión sale sin grupo', async () => {
+    const h = wire(
+      {
+        [SABRE_GET_BOOKING_PATH]: [ok(notIssued())],
+        [SABRE_FULFILL_PATH]: [ok(fulfilledCash())],
+      },
+      { settings: { ticketingPcc: 'A1B2', isolatedTargetPccSession: true } },
+    );
+    await h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 });
+    expect(h.bodyAt(SABRE_FULFILL_PATH)['targetPcc']).toBe('A1B2');
+  });
+
   it('un PCC de emisión sin grupo no sale: actuaría sobre el PCC propio', async () => {
     const h = wire({}, { settings: { ticketingPcc: 'A1B2' } });
     const error = await rejection(() => h.adapter.issueTickets(PNR, CTX, { travelerCount: 1 }));

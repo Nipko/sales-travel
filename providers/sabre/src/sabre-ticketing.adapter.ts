@@ -93,6 +93,12 @@ export interface SabreTicketingAdapterSettings {
   readonly formOfPayment?: SabreTicketingFormOfPayment;
   /** PCC de emisión → `targetPcc`. Exige `sabreGroup` o `sabreCurrentCity` en la config. */
   readonly ticketingPcc?: string;
+  /**
+   * `targetPcc` en un cliente HTTP propio que sólo emite (rodeo H-07): el cambio de contexto no
+   * contamina otras llamadas, así que no exige grupo. Lo mismo que `isolatedTargetPccSession` de
+   * la creación.
+   */
+  readonly isolatedTargetPccSession?: boolean;
   /** Sólo con `INVOICE`. */
   readonly invoiceDescription?: string;
   readonly validatingAirlineCode?: string;
@@ -313,6 +319,7 @@ export class SabreTicketingAdapter implements TicketingPort {
     const targetPcc = this.settings.ticketingPcc;
     if (
       targetPcc !== undefined &&
+      this.settings.isolatedTargetPccSession !== true &&
       this.cfg.sabreGroup === undefined &&
       this.cfg.sabreCurrentCity === undefined
     ) {
