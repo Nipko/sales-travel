@@ -45,13 +45,54 @@ function validSabreDraft(): DraftSections {
 }
 
 describe('catálogo de proveedores', () => {
-  it('incluye a Sabre y a TBO Holidays junto a los dos que ya estaban', () => {
+  it('incluye a Sabre, TBO Holidays y Despegar junto a los dos que ya estaban', () => {
     expect(Object.keys(PROVIDERS).sort()).toEqual([
       'agent-cars',
+      'despegar-hotels',
       'latam-ndc',
       'sabre',
       'tbo-hotels',
     ]);
+  });
+
+  it('Despegar: api key cifrada, factura en el blob cifrado y entorno por URL', () => {
+    const form = providerFormFor('despegar-hotels')!;
+    expect(form.initialStatus).toBe('sandbox');
+    const payload = buildProviderAccountPayload(form, {
+      credentials: { apiKey: 'k', invoiceIdType: 'NIT', invoiceIdNumber: '900' },
+      config: {},
+    });
+    expect(payload.credentials).toMatchObject({
+      apiKey: 'k',
+      invoiceFiscalStatus: 'PERSONA_JURIDICA',
+      invoiceIdType: 'NIT',
+      invoiceIdNumber: '900',
+    });
+    expect(payload.config).toEqual({
+      baseUrl: 'https://api-dev.despegar.com/v3',
+      paymentType: 'CURRENT_ACCOUNT',
+      language: 'ES',
+    });
+  });
+
+  it('Despegar: documento fiscal a medias o país mal escrito no se guardan', () => {
+    const form = providerFormFor('despegar-hotels')!;
+    const v = validateProviderDraft(form, {
+      credentials: { apiKey: 'k', invoiceFiscalName: 'Agencia SAS' },
+      config: { countryCode: 'Colombia' },
+    });
+    expect(Object.keys(v.fieldErrors).sort()).toEqual(
+      [
+        fieldKey('config', 'countryCode'),
+        fieldKey('credentials', 'invoiceIdNumber'),
+        fieldKey('credentials', 'invoiceIdType'),
+      ].sort(),
+    );
+    const ok = validateProviderDraft(form, {
+      credentials: { apiKey: 'k' },
+      config: { countryCode: 'CO' },
+    });
+    expect(ok.fieldErrors).toEqual({});
   });
 
   it('no inventa un formulario para un código desconocido', () => {

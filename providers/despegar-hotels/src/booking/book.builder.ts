@@ -1,6 +1,7 @@
-import type { BookInvoice, BookRequest } from './types';
+import type { BookInvoice, BookPayment, BookPaymentUnit, BookRequest } from './types';
 
 function buildInvoice(inv: BookInvoice): Record<string, unknown> {
+  const address = inv.fiscalAddress;
   return {
     reference: inv.reference,
     fiscal_name: inv.fiscalName,
@@ -13,15 +14,46 @@ function buildInvoice(inv: BookInvoice): Record<string, unknown> {
       issue_country: inv.fiscalIdentification.issueCountry,
       expiration_date: inv.fiscalIdentification.expirationDate,
     },
-    fiscal_address: {
-      street: inv.fiscalAddress.street,
-      number: inv.fiscalAddress.number,
-      apartment: inv.fiscalAddress.apartment,
-      floor: inv.fiscalAddress.floor,
-      neighborhood: inv.fiscalAddress.neighborhood,
-      city_id: inv.fiscalAddress.cityId,
-      zip_code: inv.fiscalAddress.zipCode,
-    },
+    fiscal_address: address
+      ? {
+          street: address.street,
+          number: address.number,
+          apartment: address.apartment,
+          floor: address.floor,
+          // Así lo escribe Despegar (inglés británico).
+          neighbourhood: address.neighborhood,
+          city_id: address.cityId,
+          zip_code: address.zipCode,
+        }
+      : undefined,
+  };
+}
+
+/**
+ * Una unidad de pago con la forma que pide cada `option_type` (docs/despegar/01 § Book):
+ * cuenta corriente sólo el tipo, diferido el plan, tarjeta el plan, el token y el titular.
+ */
+function buildUnit(optionType: string, u: BookPaymentUnit): Record<string, unknown> {
+  if (optionType === 'CURRENT_ACCOUNT') return { type: u.type ?? 'CURRENT_ACCOUNT' };
+  if (optionType === 'DEFERRED') return { type: u.type ?? 'DEFERRED', plan_id: u.planId };
+  return {
+    type: u.type ?? optionType,
+    plan_id: u.planId,
+    secure_token: u.secureToken,
+    invoice_reference: u.invoiceReference,
+    card_holder_identification: u.cardHolderIdentification
+      ? { type: u.cardHolderIdentification.type, number: u.cardHolderIdentification.number }
+      : undefined,
+  };
+}
+
+function buildPayment(payment: BookPayment): Record<string, unknown> {
+  const units = payment.units.length > 0 ? payment.units : [{}];
+  return {
+    option_type: payment.optionType,
+    payment_units: units.map((u) => buildUnit(payment.optionType, u)),
+    // El diferido no lleva facturas: se emiten cuando se paga.
+    invoices: payment.optionType === 'DEFERRED' ? undefined : payment.invoices?.map(buildInvoice),
   };
 }
 
@@ -59,19 +91,7 @@ export function buildBookBody(req: BookRequest): Record<string, unknown> {
           }
         : undefined,
     })),
-    payment: {
-      option_type: req.payment.optionType,
-      payment_units: req.payment.units.map((u) => ({
-        type: u.type ?? req.payment.optionType,
-        plan_id: u.planId,
-        secure_token: u.secureToken,
-        invoice_reference: u.invoiceReference,
-        card_holder_identification: u.cardHolderIdentification
-          ? { type: u.cardHolderIdentification.type, number: u.cardHolderIdentification.number }
-          : undefined,
-      })),
-      invoices: req.payment.invoices?.map(buildInvoice),
-    },
+    payment: buildPayment(req.payment),
     context_information: req.context
       ? { client_ip: req.context.clientIp, user_agent: req.context.userAgent }
       : undefined,

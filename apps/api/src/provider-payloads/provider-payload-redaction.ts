@@ -1,3 +1,7 @@
+import {
+  DESPEGAR_HOTELS_PROVIDER_CODE,
+  redactDespegarPayload,
+} from '@sales-travel/despegar-hotels';
 import { TBO_HOTELS_PROVIDER_CODE, redactTboPayload } from '@sales-travel/tbo-hotels';
 import { openPayload, type PayloadBinding } from './provider-payload-crypto.js';
 import type { ExportedPayloadBody } from './provider-payloads.types.js';
@@ -13,6 +17,7 @@ export type ProviderPayloadRedactor = (payload: unknown) => unknown;
  */
 const REDACTORS: Readonly<Record<string, ProviderPayloadRedactor>> = {
   [TBO_HOTELS_PROVIDER_CODE]: redactTboPayload,
+  [DESPEGAR_HOTELS_PROVIDER_CODE]: redactDespegarPayload,
 };
 
 export function redactorFor(providerCode: string): ProviderPayloadRedactor | undefined {

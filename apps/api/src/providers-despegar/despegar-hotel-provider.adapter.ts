@@ -1,18 +1,26 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   ProviderRawValueSchema,
+  type BoardType,
+  type HotelFee,
   type HotelOffer,
+  type Money,
   type HotelRatesQuery,
   type HotelRoompack,
   type HotelSearchCriteria,
   type ProviderRawValue,
   type ProviderRef,
 } from '@sales-travel/canonical';
+import { DespegarApiError } from '@sales-travel/despegar-hotels';
 import type {
+  AftersaleReservation,
+  AftersaleStatus,
   BookInvoice,
   BookPayment,
   BookResult,
   BookStatus,
+  CancelQuote,
+  MealPlanEntry,
   BookTraveler,
   DespegarHotelsAdapter,
   HotelOffer as DespegarHotelOffer,
@@ -26,8 +34,13 @@ import type {
   HotelBookPayment,
   HotelBookRequest,
   HotelBookResult,
+  HotelBookingByClientReferencePort,
+  HotelBookingDateRange,
   HotelBookingStatus,
+  HotelBookingSummary,
   HotelBookingView,
+  HotelBookingsByDatePort,
+  HotelBookingsByDateResult,
   HotelCancelRequest,
   HotelCancelResult,
   HotelDestinationSuggestion,
@@ -48,7 +61,10 @@ import type {
   SearchContext,
 } from '@sales-travel/domain';
 import { z } from '@sales-travel/validation';
-import type { HotelProviderAdapter } from '../providers/hotel-provider.types.js';
+import type {
+  HotelAccountEnvironmentPort,
+  HotelProviderAdapter,
+} from '../providers/hotel-provider.types.js';
 
 /** Código de Despegar en el registry de hoteles y en `provider.name` de cada tarifa. */
 export const DESPEGAR_HOTELS_PROVIDER_CODE = 'despegar-hotels';
@@ -69,6 +85,8 @@ export type DespegarHotelInputReason =
   | 'room-references'
   | 'room-without-guest'
   | 'unsupported-payment'
+  | 'missing-invoice'
+  | 'invalid-guest-name'
   | 'invalid-options';
 
 /**
@@ -241,17 +259,106 @@ function bookingRawOf(pack: DespegarHotelRoompack): Record<string, ProviderRawVa
  * contra el esquema neutral ni se descarta nada aquí: una tarifa que hoy se ve no puede
  * desaparecer por pasar por el envoltorio.
  */
+/**
+ * Lo que se paga en el hotel, por código de `fee-types` (TT, TA…). Sin catálogo cargado se
+ * muestra el código: traducirlo a ojo sería inventar qué cobra el hotel. Los impuestos en destino
+ * van aparte sólo si no vinieron ya en el desglose.
+ */
+function atPropertyChargesOf(pack: DespegarHotelRoompack): HotelFee[] | undefined {
+  const detail = pack.price.chargeAtDestinationDetail ?? [];
+  const charges: HotelFee[] = detail
+    .filter((c) => c.amount.amountMinor > 0)
+    .map((c) => ({
+      description: c.code ? `Cargo en destino (${c.code})` : 'Cargo en destino',
+      ...(c.code ? { descriptionRaw: c.code } : {}),
+      amount: c.amount,
+    }));
+  const taxes = pack.price.taxesAtDestination;
+  if (charges.length === 0 && taxes !== undefined && taxes.amountMinor > 0) {
+    charges.push({ description: 'Impuestos a pagar en el hotel', amount: taxes });
+  }
+  return charges.length > 0 ? charges : undefined;
+}
+
+/** El pack del ACL en la forma canónica: sólo los campos del contrato neutral. */
+function neutralPack(pack: DespegarHotelRoompack, withBookingRef: boolean): HotelRoompack {
+  const raw = withBookingRef ? bookingRawOf(pack) : undefined;
+  const {
+    mealPlanId,
+    promo: _promo,
+    price: { chargeAtDestinationDetail: _detail, taxesAtDestination: _taxes, ...price },
+    ...rest
+  } = pack;
+  const out: HotelRoompack = {
+    ...rest,
+    price,
+    provider:
+      raw === undefined
+        ? { name: DESPEGAR_HOTELS_PROVIDER_CODE, offerRef: pack.id }
+        : { name: DESPEGAR_HOTELS_PROVIDER_CODE, offerRef: pack.id, raw },
+  };
+  // El literal del régimen y el desglose de cargos van en el detalle, que es desde donde se reserva
+  // y lo que compara el PreBook; el listado sigue con el contrato de siempre.
+  if (withBookingRef) {
+    if (mealPlanId !== undefined) out.mealTypeRaw = mealPlanId.slice(0, 80);
+    const charges = atPropertyChargesOf(pack);
+    if (charges !== undefined) out.atPropertyCharges = charges;
+  }
+  return out;
+}
+
 function attributeOffer(offer: DespegarHotelOffer, withBookingRef: boolean): HotelOffer {
+  const { notices, ...rest } = offer;
+  const out: HotelOffer = {
+    ...rest,
+    roompacks: offer.roompacks.map((pack) => neutralPack(pack, withBookingRef)),
+  };
+  if (notices !== undefined && notices.length > 0) out.notices = notices;
+  return out;
+}
+
+// ───────────────────────── Regímenes (catálogo de Despegar) ─────────────────────────
+
+const MEAL_PLAN_TTL_MS = 24 * 60 * 60_000;
+const MEAL_PLAN_RETRY_MS = 5 * 60_000;
+
+/** De la descripción oficial (es/en/pt) al régimen canónico; `undefined` si no se reconoce. */
+export function boardFromMealPlan(entry: MealPlanEntry): BoardType | undefined {
+  const text = [entry.description.es, entry.description.en, entry.description.pt]
+    .filter((t): t is string => t !== undefined)
+    .join(' | ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  if (text === '') return undefined;
+  if (/todo incluido|all inclusive|tudo incluido/.test(text)) return 'AI';
+  if (/pension completa|full board|pensao completa/.test(text)) return 'FB';
+  if (/media pension|half board|meia pensao/.test(text)) return 'HB';
+  if (/desayuno|breakfast|cafe da manha/.test(text)) return 'BB';
+  if (/solo alojamiento|sin comidas|room only|sem refeic|somente hospedagem/.test(text))
+    return 'RO';
+  return undefined;
+}
+
+/**
+ * El régimen de cada pack del detalle según el catálogo: la etiqueta en español que da Despegar y,
+ * si se reconoce, el régimen canónico. Un código que no está en el catálogo queda como lo dejó el
+ * mapeo por palabra.
+ */
+function withMealPlans(offer: HotelOffer, catalog: ReadonlyMap<string, MealPlanEntry>): HotelOffer {
+  if (catalog.size === 0) return offer;
   return {
     ...offer,
-    roompacks: offer.roompacks.map((pack): HotelRoompack => {
-      const raw = withBookingRef ? bookingRawOf(pack) : undefined;
+    roompacks: offer.roompacks.map((pack) => {
+      const entry =
+        pack.mealTypeRaw === undefined ? undefined : catalog.get(pack.mealTypeRaw.toUpperCase());
+      if (entry === undefined) return pack;
+      const board = boardFromMealPlan(entry);
+      const label = entry.description.es ?? entry.description.en ?? entry.description.pt;
       return {
         ...pack,
-        provider:
-          raw === undefined
-            ? { name: DESPEGAR_HOTELS_PROVIDER_CODE, offerRef: pack.id }
-            : { name: DESPEGAR_HOTELS_PROVIDER_CODE, offerRef: pack.id, raw },
+        ...(board === undefined ? {} : { board }),
+        ...(label === undefined ? {} : { boardLabel: label.slice(0, 120) }),
       };
     }),
   };
@@ -306,15 +413,75 @@ function toInvoice(inv: HotelFiscalInvoice): BookInvoice {
   };
 }
 
-function toPayment(payment: HotelBookPayment): BookPayment {
+/**
+ * Opciones de la CUENTA de Despegar que el envoltorio necesita para reservar y que no son del ACL:
+ * contra qué entorno sale, cómo se le paga a Despegar y a nombre de quién factura.
+ */
+export interface DespegarNeutralOptions {
+  environment?: 'test' | 'live';
+  /**
+   * Cómo se paga una reserva "al crédito de la cuenta" (`agency-credit`). Por defecto
+   * `CURRENT_ACCOUNT`; `DEFERRED` si Despegar habilitó el pago remoto para la cuenta.
+   */
+  paymentType?: 'CURRENT_ACCOUNT' | 'ONE_CARD' | 'DEFERRED';
+  /** Datos fiscales de la agencia titular: Despegar los exige con cuenta corriente y tarjeta. */
+  invoice?: BookInvoice;
+}
+
+const MISSING_INVOICE =
+  'La cuenta de Despegar no tiene cargados los datos de facturación de la agencia (credentials.invoice): Despegar los exige para reservar a cuenta corriente.';
+
+/**
+ * El pago "al crédito de la cuenta" en la forma que pide Despegar. `ONE_CARD` no se puede cargar
+ * a la cuenta: necesita el token de un checkout alojado. `DEFERRED` toma el plan de `/payments`.
+ */
+async function agencyCreditPayment(
+  acl: DespegarHotelsAcl,
+  options: DespegarNeutralOptions,
+  prebookRef: string,
+): Promise<BookPayment> {
+  const type = options.paymentType ?? 'CURRENT_ACCOUNT';
+  if (type === 'ONE_CARD') {
+    throw new DespegarHotelInputError(
+      'unsupported-payment',
+      'La cuenta de Despegar está configurada para pagar con tarjeta: esta reserva necesita el token del checkout alojado.',
+    );
+  }
+  if (type === 'DEFERRED') {
+    const modalities = await acl.getPaymentOptions({ prebookId: prebookRef });
+    const plan = modalities
+      .flatMap((m) => m.options)
+      .find((o) => o.optionType === 'DEFERRED' && o.planId !== undefined);
+    if (plan?.planId === undefined) {
+      throw new DespegarHotelInputError(
+        'unsupported-payment',
+        'Despegar no ofreció pago diferido para esta tarifa. Cambia la forma de pago de la cuenta a cuenta corriente.',
+      );
+    }
+    return { optionType: 'DEFERRED', units: [{ planId: plan.planId }] };
+  }
+  if (options.invoice === undefined) {
+    throw new DespegarHotelInputError('missing-invoice', MISSING_INVOICE);
+  }
+  return {
+    optionType: 'CURRENT_ACCOUNT',
+    units: [{ type: 'CURRENT_ACCOUNT' }],
+    invoices: [options.invoice],
+  };
+}
+
+function toPayment(payment: HotelBookPayment, options: DespegarNeutralOptions): BookPayment {
   if (payment.kind !== 'hosted-token') {
     throw new DespegarHotelInputError(
       'unsupported-payment',
-      'Despegar Hoteles cobra con el checkout alojado: esta reserva no se puede cargar al crédito de la cuenta.',
+      'El pago a la cuenta se resuelve con agencyCreditPayment.',
     );
   }
+  const invoices =
+    payment.invoices?.map(toInvoice) ?? (options.invoice ? [options.invoice] : undefined);
   return {
     optionType: payment.optionType,
+    invoices,
     units: payment.units.map((u) => ({
       planId: u.planId,
       secureToken: u.secureToken,
@@ -328,7 +495,6 @@ function toPayment(payment: HotelBookPayment): BookPayment {
               number: u.cardHolderDocument.number,
             },
     })),
-    invoices: payment.invoices?.map(toInvoice),
   };
 }
 
@@ -378,6 +544,94 @@ function toPrebookResult(r: PrebookResult): HotelPrebookResult {
   return out;
 }
 
+// ───────────────────────── Post-venta: de Despegar al contrato neutral ─────────────────────────
+
+/** Sólo letras (latinas con tildes y ñ) y espacios: HotelDO rechaza el resto (certificación, 4). */
+const DESPEGAR_NAME = /^[A-Za-zÀ-ÖØ-öø-ÿ]+( [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
+
+function assertDespegarName(name: string, roomIndex: number): void {
+  if (!DESPEGAR_NAME.test(name.trim())) {
+    throw new DespegarHotelInputError(
+      'invalid-guest-name',
+      `El huésped principal de la habitación ${roomIndex + 1} tiene caracteres que Despegar no acepta: use sólo letras y espacios.`,
+    );
+  }
+}
+
+const AFTERSALE_BOOKING_STATUS: Readonly<Record<AftersaleStatus, HotelBookingStatus>> = {
+  ISSUED: 'CONFIRMED',
+  IN_PROCESS: 'PENDING',
+  CANCELLED: 'CANCELLED',
+  DELETED: 'UNKNOWN',
+  UNKNOWN: 'UNKNOWN',
+};
+
+function aftersaleView(r: AftersaleReservation, providerBookingId: string): HotelBookingView {
+  const view: HotelBookingView = {
+    found: true,
+    providerBookingId: r.reservationId ?? providerBookingId,
+    status: AFTERSALE_BOOKING_STATUS[r.status],
+    providerStatus: r.rawStatus,
+    warnings: [],
+  };
+  if (r.externalReservationId) view.bookingReference = r.externalReservationId;
+  // El PNR del producto es la referencia del hotel para el check-in.
+  if (r.pnr) view.hotelConfirmationNumber = r.pnr;
+  if (r.downloadVoucherUrl) view.voucherIssued = true;
+  return view;
+}
+
+function bookView(result: BookResult): HotelBookingView {
+  const view: HotelBookingView = {
+    found: true,
+    status: BOOKING_STATUS[result.status],
+    providerStatus: result.status,
+    warnings: [],
+  };
+  if (result.reservationId) view.providerBookingId = result.reservationId;
+  if (result.subStatus) view.providerSubStatus = result.subStatus;
+  const pnr = result.products.find((p) => p.pnr)?.pnr;
+  if (pnr) view.hotelConfirmationNumber = pnr;
+  return view;
+}
+
+function bookingSummaryOf(
+  r: AftersaleReservation,
+  range: HotelBookingDateRange,
+): HotelBookingSummary | undefined {
+  const date = r.purchaseDateTime?.slice(0, 10);
+  if (date === undefined || date < range.from || date > range.to) return undefined;
+  const summary: HotelBookingSummary = {
+    providerBookingId: r.reservationId ?? r.id,
+    bookingDate: date,
+    status: AFTERSALE_BOOKING_STATUS[r.status],
+    providerStatus: r.rawStatus,
+    providerRecordId: r.productId,
+  };
+  if (r.externalReservationId) summary.bookingReference = r.externalReservationId;
+  if (r.checkIn) summary.checkinDate = r.checkIn.slice(0, 10);
+  if (r.checkOut) summary.checkoutDate = r.checkOut.slice(0, 10);
+  if (r.hotelId) summary.hotelId = r.hotelId;
+  if (r.salePrice) {
+    summary.total = r.salePrice;
+    summary.currency = r.salePrice.currency;
+  }
+  return summary;
+}
+
+/** El reembolso que cotizó Despegar, sumado si viene por varios medios de pago. */
+function refundOf(quote: CancelQuote | undefined): Money | undefined {
+  const amounts = (quote?.refunds ?? [])
+    .map((r) => r.refundAmount)
+    .filter((m): m is Money => m !== undefined);
+  const [first] = amounts;
+  if (first === undefined || amounts.some((m) => m.currency !== first.currency)) return undefined;
+  return {
+    amountMinor: amounts.reduce((sum, m) => sum + m.amountMinor, 0),
+    currency: first.currency,
+  };
+}
+
 // ───────────────────────── Envoltorio ─────────────────────────
 
 /**
@@ -401,9 +655,26 @@ export class DespegarHotelProviderAdapter
     HotelSuggestPort,
     HotelRatesDetailPort,
     HotelPaymentOptionsPort,
-    HotelPriceJumpRecoveryPort
+    HotelPriceJumpRecoveryPort,
+    HotelBookingByClientReferencePort,
+    HotelBookingsByDatePort
 {
-  constructor(private readonly acl: DespegarHotelsAcl) {}
+  constructor(
+    private readonly acl: DespegarHotelsAcl,
+    private readonly options: DespegarNeutralOptions = {},
+  ) {}
+
+  /**
+   * El entorno de la cuenta (por su `baseUrl`): con `test` la web avisa que las reservas no son
+   * habitaciones de verdad. Ausente si quien armó el adapter no lo dijo: `hasAccountEnvironment`
+   * lo lee por valor, así que sin dato no se declara.
+   */
+  get accountEnvironment(): HotelAccountEnvironmentPort['accountEnvironment'] | undefined {
+    return this.options.environment;
+  }
+
+  /** Una ventana de un mes: `/reservations` pagina, pero una ventana corta acota cada lectura. */
+  readonly maxBookingDateWindowDays = 31;
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
@@ -419,12 +690,45 @@ export class DespegarHotelProviderAdapter
   }
 
   async getHotelRates(query: HotelRatesQuery, _ctx: SearchContext): Promise<HotelOffer> {
-    const offer = await this.acl.getHotelDetail({
-      ...stayQuery(query),
-      hotelId: query.hotelId,
-      roompackId: query.roompackId,
-    });
-    return attributeOffer(offer, true);
+    const [offer, mealPlans] = await Promise.all([
+      this.acl.getHotelDetail({
+        ...stayQuery(query),
+        hotelId: query.hotelId,
+        roompackId: query.roompackId,
+      }),
+      this.mealPlans(),
+    ]);
+    return withMealPlans(attributeOffer(offer, true), mealPlans);
+  }
+
+  #mealPlans: { at: number; value: Promise<ReadonlyMap<string, MealPlanEntry>> } | undefined;
+
+  /**
+   * El catálogo de regímenes de Despegar (`/content-api/hotels/meal-plans`), una vez al día. Los
+   * códigos v3 no son los de la API anterior (docs/despegar/01): el régimen sale de su descripción
+   * oficial. Si el catálogo no responde, se sigue con el mapeo por palabra y se reintenta en 5 min.
+   */
+  private mealPlans(): Promise<ReadonlyMap<string, MealPlanEntry>> {
+    const now = Date.now();
+    const cached = this.#mealPlans;
+    if (cached !== undefined && now - cached.at < MEAL_PLAN_TTL_MS) return cached.value;
+    const value = this.acl
+      .getMealPlans()
+      .then((entries) => {
+        const map = new Map<string, MealPlanEntry>();
+        for (const e of entries) {
+          map.set(e.id.toUpperCase(), e);
+          for (const sub of e.subCategories)
+            map.set(sub.id.toUpperCase(), { ...sub, subCategories: [] });
+        }
+        return map;
+      })
+      .catch(() => {
+        this.#mealPlans = { at: now - MEAL_PLAN_TTL_MS + MEAL_PLAN_RETRY_MS, value };
+        return new Map<string, MealPlanEntry>();
+      });
+    this.#mealPlans = { at: now, value };
+    return value;
   }
 
   suggestDestinations(
@@ -495,6 +799,8 @@ export class DespegarHotelProviderAdapter
           `La habitación ${j + 1} no tiene huésped principal.`,
         );
       }
+      assertDespegarName(lead.firstName, j);
+      assertDespegarName(lead.lastName, j);
       return toTraveler(lead, reference);
     });
 
@@ -507,7 +813,10 @@ export class DespegarHotelProviderAdapter
         phones: [{ ...request.contact.phone, type: options.phoneType }],
       },
       travelers,
-      payment: toPayment(request.payment),
+      payment:
+        request.payment.kind === 'agency-credit'
+          ? await agencyCreditPayment(this.acl, this.options, request.prebookRef)
+          : toPayment(request.payment, this.options),
       context:
         request.client === undefined
           ? undefined
@@ -541,19 +850,62 @@ export class DespegarHotelProviderAdapter
 
   // ───────────────────────── Post-venta ─────────────────────────
 
+  /**
+   * El estado de post-venta (`/reservations`: emitida, en proceso, cancelada) manda sobre el del
+   * Book, que nunca dice "cancelada". Si `/reservations` todavía no trae el producto —pasa en el
+   * primer minuto—, se lee `/book/{id}`.
+   */
   async getBooking(providerBookingId: string, _ctx: SearchContext): Promise<HotelBookingView> {
-    const result = await this.acl.getReservation(providerBookingId);
-    const view: HotelBookingView = {
-      found: true,
-      status: BOOKING_STATUS[result.status],
-      providerStatus: result.status,
-      warnings: [],
-    };
-    if (result.reservationId) view.providerBookingId = result.reservationId;
-    if (result.subStatus) view.providerSubStatus = result.subStatus;
-    return view;
+    const product = await this.acl.findHotelReservation(providerBookingId);
+    if (product !== undefined) return aftersaleView(product, providerBookingId);
+    return bookView(await this.acl.getReservation(providerBookingId));
   }
 
+  /** `GET /book/{external_booking_reference}`: Despegar documenta que acepta nuestra referencia. */
+  async getBookingByClientReference(
+    bookingReference: string,
+    _ctx: SearchContext,
+  ): Promise<HotelBookingView> {
+    try {
+      const view = bookView(await this.acl.getReservation(bookingReference));
+      return { ...view, bookingReference };
+    } catch (err) {
+      if (err instanceof DespegarApiError && err.status === 404) {
+        return { found: false, bookingReference, warnings: [] };
+      }
+      throw err;
+    }
+  }
+
+  async listBookingsByDate(
+    range: HotelBookingDateRange,
+    _ctx: SearchContext,
+  ): Promise<HotelBookingsByDateResult> {
+    const bookings: HotelBookingSummary[] = [];
+    const limit = 50;
+    // Tope de páginas: una cuenta con miles de reservas en un mes no cuelga la conciliación.
+    for (let page = 0; page < 40; page++) {
+      const items = await this.acl.findReservations({
+        fromPurchaseDate: range.from,
+        toPurchaseDate: range.to,
+        productType: 'HOTEL',
+        limit,
+        page,
+      });
+      for (const r of items) {
+        const summary = bookingSummaryOf(r, range);
+        if (summary !== undefined) bookings.push(summary);
+      }
+      if (items.length < limit) return { range, bookings };
+    }
+    throw new Error('Despegar devolvió más reservas de las que se leen en una ventana');
+  }
+
+  /**
+   * Los tres pasos de Despegar (habilitación, cotización, cancelación). El reembolso es el que
+   * cotizó Despegar; una cancelación con resolución `MANUAL` o un `flow_id` que no es `CAN-` queda
+   * en curso, no cancelada.
+   */
   async cancelBooking(
     request: HotelCancelRequest,
     _ctx: SearchContext,
@@ -563,8 +915,15 @@ export class DespegarHotelProviderAdapter
       reservationId: request.providerBookingId,
       reason: options.reason,
     });
-    // Despegar no devuelve importes ni el estado posterior en la cancelación: no se inventan.
-    return { success: result.success, warnings: [] };
+    const out: HotelCancelResult = { success: result.success, warnings: [] };
+    const refund = refundOf(result.quote);
+    if (refund !== undefined) out.refundAmount = refund;
+    const final =
+      result.flowId?.startsWith('CAN-') === true && result.quote?.resolution !== 'MANUAL';
+    out.settlement = final ? 'final' : 'in-progress';
+    out.bookingStatus = final ? 'CANCELLED' : 'CANCELLATION_IN_PROGRESS';
+    if (result.quote?.resolution === 'MANUAL') out.warnings.push('cancel-manual-resolution');
+    return out;
   }
 
   /**

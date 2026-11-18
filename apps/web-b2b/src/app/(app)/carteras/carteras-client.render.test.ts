@@ -102,7 +102,7 @@ describe('CarterasClient', () => {
       initialWallets: {
         portfolios: [],
         financier: { tenantId: WALLETS.financier!.tenantId, name: 'Consolidador Andino' },
-        ownProviderAccounts: ['email', 'tbo-hotels'],
+        ownProviderAccounts: ['despegar-hotels', 'email', 'tbo-hotels'],
       },
     });
     expect(out).toContain('Tu agencia todavía no tiene carteras.');

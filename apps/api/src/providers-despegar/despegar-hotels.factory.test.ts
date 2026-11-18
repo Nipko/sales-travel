@@ -102,8 +102,9 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
     expect(factory.capabilities).toEqual({
       retrieve: true,
       cancel: true,
-      retrieveByClientReference: false,
-      reconcileByDate: false,
+      // `GET /book/{external_booking_reference}` y `GET /reservations` por fecha de compra.
+      retrieveByClientReference: true,
+      reconcileByDate: true,
       // Lee reservas, pero sin un HCN con SLA que seguir: no entra al seguimiento.
       hcn: false,
     });

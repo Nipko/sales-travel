@@ -219,6 +219,9 @@ export class HotelPrebookService {
               searchSentAt: offer.searchSentAt,
               rooms: offer.rooms,
               baseline: { stage: 'C1', totalText: offer.pack.totalText, seen: offer.pack.seen },
+              ...(offer.pack.providerData === undefined
+                ? {}
+                : { providerData: offer.pack.providerData }),
             },
             { tenantId },
           ),
@@ -265,6 +268,7 @@ export class HotelPrebookService {
       offerRef: found.pack.offerRef,
       totalText: found.pack.totalText,
       currency: found.pack.currency,
+      ...(found.pack.providerData === undefined ? {} : { providerData: found.pack.providerData }),
       checkinDate: offer.checkinDate,
       checkoutDate: offer.checkoutDate,
       rooms: offer.rooms.map((r) => ({ adults: r.adults, childrenAges: [...r.childrenAges] })),

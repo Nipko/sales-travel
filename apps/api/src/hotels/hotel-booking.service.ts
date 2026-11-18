@@ -681,6 +681,9 @@ export class HotelBookingService {
                   rateConditionsHash: snapshot.rateConditionsHash,
                 },
               },
+              ...(snapshot.providerData === undefined
+                ? {}
+                : { providerData: snapshot.providerData }),
             },
             ctx,
           ),
@@ -847,6 +850,7 @@ export class HotelBookingService {
         occupancy: snapshot.rooms,
         rooms: input.rooms,
         contact: c.contact,
+        ...(found.pack.providerData === undefined ? {} : { providerData: found.pack.providerData }),
       },
     };
   }
@@ -869,6 +873,9 @@ export class HotelBookingService {
         offerRef: rate.found.pack.offerRef,
         totalText: rate.found.pack.totalText,
         currency: rate.found.pack.currency,
+        ...(rate.found.pack.providerData === undefined
+          ? {}
+          : { providerData: rate.found.pack.providerData }),
         roompack: rate.roompack,
         rateConditions: rate.found.result.rateConditions.map((r) => ({ ...r })),
         signals: [...rate.found.result.signals],

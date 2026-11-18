@@ -12,6 +12,7 @@ import {
   HotelProviderCodeSchema,
   HotelRoomOccupancySchema,
   MoneySchema,
+  ProviderRawValueSchema,
   type HotelRoompack,
 } from '@sales-travel/canonical';
 import type { CachePort } from '@sales-travel/core';
@@ -106,6 +107,21 @@ const SeenRateSchema = z
   })
   .strict();
 
+/** Tope del JSON de `providerData` de una tarifa: un token de Despegar ronda el kilobyte. */
+const MAX_PROVIDER_DATA_BYTES = 8192;
+
+/**
+ * Datos opacos del proveedor para reenviar (Despegar: `choice_id` y numeración de habitaciones).
+ * Acotado en claves y en tamaño: el contexto de una búsqueda guarda cientos de tarifas.
+ */
+export const ProviderDataSchema = z
+  .record(z.string().min(1).max(40), ProviderRawValueSchema)
+  .refine((d) => Object.keys(d).length <= 16, 'demasiadas claves')
+  .refine(
+    (d) => Buffer.byteLength(JSON.stringify(d), 'utf8') <= MAX_PROVIDER_DATA_BYTES,
+    'providerData demasiado grande',
+  );
+
 const PackContextSchema = z
   .object({
     hotelId: z.string().min(1).max(64),
@@ -113,6 +129,7 @@ const PackContextSchema = z
     totalText: DecimalTextSchema,
     currency: CurrencyCodeSchema,
     seen: SeenRateSchema,
+    providerData: ProviderDataSchema.optional(),
   })
   .strict();
 

@@ -262,10 +262,16 @@ const BookIdentificationSchema = z.object({
   issueCountry: z.string().length(2).optional(),
 });
 
+/**
+ * HotelDO sólo acepta letras (latinas, con tildes y ñ) y espacios en los nombres (certificación,
+ * punto 4): un guion o un apóstrofo hace fallar el Book del otro lado.
+ */
+export const DESPEGAR_NAME_RE = /^[A-Za-zÀ-ÖØ-öø-ÿ]+( [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
+
 const BookTravelerSchema = z.object({
   referenceId: z.string().min(1),
-  firstName: z.string().min(1).max(28),
-  lastName: z.string().min(1).max(29),
+  firstName: z.string().trim().min(1).max(28).regex(DESPEGAR_NAME_RE, 'sólo letras y espacios'),
+  lastName: z.string().trim().min(1).max(29).regex(DESPEGAR_NAME_RE, 'sólo letras y espacios'),
   gender: z.enum(['MALE', 'FEMALE']).optional(),
   nationality: z.string().length(2).optional(),
   birthDate: isoDate.optional(),
@@ -284,10 +290,14 @@ const BookContactSchema = z.object({
   phones: z.array(BookPhoneSchema).optional(),
 });
 
+/**
+ * Una unidad de pago. Con `CURRENT_ACCOUNT` va vacía; con `DEFERRED` lleva el plan; con
+ * `ONE_CARD`, plan y token. Lo exige {@link DespegarPaymentSchema} según el tipo.
+ */
 const BookPaymentUnitSchema = z.object({
-  planId: z.string().min(1),
+  planId: z.string().min(1).optional(),
   // Token de la tokenización hosted (PCI SAQ-A). Nunca PAN/CVV.
-  secureToken: z.string().min(1),
+  secureToken: z.string().min(1).optional(),
   type: z.string().optional(),
   invoiceReference: z.number().int().optional(),
   cardHolderIdentification: z
@@ -296,8 +306,8 @@ const BookPaymentUnitSchema = z.object({
 });
 
 const BookInvoiceSchema = z.object({
-  reference: z.number().int(),
-  fiscalName: z.string().min(1),
+  reference: z.number().int().optional(),
+  fiscalName: z.string().min(1).optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   fiscalStatus: z.string().min(1),
@@ -307,16 +317,63 @@ const BookInvoiceSchema = z.object({
     issueCountry: z.string().length(2).optional(),
     expirationDate: z.string().optional(),
   }),
-  fiscalAddress: z.object({
-    street: z.string().min(1),
-    number: z.string().min(1),
-    apartment: z.string().optional(),
-    floor: z.string().optional(),
-    neighborhood: z.string().optional(),
-    cityId: z.string().min(1),
-    zipCode: z.string().min(1),
-  }),
+  fiscalAddress: z
+    .object({
+      street: z.string().min(1).optional(),
+      number: z.string().min(1).optional(),
+      apartment: z.string().optional(),
+      floor: z.string().optional(),
+      neighborhood: z.string().optional(),
+      cityId: z.string().min(1).optional(),
+      zipCode: z.string().min(1).optional(),
+    })
+    .optional(),
 });
+
+/**
+ * Pago del Book de Despegar según su `option_type` (docs/despegar/01 § Book): cuenta corriente con
+ * facturas y sin plan; diferido con plan y sin facturas; tarjeta con plan, token y facturas.
+ */
+const DespegarPaymentSchema = z
+  .object({
+    optionType: z.enum(['CURRENT_ACCOUNT', 'ONE_CARD', 'DEFERRED']),
+    units: z.array(BookPaymentUnitSchema).max(4).default([]),
+    invoices: z.array(BookInvoiceSchema).optional(),
+  })
+  .superRefine((p, ctx) => {
+    const needsInvoices = p.optionType !== 'DEFERRED';
+    if (needsInvoices && (p.invoices === undefined || p.invoices.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['invoices'],
+        message: `${p.optionType} exige los datos de facturación`,
+      });
+    }
+    if (p.optionType === 'CURRENT_ACCOUNT') return;
+    if (p.units.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['units'],
+        message: 'falta el plan de pago',
+      });
+    }
+    p.units.forEach((u, i) => {
+      if (u.planId === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['units', i, 'planId'],
+          message: 'Required',
+        });
+      }
+      if (p.optionType === 'ONE_CARD' && u.secureToken === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['units', i, 'secureToken'],
+          message: 'Required',
+        });
+      }
+    });
+  });
 
 /**
  * Un huésped del Book neutral. Los topes son los del borde; los del proveedor (TBO: ASCII, de 2 a
@@ -379,11 +436,7 @@ export const BookSchema = z.object({
   modality: z.string().optional(),
   contact: BookContactSchema,
   travelers: z.array(BookTravelerSchema).min(1),
-  payment: z.object({
-    optionType: z.string().min(1),
-    units: z.array(BookPaymentUnitSchema).min(1),
-    invoices: z.array(BookInvoiceSchema).optional(),
-  }),
+  payment: DespegarPaymentSchema,
   context: z
     .object({ clientIp: z.string().optional(), userAgent: z.string().optional() })
     .optional(),
@@ -436,11 +489,48 @@ export const CancelBodySchema = z.object({
     .optional(),
 });
 
-export const RecoveryBodySchema = z.object({
-  messageType: z.string().min(1),
-  confirmations: z.array(z.object({ flavorId: z.string().min(1), confirm: z.boolean() })).min(1),
-  testCase: z.literal('pricejump').optional(),
+/**
+ * Salto de precio (`PRICE_JUMP`, con confirmaciones) o reserva en espera de pago
+ * (`WAITING_PAYMENT_SELECTION`, que aquí sólo se resuelve con la cuenta corriente: con tarjeta haría
+ * falta un token que esta ruta no recibe).
+ */
+export const RecoveryBodySchema = z
+  .object({
+    messageType: z.enum(['PRICE_JUMP', 'WAITING_PAYMENT_SELECTION']),
+    confirmations: z
+      .array(z.object({ flavorId: z.string().min(1), confirm: z.boolean() }))
+      .default([]),
+    paymentType: z.literal('CURRENT_ACCOUNT').optional(),
+    testCase: z.literal('pricejump').optional(),
+  })
+  .superRefine((b, ctx) => {
+    if (b.messageType === 'PRICE_JUMP' && b.confirmations.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['confirmations'], message: 'Required' });
+    }
+    if (b.messageType === 'WAITING_PAYMENT_SELECTION' && b.paymentType === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paymentType'], message: 'Required' });
+    }
+  });
+
+export const RecoveryQuerySchema = z.object({ testCase: z.literal('pricejump').optional() });
+
+export const CommissionBodySchema = z.object({
+  prebookId: z.string().min(1).max(200),
+  /** En unidades mayores de la moneda del prebook, entre su mínimo y su máximo. */
+  commission: z.number().nonnegative().finite(),
 });
+
+export const SpecialRequestBodySchema = z.object({
+  code: z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(/^[A-Z0-9_]+$/),
+  value: z.string().min(1).max(200).optional(),
+});
+
+export type CommissionBody = z.infer<typeof CommissionBodySchema>;
+export type SpecialRequestBody = z.infer<typeof SpecialRequestBodySchema>;
 
 export type HotelSuggestQuery = z.infer<typeof HotelSuggestQuerySchema>;
 export type HotelAvailabilityInput = z.infer<typeof HotelAvailabilityInputSchema>;

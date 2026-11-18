@@ -9,7 +9,7 @@ import {
   PATH_METADATA,
   ROUTE_ARGS_METADATA,
 } from '@nestjs/common/constants';
-import { DespegarApiError, type BookRequest } from '@sales-travel/despegar-hotels';
+import { DespegarApiError } from '@sales-travel/despegar-hotels';
 import type { Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditService } from '../audit/audit.service.js';
@@ -60,6 +60,7 @@ import { HotelSearchPagingExpiredError } from './hotel-search-paging.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
 import {
   CancelBodySchema,
+  CommissionBodySchema,
   HotelAvailabilityInputSchema,
   HotelAvailabilityMoreBodySchema,
   HotelBookBodySchema,
@@ -71,6 +72,8 @@ import {
   HotelSuggestQuerySchema,
   PaymentOptionsQuerySchema,
   RecoveryBodySchema,
+  RecoveryQuerySchema,
+  SpecialRequestBodySchema,
   isNeutralHotelBook,
   type HotelAvailabilityInput,
   type HotelBookInput,
@@ -406,6 +409,16 @@ describe('HotelsController — superficie HTTP', () => {
     ['bookingPermissions', RequestMethod.GET, 'booking-permissions', []],
     ['cancel', RequestMethod.POST, 'reservations/:id/cancel', [CancelBodySchema]],
     ['recovery', RequestMethod.POST, 'reservations/:id/recovery', [RecoveryBodySchema]],
+    ['priceJump', RequestMethod.GET, 'reservations/:id/recovery', [RecoveryQuerySchema]],
+    ['cancelQuote', RequestMethod.GET, 'reservations/:id/cancel-quote', []],
+    ['commission', RequestMethod.POST, 'commission', [CommissionBodySchema]],
+    ['specialRequestsCatalog', RequestMethod.GET, 'reservations/:id/special-requests', []],
+    [
+      'specialRequest',
+      RequestMethod.POST,
+      'reservations/:id/special-requests',
+      [SpecialRequestBodySchema],
+    ],
   ])('%s → %s /hotels/%s, validado con su esquema', (nombre, metodo, ruta, esquemas) => {
     const fn = handler(nombre);
     const metodoDeclarado: unknown = Reflect.getMetadata(METHOD_METADATA, fn);
@@ -416,7 +429,7 @@ describe('HotelsController — superficie HTTP', () => {
     expect(esquemasDe(nombre)).toEqual(esquemas);
   });
 
-  it('no hay más rutas que esas quince', () => {
+  it('no hay más rutas que esas veinte', () => {
     const rutas = Object.getOwnPropertyNames(HotelsController.prototype).filter(
       (nombre) =>
         nombre !== 'constructor' &&
@@ -429,6 +442,8 @@ describe('HotelsController — superficie HTTP', () => {
         'book',
         'bookingPermissions',
         'cancel',
+        'cancelQuote',
+        'commission',
         'content',
         'contentBatch',
         'currencies',
@@ -436,8 +451,11 @@ describe('HotelsController — superficie HTTP', () => {
         'getReservation',
         'payments',
         'prebook',
+        'priceJump',
         'recovery',
         'roomContent',
+        'specialRequest',
+        'specialRequestsCatalog',
         'suggestions',
       ].sort(),
     );
@@ -460,12 +478,18 @@ describe('HotelsController — superficie HTTP', () => {
 });
 
 describe('HotelsController — tenant', () => {
-  const BOOK: BookRequest = {
+  const BOOK = {
     prebookId: 'PB-0001',
     externalBookingReference: 'ISO-0001',
     contact: { email: 'reservas@agencia.example' },
     travelers: [{ referenceId: '1', firstName: 'Ana', lastName: 'Prueba' }],
-    payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }] },
+    payment: {
+      optionType: 'ONE_CARD' as const,
+      units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }],
+      invoices: [
+        { fiscalStatus: 'PERSONA_FISICA', fiscalIdentification: { type: 'CC', number: '123' } },
+      ],
+    },
   };
 
   const HANDLERS: [string, (c: HotelsController, u: string | undefined) => Promise<unknown>][] = [
@@ -534,6 +558,23 @@ describe('HotelsController — tenant', () => {
           messageType: 'PRICE_JUMP',
           confirmations: [{ flavorId: 'H0', confirm: true }],
         }),
+    ],
+    [
+      'recovery en espera de pago',
+      (c, u) =>
+        c.recovery(u, 'RES-0001', {
+          messageType: 'WAITING_PAYMENT_SELECTION',
+          confirmations: [],
+          paymentType: 'CURRENT_ACCOUNT',
+        }),
+    ],
+    ['priceJump', (c, u) => c.priceJump(u, 'RES-0001', {})],
+    ['cancelQuote', (c, u) => c.cancelQuote(u, 'RES-0001')],
+    ['commission', (c, u) => c.commission(u, { prebookId: 'PB-0001', commission: 10 })],
+    ['specialRequestsCatalog', (c, u) => c.specialRequestsCatalog(u, 'RES-0001')],
+    [
+      'specialRequest',
+      (c, u) => c.specialRequest(u, 'RES-0001', { code: 'LATE_CHECK_IN', value: '15:00' }),
     ],
   ];
 
@@ -948,7 +989,13 @@ describe('PR-4.6: POST /hotels/book con el cuerpo neutral reserva con orden detr
         prebookId: 'PB-0001',
         contact: { email: 'reservas@agencia.example' },
         travelers: [{ referenceId: '1', firstName: 'Ana', lastName: 'Prueba' }],
-        payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok' }] },
+        payment: {
+          optionType: 'ONE_CARD',
+          units: [{ planId: 'PL-1', secureToken: 'tok' }],
+          invoices: [
+            { fiscalStatus: 'PERSONA_FISICA', fiscalIdentification: { type: 'CC', number: '123' } },
+          ],
+        },
       }),
     ).toEqual(['externalBookingReference']);
     expect(rutas(neutralSinContacto)).toEqual(['contact']);
@@ -963,7 +1010,13 @@ describe('PR-4.6: POST /hotels/book con el cuerpo neutral reserva con orden detr
       providerCode: 'despegar-hotels',
       contact: { email: 'reservas@agencia.example' },
       travelers: [{ referenceId: '1', firstName: 'Ana', lastName: 'Prueba' }],
-      payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok' }] },
+      payment: {
+        optionType: 'ONE_CARD',
+        units: [{ planId: 'PL-1', secureToken: 'tok' }],
+        invoices: [
+          { fiscalStatus: 'PERSONA_FISICA', fiscalIdentification: { type: 'CC', number: '123' } },
+        ],
+      },
     });
 
     expect(parsed.success).toBe(true);

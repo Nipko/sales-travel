@@ -68,6 +68,29 @@ function stubFetch(json: unknown, status = 200): { calls: FetchCall[] } {
   return { calls };
 }
 
+/** Una respuesta por llamada, en orden. */
+function stubFetchSequence(bodies: unknown[]): { calls: FetchCall[] } {
+  const calls: FetchCall[] = [];
+  let i = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        method: init.method,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
+      });
+      const body = bodies[i++];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(body ?? {})),
+      } as Response);
+    }),
+  );
+  return { calls };
+}
+
 const cfg = {
   apiKey: 'secret-key',
   baseUrl: 'https://api-dev.despegar.com/v3',
@@ -113,7 +136,7 @@ const DETALLE = {
     {
       id: 'r1',
       meal_plan: { id: 'BREAKFAST' },
-      rooms: [{ name: 'Std', reference: 1, choice_id: 'CH-1' }],
+      rooms: [{ name: 'Std', reference: 1, room_type_id: 'RT-1', choice_id: 'CH-1' }],
       cancellation_policy: { status: 'fully_refundable' },
       price_detail: { currency: 'USD', total: 120 },
     },
@@ -240,10 +263,15 @@ describe('DespegarHotelProviderAdapter — tarifas de un hotel', () => {
     expect(calls[1]?.url).toContain('roompack_id=r1');
     const [pack] = envuelto.roompacks;
     expect(pack?.provider).toEqual(OFERTA_DESPEGAR);
-    // El token sigue también en la habitación, como lo ve hoy quien usa el detalle.
+    // El token sigue también en la habitación, como lo ve hoy quien usa el detalle. El código de
+    // régimen del ACL (`mealPlanId`) sale como `mealTypeRaw`, que es lo que compara el PreBook.
     expect(envuelto).toEqual({
       ...concreto,
-      roompacks: concreto.roompacks.map((p) => ({ ...p, provider: OFERTA_DESPEGAR })),
+      roompacks: concreto.roompacks.map(({ mealPlanId, ...p }) => ({
+        ...p,
+        ...(mealPlanId === undefined ? {} : { mealTypeRaw: mealPlanId }),
+        provider: OFERTA_DESPEGAR,
+      })),
     });
     expect(HotelOfferSchema.safeParse(envuelto).success).toBe(true);
   });
@@ -255,8 +283,8 @@ describe('DespegarHotelProviderAdapter — tarifas de un hotel', () => {
         {
           ...DETALLE.roompacks[0],
           rooms: [
-            { name: 'Doble', reference: 1, choice_id: 'CH-A' },
-            { name: 'Simple', reference: 2, choice_id: 'CH-B' },
+            { name: 'Doble', reference: 1, room_type_id: 'RT-1', choice_id: 'CH-A' },
+            { name: 'Simple', reference: 2, room_type_id: 'RT-2', choice_id: 'CH-B' },
           ],
         },
       ],
@@ -275,8 +303,8 @@ describe('DespegarHotelProviderAdapter — tarifas de un hotel', () => {
         {
           ...DETALLE.roompacks[0],
           rooms: [
-            { name: 'Doble', reference: 1, choice_id: 'CH-X' },
-            { name: 'Simple', reference: 2, choice_id: 'CH-X' },
+            { name: 'Doble', reference: 1, room_type_id: 'RT-1', choice_id: 'CH-X' },
+            { name: 'Simple', reference: 2, room_type_id: 'RT-2', choice_id: 'CH-X' },
           ],
         },
       ],
@@ -291,13 +319,13 @@ describe('DespegarHotelProviderAdapter — tarifas de un hotel', () => {
     stubFetch({
       ...DETALLE,
       roompacks: [
-        { ...DETALLE.roompacks[0], rooms: [{ name: 'Std', reference: 1 }] },
+        { ...DETALLE.roompacks[0], rooms: [{ name: 'Std', reference: 1, room_type_id: 'RT-1' }] },
         {
           ...DETALLE.roompacks[0],
           id: 'r2',
           rooms: [
-            { name: 'Doble', reference: 1, choice_id: 'CH-X' },
-            { name: 'Simple', reference: 2 },
+            { name: 'Doble', reference: 1, room_type_id: 'RT-1', choice_id: 'CH-X' },
+            { name: 'Simple', reference: 2, room_type_id: 'RT-2' },
           ],
         },
       ],
@@ -730,9 +758,17 @@ describe('DespegarHotelProviderAdapter — book', () => {
       'room-without-guest',
     ],
     [
-      'con cargo al crédito de la cuenta',
+      'a cuenta corriente sin los datos de facturación de la cuenta',
       { ...pedidoNeutral, payment: { kind: 'agency-credit' } },
-      'unsupported-payment',
+      'missing-invoice',
+    ],
+    [
+      'con un nombre que HotelDO no acepta',
+      {
+        ...pedidoNeutral,
+        rooms: [{ guests: [{ paxType: 'ADT', firstName: 'Ana-María', lastName: 'Gómez' }] }],
+      },
+      'invalid-guest-name',
     ],
     [
       'con una opción mal escrita',
@@ -758,7 +794,9 @@ describe('DespegarHotelProviderAdapter — post-venta', () => {
     await acl.getReservation('r-9');
     const vista = await neutral.getBooking('r-9', CTX);
 
-    expect(calls[1]).toEqual(calls[0]);
+    // Primero la post-venta (`/reservations`); sin producto ahí, el estado del Book.
+    expect(calls[1]?.url).toContain('/reservations?reservation_id=r-9');
+    expect(calls[2]).toEqual(calls[0]);
     expect(vista).toEqual({
       found: true,
       providerBookingId: 'r-9',
@@ -781,20 +819,93 @@ describe('DespegarHotelProviderAdapter — post-venta', () => {
     expect(vista).not.toHaveProperty('providerBookingId');
   });
 
-  it('la cancelación manda lo mismo que el ACL y no inventa importes', async () => {
-    const { calls } = stubFetch({ flow_id: 'f-1', product_id: 'p-1', product_type: 'HOTEL' });
-    const { acl, neutral } = pareja();
+  it('la lectura toma el estado de post-venta: cancelada, con el PNR del hotel', async () => {
+    stubFetch({
+      items: [
+        {
+          id: 'it-1',
+          product: {
+            product_id: 'p-1',
+            product_type: 'HOTEL',
+            status: 'CANCELLED',
+            reservation_id: 'r-9',
+            external_reservation_id: 'SDT123',
+            pnr: 'HTL-555',
+          },
+        },
+      ],
+    });
+    const vista = await pareja().neutral.getBooking('r-9', CTX);
+    expect(vista).toEqual({
+      found: true,
+      providerBookingId: 'r-9',
+      bookingReference: 'SDT123',
+      status: 'CANCELLED',
+      providerStatus: 'CANCELLED',
+      hotelConfirmationNumber: 'HTL-555',
+      warnings: [],
+    });
+  });
 
-    await acl.cancelReservation({ reservationId: 'r-1', reason: 'HOTEL_PROBLEM' });
-    const r = await neutral.cancelBooking(
+  it('la cancelación hace los tres pasos y devuelve el reembolso que cotizó Despegar', async () => {
+    const { calls } = stubFetchSequence([
+      {
+        items: [
+          { id: 'i', product: { product_id: 'p-1', transaction_id: 't-1', status: 'ISSUED' } },
+        ],
+      },
+      { product_allowance: { allowance: 'ALLOWED' } },
+      {
+        allowance_info: {
+          quote: {
+            product_quote: {
+              resolution: 'AUTOMATIC',
+              product_data: { currency: 'USD' },
+              price_box: { refunds: [{ refund_method_price_box: { refund_amount: 150 } }] },
+            },
+          },
+        },
+      },
+      { flow_id: 'CAN-7', product_id: 'p-1', product_type: 'HOTEL' },
+    ]);
+
+    const r = await pareja().neutral.cancelBooking(
       { providerBookingId: 'r-1', providerOptions: { reason: 'HOTEL_PROBLEM' } },
       CTX,
     );
-    await neutral.cancelBooking({ providerBookingId: 'r-1' }, CTX);
 
-    expect(calls[1]).toEqual(calls[0]);
-    expect(calls[2]?.body).toEqual({ reason: 'OTHER' });
-    expect(r).toEqual({ success: true, warnings: [] });
+    expect(calls[3]?.url).toContain('/reservations/p-1/cancels');
+    expect(calls[3]?.body).toEqual({ reason: 'HOTEL_PROBLEM' });
+    expect(r).toEqual({
+      success: true,
+      warnings: [],
+      refundAmount: { amountMinor: 15000, currency: 'USD' },
+      settlement: 'final',
+      bookingStatus: 'CANCELLED',
+    });
+  });
+
+  it('una cancelación de resolución manual queda en curso, sin motivo por defecto inventado', async () => {
+    const { calls } = stubFetchSequence([
+      {
+        items: [
+          { id: 'i', product: { product_id: 'p-1', transaction_id: 't-1', status: 'ISSUED' } },
+        ],
+      },
+      { product_allowance: { allowance: 'ALLOWED' } },
+      { allowance_info: { quote: { product_quote: { resolution: 'MANUAL' } } } },
+      { flow_id: 'F-9', product_id: 'p-1' },
+    ]);
+
+    const r = await pareja().neutral.cancelBooking({ providerBookingId: 'r-1' }, CTX);
+
+    expect(calls[3]?.body).toEqual({ reason: 'OTHER' });
+    expect(r).toMatchObject({
+      settlement: 'in-progress',
+      bookingStatus: 'CANCELLATION_IN_PROGRESS',
+      warnings: ['cancel-manual-resolution'],
+    });
+    expect(r).not.toHaveProperty('refundAmount');
   });
 
   it('un motivo de cancelación fuera del vocabulario de Despegar no sale', async () => {

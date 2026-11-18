@@ -45,6 +45,7 @@ function numOrNull(v: unknown): number | null {
 interface RawInventoryItem {
   id?: number | string;
   hotel_name?: string;
+  published?: boolean;
   stars?: number | string;
   property_type?: string;
   merged_ids?: unknown[];
@@ -57,24 +58,61 @@ interface RawInventoryItem {
   };
 }
 
-async function fetchInventory(apiKey: string): Promise<InventoryRow[]> {
-  const url = `${baseUrl()}/content-api/hotels-inventory`;
-  const res = await fetch(url, {
+/** Tamaño de página cuando el inventario responde paginado (`items` + `paging`). */
+const PAGE_SIZE = 5000;
+/** Tope de páginas: un `paging.total` absurdo no deja al job pidiendo para siempre. */
+const MAX_PAGES = 400;
+
+interface InventoryPage {
+  items: RawInventoryItem[];
+  /** Ausente: la respuesta fue el catálogo entero (array suelto), sin paginar. */
+  total?: number;
+}
+
+async function fetchPage(apiKey: string, offset: number | undefined): Promise<InventoryPage> {
+  const query = offset === undefined ? '' : `?limit=${PAGE_SIZE}&offset=${offset}`;
+  const res = await fetch(`${baseUrl()}/content-api/hotels-inventory${query}`, {
     headers: { 'x-apikey': apiKey, accept: 'application/json' },
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`HTTP ${res.status} fetching inventory: ${body.slice(0, 200)}`);
+    // Sólo el estado: el cuerpo de un error no se escribe en el log del job.
+    throw new Error(`HTTP ${res.status} fetching inventory`);
   }
   const json: unknown = await res.json();
-  const items: RawInventoryItem[] = Array.isArray(json)
-    ? (json as RawInventoryItem[])
-    : ((json as { items?: RawInventoryItem[] }).items ?? []);
+  if (Array.isArray(json)) return { items: json as RawInventoryItem[] };
+  const page = json as { items?: RawInventoryItem[]; paging?: { total?: number } };
+  return {
+    items: page.items ?? [],
+    ...(typeof page.paging?.total === 'number' ? { total: page.paging.total } : {}),
+  };
+}
+
+/**
+ * La FAQ de Despegar dice que el inventario no pagina y la spec documenta `limit`/`offset`
+ * (docs/despegar/01 § Contenido estático): sin parámetros se pide entero, y si la respuesta trae
+ * `paging` se recorren las páginas.
+ */
+async function fetchAllItems(apiKey: string): Promise<RawInventoryItem[]> {
+  const first = await fetchPage(apiKey, undefined);
+  if (first.total === undefined || first.items.length >= first.total) return first.items;
+  const items: RawInventoryItem[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const next = await fetchPage(apiKey, page * PAGE_SIZE);
+    items.push(...next.items);
+    if (next.items.length === 0 || items.length >= (next.total ?? first.total)) return items;
+  }
+  throw new Error('inventory paging exceeded MAX_PAGES');
+}
+
+async function fetchInventory(apiKey: string): Promise<InventoryRow[]> {
+  const items = await fetchAllItems(apiKey);
 
   const seen = new Set<string>();
   const rows: InventoryRow[] = [];
   for (const it of items) {
     const hotelId = it.id != null ? String(it.id) : '';
+    // Un hotel despublicado no se vende: no entra al catálogo de búsqueda.
+    if (it.published === false) continue;
     if (!hotelId || seen.has(hotelId)) continue;
     seen.add(hotelId);
     rows.push({
@@ -149,6 +187,11 @@ async function main(): Promise<void> {
   console.warn('[sync-hotel-inventory] fetching content-api/hotels-inventory...');
   const rows = await fetchInventory(apiKey);
   console.warn(`[sync-hotel-inventory] parsed ${rows.length} hotels`);
+  if (rows.length === 0) {
+    // El reemplazo es DELETE + INSERT: con una respuesta vacía dejaría sin hoteles todas las
+    // búsquedas de Despegar. Mejor conservar el catálogo anterior y fallar visible.
+    throw new Error('empty inventory: refusing to replace the catalog');
+  }
 
   const client = new pg.Client();
   await client.connect();

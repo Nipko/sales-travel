@@ -704,8 +704,9 @@ describe('RF-29 CA 2 — una cuenta con reservas activas no se desactiva ni deja
       await expect(
         upsert(otro.service, {
           status: 'active',
-          providerCode: 'despegar-hotels',
-          credentials: { apiKey: 'otra' },
+          // AgentCars no declara qué campos son la cuenta (Despegar sí: su URL de entorno).
+          providerCode: 'agent-cars',
+          credentials: { accessToken: 'otro' },
           config: { baseUrl: 'https://otra.example' },
         }),
       ).resolves.toMatchObject({ id: CUENTA });

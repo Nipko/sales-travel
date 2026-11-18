@@ -1,8 +1,10 @@
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
   DespegarApiError,
+  DespegarReservationNotFoundError,
   type BookRequest,
   type CancelReservationRequest,
+  type CommissionUpdateRequest,
   type PaymentOptionsQuery,
   type PrebookQuery,
   type RecoveryRequest,
@@ -44,6 +46,7 @@ const BOOK: BookRequest = {
   payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }] },
 };
 const CANCEL: CancelReservationRequest = { reservationId: 'RES-0001', reason: 'ILLNESS' };
+const COMISION: CommissionUpdateRequest = { prebookId: 'PB-0001', commission: 12.5 };
 const RECOVERY: RecoveryRequest = {
   reservationId: 'RES-0001',
   messageType: 'PRICE_JUMP',
@@ -104,6 +107,31 @@ const PASOS: PasoDirecto[] = [
     llamar: (s) => s.recoverBooking(TENANT, RECOVERY),
     mock: (a) => a.recoverBooking,
     argumento: RECOVERY,
+  },
+  {
+    nombre: 'previewCancellation',
+    llamar: (s) => s.previewCancellation(TENANT, 'RES-0001'),
+    mock: (a) => a.previewCancellation,
+    argumento: 'RES-0001',
+  },
+  {
+    nombre: 'updateCommission',
+    llamar: (s) => s.updateCommission(TENANT, COMISION),
+    mock: (a) => a.updateCommission,
+    argumento: COMISION,
+  },
+  {
+    nombre: 'getPriceJump',
+    llamar: (s) => s.getPriceJump(TENANT, 'RES-0001'),
+    mock: (a) => a.getPriceJump,
+    argumento: 'RES-0001',
+  },
+  {
+    nombre: 'getSpecialRequestsCatalog',
+    llamar: (s) => s.getSpecialRequestsCatalog(TENANT, 'RES-0001'),
+    mock: (a) => a.getSpecialRequestsCatalog,
+    // El catálogo se pide por el `product_id` que da `/reservations`, no por la reserva.
+    argumento: 'P-RES-0001',
   },
 ];
 
@@ -187,7 +215,12 @@ describe('DespegarHotelReservationsService — por el registry (PR-0.5)', () => 
 
 describe('DespegarHotelReservationsService — kill-switch en dos niveles (PR-0.6)', () => {
   /** Leer y cancelar lo ya vendido. Todo lo demás es parte de vender. */
-  const POST_VENTA = new Set(['getReservation', 'cancelReservation']);
+  const POST_VENTA = new Set([
+    'getReservation',
+    'cancelReservation',
+    'previewCancellation',
+    'getSpecialRequestsCatalog',
+  ]);
 
   it.each(PASOS.filter((p) => !POST_VENTA.has(p.nombre)))(
     '$nombre es venta: `despegar-hotels:ventas` lo frena sin llamar',
@@ -296,6 +329,9 @@ describe('DespegarHotelReservationsService — capacidades (PR-0.5)', () => {
     ['getReservation', 'la consulta de reservas'],
     ['cancelReservation', 'la cancelación de reservas'],
     ['recoverBooking', 'la confirmación de salto de precio'],
+    ['previewCancellation', 'la cancelación de reservas'],
+    ['getPriceJump', 'la confirmación de salto de precio'],
+    ['getSpecialRequestsCatalog', 'los pedidos especiales'],
   ])('%s sin la capacidad → 400 que la nombra, sin llamar', async (nombre, operacion) => {
     const { service, adapter } = sinCapacidades();
     const paso = PASOS.find((p) => p.nombre === nombre);
@@ -316,5 +352,53 @@ describe('DespegarHotelReservationsService — capacidades (PR-0.5)', () => {
 
     await paso.llamar(service);
     expect(paso.mock(adapter)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DespegarHotelReservationsService — pedidos especiales', () => {
+  it('pide el servicio sobre el product_id de la reserva', async () => {
+    const b = banco();
+    const res = await b.service.createSpecialRequest(TENANT, 'RES-0001', 'LATE_CHECK_IN', '15:00');
+
+    expect(b.adapter.findHotelReservation).toHaveBeenCalledWith('RES-0001');
+    expect(b.adapter.createSpecialRequest).toHaveBeenCalledWith({
+      productId: 'P-RES-0001',
+      code: 'LATE_CHECK_IN',
+      value: '15:00',
+    });
+    expect(res).toEqual({ productId: 'P-RES-0001' });
+
+    await b.service.createSpecialRequest(TENANT, 'RES-0001', 'CRADLE');
+    expect(b.adapter.createSpecialRequest).toHaveBeenLastCalledWith({
+      productId: 'P-RES-0001',
+      code: 'CRADLE',
+    });
+  });
+
+  it.each([
+    [
+      'el catálogo',
+      (s: DespegarHotelReservationsService) => s.getSpecialRequestsCatalog(TENANT, 'R'),
+    ],
+    [
+      'el pedido',
+      (s: DespegarHotelReservationsService) => s.createSpecialRequest(TENANT, 'R', 'CRADLE'),
+    ],
+  ])(
+    '%s sin producto en /reservations → 404 de Despegar, sin pedir nada',
+    async (_caso, llamar) => {
+      const b = banco();
+      b.adapter.findHotelReservation.mockResolvedValueOnce(undefined);
+
+      await expect(llamar(b.service)).rejects.toBeInstanceOf(DespegarReservationNotFoundError);
+      expect(b.adapter.getSpecialRequestsCatalog).not.toHaveBeenCalled();
+      expect(b.adapter.createSpecialRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el salto de precio se lee con el escenario de sandbox si se pide', async () => {
+    const b = banco();
+    await b.service.getPriceJump(TENANT, 'RES-0001', 'pricejump');
+    expect(b.adapter.getPriceJump).toHaveBeenCalledWith('RES-0001', 'pricejump');
   });
 });

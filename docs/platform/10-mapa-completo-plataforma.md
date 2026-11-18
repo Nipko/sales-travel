@@ -57,6 +57,8 @@ BullMQ en vez de Temporal). Para no confundir "documentado" con "construido":
 **Proveedores conectados:** `sabre` y `latam-ndc` (vuelos), `tbo-hotels` y `despegar-hotels`
 (hoteles), `agent-cars` (autos). Cada uno es un paquete en `providers/` con su ACL y su módulo en
 `apps/api/src/providers-*`. Ninguno de los demás de §10 (Amadeus, Hotelbeds, Stripe, Alegra…) existe.
+Desde el 2026-11-18 Despegar (HotelDO v3) también reserva por la saga con órdenes cuando la agencia
+tiene una cuenta en la bóveda; estado, decisiones y pendientes en `docs/despegar/02-brechas-y-plan.md`.
 
 ---
 

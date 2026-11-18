@@ -3,12 +3,28 @@ import { join } from 'node:path';
 import {
   mapAvailability,
   mapHotelDetail,
+  type AftersaleReservation,
+  type AmenityEntry,
   type AvailabilityQuery,
   type BookRequest,
   type BookResult,
+  type CancelAllowance,
+  type CancelPreview,
+  type CancelQuote,
+  type CancelReason,
   type CancelReservationRequest,
   type CancelReservationResult,
+  type CatalogEntry,
+  type CommissionUpdateRequest,
+  type CommissionUpdateResult,
+  type DespegarHotelContent,
   type DespegarHotelsAdapter,
+  type MealPlanEntry,
+  type PriceJumpInfo,
+  type ReservationsQuery,
+  type SpecialRequestCatalogItem,
+  type SpecialRequestInput,
+  type SpecialRequestResult,
   type GeoSuggestion,
   type HotelDetailQuery,
   type HotelOffer,
@@ -118,6 +134,73 @@ export class FakeDespegarHotelsAdapter implements DespegarHotelsPort {
   );
 
   readonly recoverBooking = vi.fn((_req: RecoveryRequest) => Promise.resolve<RecoveryResult>({}));
+
+  readonly updateCommission = vi.fn((req: CommissionUpdateRequest) =>
+    Promise.resolve<CommissionUpdateResult>({
+      commission: { amount: { amountMinor: Math.round(req.commission * 100), currency: 'USD' } },
+      total: { amountMinor: 41_237, currency: 'USD' },
+    }),
+  );
+
+  readonly getPriceJump = vi.fn((reservationId: string, _testCase?: 'pricejump') =>
+    Promise.resolve<PriceJumpInfo>({ reservationId, status: 'PROCESSING', flavorIds: [] }),
+  );
+
+  readonly findReservations = vi.fn((_q: ReservationsQuery) =>
+    Promise.resolve<AftersaleReservation[]>([]),
+  );
+
+  readonly findHotelReservation = vi.fn((reservationId: string) =>
+    Promise.resolve<AftersaleReservation | undefined>({
+      id: reservationId,
+      productId: `P-${reservationId}`,
+      productType: 'HOTEL',
+      transactionId: `T-${reservationId}`,
+      status: 'ISSUED',
+      rawStatus: 'ISSUED',
+      reservationId,
+      rooms: [],
+    }),
+  );
+
+  readonly getCancelAllowance = vi.fn((productId: string) =>
+    Promise.resolve<CancelAllowance>({ productId, allowance: 'ALLOWED' }),
+  );
+
+  readonly quoteCancellation = vi.fn((_transactionId: string, _productId: string) =>
+    Promise.resolve<CancelQuote>({ refunds: [] }),
+  );
+
+  readonly previewCancellation = vi.fn(async (reservationId: string): Promise<CancelPreview> => {
+    const reservation = (await this.findHotelReservation(reservationId))!;
+    return {
+      reservation,
+      allowance: { productId: reservation.productId, allowance: 'ALLOWED' },
+      quote: { refunds: [] },
+    };
+  });
+
+  readonly cancelProduct = vi.fn((productId: string, _reason?: CancelReason) =>
+    Promise.resolve<CancelReservationResult>({ success: true, productId }),
+  );
+
+  readonly getSpecialRequestsCatalog = vi.fn((_productId: string) =>
+    Promise.resolve<SpecialRequestCatalogItem[]>([]),
+  );
+
+  readonly createSpecialRequest = vi.fn((req: SpecialRequestInput) =>
+    Promise.resolve<SpecialRequestResult>({ productId: req.productId }),
+  );
+
+  readonly getHotelsContent = vi.fn((_ids: readonly string[], _language?: 'EN' | 'ES' | 'PT') =>
+    Promise.resolve<DespegarHotelContent[]>([]),
+  );
+
+  readonly getMealPlans = vi.fn(() => Promise.resolve<MealPlanEntry[]>([]));
+
+  readonly getFeeTypes = vi.fn(() => Promise.resolve<CatalogEntry[]>([]));
+
+  readonly getAmenities = vi.fn(() => Promise.resolve<AmenityEntry[]>([]));
 }
 
 export interface FakeDespegarFactory {

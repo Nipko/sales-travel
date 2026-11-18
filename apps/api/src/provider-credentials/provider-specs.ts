@@ -313,7 +313,17 @@ const AGENT_CARS: ProviderSpec = {
 
 const DESPEGAR_HOTELS: ProviderSpec = {
   label: 'Despegar Hotels',
-  safeConfigKeys: ['baseUrl', 'language', 'countryCode', 'currency', 'locale'],
+  // `paymentType` es cómo se le paga a Despegar (cuenta corriente, diferido): no es secreto. Los
+  // datos de facturación (`invoice*`) van en el blob cifrado.
+  safeConfigKeys: ['baseUrl', 'language', 'countryCode', 'currency', 'locale', 'paymentType'],
+  // Las reservas viven en el entorno de Despegar donde se crearon: cambiar la URL de una cuenta
+  // con reservas vivas las deja sin post-venta. La api key no está: rotarla es la misma cuenta.
+  accountIdentity: {
+    credentialKeys: [],
+    configKeys: ['baseUrl'],
+    eitherKeys: [],
+    configDefaults: { baseUrl: 'https://api-dev.despegar.com/v3' },
+  },
 };
 
 /**

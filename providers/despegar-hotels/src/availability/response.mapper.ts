@@ -3,6 +3,7 @@ import { num } from '../internal/coerce';
 import type {
   CancellationStatus,
   HotelCancellation,
+  HotelNotice,
   HotelOffer,
   HotelPrice,
   HotelRoomItem,
@@ -16,7 +17,11 @@ interface RawPriceDetail {
   taxes?: number | string;
   taxes_detail?: { code?: string; amount?: number | string }[];
   charge_at_destination?: number | string;
+  charge_at_destination_detail?: { code?: string; amount?: number | string }[];
+  taxes_at_destination?: number | string;
   agency_commission?: { amount?: number | string; percentage?: number | string };
+  binding_public_rate_enabled?: boolean;
+  binding_public_rate_value?: number | string;
 }
 interface RawCancellationRule {
   type?: string;
@@ -40,6 +45,7 @@ interface RawRoom {
 interface RawRoompack {
   id?: string;
   meal_plan?: { id?: string };
+  promo?: unknown;
   rooms?: RawRoom[];
   cancellation_policy?: RawCancellation;
   price_detail?: RawPriceDetail;
@@ -53,6 +59,14 @@ interface RawHotelItem {
     location?: { latitude?: number; longitude?: number };
   };
   roompacks?: RawRoompack[];
+}
+export interface RawNoticeGroup {
+  title?: string;
+  notices?: unknown[];
+}
+export interface RawCategorizedNotices {
+  primary?: RawNoticeGroup | RawNoticeGroup[];
+  secondary?: RawNoticeGroup | RawNoticeGroup[];
 }
 interface RawAvailabilityResponse {
   items?: RawHotelItem[];
@@ -103,6 +117,20 @@ function mapPrice(pd: RawPriceDetail | undefined): HotelPrice {
   if (pd?.charge_at_destination != null) {
     price.chargeAtDestination = Money.fromMajor(num(pd.charge_at_destination), currency);
   }
+  if (pd?.charge_at_destination_detail?.length) {
+    price.chargeAtDestinationDetail = pd.charge_at_destination_detail.map((c) => ({
+      code: c.code ?? '',
+      amount: Money.fromMajor(num(c.amount), currency),
+    }));
+  }
+  if (pd?.taxes_at_destination != null) {
+    price.taxesAtDestination = Money.fromMajor(num(pd.taxes_at_destination), currency);
+  }
+  // Con el piso activo, el valor es el precio MÍNIMO al que se puede vender; `total` sigue
+  // siendo el neto (certificación HotelDO, punto 12).
+  if (pd?.binding_public_rate_enabled === true && num(pd.binding_public_rate_value) > 0) {
+    price.minimumSellingPrice = Money.fromMajor(num(pd.binding_public_rate_value), currency);
+  }
   if (pd?.agency_commission) {
     price.agencyCommission = {
       amount: Money.fromMajor(num(pd.agency_commission.amount), currency),
@@ -126,14 +154,68 @@ function mapRoom(r: RawRoom): HotelRoomItem {
   };
 }
 
+function firstText(v: unknown, keys: readonly string[]): string | undefined {
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    for (const k of keys) {
+      const t = o[k];
+      if (typeof t === 'string' && t.trim()) return t.trim();
+    }
+  }
+  return undefined;
+}
+
 export function mapRoompack(rp: RawRoompack): HotelRoompack {
-  return {
+  const pack: HotelRoompack = {
     id: rp.id ?? '',
     board: mapMealPlan(rp.meal_plan?.id),
     rooms: (rp.rooms ?? []).map(mapRoom),
     cancellation: mapCancellation(rp.cancellation_policy),
     price: mapPrice(rp.price_detail),
   };
+  const promo = firstText(rp.promo, ['description', 'name', 'title']);
+  if (promo) pack.promo = promo;
+  return pack;
+}
+
+/**
+ * Despegar recomienda descartar los roompacks con alguna habitación sin `room_type_id`: no se
+ * pueden asociar al contenido de la habitación (docs/despegar/01 § Availability). Se aplica en el
+ * detalle, que es la puerta de la reserva.
+ */
+export function isBookableRoompack(rp: RawRoompack): boolean {
+  const rooms = rp.rooms ?? [];
+  return (
+    rooms.length > 0 &&
+    rooms.every((r) => typeof r.room_type_id === 'string' && r.room_type_id !== '')
+  );
+}
+
+function mapNoticeGroups(
+  g: RawNoticeGroup | RawNoticeGroup[] | undefined,
+  level: HotelNotice['level'],
+): HotelNotice[] {
+  const groups = Array.isArray(g) ? g : g ? [g] : [];
+  return groups.flatMap((group) =>
+    (group.notices ?? [])
+      .map((n) => firstText(n, ['description', 'text', 'value', 'message']))
+      .filter((t): t is string => t !== undefined)
+      .map((text) => {
+        const notice: HotelNotice = { level, text };
+        const title = group.title?.trim();
+        if (title) notice.title = title;
+        return notice;
+      }),
+  );
+}
+
+/** Avisos del hotel (`categorized_notices`): obligatorios en el checkout y en el voucher. */
+export function mapNotices(raw: RawCategorizedNotices | undefined): HotelNotice[] {
+  return [
+    ...mapNoticeGroups(raw?.primary, 'primary'),
+    ...mapNoticeGroups(raw?.secondary, 'secondary'),
+  ];
 }
 
 function mapHotelItem(it: RawHotelItem): HotelOffer {
@@ -147,6 +229,8 @@ function mapHotelItem(it: RawHotelItem): HotelOffer {
       loc?.latitude != null && loc?.longitude != null
         ? { lat: loc.latitude, lng: loc.longitude }
         : undefined,
+    // El listado muestra todo lo que trae Despegar; el filtro de `room_type_id` va en el detalle,
+    // que es desde donde se reserva.
     roompacks: (it.roompacks ?? []).map(mapRoompack),
   };
 }
