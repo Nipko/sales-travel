@@ -74,10 +74,12 @@ const ENTRADAS: [string, Clase][] = [
     'POST /hotels/detail',
   ),
   ...venta(
-    'reserva de hotel: PreBook, medios de pago, Book y aceptar un salto de precio',
+    'reserva de hotel: PreBook, comisión del prebook, medios de pago, Book y ver o aceptar un salto de precio',
     'POST /hotels/prebook',
+    'POST /hotels/commission',
     'GET /hotels/payments',
     'POST /hotels/book',
+    'GET /hotels/reservations/:id/recovery',
     'POST /hotels/reservations/:id/recovery',
   ),
   ...venta(
@@ -332,6 +334,8 @@ const ENTRADAS: [string, Clase][] = [
     'GET /orders/:id/payment-options',
     'GET /orders/:id/travelers',
     'GET /hotels/reservations/:id',
+    'GET /hotels/reservations/:id/cancel-quote',
+    'GET /hotels/reservations/:id/special-requests',
     'POST /cars/reservation',
     'GET /cars/daily-report',
     'GET /quotations',
@@ -346,6 +350,10 @@ const ENTRADAS: [string, Clase][] = [
   ...noVenta(
     'post-venta: reenvía la confirmación de una reserva ya hecha',
     'POST /orders/:id/send-confirmation',
+  ),
+  ...noVenta(
+    'post-venta: pedido especial al hotel (cuna, llegada tarde) sobre una reserva hecha; no da precio ni cobra',
+    'POST /hotels/reservations/:id/special-requests',
   ),
   ...noVenta(
     'corrección: cancelar lo vendido (también anulando sus tiquetes o quitando servicios adicionales), reintentar una cancelación o rechazar un hold',
