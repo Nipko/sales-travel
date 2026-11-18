@@ -5,6 +5,7 @@ import { PROVIDER_DESTINATION_INVALID } from './hotel-destination.js';
 import {
   BookSchema,
   CancelBodySchema,
+  CommissionBodySchema,
   GUEST_NATIONALITY_INVALID,
   HotelAvailabilityInputSchema,
   HotelAvailabilityMoreBodySchema,
@@ -17,6 +18,7 @@ import {
   PrebookSchema,
   RecoveryBodySchema,
   RoomDistributionSchema,
+  SpecialRequestBodySchema,
   isNeutralHotelPrebook,
 } from './hotels.schemas.js';
 
@@ -482,11 +484,58 @@ describe('BookSchema', () => {
     externalBookingReference: 'ISO-0001',
     contact: { email: 'reservas@agencia.example' },
     travelers: [{ referenceId: '1', firstName: 'Ana', lastName: 'Prueba' }],
-    payment: { optionType: 'ONE_CARD', units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }] },
+    payment: {
+      optionType: 'ONE_CARD',
+      units: [{ planId: 'PL-1', secureToken: 'tok_hosted' }],
+      invoices: [
+        {
+          fiscalStatus: 'PERSONA_FISICA',
+          fiscalIdentification: { type: 'CC', number: '123' },
+        },
+      ],
+    },
   };
 
   it('la reserva mínima pasa', () => {
     expect(BookSchema.safeParse(reserva).success).toBe(true);
+  });
+
+  it('cuenta corriente: sin plan ni token, pero con facturas', () => {
+    const cuenta = {
+      ...reserva,
+      payment: { optionType: 'CURRENT_ACCOUNT', invoices: reserva.payment.invoices },
+    };
+    expect(BookSchema.safeParse(cuenta).success).toBe(true);
+    const sinFactura = { ...reserva, payment: { optionType: 'CURRENT_ACCOUNT' } };
+    const r = BookSchema.safeParse(sinFactura);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.path.join('.'))).toContain('payment.invoices');
+  });
+
+  it('diferido: con plan y sin facturas; sin plan no pasa', () => {
+    const diferido = {
+      ...reserva,
+      payment: { optionType: 'DEFERRED', units: [{ planId: 'PL-9' }] },
+    };
+    expect(BookSchema.safeParse(diferido).success).toBe(true);
+    const sinPlan = { ...reserva, payment: { optionType: 'DEFERRED', units: [{}] } };
+    expect(BookSchema.safeParse(sinPlan).success).toBe(false);
+  });
+
+  it('una forma de pago desconocida no pasa', () => {
+    const otra = { ...reserva, payment: { ...reserva.payment, optionType: 'CASH' } };
+    expect(BookSchema.safeParse(otra).success).toBe(false);
+  });
+
+  it('nombres sólo con letras (con tildes y ñ) y espacios: HotelDO rechaza el resto', () => {
+    const viajero = (firstName: string, lastName: string) => ({
+      ...reserva,
+      travelers: [{ referenceId: '1', firstName, lastName }],
+    });
+    expect(BookSchema.safeParse(viajero('María José', 'Muñoz Peña')).success).toBe(true);
+    expect(BookSchema.safeParse(viajero('Ana-María', 'Prueba')).success).toBe(false);
+    expect(BookSchema.safeParse(viajero('Ana', "O'Neil")).success).toBe(false);
+    expect(BookSchema.safeParse(viajero('Ana2', 'Prueba')).success).toBe(false);
   });
 
   it('al menos un viajero y una unidad de pago', () => {
@@ -625,5 +674,64 @@ describe('HotelAvailabilityMoreBodySchema — el tramo siguiente (docs/tbo/02 §
     ['un tramo en texto', { sessionId: SESION, page: '1' }],
   ])('rechaza %s', (_caso, body) => {
     expect(HotelAvailabilityMoreBodySchema.safeParse(body).success).toBe(false);
+  });
+});
+
+describe('RecoveryBodySchema', () => {
+  it('salto de precio con confirmaciones; sin ellas no pasa', () => {
+    expect(
+      RecoveryBodySchema.safeParse({
+        messageType: 'PRICE_JUMP',
+        confirmations: [{ flavorId: 'H0', confirm: true }],
+      }).success,
+    ).toBe(true);
+    const r = RecoveryBodySchema.safeParse({ messageType: 'PRICE_JUMP' });
+    expect(r.error?.issues.map((i) => i.path.join('.'))).toEqual(['confirmations']);
+  });
+
+  it('reserva en espera de pago: sólo con la cuenta corriente', () => {
+    expect(
+      RecoveryBodySchema.safeParse({
+        messageType: 'WAITING_PAYMENT_SELECTION',
+        paymentType: 'CURRENT_ACCOUNT',
+      }).success,
+    ).toBe(true);
+    const r = RecoveryBodySchema.safeParse({ messageType: 'WAITING_PAYMENT_SELECTION' });
+    expect(r.error?.issues.map((i) => i.path.join('.'))).toEqual(['paymentType']);
+    expect(
+      RecoveryBodySchema.safeParse({
+        messageType: 'WAITING_PAYMENT_SELECTION',
+        paymentType: 'CREDIT_CARD',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('CommissionBodySchema y SpecialRequestBodySchema', () => {
+  it('la comisión es un número no negativo con su prebook', () => {
+    expect(CommissionBodySchema.safeParse({ prebookId: 'PB', commission: 12.5 }).success).toBe(
+      true,
+    );
+    expect(CommissionBodySchema.safeParse({ prebookId: 'PB', commission: -1 }).success).toBe(false);
+  });
+
+  it('el pedido especial es un código del catálogo', () => {
+    expect(
+      SpecialRequestBodySchema.safeParse({ code: 'LATE_CHECK_IN', value: '15:00' }).success,
+    ).toBe(true);
+    expect(SpecialRequestBodySchema.safeParse({ code: 'late check in' }).success).toBe(false);
+  });
+});
+
+describe('BookSchema — pago diferido sin unidades', () => {
+  it('sin unidades falta el plan', () => {
+    const r = BookSchema.safeParse({
+      prebookId: 'PB',
+      externalBookingReference: 'X',
+      contact: { email: 'a@b.co' },
+      travelers: [{ referenceId: '0', firstName: 'Ana', lastName: 'Prueba' }],
+      payment: { optionType: 'DEFERRED' },
+    });
+    expect(r.error?.issues.map((i) => i.path.join('.'))).toEqual(['payment.units']);
   });
 });

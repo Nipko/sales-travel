@@ -68,7 +68,7 @@ describe('DespegarHotelsAdapter', () => {
             {
               id: 'r1',
               meal_plan: { id: 'ROOM_ONLY' },
-              rooms: [{ name: 'Std', reference: 1 }],
+              rooms: [{ name: 'Std', reference: 1, room_type_id: 'RT-1' }],
               cancellation_policy: { status: 'non_refundable' },
               price_detail: { currency: 'USD', total: 100 },
             },
@@ -103,7 +103,7 @@ describe('DespegarHotelsAdapter', () => {
         {
           id: 'r1',
           meal_plan: { id: 'BREAKFAST' },
-          rooms: [{ name: 'Std', reference: 1, choice_id: 'CH-1' }],
+          rooms: [{ name: 'Std', reference: 1, room_type_id: 'RT-1', choice_id: 'CH-1' }],
           cancellation_policy: { status: 'fully_refundable' },
           price_detail: { currency: 'USD', total: 120 },
         },

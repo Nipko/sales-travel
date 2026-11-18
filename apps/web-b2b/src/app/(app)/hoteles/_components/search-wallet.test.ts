@@ -77,9 +77,10 @@ describe('searchWalletsOf', () => {
     const base = { portfolios: [], financier: null };
     const withOwn = (ownProviderAccounts: unknown) =>
       searchWalletsOf(parseAgencyWallets({ ...base, ownProviderAccounts })!).ownHotelAccounts;
-    expect(PROVIDERS_WITH_WALLET_HOLD).toEqual(['tbo-hotels']);
-    expect(withOwn(['latam-ndc', 'tbo-hotels'])).toBe(true);
-    // Despegar no retiene: tenerla propia no cambia nada; una ajena o ninguna, tampoco.
+    expect(PROVIDERS_WITH_WALLET_HOLD).toEqual(['despegar-hotels', 'tbo-hotels']);
+    expect(withOwn(['despegar-hotels', 'latam-ndc', 'tbo-hotels'])).toBe(true);
+    // Despegar también reserva por órdenes y retiene: con sólo una de las dos propias, no alcanza.
+    expect(withOwn(['latam-ndc', 'tbo-hotels'])).toBe(false);
     expect(withOwn(['despegar-hotels'])).toBe(false);
     // El correo no reserva, y vuelos y autos no graban la cuenta en la orden: no eximen.
     expect(withOwn(['agent-cars', 'email', 'latam-ndc'])).toBe(false);

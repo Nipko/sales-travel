@@ -407,6 +407,28 @@ afterEach(() => {
 });
 
 describe('PreBook de una tarifa buscada: lo que llega al proveedor sale del servidor', () => {
+  it('el `providerData` de la tarifa va al proveedor y el del PreBook queda en el snapshot', async () => {
+    // Despegar: el `choice_id` que deja el detalle, y el `prebook_id` que el Book reenvía.
+    const datos = { choiceId: 'CH-1', roomReferences: [0] };
+    const b = await bancoConBusqueda(
+      {},
+      contexto({ packs: [{ ...tarifaBuscada(TARIFA), providerData: datos }] }),
+    );
+    const base = revalidada();
+    b.puerto.prebookWithContext.mockResolvedValueOnce({
+      ...base,
+      pack: { ...base.pack, providerData: { ...datos, prebookId: 'PB-9' } },
+    });
+
+    const res = await b.service.prebook(AGENCIA, referencia(), USUARIO);
+
+    expect(b.puerto.prebookWithContext.mock.calls[0]?.[0].providerData).toEqual(datos);
+    expect((await b.snapshots.get(AGENCIA, res.prebookRef))?.providerData).toEqual({
+      ...datos,
+      prebookId: 'PB-9',
+    });
+  });
+
   it('revalida con la búsqueda guardada y compara C1 contra lo que se mostró', async () => {
     const b = await bancoConBusqueda();
 

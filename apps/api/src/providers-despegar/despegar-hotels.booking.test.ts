@@ -4,7 +4,10 @@ import {
   buildPaymentOptionsQuery,
   buildPrebookBody,
   buildRecoveryBody,
+  DespegarCancelNotAllowedError,
   DespegarHotelsAdapter,
+  DespegarReservationNotFoundError,
+  type DespegarExchange,
   mapBookResult,
   mapCancelResult,
   mapPaymentOptions,
@@ -75,7 +78,41 @@ describe('payments', () => {
               tax_breakdown: [{ code: 'VAT', amount: 30 }],
             },
           },
-          payment_options: [{ option_type: 'ONE_CARD', group_plans: 'plan-9' }],
+          payment_options: [
+            {
+              option_type: 'ONE_CARD',
+              group_plans: [
+                {
+                  type: 'CARD',
+                  plans: [
+                    {
+                      id: 'plan-9',
+                      type: 'CREDIT',
+                      price: { currency: 'USD', total: 200 },
+                      installments: 1,
+                      card_brand: 'VISA',
+                    },
+                  ],
+                },
+              ],
+            },
+            { option_type: 'CURRENT_ACCOUNT' },
+            {
+              option_type: 'DEFERRED',
+              group_plans: [
+                {
+                  type: 'DEFERRED',
+                  plans: [
+                    {
+                      id: 'plan-d',
+                      type: 'DEFERRED',
+                      deferred_conditions: { deadline: '2026-12-01T10:00:00Z', reason: 'REMOTE' },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
       ],
     });
@@ -86,8 +123,52 @@ describe('payments', () => {
       base: { amountMinor: 17000, currency: 'USD' },
       taxes: { amountMinor: 3000, currency: 'USD' },
       taxBreakdown: [{ code: 'VAT', amount: { amountMinor: 3000, currency: 'USD' } }],
-      options: [{ optionType: 'ONE_CARD', planId: 'plan-9' }],
+      options: [
+        {
+          optionType: 'ONE_CARD',
+          planId: 'plan-9',
+          plans: [
+            {
+              id: 'plan-9',
+              groupType: 'CARD',
+              type: 'CREDIT',
+              price: { amountMinor: 20000, currency: 'USD' },
+              installments: 1,
+              cardBrand: 'VISA',
+            },
+          ],
+        },
+        // Cuenta corriente no trae plan: el Book va sin `plan_id`.
+        { optionType: 'CURRENT_ACCOUNT', plans: [] },
+        {
+          optionType: 'DEFERRED',
+          planId: 'plan-d',
+          plans: [
+            {
+              id: 'plan-d',
+              groupType: 'DEFERRED',
+              type: 'DEFERRED',
+              deferredDeadline: '2026-12-01T10:00:00Z',
+              deferredReason: 'REMOTE',
+            },
+          ],
+        },
+      ],
     });
+  });
+
+  it('mapPaymentOptions tolera el `group_plans` como texto de versiones viejas', () => {
+    const out = mapPaymentOptions({
+      modalities: [
+        {
+          modality: 'PAYINADVANCE',
+          payment_options: [{ option_type: 'ONE_CARD', group_plans: 'plan-9' }],
+        },
+      ],
+    });
+    expect(out[0]?.options).toEqual([
+      { optionType: 'ONE_CARD', planId: 'plan-9', plans: [{ id: 'plan-9' }] },
+    ]);
   });
 });
 
@@ -253,6 +334,30 @@ function stubFetch(json: unknown, status = 200): { calls: FetchCall[] } {
   return { calls };
 }
 
+/** Una respuesta por llamada, en orden. */
+function stubFetchSequence(bodies: unknown[]): { calls: FetchCall[] } {
+  const calls: FetchCall[] = [];
+  let i = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        method: init.method,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
+        headers: init.headers as Record<string, string>,
+      });
+      const body = bodies[i++];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(JSON.stringify(body ?? {})),
+      } as Response);
+    }),
+  );
+  return { calls };
+}
+
 const cfg = {
   apiKey: 'secret-key',
   baseUrl: 'https://api-dev.despegar.com/v3',
@@ -314,16 +419,159 @@ describe('DespegarHotelsAdapter — reserva', () => {
     expect(out.reservationId).toBe('r-9');
   });
 
-  it('cancelReservation() hace POST /reservations/{id}/cancels con reason', async () => {
-    const { calls } = stubFetch({ flow_id: 'f-1', product_id: 'p-1', product_type: 'HOTEL' });
+  it('cancelReservation() hace los tres pasos en orden sobre el product_id de /reservations', async () => {
+    const { calls } = stubFetchSequence([
+      {
+        items: [
+          {
+            id: 'it-1',
+            product: {
+              product_id: 'p-1',
+              product_type: 'HOTEL',
+              transaction_id: 't-1',
+              status: 'ISSUED',
+              reservation_id: 'r-1',
+            },
+          },
+        ],
+      },
+      {
+        product_allowance: {
+          product_id: 'p-1',
+          allowance: 'ALLOWED',
+          refund_policy: 'WITH_PENALTY',
+        },
+      },
+      {
+        allowance_info: {
+          quote: {
+            product_quote: {
+              quote_id: 'q-1',
+              status: 'QUOTED',
+              resolution: 'AUTOMATIC',
+              product_data: { currency: 'USD' },
+              price_box: {
+                refunds: [
+                  {
+                    refund_method_price_box: {
+                      payment_amount: 200,
+                      applied_penalty: 50,
+                      refund_amount: 150,
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      { flow_id: 'CAN-1', product_id: 'p-1', product_type: 'HOTEL' },
+    ]);
     const out = await new DespegarHotelsAdapter(cfg).cancelReservation({
       reservationId: 'r-1',
       reason: 'HOTEL_PROBLEM',
     });
-    expect(calls[0]?.method).toBe('POST');
-    expect(calls[0]?.url).toContain('/reservations/r-1/cancels');
-    expect(calls[0]?.body).toEqual({ reason: 'HOTEL_PROBLEM' });
-    expect(out.success).toBe(true);
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+      'GET /v3/reservations',
+      'GET /v3/reservations/p-1/cancels/allowance',
+      'POST /v3/reservations/cancels/quote',
+      'POST /v3/reservations/p-1/cancels',
+    ]);
+    expect(calls[0]?.url).toContain('reservation_id=r-1');
+    expect(calls[2]?.body).toEqual({ transaction_id: 't-1', quote_type: 'BY_POLICIES' });
+    expect(calls[3]?.body).toEqual({ reason: 'HOTEL_PROBLEM' });
+    expect(out).toMatchObject({ success: true, flowId: 'CAN-1', productId: 'p-1' });
+    expect(out.quote?.refunds).toEqual([
+      {
+        paymentAmount: { amountMinor: 20000, currency: 'USD' },
+        appliedPenalty: { amountMinor: 5000, currency: 'USD' },
+        refundAmount: { amountMinor: 15000, currency: 'USD' },
+      },
+    ]);
+  });
+
+  it('cancelReservation() no cotiza ni cancela si Despegar no lo permite', async () => {
+    const { calls } = stubFetchSequence([
+      {
+        items: [
+          {
+            id: 'it-1',
+            product: { product_id: 'p-1', transaction_id: 't-1', status: 'CANCELLED' },
+          },
+        ],
+      },
+      { product_allowance: { allowance: 'DISALLOWED', disallowed_reason: 'ALREADY_CANCELLED' } },
+    ]);
+    await expect(
+      new DespegarHotelsAdapter(cfg).cancelReservation({ reservationId: 'r-1' }),
+    ).rejects.toBeInstanceOf(DespegarCancelNotAllowedError);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('cancelReservation() sin producto en /reservations no sigue', async () => {
+    const { calls } = stubFetchSequence([{ items: [] }]);
+    await expect(
+      new DespegarHotelsAdapter(cfg).cancelReservation({ reservationId: 'r-1' }),
+    ).rejects.toBeInstanceOf(DespegarReservationNotFoundError);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('updateCommission() hace PUT /commissions/update con prebook y comisión', async () => {
+    const { calls } = stubFetch({
+      commission: { amount: 25, min_amount: 15, max_amount: 30 },
+      total: 225,
+      currency: 'USD',
+    });
+    const out = await new DespegarHotelsAdapter(cfg).updateCommission({
+      prebookId: 'pb-1',
+      commission: 25,
+    });
+    expect(calls[0]?.method).toBe('PUT');
+    expect(calls[0]?.url).toContain('/commissions/update');
+    expect(calls[0]?.body).toEqual({ prebook_id: 'pb-1', commission: 25 });
+    expect(out.total).toEqual({ amountMinor: 22500, currency: 'USD' });
+    expect(out.commission.maxAmount).toEqual({ amountMinor: 3000, currency: 'USD' });
+  });
+
+  it('getPriceJump() lee el salto de precio por GET /book/{id}/recovery', async () => {
+    const { calls } = stubFetch({
+      reservation_id: 'r-1',
+      status: 'PROCESSING',
+      sub_status: 'PRICE_JUMP',
+      price_jump: {
+        difference: 10,
+        price_before_price_jump: 200,
+        price_after_price_jump: 210,
+        currency: 'USD',
+        timeout: '2026-11-18T10:00:00Z',
+        message: { message_type: 'PRICE_JUMP', price_jump_confirmations: [{ flavor_id: 'H0' }] },
+      },
+    });
+    const out = await new DespegarHotelsAdapter(cfg).getPriceJump('r-1');
+    expect(calls[0]?.method).toBe('GET');
+    expect(calls[0]?.url).toContain('/book/r-1/recovery');
+    expect(out).toMatchObject({
+      status: 'PROCESSING',
+      subStatus: 'PRICE_JUMP',
+      messageType: 'PRICE_JUMP',
+      flavorIds: ['H0'],
+      priceAfter: { amountMinor: 21000, currency: 'USD' },
+    });
+  });
+
+  it('cada llamada se reporta a la bóveda, sin la api key y con la operación sin ids', async () => {
+    stubFetch({ reservationId: 'r-1', status: 'SUCCESS', products: [] });
+    const exchanges: DespegarExchange[] = [];
+    await new DespegarHotelsAdapter(cfg, { onExchange: (e) => exchanges.push(e) }).getReservation(
+      'r-1',
+    );
+    expect(exchanges).toHaveLength(1);
+    expect(exchanges[0]).toMatchObject({
+      operation: 'bookStatus',
+      status: 200,
+      outcome: 'SUCCESS',
+    });
+    expect(JSON.stringify(exchanges)).not.toContain('secret-key');
   });
 
   it('recoverBooking() hace PATCH /book/{id}/recovery', async () => {

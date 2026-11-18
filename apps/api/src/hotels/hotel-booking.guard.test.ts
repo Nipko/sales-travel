@@ -77,6 +77,11 @@ const BOOK_PERMITIDO: Readonly<
     veces: 1,
     motivo: 'el envoltorio de Despegar sobre su ACL',
   },
+  'providers-despegar/despegar-hotel-context.adapter.ts': {
+    veces: 1,
+    motivo:
+      '`bookWithContext` de Despegar: lo llama SÓLO la saga con órdenes, con la referencia ya persistida',
+  },
   'providers-tbo/tbo-hotel-provider.adapter.ts': {
     veces: 1,
     motivo: 'el envoltorio de TBO delegando el puerto neutral en su ACL',

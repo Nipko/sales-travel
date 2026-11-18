@@ -13,10 +13,15 @@ import {
 import type { HotelDestinationSuggestion } from '@sales-travel/domain';
 import type {
   BookResult,
+  CancelPreview,
   CancelReservationResult,
+  CommissionUpdateResult,
   PaymentModality,
   PrebookResult,
+  PriceJumpInfo,
   RecoveryResult,
+  SpecialRequestCatalogItem,
+  SpecialRequestResult,
 } from '@sales-travel/despegar-hotels';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -55,6 +60,7 @@ import type { HotelSearchResponse } from './hotel-search.aggregate.js';
 import { HotelsService, type HotelDetailResponse } from './hotels.service.js';
 import {
   CancelBodySchema,
+  CommissionBodySchema,
   HotelAvailabilityInputSchema,
   HotelAvailabilityMoreBodySchema,
   HotelBookBodySchema,
@@ -66,9 +72,12 @@ import {
   HotelSuggestQuerySchema,
   PaymentOptionsQuerySchema,
   RecoveryBodySchema,
+  RecoveryQuerySchema,
+  SpecialRequestBodySchema,
   isNeutralHotelBook,
   isNeutralHotelPrebook,
   type CancelBody,
+  type CommissionBody,
   type HotelAvailabilityInput,
   type HotelAvailabilityMoreBody,
   type HotelBookBody,
@@ -80,6 +89,7 @@ import {
   type HotelSuggestQuery,
   type PaymentOptionsInput,
   type RecoveryBody,
+  type SpecialRequestBody,
 } from './hotels.schemas.js';
 
 /**
@@ -340,8 +350,64 @@ export class HotelsController {
       reservationId: id,
       messageType: body.messageType,
       confirmations: body.confirmations,
+      ...(body.paymentType === undefined ? {} : { paymentType: body.paymentType }),
       testCase: body.testCase,
     });
+  }
+
+  /** Lee el salto de precio (o la espera de pago) de un Book que quedó en `PROCESSING`. */
+  @SalesOperation()
+  @Get('reservations/:id/recovery')
+  async priceJump(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(RecoveryQuerySchema)) query: { testCase?: 'pricejump' },
+  ): Promise<PriceJumpInfo> {
+    const tenantId = await this.tenant(userId);
+    return this.reservations.getPriceJump(tenantId, id, query.testCase);
+  }
+
+  /**
+   * Pasos 1 y 2 de la cancelación de Despegar (habilitación y cotización): si se puede cancelar y
+   * con qué reembolso y penalidad. No cancela nada; lo que se muestra antes de confirmar.
+   */
+  @Get('reservations/:id/cancel-quote')
+  async cancelQuote(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<CancelPreview> {
+    const tenantId = await this.tenant(userId);
+    return this.reservations.previewCancellation(tenantId, id);
+  }
+
+  /** Fija la comisión de un prebook de Despegar entre su mínimo y su máximo (antes de pagar). */
+  @SalesOperation()
+  @Post('commission')
+  async commission(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CommissionBodySchema)) body: CommissionBody,
+  ): Promise<CommissionUpdateResult> {
+    const tenantId = await this.tenant(userId);
+    return this.reservations.updateCommission(tenantId, body);
+  }
+
+  @Get('reservations/:id/special-requests')
+  async specialRequestsCatalog(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+  ): Promise<{ items: SpecialRequestCatalogItem[] }> {
+    const tenantId = await this.tenant(userId);
+    return { items: await this.reservations.getSpecialRequestsCatalog(tenantId, id) };
+  }
+
+  @Post('reservations/:id/special-requests')
+  async specialRequest(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SpecialRequestBodySchema)) body: SpecialRequestBody,
+  ): Promise<SpecialRequestResult> {
+    const tenantId = await this.tenant(userId);
+    return this.reservations.createSpecialRequest(tenantId, id, body.code, body.value);
   }
 
   /**

@@ -3,7 +3,9 @@ import type { BookResult, BookStatus, BookedProduct } from './types';
 interface RawBookProduct {
   type?: string;
   platform_id?: number | string;
-  pnr?: string;
+  /** Así lo escribe el esquema del Book. */
+  plataform_id?: number | string;
+  pnr?: string | number;
 }
 
 interface RawBookResponse {
@@ -26,8 +28,9 @@ function mapMessage(m: string | string[] | undefined): string | undefined {
 
 function mapProduct(p: RawBookProduct): BookedProduct {
   const product: BookedProduct = { type: p.type ?? '' };
-  if (p.platform_id != null) product.platformId = String(p.platform_id);
-  if (p.pnr) product.pnr = p.pnr;
+  const platformId = p.platform_id ?? p.plataform_id;
+  if (platformId != null && platformId !== '') product.platformId = String(platformId);
+  if (p.pnr != null && p.pnr !== '') product.pnr = String(p.pnr);
   return product;
 }
 

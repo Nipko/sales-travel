@@ -1,6 +1,10 @@
 import { HttpStatus, Logger, type ArgumentsHost } from '@nestjs/common';
 import { FILTER_CATCH_EXCEPTIONS } from '@nestjs/common/constants';
-import { DespegarApiError } from '@sales-travel/despegar-hotels';
+import {
+  DespegarApiError,
+  DespegarCancelNotAllowedError,
+  DespegarReservationNotFoundError,
+} from '@sales-travel/despegar-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { humanizeDespegarError } from './despegar-hotels-errors.js';
 import { DespegarHotelsExceptionFilter } from './despegar-hotels-exception.filter.js';
@@ -43,14 +47,18 @@ afterEach(() => {
 });
 
 describe('DespegarHotelsExceptionFilter', () => {
-  it('sólo atrapa `DespegarApiError`', () => {
+  it('sólo atrapa los errores de Despegar', () => {
     // El 503 del catálogo vacío o del breaker y el 403 de la cuota NO pasan por aquí: salen por
     // el filtro global (`AllExceptionsFilter`, registrado en `main.ts`).
     const atrapa: unknown = Reflect.getMetadata(
       FILTER_CATCH_EXCEPTIONS,
       DespegarHotelsExceptionFilter,
     );
-    expect(atrapa).toEqual([DespegarApiError]);
+    expect(atrapa).toEqual([
+      DespegarApiError,
+      DespegarCancelNotAllowedError,
+      DespegarReservationNotFoundError,
+    ]);
   });
 
   it.each([
@@ -96,17 +104,56 @@ describe('DespegarHotelsExceptionFilter', () => {
     ]);
   });
 
-  it('el detalle técnico va al log: status, path y como mucho 250 caracteres del cuerpo', () => {
-    // Fijado tal cual. El cuerpo de Despegar puede traer datos del huésped; recortarlo o
-    // quitarlo del log tiene que ser un cambio deliberado de este test.
+  it('al log van el status, el path y el `code` de Despegar: NUNCA el cuerpo', () => {
+    // Cambio deliberado (2026-11-18): el Book y `/reservations` devuelven nombres, email y
+    // documentos, y el cuerpo recortado los llevaba al log.
     const r = respuesta();
-    const cuerpo = 'A'.repeat(400);
-    new DespegarHotelsExceptionFilter().catch(
-      new DespegarApiError(500, cuerpo, '/prebook'),
-      r.host,
-    );
+    const cuerpo = `{"code":"INVALID_FIELD","message":"Ana Prueba ${'A'.repeat(300)}"}`;
+    new DespegarHotelsExceptionFilter().catch(new DespegarApiError(400, cuerpo, '/book'), r.host);
 
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(`500 /prebook: ${'A'.repeat(250)}`);
+    expect(warn).toHaveBeenCalledWith('400 /book INVALID_FIELD');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('Ana Prueba');
+  });
+
+  it('un código de HotelDO conocido sale con su mensaje (certificación, punto 11)', () => {
+    const r = respuesta();
+    new DespegarHotelsExceptionFilter().catch(
+      new DespegarApiError(400, '{"code":"INVALID_PREBOOK_ID","message":"x"}', '/book'),
+      r.host,
+    );
+    expect(JSON.stringify(cuerpoEnviado(r))).toContain('pre-reserva venció');
+  });
+
+  it('cancelación no permitida por Despegar → 409 con el motivo', () => {
+    const r = respuesta();
+    new DespegarHotelsExceptionFilter().catch(
+      new DespegarCancelNotAllowedError({
+        productId: 'P-1',
+        allowance: 'DISALLOWED',
+        disallowedReason: 'ALREADY_CANCELLED',
+      }),
+      r.host,
+    );
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(JSON.stringify(cuerpoEnviado(r))).toContain('ya está cancelada');
+  });
+
+  it('reserva que todavía no aparece en post-venta → 404', () => {
+    const r = respuesta();
+    new DespegarHotelsExceptionFilter().catch(new DespegarReservationNotFoundError(), r.host);
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+  });
+});
+
+describe('DespegarHotelsExceptionFilter — cancelación sin motivo', () => {
+  it('sin `disallowed_reason` loguea sólo la habilitación', () => {
+    const r = respuesta();
+    new DespegarHotelsExceptionFilter().catch(
+      new DespegarCancelNotAllowedError({ productId: 'P-1', allowance: 'UNKNOWN' }),
+      r.host,
+    );
+    expect(warn).toHaveBeenCalledWith('cancelación no permitida: UNKNOWN');
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
   });
 });

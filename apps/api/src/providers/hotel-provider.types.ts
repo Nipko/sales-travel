@@ -7,6 +7,7 @@ import type {
   HotelRoompack,
   HotelSearchCriteria,
   Money,
+  ProviderRawValue,
 } from '@sales-travel/canonical';
 import type {
   HotelBookPort,
@@ -306,7 +307,16 @@ export interface HotelSearchPackContext {
    */
   readonly totalText: string;
   readonly currency: string;
+  /**
+   * Lo que el proveedor necesita reenviar y no cabe en `offerRef` (Despegar: el `choice_id`, el
+   * `prebook_id` y la numeración de habitaciones). Queda en el SERVIDOR: nunca viaja al navegador.
+   * Opaco para los servicios: sólo lo lee el adapter que lo escribió.
+   */
+  readonly providerData?: HotelProviderData;
 }
+
+/** Datos opacos de un proveedor que viajan del contexto al PreBook y del PreBook al Book. */
+export type HotelProviderData = Readonly<Record<string, ProviderRawValue>>;
 
 /** Lo que una búsqueda deja en el servidor además de las ofertas. */
 export interface HotelSearchContextData {
@@ -414,6 +424,8 @@ export interface HotelPrebookContextRequest {
   /** En el orden del Search. */
   readonly rooms: readonly HotelRoomOccupancy[];
   readonly baseline: HotelRateBaseline;
+  /** El `providerData` del pack que se revalida (del contexto en C1, del snapshot en C2). */
+  readonly providerData?: HotelProviderData;
 }
 
 export type HotelRepriceStage = HotelRateBaseline['stage'];
@@ -525,6 +537,8 @@ export interface HotelBookContextRequest {
   readonly rooms: readonly HotelBookingRoomGuests[];
   /** El contacto que viaja al proveedor (D-TBO-23 A: el operativo de la agencia). */
   readonly contact: HotelBookingContact;
+  /** `pack.providerData` del PreBook de revalidación (Despegar: el `prebook_id`). */
+  readonly providerData?: HotelProviderData;
 }
 
 /**

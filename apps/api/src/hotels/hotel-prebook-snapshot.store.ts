@@ -10,6 +10,7 @@ import { CountryCodeSchema, CurrencyCodeSchema, z } from '@sales-travel/validati
 import {
   HOTEL_SEARCH_CONTEXT_CACHE,
   HotelSearchContextExpiredError,
+  ProviderDataSchema,
 } from './hotel-search-context.store.js';
 
 /**
@@ -114,6 +115,8 @@ export const HotelPrebookSnapshotSchema = z
     /** El literal del total DEL PreBook: lo que el Book reenvía, nunca una reconstrucción. */
     totalText: DecimalTextSchema,
     currency: CurrencyCodeSchema,
+    /** El `providerData` DEL PreBook: lo que C2 y el Book reenvían (Despegar: `choice_id`). */
+    providerData: ProviderDataSchema.optional(),
     checkinDate: z.string().date(),
     checkoutDate: z.string().date(),
     rooms: z.array(HotelRoomOccupancySchema.strict()).min(1).max(8),

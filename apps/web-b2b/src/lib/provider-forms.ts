@@ -617,11 +617,124 @@ const TBO_HOTELS: ProviderForm = {
   draftWarnings: tboDraftWarnings,
 };
 
+/** Los entornos que publica Despegar (docs/despegar/01 § Conexión). */
+export const DESPEGAR_BASE_URLS = {
+  sandbox: 'https://api-dev.despegar.com/v3',
+  uat: 'https://apis-uat.despegar.com/v3',
+  prod: 'https://api.despegar.com/v3',
+} as const;
+
+/**
+ * Despegar / HotelDO, hoteles (docs/despegar/01 y 02).
+ *
+ *  - La api key va SÓLO en `credentials` (cifrada). Despegar autentica con el header `x-apikey`.
+ *  - Los datos de facturación de la agencia titular también van cifrados: Despegar los exige para
+ *    reservar a cuenta corriente, y llevan un documento fiscal.
+ *  - El entorno es la `baseUrl` (sandbox, UAT o producción).
+ *  - Sin cuenta, la plataforma puede buscar con su propia clave, pero sólo una cuenta cargada aquí
+ *    reserva por órdenes.
+ */
+const DESPEGAR_HOTELS: ProviderForm = {
+  label: 'Despegar Hoteles (HotelDO)',
+  note: 'Despegar autentica cada llamada con la API key que entrega al dar de alta la cuenta (una para pruebas y otra para producción). Para reservar a cuenta corriente, Despegar factura a nombre de la agencia titular: carga sus datos fiscales. Nace en Sandbox: cuando la credencial esté verificada, edítala y guárdala con estado Activo.',
+  credentials: [
+    {
+      key: 'apiKey',
+      label: 'API key',
+      secret: true,
+      required: true,
+      requiredMessage: 'La API key es obligatoria: Despegar rechaza cada llamada sin ella.',
+      help: 'Se guarda cifrada y no se muestra de vuelta.',
+    },
+    {
+      key: 'invoiceFiscalStatus',
+      label: 'Condición fiscal',
+      defaultValue: 'PERSONA_JURIDICA',
+      options: [
+        { value: 'PERSONA_JURIDICA', label: 'Persona jurídica (empresa)' },
+        { value: 'PERSONA_FISICA', label: 'Persona física' },
+      ],
+      help: 'A nombre de quién factura Despegar las reservas a cuenta corriente.',
+    },
+    { key: 'invoiceIdType', label: 'Tipo de documento fiscal', placeholder: 'NIT, RUC, CNPJ…' },
+    { key: 'invoiceIdNumber', label: 'Número de documento fiscal', maxLength: 40 },
+    { key: 'invoiceFiscalName', label: 'Razón social', maxLength: 200 },
+    { key: 'invoiceCityId', label: 'Ciudad (id de Despegar)', placeholder: '2345' },
+    { key: 'invoiceStreet', label: 'Calle de la dirección fiscal', maxLength: 200 },
+    { key: 'invoiceStreetNumber', label: 'Número de la dirección fiscal', maxLength: 20 },
+    { key: 'invoiceZipCode', label: 'Código postal', maxLength: 20 },
+  ],
+  config: [
+    {
+      key: 'baseUrl',
+      label: 'Entorno',
+      required: true,
+      defaultValue: DESPEGAR_BASE_URLS.sandbox,
+      options: [
+        { value: DESPEGAR_BASE_URLS.sandbox, label: 'Sandbox (certificación)' },
+        { value: DESPEGAR_BASE_URLS.uat, label: 'UAT' },
+        { value: DESPEGAR_BASE_URLS.prod, label: 'Producción' },
+      ],
+      help: 'Las reservas de certificación se hacen en Sandbox. Producción usa la API key de producción.',
+    },
+    {
+      key: 'paymentType',
+      label: 'Forma de pago a Despegar',
+      defaultValue: 'CURRENT_ACCOUNT',
+      options: [
+        { value: 'CURRENT_ACCOUNT', label: 'Cuenta corriente' },
+        { value: 'DEFERRED', label: 'Pago diferido (si Despegar lo habilitó)' },
+      ],
+    },
+    { key: 'countryCode', label: 'País del punto de venta', placeholder: 'CO', maxLength: 2 },
+    {
+      key: 'language',
+      label: 'Idioma del contenido',
+      defaultValue: 'ES',
+      options: [
+        { value: 'ES', label: 'Español' },
+        { value: 'PT', label: 'Portugués' },
+        { value: 'EN', label: 'Inglés' },
+      ],
+    },
+  ],
+  initialStatus: 'sandbox',
+  draftIssues: despegarDraftIssues,
+  // Su factory cae a `DESPEGAR_API_KEY` de la plataforma para buscar.
+  fallsBackToPlatformCredentials: true,
+};
+
+/** Sin documento fiscal no hay reserva a cuenta corriente: o los datos completos, o ninguno. */
+function despegarDraftIssues(payload: ProviderAccountPayload): Readonly<Record<string, string>> {
+  const c = payload.credentials;
+  const issues: Record<string, string> = {};
+  const anyInvoice = ['invoiceIdType', 'invoiceIdNumber', 'invoiceFiscalName'].some(
+    (k) => (c[k] ?? '').trim() !== '',
+  );
+  if (anyInvoice) {
+    if ((c['invoiceIdType'] ?? '').trim() === '') {
+      issues[fieldKey('credentials', 'invoiceIdType')] =
+        'Falta el tipo de documento: Despegar lo exige con el número.';
+    }
+    if ((c['invoiceIdNumber'] ?? '').trim() === '') {
+      issues[fieldKey('credentials', 'invoiceIdNumber')] =
+        'Falta el número de documento fiscal de la agencia.';
+    }
+  }
+  const country = payload.config['countryCode'];
+  if (country !== undefined && !/^[A-Za-z]{2}$/.test(country)) {
+    issues[fieldKey('config', 'countryCode')] =
+      'El país va en dos letras (ISO 3166-1), por ejemplo CO, PE o BR.';
+  }
+  return issues;
+}
+
 export const PROVIDERS: Readonly<Record<string, ProviderForm>> = {
   'latam-ndc': LATAM_NDC,
   'agent-cars': AGENT_CARS,
   sabre: SABRE,
   'tbo-hotels': TBO_HOTELS,
+  'despegar-hotels': DESPEGAR_HOTELS,
 };
 
 /** ¿Este nodo puede cargar su propia cuenta del proveedor? Sin restricción declarada, sí. */

@@ -1579,6 +1579,46 @@ describe('no reembolsables (b, c y e): el servidor decide y exige la confirmaci�
 
 // ───────────────────────── Revalidación (C2) ─────────────────────────
 
+describe('`providerData`: lo que el proveedor reenvía y no viaja al navegador (Despegar)', () => {
+  const DATOS = { choiceId: 'CH-1', roomReferences: [0], prebookId: 'PB-1' };
+
+  it('del snapshot a C2, y de C2 al Book', async () => {
+    const b = await banco({}, snapshot({ providerData: DATOS }));
+    const base = revalidada();
+    b.puerto.prebookWithContext.mockResolvedValue({
+      ...base,
+      pack: { ...base.pack, providerData: { ...DATOS, prebookId: 'PB-2' } },
+    });
+
+    await b.service.book(AGENCIA, USUARIO, CLAVE, pedido());
+
+    expect(b.puerto.prebookWithContext.mock.calls[0]?.[0].providerData).toEqual(DATOS);
+    expect(b.puerto.bookWithContext.mock.calls[0]?.[0].providerData).toEqual({
+      ...DATOS,
+      prebookId: 'PB-2',
+    });
+  });
+
+  it('la tarifa revalidada que hay que reconfirmar guarda el `providerData` de C2', async () => {
+    const b = await banco({ reglas: [] }, snapshot({ providerData: DATOS }));
+    const base = revalidada({
+      netoMinor: 33_000,
+      pisoMinor: 34_000,
+      comparacion: { outcome: 'INCREASED', price: 'UP' },
+    });
+    b.puerto.prebookWithContext.mockResolvedValue({
+      ...base,
+      pack: { ...base.pack, providerData: { ...DATOS, prebookId: 'PB-3' } },
+    });
+
+    const err = await rechazo(b.service.book(AGENCIA, USUARIO, CLAVE, pedido()));
+
+    const details = (err as HotelBookRepricedError).publicDetails;
+    const nueva = await b.snapshots.get(AGENCIA, details.prebookRef ?? '');
+    expect(nueva?.providerData).toEqual({ ...DATOS, prebookId: 'PB-3' });
+  });
+});
+
 describe('RF-20 y D-TBO-20 A: la revalidación de C2 antes del Book', () => {
   it('si sube el precio de venta → 409 con los valores nuevos, orden cerrada sin envío y clave libre', async () => {
     const b = await banco({ reglas: [] });

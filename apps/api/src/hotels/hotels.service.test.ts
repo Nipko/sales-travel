@@ -665,7 +665,14 @@ describe('HotelsService.getHotelDetail', () => {
     const res = await b.service.getHotelDetail(TENANT, detalle);
 
     const delAcl = (await b.adapter.getHotelDetail.mock.results[0]?.value) as DespegarHotelOffer;
-    expect(sinProveedor([res])).toEqual([delAcl]);
+    // El código de régimen del ACL (`mealPlanId`) sale en el contrato neutral como `mealTypeRaw`.
+    const comoNeutral = {
+      ...delAcl,
+      roompacks: delAcl.roompacks.map(({ mealPlanId, ...rp }) =>
+        mealPlanId === undefined ? rp : { ...rp, mealTypeRaw: mealPlanId },
+      ),
+    };
+    expect(sinProveedor([res])).toEqual([comoNeutral]);
     expect(res.roompacks.map((rp) => rp.provider.name)).toEqual(delAcl.roompacks.map(() => CODIGO));
   });
 

@@ -1,12 +1,26 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
   DespegarApiError,
+  DespegarCancelNotAllowedError,
   DespegarHotelsAdapter,
   DESPEGAR_BASE_URLS,
+  type DespegarExchange,
   type DespegarHotelsConfig,
+  type DespegarHttpDeps,
 } from '@sales-travel/despegar-hotels';
-import { humanizeDespegarError } from '../hotels/despegar-hotels-errors.js';
-import { ProviderCredentialsService } from '../provider-credentials/provider-credentials.service.js';
+import { z } from '@sales-travel/validation';
+import {
+  humanizeCancelNotAllowed,
+  humanizeDespegarError,
+} from '../hotels/despegar-hotels-errors.js';
+import {
+  ProviderCredentialsService,
+  type ResolvedProviderAccount,
+} from '../provider-credentials/provider-credentials.service.js';
+import {
+  PROVIDER_PAYLOAD_WRITER,
+  type ProviderPayloadWriter,
+} from '../provider-payloads/provider-payloads.types.js';
 import type {
   HotelProviderAdapter,
   HotelProviderCapabilities,
@@ -19,9 +33,11 @@ import {
   type CredentialSource,
   type TenantAdapter,
 } from '../providers/provider.types.js';
+import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelProviderAdapter,
+  type DespegarNeutralOptions,
 } from './despegar-hotel-provider.adapter.js';
 
 const PROVIDER_CODE = DESPEGAR_HOTELS_PROVIDER_CODE;
@@ -83,10 +99,11 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
   readonly capabilities: HotelProviderCapabilities = {
     retrieve: true,
     cancel: true,
-    // El ACL dice que `/book/{id}` también acepta nuestra referencia, pero ningún test ni
-    // respuesta grabada lo respalda. Declararlo haría que una verificación confiara en eso.
-    retrieveByClientReference: false,
-    reconcileByDate: false,
+    // `GET /book/{id}` acepta la `external_booking_reference` (docs/despegar/01 § Estado): un Book
+    // que se cortó se verifica leyendo por nuestra referencia, nunca reservando otra vez.
+    retrieveByClientReference: true,
+    // `GET /reservations?by_api_key=true&from_purchase_date…` lista las reservas de la cuenta.
+    reconcileByDate: true,
     // Sabe leer una reserva, pero no hay contrato de un HCN con SLA que seguir: seguirlo terminaría
     // en tareas de operaciones por un número que Despegar no promete.
     hcn: false,
@@ -113,7 +130,16 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
    */
   private platformKeyWarned = false;
 
-  constructor(private readonly creds: ProviderCredentialsService) {}
+  /**
+   * @param payloadWriter la bóveda de payloads: cada RQ/RS de prebook, book y post-venta queda
+   *   cifrado con su cuenta. Son los "logs" que pide la certificación de HotelDO.
+   */
+  constructor(
+    private readonly creds: ProviderCredentialsService,
+    @Optional()
+    @Inject(PROVIDER_PAYLOAD_WRITER)
+    private readonly payloadWriter?: ProviderPayloadWriter,
+  ) {}
 
   async forTenant(tenantId: string): Promise<DespegarHotelsAdapter> {
     return (await this.resolve(tenantId)).adapters.acl;
@@ -125,45 +151,147 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
   }
 
   /**
+   * La post-venta de una orden sale con la cuenta que la creó, no con la vigente del tenant: las
+   * reservas viven en ESA cuenta de Despegar. Sin cuenta guardada (órdenes de la clave de
+   * plataforma) no hay a qué volver y la bóveda responde 404.
+   */
+  async resolveForOrder(
+    tenantId: string,
+    orderId: string,
+  ): Promise<TenantAdapter<HotelProviderAdapter>> {
+    const resolved = await this.creds.resolveForOrder(tenantId, orderId);
+    if (resolved.providerCode !== PROVIDER_CODE) {
+      throw new NotFoundException('la cuenta de la orden no es de Despegar');
+    }
+    const adapters = this.adaptersFor(resolved, tenantId);
+    return {
+      adapter: adapters.neutral,
+      credentialSource: resolved.inherited ? 'inherited' : 'own',
+    };
+  }
+
+  /** La conciliación lee las reservas de la cuenta entera: resuelve por cuenta, no por tenant. */
+  async resolveForAccount(
+    ownerTenantId: string,
+    accountId: string,
+  ): Promise<TenantAdapter<HotelProviderAdapter>> {
+    const resolved = await this.creds.resolveOwnAccount(ownerTenantId, accountId, PROVIDER_CODE);
+    return { adapter: this.adaptersFor(resolved, ownerTenantId).neutral, credentialSource: 'own' };
+  }
+
+  /** El ACL de UNA cuenta resuelta, con su caché por cuenta y versión. */
+  private adaptersFor(resolved: ResolvedProviderAccount, tenantId: string): CachedAdapters {
+    const cfg = this.toConfig(resolved.credentials, resolved.config);
+    if (cfg.apiKey === '')
+      throw this.missingApiKey(tenantId, resolved.inherited ? 'inherited' : 'own');
+    const key = `byoc:${resolved.ownerTenantId}:${resolved.updatedAt.getTime()}`;
+    let adapters = this.cache.get(key);
+    if (!adapters) {
+      const options = neutralOptions(cfg, resolved.credentials, resolved.config);
+      const acl = new DespegarHotelsAdapter(
+        cfg,
+        this.httpDeps(
+          { accountId: resolved.id, ownerTenantId: resolved.ownerTenantId },
+          options.environment,
+        ),
+      );
+      adapters = {
+        acl,
+        // Con cuenta de la bóveda: reserva también por la saga con órdenes.
+        neutral: new DespegarContextHotelProviderAdapter(acl, options, {
+          accountId: resolved.id,
+          updatedAt: resolved.updatedAt.toISOString(),
+        }),
+      };
+      this.cache.set(key, adapters);
+      this.evictStale(key);
+    }
+    return adapters;
+  }
+
+  /**
    * Mismo traductor que el filtro de excepciones de la vertical. Un error que no es de Despegar
    * (p. ej. un pedido neutral que no se pudo traducir) ya trae un mensaje nuestro.
    */
   humanizeError(err: unknown): string {
     if (err instanceof DespegarApiError) return humanizeDespegarError(err.status, err.body);
+    if (err instanceof DespegarCancelNotAllowedError) {
+      return humanizeCancelNotAllowed(err.allowance.disallowedReason);
+    }
     return err instanceof Error ? err.message : String(err);
   }
 
   private async resolve(
     tenantId: string,
   ): Promise<{ adapters: CachedAdapters; credentialSource: CredentialSource }> {
-    let key: string;
-    let cfg: DespegarHotelsConfig;
-    let credentialSource: CredentialSource;
-
+    let resolved: ResolvedProviderAccount;
     try {
-      const resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
-      cfg = this.toConfig(resolved.credentials, resolved.config);
-      key = `byoc:${resolved.ownerTenantId}:${resolved.updatedAt.getTime()}`;
-      credentialSource = resolved.inherited ? 'inherited' : 'own';
+      resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
     } catch (err) {
       if (!(err instanceof NotFoundException)) throw err;
-      cfg = this.envConfig();
-      key = 'env';
-      credentialSource = 'env';
+      return { adapters: this.envAdapters(tenantId), credentialSource: 'env' };
     }
+    return {
+      adapters: this.adaptersFor(resolved, tenantId),
+      credentialSource: resolved.inherited ? 'inherited' : 'own',
+    };
+  }
 
+  /**
+   * Con la clave de la plataforma (`DESPEGAR_API_KEY`): busca y lee, pero no reserva por órdenes,
+   * porque no hay una cuenta de la bóveda a la que atar la orden ni su post-venta.
+   */
+  private envAdapters(tenantId: string): CachedAdapters {
+    const cfg = this.envConfig();
     // Puerta única, ANTES de construir: la negativa sale como una ausencia que el registry sabe
     // explicar, y no como un 401 de Despegar por cada búsqueda.
-    if (cfg.apiKey === '') throw this.missingApiKey(tenantId, credentialSource);
-
-    let adapters = this.cache.get(key);
+    if (cfg.apiKey === '') throw this.missingApiKey(tenantId, 'env');
+    let adapters = this.cache.get('env');
     if (!adapters) {
-      const acl = new DespegarHotelsAdapter(cfg);
-      adapters = { acl, neutral: new DespegarHotelProviderAdapter(acl) };
-      this.cache.set(key, adapters);
-      this.evictStale(key);
+      const options = neutralOptions(cfg, {}, {});
+      const acl = new DespegarHotelsAdapter(
+        cfg,
+        this.httpDeps({ accountId: null, ownerTenantId: tenantId }, options.environment),
+      );
+      adapters = { acl, neutral: new DespegarHotelProviderAdapter(acl, options) };
+      this.cache.set('env', adapters);
     }
-    return { adapters, credentialSource };
+    return adapters;
+  }
+
+  /**
+   * La bóveda va atada a la cuenta con que se construye el cliente: cada RQ/RS queda con su dueño,
+   * que es quien lo puede leer después. Se guardan la reserva y la post-venta siempre, y las
+   * búsquedas sólo si fallaron: una búsqueda que respondió no tiene nada que reportar y pesa.
+   */
+  private httpDeps(
+    account: { accountId: string | null; ownerTenantId: string },
+    environment: 'test' | 'live',
+  ): DespegarHttpDeps {
+    const writer = this.payloadWriter;
+    if (writer?.enabled !== true) return {};
+    return {
+      onExchange: (e) => {
+        if (!shouldVaultDespegarPayload(e)) return;
+        void writer
+          .record({
+            providerCode: PROVIDER_CODE,
+            requestId: e.requestId,
+            attempt: 1,
+            operation: e.operation,
+            environment,
+            ownerTenantId: account.ownerTenantId,
+            providerAccountId: account.accountId,
+            sentAt: new Date(e.sentAt),
+            durationMs: e.durationMs,
+            httpStatus: e.status,
+            outcome: e.outcome,
+            ...(e.requestBody === undefined ? {} : { requestBody: e.requestBody }),
+            ...(e.responseBody === undefined ? {} : { responseBody: e.responseBody }),
+          })
+          .catch(() => undefined);
+      },
+    };
   }
 
   /**
@@ -252,4 +380,121 @@ function platformApiKey(): string {
 function lang(v: unknown): 'EN' | 'ES' | 'PT' | undefined {
   const s = typeof v === 'string' ? v.toUpperCase() : '';
   return s === 'EN' || s === 'ES' || s === 'PT' ? s : undefined;
+}
+
+// ───────────────────────── Opciones del adaptador neutral ─────────────────────────
+
+/**
+ * Datos de facturación de la cuenta con Despegar: a nombre de quién emite Despegar la factura de
+ * cada reserva a cuenta corriente. Son de la AGENCIA titular de la cuenta, no del huésped. Se
+ * leen del blob cifrado (`credentials.invoice`) y, si no están, de `config.invoice`.
+ */
+const InvoiceConfigSchema = z
+  .object({
+    fiscalStatus: z.string().trim().min(1).max(40),
+    fiscalIdentification: z.object({
+      type: z.string().trim().min(1).max(20),
+      number: z.string().trim().min(1).max(40),
+      issueCountry: z.string().length(2).optional(),
+    }),
+    fiscalName: z.string().trim().min(1).max(200).optional(),
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+    fiscalAddress: z
+      .object({
+        street: z.string().trim().min(1).max(200).optional(),
+        number: z.string().trim().min(1).max(20).optional(),
+        apartment: z.string().trim().max(20).optional(),
+        floor: z.string().trim().max(20).optional(),
+        neighborhood: z.string().trim().max(120).optional(),
+        cityId: z.string().trim().min(1).max(20).optional(),
+        zipCode: z.string().trim().min(1).max(20).optional(),
+      })
+      .optional(),
+  })
+  .strict();
+
+const PaymentTypeSchema = z.enum(['CURRENT_ACCOUNT', 'ONE_CARD', 'DEFERRED']);
+
+/**
+ * La factura como la carga el formulario del panel (claves planas, `invoice*`, en el blob
+ * cifrado). `undefined` si no hay ninguna: así manda el objeto `invoice` si alguien lo cargó por API.
+ */
+function flatInvoice(c: Record<string, unknown>): Record<string, unknown> | undefined {
+  const s = (k: string): string | undefined => {
+    const v = c[k];
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+  };
+  if (s('invoiceFiscalStatus') === undefined && s('invoiceIdNumber') === undefined)
+    return undefined;
+  const address = {
+    street: s('invoiceStreet'),
+    number: s('invoiceStreetNumber'),
+    cityId: s('invoiceCityId'),
+    zipCode: s('invoiceZipCode'),
+  };
+  const hasAddress = Object.values(address).some((v) => v !== undefined);
+  return JSON.parse(
+    JSON.stringify({
+      fiscalStatus: s('invoiceFiscalStatus'),
+      fiscalIdentification: {
+        type: s('invoiceIdType'),
+        number: s('invoiceIdNumber'),
+        issueCountry: s('invoiceIssueCountry'),
+      },
+      fiscalName: s('invoiceFiscalName'),
+      fiscalAddress: hasAddress ? address : undefined,
+    }),
+  ) as Record<string, unknown>;
+}
+
+/** `live` sólo contra el host de producción; cualquier otro (sandbox, UAT, propio) es de pruebas. */
+export function despegarEnvironmentOf(baseUrl: string): 'test' | 'live' {
+  try {
+    return new URL(baseUrl).host === new URL(DESPEGAR_BASE_URLS.prod).host ? 'live' : 'test';
+  } catch {
+    return 'test';
+  }
+}
+
+function neutralOptions(
+  cfg: DespegarHotelsConfig,
+  credentials: Record<string, unknown>,
+  config: Record<string, unknown>,
+): DespegarNeutralOptions & { environment: 'test' | 'live' } {
+  const options: DespegarNeutralOptions & { environment: 'test' | 'live' } = {
+    environment: despegarEnvironmentOf(cfg.baseUrl),
+  };
+  const invoice = InvoiceConfigSchema.safeParse(
+    credentials['invoice'] ?? config['invoice'] ?? flatInvoice(credentials),
+  );
+  if (invoice.success) options.invoice = invoice.data;
+  const paymentType = PaymentTypeSchema.safeParse(config['paymentType']);
+  if (paymentType.success) options.paymentType = paymentType.data;
+  return options;
+}
+
+/**
+ * Qué se guarda en la bóveda: la venta y la post-venta siempre (son la evidencia de una reserva y
+ * los logs de la certificación); las búsquedas y el contenido, sólo si fallaron.
+ */
+const ALWAYS_VAULTED: ReadonlySet<string> = new Set([
+  'prebook',
+  'commissionUpdate',
+  'payments',
+  'book',
+  'bookStatus',
+  'recoveryRead',
+  'recovery',
+  'reservations',
+  'cancelAllowance',
+  'cancelQuote',
+  'cancel',
+  'specialRequest',
+]);
+
+export function shouldVaultDespegarPayload(
+  e: Pick<DespegarExchange, 'operation' | 'outcome'>,
+): boolean {
+  return ALWAYS_VAULTED.has(e.operation) || e.outcome !== 'SUCCESS';
 }

@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import {
   DespegarApiError,
+  DespegarReservationNotFoundError,
   type BookRequest,
   type BookResult,
+  type CancelPreview,
   type CancelReservationRequest,
   type CancelReservationResult,
+  type CommissionUpdateRequest,
+  type CommissionUpdateResult,
   type DespegarHotelsAdapter,
+  type PriceJumpInfo,
+  type SpecialRequestCatalogItem,
+  type SpecialRequestResult,
   type PaymentModality,
   type PaymentOptionsQuery,
   type PrebookQuery,
@@ -115,6 +122,78 @@ export class DespegarHotelReservationsService {
       'post-sale',
       { capability: 'cancel', operation: 'la cancelación de reservas' },
       (acl) => acl.cancelReservation(req),
+    );
+  }
+
+  /** Pasos 1 y 2 de la cancelación (habilitación y cotización) sin cancelar: lo que ve el vendedor. */
+  previewCancellation(tenantId: string, reservationId: string): Promise<CancelPreview> {
+    return this.call(
+      tenantId,
+      'post-sale',
+      { capability: 'cancel', operation: 'la cancelación de reservas' },
+      (acl) => acl.previewCancellation(reservationId),
+    );
+  }
+
+  /** Fija la comisión del prebook entre su mínimo y su máximo (antes de `/payments`). */
+  updateCommission(
+    tenantId: string,
+    req: CommissionUpdateRequest,
+  ): Promise<CommissionUpdateResult> {
+    return this.call(tenantId, 'sales', undefined, (acl) => acl.updateCommission(req));
+  }
+
+  /** Lee el salto de precio de un Book en `PROCESSING`. */
+  getPriceJump(
+    tenantId: string,
+    reservationId: string,
+    testCase?: 'pricejump',
+  ): Promise<PriceJumpInfo> {
+    return this.call(
+      tenantId,
+      'sales',
+      { supports: supportsHotelPriceJumpRecovery, operation: 'la confirmación de salto de precio' },
+      (acl) => acl.getPriceJump(reservationId, testCase),
+    );
+  }
+
+  /** Pedidos especiales que admite el hotel de la reserva. */
+  async getSpecialRequestsCatalog(
+    tenantId: string,
+    reservationId: string,
+  ): Promise<SpecialRequestCatalogItem[]> {
+    return this.call(
+      tenantId,
+      'post-sale',
+      { capability: 'retrieve', operation: 'los pedidos especiales' },
+      async (acl) => {
+        const product = await acl.findHotelReservation(reservationId);
+        if (product === undefined) throw new DespegarReservationNotFoundError();
+        return acl.getSpecialRequestsCatalog(product.productId);
+      },
+    );
+  }
+
+  /** Pide un servicio especial (cuna, late check-in…) sobre la reserva. */
+  createSpecialRequest(
+    tenantId: string,
+    reservationId: string,
+    code: string,
+    value?: string,
+  ): Promise<SpecialRequestResult> {
+    return this.call(
+      tenantId,
+      'post-sale',
+      { capability: 'retrieve', operation: 'los pedidos especiales' },
+      async (acl) => {
+        const product = await acl.findHotelReservation(reservationId);
+        if (product === undefined) throw new DespegarReservationNotFoundError();
+        return acl.createSpecialRequest({
+          productId: product.productId,
+          code,
+          ...(value === undefined ? {} : { value }),
+        });
+      },
     );
   }
 

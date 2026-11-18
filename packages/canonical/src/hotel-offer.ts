@@ -482,8 +482,21 @@ export type HotelProviderHotel = z.infer<typeof HotelProviderHotelSchema>;
  * `location` son opcionales porque hay respuestas de disponibilidad que no los traen y se
  * completan desde el catálogo.
  */
+/**
+ * Un aviso del hotel que el proveedor exige mostrar en el checkout y en el voucher (obras,
+ * horarios, depósitos…). `primary` va destacado.
+ */
+export const HotelNoticeSchema = z.object({
+  level: z.enum(['primary', 'secondary']),
+  title: z.string().min(1).max(200).optional(),
+  text: z.string().min(1).max(4000),
+});
+export type HotelNotice = z.infer<typeof HotelNoticeSchema>;
+
 export const HotelOfferSchema = z.object({
   hotelId: z.string().min(1).max(64),
+  /** Avisos del hotel. Sólo los trae el detalle de un hotel, no el listado. */
+  notices: z.array(HotelNoticeSchema).max(50).optional(),
   name: z.string().max(300).optional(),
   stars: z.number().min(0).max(5).optional(),
   type: z.string().max(60).optional(),

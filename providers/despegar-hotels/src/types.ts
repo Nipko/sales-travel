@@ -41,6 +41,12 @@ export interface HotelPrice {
   taxesDetail: HotelTax[];
   /** A pagar en el hotel (no se cobra en la reserva). */
   chargeAtDestination?: Money;
+  /** Desglose de lo que se paga en el hotel, por código de `fee-types` (TT, TA, RF…). */
+  chargeAtDestinationDetail?: HotelTax[];
+  /** Impuestos a pagar en el hotel. */
+  taxesAtDestination?: Money;
+  /** Precio mínimo de venta (`binding_public_rate_value`). Sólo si Despegar lo activó. */
+  minimumSellingPrice?: Money;
   /** Comisión B2B que expone Despegar (base para el waterfall del consolidador). */
   agencyCommission?: { amount: Money; percentage: number };
 }
@@ -74,6 +80,10 @@ export interface HotelPricing {
 export interface HotelRoompack {
   id: string;
   board: BoardType;
+  /** Código del régimen tal como lo da Despegar (catálogo `meal-plans`). */
+  mealPlanId?: string;
+  /** Texto de la promoción del pack, si la tiene. */
+  promo?: string;
   rooms: HotelRoomItem[];
   cancellation: HotelCancellation;
   price: HotelPrice;
@@ -81,8 +91,17 @@ export interface HotelRoompack {
   pricing?: HotelPricing;
 }
 
+/** Un aviso del hotel (`categorized_notices`). */
+export interface HotelNotice {
+  level: 'primary' | 'secondary';
+  title?: string;
+  text: string;
+}
+
 export interface HotelOffer {
   hotelId: string;
+  /** Sólo en el detalle. */
+  notices?: HotelNotice[];
   name?: string;
   stars?: number;
   type?: string;

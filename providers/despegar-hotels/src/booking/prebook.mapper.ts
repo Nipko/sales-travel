@@ -16,6 +16,7 @@ interface RawPrebookResponse {
   total?: number | string;
   currency?: string;
   commission?: RawPrebookCommission;
+  extended_info?: { exchange_policies?: unknown; hints?: unknown };
 }
 
 export function mapPrebook(raw: RawPrebookResponse): PrebookResult {
@@ -37,5 +38,9 @@ export function mapPrebook(raw: RawPrebookResponse): PrebookResult {
     }
     result.commission = c;
   }
+  // `include: ['EXCHANGE_POLICIES', 'HINTS']`: la certificación pide registrarlos. Viajan tal cual.
+  const ext = raw.extended_info;
+  if (ext?.exchange_policies != null) result.exchangePolicies = ext.exchange_policies;
+  if (ext?.hints != null) result.hints = ext.hints;
   return result;
 }
