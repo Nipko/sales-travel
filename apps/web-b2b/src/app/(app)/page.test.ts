@@ -81,12 +81,12 @@ beforeEach(() => {
 describe('la entrada al panel', () => {
   it('el superadmin operando como plataforma entra al Resumen', async () => {
     withMemberships(SUPERADMIN_EVERYWHERE, PLATFORM);
-    expect(await landing()).toBe('/admin/plataforma/resumen');
+    expect(await landing()).toBe('/admin/plataforma/estado');
   });
 
   it('sin agencia activa elegida, la por defecto decide (la de la plataforma)', async () => {
     withMemberships(SUPERADMIN_EVERYWHERE, null);
-    expect(await landing()).toBe('/admin/plataforma/resumen');
+    expect(await landing()).toBe('/admin/plataforma/estado');
   });
 
   it('el mismo superadmin operando como vendedor de su sucursal ve Inicio', async () => {
@@ -125,7 +125,7 @@ describe('/admin/plataforma', () => {
     try {
       PlatformIndexPage();
     } catch (err) {
-      expect((err as RedirectSignal).url).toBe('/admin/plataforma/resumen');
+      expect((err as RedirectSignal).url).toBe('/admin/plataforma/estado');
     }
   });
 });

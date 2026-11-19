@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   Car,
   FileText,
+  Gauge,
   History,
   Home,
   Hotel,
@@ -85,6 +86,8 @@ export const platformGroups: readonly NavSection[] = [
   {
     label: 'Plataforma',
     items: [
+      // Lo primero: qué está roto o espera a alguien, y los pendientes del proyecto (founder 2026-11-19).
+      { label: 'Estado', href: '/admin/plataforma/estado', icon: Gauge },
       { label: 'Salud', href: '/admin/plataforma/salud', icon: Activity },
       { label: 'Resumen', href: '/admin/plataforma/resumen', icon: LayoutDashboard },
       // Quién hizo qué, dónde y cuándo, en toda la plataforma.

@@ -7,6 +7,7 @@ import {
   type DashboardKpis,
   type SalesMetrics,
 } from './reports.service.js';
+import type { AgencyOperations } from './operations.fold.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
 
@@ -24,6 +25,17 @@ export class ReportsController {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
     return this.reports.getDashboardKpis(tenantId);
+  }
+
+  /**
+   * Inicio → Hoy: lo que la agencia tiene que atender (plazos de emisión, reservas trabadas o
+   * fallidas, cotizaciones que vencen). Todo rol que vende: son las reservas de su agencia.
+   */
+  @Get('operations')
+  async getOperations(@CurrentUser() userId: string | undefined): Promise<AgencyOperations> {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    return this.reports.getOperations(tenantId);
   }
 
   @Get('sales-metrics')

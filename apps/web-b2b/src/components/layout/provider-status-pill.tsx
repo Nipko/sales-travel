@@ -5,19 +5,13 @@ import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { verticalLabel } from '../../lib/platform-health';
 import { providerLabel } from '../../lib/platform-system';
-
-type Kind = 'ok' | 'provider' | 'paused' | 'internal' | 'idle';
-
-interface ProviderStatus {
-  readonly providerCode: string;
-  readonly vertical: string;
-  readonly status: Kind;
-  readonly message: string;
-}
-
-const KINDS: readonly Kind[] = ['ok', 'provider', 'paused', 'internal', 'idle'];
-/** Lo más grave manda en la pastilla. */
-const SEVERITY: Record<Kind, number> = { internal: 4, provider: 3, paused: 2, ok: 1, idle: 0 };
+import {
+  PROVIDER_STATUS_LABEL as LABEL,
+  parseProviderStatus,
+  worstStatus,
+  type ProviderStatus,
+  type ProviderStatusKind as Kind,
+} from '../../lib/provider-status';
 
 const DOT: Record<Kind, string> = {
   ok: 'bg-[var(--color-success)]',
@@ -25,14 +19,6 @@ const DOT: Record<Kind, string> = {
   paused: 'bg-[var(--color-warning)]',
   provider: 'bg-[var(--color-warning)]',
   internal: 'bg-[var(--color-danger)]',
-};
-
-const LABEL: Record<Kind, string> = {
-  ok: 'Operando',
-  idle: 'Sin uso reciente',
-  paused: 'En pausa',
-  provider: 'Falla del proveedor',
-  internal: 'Falla nuestra',
 };
 
 const PILL: Record<Kind, string> = {
@@ -45,41 +31,6 @@ const PILL: Record<Kind, string> = {
 
 /** Cada cuánto se vuelve a mirar: es una lectura barata, sin llamadas a proveedores. */
 const REFRESH_MS = 120_000;
-
-export function parseProviderStatus(body: unknown): ProviderStatus[] {
-  if (typeof body !== 'object' || body === null) return [];
-  const list = (body as { providers?: unknown }).providers;
-  if (!Array.isArray(list)) return [];
-  return list.flatMap((raw): ProviderStatus[] => {
-    if (typeof raw !== 'object' || raw === null) return [];
-    const r = raw as Record<string, unknown>;
-    const status = r['status'];
-    if (
-      typeof r['providerCode'] !== 'string' ||
-      typeof r['vertical'] !== 'string' ||
-      typeof status !== 'string' ||
-      !KINDS.includes(status as Kind)
-    ) {
-      return [];
-    }
-    return [
-      {
-        providerCode: r['providerCode'],
-        vertical: r['vertical'],
-        status: status as Kind,
-        message: typeof r['message'] === 'string' ? r['message'] : '',
-      },
-    ];
-  });
-}
-
-/** El estado más grave de la lista: es el que dice la pastilla. */
-export function worstStatus(providers: readonly { status: Kind }[]): Kind {
-  return providers.reduce<Kind>(
-    (acc, p) => (SEVERITY[p.status] > SEVERITY[acc] ? p.status : acc),
-    'idle',
-  );
-}
 
 /**
  * El estado de los proveedores que usa la agencia, en la barra superior: un punto y una frase. Al

@@ -230,4 +230,78 @@ d('Reportes de ventas (orders como app_user)', () => {
     const other = await service.getDashboardKpis(agencyB);
     expect(other.salesThisMonth).toEqual([{ currency: 'COP', amountMinor: 5_000_000 }]);
   });
+
+  it('Inicio → Hoy: plazos, reservas trabadas o fallidas y cotizaciones de la agencia activa, nada de otra', async () => {
+    const platform = await platformRootId(admin);
+    const agencyC = await tenant('c', platform);
+    const agencyD = await tenant('d', platform);
+    const vera = await user('vera', 'Vera', agencyC);
+    const otra = await user('otrad', 'Otra', agencyD);
+
+    async function flight(tenantId: string, userId: string, status: string, deadlineIn: string) {
+      seq += 1;
+      const { rows } = await admin.query<{ id: string }>(
+        `INSERT INTO orders (tenant_id, user_id, provider, search_criteria, selected_offer, passengers,
+                             contact_info, total_amount, currency, order_number, status)
+         VALUES ($1, $2, 'sabre', '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, 1, 'COP', $3, $4)
+         RETURNING id`,
+        [tenantId, userId, seq, status],
+      );
+      const at = `date_trunc('minute', now() + $3::interval)`;
+      await admin.query(
+        `INSERT INTO flight_order_tracking (order_id, tenant_id, ticketing_deadline_date,
+                                            ticketing_deadline_time, ticketing_deadline_zone,
+                                            ticketing_deadline_at)
+         VALUES ($1, $2, (${at} AT TIME ZONE 'UTC')::date,
+                 to_char(${at} AT TIME ZONE 'UTC', 'HH24:MI'), 'UTC', ${at})`,
+        [rows[0]!.id, tenantId, deadlineIn],
+      );
+    }
+
+    await flight(agencyC, vera, 'confirmed', '-1 hour'); // vencido
+    await flight(agencyC, vera, 'confirmed', '5 hours'); // en 24 h
+    await flight(agencyC, vera, 'confirmed', '50 hours'); // más adelante
+    await flight(agencyC, vera, 'confirmed', '10 days'); // fuera de la ventana
+    await flight(agencyC, vera, 'ticketed', '2 hours'); // ya emitido: no cuenta
+    await flight(agencyD, otra, 'confirmed', '1 hour'); // otra agencia
+    await order(agencyC, vera, { status: 'pending', amount: 1, ago: '2 hours' });
+    await order(agencyC, vera, { status: 'pending', amount: 1 });
+    await order(agencyC, vera, { status: 'failed', amount: 1, ago: '1 day' });
+    await order(agencyC, vera, { status: 'failed', amount: 1, ago: '20 days' });
+
+    for (const [status, expires] of [
+      ['sent', '10 hours'],
+      ['draft', '3 days'],
+      ['accepted', '5 hours'],
+      ['sent', '-1 hour'],
+    ] as const) {
+      seq += 1;
+      await admin.query(
+        `INSERT INTO quotations (tenant_id, user_id, status, search_criteria, selected_offer,
+                                 quote_number, expires_at)
+         VALUES ($1, $2, $3, '{}'::jsonb, '{}'::jsonb, $4, now() + $5::interval)`,
+        [agencyC, vera, status, seq, expires],
+      );
+    }
+
+    try {
+      const ops = await service.getOperations(agencyC);
+      expect(ops.deadlines).toMatchObject({ overdue: 1, within24h: 1, later: 1 });
+      expect(ops.deadlines.items).toHaveLength(3);
+      expect(ops.deadlines.items[0]!.overdue).toBe(true);
+      expect(ops.pendingOrders).toMatchObject({ count: 2, stuck: 1 });
+      expect(ops.failedOrders.count).toBe(1);
+      expect(ops.quotationsExpiring.count).toBe(1);
+      expect(ops.level).toBe('critical');
+
+      const other = await service.getOperations(agencyD);
+      expect(other.deadlines.within24h).toBe(1);
+      expect(other.pendingOrders.count).toBe(0);
+      expect(other.quotationsExpiring.count).toBe(0);
+    } finally {
+      await admin.query('DELETE FROM quotations WHERE tenant_id = ANY($1::uuid[])', [
+        [agencyC, agencyD],
+      ]);
+    }
+  });
 });

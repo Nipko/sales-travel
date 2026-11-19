@@ -5,6 +5,8 @@ import { ProviderEnablementAdminModule } from '../provider-enablement/provider-e
 import { SearchModule } from '../search/search.module.js';
 import { AdminOverviewController } from './admin-overview.controller.js';
 import { AdminOverviewService } from './admin-overview.service.js';
+import { AdminStatusController } from './admin-status.controller.js';
+import { AdminStatusService } from './admin-status.service.js';
 import { AdminSystemController } from './admin-system.controller.js';
 import { AdminSystemService } from './admin-system.service.js';
 import { AdminTenantsController } from './admin-tenants.controller.js';
@@ -24,7 +26,12 @@ import { AdminTenantsService } from './admin-tenants.service.js';
  */
 @Module({
   imports: [DatabaseModule, NetworkModule, SearchModule, ProviderEnablementAdminModule],
-  controllers: [AdminOverviewController, AdminTenantsController, AdminSystemController],
-  providers: [AdminOverviewService, AdminTenantsService, AdminSystemService],
+  controllers: [
+    AdminOverviewController,
+    AdminTenantsController,
+    AdminSystemController,
+    AdminStatusController,
+  ],
+  providers: [AdminOverviewService, AdminTenantsService, AdminSystemService, AdminStatusService],
 })
 export class AdminConsoleModule {}
