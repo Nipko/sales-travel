@@ -3,6 +3,7 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useEffect } from 'react';
 import { Button } from '../../components/ui/button';
+import { isStaleDeployError, STALE_DEPLOY_TEXT, STALE_DEPLOY_TITLE } from '../../lib/stale-deploy';
 
 /**
  * Frontera de error del panel.
@@ -16,19 +17,25 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
     console.error('[panel] error no controlado:', error);
   }, [error]);
 
+  // Una pestaña de un deploy anterior: «Reintentar» volvería a llamar a la action que ya no existe.
+  const stale = isStaleDeployError(error);
+
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center px-6 py-20 text-center">
       <div className="flex size-12 items-center justify-center rounded-xl bg-[var(--color-danger)]/10">
         <AlertTriangle className="size-6 text-[var(--color-danger)]" />
       </div>
-      <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">Algo salió mal</h1>
+      <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">
+        {stale ? STALE_DEPLOY_TITLE : 'Algo salió mal'}
+      </h1>
       <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
-        No pudimos cargar esta sección. Puedes reintentar; si sigue fallando, avísale al
-        administrador de tu agencia.
+        {stale
+          ? STALE_DEPLOY_TEXT
+          : 'No pudimos cargar esta sección. Puedes reintentar; si sigue fallando, avísale al administrador de tu agencia.'}
       </p>
-      <Button onClick={reset} className="mt-6 gap-2">
+      <Button onClick={stale ? () => window.location.reload() : reset} className="mt-6 gap-2">
         <RefreshCw className="size-4" />
-        Reintentar
+        {stale ? 'Recargar' : 'Reintentar'}
       </Button>
     </div>
   );
