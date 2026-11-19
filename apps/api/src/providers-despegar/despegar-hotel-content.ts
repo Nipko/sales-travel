@@ -76,8 +76,45 @@ export function roomNameKey(name: string): string {
     .trim();
 }
 
+/** Las entidades que trae el texto de Despegar, a su carácter: luego se escapan una sola vez. */
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&(#39|apos);/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d{1,6});/g, (_m, d: string) => codePoint(Number(d)))
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_m, h: string) => codePoint(parseInt(h, 16)))
+    .replace(/&amp;/gi, '&');
+}
+
+function codePoint(n: number): string {
+  return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ' ';
+}
+
+/**
+ * La descripción va a `descriptionHtml`, que la base valida (`hotel_catalog_html_ok`): fuera de
+ * `<p><b><ul><li><br>` no admite `< > " ' &` sin escapar. «Bar & Grill», «hotel's» o un `&nbsp;`
+ * rechazaban la fila entera (`hotels.content_batch.filas_rechazadas`) y el hotel se quedaba sin
+ * descripción ni fotos de ese lote.
+ */
+function htmlText(text: string | null): string | null {
+  const flat = plain(text);
+  if (flat === null) return null;
+  const out = decodeEntities(flat)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return out === '' ? null : out;
+}
+
 function descriptionOf(c: DespegarHotelContent, lang: HotelContentLanguage): string | null {
-  return plain(textIn(c.information, lang));
+  return htmlText(textIn(c.information, lang));
 }
 
 export function despegarProviderContent(

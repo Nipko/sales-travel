@@ -88,6 +88,21 @@ describe('piezas', () => {
     expect(despegarContentRecord(hotel(), 'pt').descriptionHtml).toBe('Hotel céntrico');
   });
 
+  it('la descripción sale escapada como pide la base: «&», comillas y entidades no rechazan la fila', () => {
+    const con = (es: string) => despegarContentRecord(hotel({ information: { es } }), 'es');
+    expect(con(`<p>Bar & Grill del hotel's "Andino"</p>`).descriptionHtml).toBe(
+      'Bar &amp; Grill del hotel&#39;s &quot;Andino&quot;',
+    );
+    // Lo que ya venía escapado no se escapa dos veces.
+    expect(con('Piscina&nbsp;&amp; spa &#8211; vista &lt;mar&gt;').descriptionHtml).toBe(
+      'Piscina &amp; spa – vista &lt;mar&gt;',
+    );
+    expect(con('&nbsp;').descriptionHtml).toBeNull();
+    // Lo mismo que valida `hotel_catalog_html_ok` (0054): nada de < > " ' & sueltos.
+    const html = con(`<script>alert("x")</script> & 'y'`).descriptionHtml ?? '';
+    expect(html.replace(/&(amp|lt|gt|quot|#39);/g, '')).not.toMatch(/[<>"'&]/);
+  });
+
   it('una habitación con id inválido no sale', () => {
     expect(
       despegarRoomContent({ id: 'con espacios', name: {}, description: {}, pictures: [] }, 'es'),
