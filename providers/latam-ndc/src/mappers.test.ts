@@ -296,6 +296,29 @@ describe('OfferPrice', () => {
     expect(offer.fareComponents).toEqual(searchOffer().fareComponents);
   });
 
+  it('sin OfferExpiration la vigencia corre desde la revalidación, no desde la búsqueda', () => {
+    const raw = xml(`<IATA_OfferPriceRS><Response><PricedOffer>
+      <OfferID>3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c</OfferID>
+      <TotalPrice><BaseAmount CurCode="COP">2800000</BaseAmount><TotalAmount CurCode="COP">3500000</TotalAmount></TotalPrice>
+    </PricedOffer></Response></IATA_OfferPriceRS>`);
+    // La cotización se armó hace 40 minutos: su vigencia de búsqueda ya pasó.
+    const vieja = { ...searchOffer(), expiresAt: new Date(Date.now() - 10 * 60_000).toISOString() };
+    const { offer } = mapOfferPriceResponse(raw, vieja);
+    expect(Date.parse(offer.expiresAt)).toBeGreaterThan(Date.now() + 29 * 60_000);
+    expect(offer.expiresAtSource).toBe('platform-policy');
+  });
+
+  it('una OfferExpiration declarada manda', () => {
+    const raw = xml(`<IATA_OfferPriceRS><Response><PricedOffer>
+      <OfferID>3f0c2a9e-6b7d-4c1e-9a55-1d2e3f4a5b6c</OfferID>
+      <TimeLimits><OfferExpiration DateTime="2030-01-01T10:00:00Z"/></TimeLimits>
+      <TotalPrice><BaseAmount CurCode="COP">2800000</BaseAmount><TotalAmount CurCode="COP">3500000</TotalAmount></TotalPrice>
+    </PricedOffer></Response></IATA_OfferPriceRS>`);
+    const { offer } = mapOfferPriceResponse(raw, searchOffer());
+    expect(offer.expiresAt).toBe('2030-01-01T10:00:00Z');
+    expect(offer.expiresAtSource).toBe('provider');
+  });
+
   it('un error de LATAM se lanza: nunca devuelve la oferta original como confirmada', () => {
     const raw = xml(`<IATA_OfferPriceRS><Error><Code>400116010</Code>
       <DescText>The number of SelectedOfferItems does not match the original AirShopping offer</DescText>

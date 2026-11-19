@@ -7,6 +7,9 @@ import { arr, attr, latamErrors, money, pick, text } from '../xml';
 
 export const OFFERPRICE_PATH = '/ndc/v192/offerPrice';
 
+/** Vigencia que damos a una oferta revalidada sin `OfferExpiration`: la misma que en AirShopping. */
+const PLATFORM_OFFER_TTL_MS = 30 * 60_000;
+
 /**
  * Mapea `IATA_OfferPriceRS` sobre la oferta que se revalidó.
  *
@@ -69,7 +72,15 @@ export function mapOfferPriceResponse(
     taxes: newTaxes,
     ...(policies ? { policies } : {}),
     ...(fareBreakdown ? { fareBreakdown } : {}),
-    ...(declaredExpiry ? { expiresAt: declaredExpiry, expiresAtSource: 'provider' as const } : {}),
+    // Sin vigencia declarada (LATAM no la manda), la de la búsqueda no sirve: una cotización
+    // revalidada 40 min después nacía vencida y la reserva respondía «ya venció, vuelve a buscar»
+    // justo tras un OfferPrice exitoso. La política de 30 min corre desde esta revalidación.
+    ...(declaredExpiry
+      ? { expiresAt: declaredExpiry, expiresAtSource: 'provider' as const }
+      : {
+          expiresAt: new Date(Date.now() + PLATFORM_OFFER_TTL_MS).toISOString(),
+          expiresAtSource: 'platform-policy' as const,
+        }),
     fetchedAt: new Date().toISOString(),
   };
 
