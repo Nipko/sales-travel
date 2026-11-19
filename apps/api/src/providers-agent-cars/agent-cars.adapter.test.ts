@@ -266,6 +266,38 @@ describe('AgentCarsAdapter — requests POST (multipart/FormData)', () => {
     expect(field(init, 'on_hold')).toBeNull();
   });
 
+  it('confirm() espera más que una búsqueda: cortarla a los 15 s dejaba reservas sin orden', async () => {
+    stubFetch({ confirmationCode: 'ABC123', status: 'confirmed' });
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const adapter = new AgentCarsAdapter(cfg);
+    await adapter.getRateDetail({ uniqid: 'sess-1', paymentType: 'ppd', rateType: 'best' });
+    expect(timeout).toHaveBeenLastCalledWith(15_000);
+    await adapter.confirm({
+      uniqid: 'sess-1',
+      paymentType: 'ppd',
+      rateType: 'best',
+      companyCode: 'ZE',
+      sippCode: 'ECMR',
+      pickUpLocation: 'MIA',
+      dropOffLocation: 'MIA',
+      pickUpDate: '2026-07-01',
+      dropOffDate: '2026-07-05',
+      pickUpHour: '1000',
+      dropOffHour: '1000',
+      pickUpAddress: '',
+      dropOffAddress: '',
+      firstName: 'Ana',
+      lastName: 'García',
+      age: 30,
+      email: 'ana@example.com',
+      realBase: Money.fromMajor(118, 'USD'),
+      realTax: Money.fromMajor(25.5, 'USD'),
+      total: Money.fromMajor(143.5, 'USD'),
+    });
+    expect(timeout).toHaveBeenLastCalledWith(60_000);
+    timeout.mockRestore();
+  });
+
   it('confirm() con onHold envía on_hold="1" y mapea extras/frequentFlyer', async () => {
     const { calls } = stubFetch({ confirmationCode: 'X', status: 'on_hold' });
     const adapter = new AgentCarsAdapter(cfg);
