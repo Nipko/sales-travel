@@ -487,6 +487,8 @@ const SHAPE_LOG_EVERY_MS = 30 * 60_000;
 /** Un solo filtro para todas las cuentas: el tope de HEADs en vuelo hacia el CDN es del proceso. */
 const LIVE_PICTURES = pictureFilter(httpPictureProbe());
 
+const INVOICE_LOG = new Logger('DespegarHotels');
+
 function neutralOptions(
   cfg: DespegarHotelsConfig,
   credentials: Record<string, unknown>,
@@ -496,10 +498,15 @@ function neutralOptions(
     environment: despegarEnvironmentOf(cfg.baseUrl),
     pictures: LIVE_PICTURES,
   };
-  const invoice = InvoiceConfigSchema.safeParse(
-    credentials['invoice'] ?? config['invoice'] ?? flatInvoice(credentials),
-  );
+  const rawInvoice = credentials['invoice'] ?? config['invoice'] ?? flatInvoice(credentials);
+  const invoice = InvoiceConfigSchema.safeParse(rawInvoice);
   if (invoice.success) options.invoice = invoice.data;
+  else if (rawInvoice !== undefined) {
+    // Cargada pero inválida (p. ej. «Colombia» en vez de «CO»): sin esto el vendedor leía «no están
+    // cargados». Sólo las rutas de los campos, nunca los valores (son datos fiscales).
+    const paths = invoice.error.issues.map((i) => i.path.join('.') || '(raíz)');
+    INVOICE_LOG.warn(`despegar.invoice_invalida campos=${[...new Set(paths)].join(',')}`);
+  }
   const paymentType = PaymentTypeSchema.safeParse(config['paymentType']);
   if (paymentType.success) options.paymentType = paymentType.data;
   return options;

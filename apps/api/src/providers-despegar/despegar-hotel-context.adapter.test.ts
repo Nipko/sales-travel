@@ -300,6 +300,26 @@ describe('PreBook con contexto', () => {
     });
   });
 
+  it('C1 sin la factura de la cuenta: falla antes del cable, sin contar contra el proveedor', async () => {
+    const { calls } = stubSequence([]);
+    const err = await adapter({ environment: 'test' })
+      .prebookWithContext(prebookRequest(), CTX)
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ reason: 'missing-invoice', failure: { circuit: 'IGNORE' } });
+    expect((err as Error).message).toContain('administrador de tu agencia');
+    expect((err as Error).message).not.toContain('credentials');
+    expect(calls).toEqual([]);
+  });
+
+  it('con pago diferido no se exige la factura en el prebook', async () => {
+    const { calls } = stubSequence([{ body: detalle() }, { body: PREBOOK }]);
+    await adapter({ environment: 'test', paymentType: 'DEFERRED' }).prebookWithContext(
+      prebookRequest(),
+      CTX,
+    );
+    expect(calls).toHaveLength(2);
+  });
+
   it('C1: si el prebook sube el precio, la comparación lo dice', async () => {
     stubSequence([{ body: detalle() }, { body: { ...PREBOOK, total: 130 } }]);
     const found = await adapter().prebookWithContext(prebookRequest(), CTX);
