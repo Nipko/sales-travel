@@ -44,6 +44,8 @@ interface RawRoom {
 }
 interface RawRoompack {
   id?: string;
+  /** Hay respuestas que lo traen en el roompack y no en cada habitación. */
+  choice_id?: string;
   meal_plan?: { id?: string };
   promo?: unknown;
   rooms?: RawRoom[];
@@ -170,7 +172,12 @@ export function mapRoompack(rp: RawRoompack): HotelRoompack {
   const pack: HotelRoompack = {
     id: rp.id ?? '',
     board: mapMealPlan(rp.meal_plan?.id),
-    rooms: (rp.rooms ?? []).map(mapRoom),
+    rooms: (rp.rooms ?? []).map((r) => {
+      const room = mapRoom(r);
+      return room.choiceId === undefined && typeof rp.choice_id === 'string' && rp.choice_id !== ''
+        ? { ...room, choiceId: rp.choice_id }
+        : room;
+    }),
     cancellation: mapCancellation(rp.cancellation_policy),
     price: mapPrice(rp.price_detail),
   };

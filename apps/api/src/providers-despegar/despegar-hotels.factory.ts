@@ -35,6 +35,7 @@ import {
 } from '../providers/provider.types.js';
 import { DESPEGAR_IMAGE_HOSTS } from './despegar-hotel-content.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
+import { payloadShape } from './despegar-payload-shape.js';
 import { httpPictureProbe, pictureFilter } from './despegar-picture-check.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
@@ -135,6 +136,23 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
    * proceso. Con cada búsqueda y cada tecla del autocompletado, sería el log entero.
    */
   private platformKeyWarned = false;
+  private readonly shapeLoggedAt = new Map<string, number>();
+
+  /**
+   * Las rutas de campos (sin valores) del detalle y del prebook, una vez cada 30 min por
+   * operación: así se ve dónde manda Despegar el `choice_id` sin abrir la bóveda.
+   */
+  private logShape(e: DespegarExchange): void {
+    if (!SHAPE_OPERATIONS.has(e.operation) || e.outcome !== 'SUCCESS') return;
+    const now = Date.now();
+    const last = this.shapeLoggedAt.get(e.operation);
+    if (last !== undefined && now - last < SHAPE_LOG_EVERY_MS) return;
+    this.shapeLoggedAt.set(e.operation, now);
+    const shape = payloadShape(e.responseBody);
+    this.logger.log(
+      `despegar.forma operation=${e.operation} paths=${shape.length} ${shape.join(',')}`,
+    );
+  }
 
   /**
    * @param payloadWriter la bóveda de payloads: cada RQ/RS de prebook, book y post-venta queda
@@ -275,10 +293,10 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     environment: 'test' | 'live',
   ): DespegarHttpDeps {
     const writer = this.payloadWriter;
-    if (writer?.enabled !== true) return {};
     return {
       onExchange: (e) => {
-        if (!shouldVaultDespegarPayload(e)) return;
+        this.logShape(e);
+        if (writer?.enabled !== true || !shouldVaultDespegarPayload(e)) return;
         void writer
           .record({
             providerCode: PROVIDER_CODE,
@@ -462,6 +480,9 @@ export function despegarEnvironmentOf(baseUrl: string): 'test' | 'live' {
     return 'test';
   }
 }
+
+const SHAPE_OPERATIONS: ReadonlySet<string> = new Set(['detail', 'prebook']);
+const SHAPE_LOG_EVERY_MS = 30 * 60_000;
 
 /** Un solo filtro para todas las cuentas: el tope de HEADs en vuelo hacia el CDN es del proceso. */
 const LIVE_PICTURES = pictureFilter(httpPictureProbe());
