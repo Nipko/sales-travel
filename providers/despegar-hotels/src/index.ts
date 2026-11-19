@@ -42,7 +42,7 @@ import type {
   SpecialRequestInput,
   SpecialRequestResult,
 } from './booking/types';
-import type { DespegarHotelsConfig } from './config';
+import { despegarLocale, type DespegarHotelsConfig } from './config';
 import {
   mapAmenities,
   mapCatalog,
@@ -149,7 +149,7 @@ export class DespegarHotelsAdapter {
   async suggest(hint: string, locale?: string): Promise<GeoSuggestion[]> {
     const raw = await this.http.get<Parameters<typeof mapSuggestions>[0]>(
       '/suggestions/hotels',
-      { hint, locale: locale ?? this.cfg.locale, weak: true },
+      { hint, locale: despegarLocale(locale, this.cfg), weak: true },
       'suggestions',
     );
     return mapSuggestions(raw);

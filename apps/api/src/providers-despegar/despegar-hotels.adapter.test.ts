@@ -1,4 +1,4 @@
-import { DespegarHotelsAdapter } from '@sales-travel/despegar-hotels';
+import { DespegarHotelsAdapter, despegarLocale } from '@sales-travel/despegar-hotels';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 interface FetchCall {
@@ -51,7 +51,7 @@ describe('DespegarHotelsAdapter', () => {
 
     expect(calls[0]?.url).toContain('/suggestions/hotels');
     expect(calls[0]?.url).toContain('hint=bogo');
-    expect(calls[0]?.url).toContain('locale=es-CO');
+    expect(calls[0]?.url).toContain('locale=es_CO');
     expect((calls[0]?.init.headers as Record<string, string>)['x-apikey']).toBe('secret-key');
     expect(out).toEqual([
       { id: 1, gid: 'CITY_1', type: 1, display: 'Bogotá', city: 'Bogotá', country: 'Colombia' },
@@ -127,5 +127,31 @@ describe('DespegarHotelsAdapter', () => {
     stubFetch({ message: 'bad request' }, 400);
     const adapter = new DespegarHotelsAdapter(cfg);
     await expect(adapter.suggest('x')).rejects.toThrow(/Despegar API 400/);
+  });
+});
+
+describe('despegarLocale: Despegar exige `locale` como idioma_PAÍS y sin él responde 400', () => {
+  it.each([
+    [undefined, {}, 'es_AR'],
+    [undefined, { language: 'ES' as const }, 'es_AR'],
+    [undefined, { language: 'PT' as const }, 'pt_BR'],
+    [undefined, { language: 'ES' as const, countryCode: 'co' }, 'es_CO'],
+    ['es', { countryCode: 'co' }, 'es_CO'],
+    ['es-CO', {}, 'es_CO'],
+    ['ES_ar', {}, 'es_AR'],
+    [undefined, { locale: 'pt-br' }, 'pt_BR'],
+    ['xx-YYY', {}, 'es_AR'],
+  ])('%s con %o → %s', (requested, cfg, expected) => {
+    expect(despegarLocale(requested, cfg)).toBe(expected);
+  });
+
+  it('una cuenta sin locale ni país igual manda uno válido', async () => {
+    const { calls } = stubFetch({ items: [] });
+    await new DespegarHotelsAdapter({
+      apiKey: 'k',
+      baseUrl: 'https://x/v3',
+      language: 'ES',
+    }).suggest('bogo');
+    expect(calls[0]?.url).toContain('locale=es_AR');
   });
 });
