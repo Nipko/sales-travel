@@ -36,26 +36,72 @@ afterEach(() => {
 });
 
 describe('DespegarHotelsAdapter', () => {
-  it('suggest() envía hint + locale y mapea las sugerencias', async () => {
+  it('suggest() pide CIUDADES a /suggestions con el perfil de hoteles y deja sólo las ciudades', async () => {
+    // Forma documentada de /suggestions: grupos por tipo, cada uno con sus items.
     const { calls } = stubFetch({
       items: [
         {
-          id: 1,
-          target: { gid: 'CITY_1', type: 1, parents: { city: 'Bogotá', country: 'Colombia' } },
-          display: 'Bogotá',
+          group: 'CITY',
+          display: 'Ciudades',
+          items: [
+            {
+              id: 'CIT_6585',
+              target: {
+                id: '6585',
+                gid: 'CIT_6585',
+                type: 'CITY',
+                parents: { city: 'CIT_6585', country: 'COU_CO' },
+              },
+              display: 'Bogotá, Colombia',
+            },
+          ],
+        },
+        {
+          group: 'AIRPORT',
+          display: 'Aeropuertos',
+          items: [
+            {
+              id: 'AIR_BOG',
+              target: { id: '1', gid: 'AIR_BOG', type: 'AIRPORT' },
+              display: 'El Dorado',
+            },
+          ],
         },
       ],
     });
     const adapter = new DespegarHotelsAdapter(cfg);
     const out = await adapter.suggest('bogo');
 
-    expect(calls[0]?.url).toContain('/suggestions/hotels');
-    expect(calls[0]?.url).toContain('hint=bogo');
-    expect(calls[0]?.url).toContain('locale=es_CO');
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname.endsWith('/suggestions')).toBe(true);
+    expect(url.searchParams.get('hint')).toBe('bogo');
+    expect(url.searchParams.get('locale')).toBe('es_CO');
+    expect(url.searchParams.get('profile')).toBe('sbox-hotels');
     expect((calls[0]?.init.headers as Record<string, string>)['x-apikey']).toBe('secret-key');
+    // El id es el de la ciudad (= location.city.id del inventario), numérico.
     expect(out).toEqual([
-      { id: 1, gid: 'CITY_1', type: 1, display: 'Bogotá', city: 'Bogotá', country: 'Colombia' },
+      {
+        id: 6585,
+        gid: 'CIT_6585',
+        type: 0,
+        display: 'Bogotá, Colombia',
+        city: 'CIT_6585',
+        country: 'COU_CO',
+      },
     ]);
+  });
+
+  it('suggest() con respuesta plana: descarta hoteles y repetidos, toma el id del gid si falta', async () => {
+    stubFetch({
+      items: [
+        { target: { id: '1', gid: 'HOT_1', type: 'HOTEL' }, display: 'Hotel' },
+        { target: { gid: 'CIT_77' }, display: 'Cartagena' },
+        { target: { gid: 'CIT_77' }, display: 'Cartagena (repetida)' },
+        { target: { gid: 'CIT_x', type: 'CITY' }, display: 'sin id' },
+      ],
+    });
+    const out = await new DespegarHotelsAdapter(cfg).suggest('cart');
+    expect(out).toEqual([{ id: 77, gid: 'CIT_77', type: 0, display: 'Cartagena' }]);
   });
 
   it('searchAvailability() construye la query y mapea ofertas', async () => {
