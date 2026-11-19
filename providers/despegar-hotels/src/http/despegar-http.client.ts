@@ -209,10 +209,12 @@ export class DespegarHttpClient {
   }
 }
 
-/** `/reservations/123/cancels` → `reservations.cancels`: sin ids, que pueden ser datos de reserva. */
+/** `/reservations/123/cancels` → `reservations_cancels`: sin ids (pueden ser datos de reserva) y con el alfabeto de la bóveda. */
 function operationOf(path: string): string {
-  return path
+  const name = path
     .split('/')
-    .filter((seg) => seg !== '' && !/\d/.test(seg) && seg.length < 40)
-    .join('.');
+    .filter((seg) => /^[A-Za-z_-]{1,39}$/.test(seg))
+    .join('_')
+    .slice(0, 64);
+  return name === '' ? 'call' : name;
 }

@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { MODULE_METADATA } from '@nestjs/common/constants';
 import { DespegarCancelNotAllowedError } from '@sales-travel/despegar-hotels';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -14,7 +15,9 @@ import {
   supportsHotelBookingsByDate,
 } from '../providers/hotel-provider.types.js';
 import { ProviderAccountIncompleteError } from '../providers/provider.types.js';
+import { ProviderPayloadsModule } from '../provider-payloads/provider-payloads.module.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
+import { DespegarHotelsProviderModule } from './despegar-hotels.module.js';
 import {
   DespegarHotelsProviderFactory,
   despegarEnvironmentOf,
@@ -321,5 +324,13 @@ describe('errores de la cancelación', () => {
         }),
       ),
     ).toContain('ya está cancelada');
+  });
+});
+
+describe('módulo', () => {
+  it('importa la bóveda: sin ella el escritor llega vacío y ningún RQ/RS de Despegar se guarda', () => {
+    const imports = (Reflect.getMetadata(MODULE_METADATA.IMPORTS, DespegarHotelsProviderModule) ??
+      []) as unknown[];
+    expect(imports).toContain(ProviderPayloadsModule);
   });
 });

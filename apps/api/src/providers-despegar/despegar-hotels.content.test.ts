@@ -336,6 +336,24 @@ describe('bóveda y errores', () => {
     await expect(a.getReservation('R')).rejects.toBeInstanceOf(DespegarApiError);
     expect(outcomes).toEqual(['REJECTED:NF']);
   });
+
+  it('cada operación cabe en el alfabeto de la bóveda: con un punto, el RQ/RS se descartaba sin aviso', async () => {
+    stubFetch(500, { code: 'X' });
+    const operations: string[] = [];
+    const a = new DespegarHotelsAdapter(
+      { apiKey: 'k', baseUrl: 'https://x/v3' },
+      { onExchange: (e) => operations.push(e.operation) },
+    );
+    await Promise.allSettled([
+      a.suggest('bog'),
+      a.getReservation('R'),
+      a.getMealPlans(),
+      a.getFeeTypes(),
+      a.getAmenities(),
+    ]);
+    expect(operations.length).toBe(5);
+    for (const op of operations) expect(op).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+  });
 });
 
 describe('Book por forma de pago', () => {
