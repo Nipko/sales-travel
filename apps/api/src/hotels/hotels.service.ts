@@ -52,6 +52,11 @@ import {
   HotelProviderCapabilityError,
 } from './hotel-provider-errors.js';
 import {
+  HOTEL_SEARCH_WAVE_DEADLINE_MS,
+  HotelSearchDeadlineError,
+  withDeadline,
+} from './hotel-search-deadline.js';
+import {
   SKIP_REASON_TEXT,
   catalogFactsOf,
   currencyMismatchReason,
@@ -453,6 +458,11 @@ export class HotelsService {
   private readonly catalog: HotelCatalogStore;
 
   private readonly pagingStore: HotelSearchPagingStore;
+  /**
+   * Cuánto espera cada ola a cada proveedor (hotel-search-deadline.ts). Campo y no constante en el
+   * código de la ola para que un test lo achique sin relojes falsos.
+   */
+  protected waveDeadlineMs = HOTEL_SEARCH_WAVE_DEADLINE_MS;
 
   constructor(
     private readonly registry: HotelProviderRegistry,
@@ -1161,7 +1171,9 @@ export class HotelsService {
 
   /**
    * Consulta en dos olas, como vuelos: primero los de `callPolicy` `always` (y los `opt-in` que
-   * el tenant activó), en PARALELO; los `fallback` sólo si la primera ola trajo poco.
+   * el tenant activó), en PARALELO; los `fallback` sólo si la primera ola trajo poco. Cada ola
+   * espera a cada proveedor hasta {@link waveDeadlineMs}: el que no llegó sale como `error` y la
+   * búsqueda devuelve lo de los demás (hotel-search-deadline.ts).
    */
   private async runFanOut(
     tenantId: string,
@@ -1226,7 +1238,21 @@ export class HotelsService {
   ): Promise<void> {
     for (const c of wave) state.called.add(c.provider.code);
     const environments = new Map(wave.map((c) => [c.provider.code, c.provider.accountEnvironment]));
-    const settled = await fanOut(wave.map((c) => this.toRun(tenantId, c, state.durations)));
+    const deadlineMs = this.waveDeadlineMs;
+    const settled = await fanOut(
+      wave.map((c): ProviderRun<ProviderOffers> => {
+        const { code, run } = this.toRun(tenantId, c, state.durations);
+        return {
+          code,
+          run: () =>
+            withDeadline(run(), deadlineMs, code).catch((err: unknown) => {
+              // La telemetría se arma antes de que la llamada termine: lo que esperó la búsqueda.
+              if (err instanceof HotelSearchDeadlineError) state.durations.set(code, deadlineMs);
+              throw err;
+            }),
+        };
+      }),
+    );
 
     // `settled.items` llega en el orden de la ola, que es el estable del registry.
     for (const batch of settled.items) {
