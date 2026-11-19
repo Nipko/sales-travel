@@ -76,6 +76,13 @@ export interface BillingSectionProps {
   /** Texto tras guardar: «Guardado» o qué faltó para guardar la facturación. */
   readonly saveInfo: string | null;
   readonly saveError: string | null;
+  /**
+   * Prefijo del teléfono tal como se ve (`+51`). Arranca con el del país de la agencia y el vendedor
+   * lo cambia si el cliente es de otro país. Sin `onDialCodeChange` no se pinta.
+   */
+  readonly dialCode?: string;
+  readonly onDialCodeChange?: (dialCode: string) => void;
+  readonly dialCodeInvalid?: boolean;
 }
 
 /**
@@ -94,6 +101,9 @@ export function BillingSection({
   saving,
   saveInfo,
   saveError,
+  dialCode,
+  onDialCodeChange,
+  dialCodeInvalid,
 }: BillingSectionProps) {
   const set = (patch: Partial<BillingDraft>) => onChange({ ...draft, ...patch });
   const bad = (field: BillingField) => showErrors && missing.includes(field);
@@ -278,16 +288,37 @@ export function BillingSection({
             Teléfono
             <Req />
           </Label>
-          <input
-            id="billing-phone"
-            type="tel"
-            autoComplete="tel"
-            value={draft.phone}
-            onChange={(e) => set({ phone: e.target.value })}
-            placeholder="3001234567"
-            aria-invalid={bad('phone') || undefined}
-            className={cn(inputClass, bad('phone') && errClass)}
-          />
+          <div className="flex gap-2">
+            {onDialCodeChange ? (
+              <input
+                id="billing-phone-dial"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel-country-code"
+                aria-label="Prefijo del país"
+                value={dialCode ?? ''}
+                onChange={(e) => onDialCodeChange(e.target.value)}
+                placeholder="+57"
+                maxLength={5}
+                aria-invalid={(showErrors && dialCodeInvalid) || undefined}
+                className={cn(
+                  inputClass,
+                  'w-20 shrink-0',
+                  showErrors && dialCodeInvalid && errClass,
+                )}
+              />
+            ) : null}
+            <input
+              id="billing-phone"
+              type="tel"
+              autoComplete={onDialCodeChange ? 'tel-national' : 'tel'}
+              value={draft.phone}
+              onChange={(e) => set({ phone: e.target.value })}
+              placeholder="3001234567"
+              aria-invalid={bad('phone') || undefined}
+              className={cn(inputClass, 'min-w-0', bad('phone') && errClass)}
+            />
+          </div>
         </div>
         <div className="space-y-1 sm:col-span-2">
           <Label htmlFor="billing-address">

@@ -112,3 +112,28 @@ describe('customerSearchStatus', () => {
     expect(customerSearchStatus({ kind: 'error' }, 'ana')).toContain('Inténtalo de nuevo');
   });
 });
+
+describe('BillingSection — prefijo del teléfono (V4)', () => {
+  it('pinta el prefijo editable junto al teléfono, con el valor que le da la página', () => {
+    const html = render({ dialCode: '+51', onDialCodeChange: noop });
+    expect(html).toMatch(/<input[^>]*id="billing-phone-dial"[^>]*aria-label="Prefijo del país"/);
+    expect(html).toMatch(/id="billing-phone-dial"[^>]*value="\+51"/);
+    expect(html.indexOf('billing-phone-dial')).toBeLessThan(html.indexOf('id="billing-phone"'));
+  });
+
+  it('marca el prefijo inválido sólo cuando ya se muestran los errores', () => {
+    const quieto = render({ dialCode: '+5x', onDialCodeChange: noop, dialCodeInvalid: true });
+    expect(quieto).not.toMatch(/id="billing-phone-dial"[^>]*aria-invalid="true"/);
+    const marcado = render({
+      dialCode: '+5x',
+      onDialCodeChange: noop,
+      dialCodeInvalid: true,
+      showErrors: true,
+    });
+    expect(marcado).toMatch(/id="billing-phone-dial"[^>]*aria-invalid="true"/);
+  });
+
+  it('sin `onDialCodeChange` no pinta el prefijo', () => {
+    expect(render()).not.toContain('billing-phone-dial');
+  });
+});

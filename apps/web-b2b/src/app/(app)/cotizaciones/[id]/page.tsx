@@ -42,6 +42,12 @@ import {
 } from './passenger-form';
 import { BillingSection } from './billing-section';
 import {
+  dialCodeForCountry,
+  FALLBACK_DIAL_CODE,
+  normalizeDialCode,
+  whatsappDigits,
+} from '../../../../lib/contact-phone';
+import {
   billingDraftFromQuotation,
   billingIdentity,
   billingProblems,
@@ -284,6 +290,9 @@ export default function QuotationDetailPage() {
   const [saveInfo, setSaveInfo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [billingTouched, setBillingTouched] = useState(false);
+  // Prefijo del teléfono de contacto: el del país de la agencia hasta que el vendedor lo cambie.
+  const [dialCodeInput, setDialCodeInput] = useState(`+${FALLBACK_DIAL_CODE}`);
+  const dialCodeEdited = useRef(false);
   // Los pasajeros tal como se escriben: «Facturación» usa al pasajero 1.
   const [paxSnapshot, setPaxSnapshot] = useState<{
     passengers: readonly ReservationPassenger[];
@@ -341,6 +350,20 @@ export default function QuotationDetailPage() {
       .finally(() => setLoading(false));
   }, [params.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/tenant/config')
+      .then(async (res) => {
+        const read = await readJson<{ countryCode?: string | null }>(res);
+        if (cancelled || dialCodeEdited.current || !read.ok || !res.ok) return;
+        setDialCodeInput(`+${dialCodeForCountry(read.data.countryCode)}`);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /*
    * El precio se revalida solo al abrir la cotización. Antes era un botón «Verificar precio» que
    * había que pulsar antes de poder reservar: un paso que el vendedor no necesita decidir, porque
@@ -376,6 +399,18 @@ export default function QuotationDetailPage() {
   const contactName = billingIdentity(billingDraft, passenger1).name;
   const contactEmail = billingDraft.email.trim();
   const contactPhone = billingDraft.phone.trim();
+  const contactDialCode = normalizeDialCode(dialCodeInput);
+  const contactProblems = [
+    ...billingProblems(billingDraft.mode, resolvedBilling.missing),
+    ...(contactDialCode === undefined
+      ? ['Facturación: el prefijo del teléfono tiene de 1 a 3 dígitos, por ejemplo +51.']
+      : []),
+  ];
+
+  function changeDialCode(value: string) {
+    dialCodeEdited.current = true;
+    setDialCodeInput(value);
+  }
 
   function changeBilling(draft: BillingDraft) {
     setBillingDraft(draft);
@@ -807,7 +842,7 @@ export default function QuotationDetailPage() {
 
   function sendWhatsApp() {
     if (!contactPhone) return;
-    const phone = contactPhone.replace(/\D/g, '');
+    const phone = whatsappDigits(contactDialCode, contactPhone);
     const text = `Hola ${contactName || ''}! Te envío cotización #${quotation!.quoteNumber}:\n\n✈️ ${searchCriteria.origin} → ${searchCriteria.destination}\n📅 ${searchCriteria.departureDate}\n💰 ${formatMoney(selectedOffer.pricing?.finalMinor ?? selectedOffer.total.amountMinor, selectedOffer.total.currency)}\n🎫 ${fareSummary ?? 'Standard'}\n\n¿Te interesa?`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
   }
@@ -880,6 +915,9 @@ export default function QuotationDetailPage() {
         saving={saving}
         saveInfo={saveInfo}
         saveError={saveError}
+        dialCode={dialCodeInput}
+        onDialCodeChange={changeDialCode}
+        dialCodeInvalid={contactDialCode === undefined}
       />
     );
   }
@@ -1132,7 +1170,8 @@ export default function QuotationDetailPage() {
                 contactEmail={contactEmail || undefined}
                 contactPhone={contactPhone || undefined}
                 billingSection={({ attempted }) => renderBilling(attempted)}
-                billingProblems={billingProblems(billingDraft.mode, resolvedBilling.missing)}
+                contactDialCode={contactDialCode}
+                billingProblems={contactProblems}
                 saveToCrm={saveToCrm}
                 onSaveToCrmChange={setSaveToCrm}
                 onPassengersChange={handlePassengersChange}
