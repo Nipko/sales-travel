@@ -5,6 +5,8 @@ import { OrdersModule } from '../orders/orders.module.js';
 import { AgentCarsProviderModule } from '../providers-agent-cars/agent-cars.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { CarsController } from './cars.controller.js';
+import { CarsPendingSweepScheduler } from './cars-pending-sweep.scheduler.js';
+import { CarsPendingSweepService } from './cars-pending-sweep.service.js';
 import { CarsService } from './cars.service.js';
 
 @Module({
@@ -16,6 +18,6 @@ import { CarsService } from './cars.service.js';
     ProviderEnablementModule,
   ],
   controllers: [CarsController],
-  providers: [CarsService],
+  providers: [CarsService, CarsPendingSweepService, CarsPendingSweepScheduler],
 })
 export class CarsModule {}
