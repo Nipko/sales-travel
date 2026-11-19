@@ -2,6 +2,7 @@
 
 import type { LocationKind } from '../../../lib/airport-cities';
 import { api } from '../../../lib/api';
+import { earliestTodayIso } from '../../../lib/earliest-today';
 
 interface Money {
   amountMinor: number;
@@ -206,9 +207,13 @@ function asInt(value: FormDataEntryValue | null, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * El piso de la fecha de ida. El reloj del servidor va en UTC: con su fecha, desde las 19:00 de
+ * Bogotá o Lima (21:00 en São Paulo) «hoy» ya era mañana y un vuelo para esa misma noche volvía
+ * «anterior a hoy». Es el mismo piso que usan hoteles y autos.
+ */
 function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return earliestTodayIso();
 }
 
 const IATA_RE = /^[A-Z]{3}$/;
