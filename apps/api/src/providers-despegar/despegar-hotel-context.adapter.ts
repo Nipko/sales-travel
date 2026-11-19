@@ -42,6 +42,7 @@ import type {
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelInputError,
+  assertAgencyCreditReady,
   DespegarHotelProviderAdapter,
   type DespegarHotelsAcl,
   type DespegarNeutralOptions,
@@ -339,6 +340,7 @@ export class DespegarContextHotelProviderAdapter
     request: HotelPrebookContextRequest,
     ctx: SearchContext,
   ): Promise<HotelPrebookWithContext> {
+    if (request.baseline.stage === 'C1') assertAgencyCreditReady(this.#options);
     const data = packDataOf(request.providerData);
     const offer = await this.getHotelRates(
       {

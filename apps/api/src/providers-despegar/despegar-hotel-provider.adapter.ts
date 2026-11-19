@@ -455,8 +455,34 @@ export interface DespegarNeutralOptions {
   pictures?: PictureFilter;
 }
 
+// Lo lee el vendedor, que no puede arreglarlo: dice quién y dónde, sin nombres de campos internos.
 const MISSING_INVOICE =
-  'La cuenta de Despegar no tiene cargados los datos de facturación de la agencia (credentials.invoice): Despegar los exige para reservar a cuenta corriente.';
+  'Despegar no acepta reservas de tu agencia hasta que se carguen sus datos de facturación (Mi Red → Credenciales → Despegar). Avísale al administrador de tu agencia.';
+
+/**
+ * Falta la factura con una cuenta que paga a cuenta corriente. Es configuración de la agencia, no
+ * una falla de Despegar: `failure.circuit = 'IGNORE'` para que el circuit breaker no lo cuente
+ * contra el proveedor de toda la red.
+ */
+export class DespegarMissingInvoiceError extends DespegarHotelInputError {
+  readonly failure = { circuit: 'IGNORE' } as const;
+  constructor() {
+    super('missing-invoice', MISSING_INVOICE);
+    this.name = 'DespegarMissingInvoiceError';
+  }
+}
+
+/**
+ * ¿La cuenta va a poder cobrar la reserva? Con cuenta corriente (lo normal) Despegar exige la
+ * factura de la agencia, y antes se descubría en el Book: después del prebook, de cargar a los
+ * huéspedes y del segundo prebook. Se mira en el primer prebook.
+ */
+export function assertAgencyCreditReady(options: DespegarNeutralOptions): void {
+  const type = options.paymentType ?? 'CURRENT_ACCOUNT';
+  if (type === 'CURRENT_ACCOUNT' && options.invoice === undefined) {
+    throw new DespegarMissingInvoiceError();
+  }
+}
 
 /**
  * El pago "al crédito de la cuenta" en la forma que pide Despegar. `ONE_CARD` no se puede cargar
