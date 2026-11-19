@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { CarLocation, CarOffer, CarSelection } from '../actions';
+import { CarBookingDone } from './car-booking-done';
 import { CarCheckout } from './car-checkout';
 import { CarResultCard } from './car-result-card';
 import { resultCarsOf } from './car-results-filters';
@@ -195,5 +196,45 @@ describe('CarCheckout', () => {
 
   it('con tiempo al retiro ofrece reservar en espera, con el plazo para activarla', () => {
     expect(checkout(Date.now())).toContain('antes del dom 20 oct · 10:00');
+  });
+
+  describe('CarBookingDone', () => {
+    function done(recorded?: boolean): string {
+      return renderToStaticMarkup(
+        createElement(CarBookingDone, {
+          result: {
+            confirmationCode: 'ABC123',
+            sippCode: 'ECAR',
+            rateCode: '3',
+            status: 'confirmed',
+            ...(recorded === undefined ? {} : { recorded }),
+          },
+          criteria,
+          selection,
+          driverName: 'Ana García',
+          onViewVoucher: noop,
+          onNewSearch: noop,
+        }),
+      );
+    }
+
+    it('guardada en Reservas: código y voucher, sin aviso', () => {
+      const html = done(true);
+      expect(html).toContain('ABC123');
+      expect(html).toContain('Ver voucher');
+      expect(html).not.toContain('no quedó guardada');
+    });
+
+    it('confirmada sin orden: el código con el aviso y sin voucher', () => {
+      const html = done(false);
+      expect(html).toContain('ABC123');
+      expect(html).toContain('La reserva existe, pero no quedó guardada en Reservas');
+      expect(html).toContain('No la vuelvas a reservar');
+      expect(html).not.toContain('Ver voucher');
+    });
+
+    it('una respuesta sin el campo (API anterior) se trata como guardada', () => {
+      expect(done()).toContain('Ver voucher');
+    });
   });
 });

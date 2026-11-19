@@ -53,6 +53,7 @@ const EXPECTED: Readonly<Record<string, PlatformAuditCategory>> = {
   CarReservationConfirmed: 'orders',
   CarReservationCancelled: 'orders',
   CarReservationRejected: 'orders',
+  CarReservationUnrecorded: 'orders',
   'platform.order.viewed': 'orders',
   'platform.order.action': 'orders',
   'system.post_sale_sweep.completed': 'system',

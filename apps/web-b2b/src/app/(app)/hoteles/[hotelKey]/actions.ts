@@ -4,7 +4,6 @@ import { api } from '../../../../lib/api';
 import { hotelImageProxyUrl } from '../../../../lib/hotel-image-proxy';
 import type { HotelAccountEnvironment, HotelOffer } from '../actions';
 import { decodeHotelKey, type HotelProviderHotelRef } from '../_components/hotel-key';
-import { parseStay } from '../_components/hotel-search-handoff';
 import {
   parseHotelContent,
   withProxiedPhotos,
@@ -12,13 +11,13 @@ import {
 } from './_components/hotel-content-view';
 
 /*
- * Lecturas del detalle de un hotel: la ficha de cada proveedor que lo vende y sus tarifas para la
- * estadía de la búsqueda (D-TBO-19 A: al abrir el hotel se vuelve a buscar sólo ese hotel, con las
- * políticas "sujetas a confirmación").
+ * Lecturas del detalle de un hotel: la ficha de cada proveedor que lo vende. Las tarifas de la
+ * estadía (D-TBO-19 A) van por `POST /api/hotels/rates`, un pedido por proveedor: el cliente de
+ * Next despacha las acciones del servidor de a una y las de un proveedor esperarían a las del otro.
  *
- * La clave y la estadía llegan del navegador y se vuelven a validar aquí: una acción del servidor
- * es un endpoint más. Cada proveedor se pide por separado y en paralelo, y el fallo de uno no
- * tapa lo que respondió el otro.
+ * La clave llega del navegador y se vuelve a validar aquí: una acción del servidor es un endpoint
+ * más. Cada proveedor se pide por separado y en paralelo, y el fallo de uno no tapa lo que
+ * respondió el otro.
  */
 
 /** El panel está en español; el API responde el inglés como respaldo y lo dice en `lang`. */
@@ -84,84 +83,4 @@ export async function hotelContentAction(hotelKey: string): Promise<HotelContent
     }),
   );
   return { ok: outcomes.some((o) => o.content !== undefined), outcomes };
-}
-
-/**
- * El entorno que el API pone junto a la oferta del detalle. Sólo los dos valores conocidos: otro
- * texto no avisa nada, que es mejor que avisar mal.
- */
-function accountEnvironmentOf(offer: HotelOffer): HotelAccountEnvironment | undefined {
-  const value = (offer as { accountEnvironment?: unknown }).accountEnvironment;
-  return value === 'test' || value === 'live' ? value : undefined;
-}
-
-function isOffer(value: unknown): value is HotelOffer {
-  if (typeof value !== 'object' || value === null) return false;
-  const { hotelId, roompacks } = value as { hotelId?: unknown; roompacks?: unknown };
-  return typeof hotelId === 'string' && Array.isArray(roompacks);
-}
-
-/**
- * Las tarifas del hotel en cada proveedor que lo vende, para la estadía de la búsqueda. Es una
- * búsqueda nueva: sus tarifas tienen su propio vencimiento y su propia referencia de reserva.
- */
-export async function hotelRatesAction(
-  hotelKey: string,
-  stay: unknown,
-): Promise<HotelDetailRatesResult> {
-  const refs = typeof hotelKey === 'string' ? decodeHotelKey(hotelKey) : undefined;
-  if (refs === undefined) return { ok: false, outcomes: [], error: INVALID_KEY };
-  const parsed = parseStay(stay);
-  if (parsed === undefined) {
-    return {
-      ok: false,
-      outcomes: [],
-      error: 'Faltan los datos de la búsqueda. Busca de nuevo desde Hoteles.',
-    };
-  }
-
-  const permission = api<unknown>('/hotels/booking-permissions');
-  const outcomes = await Promise.all(
-    refs.map(async (ref): Promise<HotelRatesOutcome> => {
-      const body: Record<string, unknown> = {
-        hotelId: ref.hotelId,
-        provider: ref.provider,
-        checkinDate: parsed.checkinDate,
-        checkoutDate: parsed.checkoutDate,
-        rooms: parsed.rooms,
-      };
-      if (parsed.guestNationality !== undefined) body.guestNationality = parsed.guestNationality;
-      if (parsed.refundableOnly) body.refundableOnly = true;
-      // La moneda del listado: sin ella el detalle buscaría en la de la agencia (D-TBO-15).
-      if (parsed.currency !== undefined) body.currency = parsed.currency;
-      const res = await api<unknown>('/hotels/detail', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) return { ref, error: res.error.message };
-      if (!isOffer(res.data)) return { ref, error: 'La respuesta del proveedor llegó incompleta.' };
-      const environment = accountEnvironmentOf(res.data);
-      return environment === undefined
-        ? { ref, offer: res.data }
-        : { ref, offer: res.data, accountEnvironment: environment };
-    }),
-  );
-  const blocked = nonRefundableBlockedOf(await permission);
-  return {
-    ok: outcomes.some((o) => o.offer !== undefined),
-    outcomes,
-    receivedAt: Date.now(),
-    ...(blocked ? { nonRefundableBlocked: true } : {}),
-  };
-}
-
-/** `GET /hotels/booking-permissions`: sólo un `blocked` explícito marca las tarifas. */
-function nonRefundableBlockedOf(res: Awaited<ReturnType<typeof api<unknown>>>): boolean {
-  if (!res.ok || typeof res.data !== 'object' || res.data === null) return false;
-  const rates = (res.data as { nonRefundableRates?: unknown }).nonRefundableRates;
-  return (
-    typeof rates === 'object' &&
-    rates !== null &&
-    (rates as { effective?: unknown }).effective === 'blocked'
-  );
 }

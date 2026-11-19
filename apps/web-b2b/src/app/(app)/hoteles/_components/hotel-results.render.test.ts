@@ -1,5 +1,6 @@
 import { createElement, type ButtonHTMLAttributes } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { setStorageScope } from '../../../../lib/storage-scope';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HotelOffer, HotelProviderOutcome, HotelRoompack } from '../actions';
 import { encodeHotelKey, hotelRefsOf } from './hotel-key';
@@ -20,6 +21,15 @@ import { ResultsFiltersPanel } from './hotel-results-filters-panel';
 import { HotelResultsMap } from './hotel-results-map';
 import { detailLinkForOffer, type HotelDetailLink, type HotelStay } from './hotel-search-handoff';
 import { rememberRoomContent } from './use-room-content';
+
+/** La sesión de las pruebas: usuario + agencia, como lo fija el layout del panel. */
+const TEST_SCOPE = 'u-1.t-1';
+const SCOPED_RATE_KEY = `${RATE_SELECTION_STORAGE_KEY}:${TEST_SCOPE}`;
+
+function stubScopedWindow(localStorage: unknown): void {
+  vi.stubGlobal('window', { localStorage });
+  setStorageScope(TEST_SCOPE);
+}
 
 /*
  * La tarjeta y el panel de filtros en su primer pintado: lo que el vendedor no puede pasar por alto
@@ -54,6 +64,7 @@ vi.mock('../../../../components/ui/button', async () => {
 });
 
 afterEach(() => {
+  setStorageScope(undefined);
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   mocks.clicks.length = 0;
@@ -290,7 +301,7 @@ describe('HotelResultRates — Reservar desde la tarjeta', () => {
 
   it('el clic guarda la tarifa en "hoteles:tarifas" y va al checkout', () => {
     const storage = memoryStorage();
-    vi.stubGlobal('window', { localStorage: storage });
+    stubScopedWindow(storage);
 
     rates(TBO_HOTEL);
     expect(mocks.clicks).toHaveLength(2);
@@ -300,7 +311,7 @@ describe('HotelResultRates — Reservar desde la tarjeta', () => {
     const href = mocks.push.mock.calls[0]?.[0] as string;
     const token = /^\/hoteles\/checkout\?tarifa=([^&]+)$/.exec(href)?.[1];
     expect(token).toBeDefined();
-    const saved = parseRateSelections(storage.getItem(RATE_SELECTION_STORAGE_KEY))[token!];
+    const saved = parseRateSelections(storage.getItem(SCOPED_RATE_KEY))[token!];
     expect(saved).toMatchObject({
       reference: { providerCode: 'tbo-hotels', searchId: SEARCH_ID, offerRef: 'A-REF' },
       hotelKey: encodeHotelKey([{ provider: 'tbo-hotels', hotelId: '1' }]),
@@ -312,7 +323,7 @@ describe('HotelResultRates — Reservar desde la tarjeta', () => {
   });
 
   it('sin almacenamiento, avisa y se queda en la lista', () => {
-    vi.stubGlobal('window', { localStorage: memoryStorage({ failOnWrite: true }) });
+    stubScopedWindow(memoryStorage({ failOnWrite: true }));
 
     rates(TBO_HOTEL);
     mocks.clicks[0]!();

@@ -38,6 +38,12 @@ export class QuotationsService {
 
   async create(tenantId: string, userId: string, dto: CreateQuotationDto): Promise<QuotationRow> {
     return this.db.withTenant(tenantId, async (trx) => {
+      // MAX + 1 sin candado repetía número cuando dos vendedores cotizaban a la vez: los dos leían
+      // el mismo MAX. El lock por agencia (se suelta con la transacción) los pone en fila; el índice
+      // único de db/migrations/0097 rechaza un repetido si algún camino se lo saltara.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended('quote-number:' || ${tenantId}::uuid::text, 0))`.execute(
+        trx,
+      );
       const nextNumber = await trx
         .selectFrom('quotations')
         .select(sql<number>`COALESCE(MAX(quote_number), 0) + 1`.as('next'))

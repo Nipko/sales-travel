@@ -36,6 +36,11 @@ interface Itinerary {
   segments: Segment[];
   totalDurationMinutes: number;
   stops: number;
+  /**
+   * La franquicia de ESTE trayecto, si el proveedor la da por trayecto (Sabre). Espejo de
+   * `Itinerary.baggage` del canónico; ausente = vale `Offer.baggage`.
+   */
+  baggage?: Offer['baggage'];
 }
 
 export interface FareComponent {

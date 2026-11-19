@@ -142,7 +142,10 @@ export function fareAttributes(
 ): FareAttributes {
   const componentes = leg === undefined ? offerInclusions(offer) : legInclusions(offer, leg);
   if (componentes === null) {
-    const baggage = offer.baggage;
+    // Con trayecto elegido, su franquicia si el proveedor la da por trayecto: la de la oferta es lo
+    // que cumplen todos, y en una vuelta con más equipaje que la ida se quedaría corta.
+    const legBaggage = leg === undefined ? undefined : offer.itineraries?.[leg]?.baggage;
+    const baggage = legBaggage ?? offer.baggage;
     return {
       source: 'offer',
       personalItem: attrDeEquipaje(

@@ -17,6 +17,7 @@ import {
   type PassengerFill,
 } from '../../../../lib/customer-search';
 import { priceChangeQuestion } from './offer-price-flow';
+import { FALLBACK_DIAL_CODE, flightContactPhone } from '../../../../lib/contact-phone';
 import { CustomerSearchCombobox } from './customer-search-combobox';
 import {
   birthdateIssue,
@@ -56,7 +57,8 @@ export interface ReservationContact {
   email: string;
   phone: string;
   countryDialingCode: string;
-  areaCode: string;
+  /** No se pide: un celular no tiene código de área y LATAM lo trata como opcional. */
+  areaCode?: string;
 }
 
 type Passenger = ReservationPassenger;
@@ -74,6 +76,11 @@ interface PassengerFormProps {
   /** Contacto de la reserva: el email y el teléfono de «Facturación» (viven en la página). */
   contactEmail?: string;
   contactPhone?: string;
+  /**
+   * Prefijo del teléfono, sin `+` (`'51'`). Lo elige el vendedor en «Facturación» y arranca con el
+   * del país de la agencia; sin él se manda el de siempre (`57`).
+   */
+  contactDialCode?: string;
   /**
    * «Facturación», que va debajo de los pasajeros y antes del botón de reservar. Recibe si ya se
    * intentó reservar, para marcar lo que falta igual que en los pasajeros.
@@ -287,6 +294,7 @@ export function PassengerForm({
   paxCount,
   contactEmail,
   contactPhone,
+  contactDialCode,
   billingSection,
   billingProblems,
   saveToCrm,
@@ -464,9 +472,7 @@ export function PassengerForm({
     try {
       const contactInfo: ContactInfo = {
         email,
-        phone,
-        countryDialingCode: '57',
-        areaCode: '1',
+        ...flightContactPhone(contactDialCode ?? FALLBACK_DIAL_CODE, phone),
       };
       await onSubmit(
         passengers.map(sinCamposEnBlanco),

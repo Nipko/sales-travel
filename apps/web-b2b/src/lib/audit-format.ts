@@ -210,6 +210,7 @@ const OPERATION_LABELS: Readonly<Record<string, string>> = {
   CarReservationConfirmed: 'La arrendadora confirmó la reserva de auto',
   CarReservationCancelled: 'La reserva de auto se canceló en AgentCars',
   CarReservationRejected: 'La arrendadora rechazó la reserva de auto',
+  CarReservationUnrecorded: 'Reserva de auto sin orden en Reservas',
   'platform.order.viewed': 'El superadmin abrió la reserva',
   // Los proveedores.
   ProviderBookingUnmatched: 'Reserva del proveedor sin orden',
