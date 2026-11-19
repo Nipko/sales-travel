@@ -50,7 +50,7 @@ const USER_A = '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed';
 const USER_B = '6ec0bd7f-11c0-43da-975e-2a8ad9ebae0b';
 const AGENCY_1 = '11111111-1111-4111-8111-111111111111';
 const AGENCY_2 = '22222222-2222-4222-8222-222222222222';
-const TOKEN = '6f1c2b9e-1d2a-4c3b-9e8f-0a1b2c3d4e5f';
+const SEARCH = 'busqueda-de-prueba-1';
 
 const HANDOFF: SearchHandoff = {
   stay: {
@@ -89,13 +89,13 @@ describe('búsquedas y tarifas de hoteles con alcance (H6)', () => {
   it('otro usuario u otra agencia en el mismo navegador no ve lo guardado', () => {
     inBrowser(memoryStorage());
     setStorageScope(storageScopeOf(USER_A, AGENCY_1));
-    saveSearchHandoff(TOKEN, HANDOFF);
-    expect(readSearchHandoff(TOKEN)?.stay.guestNationality).toBe('CO');
+    saveSearchHandoff(SEARCH, HANDOFF);
+    expect(readSearchHandoff(SEARCH)?.stay.guestNationality).toBe('CO');
 
     setStorageScope(storageScopeOf(USER_B, AGENCY_1));
-    expect(readSearchHandoff(TOKEN)).toBeUndefined();
+    expect(readSearchHandoff(SEARCH)).toBeUndefined();
     setStorageScope(storageScopeOf(USER_A, AGENCY_2));
-    expect(readSearchHandoff(TOKEN)).toBeUndefined();
+    expect(readSearchHandoff(SEARCH)).toBeUndefined();
   });
 
   it('al guardar se borra lo de otra sesión y la clave vieja sin alcance', () => {
@@ -105,7 +105,7 @@ describe('búsquedas y tarifas de hoteles con alcance (H6)', () => {
     storage.setItem('tema', 'oscuro');
 
     setStorageScope(storageScopeOf(USER_A, AGENCY_1));
-    saveSearchHandoff(TOKEN, HANDOFF);
+    saveSearchHandoff(SEARCH, HANDOFF);
 
     expect(storage.getItem('hoteles:busquedas')).toBeNull();
     expect(storage.getItem(`hoteles:busquedas:${USER_B}.${AGENCY_1}`)).toBeNull();
@@ -115,17 +115,17 @@ describe('búsquedas y tarifas de hoteles con alcance (H6)', () => {
 
   it('sin alcance no se guarda ni se lee: la tarifa no se puede llevar al checkout', () => {
     const storage = inBrowser(memoryStorage());
-    saveSearchHandoff(TOKEN, HANDOFF);
+    saveSearchHandoff(SEARCH, HANDOFF);
     expect(storage.length).toBe(0);
-    expect(saveRateSelection(TOKEN, {} as RateSelection)).toBe(false);
-    expect(readRateSelection(TOKEN)).toBeUndefined();
+    expect(saveRateSelection(SEARCH, {} as RateSelection)).toBe(false);
+    expect(readRateSelection(SEARCH)).toBeUndefined();
   });
 
   it('con el almacenamiento bloqueado nada tira', () => {
     inBrowser(memoryStorage({ throwing: true }));
     setStorageScope(storageScopeOf(USER_A, AGENCY_1));
-    expect(() => saveSearchHandoff(TOKEN, HANDOFF)).not.toThrow();
-    expect(readSearchHandoff(TOKEN)).toBeUndefined();
+    expect(() => saveSearchHandoff(SEARCH, HANDOFF)).not.toThrow();
+    expect(readSearchHandoff(SEARCH)).toBeUndefined();
     expect(() => forgetScopedStorage()).not.toThrow();
   });
 });
