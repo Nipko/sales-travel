@@ -1,4 +1,9 @@
 import { isCountryAlpha2 } from '../../../../lib/countries';
+import {
+  forgetScopedStorage,
+  scopedStorageKey,
+  type ScopedStorageBase,
+} from '../../../../lib/storage-scope';
 import type { HotelOffer, HotelSearchCriteriaView, RoomDistribution } from '../actions';
 import { encodeHotelKey, hotelRefsOf } from './hotel-key';
 import { isCurrencyCode } from './search-currency';
@@ -43,7 +48,7 @@ export interface SearchHandoff {
   readonly savedAt: number;
 }
 
-export const HANDOFF_STORAGE_KEY = 'hoteles:busquedas';
+export const HANDOFF_STORAGE_KEY = 'hoteles:busquedas' satisfies ScopedStorageBase;
 /** Una jornada de trabajo: más tarde, la divulgación guardada puede no ser la vigente. */
 export const HANDOFF_TTL_MS = 8 * 60 * 60_000;
 /** Las búsquedas más recientes que se recuerdan; las demás se olvidan. */
@@ -184,20 +189,30 @@ export function newSearchToken(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-/** Guarda una búsqueda para los detalles que se abran desde ella. Sin almacenamiento, nada. */
+/**
+ * Guarda una búsqueda para los detalles que se abran desde ella, con el alcance de la sesión
+ * (usuario + agencia, `lib/storage-scope.ts`). Sin almacenamiento o sin alcance, nada. Lo que haya
+ * dejado otra sesión en este navegador se borra: ya no es de nadie que esté adentro.
+ */
 export function saveSearchHandoff(token: string, handoff: SearchHandoff): void {
+  const key = scopedStorageKey(HANDOFF_STORAGE_KEY);
+  if (key === undefined) return;
   try {
-    const entries = parseHandoffs(window.localStorage.getItem(HANDOFF_STORAGE_KEY));
+    forgetScopedStorage([HANDOFF_STORAGE_KEY], key);
+    const entries = parseHandoffs(window.localStorage.getItem(key));
     const next = withHandoff(entries, token, handoff, Date.now());
-    window.localStorage.setItem(HANDOFF_STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.setItem(key, JSON.stringify(next));
   } catch {
     // Almacenamiento bloqueado o lleno: el detalle pedirá volver a buscar.
   }
 }
 
+/** La búsqueda guardada por ESTA sesión; la de otro usuario o agencia no se ve. */
 export function readSearchHandoff(token: string): SearchHandoff | undefined {
+  const key = scopedStorageKey(HANDOFF_STORAGE_KEY);
+  if (key === undefined) return undefined;
   try {
-    const entries = parseHandoffs(window.localStorage.getItem(HANDOFF_STORAGE_KEY));
+    const entries = parseHandoffs(window.localStorage.getItem(key));
     return handoffFor(entries, token, Date.now());
   } catch {
     return undefined;

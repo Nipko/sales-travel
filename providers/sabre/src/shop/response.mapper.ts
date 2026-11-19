@@ -4,6 +4,8 @@ import {
   OfferSchema,
   PaxTypeSchema,
   SegmentSchema,
+  type Baggage,
+  type BaggageAllowance,
   type CabinClass,
   type FareBreakdownEntry,
   type FareComponent,
@@ -275,6 +277,11 @@ const SabrePassengerInfoSchema = z.object({
       z.object({
         provisionType: z.string().optional(),
         allowance: z.object({ ref: z.number() }).optional(),
+        /**
+         * A qué segmentos aplica: índice desde 0 a lo largo de TODOS los tramos del itinerario
+         * (`v5.yml:2639`). Sin leerlo, la franquicia de la ida se pintaba también en la vuelta.
+         */
+        segments: z.array(z.object({ id: z.number().int().nonnegative() })).optional(),
       }),
     )
     .optional(),
@@ -720,20 +727,20 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
   const fareComponents = resolveFareComponents(passengers, dicts);
   const fareFamily = resolveFareFamily(pricing, itineraries, fareComponents, passengers, dicts);
 
-  // La franquicia FACTURADA, que es la única que el carril ATPCO informa.
+  // Equipaje por trayecto: la facturada (`A`) y la de mano (`B`), del adulto y por segmento.
+  // La oferta promete lo que cumplen TODOS los trayectos; cada trayecto lleva la suya.
   //
-  // Antes esto sólo emitía un warning y se descartaba: `Offer.baggage` exigía `personalItem` y
-  // `carryOn`, y rellenarlos con cero para cumplir la forma habría afirmado que el billete no
-  // lleva equipaje de mano —falso en casi cualquier tarifa—. Ahora los tres son opcionales, así
-  // que se publica lo que se sabe y se calla lo que no: `carryOn` y `personalItem` quedan
-  // AUSENTES, que significa «el proveedor no lo informó», no «no incluye».
-  //
-  // El warning se mantiene, con el código honesto: la franquicia de mano sigue sin mapearse y
-  // completarla exige decodificar `utaDescs`/`baggageChargeDescs` (docs/sabre/02 §7.4).
-  const checked = resolveCheckedBaggage(passengers, dicts);
-  if (checked !== null) {
+  // Lo que el proveedor no informó queda AUSENTE, no en cero: un `carryOn: 0` afirmaría que el
+  // billete no lleva equipaje de mano, falso en casi cualquier tarifa. `personalItem` no lo trae
+  // ATPCO. El warning se mantiene mientras falte la de mano (docs/sabre/02 §7.4).
+  const baggage = resolveBaggage(passengers, itineraries, dicts);
+  if (baggage.offer?.checked !== undefined && baggage.offer.carryOn === undefined) {
     warnings.push({ code: 'baggage-not-mapped', path, detail: 'sólo franquicia facturada' });
   }
+  const itinerariesWithBaggage = itineraries.map((leg, i) => {
+    const legBaggage = baggage.legs[i];
+    return legBaggage === undefined ? leg : { ...leg, baggage: legBaggage };
+  });
 
   const candidate = {
     id: randomUUID(),
@@ -750,10 +757,10 @@ function mapPricingInformation(args: MapPricingArgs): Offer | null {
     taxes,
     ...(fees === null ? {} : { fees }),
     ...(fareBreakdown.length === 0 ? {} : { fareBreakdown }),
-    itineraries,
+    itineraries: itinerariesWithBaggage,
     ...(fareFamily === null ? {} : { fareFamily }),
     ...(fareComponents.length === 0 ? {} : { fareComponents }),
-    ...(checked === null ? {} : { baggage: { checked } }),
+    ...(baggage.offer === undefined ? {} : { baggage: baggage.offer }),
     ...(policies === null ? {} : { policies }),
     fetchedAt: args.fetchedAt,
     expiresAt: expiry.expiresAt,
@@ -1720,38 +1727,137 @@ function buildProviderRaw(
 }
 
 /**
- * La franquicia facturada del ADULTO, o `null` si el proveedor no la informó.
+ * Qué tipo de franquicia es cada `provisionType` de Sabre: `A` la facturada incluida, `B` la de
+ * mano incluida (la pide `CarryOnInfo: true`, ver `SABRE_BAGGAGE_REQUEST`). El resto (`C`, `CC`,
+ * `E`, `EE`, `P`) son cargos y embargos: no son «lo que lleva incluido».
+ */
+const ALLOWANCE_PROVISION: Readonly<Record<string, 'checked' | 'carryOn'>> = {
+  A: 'checked',
+  B: 'carryOn',
+};
+
+interface ResolvedBaggage {
+  /** Lo que cumplen todos los trayectos; `undefined` si no se sabe nada de ninguna pieza. */
+  readonly offer: Baggage | undefined;
+  /** Por trayecto, en el orden de `itineraries`; `undefined` donde no se informó. */
+  readonly legs: readonly (Baggage | undefined)[];
+}
+
+/**
+ * La franquicia del ADULTO por trayecto, y la de la oferta.
  *
- * `provisionType: 'A'` es la franquicia incluida en la tarifa; el resto de tipos son cargos y
- * servicios, que no son «lo que llevás incluido».
+ * Antes se tomaba la primera entrada `A` del primer pasajero: en una ida y vuelta con LIGHT de ida
+ * y FULL de vuelta, la vuelta mostraba la de la ida, y con un niño delante del adulto salía la del
+ * niño. Ahora:
+ *
+ * - el pasajero es el primer `ADT` (si no hay, el primero que informa equipaje): la franquicia que
+ *   se vende es la del adulto;
+ * - cada entrada aplica a los segmentos que declara (`segments[].id`, aplanados sobre los
+ *   trayectos); una entrada sin segmentos aplica a todos, como antes;
+ * - un trayecto tiene franquicia sólo si TODOS sus segmentos la informan, y es la menor de ellos;
+ * - la oferta, igual sobre los trayectos: se promete lo que se cumple de punta a punta.
  *
  * El peso sólo se publica cuando la unidad es kilos. `unit` también puede venir en libras, y
  * copiar el número a un campo llamado `weightKg` convertiría 50 lb en «50 kg» — el doble de lo
  * que la aerolínea permite, en un dato que el vendedor le lee al cliente.
  */
-function resolveCheckedBaggage(
+function resolveBaggage(
   passengers: readonly SabrePassengerInfo[],
+  itineraries: readonly Itinerary[],
   dicts: Dictionaries,
-): { qty: number; weightKg?: number } | null {
-  for (const info of passengers) {
-    for (const bag of info.baggageInformation ?? []) {
-      if (bag.provisionType !== 'A' || bag.allowance === undefined) continue;
-      const desc = dicts.baggage.get(bag.allowance.ref);
-      if (desc === undefined) continue;
+): ResolvedBaggage {
+  const adult =
+    passengers.find((info) => (info.passengerType ?? '').toUpperCase() === 'ADT') ??
+    passengers.find((info) => (info.baggageInformation ?? []).length > 0);
 
-      const kilos = (desc.unit ?? '').trim().toUpperCase().startsWith('K');
-      // Una franquicia por PESO no declara piezas: `pieceCount` ausente con peso presente es
-      // «una pieza de N kg», que es como la venden las aerolíneas de la región.
-      const qty = desc.pieceCount ?? (desc.weight === undefined ? undefined : 1);
-      if (qty === undefined) continue;
+  const legOfSegment: number[] = [];
+  itineraries.forEach((leg, legIndex) => {
+    for (let i = 0; i < leg.segments.length; i += 1) legOfSegment.push(legIndex);
+  });
+  const segmentCount = legOfSegment.length;
 
-      return {
-        qty,
-        ...(kilos && desc.weight !== undefined ? { weightKg: desc.weight } : {}),
-      };
+  // Por pieza, la franquicia de cada segmento (índice aplanado).
+  const perSegment: Record<'checked' | 'carryOn', (BaggageAllowance | undefined)[]> = {
+    checked: new Array<BaggageAllowance | undefined>(segmentCount).fill(undefined),
+    carryOn: new Array<BaggageAllowance | undefined>(segmentCount).fill(undefined),
+  };
+  for (const bag of adult?.baggageInformation ?? []) {
+    const piece = ALLOWANCE_PROVISION[bag.provisionType ?? ''];
+    if (piece === undefined || bag.allowance === undefined) continue;
+    const desc = dicts.baggage.get(bag.allowance.ref);
+    if (desc === undefined) continue;
+    const allowance = allowanceOf(desc);
+    if (allowance === null) continue;
+
+    const ids =
+      bag.segments === undefined || bag.segments.length === 0
+        ? legOfSegment.map((_, i) => i)
+        : bag.segments.map((segment) => segment.id).filter((id) => id < segmentCount);
+    for (const id of ids) {
+      const current = perSegment[piece][id];
+      perSegment[piece][id] =
+        current === undefined ? allowance : lesserAllowance(current, allowance);
     }
   }
-  return null;
+
+  const legs = itineraries.map((_, legIndex) => {
+    const segmentsOfLeg = legOfSegment
+      .map((leg, id) => (leg === legIndex ? id : -1))
+      .filter((id) => id >= 0);
+    return baggageOf(
+      leastOf(segmentsOfLeg.map((id) => perSegment.checked[id])),
+      leastOf(segmentsOfLeg.map((id) => perSegment.carryOn[id])),
+    );
+  });
+
+  const offer = baggageOf(
+    leastOf(legs.map((leg) => leg?.checked)),
+    leastOf(legs.map((leg) => leg?.carryOn)),
+  );
+  return { offer, legs };
+}
+
+function allowanceOf(
+  desc: z.infer<typeof SabreBaggageAllowanceDescSchema>,
+): BaggageAllowance | null {
+  const kilos = (desc.unit ?? '').trim().toUpperCase().startsWith('K');
+  // Una franquicia por PESO no declara piezas: `pieceCount` ausente con peso presente es «una
+  // pieza de N kg», que es como la venden las aerolíneas de la región.
+  const qty = desc.pieceCount ?? (desc.weight === undefined ? undefined : 1);
+  if (qty === undefined) return null;
+  return { qty, ...(kilos && desc.weight !== undefined ? { weightKg: desc.weight } : {}) };
+}
+
+/**
+ * La menor de dos franquicias: menos piezas; con las mismas piezas, menos kilos. Si una no dice
+ * kilos, el resultado tampoco: no se promete un peso que uno de los tramos no confirma.
+ */
+function lesserAllowance(a: BaggageAllowance, b: BaggageAllowance): BaggageAllowance {
+  if (a.qty !== b.qty) return a.qty < b.qty ? a : b;
+  if (a.weightKg === undefined || b.weightKg === undefined) return { qty: a.qty };
+  return a.weightKg <= b.weightKg ? a : b;
+}
+
+/** La menor de todas, o `undefined` si alguna falta: un tramo que no la informa deja el total sin saber. */
+function leastOf(values: readonly (BaggageAllowance | undefined)[]): BaggageAllowance | undefined {
+  if (values.length === 0) return undefined;
+  let least: BaggageAllowance | undefined;
+  for (const value of values) {
+    if (value === undefined) return undefined;
+    least = least === undefined ? value : lesserAllowance(least, value);
+  }
+  return least;
+}
+
+function baggageOf(
+  checked: BaggageAllowance | undefined,
+  carryOn: BaggageAllowance | undefined,
+): Baggage | undefined {
+  if (checked === undefined && carryOn === undefined) return undefined;
+  return {
+    ...(carryOn === undefined ? {} : { carryOn }),
+    ...(checked === undefined ? {} : { checked }),
+  };
 }
 
 // ---------------------------------------------------------------------------

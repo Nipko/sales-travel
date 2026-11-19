@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import { agencyOptions, parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
 import { getActiveTenant, getRequestedPath } from '../../lib/session';
+import { storageScopeOf } from '../../lib/storage-scope';
 import { viewerOf } from '../../lib/viewer';
 import { AppShell, BrandStyle } from '../../components/layout/app-shell';
 import { SalesGate } from '../../components/layout/sales-gate';
@@ -15,6 +16,7 @@ import { StepUpProvider } from '../../components/step-up-dialog';
 import { MfaEnrollmentGate } from './configuracion/seguridad/_components/mfa-enrollment-gate';
 
 interface MeResponse {
+  id?: string;
   email?: string;
   /** El nombre visible (Mi cuenta → Perfil). Se lee en cada render: un cambio se ve al instante. */
   name?: string | null;
@@ -106,6 +108,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       viewer={viewer}
       session={session}
       agencies={agencies}
+      storageScope={storageScopeOf(meRes.ok ? meRes.data.id : undefined, activeTenantId)}
     >
       {showVerifyBanner && <VerifyBanner />}
       <SalesGate>{children}</SalesGate>

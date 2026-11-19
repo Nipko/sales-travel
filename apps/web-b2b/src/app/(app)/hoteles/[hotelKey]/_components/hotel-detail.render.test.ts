@@ -196,6 +196,7 @@ function detailRates(
   extra: Partial<HotelDetailRatesResult> = {},
   roomContent?: RoomContentState,
   stay: HotelStay = STAY,
+  progress: { pendingProviders?: number; stale?: boolean } = {},
 ): string {
   return renderToStaticMarkup(
     createElement(HotelDetailRates, {
@@ -217,9 +218,46 @@ function detailRates(
       facts: new Map(),
       shownFacts: { name: 'Hotel Plaza' },
       ...(roomContent === undefined ? {} : { roomContent }),
+      ...progress,
     }),
   );
 }
+
+describe('HotelDetailRates — cada proveedor apenas llega', () => {
+  it('con otro proveedor pendiente, las tarifas se ven y una línea dice que falta uno', () => {
+    const html = detailRates([tarifa('A', 400_00, 'Doble')], {}, undefined, STAY, {
+      pendingProviders: 1,
+    });
+    expect(html).toContain('Buscando tarifas en un proveedor más…');
+    expect(html).toMatch(/>Reservar</);
+    // Lo que ya llegó no se atenúa por lo que falta.
+    expect(html).not.toContain('opacity-60');
+    expect(
+      detailRates([tarifa('A', 400_00, 'Doble')], {}, undefined, STAY, { pendingProviders: 2 }),
+    ).toContain('Buscando tarifas en 2 proveedores más…');
+  });
+
+  it('«ninguna es reembolsable» se dice recién cuando respondieron todos', () => {
+    const packs = [tarifa('A', 400_00, 'Doble', NO_REEMBOLSABLE)];
+    expect(detailRates(packs, {}, undefined, STAY, { pendingProviders: 1 })).not.toContain(
+      'no tiene tarifas reembolsables',
+    );
+    expect(detailRates(packs)).toContain('no tiene tarifas reembolsables');
+  });
+
+  it('el que respondió sin tarifas no hace decir «sin disponibilidad» mientras falta otro', () => {
+    const html = detailRates([], {}, undefined, STAY, { pendingProviders: 1 });
+    expect(html).not.toContain('no tiene disponibilidad');
+    expect(html).toContain('Buscando tarifas');
+    expect(detailRates([])).toContain('no tiene disponibilidad');
+  });
+
+  it('las de la consulta anterior se atenúan mientras no responde nadie', () => {
+    expect(
+      detailRates([tarifa('A', 400_00, 'Doble')], {}, undefined, STAY, { stale: true }),
+    ).toContain('opacity-60');
+  });
+});
 
 describe('HotelDetailRates — por tipo de habitación', () => {
   it('cuenta tipos y tarifas, y cada tipo es una sección con su h3 bajo «Tarifas»', () => {

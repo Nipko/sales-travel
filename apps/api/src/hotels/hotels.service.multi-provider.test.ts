@@ -33,6 +33,7 @@ import {
   HotelOperationUnavailableError,
   HotelProviderCapabilityError,
 } from './hotel-provider-errors.js';
+import { HOTEL_SEARCH_WAVE_DEADLINE_MS } from './hotel-search-deadline.js';
 import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import type { HotelAvailabilityInput } from './hotels.schemas.js';
 import { HotelsService } from './hotels.service.js';
@@ -1034,5 +1035,90 @@ describe('entorno de la cuenta — la web avisa las tarifas de una cuenta de pru
 
     const res = await b.service.getHotelDetail(TENANT, { ...detalle, provider: STUB });
     expect(res).not.toHaveProperty('accountEnvironment');
+  });
+});
+
+describe('búsqueda combinada — plazo por ola (auditoría 19 §4.2)', () => {
+  const PLAZO_MS = 30;
+
+  /** Un proveedor que responde cuando el test lo dice: TBO colgado hasta su timeout. */
+  function colgado() {
+    let soltar!: (offers: HotelOffer[]) => void;
+    let tirar!: (err: Error) => void;
+    const respuesta = new Promise<HotelOffer[]>((resolve, reject) => {
+      soltar = resolve;
+      tirar = reject;
+    });
+    return { respuesta, soltar, tirar };
+  }
+
+  function conPlazo(b: Banco, ms = PLAZO_MS): Banco {
+    (b.service as unknown as { waveDeadlineMs: number }).waveDeadlineMs = ms;
+    return b;
+  }
+
+  it('el plazo por defecto está entre 6 y 8 s', () => {
+    expect(HOTEL_SEARCH_WAVE_DEADLINE_MS).toBeGreaterThanOrEqual(6_000);
+    expect(HOTEL_SEARCH_WAVE_DEADLINE_MS).toBeLessThanOrEqual(8_000);
+  });
+
+  it('un proveedor colgado no frena la búsqueda: sale `error` y los demás se muestran', async () => {
+    const lento = colgado();
+    const b = conPlazo(banco({ stubs: [stub({ searchImpl: () => lento.respuesta })] }));
+
+    const res = await b.service.searchAvailability(TENANT, entrada());
+
+    expect(proveedoresDe(res.hotels)).toEqual([DESPEGAR]);
+    expect(parteDe(res.providers, DESPEGAR).status).toBe('ok');
+    expect(parteDe(res.providers, STUB)).toMatchObject({ status: 'error', count: 0 });
+    expect(parteDe(res.providers, STUB).reason).toMatch(/^No respondió en \d+ s/);
+    // La telemetría dice lo que esperó la búsqueda, no 0.
+    expect(b.filas[0]?.find((f) => f.providerCode === STUB)).toMatchObject({
+      outcome: 'error',
+      durationMs: PLAZO_MS,
+    });
+    lento.soltar([]);
+  });
+
+  it('el plazo no suma al breaker: cuenta lo que pasa de verdad con la llamada, una vez', async () => {
+    const lento = colgado();
+    const b = conPlazo(banco({ stubs: [stub({ searchImpl: () => lento.respuesta })] }));
+
+    await b.service.searchAvailability(TENANT, entrada());
+    expect(b.breaker.snapshot()[STUB]?.failures ?? 0).toBe(0);
+
+    // La llamada sigue por detrás y termina en el timeout del cliente HTTP: ése es el fallo.
+    lento.tirar(new Error('timeout del cliente'));
+    await vi.waitFor(() => expect(b.breaker.snapshot()[STUB]?.failures).toBe(1));
+  });
+
+  it('un proveedor lento pero vivo deja el circuito cerrado', async () => {
+    const lento = colgado();
+    const b = conPlazo(banco({ stubs: [stub({ searchImpl: () => lento.respuesta })] }));
+
+    await b.service.searchAvailability(TENANT, entrada());
+    lento.soltar([stubHotelOffer(STUB)]);
+    await vi.waitFor(() =>
+      expect(b.breaker.snapshot()[STUB]).toEqual({ state: 'closed', failures: 0 }),
+    );
+  });
+
+  it('con todos colgados, 502 como cuando fallan todos', async () => {
+    const lento = colgado();
+    const b = conPlazo(banco({ stubs: [stub({ searchImpl: () => lento.respuesta })] }));
+    b.despegar.searchAvailability.mockReturnValue(new Promise<never>(() => undefined));
+
+    const err = await b.service.searchAvailability(TENANT, entrada()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AllHotelProvidersFailedError);
+    lento.soltar([]);
+  });
+
+  it('quien responde dentro del plazo sale igual que siempre', async () => {
+    const b = conPlazo(banco({ stubs: [stub()] }), 5_000);
+    const res = await b.service.searchAvailability(TENANT, entrada());
+    expect(res.providers).toEqual([
+      { code: DESPEGAR, status: 'ok', count: 3 },
+      { code: STUB, status: 'ok', count: 1 },
+    ]);
   });
 });
