@@ -40,6 +40,7 @@ import {
   continueGate,
   priceChangeView,
   roomAmenitiesView,
+  prebookWarningsView,
   signalsView,
   type AcceptedPrebook,
 } from './prebook-view';
@@ -342,6 +343,7 @@ function PrebookReady({
     [prebook, selection.shownSale],
   );
   const signals = useMemo(() => signalsView(prebook.signals), [prebook.signals]);
+  const warnings = useMemo(() => prebookWarningsView(prebook), [prebook]);
   const funding = useMemo(() => fundingNotice(prebook.funding), [prebook.funding]);
   const agencyContact = agencyContactNotice(prebook.bookingReadiness);
   const amenities = useMemo(() => roomAmenitiesView(prebook), [prebook]);
@@ -392,6 +394,7 @@ function PrebookReady({
         />
       ) : null}
       <RateSignalsNotice view={signals} hotelLink={hotelLink} />
+      <RateSignalsNotice view={warnings} hotelLink={hotelLink} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-5">

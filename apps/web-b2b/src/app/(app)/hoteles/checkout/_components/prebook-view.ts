@@ -90,6 +90,32 @@ export interface HotelPrebook {
    * el orden de `roompack.rooms`, como los informa el proveedor. Sólo se muestran: no deciden nada.
    */
   readonly roomAmenities?: readonly (readonly string[])[];
+  /**
+   * Los avisos del PreBook que la pantalla sabe explicar (`PREBOOK_WARNINGS`), sin repetir. Los
+   * técnicos no pasan (G3): un aviso que no se entiende no ayuda al vendedor. Ausente si no hay.
+   */
+  readonly warnings?: readonly PrebookWarning[];
+}
+
+/**
+ * Avisos del PreBook que el checkout explica antes de cargar los huéspedes.
+ *
+ * - `prebook-account-currency-differs`: el proveedor revalidó en la moneda de la CUENTA (Despegar
+ *   cotiza el prebook en la moneda contratada, p. ej. USD) y no en la de la búsqueda (p. ej. COP).
+ *   El API se queda con el total de la búsqueda y no puede comparar los dos: el precio que se ve no
+ *   quedó reconfirmado y lo que cobre el proveedor puede moverse con el tipo de cambio.
+ */
+export const PREBOOK_WARNINGS = ['prebook-account-currency-differs'] as const;
+export type PrebookWarning = (typeof PREBOOK_WARNINGS)[number];
+
+const KNOWN_WARNINGS: ReadonlySet<string> = new Set(PREBOOK_WARNINGS);
+
+function warningsOf(value: unknown): PrebookWarning[] {
+  if (!Array.isArray(value)) return [];
+  const known = value.filter(
+    (w): w is PrebookWarning => typeof w === 'string' && KNOWN_WARNINGS.has(w),
+  );
+  return [...new Set(known)];
 }
 
 // ───────────────────────── Lectura de la respuesta ─────────────────────────
@@ -260,6 +286,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
   const environment = value['providerEnvironment'];
   const bookingReadiness = readinessOf(value['bookingReadiness']);
   const roomAmenities = roomAmenitiesOf(value['roomAmenities'], roompack.rooms.length);
+  const warnings = warningsOf(value['warnings']);
   return {
     prebookRef,
     providerCode,
@@ -281,6 +308,7 @@ export function parsePrebook(value: unknown): HotelPrebook | undefined {
       : {}),
     ...(bookingReadiness === undefined ? {} : { bookingReadiness }),
     ...(roomAmenities === undefined ? {} : { roomAmenities }),
+    ...(warnings.length === 0 ? {} : { warnings }),
   };
 }
 
@@ -486,6 +514,30 @@ export function signalsView(signals: readonly string[]): SignalsView {
     .map((code) => ({ code, ...(SIGNAL_NOTICES[code] ?? UNKNOWN_SIGNAL) }))
     .sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'danger' ? -1 : 1));
   return { blocking: signals.includes('PACKAGE_WITH_FLIGHT_ONLY'), notices };
+}
+
+// ───────────────────────── Avisos del PreBook ─────────────────────────
+
+/**
+ * Los avisos del PreBook como notas de arriba, junto a las señales. Ninguno bloquea: el vendedor
+ * decide con la información a la vista. No nombran al proveedor: la agencia puede tenerlo oculto.
+ */
+export function prebookWarningsView(
+  prebook: Pick<HotelPrebook, 'warnings' | 'roompack'>,
+): SignalsView {
+  const currency = prebook.roompack.price.total.currency;
+  const notices = (prebook.warnings ?? []).map((code): SignalNotice => {
+    switch (code) {
+      case 'prebook-account-currency-differs':
+        return {
+          code,
+          tone: 'warning',
+          title: `El proveedor revalidó esta tarifa en otra moneda, no en ${currency}.`,
+          detail: `Cotizó en la moneda de tu cuenta con el proveedor. El precio en ${currency} es el de la búsqueda y no quedó reconfirmado: lo que te cobre el proveedor puede variar por el tipo de cambio.`,
+        };
+    }
+  });
+  return { blocking: false, notices };
 }
 
 // ───────────────────────── Vencimiento (RF-09) ─────────────────────────
