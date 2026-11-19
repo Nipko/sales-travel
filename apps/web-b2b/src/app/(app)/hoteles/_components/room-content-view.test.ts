@@ -192,7 +192,7 @@ describe('parseRoomContent', () => {
 describe('parseRoomContentReply', () => {
   it('sólo los proveedores que dan contenido; cada uno por el lector', () => {
     const reply = parseRoomContentReply({
-      byProvider: { 'tbo-hotels': ready([habitacion()]), 'hotelbeds': ready([habitacion()]) },
+      byProvider: { 'tbo-hotels': ready([habitacion()]), hotelbeds: ready([habitacion()]) },
     });
     expect(Object.keys(reply?.byProvider ?? {})).toEqual(['tbo-hotels']);
     expect(reply?.byProvider['tbo-hotels']?.status).toBe('ready');
