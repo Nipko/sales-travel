@@ -21,7 +21,12 @@ import {
   type UnavailableProvider,
 } from '../providers/provider.types.js';
 import { isTestOffer, stampProviderEnvironment } from '../providers/provider-environment.js';
-import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
+import {
+  PricingService,
+  applyCascade,
+  rulesForCurrency,
+  toTenantView,
+} from '../pricing/pricing.service.js';
 import { CircuitBreakerService } from './circuit-breaker.service.js';
 import { SearchTelemetryService, type ProviderSearchSlice } from './search-telemetry.service.js';
 import { SEARCH_CACHE } from './search-cache.adapter.js';
@@ -834,19 +839,5 @@ export class SearchService {
   }
 }
 
-/**
- * Las reglas que valen para una oferta en esta moneda.
- *
- * Un markup `fixed` está escrito en minor units de la moneda de la agencia y la regla no guarda
- * la moneda: sumar «20.000» de un markup en COP a una tarifa en BRL serían 20.000 reales. Sólo
- * pasa con las tarifas en otra moneda que el superadmin habilitó para pruebas
- * ({@link SaleCurrencyPolicy}); a esas se les aplican sólo los porcentajes, que no tienen unidad.
- */
-export function rulesForCurrency<R extends { ruleType: string }>(
-  rules: readonly R[],
-  offerCurrency: string,
-  homeCurrency: string | undefined,
-): R[] {
-  if (homeCurrency === undefined || offerCurrency === homeCurrency) return [...rules];
-  return rules.filter((r) => r.ruleType === 'percentage');
-}
+// Vive en pricing: también la usa la creación de la orden, no sólo la búsqueda.
+export { rulesForCurrency };
