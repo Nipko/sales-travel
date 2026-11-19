@@ -10,7 +10,7 @@ import { proxyHotelRooms, roomContentLang } from './hotel-rooms-proxy';
  */
 
 const TBO = { provider: 'tbo-hotels', hotelId: '1402689' };
-const DESPEGAR = { provider: 'despegar-hotels', hotelId: '555' };
+const DESPEGAR = { provider: 'hotelbeds', hotelId: '555' };
 const KEY = encodeHotelKey([DESPEGAR, TBO]) ?? '';
 const PHOTO = '/api/hotels/images/aHR0cHM6Ly93d3cudGJvaG9saWRheXMuY29tL3IuanBn';
 

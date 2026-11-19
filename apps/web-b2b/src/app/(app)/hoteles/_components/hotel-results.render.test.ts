@@ -754,7 +754,7 @@ describe('HotelResultRates — fotos, tamaño y descripción de cada tipo', () =
   });
 
   it('un hotel sin proveedor que dé contenido queda como siempre: el icono de la cama', () => {
-    const html = rates(hotelConFotos('fotos-3', 'despegar-hotels'));
+    const html = rates(hotelConFotos('fotos-3', 'hotelbeds'));
     expect(html).toContain('lucide-bed-double');
     expect(html).not.toContain('data-room-photo-skeleton');
   });

@@ -181,6 +181,7 @@ describe('PassengerForm — sólo lo necesario', () => {
       onSaveToCrmChange?: (v: boolean) => void;
       saveToCrm?: boolean;
       billingSection?: (state: { attempted: boolean }) => ReactNode;
+      submitRef?: { current: ((acceptNewPrice?: boolean) => void) | null };
     } = {},
   ): string {
     return renderToStaticMarkup(
@@ -256,6 +257,16 @@ describe('PassengerForm — sólo lo necesario', () => {
     expect(html).toContain('El precio cambió a USD 1.250,00. ¿Reservar con el nuevo precio?');
     expect(html).toMatch(/<button[^>]*>.*Reservar con el nuevo precio<\/button>/);
     expect(html).not.toMatch(/>Reservar<\/button>/);
+  });
+
+  it('con el botón fijo de la página no repite «Reservar» al final del formulario', () => {
+    const html = render({ submitRef: { current: null } });
+    expect(html).not.toMatch(/>Reservar<\/button>/);
+    expect(html).not.toContain('checkout-reservar');
+    const changed = render({ submitRef: { current: null }, priceChangeTotal: 'USD 1.250,00' });
+    expect(changed).toContain('El precio cambió a USD 1.250,00. ¿Reservar con el nuevo precio?');
+    expect(changed).not.toContain('Reservar con el nuevo precio</button>');
+    expect(render()).toMatch(/>Reservar<\/button>/);
   });
 
   it('sin cambio de precio el formulario no está deshabilitado esperando una verificación', () => {

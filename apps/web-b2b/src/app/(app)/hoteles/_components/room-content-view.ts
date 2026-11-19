@@ -14,7 +14,10 @@ import { normalizeRoomName } from './room-type-groups';
  */
 
 /** Los proveedores que dan contenido por habitación (`HotelRoomContentPort` en el API). */
-export const ROOM_CONTENT_PROVIDERS: ReadonlySet<string> = new Set(['tbo-hotels']);
+export const ROOM_CONTENT_PROVIDERS: ReadonlySet<string> = new Set([
+  'tbo-hotels',
+  'despegar-hotels',
+]);
 
 /** Techos de la pantalla: los mismos del API, para que una respuesta rota no infle la página. */
 export const ROOM_CONTENT_MAX_ROOMS = 100;

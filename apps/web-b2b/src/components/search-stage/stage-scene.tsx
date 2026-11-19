@@ -2,7 +2,7 @@
 
 import { Suspense, useId } from 'react';
 import { cn } from '../../lib/cn';
-import { Birds, Cloud, GroundStrip, STAGE_H, STAGE_W, Sky, Sun } from './kit';
+import { Birds, BrandMark, Cloud, GroundStrip, STAGE_H, STAGE_W, Sky, Sun } from './kit';
 import { archetypeScene, cityScene } from './registry';
 import type { ResolvedScene } from './resolve-scene';
 import { CarStory, FlightStory, HotelStory } from './stories';
@@ -44,7 +44,7 @@ export function StageScene({
     >
       <Sky id={`ss${id}`} />
       <Sun cx={598} cy={46} r={18} />
-      <Cloud x={110} y={66} />
+      <Cloud x={170} y={70} />
       <Cloud x={390} y={42} scale={0.8} slow />
       <Birds y={96} />
       <Suspense fallback={null}>
@@ -58,6 +58,7 @@ export function StageScene({
       ) : (
         <CarStory />
       )}
+      <BrandMark id={`ss${id}`} />
     </svg>
   );
 }

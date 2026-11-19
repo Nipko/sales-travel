@@ -21,7 +21,7 @@ import {
  */
 
 const TBO_KEY = encodeHotelKey([{ provider: 'tbo-hotels', hotelId: '1402689' }]) ?? '';
-const DESPEGAR_KEY = encodeHotelKey([{ provider: 'despegar-hotels', hotelId: '555' }]) ?? '';
+const DESPEGAR_KEY = encodeHotelKey([{ provider: 'hotelbeds', hotelId: '555' }]) ?? '';
 
 const PENDING: RoomContentReply = {
   byProvider: { 'tbo-hotels': { status: 'pending', retryAfterMs: 3_000, rooms: [] } },

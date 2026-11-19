@@ -150,3 +150,32 @@ describe('puertos de contenido del adaptador', () => {
     });
   });
 });
+
+describe('fotos que el CDN ya no tiene', () => {
+  const dead = new Set([
+    'https://media.staticontent.com/a.jpg',
+    'https://media.staticontent.com/r.jpg',
+  ]);
+  const pictures = vi.fn((urls: readonly string[]) =>
+    Promise.resolve(urls.filter((u) => !dead.has(u))),
+  );
+
+  function filtered(found: DespegarHotelContent[]) {
+    const acl = {
+      getHotelsContent: vi.fn(() => Promise.resolve(found)),
+    } as unknown as DespegarHotelsAcl;
+    return new DespegarHotelProviderAdapter(acl, { pictures });
+  }
+
+  it('la ficha y el lote guardan sólo las que abren: la tarjeta toma la primera buena', async () => {
+    const one = await filtered([hotel()]).fetchHotelContent('101', 'es', CTX, OPTS);
+    expect(one?.images).toEqual(['https://media.staticontent.com/b.jpg']);
+    const batch = await filtered([hotel()]).fetchHotelContents(['101'], 'es', CTX, OPTS);
+    expect(batch.contents[0]?.images).toEqual(['https://media.staticontent.com/b.jpg']);
+  });
+
+  it('las habitaciones también', async () => {
+    const rooms = await filtered([hotel()]).fetchHotelRoomContent('101', 'es', CTX, OPTS);
+    expect(rooms.rooms[0]?.images).toEqual([]);
+  });
+});
