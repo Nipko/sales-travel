@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ProviderCredentialsModule } from '../provider-credentials/provider-credentials.module.js';
+import { ProviderPayloadsModule } from '../provider-payloads/provider-payloads.module.js';
 import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
 
 /**
@@ -7,7 +8,7 @@ import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
  * Lo consumen HotelsModule y HotelProvidersModule.
  */
 @Module({
-  imports: [ProviderCredentialsModule],
+  imports: [ProviderCredentialsModule, ProviderPayloadsModule],
   providers: [DespegarHotelsProviderFactory],
   exports: [DespegarHotelsProviderFactory],
 })
