@@ -54,7 +54,13 @@ export type Paint =
   | 'pants'
   | 'suitcase'
   | 'shadow'
-  | 'star';
+  | 'star'
+  | 'brand-orange'
+  | 'brand-navy'
+  | 'brand-blue'
+  | 'brand-sky'
+  | 'brand-plane'
+  | 'brand-badge';
 
 /** `style` de relleno con un color de la paleta. */
 export function f(paint: Paint, extra?: CSSProperties): CSSProperties {
@@ -491,4 +497,95 @@ export function SignBoard({
 /** Envoltorio de una escena de destino: todo su dibujo entre el cielo y el horizonte. */
 export function Backdrop({ children }: { children: ReactNode }) {
   return <g data-layer="backdrop">{children}</g>;
+}
+
+/** El avión del logo de Planetour (lienzo de 930 × 540), con la nariz hacia +x y centrado en 0,0. */
+const BRAND_PLANE_D =
+  'M35 252 L70 243 L235 322 L440 278 L388 140 Q392 122 415 124 L598 240 L790 214 Q860 220 855 255 Q850 268 830 275 L560 352 L262 525 Q232 532 232 515 L398 410 L398 398 L175 410 L68 465 Q45 470 52 455 L128 370 L118 360 Z';
+
+function BrandPlane({ size }: { size: number }) {
+  const k = size / 820;
+  return (
+    <g transform={`rotate(8) scale(${k}) translate(-446 -327)`}>
+      <path
+        d={BRAND_PLANE_D}
+        style={f('brand-plane', {
+          stroke: 'var(--ss-brand-orange)',
+          strokeWidth: 0.9 / k,
+          strokeLinejoin: 'round',
+        })}
+      />
+    </g>
+  );
+}
+
+/** Centro, radio del mundo y semiejes de la órbita del sello. */
+const MARK = { cx: 62, cy: 46, r: 17, rx: 40, ry: 12, tilt: -14 } as const;
+
+/** La órbita, empezando por la izquierda y pasando primero por detrás (arriba). */
+export const BRAND_ORBIT_PATH = `M${MARK.cx - MARK.rx} ${MARK.cy} A${MARK.rx} ${MARK.ry} 0 0 1 ${MARK.cx + MARK.rx} ${MARK.cy} A${MARK.rx} ${MARK.ry} 0 0 1 ${MARK.cx - MARK.rx} ${MARK.cy}`;
+
+/**
+ * El sello de Planetour: el avioncito de su logo dándole la vuelta a un mundo chico que gira, con la
+ * órbita naranja del logo, sobre una pastilla translúcida que se lee en cualquier cielo. El avión
+ * va dos veces por la misma órbita, una antes del mundo y otra después: la de atrás se ve en la
+ * mitad de arriba y la de adelante en la de abajo, así el mundo lo tapa cuando pasa por detrás.
+ * Quieto (movimiento reducido), el avión queda adelante.
+ */
+export function BrandMark({ id }: { id: string }) {
+  const { cx, cy, r, rx, ry, tilt } = MARK;
+  const clip = `${id}-globe`;
+  const land = (dx: number) => (
+    <g transform={`translate(${dx} 0)`} style={f('brand-blue')}>
+      <path d={`M${cx - 14} ${cy - 9} q6 -5 11 -1 q2 5 -3 7 q-1 6 -6 5 q-4 -4 -2 -11 Z`} />
+      <path d={`M${cx + 1} ${cy - 13} q7 -2 10 3 q-2 3 -6 3 q-4 -1 -4 -6 Z`} />
+      <path d={`M${cx + 3} ${cy - 2} q8 -2 10 4 q-1 7 -6 10 q-5 -3 -4 -14 Z`} />
+    </g>
+  );
+  const orbit = (className: string, size: number, rest: string, opacity: number) => (
+    <g
+      className={className}
+      style={{
+        offsetPath: `path('${BRAND_ORBIT_PATH}')`,
+        offsetRotate: 'auto',
+        offsetDistance: rest,
+        opacity,
+      }}
+    >
+      <BrandPlane size={size} />
+    </g>
+  );
+  return (
+    <g data-brand="planetour">
+      <defs>
+        <clipPath id={clip}>
+          <circle cx={cx} cy={cy} r={r} />
+        </clipPath>
+      </defs>
+      <rect x={14} y={20} width={96} height={52} rx={26} style={f('brand-badge')} />
+      <g transform={`rotate(${tilt} ${cx} ${cy})`}>
+        <path
+          d={`M${cx - rx} ${cy} A${rx} ${ry} 0 0 1 ${cx + rx} ${cy}`}
+          style={s('brand-orange', 1.6, { strokeLinecap: 'round' })}
+        />
+        {orbit('ss-brand-plane ss-brand-back', 13, '25%', 0)}
+      </g>
+      <circle cx={cx} cy={cy} r={r} style={f('brand-sky')} />
+      <g clipPath={`url(#${clip})`}>
+        <g className="ss-brand-land">
+          {land(0)}
+          {land(2 * r)}
+        </g>
+        <circle cx={cx - 6} cy={cy - 7} r={r} style={f('brand-plane', { opacity: 0.18 })} />
+      </g>
+      <circle cx={cx} cy={cy} r={r} style={s('brand-navy', 1.2)} />
+      <g transform={`rotate(${tilt} ${cx} ${cy})`}>
+        <path
+          d={`M${cx + rx} ${cy} A${rx} ${ry} 0 0 1 ${cx - rx} ${cy}`}
+          style={s('brand-orange', 1.6, { strokeLinecap: 'round' })}
+        />
+        {orbit('ss-brand-plane ss-brand-front', 17, '72%', 1)}
+      </g>
+    </g>
+  );
 }

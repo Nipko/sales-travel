@@ -440,6 +440,10 @@ export function PassengerForm({
     onSubmittingChange?.(submitting);
   }, [submitting, onSubmittingChange]);
 
+  // Con `submitRef` el botón es de la página (columna derecha fija y barra del teléfono): uno más
+  // al final del formulario era el mismo «Reservar» dos veces en pantalla.
+  const ownButton = submitRef !== undefined;
+
   // Cada render deja el envío con el estado de ahora: la barra inferior reserva lo que se ve.
   useEffect(() => {
     if (!submitRef) return;
@@ -816,18 +820,20 @@ export function PassengerForm({
               className="mt-5 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <p className="text-sm text-amber-900">{priceChangeQuestion(priceChangeTotal)}</p>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={submitting}
-                onClick={() => void handleSubmit(true)}
-                className="h-10 shrink-0 gap-2 sm:h-9"
-              >
-                <Plane className="size-4" />
-                Reservar con el nuevo precio
-              </Button>
+              {ownButton ? null : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={submitting}
+                  onClick={() => void handleSubmit(true)}
+                  className="h-10 shrink-0 gap-2 sm:h-9"
+                >
+                  <Plane className="size-4" />
+                  Reservar con el nuevo precio
+                </Button>
+              )}
             </div>
-          ) : (
+          ) : ownButton ? null : (
             <div id="checkout-reservar" className="mt-5 flex scroll-mt-24 justify-end">
               <Button
                 variant="primary"

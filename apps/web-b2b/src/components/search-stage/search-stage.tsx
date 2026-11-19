@@ -1,7 +1,7 @@
 'use client';
 
-import { Minimize2 } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ArrowDown, Minimize2 } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SearchMessages } from '../ui/search-loading-messages';
 import { ARCHETYPE_LABEL } from './catalog';
@@ -33,6 +33,71 @@ export function destinationPhrase(scene: ResolvedScene, hint: DestinationHint | 
   return `· ${ARCHETYPE_LABEL[scene.archetype]}`;
 }
 
+interface Area {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * El rectángulo del contenido de la página (el `<main>` del shell, sin el menú ni la barra de
+ * arriba). La ventana se centra ahí y no en la pantalla entera: centrada en la pantalla quedaba
+ * corrida respecto del formulario de búsqueda, que vive a la derecha del menú. Sin `<main>`, la
+ * pantalla.
+ */
+const MIN_AREA_WIDTH = 640;
+
+function useContentArea(open: boolean): Area | null {
+  const [area, setArea] = useState<Area | null>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const main = document.querySelector('main');
+    if (main === null) return;
+    const measure = () => {
+      const r = main.getBoundingClientRect();
+      // Angosto (teléfono, o un panel lateral abierto): la ventana usa la pantalla entera.
+      if (r.width < MIN_AREA_WIDTH) {
+        setArea(null);
+        return;
+      }
+      setArea((prev) =>
+        prev !== null &&
+        prev.left === r.left &&
+        prev.top === r.top &&
+        prev.width === r.width &&
+        prev.height === r.height
+          ? prev
+          : { left: r.left, top: r.top, width: r.width, height: r.height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(main);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [open]);
+  return area;
+}
+
+/**
+ * Lo mínimo que la ventana queda abierta. Una búsqueda que vuelve en medio segundo la mostraba y la
+ * cerraba de golpe, sin dejar ver nada: así se alcanza a ver la escena, y los resultados ya se
+ * pintan debajo mientras tanto. Si la búsqueda tarda más, la ventana sigue hasta que termine.
+ */
+export const STAGE_MIN_OPEN_MS = 2_500;
+
+/** Cuánto más queda abierta una ventana que se abrió en `openedAt` y cuya búsqueda ya terminó. */
+export function lingerMs(openedAt: number | null, now: number, min = STAGE_MIN_OPEN_MS): number {
+  if (openedAt === null) return 0;
+  return Math.max(0, min - (now - openedAt));
+}
+
+export const STAGE_DONE_TITLE = 'Listo, ya están tus resultados';
+
 export function SearchStage({
   active,
   vertical,
@@ -52,6 +117,8 @@ export function SearchStage({
   const [mounted, setMounted] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [lingering, setLingering] = useState(false);
+  const openedAt = useRef<number | null>(null);
   const titleId = useId();
   const descId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -64,12 +131,25 @@ export function SearchStage({
 
   useEffect(() => setMounted(true), []);
 
-  // Cada búsqueda nueva abre la ventana otra vez.
+  // Cada búsqueda nueva abre la ventana otra vez. Al terminar, se queda lo que falte para el mínimo.
   useEffect(() => {
-    if (active) setMinimized(false);
+    if (active) {
+      setMinimized(false);
+      setLingering(false);
+      openedAt.current = Date.now();
+      return;
+    }
+    const rest = lingerMs(openedAt.current, Date.now());
+    openedAt.current = null;
+    if (rest === 0) return;
+    setLingering(true);
+    const timer = window.setTimeout(() => setLingering(false), rest);
+    return () => window.clearTimeout(timer);
   }, [active]);
 
-  const open = mounted && active && !minimized;
+  const done = !active;
+  const open = mounted && (active || lingering) && !minimized;
+  const area = useContentArea(open);
 
   useEffect(() => {
     if (!open) return;
@@ -102,62 +182,96 @@ export function SearchStage({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[60]">
       <div
         aria-hidden="true"
-        className="ss-modal-backdrop absolute inset-0 bg-[color-mix(in_oklch,var(--color-bg)_55%,transparent)] backdrop-blur-[3px]"
+        className={
+          done
+            ? 'ss-modal-backdrop absolute inset-0 bg-[color-mix(in_oklch,var(--color-bg)_25%,transparent)] transition-[background-color] duration-500'
+            : 'ss-modal-backdrop absolute inset-0 bg-[color-mix(in_oklch,var(--color-bg)_55%,transparent)] backdrop-blur-[3px]'
+        }
       />
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descId}
-        data-search-stage={vertical}
-        className="ss-modal relative w-full max-w-[760px] overflow-hidden rounded-t-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xl)] sm:rounded-2xl"
+        data-search-stage-area=""
+        className="absolute inset-0 flex items-end justify-center p-0 sm:items-center sm:p-6"
+        style={area ?? undefined}
       >
-        <StageScene vertical={vertical} scene={scene} paused={hidden} className="aspect-[16/9]" />
-        <div className="flex items-start gap-4 px-5 pb-5 pt-4 sm:px-6">
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-base font-semibold text-[var(--color-fg)] sm:text-lg">
-              {STAGE_TITLES[vertical]}{' '}
-              <span className="text-[var(--color-primary)]">
-                {destinationPhrase(scene, destination)}
-              </span>
-            </h2>
-            {echo ? (
-              <p id={descId} className="mt-0.5 line-clamp-2 text-sm text-[var(--color-fg-muted)]">
-                {echo}
-              </p>
-            ) : (
-              <p id={descId} className="sr-only">
-                Consultando proveedores y comparando tarifas.
-              </p>
-            )}
-            <SearchMessages className="mt-2" messages={messages} />
-            <p
-              aria-hidden="true"
-              className="mt-1.5 text-xs text-[var(--color-fg-subtle)] motion-safe:animate-search-slow motion-reduce:hidden"
-            >
-              {slowMessage}
-            </p>
-          </div>
-          <button
-            ref={buttonRef}
-            type="button"
-            onClick={() => setMinimized(true)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-          >
-            <Minimize2 aria-hidden="true" className="size-3.5" />
-            <span className="hidden sm:inline">Seguir en segundo plano</span>
-            <span className="sm:hidden">Minimizar</span>
-          </button>
-        </div>
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-[var(--color-primary)]/10 motion-reduce:hidden"
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descId}
+          data-search-stage={vertical}
+          className="ss-modal relative w-full max-w-[760px] overflow-hidden rounded-t-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xl)] sm:rounded-2xl"
         >
-          <span className="block h-full w-1/3 animate-search-sweep rounded-full bg-[var(--color-primary)]" />
-        </span>
+          <StageScene vertical={vertical} scene={scene} paused={hidden} className="aspect-[16/9]" />
+          <div className="flex items-start gap-4 px-5 pb-5 pt-4 sm:px-6">
+            <div className="min-w-0 flex-1">
+              <h2
+                id={titleId}
+                className="text-base font-semibold text-[var(--color-fg)] sm:text-lg"
+              >
+                {done ? (
+                  STAGE_DONE_TITLE
+                ) : (
+                  <>
+                    {STAGE_TITLES[vertical]}{' '}
+                    <span className="text-[var(--color-primary)]">
+                      {destinationPhrase(scene, destination)}
+                    </span>
+                  </>
+                )}
+              </h2>
+              {echo ? (
+                <p id={descId} className="mt-0.5 line-clamp-2 text-sm text-[var(--color-fg-muted)]">
+                  {echo}
+                </p>
+              ) : (
+                <p id={descId} className="sr-only">
+                  Consultando proveedores y comparando tarifas.
+                </p>
+              )}
+              {done ? null : (
+                <>
+                  <SearchMessages className="mt-2" messages={messages} />
+                  <p
+                    aria-hidden="true"
+                    className="mt-1.5 text-xs text-[var(--color-fg-subtle)] motion-safe:animate-search-slow motion-reduce:hidden"
+                  >
+                    {slowMessage}
+                  </p>
+                </>
+              )}
+            </div>
+            <button
+              ref={buttonRef}
+              type="button"
+              onClick={() => setMinimized(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+            >
+              {done ? (
+                <>
+                  <ArrowDown aria-hidden="true" className="size-3.5" />
+                  Ver resultados
+                </>
+              ) : (
+                <>
+                  <Minimize2 aria-hidden="true" className="size-3.5" />
+                  <span className="hidden sm:inline">Seguir en segundo plano</span>
+                  <span className="sm:hidden">Minimizar</span>
+                </>
+              )}
+            </button>
+          </div>
+          {done ? null : (
+            <span
+              aria-hidden="true"
+              className="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-[var(--color-primary)]/10 motion-reduce:hidden"
+            >
+              <span className="block h-full w-1/3 animate-search-sweep rounded-full bg-[var(--color-primary)]" />
+            </span>
+          )}
+        </div>
       </div>
     </div>,
     document.body,

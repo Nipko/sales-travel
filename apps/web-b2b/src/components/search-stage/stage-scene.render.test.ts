@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { resolveScene } from './resolve-scene';
-import { STAGE_TITLES, destinationPhrase } from './search-stage';
+import { STAGE_MIN_OPEN_MS, STAGE_TITLES, destinationPhrase, lingerMs } from './search-stage';
 import { StageScene, type StageVertical } from './stage-scene';
 import { FLIGHT_PATH } from './stories';
 
@@ -85,5 +85,27 @@ describe('la ventana', () => {
       }),
     ).toBe('en Isla Margarita');
     expect(destinationPhrase(resolveScene({ iata: 'XXX' }), { iata: 'XXX' })).toBe('· Ciudad');
+  });
+});
+
+describe('tiempo mínimo de la ventana', () => {
+  it('una búsqueda rápida deja la ventana lo que falta para el mínimo; una lenta, nada más', () => {
+    expect(lingerMs(1_000, 1_400)).toBe(STAGE_MIN_OPEN_MS - 400);
+    expect(lingerMs(1_000, 1_000 + STAGE_MIN_OPEN_MS + 5)).toBe(0);
+    expect(lingerMs(null, 5_000)).toBe(0);
+  });
+});
+
+describe('la marca', () => {
+  it('el avioncito de Planetour va en la escena, con la paleta de la escena', () => {
+    const html = renderToStaticMarkup(
+      createElement(StageScene, { vertical: 'flights', scene: resolveScene(undefined) }),
+    );
+    expect(html).toContain('data-brand="planetour"');
+    expect(html).toContain('var(--ss-brand-orange)');
+    expect(html).not.toMatch(/Planetour</);
+    // El avioncito le da la vuelta al mundo: dos veces por la misma órbita (detrás y delante).
+    expect(html.match(/class="ss-brand-plane /g)).toHaveLength(2);
+    expect(html).toContain('ss-brand-land');
   });
 });

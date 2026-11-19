@@ -35,6 +35,7 @@ import {
 } from '../providers/provider.types.js';
 import { DESPEGAR_IMAGE_HOSTS } from './despegar-hotel-content.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
+import { httpPictureProbe, pictureFilter } from './despegar-picture-check.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelProviderAdapter,
@@ -462,6 +463,9 @@ export function despegarEnvironmentOf(baseUrl: string): 'test' | 'live' {
   }
 }
 
+/** Un solo filtro para todas las cuentas: el tope de HEADs en vuelo hacia el CDN es del proceso. */
+const LIVE_PICTURES = pictureFilter(httpPictureProbe());
+
 function neutralOptions(
   cfg: DespegarHotelsConfig,
   credentials: Record<string, unknown>,
@@ -469,6 +473,7 @@ function neutralOptions(
 ): DespegarNeutralOptions & { environment: 'test' | 'live' } {
   const options: DespegarNeutralOptions & { environment: 'test' | 'live' } = {
     environment: despegarEnvironmentOf(cfg.baseUrl),
+    pictures: LIVE_PICTURES,
   };
   const invoice = InvoiceConfigSchema.safeParse(
     credentials['invoice'] ?? config['invoice'] ?? flatInvoice(credentials),

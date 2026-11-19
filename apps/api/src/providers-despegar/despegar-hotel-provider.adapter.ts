@@ -22,6 +22,7 @@ import type {
   CancelQuote,
   MealPlanEntry,
   BookTraveler,
+  DespegarHotelContent,
   DespegarHotelsAdapter,
   HotelOffer as DespegarHotelOffer,
   HotelRoompack as DespegarHotelRoompack,
@@ -81,6 +82,11 @@ import {
   despegarRoomContent,
   toDespegarLanguage,
 } from './despegar-hotel-content.js';
+import {
+  DESPEGAR_PICTURES_PER_HOTEL,
+  DESPEGAR_PICTURES_PER_ROOM,
+  type PictureFilter,
+} from './despegar-picture-check.js';
 
 /** Código de Despegar en el registry de hoteles y en `provider.name` de cada tarifa. */
 export const DESPEGAR_HOTELS_PROVIDER_CODE = 'despegar-hotels';
@@ -442,6 +448,11 @@ export interface DespegarNeutralOptions {
   paymentType?: 'CURRENT_ACCOUNT' | 'ONE_CARD' | 'DEFERRED';
   /** Datos fiscales de la agencia titular: Despegar los exige con cuenta corriente y tarjeta. */
   invoice?: BookInvoice;
+  /**
+   * Descarta las fotos que el CDN de Despegar ya no tiene (despegar-picture-check.ts). Sin él, las
+   * fotos se guardan como llegan.
+   */
+  pictures?: PictureFilter;
 }
 
 const MISSING_INVOICE =
@@ -776,7 +787,9 @@ export class DespegarHotelProviderAdapter
     _ctx: SearchContext,
     _options: HotelContentFetchOptions,
   ): Promise<HotelContentBatch> {
-    const found = await this.acl.getHotelsContent(hotelIds, toDespegarLanguage(lang));
+    const found = await this.livePictures(
+      await this.acl.getHotelsContent(hotelIds, toDespegarLanguage(lang)),
+    );
     const byId = new Map(found.map((c) => [c.id, c]));
     return {
       contents: hotelIds.flatMap((id) => {
@@ -794,8 +807,32 @@ export class DespegarHotelProviderAdapter
     _ctx: SearchContext,
     _options: HotelContentFetchOptions,
   ): Promise<HotelProviderContent | null> {
-    const [c] = await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang));
+    const [c] = await this.livePictures(
+      await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang)),
+    );
     return c === undefined || c.id !== hotelId ? null : despegarProviderContent(c, lang);
+  }
+
+  /** Las fotos de hoteles y habitaciones sin las que el CDN ya no tiene. */
+  private async livePictures(
+    contents: readonly DespegarHotelContent[],
+  ): Promise<DespegarHotelContent[]> {
+    const filter = this.options.pictures;
+    if (filter === undefined) return [...contents];
+    return Promise.all(
+      contents.map(async (c) => {
+        const [pictures, roomTypes] = await Promise.all([
+          filter(c.pictures, DESPEGAR_PICTURES_PER_HOTEL),
+          Promise.all(
+            c.roomTypes.map(async (rt) => ({
+              ...rt,
+              pictures: await filter(rt.pictures, DESPEGAR_PICTURES_PER_ROOM),
+            })),
+          ),
+        ]);
+        return { ...c, pictures, roomTypes };
+      }),
+    );
   }
 
   /** Las habitaciones del hotel (`room_types[]`), con su id = el `roomTypeId` de las tarifas. */
@@ -805,7 +842,9 @@ export class DespegarHotelProviderAdapter
     _ctx: SearchContext,
     _options: HotelContentFetchOptions,
   ): Promise<HotelRoomContentFetch> {
-    const [c] = await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang));
+    const [c] = await this.livePictures(
+      await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang)),
+    );
     if (c === undefined || c.id !== hotelId) return { lang, outcome: 'none', rooms: [] };
     const rooms = c.roomTypes
       .map((rt) => despegarRoomContent(rt, lang))
