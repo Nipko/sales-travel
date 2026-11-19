@@ -31,6 +31,7 @@ import {
   DespegarHotelInputError,
   DespegarHotelProviderAdapter,
 } from './despegar-hotel-provider.adapter.js';
+import { withDespegarCancellationDates } from './despegar-cancellation-dates.js';
 import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
 
 /**
@@ -119,11 +120,12 @@ function respuestaDisponibilidad(): unknown {
 }
 
 /** Lo que el envoltorio promete: el ACL tal cual, más `provider` en cada pack. */
-function atribuido(offers: DespegarHotelOffer[]): HotelOffer[] {
+function atribuido(offers: DespegarHotelOffer[], checkinDate: string): HotelOffer[] {
   return offers.map((o) => ({
     ...o,
     roompacks: o.roompacks.map((p) => ({
       ...p,
+      cancellation: withDespegarCancellationDates(p.cancellation, checkinDate),
       provider: { name: DESPEGAR_HOTELS_PROVIDER_CODE, offerRef: p.id },
     })),
   }));
@@ -191,7 +193,7 @@ describe('DespegarHotelProviderAdapter — búsqueda', () => {
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual(calls[0]);
     expect(concreto.length).toBeGreaterThan(0);
-    expect(envuelto).toEqual(atribuido(concreto));
+    expect(envuelto).toEqual(atribuido(concreto, criterio.checkinDate));
   });
 
   it('cada tarifa valida contra el contrato neutral y dice que es de Despegar (RF-40)', async () => {
