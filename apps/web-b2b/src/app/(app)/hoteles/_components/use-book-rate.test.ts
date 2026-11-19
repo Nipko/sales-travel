@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { setStorageScope } from '../../../../lib/storage-scope';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HotelRoompack } from '../actions';
 import { encodeHotelKey } from './hotel-key';
@@ -12,6 +13,15 @@ import {
   type BookRate,
   type UseBookRateOptions,
 } from './use-book-rate';
+
+/** La sesión de las pruebas: usuario + agencia, como lo fija el layout del panel. */
+const TEST_SCOPE = 'u-1.t-1';
+const SCOPED_RATE_KEY = `${RATE_SELECTION_STORAGE_KEY}:${TEST_SCOPE}`;
+
+function stubScopedWindow(localStorage: unknown): void {
+  vi.stubGlobal('window', { localStorage });
+  setStorageScope(TEST_SCOPE);
+}
 
 const mocks = vi.hoisted(() => ({ push: vi.fn(), toastError: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
@@ -92,6 +102,7 @@ function tokenOfPush(call: number): string {
 }
 
 afterEach(() => {
+  setStorageScope(undefined);
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
@@ -119,7 +130,7 @@ describe('useBookRate — canBook', () => {
 describe('useBookRate — book', () => {
   it('guarda la elección en "hoteles:tarifas" y va al checkout con su identificador', () => {
     const storage = memoryStorage();
-    vi.stubGlobal('window', { localStorage: storage });
+    stubScopedWindow(storage);
 
     hookWith({
       factsFor: (code) => (code === 'tbo-hotels' ? { name: 'Hotel según TBO' } : undefined),
@@ -127,7 +138,7 @@ describe('useBookRate — book', () => {
 
     expect(mocks.push).toHaveBeenCalledTimes(1);
     const token = tokenOfPush(0);
-    const saved = parseRateSelections(storage.getItem(RATE_SELECTION_STORAGE_KEY))[token];
+    const saved = parseRateSelections(storage.getItem(SCOPED_RATE_KEY))[token];
     expect(saved).toMatchObject({
       reference: { providerCode: 'tbo-hotels', searchId: SEARCH_ID, offerRef: 'A-REF' },
       hotelKey: HOTEL_KEY,
@@ -143,7 +154,7 @@ describe('useBookRate — book', () => {
 
   it('cada clic con su identificador: dos pestañas no se pisan', () => {
     const storage = memoryStorage();
-    vi.stubGlobal('window', { localStorage: storage });
+    stubScopedWindow(storage);
 
     const hook = hookWith();
     hook.book(BOOKABLE);
@@ -152,12 +163,12 @@ describe('useBookRate — book', () => {
     const first = tokenOfPush(0);
     const second = tokenOfPush(1);
     expect(first).not.toBe(second);
-    const saved = parseRateSelections(storage.getItem(RATE_SELECTION_STORAGE_KEY));
+    const saved = parseRateSelections(storage.getItem(SCOPED_RATE_KEY));
     expect(Object.keys(saved).sort()).toEqual([first, second].sort());
   });
 
   it('sin almacenamiento, avisa y no navega', () => {
-    vi.stubGlobal('window', { localStorage: memoryStorage({ failOnWrite: true }) });
+    stubScopedWindow(memoryStorage({ failOnWrite: true }));
 
     hookWith().book(BOOKABLE);
 
@@ -167,13 +178,13 @@ describe('useBookRate — book', () => {
 
   it('una tarifa que no se puede reservar no guarda ni navega', () => {
     const storage = memoryStorage();
-    vi.stubGlobal('window', { localStorage: storage });
+    stubScopedWindow(storage);
 
     hookWith().book(NO_SEARCH);
     hookWith({ stay: undefined }).book(BOOKABLE);
     hookWith({ hotelKey: undefined }).book(BOOKABLE);
 
-    expect(storage.getItem(RATE_SELECTION_STORAGE_KEY)).toBeNull();
+    expect(storage.getItem(SCOPED_RATE_KEY)).toBeNull();
     expect(mocks.push).not.toHaveBeenCalled();
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
