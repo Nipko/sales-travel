@@ -50,6 +50,7 @@ const EXPECTED: Readonly<Record<string, PlatformAuditCategory>> = {
   HotelConfirmationNumberMissing: 'orders',
   HotelOfferRepriced: 'orders',
   CarReservationCreated: 'orders',
+  CarReservationUnrecorded: 'orders',
   'platform.order.viewed': 'orders',
   'platform.order.action': 'orders',
   'system.post_sale_sweep.completed': 'system',
