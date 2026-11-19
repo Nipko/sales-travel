@@ -75,6 +75,7 @@ import type {
   HotelRoomContentFetch,
   HotelRoomContentPort,
 } from '../providers/hotel-provider.types.js';
+import { withDespegarCancellationDates } from './despegar-cancellation-dates.js';
 import { despegarGuestName } from './despegar-guest-name.js';
 import {
   DESPEGAR_CONTENT_BATCH_SIZE,
@@ -304,7 +305,11 @@ function atPropertyChargesOf(pack: DespegarHotelRoompack): HotelFee[] | undefine
 }
 
 /** El pack del ACL en la forma canónica: sólo los campos del contrato neutral. */
-function neutralPack(pack: DespegarHotelRoompack, withBookingRef: boolean): HotelRoompack {
+function neutralPack(
+  pack: DespegarHotelRoompack,
+  withBookingRef: boolean,
+  checkinDate: string,
+): HotelRoompack {
   const raw = withBookingRef ? bookingRawOf(pack) : undefined;
   const {
     mealPlanId,
@@ -314,6 +319,7 @@ function neutralPack(pack: DespegarHotelRoompack, withBookingRef: boolean): Hote
   } = pack;
   const out: HotelRoompack = {
     ...rest,
+    cancellation: withDespegarCancellationDates(rest.cancellation, checkinDate),
     price,
     provider:
       raw === undefined
@@ -330,11 +336,15 @@ function neutralPack(pack: DespegarHotelRoompack, withBookingRef: boolean): Hote
   return out;
 }
 
-function attributeOffer(offer: DespegarHotelOffer, withBookingRef: boolean): HotelOffer {
+function attributeOffer(
+  offer: DespegarHotelOffer,
+  withBookingRef: boolean,
+  checkinDate: string,
+): HotelOffer {
   const { notices, ...rest } = offer;
   const out: HotelOffer = {
     ...rest,
-    roompacks: offer.roompacks.map((pack) => neutralPack(pack, withBookingRef)),
+    roompacks: offer.roompacks.map((pack) => neutralPack(pack, withBookingRef, checkinDate)),
   };
   if (notices !== undefined && notices.length > 0) out.notices = notices;
   return out;
@@ -746,7 +756,7 @@ export class DespegarHotelProviderAdapter
       ...stayQuery(criteria),
       hotelIds: [...criteria.hotelIds],
     });
-    return offers.map((offer) => attributeOffer(offer, false));
+    return offers.map((offer) => attributeOffer(offer, false, criteria.checkinDate));
   }
 
   async getHotelRates(query: HotelRatesQuery, _ctx: SearchContext): Promise<HotelOffer> {
@@ -758,7 +768,7 @@ export class DespegarHotelProviderAdapter
       }),
       this.mealPlans(),
     ]);
-    return withMealPlans(attributeOffer(offer, true), mealPlans);
+    return withMealPlans(attributeOffer(offer, true, query.checkinDate), mealPlans);
   }
 
   #mealPlans: { at: number; value: Promise<ReadonlyMap<string, MealPlanEntry>> } | undefined;

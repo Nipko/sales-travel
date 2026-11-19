@@ -486,6 +486,8 @@ export interface QuotationsTable {
   /** 0091: a nombre de quién se factura (JSONB, documento cifrado). */
   billing: unknown;
   quote_number: number;
+  /** 0097: repetido anterior al índice único, conservado con su número. Nada nuevo lo pone en true. */
+  quote_number_duplicate: Generated<boolean>;
   expires_at: Timestamp;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;

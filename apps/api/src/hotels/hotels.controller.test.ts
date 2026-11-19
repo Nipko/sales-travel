@@ -37,6 +37,7 @@ import {
   fakeDespegarFactory,
   withoutCatalogContent,
   hotelRegistry,
+  sinFechasDeCancelacion,
 } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
 import { DespegarHotelReservationsService } from './despegar-hotel-reservations.service.js';
@@ -239,7 +240,9 @@ function comoAntes(sobre: HotelSearchEnvelope): unknown {
   return {
     hotels: sobre.hotels.map((o) => ({
       ...o,
-      roompacks: o.roompacks.map(({ provider: _provider, ...resto }) => resto),
+      roompacks: o.roompacks.map(({ provider: _provider, ...resto }) =>
+        sinFechasDeCancelacion(resto),
+      ),
     })),
   };
 }

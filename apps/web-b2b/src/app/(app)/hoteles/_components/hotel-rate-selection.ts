@@ -1,3 +1,8 @@
+import {
+  forgetScopedStorage,
+  scopedStorageKey,
+  type ScopedStorageBase,
+} from '../../../../lib/storage-scope';
 import type { HotelRoompack, Money } from '../actions';
 import { decodeHotelKey } from './hotel-key';
 import {
@@ -45,7 +50,7 @@ export interface RateSelection {
   readonly savedAt: number;
 }
 
-export const RATE_SELECTION_STORAGE_KEY = 'hoteles:tarifas';
+export const RATE_SELECTION_STORAGE_KEY = 'hoteles:tarifas' satisfies ScopedStorageBase;
 /**
  * Una tarifa se sostiene 27 minutos desde la búsqueda. Una hora alcanza para volver a abrir el
  * checkout y leer que venció; más tarde, la elección ya no le dice nada a nadie.
@@ -231,19 +236,26 @@ export function rateSelectionFor(
  * entonces el checkout no tendría qué revalidar, y no se navega a él.
  */
 export function saveRateSelection(token: string, selection: RateSelection): boolean {
+  // Con el alcance de la sesión (usuario + agencia): sin él no se guarda, como sin almacenamiento.
+  const key = scopedStorageKey(RATE_SELECTION_STORAGE_KEY);
+  if (key === undefined) return false;
   try {
-    const entries = parseRateSelections(window.localStorage.getItem(RATE_SELECTION_STORAGE_KEY));
+    forgetScopedStorage([RATE_SELECTION_STORAGE_KEY], key);
+    const entries = parseRateSelections(window.localStorage.getItem(key));
     const next = withRateSelection(entries, token, selection, Date.now());
-    window.localStorage.setItem(RATE_SELECTION_STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.setItem(key, JSON.stringify(next));
     return true;
   } catch {
     return false;
   }
 }
 
+/** La tarifa elegida en ESTA sesión; la de otro usuario o agencia no se ve. */
 export function readRateSelection(token: string): RateSelection | undefined {
+  const key = scopedStorageKey(RATE_SELECTION_STORAGE_KEY);
+  if (key === undefined) return undefined;
   try {
-    const entries = parseRateSelections(window.localStorage.getItem(RATE_SELECTION_STORAGE_KEY));
+    const entries = parseRateSelections(window.localStorage.getItem(key));
     return rateSelectionFor(entries, token, Date.now());
   } catch {
     return undefined;

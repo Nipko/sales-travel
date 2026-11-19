@@ -37,14 +37,14 @@ AgentCars dev) y se miden los tiempos en la pestaña de red.
 Flight Check) antes de reservar, idempotencia de la reserva (`q:<quotationId>` con índice único,
 se libera sólo si el proveedor no fue llamado), post-venta de emisión/anulación.
 
-| #   | Hallazgo                                                                                                                                                      | Estado                    | PR  |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --- |
-| V1  | La orden sumaba el **markup fijo** a una tarifa en otra moneda (LATAM BRL para agencia COP): orden y retención de cartera más caras que el precio aceptado    | Verificado, corregido     | #46 |
-| V2  | LATAM: OfferPrice conservaba la vigencia de la búsqueda; una cotización reservada > 30 min después daba «ya venció» tras un OfferPrice exitoso                | Verificado, corregido     | #47 |
-| V3  | Desde las 19:00 de Bogotá/Lima la búsqueda rechazaba vuelos del mismo día («anterior a hoy»): el servidor compara en UTC                                      | Verificado, corregido     | #50 |
-| V4  | Teléfono de contacto siempre `+57`, área `1` (`passenger-form.tsx`) → LATAM recibe un teléfono mal para agencias de PE/BR                                     | Verificado, **pendiente** | —   |
-| V5  | `quote_number` = `MAX+1` sin índice único: dos cotizaciones simultáneas pueden repetir número                                                                 | Verificado, pendiente     | —   |
-| V6  | Equipaje facturado de Sabre: toma el primer pasajero y el primer tramo; la vuelta con otra franquicia muestra la de la ida. Equipaje de mano no se decodifica | Verificado, pendiente     | —   |
+| #   | Hallazgo                                                                                                                                                      | Estado                | PR  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --- |
+| V1  | La orden sumaba el **markup fijo** a una tarifa en otra moneda (LATAM BRL para agencia COP): orden y retención de cartera más caras que el precio aceptado    | Verificado, corregido | #46 |
+| V2  | LATAM: OfferPrice conservaba la vigencia de la búsqueda; una cotización reservada > 30 min después daba «ya venció» tras un OfferPrice exitoso                | Verificado, corregido | #47 |
+| V3  | Desde las 19:00 de Bogotá/Lima la búsqueda rechazaba vuelos del mismo día («anterior a hoy»): el servidor compara en UTC                                      | Verificado, corregido | #50 |
+| V4  | Teléfono de contacto siempre `+57`, área `1` (`passenger-form.tsx`) → LATAM recibe un teléfono mal para agencias de PE/BR                                     | En PR                 | #55 |
+| V5  | `quote_number` = `MAX+1` sin índice único: dos cotizaciones simultáneas pueden repetir número                                                                 | En PR                 | #59 |
+| V6  | Equipaje facturado de Sabre: toma el primer pasajero y el primer tramo; la vuelta con otra franquicia muestra la de la ida. Equipaje de mano no se decodifica | En PR                 | #64 |
 
 **Tiempos (del código):**
 
@@ -60,15 +60,15 @@ se libera sólo si el proveedor no fue llamado), post-venta de emisión/anulaci�
 
 **Funciona:** fechas en el huso de la oficina, validación de edad, candado contra doble clic, cuenta regresiva de 15 min y renovación de la tarifa, y una confirmación sin código no se da por hecha.
 
-| #   | Hallazgo                                                                                                                                                                                                                                                                     | Estado                    | PR  |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --- |
-| A1  | Una confirmación que tardaba > 15 s o devolvía 5xx decía «**Prueba de nuevo**»: el segundo clic con el mismo `uniqid` era otra reserva y la primera quedaba sin orden                                                                                                        | Verificado, corregido     | #44 |
-| A2  | «Gestionar reserva» (consultar/cancelar/activar por apellido + código) no miraba `orders`: con la cuenta heredada del consolidador, una agencia abría o cancelaba reservas de otra. Cancelar no actualizaba la orden. El reporte diario traía las reservas de toda la cuenta | Verificado, corregido     | #45 |
-| A3  | Reservas «en espera» (on hold / on request) quedan `pending` para siempre: nada las refresca (`retrieve: false`, sin barrido)                                                                                                                                                | Verificado, **pendiente** | —   |
-| A4  | Si la persistencia falla después de confirmar, sólo se loguea: reserva viva sin orden ni evento                                                                                                                                                                              | Verificado, pendiente     | —   |
-| A5  | La selección toma la primera tarifa (ppd) aunque se haya buscado «pago en destino»                                                                                                                                                                                           | Sospechado, pendiente     | —   |
-| A6  | El cambio de precio entre la lista, la selección y la renovación no se muestra                                                                                                                                                                                               | Verificado, pendiente     | —   |
-| A7  | Un error en el autocompletado de oficinas queda en caché como «sin resultados» hasta recargar                                                                                                                                                                                | Verificado, pendiente     | —   |
+| #   | Hallazgo                                                                                                                                                                                                                                                                     | Estado                | PR  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --- |
+| A1  | Una confirmación que tardaba > 15 s o devolvía 5xx decía «**Prueba de nuevo**»: el segundo clic con el mismo `uniqid` era otra reserva y la primera quedaba sin orden                                                                                                        | Verificado, corregido | #44 |
+| A2  | «Gestionar reserva» (consultar/cancelar/activar por apellido + código) no miraba `orders`: con la cuenta heredada del consolidador, una agencia abría o cancelaba reservas de otra. Cancelar no actualizaba la orden. El reporte diario traía las reservas de toda la cuenta | Verificado, corregido | #45 |
+| A3  | Reservas «en espera» (on hold / on request) quedan `pending` para siempre: nada las refresca (`retrieve: false`, sin barrido)                                                                                                                                                | En PR                 | #63 |
+| A4  | Si la persistencia falla después de confirmar, sólo se loguea: reserva viva sin orden ni evento                                                                                                                                                                              | En PR                 | #58 |
+| A5  | La selección toma la primera tarifa (ppd) aunque se haya buscado «pago en destino»                                                                                                                                                                                           | Sospechado, pendiente | —   |
+| A6  | El cambio de precio entre la lista, la selección y la renovación no se muestra                                                                                                                                                                                               | En PR                 | #66 |
+| A7  | Un error en el autocompletado de oficinas queda en caché como «sin resultados» hasta recargar                                                                                                                                                                                | En PR                 | #54 |
 
 **Tiempos:** el checkout espera get-selection **y luego** get-rate-information (una ida y vuelta más, 0,5–2 s) aunque el detalle sólo hace falta para el desglose de mostrador. Cada llamada hace 4–5 lecturas de base en serie (20–60 ms).
 
@@ -94,21 +94,21 @@ Recomendaciones para PR #42 o un PR siguiente:
 
 ### 4.2 Hallazgos
 
-| #   | Hallazgo                                                                                                                                                      | Estado                    | PR  |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --- |
-| H1  | La descripción de Despegar con `&`, comillas o entidades rechazaba la fila de contenido entera (sin descripción ni fotos del lote)                            | Verificado, corregido     | #48 |
-| H2  | Sin datos de facturación (cuenta corriente) se fallaba recién en el Book, con un mensaje técnico. Una factura cargada pero inválida se descartaba en silencio | Verificado, corregido     | #49 |
-| H3  | Despegar: la cancelación gratis «hasta 72 h antes» nunca se compara con el reloj. Con check-in mañana no se pide la aceptación de no reembolsable             | Sospechado, **pendiente** | —   |
-| H4  | Prebook en la moneda de la cuenta (USD) distinta a la buscada (COP): se avisa con un warning que la UI no lee                                                 | Verificado, pendiente     | —   |
-| H5  | El nombre del huésped rechaza guiones y apóstrofos (García-López, O'Brien)                                                                                    | Sospechado, pendiente     | —   |
-| H6  | Las claves de localStorage del handoff (`hoteles:busquedas`, `hoteles:tarifas`) no van por usuario/tenant ni se borran al cerrar sesión                       | Verificado, pendiente     | —   |
-| H7  | Un link de la ficha abierto en otro navegador o dispositivo dice «busca de nuevo»: la estadía vive sólo en localStorage                                       | Verificado, pendiente     | —   |
+| #   | Hallazgo                                                                                                                                                      | Estado                | PR  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --- |
+| H1  | La descripción de Despegar con `&`, comillas o entidades rechazaba la fila de contenido entera (sin descripción ni fotos del lote)                            | Verificado, corregido | #48 |
+| H2  | Sin datos de facturación (cuenta corriente) se fallaba recién en el Book, con un mensaje técnico. Una factura cargada pero inválida se descartaba en silencio | Verificado, corregido | #49 |
+| H3  | Despegar: la cancelación gratis «hasta 72 h antes» nunca se compara con el reloj. Con check-in mañana no se pide la aceptación de no reembolsable             | En PR                 | #56 |
+| H4  | Prebook en la moneda de la cuenta (USD) distinta a la buscada (COP): se avisa con un warning que la UI no lee                                                 | En PR                 | #60 |
+| H5  | El nombre del huésped rechaza guiones y apóstrofos (García-López, O'Brien)                                                                                    | En PR                 | #62 |
+| H6  | Las claves de localStorage del handoff (`hoteles:busquedas`, `hoteles:tarifas`) no van por usuario/tenant ni se borran al cerrar sesión                       | En PR                 | #67 |
+| H7  | Un link de la ficha abierto en otro navegador o dispositivo dice «busca de nuevo»: la estadía vive sólo en localStorage                                       | Verificado, pendiente | —   |
 
 **Tiempos:**
 
 - **Venta Despegar = ~6 llamadas en serie:** detalle → C1 (detalle + prebook) → C2 (detalle + prebook) → book. Guardar el `choiceId` en `providerData` (cabe en los 8 KB) y volver a pedir el detalle sólo ante un 410 ahorra 2 llamadas (2–4 s).
-- **Ficha:** `Promise.all` por proveedor. Las tarifas de Despegar esperan a TBO: hasta ~13 s si TBO se cuelga, 1–2 s con su 500 rápido. Hay que mostrar cada proveedor apenas responde.
-- **Búsqueda con TBO caído:** mientras el breaker está cerrado, y en cada sonda (cada 30 s), la búsqueda espera a TBO. Mientras TBO siga en 500, conviene apagarlo con el kill-switch del panel de superadmin y agregar un plazo por ola (6–8 s).
+- **Ficha:** `Promise.all` por proveedor. Las tarifas de Despegar esperan a TBO: hasta ~13 s si TBO se cuelga, 1–2 s con su 500 rápido. Hay que mostrar cada proveedor apenas responde (**en PR #57**).
+- **Búsqueda con TBO caído:** mientras el breaker está cerrado, y en cada sonda (cada 30 s), la búsqueda espera a TBO. Mientras TBO siga en 500, conviene apagarlo con el kill-switch del panel de superadmin y agregar un plazo por ola (6–8 s; **en PR #61**, con 8 s).
 - **Fotos:** el chequeo de fotos del CDN comparte una cola de 24 HEAD para todo el proceso. Un lote de 50 hoteles encola cientos y la ficha de un hotel espera detrás.
 
 ## 5. Transversal
@@ -116,11 +116,11 @@ Recomendaciones para PR #42 o un PR siguiente:
 | #   | Hallazgo                                                                                                                 | Estado                | PR  |
 | --- | ------------------------------------------------------------------------------------------------------------------------ | --------------------- | --- |
 | T1  | Tras cada deploy, las pestañas abiertas fallan («Failed to find Server Action»), con un «Reintentar» que repite el fallo | Verificado, corregido | #43 |
-| T2  | `mfa.integration.test.ts` deja un rechazo sin manejar que a veces tumba el job de integración (visto en el CI de #46)    | Observado, pendiente  | —   |
+| T2  | `mfa.integration.test.ts` deja un rechazo sin manejar que a veces tumba el job de integración (visto en el CI de #46)    | En PR                 | #53 |
 
 ## 6. PRs de esta revisión
 
-Cada uno se mergea y despliega sólo con la aprobación del founder **para ese PR**.
+La primera tanda (#42–#51) se mergeó el 2026-11-19 por pedido del founder.
 
 | PR  | Tema                                                                 |
 | --- | -------------------------------------------------------------------- |
@@ -133,11 +133,39 @@ Cada uno se mergea y despliega sólo con la aprobación del founder **para ese P
 | #49 | Despegar: sin datos de facturación se avisa en el primer prebook     |
 | #50 | Vuelos: un vuelo para esta noche no vuelve «anterior a hoy»          |
 
+### 6.1 Segunda tanda (abiertos, CI en verde)
+
+Cada uno se mergea con la aprobación del founder **para ese PR**. Ninguno se probó en el navegador ni contra proveedores reales.
+
+| PR  | Hallazgo | Tema                                                                         | Decisión pendiente                                                                       |
+| --- | -------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| #53 | T2       | El test de carrera del 2FA no deja un rechazo sin manejar                    | —                                                                                        |
+| #54 | A7       | Autos: un error del autocompletado no se cachea; «Reintentar»                | —                                                                                        |
+| #55 | V4       | Vuelos: prefijo del teléfono según el país de la agencia, editable           | ¿Sabre recibe el teléfono con `+prefijo`? Probar en sandbox (cambia el PNR)              |
+| #56 | H3       | Despegar: plazo de cancelación gratis con fecha; vencido = no reembolsable   | Las horas se cuentan desde las 00:00 del check-in; sin cargo informado se asume 100 %    |
+| #57 | —        | Ficha de hotel: tarifas de cada proveedor apenas responde                    | —                                                                                        |
+| #58 | A4       | Autos: reintento al guardar la orden; evento `CarReservationUnrecorded`      | Si Postgres cae del todo sólo queda el log (outbox fuera de PG sin decidir)              |
+| #59 | V5       | Vuelos: `quote_number` bajo lock por agencia + índice único (migración 0097) | Contar duplicados en producción antes; los viejos se marcan, no se renumeran             |
+| #60 | H4       | Hoteles: aviso de moneda de la cuenta en el prebook                          | ¿Pedir que el vendedor lo marque como leído?                                             |
+| #61 | —        | Búsqueda de hoteles: plazo de 8 s por proveedor; el plazo no abre el breaker | Mirar el p95 de TBO antes: su `ResponseTime` es 10 s                                     |
+| #62 | H5       | Despegar: nombres con guion/apóstrofo se adaptan en vez de rechazarse        | `O'Brien` → `OBrien` (¿o `O Brien`?)                                                     |
+| #63 | A3       | Autos: barrido cada 30 min de las reservas en espera                         | Textos de cancelada/rechazada supuestos (confirmar en sandbox); usa la credencial actual |
+| #64 | V6       | Sabre: equipaje por tramo y del primer adulto, con equipaje de mano          | `B` = mano según docs, sin fixture real; resumen/PDF muestra el menor de ida y vuelta    |
+| #66 | A6       | Autos: aviso de cambio de precio; una subida pide aceptación                 | ¿Aceptación explícita o sólo aviso? ¿Umbral?                                             |
+| #67 | H6       | Hoteles: localStorage por usuario y agencia, se limpia al salir              | #65 cerrado por un falso positivo de GitGuardian (UUID de test)                          |
+
+Conflictos esperables al mergear: #58, #63 y #66 tocan `audit-format.ts` y los mismos tests; el segundo necesita un rebase simple.
+
+### 6.2 Caída de producción del 2026-11-19
+
+Al desplegar #42–#51, el deploy bajó una imagen nueva de la etiqueta flotante `timescale/timescaledb-ha:pg16`, sin la versión de TimescaleDB instalada en la base (2.26.4). Todo SQL falló, `migrate` cayó con exit 1 y el API y la web quedaron abajo (~20:00 UTC). No tuvo que ver con el código mergeado. El arreglo, a cargo de la sesión principal, es fijar la imagen en `pg16-ts2.26` en el servidor y en `infrastructure/hostinger/docker-compose.{prod,cert}.yml`. Lección: ninguna imagen de base de datos con etiqueta flotante.
+
 ## 7. Siguiente, por impacto en la venta
 
-1. Mergear #42 y leer el log `despegar.forma` abriendo un hotel; completar §4.1 (descartes por motivo).
-2. Apagar TBO con el kill-switch mientras su test siga en 500, y escribir a soporte de TBO.
-3. Vuelos V4 (teléfono con prefijo del país) y autos A3 (refrescar las reservas en espera).
-4. Tiempos: ficha de hotel por proveedor, `choiceId` guardado en Despegar, caché de `searchReturns`, plazo global de Sabre.
-5. Estado en la URL (vuelos, autos) para que «atrás» y refrescar no pierdan la búsqueda.
-6. Sabre H-07: sigue el rodeo `bookOnTicketingPcc` → `targetPcc` hasta que Sabre active «Store Passenger Type In PNR» (`docs/sabre/12-hallazgos-sandbox.md`).
+1. Revisar y mergear la segunda tanda (§6.1), resolviendo antes sus decisiones pendientes.
+2. Leer el log `despegar.forma` abriendo un hotel (con #42 ya en producción) y completar §4.1: packs de varias habitaciones con `choice_id` distinto y roompacks sin `id`; descartes por motivo.
+3. Apagar TBO con el kill-switch mientras su test siga en 500, y escribir a soporte de TBO.
+4. Tiempos: `choiceId` guardado en Despegar, caché de `searchReturns`, plazo global de Sabre.
+5. Estado en la URL (vuelos, autos, H7 en hoteles) para que «atrás», refrescar y otro dispositivo no pierdan la búsqueda.
+6. A5 (tarifa de pago en destino) y las pruebas en vivo en sandbox: necesitan una sesión del panel.
+7. Sabre H-07: sigue el rodeo `bookOnTicketingPcc` → `targetPcc` hasta que Sabre active «Store Passenger Type In PNR» (`docs/sabre/12-hallazgos-sandbox.md`).

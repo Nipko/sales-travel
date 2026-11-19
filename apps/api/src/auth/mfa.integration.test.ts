@@ -515,11 +515,13 @@ d('MfaService contra Postgres, como app_user', { timeout: 30_000 }, () => {
         // escritura espera la fila. Si al soltarla escribiera igual, la cuenta quedaría con el 2FA
         // de la persona y el secreto del atacante pendiente: un "cambiar de teléfono" que nunca pidió
         // la contraseña ni el código de la app de la persona.
-        const begin = mfa.beginEnrollment(id, 'carrera@test.local');
+        // El rechazo se engancha ya: el paso 1 puede fallar apenas se suelta la fila, antes de que
+        // vuelva el COMMIT, y un rechazo sin manejar en ese hueco tumba la corrida de Vitest.
+        const begin = rejection(mfa.beginEnrollment(id, 'carrera@test.local'));
         await untilUpdateWaits();
         await victim.query('COMMIT');
 
-        expect(await rejection(begin)).toBeInstanceOf(MfaAlreadyEnabledError);
+        expect(await begin).toBeInstanceOf(MfaAlreadyEnabledError);
       } finally {
         victim.release();
       }

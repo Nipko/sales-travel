@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CircleCheck, Copy, PauseCircle, Search, Ticket } from 'lucide-react';
+import { AlertTriangle, Check, CircleCheck, Copy, PauseCircle, Search, Ticket } from 'lucide-react';
 import { useState } from 'react';
 import { Card } from '../../../../components/ui/card';
 import { cn } from '../../../../lib/cn';
@@ -43,6 +43,8 @@ export function CarBookingDone({
     selection.category ||
     CAR_CLASS_LABELS[carClassOf(selection.sippCode)];
   const [copied, setCopied] = useState(false);
+  // Sin orden, el voucher (que se busca entre las reservas de la agencia) daría «no encontrada».
+  const unrecorded = result.recorded === false;
 
   function copy() {
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
@@ -97,8 +99,37 @@ export function CarBookingDone({
             )}
           </button>
         </div>
-        <p className="mx-auto mt-3 max-w-md text-sm text-[var(--color-fg)]">{view.note}</p>
+        {/* Las notas remiten a «Gestionar reserva» o al voucher, que sin orden no la encuentran. */}
+        {unrecorded ? null : (
+          <p className="mx-auto mt-3 max-w-md text-sm text-[var(--color-fg)]">{view.note}</p>
+        )}
       </div>
+
+      {unrecorded ? (
+        <div
+          role="alert"
+          className="flex gap-3 border-t border-[var(--color-border)] bg-[var(--color-warning)]/10 px-5 py-4 text-left"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-[var(--color-fg)]"
+          />
+          <div className="space-y-1 text-sm text-[var(--color-fg)]">
+            <p className="font-medium">La reserva existe, pero no quedó guardada en Reservas</p>
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              Copia el código y compártelo con el cliente. Operaciones ya tiene el aviso para darla
+              de alta; hasta entonces no aparece en Reservas ni en «Gestionar reserva». No la
+              vuelvas a reservar.
+            </p>
+            {result.status === 'on_hold' ? (
+              <p className="text-xs font-medium">
+                Está en espera: avísale a operaciones que hay que activarla antes del{' '}
+                {holdDeadlineLabel(values)}.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-4 border-t border-[var(--color-border)] p-5 sm:flex-row">
         <CarPhoto
@@ -153,14 +184,16 @@ export function CarBookingDone({
           <Search aria-hidden="true" className="size-4" />
           Nueva búsqueda
         </button>
-        <button
-          type="button"
-          onClick={onViewVoucher}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2"
-        >
-          <Ticket aria-hidden="true" className="size-4" />
-          Ver voucher
-        </button>
+        {unrecorded ? null : (
+          <button
+            type="button"
+            onClick={onViewVoucher}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2"
+          >
+            <Ticket aria-hidden="true" className="size-4" />
+            Ver voucher
+          </button>
+        )}
       </div>
     </Card>
   );

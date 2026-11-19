@@ -49,6 +49,7 @@ import type {
   TenantAdapter,
 } from '../../providers/provider.types.js';
 import { providerFlags } from '../../providers/__fixtures__/provider-flags.js';
+import { DESPEGAR_UNDETAILED_PENALTY_TYPE } from '../../providers-despegar/despegar-cancellation-dates.js';
 import { DespegarHotelProviderAdapter } from '../../providers-despegar/despegar-hotel-provider.adapter.js';
 import { DespegarHotelsProviderFactory } from '../../providers-despegar/despegar-hotels.factory.js';
 
@@ -87,6 +88,28 @@ function itemsPedidos(hotelIds: readonly string[]): NonNullable<RespuestaDespega
  */
 export function ofertasDespegar(hotelIds: readonly string[]): HotelOffer[] {
   return mapAvailability({ items: itemsPedidos(hotelIds) });
+}
+
+/**
+ * Una cancelación sin lo que el envoltorio de Despegar le suma a los plazos en horas
+ * (`despegar-cancellation-dates.ts`): la fecha local de cada tramo, el fin de la cancelación gratis
+ * y el tramo del cargo no detallado. Así se compara contra lo que mapeó el ACL.
+ */
+export function sinFechasDeCancelacion<T extends { cancellation: object }>(pack: T): T {
+  const c = pack.cancellation as {
+    freeCancellationUntilLocal?: string;
+    rules: { type: string; fromLocalDateTime?: string }[];
+  };
+  const { freeCancellationUntilLocal: _free, ...resto } = c;
+  return {
+    ...pack,
+    cancellation: {
+      ...resto,
+      rules: c.rules
+        .filter((r) => r.type !== DESPEGAR_UNDETAILED_PENALTY_TYPE)
+        .map(({ fromLocalDateTime: _from, ...r }) => r),
+    },
+  };
 }
 
 /** IDs de la respuesta grabada, en el orden en que llegan. */

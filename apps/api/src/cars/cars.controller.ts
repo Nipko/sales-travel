@@ -2,7 +2,6 @@ import { Body, Controller, ForbiddenException, Get, Post, Query, UseFilters } fr
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
 import type {
   CancelResult,
-  CarBookResult,
   CarLocation,
   CarOffice,
   CarRateDetail,
@@ -13,7 +12,12 @@ import type {
 } from '@sales-travel/agent-cars';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
-import { CarsService, type PricedCarOffer, type PricedCarSelection } from './cars.service.js';
+import {
+  CarsService,
+  type CarBookOutcome,
+  type PricedCarOffer,
+  type PricedCarSelection,
+} from './cars.service.js';
 import { AgentCarsExceptionFilter } from './agent-cars-exception.filter.js';
 import {
   CancelBodySchema,
@@ -118,7 +122,7 @@ export class CarsController {
   async book(
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(ConfirmInputSchema)) body: ConfirmInput,
-  ): Promise<CarBookResult> {
+  ): Promise<CarBookOutcome> {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.tenant(userId);
     return this.cars.book(tenantId, userId, body);

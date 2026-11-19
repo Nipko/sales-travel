@@ -4,10 +4,11 @@ import { Loader2, MapPin, Plane } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { suggestCarLocationsAction, type CarLocation } from '../actions';
+import { loadSuggestions } from './location-suggest-cache';
 
 const DEBOUNCE_MS = 160;
 
-/** Caché de sugerencias por query (nivel módulo: persiste mientras viva la sesión del SPA). */
+/** Caché de sugerencias por query (nivel módulo: persiste mientras viva la sesión del SPA). Sólo respuestas del API, nunca errores. */
 const suggestCache = new Map<string, CarLocation[]>();
 
 const inputClass = cn(
@@ -50,6 +51,7 @@ export function CarLocationCombobox({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<CarLocation[]>([]);
+  const [failed, setFailed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export function CarLocationCombobox({
     latestRef.current = norm;
     if (norm.length < 2) {
       setItems([]);
+      setFailed(false);
       setLoading(false);
       return;
     }
@@ -73,20 +76,23 @@ export function CarLocationCombobox({
     const cached = suggestCache.get(norm);
     if (cached) {
       setItems(cached);
+      setFailed(false);
       setActiveIndex(-1);
       setLoading(false);
       return;
     }
     setLoading(true);
     timerRef.current = setTimeout(() => {
-      void suggestCarLocationsAction(q).then((results) => {
-        suggestCache.set(norm, results);
-        // Aplica sólo si la query sigue vigente (una respuesta vieja no pisa una más nueva).
-        if (latestRef.current !== norm) return;
-        setItems(results);
-        setActiveIndex(-1);
-        setLoading(false);
-      });
+      void loadSuggestions(suggestCache, norm, () => suggestCarLocationsAction(q)).then(
+        (outcome) => {
+          // Aplica sólo si la query sigue vigente (una respuesta vieja no pisa una más nueva).
+          if (latestRef.current !== norm) return;
+          setItems(outcome.items);
+          setFailed(!outcome.ok);
+          setActiveIndex(-1);
+          setLoading(false);
+        },
+      );
     }, DEBOUNCE_MS);
   }
 
@@ -220,7 +226,27 @@ export function CarLocationCombobox({
         </ul>
       ) : null}
 
-      {open && !loading && query.trim().length >= 2 && items.length === 0 ? (
+      {open && !loading && failed && query.trim().length >= 2 ? (
+        <div
+          role="alert"
+          className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 text-center shadow-lg"
+        >
+          <p className="text-xs font-medium text-[var(--color-fg)]">
+            No pudimos buscar lugares en este momento
+          </p>
+          <button
+            type="button"
+            // mousedown sin foco: el input no lo pierde y el desplegable no se cierra.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => runSearch(query)}
+            className="mt-2 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : null}
+
+      {open && !loading && !failed && query.trim().length >= 2 && items.length === 0 ? (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-center shadow-lg">
           <p className="text-xs font-medium text-[var(--color-fg)]">
             Sin resultados para «{query.trim()}»

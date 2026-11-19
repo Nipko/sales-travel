@@ -1,4 +1,5 @@
 import { z } from '@sales-travel/validation';
+import { BaggageSchema } from './baggage';
 import { HotelStaySchema } from './hotel';
 import { ItinerarySchema } from './itinerary';
 import { MoneySchema } from './money';
@@ -272,18 +273,11 @@ export const OfferSchema = z.object({
    * Ahora `undefined` significa «el proveedor no lo informó» y `0` significa «no incluye». Quien
    * pinte esto TIENE que distinguirlos: el PDF de la cotización va al cliente final, y ahí un
    * «No incluye» sobre algo que no sabemos es una promesa por escrito que no se puede sostener.
+   *
+   * Con trayectos de franquicias distintas (LIGHT de ida y FULL de vuelta), la de la oferta es la
+   * que CUMPLEN TODOS: se promete sólo eso. La de cada trayecto va en `Itinerary.baggage`.
    */
-  baggage: z
-    .object({
-      personalItem: z.number().int().nonnegative().optional(),
-      carryOn: z
-        .object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() })
-        .optional(),
-      checked: z
-        .object({ qty: z.number().int().nonnegative(), weightKg: z.number().optional() })
-        .optional(),
-    })
-    .optional(),
+  baggage: BaggageSchema.optional(),
 
   /**
    * Cada campo es OPCIONAL por la misma razón que `baggage`: ausente = «el proveedor no lo

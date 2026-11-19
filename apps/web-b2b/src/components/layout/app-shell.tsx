@@ -3,6 +3,7 @@ import { brandStyleSheet } from '../../lib/brand-tokens';
 import { ANONYMOUS_VIEWER, type Viewer } from '../../lib/viewer';
 import { AgencySwitcherProvider } from './agency-switcher';
 import { AnnouncementBanner } from './announcement-banner';
+import { BrowserStorageScope } from './browser-storage-scope';
 import { SessionGuard } from './session-guard';
 import type { SessionSnapshot } from './session-guard-state';
 import { Sidebar } from './sidebar';
@@ -33,6 +34,11 @@ interface AppShellProps {
   session?: SessionSnapshot | null;
   /** Las agencias del usuario para el selector (topbar, drawer móvil y ⌘K). */
   agencies?: AgencyOption[];
+  /**
+   * Usuario + agencia: el alcance de lo que las pantallas guardan en `localStorage`
+   * (`lib/storage-scope.ts`). Sin él no se guarda nada.
+   */
+  storageScope?: string;
 }
 
 /**
@@ -61,6 +67,7 @@ export function AppShell({
   viewer = ANONYMOUS_VIEWER,
   session = null,
   agencies = [],
+  storageScope,
 }: AppShellProps) {
   const shell = (
     // `h-dvh` + `overflow-hidden`, NO `min-h-screen`: con `min-h-screen` el contenedor crece
@@ -80,6 +87,7 @@ export function AppShell({
     // la rueda seguía por una franja en blanco que se llevaba el menú y la barra.
     <div className="relative flex h-dvh overflow-hidden bg-[var(--color-bg)]">
       <BrandStyle branding={branding} />
+      <BrowserStorageScope scope={storageScope} />
       <Sidebar
         role={role}
         tenantName={tenantName}

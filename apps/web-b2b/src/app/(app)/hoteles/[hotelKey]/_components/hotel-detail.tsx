@@ -11,7 +11,6 @@ import { countryNamer } from '../../_components/nationality-field';
 import { useRoomContent } from '../../_components/use-room-content';
 import {
   hotelContentAction,
-  hotelRatesAction,
   type HotelContentResult,
   type HotelDetailRatesResult,
 } from '../actions';
@@ -42,10 +41,19 @@ import {
   staySummary,
 } from './hotel-detail-view';
 import { GallerySkeleton, HotelGallery } from './hotel-gallery';
+import {
+  fetchRatesByProvider,
+  pendingProviders,
+  ratesSoFar,
+  settleProvider,
+  startRates,
+  type RatesProgress,
+} from './hotel-rates-progress';
 
 /*
  * El detalle de un hotel (U-05 en el portal): la ficha del proveedor que puso nombre a la tarjeta
- * (o, si ése no tiene, la de otro que lo vende) y las tarifas de todos, pedidas a la vez. La ficha
+ * (o, si ése no tiene, la de otro que lo vende) y las tarifas de todos, pedidas a la vez y cada una
+ * pintada apenas llega (hotel-rates-progress): un proveedor lento no frena a los demás. La ficha
  * no espera a las tarifas ni al revés: el contenido acompaña a la venta, no la frena (principio 1).
  *
  * Si la ficha llega sin fotos, se buscan en el proveedor en segundo plano (hotel-content-warmup):
@@ -60,12 +68,6 @@ const CONTENT_UNREADABLE: HotelContentResult = {
   ok: false,
   outcomes: [],
   error: 'No pudimos cargar la ficha del hotel.',
-};
-
-const RATES_UNREACHABLE: HotelDetailRatesResult = {
-  ok: false,
-  outcomes: [],
-  error: 'No pudimos conectar para traer las tarifas. Revisa tu conexión e intenta de nuevo.',
 };
 
 interface HotelDetailProps {
@@ -83,8 +85,11 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
   const [photoSearch, setPhotoSearch] = useState<PhotoSearch>('idle');
   // `undefined` mientras no se leyó el almacenamiento; `null` si no hay búsqueda de origen.
   const [handoff, setHandoff] = useState<SearchHandoff | null | undefined>(undefined);
-  const [rates, setRates] = useState<HotelDetailRatesResult | undefined>(undefined);
-  const [ratesLoading, setRatesLoading] = useState(false);
+  const [progress, setProgress] = useState<RatesProgress | undefined>(undefined);
+  // Lo que se mostraba antes de «Buscar de nuevo»: queda atenuado hasta que responda alguien.
+  const [previousRates, setPreviousRates] = useState<HotelDetailRatesResult | undefined>(undefined);
+  const ratesRun = useRef<AbortController | null>(null);
+  const shownRates = useRef<HotelDetailRatesResult | undefined>(undefined);
   // La lectura en curso de la ficha y su búsqueda de fotos: se corta al reintentar o al salir.
   const contentRun = useRef<AbortController | null>(null);
   // Sin búsqueda de origen no hay tarifas, y sin tarifas no hay tipos a los que ponerles foto.
@@ -118,18 +123,41 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
     });
   }, [hotelKey, refs]);
 
-  useEffect(() => () => contentRun.current?.abort(), []);
+  useEffect(
+    () => () => {
+      contentRun.current?.abort();
+      ratesRun.current?.abort();
+    },
+    [],
+  );
 
   const loadRates = useCallback(
     (from: SearchHandoff) => {
-      setRatesLoading(true);
-      hotelRatesAction(hotelKey, from.stay)
-        .then(setRates)
-        .catch(() => setRates(RATES_UNREACHABLE))
-        .finally(() => setRatesLoading(false));
+      ratesRun.current?.abort();
+      const run = new AbortController();
+      ratesRun.current = run;
+      setPreviousRates(shownRates.current);
+      setProgress(startRates(refs));
+      void fetchRatesByProvider(
+        hotelKey,
+        refs,
+        from.stay,
+        (arrival) => {
+          setPreviousRates(undefined);
+          setProgress((prev) => (prev === undefined ? prev : settleProvider(prev, arrival)));
+        },
+        run.signal,
+      );
     },
-    [hotelKey],
+    [hotelKey, refs],
   );
+
+  const current = progress === undefined ? undefined : ratesSoFar(progress);
+  const rates = current ?? previousRates;
+  const pending = progress === undefined ? 0 : pendingProviders(progress);
+  useEffect(() => {
+    shownRates.current = rates;
+  }, [rates]);
 
   useEffect(() => {
     loadContent();
@@ -277,7 +305,9 @@ export function HotelDetail({ hotelKey, refs, searchToken }: HotelDetailProps) {
             nights={stayNights(handoff.stay)}
             showProvider={handoff.showProviderInResults}
             rates={rates}
-            loading={ratesLoading}
+            loading={pending > 0}
+            pendingProviders={current === undefined ? 0 : pending}
+            stale={current === undefined && previousRates !== undefined}
             onReload={() => loadRates(handoff)}
             facts={facts}
             roomContent={roomContent}
