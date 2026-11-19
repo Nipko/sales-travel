@@ -95,6 +95,11 @@ export interface CarBookResult {
   sippCode: string;
   rateCode: string;
   status: BookingStatus;
+  /**
+   * `false`: AgentCars la confirmó pero no quedó como orden (se reintentó y quedó el rastro para
+   * operaciones). La reserva existe; todavía no aparece en Reservas ni en «Gestionar reserva».
+   */
+  recorded?: boolean;
 }
 
 export interface CarReservation {

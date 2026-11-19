@@ -59,6 +59,18 @@ const PROVIDER = 'agent-cars';
  */
 export type CarPricing = TenantPricingView;
 
+/**
+ * La reserva confirmada en AgentCars y si quedó como orden. `recorded: false` es una reserva viva
+ * que todavía no está en Reservas: el panel muestra el código con un aviso (A4 de la auditoría 19).
+ */
+export type CarBookOutcome = CarBookResult & { recorded: boolean };
+
+/** Rastro durable de una reserva confirmada que no se pudo guardar como orden. */
+export const CAR_RESERVATION_UNRECORDED_EVENT = 'CarReservationUnrecorded';
+
+/** Pausas entre los intentos de guardar la orden (3 intentos, ~1,25 s en total). */
+const PERSIST_RETRY_DELAYS_MS = [250, 1000] as const;
+
 export type PricedCarOffer = CarOffer & { pricing?: CarPricing };
 export type PricedCarSelection = CarSelection & { pricing?: CarPricing };
 
@@ -147,7 +159,7 @@ export class CarsService {
 
   // ───────────────────────── Reserva ─────────────────────────
 
-  async book(tenantId: string, userId: string, input: ConfirmInput): Promise<CarBookResult> {
+  async book(tenantId: string, userId: string, input: ConfirmInput): Promise<CarBookOutcome> {
     await this.assertCarsEnabled(tenantId);
     if (this.governance) {
       await this.governance.assertEnabled(
@@ -194,18 +206,66 @@ export class CarsService {
 
     const result = await adapter.confirm(req);
 
-    // La reserva YA ocurrió: persistirla NO debe poder tumbarla. Cualquier fallo de persistencia o
-    // auditoría se loguea y se traga; el cliente igual recibe el CarBookResult.
-    try {
-      await this.persistOrder(tenantId, userId, input, result);
-    } catch (err) {
-      this.logger.error(
-        `[cars] reserva ${result.confirmationCode} confirmada pero falló su persistencia:`,
-        (err as Error).message,
-      );
-    }
+    // La reserva YA ocurrió: persistirla NO debe poder tumbarla. Se reintenta; si igual no entra,
+    // queda un rastro durable y el vendedor recibe el código con el aviso, nunca un error genérico.
+    const recorded = await this.persistWithRetry(tenantId, userId, input, result);
+    return { ...result, recorded };
+  }
 
-    return result;
+  /**
+   * Reintenta `persistOrder` (la inserción es transaccional: un intento fallido no deja nada). Si
+   * los intentos se agotan, emite `CarReservationUnrecorded` con el código para que operaciones la
+   * dé de alta a mano. Sin nombre ni correo del conductor: el panel de red lo ve cualquier admin.
+   */
+  private async persistWithRetry(
+    tenantId: string,
+    userId: string,
+    input: ConfirmInput,
+    result: CarBookResult,
+  ): Promise<boolean> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= PERSIST_RETRY_DELAYS_MS.length; attempt++) {
+      if (attempt > 0) await this.sleep(PERSIST_RETRY_DELAYS_MS[attempt - 1] ?? 0);
+      try {
+        await this.persistOrder(tenantId, userId, input, result);
+        return true;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    const reason = lastError instanceof Error ? lastError.message : String(lastError);
+    this.logger.error(
+      `[cars] reserva ${result.confirmationCode} confirmada pero no quedó como orden tras ${
+        PERSIST_RETRY_DELAYS_MS.length + 1
+      } intentos: ${reason}`,
+    );
+    await this.audit.emit({
+      eventType: CAR_RESERVATION_UNRECORDED_EVENT,
+      tenantId,
+      actorUserId: userId,
+      aggregateType: 'car_reservation',
+      aggregateId: result.confirmationCode,
+      payload: {
+        provider: PROVIDER,
+        confirmationCode: result.confirmationCode,
+        status: result.status,
+        companyCode: input.companyCode,
+        sippCode: result.sippCode,
+        pickUpLocation: input.pickUpLocation,
+        pickUpDate: input.pickUpDate,
+        dropOffDate: input.dropOffDate,
+        netTotalMinor: Math.round(input.total * 100),
+        currency: input.currency,
+        paymentType: input.paymentType,
+        attempts: PERSIST_RETRY_DELAYS_MS.length + 1,
+      },
+    });
+    return false;
+  }
+
+  /** Espera entre reintentos; las suites la reemplazan para no dormir. */
+  protected sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

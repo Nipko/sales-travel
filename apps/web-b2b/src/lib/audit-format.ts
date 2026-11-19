@@ -207,6 +207,7 @@ const OPERATION_LABELS: Readonly<Record<string, string>> = {
   HotelOfferRepriced: 'El proveedor cambió el precio',
   HotelNonRefundableAcknowledged: 'Se aceptó la tarifa no reembolsable',
   CarReservationCreated: 'Reserva de auto creada',
+  CarReservationUnrecorded: 'Reserva de auto sin orden en Reservas',
   'platform.order.viewed': 'El superadmin abrió la reserva',
   // Los proveedores.
   ProviderBookingUnmatched: 'Reserva del proveedor sin orden',
