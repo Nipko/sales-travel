@@ -46,7 +46,12 @@ import { AuditService } from '../audit/audit.service.js';
 import type { HotelCancellationEstimate } from '../hotels/hotel-cancellation.js';
 import { BookingHoldPolicyService } from '../portfolios/booking-hold-policy.service.js';
 import { BookingHoldLedger } from '../portfolios/booking-hold.ledger.js';
-import { PricingService, applyCascade, toTenantView } from '../pricing/pricing.service.js';
+import {
+  PricingService,
+  applyCascade,
+  rulesForCurrency,
+  toTenantView,
+} from '../pricing/pricing.service.js';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import { FlightProviderRegistry } from '../providers/flight-provider.registry.js';
 import { stampProviderEnvironment } from '../providers/provider-environment.js';
@@ -980,16 +985,36 @@ export class OrdersService {
   /** La oferta con el precio de venta del tenant, calculado con las reglas de la BD sobre el neto. */
   private async withTenantPricing(tenantId: string, providerOffer: Offer): Promise<Offer> {
     const rules = await this.pricing.getApplicableRules(tenantId, 'flights');
-    return rules.length === 0
-      ? providerOffer
-      : {
-          ...providerOffer,
-          pricing: toTenantView(
-            applyCascade(providerOffer.total.amountMinor, rules),
-            tenantId,
-            providerOffer.total.currency,
-          ),
-        };
+    if (rules.length === 0) return providerOffer;
+    // Las mismas reglas que vio el vendedor en la búsqueda y la revalidación: a una tarifa en otra
+    // moneda (LATAM en BRL para una agencia en COP) no se le suma el markup fijo, que está escrito
+    // en la moneda de la agencia. Sin esto, la orden y la retención de cartera salían más caras
+    // que el precio aceptado. Sólo un markup no porcentual depende de la moneda.
+    const currency = providerOffer.total.currency;
+    const applicable = rules.every((r) => r.ruleType === 'percentage')
+      ? rules
+      : rulesForCurrency(rules, currency, await this.homeCurrencyOf(tenantId));
+    return {
+      ...providerOffer,
+      pricing: toTenantView(
+        applyCascade(providerOffer.total.amountMinor, applicable),
+        tenantId,
+        currency,
+      ),
+    };
+  }
+
+  /** La moneda de la agencia (`tenants.default_currency`), si es un ISO-4217 válido. */
+  private async homeCurrencyOf(tenantId: string): Promise<string | undefined> {
+    const row = await this.db.db
+      .selectFrom('tenants')
+      .select('default_currency')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const raw = row?.default_currency;
+    if (typeof raw !== 'string') return undefined;
+    const code = raw.trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : undefined;
   }
 
   // ─────────────── Retención de cartera de lo que liquida la red (SAB-10) ───────────────

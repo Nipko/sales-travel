@@ -103,7 +103,7 @@ function dto(code: string): CreateOrderDto {
  * Doble de la base: encadena como Kysely lo justo para `createOrder` y guarda los valores del
  * INSERT, que es lo que este test necesita mirar.
  */
-function dbFalsa(): {
+function dbFalsa(homeCurrency: string | null = null): {
   db: DatabaseService;
   insertado: () => Record<string, unknown> | undefined;
   insertadoInicial: () => Record<string, unknown> | undefined;
@@ -162,8 +162,15 @@ function dbFalsa(): {
     updateTable: () => update,
   };
 
+  // Fuera de la transacción del tenant sólo se lee `tenants.default_currency` (la moneda de venta).
+  const tenantRow = {
+    select: () => tenantRow,
+    where: () => tenantRow,
+    executeTakeFirst: () => Promise.resolve({ default_currency: homeCurrency }),
+  };
   const db = {
     withTenant: <T>(_tenantId: string, cb: (trx: unknown) => Promise<T>) => cb(trx),
+    db: { selectFrom: () => tenantRow },
   } as unknown as DatabaseService;
 
   return {
@@ -176,6 +183,7 @@ function dbFalsa(): {
 function banco(
   codes: string[],
   opciones: Readonly<Record<string, Omit<StubFactoryOptions, 'code'>>> = {},
+  venta: { readonly pricing?: PricingService; readonly homeCurrency?: string } = {},
 ): {
   orders: OrdersService;
   factories: Map<string, StubProviderFactory>;
@@ -189,7 +197,7 @@ function banco(
   const registry = new FlightProviderRegistry([...factories.values()], {
     decisionFor: () => Promise.resolve(undefined),
   });
-  const { db, insertado, insertadoInicial } = dbFalsa();
+  const { db, insertado, insertadoInicial } = dbFalsa(venta.homeCurrency ?? null);
   const audit = new RecordingAuditService();
 
   const orders = new OrdersService(
@@ -198,7 +206,7 @@ function banco(
     new RecordingQueueService().asService(),
     {} as unknown as AgentCarsProviderFactory,
     audit.asService(),
-    PRICING_SIN_REGLAS,
+    venta.pricing ?? PRICING_SIN_REGLAS,
   );
 
   return { orders, factories, insertado, insertadoInicial, audit };
@@ -404,6 +412,33 @@ describe('OrdersService.createOrder — enrutado por proveedor', () => {
       tenantId: TENANT,
       requestId: 'order-1',
     });
+  });
+
+  it('a una tarifa en otra moneda no le suma el markup fijo: el mismo precio que vio el vendedor', async () => {
+    // Agencia en COP, tarifa de LATAM en otra moneda (habilitado para pruebas): el fijo de 20.000
+    // está escrito en pesos. Búsqueda y revalidación ya lo dejaban fuera; la orden lo sumaba.
+    const regla = { tenantId: TENANT, tenantName: 'Agencia', level: 0 };
+    const reglas = [
+      { ...regla, ruleType: 'percentage', valueMinor: 1000 },
+      { ...regla, ruleType: 'fixed', valueMinor: 20_000 },
+    ];
+    const pricing = {
+      getApplicableRules: () => Promise.resolve(reglas),
+    } as unknown as PricingService;
+    const input = dto('beta-air');
+    const moneda = input.offer.total.currency;
+    const ajena = banco(
+      ['beta-air'],
+      {},
+      { pricing, homeCurrency: moneda === 'COP' ? 'USD' : 'COP' },
+    );
+    await ajena.orders.createOrder(TENANT, USER, input);
+    const neto = input.offer.total.amountMinor;
+    expect(guardada(ajena.insertado()).pricing?.finalMinor).toBe(Math.round(neto * 1.1));
+
+    const propia = banco(['beta-air'], {}, { pricing, homeCurrency: moneda });
+    await propia.orders.createOrder(TENANT, USER, dto('beta-air'));
+    expect(guardada(propia.insertado()).pricing?.finalMinor).toBe(Math.round(neto * 1.1) + 20_000);
   });
 
   it('si Flight Check cambia la familia o fare basis exige una nueva aceptación', async () => {

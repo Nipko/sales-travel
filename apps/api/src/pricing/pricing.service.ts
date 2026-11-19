@@ -85,6 +85,23 @@ export interface ApplicableRule {
 }
 
 /**
+ * Las reglas que valen para una oferta en esta moneda.
+ *
+ * Un markup `fixed` está escrito en minor units de la moneda de la agencia y la regla no guarda
+ * la moneda: sumar «20.000» de un markup en COP a una tarifa en BRL serían 20.000 reales. Sólo
+ * pasa con las tarifas en otra moneda que el superadmin habilitó para pruebas
+ * (`SaleCurrencyPolicy` en search.service); a esas se les aplican sólo los porcentajes, que no tienen unidad.
+ */
+export function rulesForCurrency<R extends { ruleType: string }>(
+  rules: readonly R[],
+  offerCurrency: string,
+  homeCurrency: string | undefined,
+): R[] {
+  if (homeCurrency === undefined || offerCurrency === homeCurrency) return [...rules];
+  return rules.filter((r) => r.ruleType === 'percentage');
+}
+
+/**
  * Aplica la cascada en JS (misma semántica que compute_price_waterfall): cada regla se
  * compone sobre el running total; 'percentage' suma running*(value/10000), 'fixed' suma value.
  * Se usa para precios en batch (cada oferta de una búsqueda) tras traer las reglas una vez.
