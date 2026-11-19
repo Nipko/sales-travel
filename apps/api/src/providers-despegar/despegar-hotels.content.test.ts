@@ -7,6 +7,7 @@ import {
   mapCatalog,
   mapHotelContent,
   mapMealPlans,
+  httpsUrl,
   mapReservations,
   redactDespegarPayload,
   type BookRequest,
@@ -60,7 +61,11 @@ describe('contenido y catálogos', () => {
         information: { es: 'Hotel céntrico', en: 'Central hotel' },
         notices: 'Piscina en obras',
         main_picture: { url: 'https://img.example/1.jpg' },
-        pictures: [{ url: 'https://img.example/1.jpg' }, { url: 'http://inseguro/2.jpg' }],
+        pictures: [
+          { url: 'https://img.example/1.jpg' },
+          { url: 'ftp://inseguro/2.jpg' },
+          { url: '/relativa.jpg' },
+        ],
         amenities: [{ id: 'WIFI' }, { id: 7 }, {}],
         extra_details: { phone_numbers: ['+57 1 555', { number: 6015555 }, {}], email: 'h@x.co' },
       },
@@ -116,7 +121,10 @@ describe('contenido y catálogos', () => {
                 id: 'RT-1',
                 name: { es: 'Doble Estándar' },
                 descriptions: { en: 'Two beds' },
-                pictures: [{ url: 'https://media.staticontent.com/r.jpg' }, { url: 'http://x/y' }],
+                pictures: [
+                  { url: 'https://media.staticontent.com/r.jpg' },
+                  { url: '//media.staticontent.com/sin-protocolo.jpg' },
+                ],
               },
               { name: 'sin id' },
             ],
@@ -128,7 +136,10 @@ describe('contenido y catálogos', () => {
         id: 'RT-1',
         name: { es: 'Doble Estándar' },
         description: { en: 'Two beds' },
-        pictures: ['https://media.staticontent.com/r.jpg'],
+        pictures: [
+          'https://media.staticontent.com/r.jpg',
+          'https://media.staticontent.com/sin-protocolo.jpg',
+        ],
       },
     ]);
   });
@@ -457,5 +468,22 @@ describe('Book por forma de pago', () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain('fiscal_address');
+  });
+});
+
+describe('httpsUrl: las fotos de Despegar llegan sin protocolo o en http', () => {
+  it.each([
+    [
+      '//media.staticontent.com/media/pictures/abc',
+      'https://media.staticontent.com/media/pictures/abc',
+    ],
+    ['http://media.staticontent.com/a.jpg', 'https://media.staticontent.com/a.jpg'],
+    [' https://media.staticontent.com/a.jpg ', 'https://media.staticontent.com/a.jpg'],
+    ['/relativa.jpg', undefined],
+    ['ftp://x/y.jpg', undefined],
+    ['https://', undefined],
+    [42, undefined],
+  ])('%s → %s', (raw, expected) => {
+    expect(httpsUrl(raw)).toBe(expected);
   });
 });

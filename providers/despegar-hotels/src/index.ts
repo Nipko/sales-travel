@@ -107,6 +107,7 @@ export {
 export {
   mapAmenities,
   mapCatalog,
+  httpsUrl,
   mapHotelContent,
   mapMealPlans,
   type AmenityEntry,

@@ -131,8 +131,17 @@ interface RawHotelContent {
   }[];
 }
 
-const httpsUrl = (u: unknown): string | undefined =>
-  typeof u === 'string' && /^https:\/\//i.test(u) ? u : undefined;
+/**
+ * La URL de una foto, siempre `https`. Despegar las manda sin protocolo (`//media…`) o en `http`:
+ * descartarlas dejaba a todos los hoteles sin fotos. Se completan con `https:`; cualquier otra
+ * cosa (relativa, otro esquema) no es una foto que se pueda servir.
+ */
+export function httpsUrl(u: unknown): string | undefined {
+  if (typeof u !== 'string') return undefined;
+  const url = u.trim();
+  const normalized = url.startsWith('//') ? `https:${url}` : url.replace(/^http:\/\//i, 'https://');
+  return /^https:\/\/[^\s/]+\/\S*$/i.test(normalized) ? normalized : undefined;
+}
 
 const picturesOf = (list: readonly ({ url?: string } | undefined)[]): string[] => [
   ...new Set(list.map((p) => httpsUrl(p?.url)).filter((u): u is string => u !== undefined)),
