@@ -214,8 +214,10 @@ describe('lo que el catálogo ya tiene sale al instante', () => {
   });
 
   it('con varios proveedores, la foto del MISMO hotel en otro (equivalencia aceptada)', async () => {
+    // El propio ya tiene su detalle, sin fotos: la del equivalente es lo que queda.
     const b = banco(['H1'], {
       fotos: [foto('H1', OTRO, 'https://cdn.otro.example/h1.jpg')],
+      estado: { H1: { in_catalog: true, has_details: true } },
     });
 
     const [item] = (await pedir(b, ['H1'])).items;
@@ -228,6 +230,49 @@ describe('lo que el catálogo ya tiene sale al instante', () => {
     const [consulta] = b.db.consultasMarcadas('main-images');
     expect(consulta?.sql).toContain("own.status = 'accepted'");
     expect(consulta?.sql).toContain("other.status = 'accepted'");
+  });
+
+  it('la foto del equivalente no tapa la propia: primero se trae la del proveedor que vende', async () => {
+    // 2026-11-19: hoteles de Despegar mostraban la foto del mismo hotel en TBO, cuyo CDN no le
+    // sirve al proxy, mientras su propio contenido (sin pedir todavía) tenía fotos buenas.
+    const b = banco(['H1'], { fotos: [foto('H1', OTRO, 'https://cdn.otro.example/h1.jpg')] });
+
+    const [item] = (await pedir(b, ['H1'])).items;
+
+    expect(b.fetchContents).toHaveBeenCalledTimes(1);
+    expect(item?.status).toBe('ready');
+    expect(item?.mainImage?.url).toBe(
+      `${HOTEL_IMAGE_PROXY_PATH}${clave(`https://${HOST}/H1/1.jpg`)}`,
+    );
+  });
+
+  it('si el proveedor confirma que no tiene contenido, sale la del equivalente', async () => {
+    const b = banco(['H1'], {
+      fetchContents: proveedorQueResponde(['H1']),
+      fotos: [foto('H1', OTRO, 'https://cdn.otro.example/h1.jpg')],
+    });
+
+    const [item] = (await pedir(b, ['H1'])).items;
+
+    expect(b.fetchContents).toHaveBeenCalledTimes(1);
+    expect(item?.mainImage?.url).toBe(
+      `${HOTEL_IMAGE_PROXY_PATH}${clave('https://cdn.otro.example/h1.jpg')}`,
+    );
+  });
+
+  it('mientras la propia está en camino, sale `pending` y no la del equivalente', async () => {
+    vi.useFakeTimers();
+    const b = banco(['H1'], {
+      fetchContents: vi.fn(() => new Promise<HotelContentBatch>(() => undefined)),
+      fotos: [foto('H1', OTRO, 'https://cdn.otro.example/h1.jpg')],
+    });
+
+    const respuesta = pedir(b, ['H1']);
+    await vi.advanceTimersByTimeAsync(HOTEL_CONTENT_BATCH_WAIT_MS);
+    const [item] = (await respuesta).items;
+
+    expect(item?.status).toBe('pending');
+    expect(item?.mainImage).toBeNull();
   });
 
   it('una foto de un dominio que no es del proveedor no sale: se prueba la siguiente', async () => {

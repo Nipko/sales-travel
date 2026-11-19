@@ -96,6 +96,17 @@ describe('pickMainImages', () => {
     });
   });
 
+  it('`ownOnly`: sólo la foto del proveedor que vende, nunca la del equivalente', () => {
+    const otra = fila({
+      providerCode: 'otro-hotels',
+      firstImages: ['https://cdn.otro.example/h.jpg'],
+    });
+    expect(pickMainImages([otra], hostsOf, { ownOnly: true }).size).toBe(0);
+    expect(
+      pickMainImages([otra, fila({})], hostsOf, { ownOnly: true }).get('tbo-hotels H1'),
+    ).toEqual({ url: hotelImageProxyUrl(FOTO, TBO), count: 3 });
+  });
+
   it('cada foto se valida con los dominios del proveedor DUEÑO de la foto', () => {
     // Una foto de TBO guardada como si fuera de otro proveedor no pasa con los dominios de ése.
     const fotos = pickMainImages([fila({ providerCode: 'otro-hotels' })], hostsOf);
