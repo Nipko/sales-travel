@@ -753,11 +753,22 @@ describe('post-venta por nuestra referencia y por fecha', () => {
       },
     });
     const { calls } = stubSequence([
-      { body: { items: [fila(1, '2026-11-02'), fila(2, '2026-10-30'), { id: 'x' }] } },
+      {
+        body: {
+          items: [
+            fila(1, '2026-11-02'),
+            fila(2, '2026-10-30'),
+            { id: 'x' },
+            { id: 'v', product: { ...fila(3, '2026-11-03').product, product_type: 'FLIGHT' } },
+          ],
+        },
+      },
     ]);
     const out = await adapter().listBookingsByDate({ from: '2026-11-01', to: '2026-11-30' }, CTX);
     expect(calls[0]?.url).toContain('by_api_key=true');
     expect(calls[0]?.url).toContain('from_purchase_date=2026-11-01');
+    // product_type sólo va con product_id: suelto, Despegar responde 400.
+    expect(calls[0]?.url).not.toContain('product_type');
     expect(out.bookings).toEqual([
       {
         providerBookingId: 'R-1',

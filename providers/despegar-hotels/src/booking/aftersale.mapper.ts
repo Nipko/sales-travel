@@ -37,7 +37,9 @@ export function buildReservationsQuery(q: ReservationsQuery): Query {
     product_id: q.productId,
     external_transaction_id: q.externalTransactionId,
     flow_id: q.flowId,
-    product_type: q.productType,
+    // "Only to be used with the corresponding product_id": suelto (por fecha o por reserva)
+    // Despegar responde 400. Sin él, quien llama filtra el tipo en la respuesta.
+    product_type: q.productId === undefined ? undefined : q.productType,
     by_api_key: byDate ? true : undefined,
     from_purchase_date: q.fromPurchaseDate,
     to_purchase_date: q.toPurchaseDate,
