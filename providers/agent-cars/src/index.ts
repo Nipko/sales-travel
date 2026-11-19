@@ -83,6 +83,9 @@ export {
   mapReservation,
 } from './booking/response.mapper.js';
 
+/** Techo de `/confirmation`: holgado, pero por debajo de los 100 s de Cloudflare hacia el panel. */
+const CONFIRM_TIMEOUT_MS = 60_000;
+
 export class AgentCarsAdapter {
   private readonly http: AgentCarsHttpClient;
   private readonly cfg: AgentCarsConfig;
@@ -182,6 +185,10 @@ export class AgentCarsAdapter {
       this.cfg.baseUrl,
       '/confirmation',
       buildConfirmationBody(req),
+      {},
+      // La arrendadora confirma en línea y puede tardar más que una búsqueda. Cortar a los 15 s
+      // dejaba reservas hechas sin orden: mejor esperar a la respuesta.
+      { timeoutMs: CONFIRM_TIMEOUT_MS },
     );
     const result = mapBookResult(raw);
     // Sin código no hay reserva que guardar ni que consultar. No se da por hecha, y el mensaje pide

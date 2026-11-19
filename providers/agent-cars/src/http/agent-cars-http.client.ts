@@ -29,6 +29,8 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 interface RequestOptions {
   /** `false` para servicios públicos que no llevan token (el suggest). */
   auth?: boolean;
+  /** Techo propio de esta llamada; sin él, `cfg.timeoutMs` o 15 s. */
+  timeoutMs?: number;
 }
 
 export class AgentCarsHttpClient {
@@ -54,8 +56,9 @@ export class AgentCarsHttpClient {
     path: string,
     body: Record<string, QueryValue>,
     query: Record<string, QueryValue> = {},
+    opts: RequestOptions = {},
   ): Promise<T> {
-    const url = this.buildUrl(baseUrl, path, this.withToken(query, {}));
+    const url = this.buildUrl(baseUrl, path, this.withToken(query, opts));
     const form = new FormData();
     for (const [k, v] of Object.entries(body)) {
       if (v !== null && v !== undefined) form.append(k, String(v));
@@ -64,6 +67,7 @@ export class AgentCarsHttpClient {
       url,
       { method: 'POST', body: form, headers: { Accept: 'application/json' } },
       path,
+      opts.timeoutMs,
     );
     return this.parse<T>(res, path, url);
   }
@@ -90,8 +94,13 @@ export class AgentCarsHttpClient {
    * "fetch failed"; el motivo real (ENOTFOUND con el host, ECONNREFUSED…) viene en `cause`, y sin él
    * una URL base mal escrita parecía una caída del proveedor.
    */
-  private async fetchOrThrow(url: string, init: RequestInit, path: string): Promise<Response> {
-    const timeoutMs = this.cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  private async fetchOrThrow(
+    url: string,
+    init: RequestInit,
+    path: string,
+    callTimeoutMs?: number,
+  ): Promise<Response> {
+    const timeoutMs = callTimeoutMs ?? this.cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     try {
       return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (err) {

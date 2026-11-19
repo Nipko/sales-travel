@@ -25,6 +25,10 @@ const SEARCH_PATHS: ReadonlySet<string> = new Set(['/get-matrix', '/get-selectio
 const URL_HINT =
   'Revisa la URL base en Mi Red → Credenciales → AgentCars (o la variable AGENT_CARS_BASE_URL): pruebas es https://api.dev.agentcars.com/v2/sites y producción https://api.agentcars.com/v2/sites.';
 
+/** La confirmación no dio una respuesta clara: no se sabe si la reserva quedó hecha. */
+export const UNCERTAIN_CONFIRMATION =
+  'AgentCars no confirmó a tiempo y la reserva pudo quedar hecha. Revísala en «Gestionar reserva» (apellido + código) o en Reservas antes de intentar de nuevo.';
+
 function isHtml(body: string): boolean {
   return /^\s*(<!doctype html|<html)/i.test(body);
 }
@@ -143,6 +147,12 @@ function networkMessage(body: string): string {
  * búsqueda, en una reserva y en una confirmación.
  */
 export function humanizeAgentCarsError(status: number, body: string, path?: string): string {
+  // Una confirmación que se cortó (timeout, conexión) o que el proveedor contestó con 5xx pudo
+  // quedar hecha del lado de AgentCars. «Prueba de nuevo» con el mismo `uniqid` era una segunda
+  // reserva, y la primera quedaba sin orden en Reservas.
+  if (path === '/confirmation' && (status === 0 || status >= 500)) {
+    return UNCERTAIN_CONFIRMATION;
+  }
   // Error de red (status 0 = fetch falló) o del proveedor (5xx).
   if (status === 0) return networkMessage(body);
   if (status >= 500) {

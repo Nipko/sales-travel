@@ -46,6 +46,20 @@ describe('humanizeAgentCarsError', () => {
     expect(humanizeAgentCarsError(0, 'fetch failed')).toContain('conectar');
   });
 
+  it('confirmación cortada o con 5xx → pudo quedar hecha, no «prueba de nuevo»', () => {
+    for (const [status, body] of [
+      [0, 'el proveedor no respondió en 60000 ms'],
+      [0, 'fetch failed'],
+      [502, 'Bad Gateway'],
+      [500, 'Internal Server Error'],
+    ] as const) {
+      const msg = humanizeAgentCarsError(status, body, '/confirmation');
+      expect(msg).toContain('pudo quedar hecha');
+      expect(msg).toContain('Gestionar reserva');
+      expect(msg).not.toMatch(/prueba de nuevo/i);
+    }
+  });
+
   it('5xx → problema interno del proveedor', () => {
     expect(humanizeAgentCarsError(503, 'Service Unavailable')).toContain('problema interno');
   });

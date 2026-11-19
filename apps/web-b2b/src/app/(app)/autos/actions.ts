@@ -2,6 +2,7 @@
 
 import { api } from '../../../lib/api';
 import { earliestTodayIso } from '../../../lib/earliest-today';
+import { isUncertainBookStatus, UNCERTAIN_BOOKING } from '../../../lib/car-book-outcome';
 
 // ─────────────────────────── Tipos (espejo del contrato /cars) ───────────────────────────
 
@@ -392,7 +393,12 @@ export async function bookCarAction(
     method: 'POST',
     body: JSON.stringify(body),
   });
-  if (!res.ok) return { ok: false, error: res.error.message };
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: isUncertainBookStatus(res.error.status) ? UNCERTAIN_BOOKING : res.error.message,
+    };
+  }
   return { ok: true, result: res.data };
 }
 
