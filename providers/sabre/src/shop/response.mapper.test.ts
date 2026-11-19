@@ -1100,3 +1100,111 @@ describe('taxLines: cada impuesto del pasajero, con su código', () => {
     expect(codes(result.warnings)).toContain('tax-lines-mismatch');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Equipaje por trayecto (auditoría de flujos de venta, V6)
+// ---------------------------------------------------------------------------
+
+describe('equipaje por trayecto: del adulto, por segmento, y la de mano', () => {
+  type BagInfo = {
+    provisionType: string;
+    airlineCode: string;
+    segments?: { id: number }[];
+    allowance?: { ref: number };
+  };
+
+  function allowanceDescs(payload: Json): Json[] {
+    return (payload['groupedItineraryResponse'] as Json)['baggageAllowanceDescs'] as Json[];
+  }
+
+  /** El adulto RT del ejemplo oficial, con 23 kg de ida, nada de vuelta y lo que se agregue. */
+  function idaConMaletaVueltaSin(extra: BagInfo[] = []): Json {
+    const payload = clone(adultFixture) as unknown as Json;
+    allowanceDescs(payload).push({ id: 2, pieceCount: 1, weight: 23, unit: 'kg' });
+    passengerInfos(payload)[0]!['baggageInformation'] = [
+      { provisionType: 'A', airlineCode: 'LO', segments: [{ id: 0 }], allowance: { ref: 2 } },
+      { provisionType: 'A', airlineCode: 'LO', segments: [{ id: 1 }], allowance: { ref: 1 } },
+      ...extra,
+    ];
+    return payload;
+  }
+
+  it('la vuelta lleva SU franquicia, no la de la ida', () => {
+    const offer = onlyOffer(run(idaConMaletaVueltaSin()));
+    expect(offer.itineraries?.[0]?.baggage?.checked).toEqual({ qty: 1, weightKg: 23 });
+    expect(offer.itineraries?.[1]?.baggage?.checked).toEqual({ qty: 0 });
+    // La oferta promete lo que cumplen los dos trayectos. Antes decía «1 maleta de 23 kg»
+    // porque leía sólo la primera entrada (la ida).
+    expect(offer.baggage?.checked).toEqual({ qty: 0 });
+    expect(OfferSchema.safeParse(offer).success).toBe(true);
+  });
+
+  it('con la misma franquicia en los dos trayectos, la oferta la conserva', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    allowanceDescs(payload)[0]!['pieceCount'] = 2;
+    const offer = onlyOffer(run(payload));
+    expect(offer.baggage?.checked).toEqual({ qty: 2 });
+    expect(offer.itineraries?.map((leg) => leg.baggage?.checked)).toEqual([{ qty: 2 }, { qty: 2 }]);
+  });
+
+  it('decodifica el equipaje de mano (`provisionType: B`) por trayecto', () => {
+    const payload = idaConMaletaVueltaSin([
+      { provisionType: 'B', airlineCode: 'LO', segments: [{ id: 0 }], allowance: { ref: 3 } },
+      { provisionType: 'B', airlineCode: 'LO', segments: [{ id: 1 }], allowance: { ref: 3 } },
+    ]);
+    allowanceDescs(payload).push({ id: 3, pieceCount: 1, weight: 10, unit: 'kg' });
+    const result = run(payload);
+    const offer = onlyOffer(result);
+    expect(offer.baggage?.carryOn).toEqual({ qty: 1, weightKg: 10 });
+    expect(offer.itineraries?.[1]?.baggage).toEqual({
+      carryOn: { qty: 1, weightKg: 10 },
+      checked: { qty: 0 },
+    });
+    // Con la de mano ya mapeada, el aviso de «sólo facturada» deja de tener sentido.
+    expect(codes(result.warnings)).not.toContain('baggage-not-mapped');
+  });
+
+  it('los cargos (`C`) no son franquicia: no se cuentan como equipaje incluido', () => {
+    const offer = onlyOffer(run(clone(childFixture)));
+    expect(offer.baggage).toEqual({ checked: { qty: 0 } });
+  });
+
+  it('un trayecto sin franquicia informada queda sin dato, y la oferta no promete por él', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    passengerInfos(payload)[0]!['baggageInformation'] = [
+      { provisionType: 'A', airlineCode: 'LO', segments: [{ id: 0 }], allowance: { ref: 1 } },
+    ];
+    const offer = onlyOffer(run(payload));
+    expect(offer.itineraries?.[0]?.baggage?.checked).toEqual({ qty: 0 });
+    expect(offer.itineraries?.[1]?.baggage).toBeUndefined();
+    expect(offer.baggage).toBeUndefined();
+  });
+
+  it('es la franquicia del ADULTO aunque el niño venga primero en la lista', () => {
+    const payload = clone(childFixture) as unknown as Json;
+    allowanceDescs(payload).push({ id: 2, pieceCount: 1, weight: 23, unit: 'kg' });
+    const fare = firstPricing(payload)['fare'] as Json;
+    const list = fare['passengerInfoList'] as Json[];
+    const child = list.find(
+      (entry) => (entry['passengerInfo'] as Json)['passengerType'] !== 'ADT',
+    ) as Json;
+    (child['passengerInfo'] as Json)['baggageInformation'] = [
+      { provisionType: 'A', airlineCode: 'LO', segments: [{ id: 0 }], allowance: { ref: 2 } },
+      { provisionType: 'A', airlineCode: 'LO', segments: [{ id: 1 }], allowance: { ref: 2 } },
+    ];
+    fare['passengerInfoList'] = [child, ...list.filter((entry) => entry !== child)];
+
+    const offer = onlyOffer(run(payload));
+    expect(offer.baggage?.checked).toEqual({ qty: 0 });
+  });
+
+  it('una entrada sin `segments` vale para todo el itinerario, como antes', () => {
+    const payload = clone(adultFixture) as unknown as Json;
+    passengerInfos(payload)[0]!['baggageInformation'] = [
+      { provisionType: 'A', airlineCode: 'LO', allowance: { ref: 1 } },
+    ];
+    const offer = onlyOffer(run(payload));
+    expect(offer.baggage?.checked).toEqual({ qty: 0 });
+    expect(offer.itineraries?.[1]?.baggage?.checked).toEqual({ qty: 0 });
+  });
+});
