@@ -9,9 +9,9 @@ import { customerForHotelSearchAction, type CustomerForHotelSearch } from '../ac
 /*
  * Nacionalidad del pasajero principal (RF-06, D-TBO-14 A, U-03).
  *
- * Hay proveedores que tarifan según ella y piden no fijarla en código (TBO, KP-1). Por eso el
- * campo es obligatorio, está siempre a la vista y nunca arranca con un valor que nadie eligió: ni
- * el país de la agencia ni uno de configuración. Lo que sí hace es PRELLENARSE con algo que el
+ * Opcional (2026-11-19): sin ella, la búsqueda sale igual y un proveedor que tarifa según ella
+ * (TBO, KP-1) queda fuera con su motivo. Está siempre a la vista y nunca arranca con un valor que
+ * nadie eligió: ni el país de la agencia ni uno de configuración. Lo que sí hace es PRELLENARSE con algo que el
  * vendedor puede ver y cambiar: la ficha del cliente del CRM, si llegó desde ahí, o su última
  * búsqueda. Y dice de dónde salió.
  */
@@ -118,13 +118,13 @@ export function prefillMessage(
       };
     case 'crm-missing':
       return {
-        tone: 'error',
-        text: `La ficha de ${prefill.customerName} no tiene nacionalidad: elígela en la lista.`,
+        tone: 'info',
+        text: `La ficha de ${prefill.customerName} no tiene nacionalidad: elígela si la conoces.`,
       };
     case 'crm-unreadable':
       return {
-        tone: 'error',
-        text: 'No pudimos leer la ficha del cliente: elige la nacionalidad en la lista.',
+        tone: 'info',
+        text: 'No pudimos leer la ficha del cliente: elige la nacionalidad si la conoces.',
       };
     case 'last-search':
       return { tone: 'info', text: 'La de tu última búsqueda: cámbiala si el pasajero es otro.' };
@@ -204,14 +204,11 @@ export function NationalityField({ className }: { className?: string }) {
     <div className={cn('space-y-1.5', className)}>
       <label htmlFor={id} className="block text-xs font-medium text-[var(--color-fg)]">
         Nacionalidad del pasajero principal
-        <span aria-hidden="true" className="ml-0.5 text-[var(--color-danger)]">
-          *
-        </span>
+        <span className="ml-1 font-normal text-[var(--color-fg-muted)]">(opcional)</span>
       </label>
       <Select
         id={id}
         name="guestNationality"
-        required
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
@@ -221,9 +218,7 @@ export function NationalityField({ className }: { className?: string }) {
         aria-invalid={message?.tone === 'error' && value === '' ? true : undefined}
         className="h-10 shadow-[var(--shadow-xs)]"
       >
-        <option value="" disabled>
-          Elige un país
-        </option>
+        <option value="">Sin especificar</option>
         {options ? (
           <>
             <optgroup label="Frecuentes">
@@ -250,7 +245,8 @@ export function NationalityField({ className }: { className?: string }) {
           message?.tone === 'error' ? 'text-[var(--color-danger)]' : 'text-[var(--color-fg-muted)]',
         )}
       >
-        {message?.text ?? 'Hay proveedores que tarifan según la nacionalidad.'}
+        {message?.text ??
+          'Sin ella, los proveedores que tarifan según la nacionalidad no entran en la búsqueda.'}
       </p>
     </div>
   );

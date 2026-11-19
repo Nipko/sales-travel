@@ -18,6 +18,7 @@ import {
 import {
   FakeDespegarHotelsAdapter,
   fakeDespegarFactory,
+  withoutCatalogContent,
   hotelFlags,
   hotelRegistry,
 } from './__fixtures__/fake-despegar-hotels.adapter.js';
@@ -97,7 +98,8 @@ function banco(
 ): Banco {
   const despegar = new FakeDespegarHotelsAdapter();
   const factories: HotelProviderFactory[] = [...(opts.stubs ?? [])];
-  if (opts.conDespegar ?? true) factories.push(fakeDespegarFactory(despegar).factory);
+  if (opts.conDespegar ?? true)
+    factories.push(withoutCatalogContent(fakeDespegarFactory(despegar).factory));
 
   const db = fakeHotelsDb({
     catalogo: opts.catalogo ?? { [DESPEGAR]: CATALOGO_DESPEGAR, [STUB]: CATALOGO_STUB },

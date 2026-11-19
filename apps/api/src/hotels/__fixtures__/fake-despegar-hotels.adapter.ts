@@ -261,3 +261,14 @@ export function hotelRegistry(
 ): HotelProviderRegistry {
   return new HotelProviderRegistry(factories, flags);
 }
+
+/**
+ * El factory con el perfil de búsqueda de un proveedor SIN contenido en el catálogo (sin fotos ni
+ * habitaciones propias): las suites que usan a Despegar como ese caso lo siguen probando aunque el
+ * Despegar real ya guarde su contenido (`contentFromCatalog`, `imageHosts`).
+ */
+export function withoutCatalogContent<T extends DespegarHotelsProviderFactory>(factory: T): T {
+  const { contentFromCatalog: _c, imageHosts: _i, ...profile } = factory.searchProfile;
+  Object.defineProperty(factory, 'searchProfile', { value: profile });
+  return factory;
+}

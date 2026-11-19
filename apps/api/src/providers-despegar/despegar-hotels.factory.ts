@@ -33,6 +33,7 @@ import {
   type CredentialSource,
   type TenantAdapter,
 } from '../providers/provider.types.js';
+import { DESPEGAR_IMAGE_HOSTS } from './despegar-hotel-content.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
@@ -119,6 +120,10 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     idSpace: 'platform',
     maxHotelsPerSearch: 50,
     catalogOrder: 'hotel_id',
+    // La disponibilidad no trae fotos: salen de `/content-api/hotels`, guardadas en el catálogo
+    // (`hotel_content`), y se sirven por el proxy de imágenes, sólo de estos dominios.
+    contentFromCatalog: true,
+    imageHosts: DESPEGAR_IMAGE_HOSTS,
   };
 
   private readonly logger = new Logger('DespegarHotels');

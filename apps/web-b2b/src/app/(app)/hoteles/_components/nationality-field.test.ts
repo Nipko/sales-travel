@@ -35,10 +35,10 @@ describe('prefillFromCustomer — la ficha del CRM (RF-06 CA 2)', () => {
     expect(prefillMessage(prefill)?.text).toMatch(/no tiene nacionalidad/);
   });
 
-  it('una ficha que no se pudo leer deja el campo vacío y lo dice', () => {
+  it('una ficha que no se pudo leer deja el campo vacío y lo dice, sin marcarlo como error (es opcional)', () => {
     const prefill = prefillFromCustomer(null);
     expect(prefillValue(prefill)).toBe('');
-    expect(prefillMessage(prefill)?.tone).toBe('error');
+    expect(prefillMessage(prefill)?.tone).toBe('info');
   });
 });
 

@@ -24,7 +24,8 @@ export interface HotelStay {
   /** Una por habitación, en el orden de la búsqueda. */
   readonly rooms: readonly RoomDistribution[];
   /** ISO 3166-1 alfa-2. */
-  readonly guestNationality: string;
+  /** Opcional: sin ella, un proveedor que tarifa según ella queda fuera con su motivo. */
+  readonly guestNationality?: string;
   readonly refundableOnly: boolean;
   /**
    * La moneda de la búsqueda (ISO 4217, D-TBO-15): el detalle pide sus tarifas en la misma, o
@@ -86,7 +87,15 @@ export function parseStay(value: unknown): HotelStay | undefined {
   if (typeof checkinDate !== 'string' || !DATE_RE.test(checkinDate)) return undefined;
   if (typeof checkoutDate !== 'string' || !DATE_RE.test(checkoutDate)) return undefined;
   if (checkoutDate <= checkinDate) return undefined;
-  if (typeof guestNationality !== 'string' || !isCountryAlpha2(guestNationality)) return undefined;
+  // Ausente o vacía vale (es opcional); un valor que no es un país, no: sería otra tarifa.
+  const nationality =
+    guestNationality === undefined || guestNationality === '' ? undefined : guestNationality;
+  if (
+    nationality !== undefined &&
+    (typeof nationality !== 'string' || !isCountryAlpha2(nationality))
+  ) {
+    return undefined;
+  }
   if (!Array.isArray(raw['rooms']) || raw['rooms'].length === 0) return undefined;
   if (raw['rooms'].length > MAX_ROOMS) return undefined;
   const rooms = raw['rooms'].map(roomOf);
@@ -99,7 +108,7 @@ export function parseStay(value: unknown): HotelStay | undefined {
     checkinDate,
     checkoutDate,
     rooms: rooms as RoomDistribution[],
-    guestNationality,
+    ...(nationality === undefined ? {} : { guestNationality: nationality }),
     refundableOnly: raw['refundableOnly'] === true,
     ...(currency === undefined ? {} : { currency }),
   };
@@ -234,7 +243,9 @@ export function stayOfCriteria(
     checkinDate: criteria.checkinDate,
     checkoutDate: criteria.checkoutDate,
     rooms: criteria.occupancy,
-    guestNationality: criteria.guestNationality,
+    ...(criteria.guestNationality === undefined
+      ? {}
+      : { guestNationality: criteria.guestNationality }),
     refundableOnly: criteria.refundableOnly,
     ...(criteria.currency === undefined ? {} : { currency: criteria.currency }),
   });

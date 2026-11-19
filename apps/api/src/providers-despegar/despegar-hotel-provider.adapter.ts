@@ -63,8 +63,24 @@ import type {
 import { z } from '@sales-travel/validation';
 import type {
   HotelAccountEnvironmentPort,
+  HotelContentBatch,
+  HotelContentBatchPort,
+  HotelContentFetchOptions,
+  HotelContentLanguage,
+  HotelContentPort,
   HotelProviderAdapter,
+  HotelProviderContent,
+  HotelProviderRoomContent,
+  HotelRoomContentFetch,
+  HotelRoomContentPort,
 } from '../providers/hotel-provider.types.js';
+import {
+  DESPEGAR_CONTENT_BATCH_SIZE,
+  despegarContentRecord,
+  despegarProviderContent,
+  despegarRoomContent,
+  toDespegarLanguage,
+} from './despegar-hotel-content.js';
 
 /** Código de Despegar en el registry de hoteles y en `provider.name` de cada tarifa. */
 export const DESPEGAR_HOTELS_PROVIDER_CODE = 'despegar-hotels';
@@ -657,7 +673,10 @@ export class DespegarHotelProviderAdapter
     HotelPaymentOptionsPort,
     HotelPriceJumpRecoveryPort,
     HotelBookingByClientReferencePort,
-    HotelBookingsByDatePort
+    HotelBookingsByDatePort,
+    HotelContentPort,
+    HotelContentBatchPort,
+    HotelRoomContentPort
 {
   constructor(
     private readonly acl: DespegarHotelsAcl,
@@ -737,6 +756,63 @@ export class DespegarHotelProviderAdapter
     locale?: string,
   ): Promise<HotelDestinationSuggestion[]> {
     return this.acl.suggest(query, locale);
+  }
+
+  // ───────────────────────── Contenido estático ─────────────────────────
+
+  /** `/content-api/hotels` acepta hasta 100 ids; de a 50 para no alargar la espera. */
+  get contentBatchSize(): number {
+    return DESPEGAR_CONTENT_BATCH_SIZE;
+  }
+
+  /**
+   * Fotos y ficha de un lote, para GUARDARLAS en el catálogo (fotos de los resultados). Lo que
+   * Despegar no devolvió es contenido confirmado como ausente: no tiene un idioma de respaldo que
+   * cambie la respuesta (las fotos no dependen del idioma).
+   */
+  async fetchHotelContents(
+    hotelIds: readonly string[],
+    lang: HotelContentLanguage,
+    _ctx: SearchContext,
+    _options: HotelContentFetchOptions,
+  ): Promise<HotelContentBatch> {
+    const found = await this.acl.getHotelsContent(hotelIds, toDespegarLanguage(lang));
+    const byId = new Map(found.map((c) => [c.id, c]));
+    return {
+      contents: hotelIds.flatMap((id) => {
+        const c = byId.get(id);
+        return c === undefined ? [] : [despegarContentRecord(c, lang)];
+      }),
+      missingHotelIds: hotelIds.filter((id) => !byId.has(id)),
+      calls: { total: 1, fallback: 0, isolation: 0 },
+    };
+  }
+
+  async fetchHotelContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    _ctx: SearchContext,
+    _options: HotelContentFetchOptions,
+  ): Promise<HotelProviderContent | null> {
+    const [c] = await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang));
+    return c === undefined || c.id !== hotelId ? null : despegarProviderContent(c, lang);
+  }
+
+  /** Las habitaciones del hotel (`room_types[]`), con su id = el `roomTypeId` de las tarifas. */
+  async fetchHotelRoomContent(
+    hotelId: string,
+    lang: HotelContentLanguage,
+    _ctx: SearchContext,
+    _options: HotelContentFetchOptions,
+  ): Promise<HotelRoomContentFetch> {
+    const [c] = await this.acl.getHotelsContent([hotelId], toDespegarLanguage(lang));
+    if (c === undefined || c.id !== hotelId) return { lang, outcome: 'none', rooms: [] };
+    const rooms = c.roomTypes
+      .map((rt) => despegarRoomContent(rt, lang))
+      .filter((r): r is HotelProviderRoomContent => r !== undefined);
+    return rooms.length === 0
+      ? { lang, outcome: 'unreadable', rooms: [] }
+      : { lang, outcome: 'rooms', rooms };
   }
 
   // ───────────────────────── Reserva ─────────────────────────

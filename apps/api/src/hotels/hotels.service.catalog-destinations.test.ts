@@ -50,7 +50,12 @@ import type { HotelProviderOutcome } from './hotel-search.aggregate.js';
 import { HotelSearchContextStore } from './hotel-search-context.store.js';
 import { HotelsController, type HotelSearchEnvelope } from './hotels.controller.js';
 import { HotelAvailabilityInputSchema, HotelDetailInputSchema } from './hotels.schemas.js';
-import { HotelsService } from './hotels.service.js';
+import {
+  HOTEL_SUGGEST_CACHE_MAX,
+  HOTEL_SUGGEST_CACHE_TTL_MS,
+  HOTEL_SUGGEST_EMPTY_TTL_MS,
+  HotelsService,
+} from './hotels.service.js';
 
 /**
  * Destinos desde el catálogo local cuando la agencia no tiene autocompletado de la plataforma
@@ -601,5 +606,69 @@ describe('POST /hotels/availability — una ciudad del catálogo local', () => {
     expect(b.db.consultasA('hotel_destination_map').map((q) => q.parameters)).toEqual([
       [DESPEGAR, '2345', TBO, 'accepted'],
     ]);
+  });
+});
+
+/**
+ * El vendedor escribe "bog", "bogo"… o vuelve a la misma ciudad: la lista del proveedor para ese
+ * texto se reutiliza, y una consulta igual en vuelo se comparte, en vez de pedirla en cada tecla.
+ */
+describe('GET /hotels/suggestions — caché de las sugerencias del proveedor', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('el mismo texto (sin importar mayúsculas ni espacios) e idioma no vuelve a Despegar', async () => {
+    const b = banco({ despegar: 'activo' });
+    const [a, c] = await Promise.all([
+      b.service.suggest(AGENCIA, 'bogo', 'es_CO'),
+      b.service.suggest(AGENCIA, ' BOGO ', 'es_CO'),
+    ]);
+    await b.service.suggest(AGENCIA, 'bogo', 'es_CO');
+    expect(c).toBe(a);
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(1);
+
+    await b.service.suggest(AGENCIA, 'bogo', 'pt_BR');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(2);
+  });
+
+  it('vence a las horas; una lista vacía, a los segundos', async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-19T10:00:00Z') });
+    const b = banco({ despegar: 'activo' });
+    await b.service.suggest(AGENCIA, 'bogo');
+    vi.setSystemTime(Date.now() + HOTEL_SUGGEST_CACHE_TTL_MS - 1);
+    await b.service.suggest(AGENCIA, 'bogo');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 2);
+    await b.service.suggest(AGENCIA, 'bogo');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(2);
+
+    b.despegar.suggest.mockResolvedValue([]);
+    await b.service.suggest(AGENCIA, 'xyz');
+    await b.service.suggest(AGENCIA, 'xyz');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(3);
+    vi.setSystemTime(Date.now() + HOTEL_SUGGEST_EMPTY_TTL_MS + 1);
+    await b.service.suggest(AGENCIA, 'xyz');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(4);
+  });
+
+  it('un fallo no se guarda: la próxima tecla vuelve a preguntar', async () => {
+    const b = banco({ despegar: 'activo' });
+    b.despegar.suggest.mockRejectedValueOnce(new DespegarApiError(503, '{}', '/suggestions'));
+    await b.service.suggest(AGENCIA, 'Bogotá').catch(() => undefined);
+    await b.service.suggest(AGENCIA, 'Bogotá');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(2);
+  });
+
+  it('con el tope lleno sale la más vieja; la usada recién se queda', async () => {
+    const b = banco({ despegar: 'activo' });
+    await b.service.suggest(AGENCIA, 'primera');
+    for (let n = 1; n < HOTEL_SUGGEST_CACHE_MAX; n++) await b.service.suggest(AGENCIA, `t${n}`);
+    // Usada recién: pasa al final y no es la que sale.
+    await b.service.suggest(AGENCIA, 'primera');
+    await b.service.suggest(AGENCIA, 'una más');
+    const llamadas = b.despegar.suggest.mock.calls.length;
+    await b.service.suggest(AGENCIA, 'primera');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(llamadas);
+    await b.service.suggest(AGENCIA, 't1');
+    expect(b.despegar.suggest).toHaveBeenCalledTimes(llamadas + 1);
   });
 });

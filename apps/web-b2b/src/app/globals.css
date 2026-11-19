@@ -73,6 +73,19 @@
      un tercio del ciclo— y su duración es 3 × SEARCH_MESSAGE_MS (components/ui/search-loading). */
   --animate-search-sweep: search-sweep 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
   --animate-search-message: search-message 7.5s ease-in-out infinite both;
+  /* Si tarda, un aviso amable a los 8 s (components/ui/search-loading). */
+  --animate-search-slow: fade-in 0.5s ease-out 8s both;
+  /* La escena de la espera (components/ui/travel-scene): avión, nubes, ventanas que se encienden,
+     ruta que avanza. Todo con `motion-safe:`; quieta, la escena queda completa. */
+  --animate-scene-fly: scene-fly 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-scene-cloud: scene-cloud 9s ease-in-out infinite alternate;
+  --animate-scene-cloud-slow: scene-cloud 13s ease-in-out infinite alternate-reverse;
+  --animate-scene-window: scene-window 4.8s ease-in-out infinite both;
+  --animate-scene-glow: scene-glow 2.4s ease-in-out infinite;
+  --animate-scene-sway: scene-sway 3.2s ease-in-out infinite alternate;
+  --animate-scene-dash: scene-dash 1.2s linear infinite;
+  --animate-scene-road: scene-road 0.55s linear infinite;
+  --animate-scene-bob: scene-bob 0.45s ease-in-out infinite alternate;
 
   @keyframes fade-in-up {
     from {
@@ -139,6 +152,100 @@
     100% {
       opacity: 0;
       transform: translateY(-4px);
+    }
+  }
+
+  @keyframes scene-fly {
+    from {
+      transform: translateX(-24px) translateY(2px);
+    }
+    50% {
+      transform: translateX(80px) translateY(-1px);
+    }
+    to {
+      transform: translateX(190px) translateY(2px);
+    }
+  }
+
+  @keyframes scene-cloud {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(10px);
+    }
+  }
+
+  /* 16 ventanas con 180 ms entre una y otra: la última se enciende a los 2,9 s del ciclo. */
+  @keyframes scene-window {
+    0%,
+    6% {
+      opacity: 0.12;
+    }
+    14%,
+    78% {
+      opacity: 1;
+    }
+    92%,
+    100% {
+      opacity: 0.12;
+    }
+  }
+
+  @keyframes scene-glow {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.25;
+    }
+    50% {
+      transform: scale(1.25);
+      opacity: 0.12;
+    }
+  }
+
+  @keyframes scene-sway {
+    from {
+      transform: rotate(-2.5deg);
+    }
+    to {
+      transform: rotate(2.5deg);
+    }
+  }
+
+  @keyframes scene-dash {
+    to {
+      stroke-dashoffset: -13;
+    }
+  }
+
+  @keyframes scene-road {
+    to {
+      stroke-dashoffset: 15;
+    }
+  }
+
+  @keyframes scene-bob {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-0.8px);
+    }
+  }
+
+  @keyframes scene-route {
+    from {
+      offset-distance: 0%;
+      opacity: 0;
+    }
+    8%,
+    88% {
+      opacity: 1;
+    }
+    to {
+      offset-distance: 100%;
+      opacity: 0;
     }
   }
 
@@ -292,4 +399,19 @@ body {
 .form-input:disabled {
   background: var(--color-surface-muted);
   cursor: not-allowed;
+}
+
+/* El avión de la escena de vuelos (components/ui/travel-scene) sigue la ruta punteada. Quieto, a
+   mitad de camino: con «reducir movimiento» la escena sigue diciendo "un vuelo de A a B". La ruta
+   es `FLIGHT_ROUTE` del componente: si cambia una, cambia la otra. */
+.scene-route-plane {
+  offset-path: path('M26 70 Q80 6 134 44');
+  offset-rotate: auto;
+  offset-distance: 55%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scene-route-plane {
+    animation: scene-route 4.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
 }

@@ -129,8 +129,8 @@ export async function hotelRatesAction(
         checkinDate: parsed.checkinDate,
         checkoutDate: parsed.checkoutDate,
         rooms: parsed.rooms,
-        guestNationality: parsed.guestNationality,
       };
+      if (parsed.guestNationality !== undefined) body.guestNationality = parsed.guestNationality;
       if (parsed.refundableOnly) body.refundableOnly = true;
       // La moneda del listado: sin ella el detalle buscaría en la de la agencia (D-TBO-15).
       if (parsed.currency !== undefined) body.currency = parsed.currency;

@@ -88,8 +88,8 @@ const DIAL_CODES: Readonly<Record<string, string>> = {
   ES: '+34',
 };
 
-export function dialCodeFor(nationality: string): string {
-  return DIAL_CODES[nationality] ?? '';
+export function dialCodeFor(nationality: string | undefined): string {
+  return nationality === undefined ? '' : (DIAL_CODES[nationality] ?? '');
 }
 
 /**
@@ -99,7 +99,7 @@ export function dialCodeFor(nationality: string): string {
  */
 export function emptyGuestDraft(
   rooms: readonly RoomDistribution[],
-  guestNationality: string,
+  guestNationality: string | undefined,
 ): GuestDraft {
   return {
     rooms: rooms.map((room) => ({

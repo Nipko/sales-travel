@@ -170,9 +170,9 @@ describe('parseRateSelections — lo guardado no se da por bueno', () => {
     expect(Object.keys(parseRateSelections(raw))).toEqual([SEARCH_TOKEN]);
   });
 
-  it('descarta estadía sin nacionalidad, clave ajena o precio ilegible', () => {
+  it('descarta estadía con una nacionalidad que no es un país, clave ajena o precio ilegible', () => {
     const bad = [
-      { ...selection(NOW), stay: { ...STAY, guestNationality: '' } },
+      { ...selection(NOW), stay: { ...STAY, guestNationality: 'Colombia' } },
       { ...selection(NOW), hotelKey: '../../admin' },
       { ...selection(NOW), shownSale: { amountMinor: 1.5, currency: 'USD' } },
       { ...selection(NOW), shownSale: { amountMinor: 100, currency: 'usd' } },

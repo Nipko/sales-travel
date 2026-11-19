@@ -250,7 +250,8 @@ export interface HotelSearchCriteriaView {
   nights: number;
   rooms: number;
   guests: number;
-  guestNationality: string;
+  /** Ausente: no se indicó (es opcional). */
+  guestNationality?: string;
   /** Una por habitación, en el orden de la búsqueda: el detalle del hotel vuelve a pedirla igual. */
   occupancy: RoomDistribution[];
   refundableOnly: boolean;
@@ -470,17 +471,17 @@ export async function searchHotelsAction(
   if (hotelIds.length === 0 && destinationId === undefined) {
     return fallo('Elige un destino del autocompletado o indica IDs de hotel.');
   }
-  // Nunca un valor por defecto: hay proveedores que tarifan según la nacionalidad (RF-06).
-  if (nationalityRaw.trim() === '') {
-    return fallo('Indica la nacionalidad del pasajero principal.');
-  }
-  if (guestNationality === undefined) {
+  // Opcional, pero nunca un valor por defecto: hay proveedores que tarifan según la nacionalidad
+  // (RF-06) y, sin ella, quedan fuera de la búsqueda con su motivo. Uno que no es un país, se pide.
+  const withNationality = nationalityRaw.trim() !== '';
+  if (withNationality && guestNationality === undefined) {
     return fallo('No reconocemos esa nacionalidad: elígela de la lista.');
   }
   if (!currencyField.ok) return fallo('Elige la moneda de la búsqueda de la lista.');
   const { currency } = currencyField;
 
-  const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms, guestNationality };
+  const body: Record<string, unknown> = { checkinDate, checkoutDate, rooms };
+  if (withNationality && guestNationality !== undefined) body.guestNationality = guestNationality;
   if (hotelIds.length > 0) body.hotelIds = hotelIds;
   if (destinationId !== undefined) body.destinationId = destinationId;
   if (refundableOnly) body.refundableOnly = true;
@@ -507,7 +508,7 @@ export async function searchHotelsAction(
       nights: nightsBetween(checkinDate, checkoutDate),
       rooms: rooms.length,
       guests: rooms.reduce((n, r) => n + r.adults + r.childrenAges.length, 0),
-      guestNationality,
+      ...(withNationality && guestNationality !== undefined ? { guestNationality } : {}),
       occupancy: rooms,
       refundableOnly,
       ...(currency === undefined ? {} : { currency }),

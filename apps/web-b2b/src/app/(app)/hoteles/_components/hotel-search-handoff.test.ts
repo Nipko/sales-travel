@@ -38,8 +38,12 @@ describe('parseStay — la estadía que se vuelve a pedir', () => {
     expect(parseStay(STAY)).toEqual(STAY);
   });
 
-  it('sin nacionalidad válida no hay estadía: nunca un valor por defecto (RF-06)', () => {
-    expect(parseStay({ ...STAY, guestNationality: '' })).toBeUndefined();
+  it('la nacionalidad es opcional, pero nunca inventada ni un valor que no es un país (RF-06)', () => {
+    expect(parseStay({ ...STAY, guestNationality: '' })).not.toHaveProperty('guestNationality');
+    expect(parseStay({ ...STAY, guestNationality: undefined })).not.toHaveProperty(
+      'guestNationality',
+    );
+    expect(parseStay({ ...STAY, guestNationality: '' })).toBeDefined();
     expect(parseStay({ ...STAY, guestNationality: 'Colombia' })).toBeUndefined();
     expect(parseStay({ ...STAY, guestNationality: 'COL' })).toBeUndefined();
   });

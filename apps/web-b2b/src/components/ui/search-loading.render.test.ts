@@ -9,6 +9,7 @@ import {
   SearchButtonLabel,
   SearchLoading,
   searchAnnouncement,
+  searchMessagesFor,
   searchMessageStyle,
 } from './search-loading';
 
@@ -47,17 +48,18 @@ describe('SearchLoading', () => {
     const html = loading(true, 'Lima · 3 – 5 nov 2026 · 2 noches');
     expect(html).toContain('Buscando</span>');
     expect(html).toContain('Lima · 3 – 5 nov 2026 · 2 noches');
-    for (const message of SEARCH_LOADING_MESSAGES) expect(html).toContain(message);
+    // Los de hoteles, con sus palabras.
+    for (const message of searchMessagesFor('hoteles')) expect(html).toContain(message);
     expect(html).toContain('class="silueta"');
   });
 
   it('los mensajes que se turnan no se leen: repetidos cada dos segundos taparían todo', () => {
     const html = loading(true);
     const live = /<p role="status"[^>]*>(.*?)<\/p>/.exec(html)?.[1] ?? '';
-    for (const message of SEARCH_LOADING_MESSAGES) expect(live).not.toContain(message);
-    // Los mensajes que se turnan, la línea que barre y la silueta están fuera del árbol
-    // accesible: ya los resume la región viva.
-    expect(html.match(/aria-hidden="true"/g)).toHaveLength(3);
+    for (const message of searchMessagesFor('hoteles')) expect(live).not.toContain(message);
+    // Los mensajes que se turnan, el aviso de demora, la línea que barre, la escena y la silueta
+    // están fuera del árbol accesible: ya los resume la región viva.
+    expect(html.match(/aria-hidden="true"/g)).toHaveLength(5);
   });
 
   it('la región ocupada no queda vacía para el lector: dice qué se está buscando', () => {
@@ -69,12 +71,13 @@ describe('SearchLoading', () => {
     expect(echo).toBeLessThan(firstHidden);
   });
 
-  it('con «reducir movimiento» queda sólo texto: un mensaje fijo, sin barrido ni siluetas', () => {
+  it('con «reducir movimiento»: un mensaje fijo, sin barrido ni siluetas, y la escena quieta', () => {
     const html = loading(true);
     expect(html).toContain('motion-safe:animate-search-message');
-    // Los mensajes que no son el primero, la línea que barre y la silueta.
+    // Los mensajes que no son el primero, el aviso de demora, la línea que barre y la silueta.
+    // La escena NO se oculta: queda quieta y completa (sólo `motion-safe:` la anima).
     expect(html.match(/motion-reduce:hidden/g)).toHaveLength(
-      SEARCH_LOADING_MESSAGES.length - 1 + 2,
+      SEARCH_LOADING_MESSAGES.length - 1 + 3,
     );
     expect(html).toContain('motion-reduce:animate-none');
   });

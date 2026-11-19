@@ -46,11 +46,12 @@ beforeEach(() => {
 });
 
 describe('searchHotelsAction — nacionalidad del pasajero principal (RF-06, U-03)', () => {
-  it('sin nacionalidad no se busca: nunca un valor por defecto', async () => {
+  it('es opcional: sin ella se busca igual, sin inventar un valor por defecto', async () => {
     const res = await searchHotelsAction(INITIAL, form({ guestNationality: '' }));
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe('Indica la nacionalidad del pasajero principal.');
-    expect(apiMock).not.toHaveBeenCalled();
+    expect(res.ok).toBe(true);
+    const [, init] = apiMock.mock.calls[0] as [string, { body: string }];
+    expect(JSON.parse(init.body)).not.toHaveProperty('guestNationality');
+    expect(res.criteria).not.toHaveProperty('guestNationality');
   });
 
   it('un valor que no es un país oficial no se manda', async () => {

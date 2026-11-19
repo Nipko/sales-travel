@@ -38,6 +38,15 @@ export interface DespegarHotelContent {
   amenityIds: string[];
   phones: string[];
   email?: string;
+  /** `room_types[]`: su `id` es el `room_type_id` de las habitaciones de cada roompack. */
+  roomTypes: DespegarRoomTypeContent[];
+}
+
+export interface DespegarRoomTypeContent {
+  id: string;
+  name: LocalizedText;
+  description: LocalizedText;
+  pictures: string[];
 }
 
 function localized(v: unknown): LocalizedText {
@@ -113,25 +122,53 @@ interface RawHotelContent {
   pictures?: { url?: string }[];
   amenities?: { id?: string | number }[];
   extra_details?: { phone_numbers?: unknown[]; email?: string };
+  room_types?: {
+    id?: string | number;
+    name?: unknown;
+    description?: unknown;
+    descriptions?: unknown;
+    pictures?: { url?: string }[];
+  }[];
 }
 
 const httpsUrl = (u: unknown): string | undefined =>
   typeof u === 'string' && /^https:\/\//i.test(u) ? u : undefined;
 
+const picturesOf = (list: readonly ({ url?: string } | undefined)[]): string[] => [
+  ...new Set(list.map((p) => httpsUrl(p?.url)).filter((u): u is string => u !== undefined)),
+];
+
+/** Array suelto o `{ items }`: la spec no publica ejemplo de la respuesta. */
+function hotelItems(raw: unknown): RawHotelContent[] {
+  if (Array.isArray(raw)) return raw as RawHotelContent[];
+  const items = (raw as { items?: unknown } | null)?.items;
+  return Array.isArray(items) ? (items as RawHotelContent[]) : [];
+}
+
 export function mapHotelContent(raw: unknown): DespegarHotelContent[] {
-  const items = Array.isArray(raw) ? (raw as RawHotelContent[]) : [];
+  const items = hotelItems(raw);
   return items.flatMap((h) => {
     const id = idOf(h.id);
     if (id === undefined) return [];
     const loc = h.location;
-    const pictures = [h.main_picture, ...(h.pictures ?? [])]
-      .map((p) => httpsUrl(p?.url))
-      .filter((u): u is string => u !== undefined);
+    const pictures = picturesOf([h.main_picture, ...(h.pictures ?? [])]);
     const out: DespegarHotelContent = {
       id,
       information: localized(h.information),
       notices: localized(h.notices),
-      pictures: [...new Set(pictures)],
+      pictures,
+      roomTypes: (h.room_types ?? []).flatMap((rt) => {
+        const roomId = idOf(rt.id);
+        if (roomId === undefined) return [];
+        return [
+          {
+            id: roomId,
+            name: localized(rt.name),
+            description: localized(rt.description ?? rt.descriptions),
+            pictures: picturesOf(rt.pictures ?? []),
+          },
+        ];
+      }),
       amenityIds: (h.amenities ?? [])
         .map((a) => idOf(a.id))
         .filter((a): a is string => a !== undefined),

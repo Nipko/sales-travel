@@ -159,8 +159,8 @@ describe('hotelRatesAction — las tarifas de la estadía (D-TBO-19 A)', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it('sin estadía válida no se busca: nunca una nacionalidad por defecto (RF-06)', async () => {
-    const res = await hotelRatesAction(KEY, { ...STAY, guestNationality: '' });
+  it('sin estadía válida no se busca: una nacionalidad que no es un país no viaja (RF-06)', async () => {
+    const res = await hotelRatesAction(KEY, { ...STAY, guestNationality: 'Colombia' });
     expect(res.ok).toBe(false);
     expect(res.error).toBe('Faltan los datos de la búsqueda. Busca de nuevo desde Hoteles.');
     expect(apiMock).not.toHaveBeenCalled();
