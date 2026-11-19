@@ -203,11 +203,14 @@ function withCityCoords(body: Record<string, unknown>, v: CarSearchValues): void
 // ─────────────────────────── Actions ───────────────────────────
 
 /** Autocomplete de ubicaciones (aeropuertos/ciudades con oficinas). */
-export async function suggestCarLocationsAction(query: string): Promise<CarLocation[]> {
+export async function suggestCarLocationsAction(
+  query: string,
+): Promise<{ ok: boolean; items: CarLocation[] }> {
   const q = query.trim();
-  if (q.length < 2) return [];
+  if (q.length < 2) return { ok: true, items: [] };
   const res = await api<{ items: CarLocation[] }>(`/cars/suggestions?q=${encodeURIComponent(q)}`);
-  return res.ok ? res.data.items : [];
+  // `ok: false` no es «sin resultados»: el combobox no lo cachea y avisa que reintente.
+  return res.ok ? { ok: true, items: res.data.items } : { ok: false, items: [] };
 }
 
 /** Catálogo de tipos de tarifa para el país destino (GET /cars/rates). */
