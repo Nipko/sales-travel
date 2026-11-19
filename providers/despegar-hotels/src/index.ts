@@ -145,11 +145,15 @@ export class DespegarHotelsAdapter {
 
   // ───────────────────────── Búsqueda ─────────────────────────
 
-  /** Autocomplete de destinos/hoteles por texto. */
+  /**
+   * Autocomplete de CIUDADES. `/suggestions/hotels` devuelve hoteles, y la búsqueda resuelve el
+   * destino a los hoteles de una ciudad del inventario: se usa `/suggestions` con el perfil de
+   * hoteles, que agrupa ciudades, aeropuertos, zonas…, y el mapper deja sólo las ciudades.
+   */
   async suggest(hint: string, locale?: string): Promise<GeoSuggestion[]> {
     const raw = await this.http.get<Parameters<typeof mapSuggestions>[0]>(
-      '/suggestions/hotels',
-      { hint, locale: despegarLocale(locale, this.cfg), weak: true },
+      '/suggestions',
+      { hint, locale: despegarLocale(locale, this.cfg), profile: 'sbox-hotels' },
       'suggestions',
     );
     return mapSuggestions(raw);

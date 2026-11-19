@@ -92,27 +92,28 @@ describe('mapMealPlan', () => {
 });
 
 describe('mapSuggestions', () => {
-  it('mapea items con gid y descarta los que no tienen gid', () => {
+  it('mapea ciudades con gid y descarta las que no lo tienen y lo que no es ciudad', () => {
     const result = mapSuggestions({
       items: [
         {
           id: 111,
           target: {
             id: 555,
-            gid: 'CITY_222',
-            type: 1,
+            gid: 'CIT_555',
+            type: 'CITY',
             parents: { city: 'Lima', country: 'Peru' },
           },
           display: 'Lima, Peru',
           highlight: '<b>Lima</b>, Peru',
         },
-        { id: 999, target: { id: 999, type: 2 }, display: 'No GID' },
+        { id: 999, target: { id: 999, type: 'CITY' }, display: 'No GID' },
+        { id: 7, target: { id: 7, gid: 'HOT_7', type: 'HOTEL' }, display: 'Un hotel' },
       ],
     });
 
-    // id = target.id (geo/city id), no el id del item.
+    // id = target.id (geo/city id = location.city.id del inventario), no el id del item.
     expect(result).toEqual([
-      { id: 555, gid: 'CITY_222', type: 1, display: 'Lima, Peru', city: 'Lima', country: 'Peru' },
+      { id: 555, gid: 'CIT_555', type: 0, display: 'Lima, Peru', city: 'Lima', country: 'Peru' },
     ]);
   });
 
