@@ -276,6 +276,7 @@ const ENTRADAS: [string, Clase][] = [
   ...noVenta(
     'reportes de lectura',
     'GET /reports/dashboard',
+    'GET /reports/operations',
     'GET /reports/sales-metrics',
     'GET /reports/commissions',
   ),
@@ -401,6 +402,10 @@ const ENTRADAS: [string, Clase][] = [
   ...noVenta(
     'Sistema › Procesos: si el barrido, la conciliación y los catálogos están corriendo (sólo lectura)',
     'GET /admin/system/jobs',
+  ),
+  ...noVenta(
+    'Plataforma → Estado: el semáforo de la plataforma y los pendientes del proyecto (sólo lectura)',
+    'GET /admin/status',
   ),
   ...noVenta(
     'Salud de proveedores: cómo respondieron a las búsquedas de toda la red (sólo lectura)',

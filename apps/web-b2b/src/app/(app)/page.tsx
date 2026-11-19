@@ -12,18 +12,23 @@ import {
 import type { Route } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { TodayPanel } from '../../components/home/today-panel';
 import { Card, CardContent } from '../../components/ui/card';
+import { parseAgencyOperations, todayItems } from '../../lib/agency-today';
 import { parseMemberships, resolveActiveMembership } from '../../lib/agencies';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { isAdminRole } from '../../lib/roles';
-import { PLATFORM_HOME, shouldLandOnPlatformOverview } from '../../lib/platform-overview';
+import { shouldLandOnPlatformOverview } from '../../lib/platform-overview';
+import { PLATFORM_LANDING } from '../../lib/platform-status';
 import {
   parseDashboardKpis,
   salesThisMonthLines,
   type DashboardKpis,
 } from '../../lib/sales-reports';
+import { parseProviderStatus } from '../../lib/provider-status';
 import { getActiveTenant } from '../../lib/session';
+import { parseAgencyWallets } from '../../lib/wallets';
 import { canSell, viewerOf, type Viewer } from '../../lib/viewer';
 
 interface QuickAction {
@@ -114,22 +119,32 @@ function buildStats(k: DashboardKpis | null): Stat[] {
 }
 
 export default async function DashboardPage() {
-  const [res, kpiRes, activeTenantId] = await Promise.all([
+  const [res, kpiRes, activeTenantId, opsRes, walletsRes, providersRes] = await Promise.all([
     api<unknown>('/me/memberships'),
     api<unknown>('/reports/dashboard').catch(() => null),
     getActiveTenant(),
+    api<unknown>('/reports/operations').catch(() => null),
+    api<unknown>('/portfolios').catch(() => null),
+    api<unknown>('/search/provider-status').catch(() => null),
   ]);
   const memberships = res.ok ? parseMemberships(res.data) : [];
   const viewer = viewerOf(memberships);
-  // El superadmin entra a su Resumen, con el mismo criterio con que `/admin/plataforma` lo deja
+  // El superadmin entra a su Estado, con el mismo criterio con que `/admin/plataforma` lo deja
   // pasar: sin bucle de redirecciones. `redirect` lanza, así que va fuera de cualquier try/catch.
   if (
     shouldLandOnPlatformOverview(resolveActiveMembership(memberships, activeTenantId)?.role, viewer)
   ) {
-    redirect(PLATFORM_HOME);
+    redirect(PLATFORM_LANDING);
   }
   // Sin KPIs se muestran guiones, no ceros: un cero es un dato, y sería falso.
   const stats = buildStats(kpiRes?.ok ? (parseDashboardKpis(kpiRes.data) ?? null) : null);
+  // Hoy: sólo quien vende (el superadmin ya se fue a su Estado). Cartera y proveedores son
+  // complementos: si no responden, no se muestran; las reservas sí se avisan si no se leen.
+  const sells = canSell(viewer);
+  const ops = opsRes?.ok ? parseAgencyOperations(opsRes.data) : undefined;
+  const wallets = walletsRes?.ok ? (parseAgencyWallets(walletsRes.data)?.portfolios ?? []) : [];
+  const providers = providersRes?.ok ? parseProviderStatus(providersRes.data) : [];
+  const today = todayItems(ops, wallets, providers, Date.now());
   const primary = primaryAction(viewer);
   const PrimaryIcon = primary.icon;
 
@@ -150,6 +165,8 @@ export default async function DashboardPage() {
           </p>
         </div>
       </header>
+
+      {sells ? <TodayPanel items={today} unavailable={ops === undefined} /> : null}
 
       {/* Acciones Rápidas Modernizadas */}
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-5">

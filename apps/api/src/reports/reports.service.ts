@@ -2,6 +2,23 @@ import { Injectable } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import type { DB } from '../database/database.types.js';
+import {
+  DEADLINE_WINDOW_HOURS,
+  FAILED_WINDOW_DAYS,
+  PENDING_STUCK_MINUTES,
+  QUOTATION_WINDOW_HOURS,
+  foldOperations,
+  type AgencyOperations,
+  type DeadlineRow,
+  type PendingOrdersRow,
+  type QuotationExpiryRow,
+} from './operations.fold.js';
+
+/**
+ * Cuántas filas lee Inicio → Hoy de plazos y de cotizaciones. Los contadores salen de estas filas:
+ * una agencia con más de esto en 72 horas ve «50» y la lista completa en Reservas.
+ */
+const OPERATIONS_QUERY_LIMIT = 50;
 
 /**
  * Reportes de ventas de la agencia activa y los KPIs de Inicio.
@@ -402,6 +419,65 @@ export class ReportsService {
         activeCustomers: toNumber(customers?.count),
         salesThisMonth: foldSalesByCurrency(sales),
       };
+    });
+  }
+
+  /**
+   * Inicio → Hoy: plazos de emisión que vencen, reservas en creación o trabadas, fallidas recientes
+   * y cotizaciones vigentes que vencen. Todo del tenant activo, con su RLS (`withTenant`); sin datos
+   * de pasajeros ni clientes.
+   */
+  async getOperations(tenantId: string, now: Date = new Date()): Promise<AgencyOperations> {
+    const deadlineUntil = new Date(now.getTime() + DEADLINE_WINDOW_HOURS * 3_600_000);
+    const quotationUntil = new Date(now.getTime() + QUOTATION_WINDOW_HOURS * 3_600_000);
+    const stuckBefore = new Date(now.getTime() - PENDING_STUCK_MINUTES * 60_000);
+    const failedSince = new Date(now.getTime() - FAILED_WINDOW_DAYS * 86_400_000);
+    return this.db.withTenant(tenantId, async (trx) => {
+      const [deadlines, pending, failed, quotations] = await Promise.all([
+        sql<DeadlineRow>`
+          SELECT o.id AS order_id, o.order_number, t.ticketing_deadline_at AS deadline_at
+            FROM orders o
+            JOIN flight_order_tracking t ON t.order_id = o.id AND t.tenant_id = o.tenant_id
+           WHERE o.tenant_id = ${tenantId}::uuid
+             AND o.status = 'confirmed'
+             AND t.ticketing_deadline_at IS NOT NULL
+             AND t.ticketing_deadline_at <= ${deadlineUntil}::timestamptz
+           ORDER BY t.ticketing_deadline_at
+           LIMIT ${OPERATIONS_QUERY_LIMIT}
+        `.execute(trx),
+        sql<PendingOrdersRow>`
+          SELECT count(*) AS pending,
+                 count(*) FILTER (WHERE created_at < ${stuckBefore}::timestamptz) AS stuck,
+                 min(created_at) AS oldest_at
+            FROM orders
+           WHERE tenant_id = ${tenantId}::uuid AND status = 'pending'
+        `.execute(trx),
+        sql<{ failed: string }>`
+          SELECT count(*) AS failed
+            FROM orders
+           WHERE tenant_id = ${tenantId}::uuid AND status = 'failed'
+             AND created_at >= ${failedSince}::timestamptz
+        `.execute(trx),
+        sql<QuotationExpiryRow>`
+          SELECT id AS quotation_id, quote_number, expires_at
+            FROM quotations
+           WHERE tenant_id = ${tenantId}::uuid
+             AND status IN ('draft', 'sent')
+             AND expires_at > ${now}::timestamptz
+             AND expires_at <= ${quotationUntil}::timestamptz
+           ORDER BY expires_at
+           LIMIT ${OPERATIONS_QUERY_LIMIT}
+        `.execute(trx),
+      ]);
+      return foldOperations(
+        {
+          deadlines: deadlines.rows,
+          pending: pending.rows[0],
+          failed: failed.rows[0]?.failed,
+          quotations: quotations.rows,
+        },
+        now,
+      );
     });
   }
 

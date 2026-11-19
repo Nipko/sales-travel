@@ -140,11 +140,12 @@ describe('navSections: la misma lista para el sidebar y la paleta', () => {
     expect(sections.map((s) => s.label)).toContain('Gestión');
   });
 
-  it('la consola por tarea: Salud primero, y sin los dobles de la Administración', () => {
+  it('la consola por tarea: Estado primero, después Salud, y sin los dobles de la Administración', () => {
     const sections = navSections('superadmin', { platformUser: true, superadmin: true });
     const group = (label: string) =>
       sections.find((s) => s.label === label)?.items.map((i) => [i.label, i.href]);
     expect(group('Plataforma')).toEqual([
+      ['Estado', '/admin/plataforma/estado'],
       ['Salud', '/admin/plataforma/salud'],
       ['Resumen', '/admin/plataforma/resumen'],
       ['Actividad', '/admin/plataforma/actividad'],

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
-import { PLATFORM_HOME } from '../../../../lib/platform-overview';
+import { PLATFORM_LANDING } from '../../../../lib/platform-status';
 
-/** `/admin/plataforma` a secas es su Resumen. */
+/** `/admin/plataforma` a secas es su Estado. */
 export default function PlatformIndexPage(): never {
-  redirect(PLATFORM_HOME);
+  redirect(PLATFORM_LANDING);
 }
