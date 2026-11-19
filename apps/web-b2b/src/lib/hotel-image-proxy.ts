@@ -30,13 +30,16 @@ export const HOTEL_IMAGE_PROXY_PATH = '/api/hotels/images/';
 
 /**
  * Dominios de fotos de los proveedores de hoteles. ESPEJO de `TBO_IMAGE_HOST_SUFFIXES` del ACL de
- * TBO (`providers/tbo-hotels/src/static/image-hosts.ts`), que es lo que el API declara en el perfil
- * del proveedor: el panel no depende de los paquetes del backend, y el test de este archivo repite
- * los casos del API para que no se separen.
+ * TBO (`providers/tbo-hotels/src/static/image-hosts.ts`) y de `DESPEGAR_IMAGE_HOSTS`
+ * (`apps/api/src/providers-despegar/despegar-hotel-content.ts`), que es lo que el API declara en el
+ * perfil de cada proveedor: el panel no depende de los paquetes del backend, y el test de este
+ * archivo repite los casos del API para que no se separen.
  */
 export const HOTEL_IMAGE_HOST_SUFFIXES: readonly string[] = Object.freeze([
   'tbotechnology.in',
   'tboholidays.com',
+  'staticontent.com',
+  'despegar.com',
 ]);
 
 export const HOTEL_IMAGE_SOURCE_MAX_LENGTH = 1_024;

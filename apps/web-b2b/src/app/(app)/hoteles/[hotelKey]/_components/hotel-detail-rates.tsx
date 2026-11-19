@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { SearchMessages } from '../../../../../components/ui/search-loading';
+import { TravelScene } from '../../../../../components/ui/travel-scene';
 import { cn } from '../../../../../lib/cn';
 import type { HotelRoompack } from '../../actions';
 import { formatMoney } from '../../_components/hotel-format';
@@ -279,9 +281,23 @@ function RetryButton({ onClick, loading }: { onClick: () => void; loading: boole
   );
 }
 
+/** Lo que se turna mientras llegan las tarifas del hotel. */
+export const RATES_LOADING_MESSAGES = [
+  'Consultando las habitaciones disponibles…',
+  'Comparando tarifas y políticas…',
+  'Preparando fotos y detalles…',
+] as const;
+
 export function RatesSkeleton() {
   return (
     <div aria-hidden="true" className="divide-y divide-[var(--color-border)]">
+      <div className="flex items-center gap-4 px-4 py-3">
+        <TravelScene kind="hotels" className="w-24 shrink-0 sm:w-32" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[var(--color-fg)]">Buscando tarifas</p>
+          <SearchMessages className="mt-0.5" messages={RATES_LOADING_MESSAGES} />
+        </div>
+      </div>
       {[0, 1, 2].map((i) => (
         <div key={i} className="space-y-2 px-4 py-3">
           <div className="flex justify-between gap-3">

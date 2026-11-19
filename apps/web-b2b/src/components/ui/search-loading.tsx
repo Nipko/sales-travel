@@ -2,6 +2,7 @@ import { Loader2, Search } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { RESULTS_GRID } from './filters-aside';
+import { TravelScene, sceneForSubject } from './travel-scene';
 
 /*
  * La espera de una búsqueda, igual en vuelos, hoteles y autos: el botón pasa a «Buscando…» y el
@@ -19,6 +20,35 @@ export const SEARCH_LOADING_MESSAGES = [
   'Comparando tarifas…',
   'Buscando las mejores opciones…',
 ] as const;
+
+/** Los de cada búsqueda, con sus palabras: el vendedor reconoce lo que está pasando. */
+export const SEARCH_MESSAGES_BY_SUBJECT: Readonly<
+  Record<string, readonly [string, string, string]>
+> = {
+  hoteles: [
+    'Consultando disponibilidad…',
+    'Comparando tarifas entre proveedores…',
+    'Preparando fotos y habitaciones…',
+  ],
+  vuelos: [
+    'Consultando aerolíneas…',
+    'Comparando tarifas y escalas…',
+    'Ordenando las mejores opciones…',
+  ],
+  autos: [
+    'Consultando rentadoras…',
+    'Comparando tarifas y coberturas…',
+    'Buscando las mejores opciones…',
+  ],
+};
+
+export function searchMessagesFor(subject: string): readonly [string, string, string] {
+  return SEARCH_MESSAGES_BY_SUBJECT[subject] ?? SEARCH_LOADING_MESSAGES;
+}
+
+/** Lo que se lee si la búsqueda pasa de unos segundos: que nada se colgó. */
+export const SEARCH_SLOW_MESSAGE =
+  'Algunos proveedores tardan un poco más en responder. Seguimos buscando…';
 
 /**
  * Cuánto se ve cada mensaje. El ciclo de `search-message` es esto por la cantidad de mensajes
@@ -120,6 +150,7 @@ export function SearchLoading({
   className?: string;
   cardClassName?: string;
 }) {
+  const scene = sceneForSubject(subject);
   return (
     <>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
@@ -137,17 +168,31 @@ export function SearchLoading({
         >
           <div
             className={cn(
-              'relative overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-xs)]',
+              'relative flex items-center gap-4 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-[var(--shadow-xs)]',
               cardClassName,
             )}
           >
-            {/* Hasta dos renglones: en el teléfono, cortado en uno, el eco perdía las fechas. */}
-            <p className="line-clamp-2 text-sm">
-              <span className="font-semibold text-[var(--color-fg)]">Buscando</span>{' '}
-              <span className="text-[var(--color-fg-muted)]">{echo || subject}</span>
-            </p>
-            {/* Un renglón fijo: los mensajes se turnan encima unos de otros y nada se corre. */}
-            <SearchMessages className="mt-0.5" />
+            <div className="min-w-0 flex-1">
+              {/* Hasta dos renglones: en el teléfono, cortado en uno, el eco perdía las fechas. */}
+              <p className="line-clamp-2 text-sm">
+                <span className="font-semibold text-[var(--color-fg)]">Buscando</span>{' '}
+                <span className="text-[var(--color-fg-muted)]">{echo || subject}</span>
+              </p>
+              {/* Un renglón fijo: los mensajes se turnan encima unos de otros y nada se corre. */}
+              <SearchMessages className="mt-0.5" messages={searchMessagesFor(subject)} />
+              {/* Sólo si tarda: aparece a los 8 s y no se mueve (ya lo anunció la región viva). */}
+              <p
+                aria-hidden="true"
+                className="mt-1.5 text-[11px] leading-4 text-[var(--color-fg-subtle)] motion-safe:animate-search-slow motion-reduce:hidden"
+              >
+                {SEARCH_SLOW_MESSAGE}
+              </p>
+            </div>
+            {/* Después del texto en el documento (el lector oye primero qué se busca) y a la
+                izquierda en pantalla. */}
+            {scene === undefined ? null : (
+              <TravelScene kind={scene} className="order-first w-24 shrink-0 sm:w-36" />
+            )}
             <span
               aria-hidden="true"
               className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--color-primary)]/10 motion-reduce:hidden"

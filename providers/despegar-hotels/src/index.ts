@@ -113,6 +113,7 @@ export {
   type CatalogEntry,
   type ContentLanguage,
   type DespegarHotelContent,
+  type DespegarRoomTypeContent,
   type LocalizedText,
   type MealPlanEntry,
 } from './content/content.mapper';

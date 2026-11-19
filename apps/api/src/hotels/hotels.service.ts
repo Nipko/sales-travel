@@ -140,6 +140,13 @@ const FALLBACK_CURRENCY = 'USD';
  */
 const FALLBACK_MIN_HOTELS = 5;
 
+/** Cuánto vale una lista de sugerencias del proveedor: los nombres de ciudades no cambian en el día. */
+export const HOTEL_SUGGEST_CACHE_TTL_MS = 12 * 60 * 60_000;
+/** Una lista vacía, apenas unos segundos. */
+export const HOTEL_SUGGEST_EMPTY_TTL_MS = 30_000;
+/** Textos distintos guardados, como mucho: los más viejos salen primero. */
+export const HOTEL_SUGGEST_CACHE_MAX = 2_000;
+
 const CATALOG_EMPTY_MESSAGE =
   'El catálogo de hoteles de ese destino todavía no está sincronizado. Prueba con otra ciudad o avísale al administrador.';
 
@@ -432,6 +439,17 @@ export class HotelsService {
    */
   private readonly recentPages = new Map<string, RecentPage>();
 
+  /**
+   * Sugerencias del proveedor de la plataforma por proveedor, idioma y texto: los nombres de
+   * ciudades no cambian en el día, y el vendedor escribe "bog", "bogo"… o repite una ciudad. Una
+   * consulta igual en vuelo se comparte. Memoria del proceso: se pierde con un reinicio y no es
+   * del tenant (la lista de ciudades del proveedor es la misma para todas las cuentas).
+   */
+  private readonly suggestCache = new Map<
+    string,
+    { readonly at: number; readonly value: Promise<HotelDestinationSuggestion[]> }
+  >();
+
   private readonly catalog: HotelCatalogStore;
 
   private readonly pagingStore: HotelSearchPagingStore;
@@ -482,10 +500,12 @@ export class HotelsService {
       const { code, adapter, circuit } = platform;
       try {
         // Por el circuito, como siempre: el fallo cuenta, y abierto no se le vuelve a llamar.
-        return await this.breaker.execute(
-          code,
-          () => adapter.suggestDestinations(q, { tenantId }, locale),
-          circuit,
+        return await this.cachedSuggestions(code, q, locale, () =>
+          this.breaker.execute(
+            code,
+            () => adapter.suggestDestinations(q, { tenantId }, locale),
+            circuit,
+          ),
         );
       } catch (err) {
         const fromCatalog = await this.suggestAfterPlatformFailure(
@@ -504,6 +524,51 @@ export class HotelsService {
       throw new HotelOperationUnavailableError('sugerencias de destino');
     }
     return this.suggestFromCatalog(catalogProviders, q, locale);
+  }
+
+  /**
+   * La respuesta del proveedor de la plataforma para ese texto, de la caché o pedida una vez. Un
+   * fallo no se guarda (se vuelve a intentar con la próxima tecla) y una lista vacía dura poco: una
+   * ciudad que el proveedor agrega no debe tardar un día en aparecer.
+   */
+  private cachedSuggestions(
+    code: string,
+    q: string,
+    locale: string | undefined,
+    load: () => Promise<HotelDestinationSuggestion[]>,
+  ): Promise<HotelDestinationSuggestion[]> {
+    const key = `${code}|${locale ?? ''}|${q.trim().toLocaleLowerCase()}`;
+    const now = Date.now();
+    const hit = this.suggestCache.get(key);
+    if (hit !== undefined && now - hit.at < HOTEL_SUGGEST_CACHE_TTL_MS) {
+      // Al final del orden: es la usada más reciente.
+      this.suggestCache.delete(key);
+      this.suggestCache.set(key, hit);
+      return hit.value;
+    }
+    const value = load();
+    this.suggestCache.set(key, { at: now, value });
+    while (this.suggestCache.size > HOTEL_SUGGEST_CACHE_MAX) {
+      const oldest = this.suggestCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.suggestCache.delete(oldest);
+    }
+    value.then(
+      (items) => {
+        if (items.length > 0) return;
+        const current = this.suggestCache.get(key);
+        if (current?.value !== value) return;
+        // Vacía: sólo unos segundos (alcanza para el "bogo" que sigue a "bog").
+        this.suggestCache.set(key, {
+          at: now - HOTEL_SUGGEST_CACHE_TTL_MS + HOTEL_SUGGEST_EMPTY_TTL_MS,
+          value,
+        });
+      },
+      () => {
+        if (this.suggestCache.get(key)?.value === value) this.suggestCache.delete(key);
+      },
+    );
+    return value;
   }
 
   /**

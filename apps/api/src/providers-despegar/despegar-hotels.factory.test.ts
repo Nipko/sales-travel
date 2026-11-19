@@ -118,6 +118,9 @@ describe('DespegarHotelsProviderFactory — contrato del registry de hoteles', (
       idSpace: 'platform',
       maxHotelsPerSearch: 50,
       catalogOrder: 'hotel_id',
+      // Las fotos salen de /content-api/hotels, guardadas en el catálogo, y sólo de sus dominios.
+      contentFromCatalog: true,
+      imageHosts: ['staticontent.com', 'despegar.com'],
     });
   });
 

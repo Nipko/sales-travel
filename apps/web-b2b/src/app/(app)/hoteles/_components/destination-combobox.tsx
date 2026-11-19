@@ -3,11 +3,12 @@
 import { Clock, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { cn } from '../../../../lib/cn';
-import { suggestDestinationsAction, type GeoSuggestion } from '../actions';
+import type { GeoSuggestion } from '../actions';
 import {
   SUGGESTIONS_MIN_QUERY,
   SUGGESTIONS_UNAVAILABLE,
   destinationNotice,
+  fetchDestinationSuggestions,
   loadsOnSearchNotice,
   loadsOnSearchOptionHint,
 } from './destination-suggestions';
@@ -49,8 +50,11 @@ export function DestinationCombobox() {
     }
     setLoading(true);
     const my = ++seq.current;
+    // Cada tecla cancela la consulta anterior: con la server action, quedaban en fila una detrás
+    // de otra, también las de un texto que ya no servía.
+    const controller = new AbortController();
     const t = setTimeout(() => {
-      suggestDestinationsAction(q)
+      fetchDestinationSuggestions(q, controller.signal)
         .then((res) => {
           if (my !== seq.current) return;
           setItems(res.items);
@@ -58,15 +62,19 @@ export function DestinationCombobox() {
           setActive(-1);
           setLoading(false);
         })
-        .catch(() => {
-          // La acción misma no respondió (red, despliegue en curso): tampoco es "no hay ciudades".
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.name === 'AbortError') return;
+          // La ruta misma no respondió (red, despliegue en curso): tampoco es "no hay ciudades".
           if (my !== seq.current) return;
           setItems([]);
           setError(SUGGESTIONS_UNAVAILABLE);
           setLoading(false);
         });
-    }, 250);
-    return () => clearTimeout(t);
+    }, 200);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [query, label, attempt]);
 
   useEffect(() => {

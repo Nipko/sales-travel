@@ -15,6 +15,7 @@ import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import {
   fakeDespegarFactory,
+  withoutCatalogContent,
   FakeDespegarHotelsAdapter,
   hotelFlags,
   hotelRegistry,
@@ -230,6 +231,7 @@ function banco(opts: BancoOpts = {}): Banco {
   vi.spyOn(factory, 'adapterFor').mockReturnValue(adapter);
 
   const despegar = fakeDespegarFactory(new FakeDespegarHotelsAdapter());
+  withoutCatalogContent(despegar.factory);
   const registry = hotelRegistry(
     [despegar.factory, factory],
     hotelFlags((_tenant, code) => code === PROVEEDOR && (opts.flag ?? true)),

@@ -309,7 +309,8 @@ export function staySummary(stay: HotelStay, countryName: (code: string) => stri
     dates: `${formatStayDate(stay.checkinDate)} → ${formatStayDate(stay.checkoutDate)}`,
     nights,
     details: parts.join(' · '),
-    nationality: countryName(stay.guestNationality),
+    nationality:
+      stay.guestNationality === undefined ? 'sin especificar' : countryName(stay.guestNationality),
     ...(stay.currency === undefined ? {} : { currency: stay.currency }),
   };
 }

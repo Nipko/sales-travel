@@ -87,12 +87,49 @@ describe('contenido y catálogos', () => {
         pictures: ['https://img.example/1.jpg'],
         amenityIds: ['WIFI', '7'],
         phones: ['+57 1 555', '6015555'],
+        roomTypes: [],
         email: 'h@x.co',
       },
     ]);
     expect(mapHotelContent({ no: 'es lista' })).toEqual([]);
     expect(mapHotelContent([{ id: 1 }])).toEqual([
-      { id: '1', information: {}, notices: {}, pictures: [], amenityIds: [], phones: [] },
+      {
+        id: '1',
+        information: {},
+        notices: {},
+        pictures: [],
+        amenityIds: [],
+        phones: [],
+        roomTypes: [],
+      },
+    ]);
+  });
+
+  it('habitaciones (room_types) con sus fotos https, también dentro de `{ items }`', () => {
+    expect(
+      mapHotelContent({
+        items: [
+          {
+            id: 9,
+            room_types: [
+              {
+                id: 'RT-1',
+                name: { es: 'Doble Estándar' },
+                descriptions: { en: 'Two beds' },
+                pictures: [{ url: 'https://media.staticontent.com/r.jpg' }, { url: 'http://x/y' }],
+              },
+              { name: 'sin id' },
+            ],
+          },
+        ],
+      })[0]?.roomTypes,
+    ).toEqual([
+      {
+        id: 'RT-1',
+        name: { es: 'Doble Estándar' },
+        description: { en: 'Two beds' },
+        pictures: ['https://media.staticontent.com/r.jpg'],
+      },
     ]);
   });
 

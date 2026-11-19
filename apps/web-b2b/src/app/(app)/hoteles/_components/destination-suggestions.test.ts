@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   LOADS_ON_SEARCH_OPTION_HINT,
   SUGGESTIONS_MAX_QUERY,
   SUGGESTIONS_UNAVAILABLE,
   destinationNotice,
+  fetchDestinationSuggestions,
   loadsOnSearchNotice,
   loadsOnSearchOptionHint,
   parseSuggestionItems,
@@ -134,5 +135,57 @@ describe('ciudades que se cargan al buscar (loadsOnSearch)', () => {
       ],
     });
     expect(items?.[0]?.loadsOnSearch).toBe(true);
+  });
+});
+
+describe('fetchDestinationSuggestions: la ruta del autocompletado, cancelable', () => {
+  const ok = (body: unknown, status = 200) =>
+    vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify(body), { status })),
+    ) as unknown as typeof fetch;
+
+  it('pide la ruta con el texto codificado y devuelve las ciudades', async () => {
+    const fetcher = ok({ items: [{ id: 6585, gid: 'CIT_6585', display: 'Bogotá' }] });
+    const controller = new AbortController();
+    expect(await fetchDestinationSuggestions('bogo tá', controller.signal, fetcher)).toEqual({
+      items: [{ id: 6585, gid: 'CIT_6585', display: 'Bogotá' }],
+    });
+    expect(fetcher).toHaveBeenCalledWith('/api/hotels/suggestions?q=bogo%20t%C3%A1', {
+      signal: controller.signal,
+      headers: { accept: 'application/json' },
+    });
+  });
+
+  it('el aviso de la API viaja con la lista', async () => {
+    expect(
+      await fetchDestinationSuggestions('x', undefined, ok({ items: [], error: 'Sin servicio' })),
+    ).toEqual({ items: [], error: 'Sin servicio' });
+  });
+
+  it('un error HTTP, una forma inesperada o la red caída no son "no hay ciudades"', async () => {
+    expect(await fetchDestinationSuggestions('x', undefined, ok({}, 503))).toEqual({
+      items: [],
+      error: suggestionsErrorMessage(503),
+    });
+    expect(await fetchDestinationSuggestions('x', undefined, ok({ nada: 1 }))).toEqual({
+      items: [],
+      error: SUGGESTIONS_UNAVAILABLE,
+    });
+    const caida = vi.fn(() =>
+      Promise.reject(new TypeError('fetch failed')),
+    ) as unknown as typeof fetch;
+    expect(await fetchDestinationSuggestions('x', undefined, caida)).toEqual({
+      items: [],
+      error: SUGGESTIONS_UNAVAILABLE,
+    });
+  });
+
+  it('cancelada, relanza el AbortError: quien canceló ya no espera esta respuesta', async () => {
+    const abortada = vi.fn(() =>
+      Promise.reject(new DOMException('aborted', 'AbortError')),
+    ) as unknown as typeof fetch;
+    await expect(fetchDestinationSuggestions('x', undefined, abortada)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
   });
 });

@@ -35,6 +35,7 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   FakeDespegarHotelsAdapter,
   fakeDespegarFactory,
+  withoutCatalogContent,
   hotelRegistry,
 } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb } from './__fixtures__/fake-hotels-db.js';
@@ -153,7 +154,7 @@ const RESERVA_EN_CURSO: HotelBookResponse = {
 
 function banco(reglas: ApplicableRule[] = REGLAS): Banco {
   const adapter = new FakeDespegarHotelsAdapter();
-  const { factory } = fakeDespegarFactory(adapter);
+  const factory = withoutCatalogContent(fakeDespegarFactory(adapter).factory);
   const registry = hotelRegistry([factory]);
   const breaker = new CircuitBreakerService();
   const db = fakeHotelsDb({

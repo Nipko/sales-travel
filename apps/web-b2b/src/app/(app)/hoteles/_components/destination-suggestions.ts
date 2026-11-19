@@ -61,6 +61,34 @@ export function parseSuggestionItems(value: unknown): GeoSuggestion[] | undefine
 }
 
 /**
+ * Desde el navegador: `GET /api/hotels/suggestions`, cancelable. Una respuesta sin la forma esperada
+ * o una ruta que no contesta es "no se pudo consultar", nunca "no hay ciudades". Un `AbortError`
+ * se relanza: quien canceló ya no espera esta respuesta.
+ */
+export async function fetchDestinationSuggestions(
+  q: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<DestinationSuggestionsResult> {
+  let res: Response;
+  try {
+    res = await fetcher(`/api/hotels/suggestions?q=${encodeURIComponent(q)}`, {
+      ...(signal === undefined ? {} : { signal }),
+      headers: { accept: 'application/json' },
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') throw err;
+    return { items: [], error: SUGGESTIONS_UNAVAILABLE };
+  }
+  if (!res.ok) return { items: [], error: suggestionsErrorMessage(res.status) };
+  const body = (await res.json().catch(() => undefined)) as unknown;
+  const items = parseSuggestionItems(body);
+  if (items === undefined) return { items: [], error: SUGGESTIONS_UNAVAILABLE };
+  const error = (body as { error?: unknown }).error;
+  return typeof error === 'string' && error !== '' ? { items, error } : { items };
+}
+
+/**
  * Lo que la sugerencia de una ciudad sin hoteles cargados todavía (`loadsOnSearch`, cobertura
  * global del 2026-09-29) le dice al vendedor: se ofrece igual, pero la primera búsqueda trae sus
  * hoteles del proveedor y tarda unos segundos más. `undefined` para el resto de las ciudades.
