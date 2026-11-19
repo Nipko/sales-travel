@@ -97,6 +97,8 @@ export default function AutosPage() {
   const [lastAttempt, setLastAttempt] = useState<CarSearchCriteria | null>(null);
   /** Qué se está buscando, para la espera: sale de lo que se envió, no del formulario. */
   const [echo, setEcho] = useState('');
+  /** Dónde se recoge, para la escena de la espera. */
+  const [pickupHint, setPickupHint] = useState<{ name: string; iata?: string } | undefined>();
   const [editing, setEditing] = useState(false);
   const [searchToken, setSearchToken] = useState(0);
   const focusResults = useRef(false);
@@ -139,6 +141,10 @@ export default function AutosPage() {
     setSelectError('');
     setLastAttempt(next);
     setEcho(carSearchEcho(next));
+    setPickupHint({
+      name: next.pickup.value,
+      ...(next.pickup.iata ? { iata: next.pickup.iata } : {}),
+    });
     startSearch(async () => {
       const res = await searchCarsAction(next.values).catch(() => ({
         ok: false as const,
@@ -345,7 +351,12 @@ export default function AutosPage() {
 
         {/* La espera ocupa el lugar de los resultados. Los de la búsqueda anterior quedan
             montados pero ocultos: filtros y orden viven en ellos (y en la URL) y no se pierden. */}
-        <SearchLoading active={searching} subject="autos" echo={echo}>
+        <SearchLoading
+          active={searching}
+          subject="autos"
+          echo={echo}
+          {...(pickupHint === undefined ? {} : { destination: pickupHint })}
+        >
           <ResultsSkeletonFrame>
             {[0, 1, 2].map((i) => (
               <CarResultSkeleton key={i} />
