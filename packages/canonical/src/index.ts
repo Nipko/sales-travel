@@ -1,6 +1,7 @@
 export * from './money';
 export * from './pax';
 export * from './segment';
+export * from './baggage';
 export * from './itinerary';
 export * from './hotel';
 export * from './offer';

@@ -145,3 +145,44 @@ describe('fareAttributes — lo que incluye ESA tarifa en ESE trayecto', () => {
     expect(legInclusions(o, 1)).toBeNull();
   });
 });
+
+describe('fareAttributes — sin atributos de marca, la franquicia de cada trayecto (V6)', () => {
+  /** Ida sin maleta y vuelta con una de 23 kg; la oferta promete lo que cumplen las dos. */
+  function porTrayecto(): Offer {
+    const o = oferta();
+    delete o.fareComponents;
+    o.baggage = { checked: { qty: 0 } };
+    o.itineraries = [
+      {
+        segments: [segmento('BOG', 'LIM')],
+        totalDurationMinutes: 120,
+        stops: 0,
+        baggage: { checked: { qty: 0 }, carryOn: { qty: 1, weightKg: 10 } },
+      },
+      {
+        segments: [segmento('LIM', 'BOG')],
+        totalDurationMinutes: 120,
+        stops: 0,
+        baggage: { checked: { qty: 1, weightKg: 23 }, carryOn: { qty: 1, weightKg: 10 } },
+      },
+    ];
+    return o;
+  }
+
+  it('la vuelta muestra SU maleta, no la de la ida', () => {
+    const o = porTrayecto();
+    expect(fareAttributes(o, 0, fmt).checked.value).toBe('no');
+    expect(fareAttributes(o, 1, fmt).checked.value).toBe('yes');
+    expect(fareAttributes(o, 1, fmt).carryOn.value).toBe('yes');
+  });
+
+  it('sin trayecto elegido, la de la oferta', () => {
+    expect(fareAttributes(porTrayecto(), undefined, fmt).checked.value).toBe('no');
+  });
+
+  it('un trayecto sin franquicia propia usa la de la oferta, como antes', () => {
+    const o = porTrayecto();
+    delete o.itineraries![1]!.baggage;
+    expect(fareAttributes(o, 1, fmt).checked.value).toBe('no');
+  });
+});
