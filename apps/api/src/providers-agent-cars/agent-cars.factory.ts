@@ -44,6 +44,21 @@ export class AgentCarsProviderFactory {
     return adapter;
   }
 
+  /**
+   * ¿La cuenta de AgentCars con la que opera el tenant es suya? Una heredada del consolidador (o la
+   * del entorno, que es de la plataforma) la comparten otras agencias: su reporte diario trae
+   * también las reservas de ellas.
+   */
+  async ownsAccount(tenantId: string): Promise<boolean> {
+    try {
+      const resolved = await this.creds.resolve(tenantId, PROVIDER_CODE);
+      return resolved.ownerTenantId === tenantId;
+    } catch (err) {
+      if (err instanceof NotFoundException) return false;
+      throw err;
+    }
+  }
+
   /** Conserva sólo la entrada vigente por owner (al rotar credenciales el `updatedAt` cambia la key). */
   private evictStale(currentKey: string): void {
     if (!currentKey.startsWith('byoc:')) return;

@@ -138,8 +138,9 @@ export class CarsController {
     @CurrentUser() userId: string | undefined,
     @Body(new ZodValidationPipe(CancelBodySchema)) body: CancelBody,
   ): Promise<CancelResult> {
+    if (!userId) throw new ForbiddenException();
     const tenantId = await this.tenant(userId);
-    return this.cars.cancel(tenantId, body);
+    return this.cars.cancel(tenantId, userId, body);
   }
 
   @SalesOperation()

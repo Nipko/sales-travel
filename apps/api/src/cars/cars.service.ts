@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { GovernancePaymentsService } from '../governance/governance-payments.service.js';
 import { Money } from '@sales-travel/canonical';
 import type {
@@ -26,7 +32,8 @@ import type {
 import { AuditService } from '../audit/audit.service.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ActiveTenantService } from '../request-context/active-tenant.service.js';
-import { OrdersService } from '../orders/orders.service.js';
+import { OrdersService, type OrderRow } from '../orders/orders.service.js';
+import { sql } from 'kysely';
 import { AgentCarsProviderFactory } from '../providers-agent-cars/agent-cars.factory.js';
 import {
   PricingService,
@@ -44,6 +51,7 @@ import type {
 } from './cars.schemas.js';
 
 const VERTICAL = 'cars';
+const PROVIDER = 'agent-cars';
 
 /**
  * Pricing acotado al tenant que consulta. Sin neto ni desglose por ancestro: le
@@ -279,17 +287,45 @@ export class CarsService {
     });
   }
 
+  /**
+   * La gestión por apellido + código (consultar, cancelar, activar) sólo vale para reservas de la
+   * agencia. Las sub-agencias heredan la cuenta de AgentCars del consolidador: sin esto, con el
+   * apellido y el código de una reserva ajena se leía su voucher o se la cancelaba.
+   */
+  private async ownedOrder(tenantId: string, confirmationCode: string): Promise<OrderRow> {
+    const order = await this.orders.findByProviderOrderId(tenantId, PROVIDER, confirmationCode);
+    if (!order?.provider_order_id) {
+      throw new NotFoundException(
+        'No encontramos esa reserva entre las de tu agencia. Revisa el código de confirmación.',
+      );
+    }
+    return order;
+  }
+
   async myReservation(tenantId: string, q: MyReservationQuery): Promise<CarReservation> {
+    await this.ownedOrder(tenantId, q.confirmationCode);
     const adapter = await this.factory.forTenant(tenantId);
     return adapter.myReservation(q);
   }
 
-  async cancel(tenantId: string, q: CancelQuery): Promise<CancelResult> {
-    const adapter = await this.factory.forTenant(tenantId);
-    return adapter.cancel(q);
+  /**
+   * Cancela por la misma vía que «Reservas»: la orden pasa a cancelada, queda la operación y su
+   * auditoría, y una cancelación ya hecha o en duda no se vuelve a mandar. Antes iba directo al
+   * proveedor y la orden seguía «confirmada» en Reservas y en los reportes.
+   */
+  async cancel(tenantId: string, userId: string, q: CancelQuery): Promise<CancelResult> {
+    const order = await this.ownedOrder(tenantId, q.confirmationCode);
+    const providerOrderId = order.provider_order_id ?? q.confirmationCode;
+    const { result } = await this.orders.cancelOrder(tenantId, order.id, providerOrderId, userId);
+    return {
+      success: result.success,
+      confirmationCode: providerOrderId,
+      ...(result.error ? { message: result.error } : {}),
+    };
   }
 
   async release(tenantId: string, q: ReleaseQuery): Promise<ReleaseResult> {
+    await this.ownedOrder(tenantId, q.referenceCode);
     const adapter = await this.factory.forTenant(tenantId);
     return adapter.release(q);
   }
@@ -299,7 +335,32 @@ export class CarsService {
     const q: { date?: string; language?: string } = {};
     if (input.date) q.date = input.date;
     if (input.language) q.language = input.language;
-    return adapter.getDailyReport(q);
+    const [entries, owns] = await Promise.all([
+      adapter.getDailyReport(q),
+      this.factory.ownsAccount(tenantId),
+    ]);
+    if (owns) return entries;
+    // Cuenta compartida: sólo las reservas que la agencia tiene como órdenes.
+    const mine = await this.ownedCodes(
+      tenantId,
+      entries.map((e) => e.confirmationCode),
+    );
+    return entries.filter((e) => mine.has(e.confirmationCode.trim().toUpperCase()));
+  }
+
+  private async ownedCodes(tenantId: string, codes: readonly string[]): Promise<Set<string>> {
+    const wanted = [...new Set(codes.map((c) => c.trim().toUpperCase()).filter(Boolean))];
+    if (wanted.length === 0) return new Set();
+    const rows = await this.db.withTenant(tenantId, (trx) =>
+      trx
+        .selectFrom('orders')
+        .select('provider_order_id')
+        .where('tenant_id', '=', tenantId)
+        .where('provider', '=', PROVIDER)
+        .where(sql<string>`upper(provider_order_id)`, 'in', wanted)
+        .execute(),
+    );
+    return new Set(rows.map((r) => String(r.provider_order_id).toUpperCase()));
   }
 
   // ───────────────────────── Helpers ─────────────────────────

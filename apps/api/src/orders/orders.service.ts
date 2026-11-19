@@ -1536,6 +1536,29 @@ export class OrdersService {
     });
   }
 
+  /**
+   * La orden del tenant con ese localizador del proveedor. Para lo que llega por código y no por
+   * id (la gestión de autos por apellido + código): sin esto, el código de otra agencia que comparte
+   * la cuenta del consolidador abría su reserva.
+   */
+  async findByProviderOrderId(
+    tenantId: string,
+    provider: string,
+    providerOrderId: string,
+  ): Promise<OrderRow | undefined> {
+    return this.db.withTenant(tenantId, async (trx) => {
+      const row = await trx
+        .selectFrom('orders')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('provider', '=', provider)
+        .where(sql<string>`upper(provider_order_id)`, '=', providerOrderId.trim().toUpperCase())
+        .orderBy('created_at', 'desc')
+        .executeTakeFirst();
+      return row as unknown as OrderRow | undefined;
+    });
+  }
+
   async findById(tenantId: string, id: string): Promise<OrderRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
       const row = await trx
