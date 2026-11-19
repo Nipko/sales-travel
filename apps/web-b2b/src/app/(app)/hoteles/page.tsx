@@ -206,6 +206,8 @@ export default function HotelesPage() {
       .join(' ') || undefined;
   /** Qué se está buscando, congelado al enviar: si el vendedor sigue tocando, la espera no miente. */
   const [echo, setEcho] = useState('');
+  /** Adónde se busca, para la escena de la espera. */
+  const [searchDestination, setSearchDestination] = useState<string>('');
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
   const formId = useId();
@@ -297,6 +299,7 @@ export default function HotelesPage() {
       const value = data.get(name);
       return typeof value === 'string' ? value : '';
     };
+    setSearchDestination(field('destinationLabel'));
     setEcho(
       searchingEcho({
         destinationLabel: field('destinationLabel'),
@@ -561,7 +564,12 @@ export default function HotelesPage() {
 
       {/* La espera ocupa el lugar de los resultados. Los de la búsqueda anterior quedan montados
           pero ocultos: filtros, orden y vista viven en ellos (y en la URL) y no se pierden. */}
-      <SearchLoading active={isPending} subject="hoteles" echo={echo}>
+      <SearchLoading
+        active={isPending}
+        subject="hoteles"
+        echo={echo}
+        {...(searchDestination ? { destination: { name: searchDestination } } : {})}
+      >
         <ResultsSkeletonFrame>
           {[0, 1, 2].map((i) => (
             <HotelResultSkeleton key={i} />

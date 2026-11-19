@@ -1,8 +1,21 @@
 import { Loader2, Search } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { RESULTS_GRID } from './filters-aside';
+import { SEARCH_SLOW_MESSAGE, SearchMessages, searchMessagesFor } from './search-loading-messages';
+import { SearchStage } from '../search-stage/search-stage';
+import type { DestinationHint } from '../search-stage/resolve-scene';
 import { TravelScene, sceneForSubject } from './travel-scene';
+
+export {
+  SEARCH_LOADING_MESSAGES,
+  SEARCH_MESSAGES_BY_SUBJECT,
+  SEARCH_MESSAGE_MS,
+  SEARCH_SLOW_MESSAGE,
+  SearchMessages,
+  searchMessageStyle,
+  searchMessagesFor,
+} from './search-loading-messages';
 
 /*
  * La espera de una búsqueda, igual en vuelos, hoteles y autos: el botón pasa a «Buscando…» y el
@@ -13,92 +26,6 @@ import { TravelScene, sceneForSubject } from './travel-scene';
  * que limpiar ni estado que se desfase con el servidor. Con «reducir movimiento» no se mueve nada
  * y queda sólo el texto: sin giro, sin barrido, sin siluetas latiendo y un único mensaje fijo.
  */
-
-/** Los mensajes que se turnan, en el orden en que pasan las cosas. */
-export const SEARCH_LOADING_MESSAGES = [
-  'Consultando proveedores…',
-  'Comparando tarifas…',
-  'Buscando las mejores opciones…',
-] as const;
-
-/** Los de cada búsqueda, con sus palabras: el vendedor reconoce lo que está pasando. */
-export const SEARCH_MESSAGES_BY_SUBJECT: Readonly<
-  Record<string, readonly [string, string, string]>
-> = {
-  hoteles: [
-    'Consultando disponibilidad…',
-    'Comparando tarifas entre proveedores…',
-    'Preparando fotos y habitaciones…',
-  ],
-  vuelos: [
-    'Consultando aerolíneas…',
-    'Comparando tarifas y escalas…',
-    'Ordenando las mejores opciones…',
-  ],
-  autos: [
-    'Consultando rentadoras…',
-    'Comparando tarifas y coberturas…',
-    'Buscando las mejores opciones…',
-  ],
-};
-
-export function searchMessagesFor(subject: string): readonly [string, string, string] {
-  return SEARCH_MESSAGES_BY_SUBJECT[subject] ?? SEARCH_LOADING_MESSAGES;
-}
-
-/** Lo que se lee si la búsqueda pasa de unos segundos: que nada se colgó. */
-export const SEARCH_SLOW_MESSAGE =
-  'Algunos proveedores tardan un poco más en responder. Seguimos buscando…';
-
-/**
- * Cuánto se ve cada mensaje. El ciclo de `search-message` es esto por la cantidad de mensajes
- * (7,5 s) y cada uno se muestra en su tercio: cambiar uno sin el otro los encima.
- */
-export const SEARCH_MESSAGE_MS = 2500;
-
-/**
- * Tres mensajes que se turnan en un renglón fijo, uno encima del otro: nada se corre. Fuera del
- * árbol accesible (los resume la región viva de quien los usa) y, con «reducir movimiento», sólo
- * el primero y quieto. `search-message` está pensada para TRES mensajes.
- */
-export function SearchMessages({
-  messages = SEARCH_LOADING_MESSAGES,
-  className,
-}: {
-  messages?: readonly [string, string, string];
-  className?: string;
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn(
-        'relative h-4 overflow-hidden text-xs leading-4 text-[var(--color-fg-subtle)]',
-        className,
-      )}
-    >
-      {messages.map((message, index) => (
-        <span
-          key={message}
-          style={searchMessageStyle(index)}
-          className={cn(
-            'absolute inset-0 truncate motion-safe:animate-search-message',
-            index > 0 && 'motion-reduce:hidden',
-          )}
-        >
-          {message}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** El retraso de cada mensaje dentro del ciclo: el segundo arranca cuando se va el primero. */
-export function searchMessageStyle(index: number): CSSProperties {
-  return {
-    animationDelay: `${index * SEARCH_MESSAGE_MS}ms`,
-    animationDuration: `${SEARCH_LOADING_MESSAGES.length * SEARCH_MESSAGE_MS}ms`,
-  };
-}
 
 /**
  * Lo que oye un lector de pantalla al empezar la búsqueda: una sola vez, sin los mensajes que
@@ -135,6 +62,7 @@ export function SearchLoading({
   active,
   subject,
   echo,
+  destination,
   children,
   className,
   cardClassName,
@@ -145,6 +73,11 @@ export function SearchLoading({
   subject: string;
   /** Lo que se buscó, en una línea: quien dictó las fechas de memoria las ve escritas. */
   echo?: string;
+  /**
+   * Adónde se busca: la ventana grande de la espera muestra su paisaje (o el que más se le
+   * parece). Sin él, la escena genérica de ciudad.
+   */
+  destination?: DestinationHint;
   /** La silueta de los resultados de esta búsqueda. */
   children?: ReactNode;
   className?: string;
@@ -156,6 +89,16 @@ export function SearchLoading({
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {active ? searchAnnouncement(subject, echo) : ''}
       </p>
+      {scene === undefined ? null : (
+        <SearchStage
+          active={active}
+          vertical={scene}
+          {...(destination === undefined ? {} : { destination })}
+          {...(echo ? { echo } : {})}
+          messages={searchMessagesFor(subject)}
+          slowMessage={SEARCH_SLOW_MESSAGE}
+        />
+      )}
       {active ? (
         /*
           `aria-busy` marca el lugar de los resultados mientras se llenan. Lo que dice qué se busca

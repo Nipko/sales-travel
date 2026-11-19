@@ -260,6 +260,8 @@ export default function CotizacionesPage() {
   const [quoteError, setQuoteError] = useState('');
   /** Qué se está buscando, congelado al enviar: si el usuario sigue tocando, el eco no miente. */
   const [echo, setEcho] = useState('');
+  /** El aeropuerto de destino, para la escena de la espera (en multidestino, el del último tramo). */
+  const [echoDestination, setEchoDestination] = useState('');
   /**
    * Los criterios de la búsqueda que PRODUJO los resultados, congelados al enviar. La cotización
    * se guardaba con lo que el formulario tuviera al pulsar «Cotizar»: cambiar los pasajeros
@@ -363,6 +365,11 @@ export default function CotizacionesPage() {
 
     setProblem(null);
     setEcho(searchEcho(draft));
+    setEchoDestination(
+      (draft.mode === 'multicity' && draft.legs?.length
+        ? draft.legs[draft.legs.length - 1]?.destination
+        : draft.destination) ?? '',
+    );
     // Multidestino: el primer tramo va también en origin/destination/departureDate, como pide el
     // criterio del API, y todos en `legs`.
     const firstLeg = tripMode === 'multicity' ? legs[0] : undefined;
@@ -691,6 +698,7 @@ export default function CotizacionesPage() {
           <SearchResults
             hasSearched={hasSearched}
             echo={echo}
+            echoDestination={echoDestination}
             result={result}
             allGroups={allGroups}
             flightGroups={flightGroups}
@@ -786,6 +794,7 @@ function SimulatedFaresNotice({ result }: { result: SearchResult }) {
 function SearchResults({
   hasSearched,
   echo,
+  echoDestination,
   result,
   allGroups,
   flightGroups,
@@ -803,6 +812,8 @@ function SearchResults({
 }: {
   hasSearched: boolean;
   echo: string;
+  /** IATA del destino buscado: la escena de la espera muestra su ciudad. */
+  echoDestination: string;
   result: SearchResult;
   allGroups: FlightGroup[];
   flightGroups: FlightGroup[];
@@ -837,6 +848,7 @@ function SearchResults({
         active={pending}
         subject="vuelos"
         echo={echo}
+        {...(echoDestination ? { destination: { iata: echoDestination } } : {})}
         className="mt-8"
         cardClassName="rounded-xl"
       >
@@ -850,6 +862,7 @@ function SearchResults({
         <SearchResultsBody
           hasSearched={hasSearched}
           echo={echo}
+          echoDestination={echoDestination}
           result={result}
           allGroups={allGroups}
           flightGroups={flightGroups}

@@ -1,0 +1,448 @@
+/*
+ * La escena de la espera de una búsqueda (components/search-stage). Una paleta de ilustración
+ * propia —día en claro, noche en oscuro— y animaciones que sólo mueven `transform` y `opacity`:
+ * las que el navegador resuelve en la GPU sin recalcular el diseño de la página.
+ *
+ * Reglas de la casa:
+ * - Nada de colores fijos en los SVG: todo sale de estas variables (`--ss-*`).
+ * - Toda animación es una clase `ss-*` de este archivo. Con «reducir movimiento» no corre ninguna
+ *   y la escena queda en su pose quieta, completa.
+ * - `data-paused` (la pestaña no está a la vista o la ventana se minimizó) congela todo.
+ */
+
+.ss-root {
+  --ss-sky-top: oklch(0.83 0.07 232);
+  --ss-sky-bottom: oklch(0.95 0.04 75);
+  --ss-sun: oklch(0.9 0.15 88);
+  --ss-sun-glow: oklch(0.93 0.1 85 / 0.45);
+  --ss-cloud: oklch(0.995 0 0);
+  --ss-far: oklch(0.82 0.04 245);
+  --ss-mid: oklch(0.72 0.05 250);
+  --ss-near: oklch(0.58 0.05 255);
+  --ss-stone: oklch(0.84 0.05 75);
+  --ss-stone-dark: oklch(0.7 0.06 62);
+  --ss-wall: oklch(0.95 0.02 85);
+  --ss-wall-warm: oklch(0.86 0.08 70);
+  --ss-roof: oklch(0.6 0.14 38);
+  --ss-sea: oklch(0.66 0.11 222);
+  --ss-sea-light: oklch(0.8 0.09 205);
+  --ss-foam: oklch(0.98 0.01 210);
+  --ss-sand: oklch(0.9 0.07 85);
+  --ss-green: oklch(0.7 0.14 145);
+  --ss-green-dark: oklch(0.55 0.12 150);
+  --ss-trunk: oklch(0.55 0.07 55);
+  --ss-snow: oklch(0.985 0.008 240);
+  --ss-street: oklch(0.78 0.012 260);
+  --ss-sidewalk: oklch(0.88 0.01 260);
+  --ss-line: oklch(0.98 0 0);
+  --ss-glass: oklch(0.78 0.06 228);
+  --ss-glass-dark: oklch(0.62 0.07 235);
+  --ss-metal: oklch(0.72 0.02 250);
+  --ss-window: oklch(0.88 0.13 85);
+  --ss-window-off: oklch(0.86 0.03 240);
+  --ss-ink: oklch(0.32 0.03 264);
+  --ss-accent: var(--color-primary);
+  --ss-accent-2: var(--color-accent);
+  --ss-red: oklch(0.6 0.19 27);
+  --ss-gold: oklch(0.8 0.14 80);
+  --ss-skin: oklch(0.76 0.08 55);
+  --ss-hair: oklch(0.3 0.04 40);
+  --ss-pants: oklch(0.4 0.05 264);
+  --ss-suitcase: oklch(0.62 0.13 232);
+  --ss-shadow: oklch(0.2 0.02 264 / 0.14);
+  --ss-star: oklch(1 0 0 / 0);
+}
+
+:root.dark .ss-root,
+:root[data-theme='dark'] .ss-root {
+  --ss-sky-top: oklch(0.2 0.05 272);
+  --ss-sky-bottom: oklch(0.38 0.09 305);
+  --ss-sun: oklch(0.93 0.04 95);
+  --ss-sun-glow: oklch(0.9 0.05 95 / 0.18);
+  --ss-cloud: oklch(0.42 0.04 285);
+  --ss-far: oklch(0.33 0.05 285);
+  --ss-mid: oklch(0.29 0.045 280);
+  --ss-near: oklch(0.25 0.04 275);
+  --ss-stone: oklch(0.5 0.04 70);
+  --ss-stone-dark: oklch(0.4 0.04 60);
+  --ss-wall: oklch(0.46 0.03 270);
+  --ss-wall-warm: oklch(0.48 0.05 60);
+  --ss-roof: oklch(0.42 0.1 35);
+  --ss-sea: oklch(0.32 0.07 250);
+  --ss-sea-light: oklch(0.42 0.07 240);
+  --ss-foam: oklch(0.65 0.03 240);
+  --ss-sand: oklch(0.5 0.05 70);
+  --ss-green: oklch(0.42 0.08 155);
+  --ss-green-dark: oklch(0.33 0.07 160);
+  --ss-trunk: oklch(0.38 0.05 50);
+  --ss-snow: oklch(0.78 0.02 250);
+  --ss-street: oklch(0.3 0.015 264);
+  --ss-sidewalk: oklch(0.38 0.015 264);
+  --ss-line: oklch(0.7 0.05 85);
+  --ss-glass: oklch(0.38 0.06 250);
+  --ss-glass-dark: oklch(0.3 0.05 255);
+  --ss-metal: oklch(0.45 0.02 260);
+  --ss-window: oklch(0.88 0.15 85);
+  --ss-window-off: oklch(0.36 0.03 260);
+  --ss-ink: oklch(0.85 0.02 264);
+  --ss-red: oklch(0.6 0.17 27);
+  --ss-gold: oklch(0.82 0.13 82);
+  --ss-skin: oklch(0.68 0.07 55);
+  --ss-hair: oklch(0.22 0.03 40);
+  --ss-pants: oklch(0.32 0.04 264);
+  --ss-suitcase: oklch(0.55 0.12 232);
+  --ss-shadow: oklch(0 0 0 / 0.3);
+  --ss-star: oklch(1 0 0 / 0.85);
+}
+
+/* Las piezas que giran, se mecen o laten lo hacen sobre su propio centro. */
+.ss-root .ss-sway,
+.ss-root .ss-spin,
+.ss-root .ss-pulse,
+.ss-root .ss-leg,
+.ss-root .ss-arm,
+.ss-root .ss-wheel {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.ss-root .ss-sway {
+  transform-origin: bottom center;
+}
+.ss-root .ss-leg,
+.ss-root .ss-arm {
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ss-root .ss-drift {
+    animation: ss-drift 16s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-drift-slow {
+    animation: ss-drift 24s ease-in-out infinite alternate-reverse;
+  }
+  .ss-root .ss-sway {
+    animation: ss-sway 3.4s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-wave {
+    animation: ss-wave 5s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-wave-slow {
+    animation: ss-wave 7s ease-in-out infinite alternate-reverse;
+  }
+  .ss-root .ss-twinkle {
+    animation: ss-twinkle 2.6s ease-in-out infinite;
+  }
+  .ss-root .ss-spin {
+    animation: ss-spin 14s linear infinite;
+  }
+  .ss-root .ss-pulse {
+    animation: ss-pulse 2.8s ease-in-out infinite;
+  }
+  .ss-root .ss-float {
+    animation: ss-float 4s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-fly-across {
+    animation: ss-fly-across 18s linear infinite;
+  }
+  .ss-root .ss-leg {
+    animation: ss-leg 0.5s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-leg-b {
+    animation-direction: alternate-reverse;
+  }
+  .ss-root .ss-arm {
+    animation: ss-leg 0.5s ease-in-out infinite alternate-reverse;
+  }
+  .ss-root .ss-step {
+    animation: ss-step 0.25s ease-in-out infinite alternate;
+  }
+  .ss-root .ss-wheel {
+    animation: ss-spin 0.6s linear infinite;
+  }
+  .ss-root .ss-dash {
+    animation: ss-dash 1.4s linear infinite;
+  }
+
+  /* ── Las historias: ciclos de 10 s. Quietas, cada actor queda en su pose final. ── */
+  .ss-root .ss-hotel-walker {
+    animation: ss-hotel-walker 10s linear infinite;
+  }
+  .ss-root .ss-hotel-door {
+    animation: ss-hotel-door 10s ease-in-out infinite;
+  }
+  .ss-root .ss-flight-plane {
+    animation: ss-flight-plane 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  .ss-root .ss-flight-trail {
+    animation: ss-flight-trail 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  .ss-root .ss-flight-dest {
+    animation: ss-flight-dest 10s ease-in-out infinite;
+  }
+  .ss-root .ss-car-walker {
+    animation: ss-car-walker 10s linear infinite;
+  }
+  .ss-root .ss-car {
+    animation: ss-car 10s cubic-bezier(0.5, 0, 0.6, 1) infinite;
+  }
+  .ss-root .ss-car-keys {
+    animation: ss-car-keys 10s ease-in-out infinite;
+  }
+}
+
+.ss-root[data-paused] *,
+.ss-root[data-paused] {
+  animation-play-state: paused !important;
+}
+
+@keyframes ss-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(28px);
+  }
+}
+@keyframes ss-sway {
+  from {
+    transform: rotate(-3deg);
+  }
+  to {
+    transform: rotate(3deg);
+  }
+}
+@keyframes ss-wave {
+  from {
+    transform: translateX(-10px);
+  }
+  to {
+    transform: translateX(10px);
+  }
+}
+@keyframes ss-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes ss-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ss-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.45;
+  }
+}
+@keyframes ss-float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+@keyframes ss-fly-across {
+  from {
+    transform: translateX(-80px);
+  }
+  to {
+    transform: translateX(720px);
+  }
+}
+@keyframes ss-leg {
+  from {
+    transform: rotate(-22deg);
+  }
+  to {
+    transform: rotate(22deg);
+  }
+}
+@keyframes ss-step {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-2px);
+  }
+}
+@keyframes ss-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* Hoteles: el viajero camina hasta la puerta (0–62 %), entra (62–70 %), la puerta se ilumina y
+   el ciclo vuelve a empezar. */
+@keyframes ss-hotel-walker {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  62% {
+    transform: translateX(420px);
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateX(436px);
+    opacity: 0;
+  }
+}
+@keyframes ss-hotel-door {
+  0%,
+  60% {
+    opacity: 0.15;
+  }
+  68%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+/* Vuelos: despega del origen, cruza el arco y aterriza en el destino, que se ilumina. */
+@keyframes ss-flight-plane {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  80% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+  90%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+@keyframes ss-flight-trail {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  80%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ss-flight-dest {
+  0%,
+  74% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  82% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+}
+
+/* Autos: el viajero sale del aeropuerto (0–24 %), recoge las llaves en el mostrador (24–34 %),
+   sube al auto (34–40 %) y el auto sale hacia la ciudad (42–92 %). */
+@keyframes ss-car-walker {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  24%,
+  32% {
+    transform: translateX(120px);
+    opacity: 1;
+  }
+  38% {
+    transform: translateX(176px);
+    opacity: 1;
+  }
+  40%,
+  100% {
+    transform: translateX(176px);
+    opacity: 0;
+  }
+}
+@keyframes ss-car-keys {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  26%,
+  34% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  38%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes ss-car {
+  0%,
+  40% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(470px);
+    opacity: 1;
+  }
+  94%,
+  100% {
+    transform: translateX(500px);
+    opacity: 0;
+  }
+}
+
+/* La ventana: entra suave, sin saltos. */
+@keyframes ss-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ss-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ss-modal {
+    animation: ss-modal-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .ss-modal-backdrop {
+    animation: ss-backdrop-in 0.25s ease-out both;
+  }
+}
