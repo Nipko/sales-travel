@@ -8,6 +8,7 @@ import {
   countdownLabel,
   holdDeadlineLabel,
   priceBreakdown,
+  priceChangeOf,
   sessionRemainingMs,
   sessionTone,
   youngDriver,
@@ -142,5 +143,36 @@ describe('bookingStatusView', () => {
 
   it('a confirmar: que no se le avise al cliente todavía', () => {
     expect(bookingStatusView('on_request', 'ppd', 'x').note).toContain('antes de avisarle');
+  });
+});
+
+describe('priceChangeOf', () => {
+  it('sin precio anterior, o igual, no hay aviso', () => {
+    expect(priceChangeOf(undefined, usd(130))).toBeNull();
+    expect(priceChangeOf(usd(130), usd(130))).toBeNull();
+  });
+
+  it('una subida se avisa con la diferencia y pide aceptarla', () => {
+    expect(priceChangeOf(usd(120), usd(130.5))).toEqual({
+      previous: usd(120),
+      current: usd(130.5),
+      direction: 'up',
+      delta: usd(10.5),
+      needsAcceptance: true,
+    });
+  });
+
+  it('una bajada se avisa pero no frena la confirmación', () => {
+    expect(priceChangeOf(usd(130), usd(125))).toMatchObject({
+      direction: 'down',
+      delta: usd(5),
+      needsAcceptance: false,
+    });
+  });
+
+  it('otra moneda: sin diferencia y con aceptación', () => {
+    const change = priceChangeOf(usd(130), { amountMinor: 50_000_000, currency: 'COP' });
+    expect(change?.delta).toBeUndefined();
+    expect(change?.needsAcceptance).toBe(true);
   });
 });

@@ -15,9 +15,11 @@ import {
   type CarRateDetail,
   type CarSelection,
   type DriverValues,
+  type Money,
 } from './actions';
 import { CarBookingDone } from './_components/car-booking-done';
 import { CarCheckout } from './_components/car-checkout';
+import { saleOf } from './_components/car-format';
 import { priceBreakdown } from './_components/car-checkout-model';
 import { CarResultSkeleton } from './_components/car-result-card';
 import { CarResults } from './_components/car-results';
@@ -39,6 +41,8 @@ interface Selected {
   readonly rateDetail: CarRateDetail | null;
   /** Cuándo se abrió la sesión de la tarifa: vale 15 minutos. */
   readonly at: number;
+  /** El precio de venta que el vendedor vio antes de abrir esta tarifa (lista o renovación). */
+  readonly previousSale?: Money;
 }
 
 interface Booked {
@@ -185,7 +189,8 @@ export default function AutosPage() {
         setSelectError(opened.error);
         return;
       }
-      setSelected(opened.selected);
+      // El precio de la lista es el que el vendedor eligió: si la selección trae otro, se avisa.
+      setSelected({ ...opened.selected, previousSale: saleOf(offer) });
       setCheckoutError('');
       setStep('checkout');
       window.scrollTo({ top: 0 });
@@ -201,7 +206,7 @@ export default function AutosPage() {
         setCheckoutError(opened.error);
         return;
       }
-      setSelected(opened.selected);
+      setSelected({ ...opened.selected, previousSale: saleOf(selected.selection) });
     });
   }
 
@@ -386,6 +391,7 @@ export default function AutosPage() {
           selection={selected.selection}
           rateDetail={selected.rateDetail}
           selectedAt={selected.at}
+          previousSale={selected.previousSale}
           booking={booking}
           renewing={renewing}
           error={checkoutError}

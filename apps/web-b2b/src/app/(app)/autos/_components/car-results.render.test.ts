@@ -148,11 +148,15 @@ describe('CarCheckout', () => {
   };
   const selection: CarSelection = { ...CON_MARKUP, uniqid: 'abc123', rateCode: '3' };
 
-  function checkout(selectedAt: number): string {
+  function checkout(
+    selectedAt: number,
+    previousSale?: { amountMinor: number; currency: string },
+  ): string {
     return renderToStaticMarkup(
       createElement(CarCheckout, {
         criteria,
         selection,
+        previousSale,
         rateDetail: {
           base: usd(90),
           tax: usd(10),
@@ -196,6 +200,29 @@ describe('CarCheckout', () => {
 
   it('con tiempo al retiro ofrece reservar en espera, con el plazo para activarla', () => {
     expect(checkout(Date.now())).toContain('antes del dom 20 oct · 10:00');
+  });
+
+  it('sin cambio de precio no hay aviso', () => {
+    const html = checkout(Date.now(), usd(130));
+    expect(html).not.toContain('Subió el precio');
+    expect(html).not.toContain('Bajó el precio');
+  });
+
+  it('si subió desde la lista: antes, ahora y diferencia, y no confirma sin aceptarlo', () => {
+    const html = checkout(Date.now(), usd(120));
+    expect(html).toContain('Subió el precio');
+    expect(html).toMatch(money('120,00'));
+    expect(html).toMatch(new RegExp('\\+' + money('10,00').source));
+    expect(html).toContain('Aceptar el precio nuevo');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Confirmar reserva<\/button>/);
+  });
+
+  it('si bajó: se informa y se puede confirmar', () => {
+    const html = checkout(Date.now(), usd(140));
+    expect(html).toContain('Bajó el precio');
+    expect(html).not.toContain('Aceptar el precio nuevo');
+    expect(html).toMatch(/<button[^>]*>Confirmar reserva<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Confirmar reserva<\/button>/);
   });
 
   describe('CarBookingDone', () => {

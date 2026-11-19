@@ -21,8 +21,8 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Card } from '../../../../components/ui/card';
 import { Field, TextInput } from '../../../../components/ui/field';
 import { cn } from '../../../../lib/cn';
-import type { BookOptions, CarRateDetail, CarSelection, DriverValues } from '../actions';
-import { CAR_CLASS_LABELS, carClassOf, formatMoney, modelLabel } from './car-format';
+import type { BookOptions, CarRateDetail, CarSelection, DriverValues, Money } from '../actions';
+import { CAR_CLASS_LABELS, carClassOf, formatMoney, modelLabel, saleOf } from './car-format';
 import {
   MAX_DRIVER_AGE,
   MIN_DRIVER_AGE,
@@ -31,11 +31,13 @@ import {
   countdownLabel,
   holdDeadlineLabel,
   priceBreakdown,
+  priceChangeOf,
   sessionRemainingMs,
   sessionTone,
   youngDriver,
   type DriverDraft,
   type DriverField,
+  type PriceChange,
 } from './car-checkout-model';
 import { CarPhoto, CompanyLogo } from './car-photo';
 import {
@@ -101,6 +103,7 @@ export function CarCheckout({
   selection,
   rateDetail,
   selectedAt,
+  previousSale,
   booking,
   renewing,
   error,
@@ -113,6 +116,11 @@ export function CarCheckout({
   rateDetail: CarRateDetail | null;
   /** Cuándo se abrió la sesión de la tarifa (reloj del navegador). */
   selectedAt: number;
+  /**
+   * El precio de venta que el vendedor vio antes de esta tarifa: el de la lista al elegir el auto,
+   * o el del checkout al renovar. Si difiere, se avisa antes de confirmar.
+   */
+  previousSale?: Money | undefined;
   booking: boolean;
   renewing: boolean;
   error?: string | undefined;
@@ -132,6 +140,11 @@ export function CarCheckout({
   const [flightNumber, setFlightNumber] = useState('');
   const [onHold, setOnHold] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // Qué tarifa (por su `selectedAt`) aceptó el vendedor con el precio nuevo: una renovación vuelve
+  // a pedirlo si el precio cambia otra vez.
+  const [acceptedFor, setAcceptedFor] = useState<number | null>(null);
+  const priceChange = priceChangeOf(previousSale, saleOf(selection));
+  const mustAccept = priceChange?.needsAcceptance === true && acceptedFor !== selectedAt;
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -365,6 +378,9 @@ export function CarCheckout({
             renewing={renewing}
             onHold={onHold && holdAllowed}
             error={error}
+            priceChange={priceChange}
+            mustAccept={mustAccept}
+            onAcceptPrice={() => setAcceptedFor(selectedAt)}
             onRenew={onRenew}
             onConfirm={confirm}
           />
@@ -496,6 +512,9 @@ function CheckoutSummary({
   renewing,
   onHold,
   error,
+  priceChange,
+  mustAccept,
+  onAcceptPrice,
   onRenew,
   onConfirm,
 }: {
@@ -508,6 +527,10 @@ function CheckoutSummary({
   renewing: boolean;
   onHold: boolean;
   error?: string | undefined;
+  priceChange: PriceChange | null;
+  /** Subió el precio y el vendedor todavía no lo aceptó: no se confirma. */
+  mustAccept: boolean;
+  onAcceptPrice: () => void;
   onRenew: () => void;
   onConfirm: () => void;
 }) {
@@ -627,6 +650,13 @@ function CheckoutSummary({
 
         {/* Siempre montada: una región viva que aparece ya con texto no la anuncian todos. */}
         <div aria-live="polite" aria-atomic="true" className="space-y-3">
+          {priceChange && !expired ? (
+            <PriceChangeNotice
+              change={priceChange}
+              mustAccept={mustAccept}
+              onAccept={onAcceptPrice}
+            />
+          ) : null}
           {expired ? (
             <div className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/5 px-3 py-2.5 text-xs text-[var(--color-fg)]">
               <p className="flex items-start gap-1.5">
@@ -666,7 +696,7 @@ function CheckoutSummary({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={booking || renewing}
+            disabled={booking || renewing || mustAccept}
             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-primary-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {booking ? (
@@ -683,5 +713,60 @@ function CheckoutSummary({
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * El precio cambió entre la lista (o el checkout antes de renovar) y la tarifa abierta. Una subida
+ * se acepta con un toque antes de confirmar; una bajada sólo se informa.
+ */
+function PriceChangeNotice({
+  change,
+  mustAccept,
+  onAccept,
+}: {
+  change: PriceChange;
+  mustAccept: boolean;
+  onAccept: () => void;
+}) {
+  const up = change.direction === 'up';
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3 py-2.5 text-xs text-[var(--color-fg)]',
+        up
+          ? 'border-[var(--color-warning)]/50 bg-[var(--color-warning)]/10'
+          : 'border-[var(--color-border)] bg-[var(--color-surface-muted)]',
+      )}
+    >
+      <p className="font-semibold">{up ? 'Subió el precio' : 'Bajó el precio'}</p>
+      <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 tabular-nums">
+        <dt className="text-[var(--color-fg-muted)]">Antes</dt>
+        <dd className="text-right text-[var(--color-fg-muted)] line-through">
+          {formatMoney(change.previous)}
+        </dd>
+        <dt className="text-[var(--color-fg-muted)]">Ahora</dt>
+        <dd className="text-right font-semibold">{formatMoney(change.current)}</dd>
+        {change.delta ? (
+          <>
+            <dt className="text-[var(--color-fg-muted)]">Diferencia</dt>
+            <dd className="text-right">{`${up ? '+' : '−'}${formatMoney(change.delta)}`}</dd>
+          </>
+        ) : null}
+      </dl>
+      {up ? (
+        mustAccept ? (
+          <button
+            type="button"
+            onClick={onAccept}
+            className="mt-2.5 inline-flex h-9 w-full items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-fg)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/40"
+          >
+            Aceptar el precio nuevo
+          </button>
+        ) : (
+          <p className="mt-1.5 text-[var(--color-fg-muted)]">Aceptaste el precio nuevo.</p>
+        )
+      ) : null}
+    </div>
   );
 }
