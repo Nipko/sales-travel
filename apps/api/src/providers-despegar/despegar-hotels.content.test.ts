@@ -201,6 +201,21 @@ describe('/reservations', () => {
     expect(calls[1]).toContain('flow_id=CAN-1');
   });
 
+  it('product_type sólo viaja con su product_id: suelto, Despegar responde 400', async () => {
+    const calls = stubFetch(200, { items: [] });
+    await acl().findReservations({
+      fromPurchaseDate: '2026-11-17',
+      toPurchaseDate: '2026-11-19',
+      productType: 'HOTEL',
+    });
+    await acl().findHotelReservation('R-9');
+    await acl().findReservations({ productId: 'P-1', productType: 'HOTEL' });
+    expect(calls[0]).not.toContain('product_type');
+    expect(calls[1]).toContain('reservation_id=R-9');
+    expect(calls[1]).not.toContain('product_type');
+    expect(calls[2]).toContain('product_type=HOTEL');
+  });
+
   it('el producto de hotel de una reserva; si sólo hay otro tipo, el primero', async () => {
     stubFetch(200, {
       items: [

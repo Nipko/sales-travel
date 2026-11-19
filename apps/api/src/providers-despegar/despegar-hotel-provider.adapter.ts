@@ -893,6 +893,8 @@ export class DespegarHotelProviderAdapter
         page,
       });
       for (const r of items) {
+        // `by_api_key` trae todos los productos de la cuenta (vuelos, tickets…): sólo hoteles.
+        if (r.productType !== '' && r.productType !== 'HOTEL') continue;
         const summary = bookingSummaryOf(r, range);
         if (summary !== undefined) bookings.push(summary);
       }
