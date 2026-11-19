@@ -20,6 +20,7 @@ import {
   fakeDespegarFactory,
   hotelRegistry,
   ofertasDespegar,
+  sinFechasDeCancelacion,
   type FakeDespegarFactory,
 } from './__fixtures__/fake-despegar-hotels.adapter.js';
 import { fakeHotelsDb, type FakeHotelsDb, type FilaTenant } from './__fixtures__/fake-hotels-db.js';
@@ -158,7 +159,9 @@ function roompack(ofertas: HotelOffer[], hotelId: string, roompackId: string) {
 function sinProveedor(ofertas: readonly HotelOffer[]): unknown[] {
   return ofertas.map((o) => ({
     ...o,
-    roompacks: o.roompacks.map(({ provider: _provider, ...resto }) => resto),
+    roompacks: o.roompacks.map(({ provider: _provider, ...resto }) =>
+      sinFechasDeCancelacion(resto),
+    ),
   }));
 }
 
