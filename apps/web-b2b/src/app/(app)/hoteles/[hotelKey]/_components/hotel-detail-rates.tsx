@@ -4,6 +4,7 @@ import {
   Ban,
   BedDouble,
   Info,
+  LoaderCircle,
   Moon,
   RefreshCw,
   Search,
@@ -281,6 +282,22 @@ function RetryButton({ onClick, loading }: { onClick: () => void; loading: boole
   );
 }
 
+/**
+ * Lo que falta mientras ya se ven las tarifas de otro proveedor: una línea, sin tapar nada. No
+ * nombra al proveedor: la pastilla de cada tarifa decide si la agencia lo ve.
+ */
+export function PendingProvidersNote({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <p role="status" className="flex items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
+      <LoaderCircle aria-hidden="true" className="size-3 shrink-0 animate-spin" />
+      {count === 1
+        ? 'Buscando tarifas en un proveedor más…'
+        : `Buscando tarifas en ${count} proveedores más…`}
+    </p>
+  );
+}
+
 /** Lo que se turna mientras llegan las tarifas del hotel. */
 export const RATES_LOADING_MESSAGES = [
   'Consultando las habitaciones disponibles…',
@@ -344,7 +361,15 @@ interface HotelDetailRatesProps {
   nights: number;
   showProvider: boolean;
   rates: HotelDetailRatesResult | undefined;
+  /** Hay pedidos en curso (deshabilita «Buscar de nuevo»). */
   loading: boolean;
+  /**
+   * Proveedores que todavía no respondieron, con las tarifas de otro ya a la vista: cada proveedor
+   * se pinta apenas llega (hotel-rates-progress).
+   */
+  pendingProviders?: number;
+  /** `rates` es de la consulta anterior: se atenúa hasta que responda alguien. */
+  stale?: boolean;
   onReload: () => void;
   /** Nombre y dirección con que cada proveedor conoce al hotel. */
   facts: ReadonlyMap<string, HotelFacts>;
@@ -367,6 +392,8 @@ export function HotelDetailRates({
   showProvider,
   rates,
   loading,
+  pendingProviders = 0,
+  stale = false,
   onReload,
   facts,
   shownFacts,
@@ -448,17 +475,29 @@ export function HotelDetailRates({
 
   const count = view.rows.length;
   const provisional = view.rows.some((r) => r.pack.cancellation.policySource !== 'prebook-final');
-  const refundNotice = ratesRefundNotice(
-    view.groups.flatMap((g) => g.plans.map((p) => p.refund)),
-    blocked,
-  );
+  // «Ninguna es reembolsable» se dice cuando respondieron todos: el que falta puede traer alguna.
+  const refundNotice =
+    pendingProviders > 0
+      ? undefined
+      : ratesRefundNotice(
+          view.groups.flatMap((g) => g.plans.map((p) => p.refund)),
+          blocked,
+        );
   return (
     <div
       aria-busy={loading}
-      className={cn('space-y-3 p-4 transition-opacity', loading && 'opacity-60')}
+      className={cn('space-y-3 p-4 transition-opacity', stale && 'opacity-60')}
     >
       <FailedProvidersNotice failed={view.failed} />
-      {count === 0 ? (
+      {count === 0 && pendingProviders > 0 ? (
+        // El que respondió no trajo tarifas (o falló): todavía no se puede decir que no hay lugar.
+        <div className="-mx-4 -mb-4">
+          <p className="sr-only" role="status">
+            Buscando tarifas…
+          </p>
+          <RatesSkeleton />
+        </div>
+      ) : count === 0 ? (
         <EmptyRates view={view} onRetry={onReload} loading={loading} />
       ) : (
         <>
@@ -474,6 +513,7 @@ export function HotelDetailRates({
               completa
             </p>
           </OfferExpiry>
+          <PendingProvidersNote count={pendingProviders} />
           <TestAccountNotice view={testAccount} />
           <RatesRefundNoticeBox notice={refundNotice} />
           {provisional ? (
