@@ -706,6 +706,25 @@ describe('DespegarHotelProviderAdapter — book', () => {
     ]);
   });
 
+  it('guion y apóstrofo salen adaptados a HotelDO, no se rechazan (H5)', async () => {
+    const { calls } = stubFetch({ reservationId: 'r-1', status: 'SUCCESS', products: [] });
+    await pareja().neutral.book(
+      {
+        ...pedidoNeutral,
+        rooms: [
+          {
+            guests: [{ paxType: 'ADT', firstName: 'Ana-María', lastName: 'O’Brien García-López' }],
+          },
+        ],
+      },
+      CTX,
+    );
+    const cuerpo = calls[0]?.body as { travelers: { first_name: string; last_name: string }[] };
+    expect(cuerpo.travelers.map((t) => [t.first_name, t.last_name])).toEqual([
+      ['Ana María', 'OBrien García López'],
+    ]);
+  });
+
   it.each([
     [{ reservationId: 'r-2', status: 'PROCESSING', products: [] }, 'PENDING'],
     [{ reservationId: 'r-3', status: 'ERROR', sub_status: 'UNAVAILABLE', products: [] }, 'FAILED'],
@@ -768,7 +787,7 @@ describe('DespegarHotelProviderAdapter — book', () => {
       'con un nombre que HotelDO no acepta',
       {
         ...pedidoNeutral,
-        rooms: [{ guests: [{ paxType: 'ADT', firstName: 'Ana-María', lastName: 'Gómez' }] }],
+        rooms: [{ guests: [{ paxType: 'ADT', firstName: 'Ана', lastName: 'Gómez' }] }],
       },
       'invalid-guest-name',
     ],

@@ -76,6 +76,7 @@ import type {
   HotelRoomContentPort,
 } from '../providers/hotel-provider.types.js';
 import { withDespegarCancellationDates } from './despegar-cancellation-dates.js';
+import { despegarGuestName } from './despegar-guest-name.js';
 import {
   DESPEGAR_CONTENT_BATCH_SIZE,
   despegarContentRecord,
@@ -609,16 +610,19 @@ function toPrebookResult(r: PrebookResult): HotelPrebookResult {
 
 // ───────────────────────── Post-venta: de Despegar al contrato neutral ─────────────────────────
 
-/** Sólo letras (latinas con tildes y ñ) y espacios: HotelDO rechaza el resto (certificación, 4). */
-const DESPEGAR_NAME = /^[A-Za-zÀ-ÖØ-öø-ÿ]+( [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
-
-function assertDespegarName(name: string, roomIndex: number): void {
-  if (!DESPEGAR_NAME.test(name.trim())) {
+/**
+ * El nombre como lo acepta HotelDO (certificación, 4): guiones y apóstrofos se adaptan
+ * (`despegar-guest-name.ts`); lo que no se puede adaptar se rechaza antes de llamar.
+ */
+function despegarNameOf(name: string, roomIndex: number): string {
+  const adapted = despegarGuestName(name);
+  if (adapted === undefined) {
     throw new DespegarHotelInputError(
       'invalid-guest-name',
       `El huésped principal de la habitación ${roomIndex + 1} tiene caracteres que Despegar no acepta: use sólo letras y espacios.`,
     );
   }
+  return adapted;
 }
 
 const AFTERSALE_BOOKING_STATUS: Readonly<Record<AftersaleStatus, HotelBookingStatus>> = {
@@ -950,9 +954,14 @@ export class DespegarHotelProviderAdapter
           `La habitación ${j + 1} no tiene huésped principal.`,
         );
       }
-      assertDespegarName(lead.firstName, j);
-      assertDespegarName(lead.lastName, j);
-      return toTraveler(lead, reference);
+      return toTraveler(
+        {
+          ...lead,
+          firstName: despegarNameOf(lead.firstName, j),
+          lastName: despegarNameOf(lead.lastName, j),
+        },
+        reference,
+      );
     });
 
     const result = await this.acl.book({

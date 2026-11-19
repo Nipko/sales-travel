@@ -39,6 +39,7 @@ import type {
   HotelRepriceComparison,
   HotelSearchPackContext,
 } from '../providers/hotel-provider.types.js';
+import { despegarGuestName } from './despegar-guest-name.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelInputError,
@@ -246,9 +247,6 @@ export function newDespegarBookingReference(environment: 'test' | 'live'): strin
   for (const b of bytes) out += alphabet[b % alphabet.length];
   return out;
 }
-
-/** Sólo letras (latinas, con tildes y ñ) y espacios: HotelDO rechaza el resto. */
-const DESPEGAR_NAME = /^[A-Za-zÀ-ÖØ-öø-ÿ]+( [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
 
 // ───────────────────────── Adapter ─────────────────────────
 
@@ -458,8 +456,8 @@ export class DespegarContextHotelProviderAdapter
   }
 
   /**
-   * Despegar recibe UN huésped por habitación, el principal, con nombre sólo de letras. Los demás
-   * quedan en la orden, no salen al proveedor.
+   * Despegar recibe UN huésped por habitación, el principal, con nombre sólo de letras y espacios
+   * (guiones y apóstrofos se adaptan). Los demás quedan en la orden, no salen al proveedor.
    */
   checkBookingGuests(
     rooms: readonly HotelBookingRoomGuests[],
@@ -475,20 +473,20 @@ export class DespegarContextHotelProviderAdapter
       }
       if (lead.paxType !== 'ADT') issues.push(`rooms.${j}.guests.0.paxType:lead_not_adult`);
       if (lead.title === undefined) issues.push(`rooms.${j}.guests.0.title:required`);
+      // Guiones y apóstrofos se adaptan acá (`despegar-guest-name.ts`), no se le rechazan al
+      // vendedor: lo que sale es el nombre adaptado y la orden guarda los dos.
+      const names = { firstName: '', lastName: '' };
       for (const field of ['firstName', 'lastName'] as const) {
         const value = lead[field].trim();
+        const adapted = despegarGuestName(value);
         if (value.length < 2) issues.push(`rooms.${j}.guests.0.${field}:too_short`);
-        else if (!DESPEGAR_NAME.test(value))
+        else if (adapted === undefined)
           issues.push(`rooms.${j}.guests.0.${field}:invalid_characters`);
+        else if (adapted.replace(/ /g, '').length < 2)
+          issues.push(`rooms.${j}.guests.0.${field}:too_short`);
+        else names[field] = adapted;
       }
-      return [
-        {
-          title: lead.title ?? 'Mr',
-          firstName: lead.firstName.trim(),
-          lastName: lead.lastName.trim(),
-          paxType: 'ADT',
-        },
-      ];
+      return [{ title: lead.title ?? 'Mr', ...names, paxType: 'ADT' }];
     });
     return issues.length > 0 ? { ok: false, issues } : { ok: true, rooms: sent };
   }

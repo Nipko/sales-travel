@@ -527,15 +527,20 @@ describe('BookSchema', () => {
     expect(BookSchema.safeParse(otra).success).toBe(false);
   });
 
-  it('nombres sólo con letras (con tildes y ñ) y espacios: HotelDO rechaza el resto', () => {
+  it('nombres que salen sólo con letras (con tildes y ñ) y espacios, como pide HotelDO', () => {
     const viajero = (firstName: string, lastName: string) => ({
       ...reserva,
       travelers: [{ referenceId: '1', firstName, lastName }],
     });
     expect(BookSchema.safeParse(viajero('María José', 'Muñoz Peña')).success).toBe(true);
-    expect(BookSchema.safeParse(viajero('Ana-María', 'Prueba')).success).toBe(false);
-    expect(BookSchema.safeParse(viajero('Ana', "O'Neil")).success).toBe(false);
+    // Guion y apóstrofo se adaptan (H5): no se le rechazan al vendedor.
+    const adaptado = BookSchema.safeParse(viajero('Ana-María', "O'Neil"));
+    expect(adaptado.success && adaptado.data.travelers[0]).toMatchObject({
+      firstName: 'Ana María',
+      lastName: 'ONeil',
+    });
     expect(BookSchema.safeParse(viajero('Ana2', 'Prueba')).success).toBe(false);
+    expect(BookSchema.safeParse(viajero('Ана', 'Prueba')).success).toBe(false);
   });
 
   it('al menos un viajero y una unidad de pago', () => {

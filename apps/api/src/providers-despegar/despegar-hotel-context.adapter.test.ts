@@ -491,7 +491,7 @@ describe('huéspedes', () => {
   it('nombra cada problema con su ruta y sin valores', () => {
     const check = adapter().checkBookingGuests(
       [
-        { guests: [guest({ firstName: 'Ana-María', title: undefined })] },
+        { guests: [guest({ firstName: 'Ана', title: undefined })] },
         { guests: [guest({ paxType: 'CHD', lastName: 'G' })] },
         { guests: [] },
       ],
@@ -511,6 +511,25 @@ describe('huéspedes', () => {
         'rooms.2.guests:missing_lead',
       ],
     });
+  });
+
+  it('guiones y apóstrofos no se rechazan: salen adaptados a lo que acepta HotelDO (H5)', () => {
+    const check = adapter().checkBookingGuests(
+      [{ guests: [guest({ firstName: 'Ana-María', lastName: "O'Brien García-López" })] }],
+      [{ adults: 1, childrenAges: [] }],
+    );
+    expect(check).toMatchObject({
+      ok: true,
+      rooms: [[{ firstName: 'Ana María', lastName: 'OBrien García López' }]],
+    });
+  });
+
+  it('un nombre que adaptado queda con menos de dos letras es corto', () => {
+    const check = adapter().checkBookingGuests(
+      [{ guests: [guest({ lastName: "O'-" })] }],
+      [{ adults: 1, childrenAges: [] }],
+    );
+    expect(check).toEqual({ ok: false, issues: ['rooms.0.guests.0.lastName:too_short'] });
   });
 
   it('la referencia es nueva en cada Book y dice el entorno', () => {

@@ -6,6 +6,7 @@ import {
   toIsoCountryAlpha2,
   z,
 } from '@sales-travel/validation';
+import { despegarGuestName } from '../providers-despegar/despegar-guest-name.js';
 import { HOTEL_CONTENT_BATCH_MAX_HOTELS } from './hotel-content.service.js';
 import { PROVIDER_DESTINATION_INVALID, isProviderDestinationId } from './hotel-destination.js';
 import { HOTEL_SEARCH_MAX_PAGE_NUMBER } from './hotel-search-paging.js';
@@ -263,15 +264,30 @@ const BookIdentificationSchema = z.object({
 });
 
 /**
- * HotelDO sólo acepta letras (latinas, con tildes y ñ) y espacios en los nombres (certificación,
- * punto 4): un guion o un apóstrofo hace fallar el Book del otro lado.
+ * Un nombre de huésped para Despegar: HotelDO sólo acepta letras (latinas, con tildes y ñ) y
+ * espacios (certificación, punto 4). Guiones y apóstrofos no se le rechazan al vendedor: se adaptan
+ * (`despegar-guest-name.ts`) y el largo se mide sobre lo que sale.
  */
-export const DESPEGAR_NAME_RE = /^[A-Za-zÀ-ÖØ-öø-ÿ]+( [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
+function despegarNameSchema(max: number) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value, ctx) => {
+      const adapted = despegarGuestName(value);
+      if (adapted === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sólo letras y espacios' });
+        return z.NEVER;
+      }
+      return adapted;
+    })
+    .pipe(z.string().min(1).max(max));
+}
 
 const BookTravelerSchema = z.object({
   referenceId: z.string().min(1),
-  firstName: z.string().trim().min(1).max(28).regex(DESPEGAR_NAME_RE, 'sólo letras y espacios'),
-  lastName: z.string().trim().min(1).max(29).regex(DESPEGAR_NAME_RE, 'sólo letras y espacios'),
+  firstName: despegarNameSchema(28),
+  lastName: despegarNameSchema(29),
   gender: z.enum(['MALE', 'FEMALE']).optional(),
   nationality: z.string().length(2).optional(),
   birthDate: isoDate.optional(),
