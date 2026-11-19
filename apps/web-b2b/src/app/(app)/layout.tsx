@@ -7,6 +7,7 @@ import { viewerOf } from '../../lib/viewer';
 import { AppShell, BrandStyle } from '../../components/layout/app-shell';
 import { SalesGate } from '../../components/layout/sales-gate';
 import { SessionGuard } from '../../components/layout/session-guard';
+import { StaleDeployListener } from '../../components/layout/stale-deploy-listener';
 import { decideLayoutGate } from '../../components/layout/session-gate';
 import { parseSessionSnapshot, sessionEndPath } from '../../components/layout/session-guard-state';
 import { VerifyBanner } from '../../components/layout/verify-banner';
@@ -111,6 +112,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* "Confirma que eres tú": lo abre cualquier acción de alto impacto que pida el 2FA (USR-13). */}
       <StepUpProvider />
       <Toaster richColors closeButton position="top-right" />
+      <StaleDeployListener />
     </AppShell>
   );
 }

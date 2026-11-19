@@ -2,6 +2,7 @@
 
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { isStaleDeployError, STALE_DEPLOY_TEXT, STALE_DEPLOY_TITLE } from '../lib/stale-deploy';
 import './globals.css';
 
 /**
@@ -13,11 +14,13 @@ import './globals.css';
  * `<html>` y `<body>` (y sus estilos).
  */
 export default function GlobalError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const stale = isStaleDeployError(error);
   return (
     <html lang="es">
       <body>
@@ -25,14 +28,17 @@ export default function GlobalError({
           <div className="flex size-12 items-center justify-center rounded-xl bg-[var(--color-danger)]/10">
             <AlertTriangle className="size-6 text-[var(--color-danger)]" aria-hidden />
           </div>
-          <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">Algo salió mal</h1>
+          <h1 className="mt-4 text-lg font-bold text-[var(--color-fg)]">
+            {stale ? STALE_DEPLOY_TITLE : 'Algo salió mal'}
+          </h1>
           <p className="mt-2 text-sm text-[var(--color-fg-muted)]">
-            No pudimos cargar el panel. Prueba de nuevo; si sigue fallando, avísale al administrador
-            de tu agencia.
+            {stale
+              ? STALE_DEPLOY_TEXT
+              : 'No pudimos cargar el panel. Prueba de nuevo; si sigue fallando, avísale al administrador de tu agencia.'}
           </p>
-          <Button onClick={reset} className="mt-6 gap-2">
+          <Button onClick={stale ? () => window.location.reload() : reset} className="mt-6 gap-2">
             <RefreshCw className="size-4" aria-hidden />
-            Reintentar
+            {stale ? 'Recargar' : 'Reintentar'}
           </Button>
         </main>
       </body>
