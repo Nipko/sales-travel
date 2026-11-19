@@ -79,15 +79,21 @@ export interface PickedMainImage extends HotelMainImage {
  * que el proxy puede servir de la primera fila candidata que tenga una. Las filas llegan en orden de
  * preferencia (las del propio proveedor y después las de hoteles equivalentes, RF-34), así que un
  * hotel de un proveedor sin fotos toma la del MISMO hotel en otro, nunca la de otro hotel.
+ *
+ * `ownOnly`: sólo las fotos del proveedor que vende la tarjeta. La del hotel equivalente de otro
+ * proveedor es el último recurso: el host de ese otro proveedor puede no servirle al proxy (el CDN
+ * de TBO le responde 403 al servidor, 2026-11-19) aunque el propio proveedor tenga fotos buenas.
  */
 export function pickMainImages(
   candidates: readonly MainImageCandidate[],
   hostsOf: (providerCode: string) => readonly string[],
+  opts: { readonly ownOnly?: boolean } = {},
 ): Map<string, PickedMainImage> {
   const out = new Map<string, PickedMainImage>();
   for (const candidate of candidates) {
     const key = `${candidate.wantProvider} ${candidate.wantHotel}`;
     if (out.has(key)) continue;
+    if (opts.ownOnly === true && candidate.providerCode !== candidate.wantProvider) continue;
     const hosts = hostsOf(candidate.providerCode);
     for (const src of candidate.firstImages) {
       const url = hotelImageProxyUrl(src, hosts);

@@ -1355,9 +1355,12 @@ export class HotelsService {
     );
     let images;
     try {
+      // Sólo la foto del propio proveedor: la del hotel equivalente de otro la decide el contenido
+      // por lote, después de intentar traer la propia (hotel-content.service, getContentBatch).
       images = pickMainImages(
         await this.catalog.imageCandidates(refs, lang),
         (code) => hosts.get(code) ?? [],
+        { ownOnly: true },
       );
     } catch (err) {
       // Sin el error: el mensaje de un driver puede citar los parámetros de la consulta.

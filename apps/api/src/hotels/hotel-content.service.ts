@@ -652,8 +652,11 @@ export class HotelContentService {
     const hostsOf = (code: string): readonly string[] =>
       registrations.get(code)?.searchProfile.imageHosts ?? [];
 
-    let images = pickMainImages(await this.catalog.imageCandidates(known, lang), hostsOf);
-    const withoutImage = known.filter((r) => !images.has(hotelRefKey(r.providerCode, r.hotelId)));
+    // Primero la foto del propio proveedor: a un hotel que sólo tiene la del equivalente de otro
+    // proveedor se le intenta traer la suya. La del otro es el último recurso (pickMainImages).
+    let candidates = await this.catalog.imageCandidates(known, lang);
+    let own = pickMainImages(candidates, hostsOf, { ownOnly: true });
+    const withoutImage = known.filter((r) => !own.has(hotelRefKey(r.providerCode, r.hotelId)));
     const fetchable = await this.fetchableRefs(withoutImage, lang, registrations);
     const fetchNow = fetchable.slice(0, HOTEL_CONTENT_BATCH_MAX_FETCH);
     const deferred = new Set(
@@ -674,13 +677,17 @@ export class HotelContentService {
         if (!done.has(key)) pending.add(key);
       }
       if (done.size > 0) {
-        images = pickMainImages(await this.catalog.imageCandidates(known, lang), hostsOf);
+        candidates = await this.catalog.imageCandidates(known, lang);
+        own = pickMainImages(candidates, hostsOf, { ownOnly: true });
       }
     }
+    const any = pickMainImages(candidates, hostsOf);
 
     const items = refs.map((r): HotelContentBatchItem => {
       const key = hotelRefKey(r.providerCode, r.hotelId);
-      const image = images.get(key);
+      const waiting = pending.has(key) || deferred.has(key);
+      // Mientras la propia está en camino, la del otro proveedor no la tapa: la web vuelve a pedir.
+      const image = own.get(key) ?? (waiting ? undefined : any.get(key));
       if (image !== undefined) {
         return {
           providerCode: r.providerCode,
@@ -693,7 +700,7 @@ export class HotelContentService {
       return {
         providerCode: r.providerCode,
         hotelId: r.hotelId,
-        status: pending.has(key) || deferred.has(key) ? 'pending' : 'none',
+        status: waiting ? 'pending' : 'none',
         mainImage: null,
         imageCount: 0,
       };
