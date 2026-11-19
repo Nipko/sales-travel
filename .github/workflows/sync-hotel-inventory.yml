@@ -47,25 +47,27 @@ jobs:
               printf '%s' "$v"
             }
             POSTGRES_ADMIN_PASSWORD=$(env_get POSTGRES_ADMIN_PASSWORD)
+            # La clave de la bóveda, la misma del api: con ella el contenedor abre la cuenta de
+            # Despegar que el superadmin cargó en la plataforma. DESPEGAR_API_KEY, si está, la
+            # reemplaza. Sin cuenta ni override, el contenedor sale con 0 sin tocar el catálogo.
+            PROVIDER_CREDENTIALS_KEY=$(env_get PROVIDER_CREDENTIALS_KEY)
             DESPEGAR_API_KEY=$(env_get DESPEGAR_API_KEY)
             DESPEGAR_BASE_URL=$(env_get DESPEGAR_BASE_URL)
-
-            if [ -z "${DESPEGAR_API_KEY:-}" ]; then
-              echo "DESPEGAR_API_KEY no configurado en .env — se omite el sync."
-              exit 0
-            fi
+            export PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" PROVIDER_CREDENTIALS_KEY DESPEGAR_API_KEY DESPEGAR_BASE_URL
 
             docker pull ghcr.io/nipko/sales-travel-sync-hotel-inventory:latest
 
-            # 2 redes: internal (Postgres) + edge (Internet, fetch Despegar).
+            # 2 redes: internal (Postgres) + edge (Internet, fetch Despegar). `-e NOMBRE` sin valor
+            # toma el del entorno exportado arriba: los secretos no quedan en la línea de comando.
             CID=$(docker create --network sales-travel_internal \
               -e PGHOST=postgres \
               -e PGPORT=5432 \
               -e PGUSER=postgres \
-              -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD}" \
+              -e PGPASSWORD \
               -e PGDATABASE=sales_travel \
-              -e DESPEGAR_API_KEY="${DESPEGAR_API_KEY}" \
-              -e DESPEGAR_BASE_URL="${DESPEGAR_BASE_URL:-https://api-dev.despegar.com/v3}" \
+              -e PROVIDER_CREDENTIALS_KEY \
+              -e DESPEGAR_API_KEY \
+              -e DESPEGAR_BASE_URL \
               ghcr.io/nipko/sales-travel-sync-hotel-inventory:latest)
 
             docker network connect sales-travel_edge "$CID"

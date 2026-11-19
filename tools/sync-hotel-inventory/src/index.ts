@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { chooseCredentials, platformAccounts } from './credentials.js';
 
 /**
  * Sync del catálogo de hoteles de Despegar/HotelDo (resuelve ciudad→IDs).
@@ -12,8 +13,9 @@ import pg from 'pg';
 
 const PROVIDER_CODE = process.env['DESPEGAR_PROVIDER_CODE'] ?? 'despegar-hotels';
 
-function baseUrl(): string {
-  return process.env['DESPEGAR_BASE_URL'] ?? 'https://api-dev.despegar.com/v3';
+interface DespegarApi {
+  readonly apiKey: string;
+  readonly baseUrl: string;
 }
 
 interface InventoryRow {
@@ -69,10 +71,10 @@ interface InventoryPage {
   total?: number;
 }
 
-async function fetchPage(apiKey: string, offset: number | undefined): Promise<InventoryPage> {
+async function fetchPage(api: DespegarApi, offset: number | undefined): Promise<InventoryPage> {
   const query = offset === undefined ? '' : `?limit=${PAGE_SIZE}&offset=${offset}`;
-  const res = await fetch(`${baseUrl()}/content-api/hotels-inventory${query}`, {
-    headers: { 'x-apikey': apiKey, accept: 'application/json' },
+  const res = await fetch(`${api.baseUrl}/content-api/hotels-inventory${query}`, {
+    headers: { 'x-apikey': api.apiKey, accept: 'application/json' },
   });
   if (!res.ok) {
     // Sólo el estado: el cuerpo de un error no se escribe en el log del job.
@@ -92,20 +94,20 @@ async function fetchPage(apiKey: string, offset: number | undefined): Promise<In
  * (docs/despegar/01 § Contenido estático): sin parámetros se pide entero, y si la respuesta trae
  * `paging` se recorren las páginas.
  */
-async function fetchAllItems(apiKey: string): Promise<RawInventoryItem[]> {
-  const first = await fetchPage(apiKey, undefined);
+async function fetchAllItems(api: DespegarApi): Promise<RawInventoryItem[]> {
+  const first = await fetchPage(api, undefined);
   if (first.total === undefined || first.items.length >= first.total) return first.items;
   const items: RawInventoryItem[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const next = await fetchPage(apiKey, page * PAGE_SIZE);
+    const next = await fetchPage(api, page * PAGE_SIZE);
     items.push(...next.items);
     if (next.items.length === 0 || items.length >= (next.total ?? first.total)) return items;
   }
   throw new Error('inventory paging exceeded MAX_PAGES');
 }
 
-async function fetchInventory(apiKey: string): Promise<InventoryRow[]> {
-  const items = await fetchAllItems(apiKey);
+async function fetchInventory(api: DespegarApi): Promise<InventoryRow[]> {
+  const items = await fetchAllItems(api);
 
   const seen = new Set<string>();
   const rows: InventoryRow[] = [];
@@ -174,28 +176,41 @@ async function replaceInventory(client: pg.Client, rows: InventoryRow[]): Promis
 }
 
 async function main(): Promise<void> {
-  const apiKey = process.env['DESPEGAR_API_KEY'];
-  if (!apiKey) {
-    // Sin credenciales todavía: no es un error (se configuran luego). No-op idempotente.
-    console.warn(JSON.stringify({ ok: true, action: 'skip', reason: 'DESPEGAR_API_KEY not set' }));
-    return;
-  }
   if (!process.env['PGHOST'] || !process.env['PGUSER'] || !process.env['PGPASSWORD']) {
     throw new Error('PGHOST, PGUSER, PGPASSWORD required');
-  }
-
-  console.warn('[sync-hotel-inventory] fetching content-api/hotels-inventory...');
-  const rows = await fetchInventory(apiKey);
-  console.warn(`[sync-hotel-inventory] parsed ${rows.length} hotels`);
-  if (rows.length === 0) {
-    // El reemplazo es DELETE + INSERT: con una respuesta vacía dejaría sin hoteles todas las
-    // búsquedas de Despegar. Mejor conservar el catálogo anterior y fallar visible.
-    throw new Error('empty inventory: refusing to replace the catalog');
   }
 
   const client = new pg.Client();
   await client.connect();
   try {
+    // La cuenta de Despegar que el superadmin cargó en la plataforma; DESPEGAR_API_KEY la reemplaza.
+    const credentials = chooseCredentials(
+      process.env,
+      await platformAccounts(client, PROVIDER_CODE),
+    );
+    if (credentials.kind === 'none') {
+      // Sin cuenta todavía: no es un error. No-op idempotente.
+      console.warn(JSON.stringify({ ok: true, action: 'skip', reason: credentials.reason }));
+      return;
+    }
+    console.warn(
+      JSON.stringify({
+        action: 'credentials',
+        source: credentials.source,
+        ...(credentials.label === undefined ? {} : { account: credentials.label }),
+        baseUrl: credentials.baseUrl,
+      }),
+    );
+
+    console.warn('[sync-hotel-inventory] fetching content-api/hotels-inventory...');
+    const rows = await fetchInventory(credentials);
+    console.warn(`[sync-hotel-inventory] parsed ${rows.length} hotels`);
+    if (rows.length === 0) {
+      // El reemplazo es DELETE + INSERT: con una respuesta vacía dejaría sin hoteles todas las
+      // búsquedas de Despegar. Mejor conservar el catálogo anterior y fallar visible.
+      throw new Error('empty inventory: refusing to replace the catalog');
+    }
+
     await client.query('BEGIN');
     const inserted = await replaceInventory(client, rows);
     await client.query('COMMIT');

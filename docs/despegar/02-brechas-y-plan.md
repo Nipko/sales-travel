@@ -76,6 +76,10 @@
 
 - `sync-hotel-inventory`: recorre páginas si la respuesta viene paginada, omite hoteles no
   publicados y se niega a vaciar el catálogo si Despegar devuelve una lista vacía.
+- Desde el 2026-11-19 toma la clave de la cuenta de Despegar que el superadmin cargó en la
+  plataforma (bóveda, con `PROVIDER_CREDENTIALS_KEY`), como el sync de TBO. `DESPEGAR_API_KEY` en el
+  `.env` sólo la reemplaza si está. Antes se saltaba todos los días por no tener esa variable y el
+  inventario de Despegar estaba vacío: ninguna búsqueda llegaba a Despegar.
 
 ## 3. Decisiones tomadas por defecto (revisar)
 
