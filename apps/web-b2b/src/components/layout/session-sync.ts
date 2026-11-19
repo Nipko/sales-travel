@@ -9,6 +9,7 @@
  */
 
 import type { SessionMotivo } from '../../lib/session-reasons';
+import { forgetScopedStorage, setStorageScope } from '../../lib/storage-scope';
 import {
   ACTIVITY_KEY,
   CLOCK_KEY,
@@ -181,8 +182,13 @@ export function resetLeaving(): void {
  * dibujar clientes u órdenes sin pedirlos al servidor, y reemplaza la entrada del historial en vez
  * de apilar otra. Pasa por `/api/session/end`, que borra las cookies aunque quien cerró la sesión
  * haya sido otra pestaña o el servidor.
+ *
+ * Antes de salir se olvida lo que la sesión dejó en `localStorage` para las pantallas (búsquedas
+ * y tarifas de hoteles, `lib/storage-scope.ts`): la próxima persona en este navegador no lo hereda.
  */
 function go(motivo: SessionMotivo | null): void {
+  setStorageScope(undefined);
+  forgetScopedStorage();
   window.location.replace(
     sessionEndPath(motivo, motivo === null ? null : currentPath(), idleMinutes),
   );
