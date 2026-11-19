@@ -186,7 +186,7 @@ export class DespegarHotelsAdapter {
       }),
       'detail',
     );
-    return mapHotelDetail(raw);
+    return mapHotelDetail(raw, q.hotelId);
   }
 
   // ───────────────────────── Reserva ─────────────────────────
