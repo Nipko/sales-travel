@@ -207,3 +207,32 @@ export function bookingStatusView(
       };
   }
 }
+
+/**
+ * El precio de venta cambió entre lo que el vendedor vio (la lista, o el checkout antes de renovar
+ * la tarifa) y la tarifa abierta ahora. `delta` falta si cambió la moneda: no se restan monedas
+ * distintas. Una subida (o un cambio de moneda) pide que el vendedor la acepte antes de confirmar.
+ */
+export interface PriceChange {
+  readonly previous: Money;
+  readonly current: Money;
+  readonly direction: 'up' | 'down';
+  readonly delta?: Money;
+  readonly needsAcceptance: boolean;
+}
+
+export function priceChangeOf(previous: Money | undefined, current: Money): PriceChange | null {
+  if (!previous) return null;
+  if (previous.currency !== current.currency) {
+    return { previous, current, direction: 'up', needsAcceptance: true };
+  }
+  const diff = current.amountMinor - previous.amountMinor;
+  if (diff === 0) return null;
+  return {
+    previous,
+    current,
+    direction: diff > 0 ? 'up' : 'down',
+    delta: { amountMinor: Math.abs(diff), currency: current.currency },
+    needsAcceptance: diff > 0,
+  };
+}
