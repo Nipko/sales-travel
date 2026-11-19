@@ -46,7 +46,9 @@ services:
       - web-b2b
 
   postgres:
-    image: timescale/timescaledb-ha:pg16
+    # Versión de TimescaleDB fija: la base tiene la extensión en 2.26.4 y `pg16` a secas trae
+    # otras. Subirla = ALTER EXTENSION timescaledb UPDATE con respaldo, y después la etiqueta.
+    image: timescale/timescaledb-ha:pg16-ts2.26
     <<: [*restart, *logging]
     environment:
       POSTGRES_USER: postgres
