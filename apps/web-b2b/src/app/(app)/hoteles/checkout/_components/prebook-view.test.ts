@@ -10,6 +10,7 @@ import {
   continueGate,
   isRetryablePrebookStatus,
   parsePrebook,
+  prebookWarningsView,
   priceChangeView,
   roomAmenitiesView,
   signalsView,
@@ -88,6 +89,30 @@ function prebook(repricing: Partial<HotelPrebookRepricing> = {}, finalMinor = 32
 
 const SHOWN = { amountMinor: 32134, currency: 'USD' };
 
+describe('prebookWarningsView — avisos del PreBook antes de cargar los huéspedes', () => {
+  it('moneda de la cuenta distinta: avisa con la moneda de la búsqueda, sin nombrar al proveedor', () => {
+    const view = prebookWarningsView({
+      ...prebook(),
+      roompack: {
+        ...ROOMPACK,
+        price: { total: { amountMinor: 1_200_000, currency: 'COP' }, taxesDetail: [] },
+      },
+      warnings: ['prebook-account-currency-differs'],
+    });
+    expect(view.blocking).toBe(false);
+    expect(view.notices).toHaveLength(1);
+    const [notice] = view.notices;
+    expect(notice?.tone).toBe('warning');
+    expect(notice?.title).toContain('COP');
+    expect(notice?.detail).toContain('tipo de cambio');
+    expect(`${notice?.title} ${notice?.detail}`).not.toMatch(/despegar|tbo/i);
+  });
+
+  it('sin avisos no pinta nada', () => {
+    expect(prebookWarningsView(prebook()).notices).toEqual([]);
+  });
+});
+
 describe('parsePrebook — la respuesta del PreBook neutral', () => {
   it('lee una tarifa revalidada completa', () => {
     const parsed = parsePrebook(apiResponse());
@@ -101,6 +126,23 @@ describe('parsePrebook — la respuesta del PreBook neutral', () => {
     expect(parsed?.repricing).toEqual({ outcome: 'UNCHANGED', price: 'SAME', changes: [] });
     expect(JSON.stringify(parsed)).not.toContain('previousTotal');
     expect(parsed).not.toHaveProperty('warnings');
+  });
+
+  it('el aviso de moneda de la cuenta pasa, una sola vez, y los técnicos no', () => {
+    const parsed = parsePrebook(
+      apiResponse({
+        warnings: [
+          'BOOKING_CODE_CHANGED',
+          'prebook-account-currency-differs',
+          'prebook-account-currency-differs',
+          42,
+        ],
+      }),
+    );
+    expect(parsed?.warnings).toEqual(['prebook-account-currency-differs']);
+    expect(
+      parsePrebook(apiResponse({ warnings: 'prebook-account-currency-differs' })),
+    ).not.toHaveProperty('warnings');
   });
 
   it('trae el aviso de cartera del API; sin él, la tarifa se lee igual y decide el Book', () => {
