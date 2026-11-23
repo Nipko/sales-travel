@@ -1,3 +1,7 @@
+import type { ActivitySnapshot } from '../../paquetes/_components/package-model';
+
+export type { ActivitySnapshot };
+
 /*
  * Modelo de la sección de actividades: tipos espejo del contrato /activities del API y funciones
  * puras (formato, cancelación, participantes y el ítem de paquete). Sin React, para testearlas.
@@ -244,30 +248,6 @@ export function travelersMismatch(
 }
 
 // ───────────────────────── Paquetes ─────────────────────────
-
-/**
- * Snapshot de una actividad dentro de un paquete (`package_items.raw_details`), con el contrato
- * acordado con Paquetes (docs/platform/20-paquetes.md): `kind: 'activity'` y participantes propios,
- * que no heredan la ocupación del hotel.
- */
-export interface ActivitySnapshot {
-  kind: 'activity';
-  title: string;
-  category: ActivityCategory;
-  modality?: string;
-  date: string;
-  startAt?: string;
-  endAt?: string;
-  participants: { adults: number; childrenAges: number[] };
-  cancellation: {
-    refundable: boolean;
-    tiers: { from: string; to?: string; percentage: number; label?: string }[];
-  };
-  ticketValidity?: { useDate?: string; expirationDate?: string };
-  images: string[];
-  description?: string;
-  test?: boolean;
-}
 
 /** El cuerpo de `POST /packages/:id/items` para una actividad. */
 export interface ActivityPackageItemInput {

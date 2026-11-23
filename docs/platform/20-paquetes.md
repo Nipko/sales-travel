@@ -16,9 +16,14 @@
 - **Precio**: por omisión **total del paquete** (y por persona), sin desglose. Algunas tarifas de
   hotel «de paquete» sólo pueden venderse combinadas y sin que su precio se pueda deducir. El
   vendedor puede activar «Mostrar precio por servicio» en cada cotización.
-- **Actividades**: no hay proveedor integrado. Candidatos: Civitatis (contenido en español, API por
-  contacto comercial) y Viator Merchant API (documentada, con certificación). Mientras tanto,
-  **servicios manuales**: el vendedor escribe nombre, descripción, día y precio de venta.
+- **Actividades**: proveedor **Despegar/HotelDO** (`docs/despegar/03-actividades-api.md`), apagado
+  hasta que Despegar habilite el acceso y se valide en sandbox. Se agregan desde la sección
+  Actividades («Agregar a un paquete»): `vertical: 'activities'`, `providerName:
+'despegar-activities'`, neto en `baseFareMinor`/`taxesMinor` en la moneda del paquete (de los
+  precios en USD y moneda local de HotelDO; si no está, no se agrega) y snapshot `kind: 'activity'`
+  con participantes **propios** (no heredan la ocupación del hotel). Despegar no informa piso de
+  venta, así que no hay `minimumSellingMinor`. Siguen los **servicios manuales** para lo demás: el
+  vendedor escribe nombre, descripción, día y precio de venta.
 
 ## 2. Decisiones
 
@@ -54,6 +59,7 @@
 
 - Reservar el paquete completo (saga multi-proveedor con compensación; hoy se reserva cada servicio
   desde su sección).
-- Proveedor de actividades (Civitatis / Viator) como un ítem más con origen de proveedor.
+- Actividades: validar Despegar en sandbox, buscarlas desde el buscador del paquete (hoy se agregan
+  desde la sección Actividades) y revalidar el `choice_id`, que vence, al reservar.
 - Revalidar precios al reabrir una cotización vieja.
 - Envío por email desde el API, como la cotización de vuelos.

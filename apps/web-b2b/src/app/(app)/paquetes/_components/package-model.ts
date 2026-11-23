@@ -332,7 +332,38 @@ export interface ManualSnapshot {
   date?: string;
 }
 
-export type ItemSnapshot = FlightSnapshot | HotelSnapshot | CarSnapshot | ManualSnapshot;
+/**
+ * Una actividad de un proveedor (Despegar/HotelDO: `providerName = 'despegar-activities'`). Sus
+ * participantes son PROPIOS: no heredan la ocupación del hotel (un tour puede ser para parte del
+ * grupo). Lo arma `toActivitySnapshot` (`actividades/_components/activity-model.ts`).
+ */
+export interface ActivitySnapshot {
+  kind: 'activity';
+  title: string;
+  category: 'ticket' | 'tour';
+  modality?: string;
+  /** YYYY-MM-DD. */
+  date: string;
+  /** ISO 8601 con offset, si el proveedor lo informó. */
+  startAt?: string;
+  endAt?: string;
+  participants: { adults: number; childrenAges: number[] };
+  cancellation: {
+    refundable: boolean;
+    tiers: { from: string; to?: string; percentage: number; label?: string }[];
+  };
+  ticketValidity?: { useDate?: string; expirationDate?: string };
+  images: string[];
+  description?: string;
+  test?: boolean;
+}
+
+export type ItemSnapshot =
+  | FlightSnapshot
+  | HotelSnapshot
+  | CarSnapshot
+  | ManualSnapshot
+  | ActivitySnapshot;
 
 export function flightSnapshot(o: Offer): FlightSnapshot {
   const itineraries = (o.itineraries ?? []).map((it) => ({
@@ -607,6 +638,13 @@ export function buildItinerary(
       });
     } else if (item.kind === 'manual' && item.date) {
       at(item.date)?.events.push({ icon: 'activity', text: item.title });
+    } else if (item.kind === 'activity') {
+      const time = item.startAt ? clock(item.startAt) : undefined;
+      at(item.date)?.events.push({
+        ...(time ? { time } : {}),
+        icon: 'activity',
+        text: item.modality ? `${item.title} · ${item.modality}` : item.title,
+      });
     }
   }
   for (const day of days) {
@@ -619,7 +657,11 @@ export function buildItinerary(
 export function asSnapshot(details: unknown): ItemSnapshot | undefined {
   if (typeof details !== 'object' || details === null) return undefined;
   const kind = (details as { kind?: unknown }).kind;
-  return kind === 'flight' || kind === 'hotel' || kind === 'car' || kind === 'manual'
+  return kind === 'flight' ||
+    kind === 'hotel' ||
+    kind === 'car' ||
+    kind === 'manual' ||
+    kind === 'activity'
     ? (details as ItemSnapshot)
     : undefined;
 }

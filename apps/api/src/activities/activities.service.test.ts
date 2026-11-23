@@ -1,4 +1,4 @@
-import type { HttpException} from '@nestjs/common';
+import type { HttpException } from '@nestjs/common';
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { ActivityPrice } from '@sales-travel/canonical';
 import { mapAvailability } from '@sales-travel/despegar-activities';

@@ -42,6 +42,13 @@ const VERTICAL_LABEL: Record<string, string> = {
   other: 'Servicio',
 };
 
+/** Participantes propios de una actividad, para el cliente. */
+function activityPeople(p: { adults: number; childrenAges: number[] }): string {
+  const adults = `${p.adults} ${p.adults === 1 ? 'adulto' : 'adultos'}`;
+  const n = p.childrenAges.length;
+  return n === 0 ? adults : `${adults} y ${n} ${n === 1 ? 'menor' : 'menores'}`;
+}
+
 function SectionTitle({ icon: Icon, children }: { icon: typeof Plane; children: string }) {
   return (
     <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
@@ -261,7 +268,7 @@ export function QuoteDocument({
           {hotel ? <Chip icon={Hotel}>{`${model.nights} noches de hotel`}</Chip> : null}
           {car ? <Chip icon={Car}>Auto</Chip> : null}
           {model.extras.map((e) =>
-            e.snapshot.kind === 'manual' ? (
+            e.snapshot.kind === 'manual' || e.snapshot.kind === 'activity' ? (
               <Chip key={e.id} icon={Sparkles}>
                 {e.snapshot.title}
               </Chip>
@@ -426,6 +433,25 @@ export function QuoteDocument({
                       </p>
                     ) : null}
                   </li>
+                ) : e.snapshot.kind === 'activity' ? (
+                  <li key={e.id} className="rounded-xl border border-[var(--color-border)] p-4">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--brand)]">
+                      {e.snapshot.category === 'ticket' ? 'Entrada' : 'Actividad'} ·{' '}
+                      {formatShortDate(e.snapshot.date)}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--color-fg)]">
+                      {e.snapshot.title}
+                    </p>
+                    {e.snapshot.modality ? (
+                      <p className="text-xs text-[var(--color-fg-muted)]">{e.snapshot.modality}</p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+                      {activityPeople(e.snapshot.participants)} ·{' '}
+                      {e.snapshot.cancellation.refundable
+                        ? 'Cancelable con condiciones'
+                        : 'No reembolsable'}
+                    </p>
+                  </li>
                 ) : null,
               )}
             </ul>
@@ -526,7 +552,7 @@ export function QuoteDocument({
               {model.items.map((item) => (
                 <div key={item.id} className="flex justify-between gap-3">
                   <dt className="text-[var(--color-fg-muted)]">
-                    {item.snapshot.kind === 'manual'
+                    {item.snapshot.kind === 'manual' || item.snapshot.kind === 'activity'
                       ? item.snapshot.title
                       : item.snapshot.kind === 'hotel'
                         ? item.snapshot.name
