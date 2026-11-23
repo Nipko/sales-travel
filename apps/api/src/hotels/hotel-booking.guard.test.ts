@@ -60,6 +60,14 @@ function quienesLlaman(patron: RegExp): string[] {
 const BOOK_PERMITIDO: Readonly<
   Record<string, { readonly veces: number; readonly motivo: string }>
 > = {
+  'activities/activities.controller.ts': {
+    veces: 1,
+    motivo: 'actividades: `ActivitiesService.book`, otra vertical y otro ACL',
+  },
+  'activities/activities.service.ts': {
+    veces: 1,
+    motivo: 'el ACL de actividades de Despegar (cuenta corriente), con la orden guardada después',
+  },
   'cars/cars.controller.ts': {
     veces: 1,
     motivo: 'autos: `CarsService.book`, otra vertical y otro puerto',

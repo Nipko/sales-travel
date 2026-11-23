@@ -69,6 +69,8 @@ export { DESPEGAR_REDACTED, redactDespegarPayload } from './redaction';
 export const DESPEGAR_HOTELS_PROVIDER_CODE = 'despegar-hotels';
 export {
   DespegarApiError,
+  // Lo reusa `@sales-travel/despegar-activities`: misma clave, mismo host y misma bóveda.
+  DespegarHttpClient,
   type DespegarExchange,
   type DespegarHttpDeps,
 } from './http/despegar-http.client';

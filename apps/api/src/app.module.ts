@@ -40,6 +40,7 @@ import { MailerModule } from './mail/mailer.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { HotelsModule } from './hotels/hotels.module.js';
 import { CarsModule } from './cars/cars.module.js';
+import { ActivitiesModule } from './activities/activities.module.js';
 import { CrmModule } from './crm/crm.module.js';
 import { PackagesModule } from './packages/packages.module.js';
 
@@ -82,6 +83,7 @@ import { PackagesModule } from './packages/packages.module.js';
     HotelsModule,
     PostSaleModule,
     CarsModule,
+    ActivitiesModule,
   ],
   controllers: [HealthController],
   providers: [

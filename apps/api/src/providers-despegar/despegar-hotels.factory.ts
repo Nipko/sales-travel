@@ -4,6 +4,7 @@ import {
   DespegarCancelNotAllowedError,
   DespegarHotelsAdapter,
   DESPEGAR_BASE_URLS,
+  type BookInvoice,
   type DespegarExchange,
   type DespegarHotelsConfig,
   type DespegarHttpDeps,
@@ -470,6 +471,19 @@ function flatInvoice(c: Record<string, unknown>): Record<string, unknown> | unde
       fiscalAddress: hasAddress ? address : undefined,
     }),
   ) as Record<string, unknown>;
+}
+
+/**
+ * La facturación de la cuenta, válida, o `undefined`. La usa también el factory de actividades:
+ * es la misma cuenta y el book a cuenta corriente pide los mismos datos.
+ */
+export function despegarInvoiceOf(
+  credentials: Record<string, unknown>,
+  config: Record<string, unknown>,
+): BookInvoice | undefined {
+  const raw = credentials['invoice'] ?? config['invoice'] ?? flatInvoice(credentials);
+  const parsed = InvoiceConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** `live` sólo contra el host de producción; cualquier otro (sandbox, UAT, propio) es de pruebas. */

@@ -55,7 +55,9 @@ export const PLATFORM_AUDIT_CATEGORY_PREFIXES: Readonly<
    */
   providers: { include: ['platform.provider', 'Provider', 'tenant.provider_disclosure'] },
   /** La vida de cada reserva y lo que hizo el superadmin desde Reservas de la red. */
-  orders: { include: ['Order', 'Hotel', 'CarReservation', 'platform.order.'] },
+  orders: {
+    include: ['Order', 'Hotel', 'CarReservation', 'ActivityReservation', 'platform.order.'],
+  },
   /**
    * Lo que corre solo (el barrido de post-venta) y lo de la consola sobre la consola: anuncios y
    * exportaciones.

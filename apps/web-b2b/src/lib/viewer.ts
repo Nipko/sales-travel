@@ -45,7 +45,7 @@ export function canSell(viewer: Viewer): boolean {
   return !viewer.platformUser;
 }
 
-export type SalesArea = 'flights' | 'hotels' | 'cars' | 'packages';
+export type SalesArea = 'flights' | 'hotels' | 'cars' | 'activities' | 'packages';
 
 /**
  * Las pantallas de venta, por prefijo de ruta. Buscar/Cotizar (con las cotizaciones guardadas y
@@ -59,6 +59,7 @@ const SALES_ROUTES: readonly (readonly [prefix: string, area: SalesArea])[] = [
   ['/cotizaciones', 'flights'],
   ['/hoteles', 'hotels'],
   ['/autos/oficinas', 'cars'],
+  ['/actividades', 'activities'],
   ['/paquetes', 'packages'],
 ];
 
