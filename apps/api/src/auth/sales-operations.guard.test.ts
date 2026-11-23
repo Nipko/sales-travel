@@ -113,6 +113,7 @@ const ENTRADAS: [string, Clase][] = [
   ...venta(
     'paquetes: crear y editar',
     'POST /packages',
+    'PATCH /packages/:id',
     'POST /packages/:id/items',
     'DELETE /packages/:id/items/:itemId',
   ),

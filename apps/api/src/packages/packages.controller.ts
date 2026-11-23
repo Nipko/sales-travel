@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { SalesOperation } from '../auth/decorators/sales-operation.decorator.js';
@@ -8,8 +17,10 @@ import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   AddPackageItemSchema,
   CreatePackageSchema,
+  UpdatePackageSchema,
   type AddPackageItemDto,
   type CreatePackageDto,
+  type UpdatePackageDto,
 } from './packages.schemas.js';
 import { PackagesService, type PackageItemRow, type PackageRow } from './packages.service.js';
 
@@ -55,6 +66,18 @@ export class PackagesController {
   }
 
   @SalesOperation()
+  @Patch(':id')
+  async update(
+    @CurrentUser() userId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdatePackageSchema)) body: UpdatePackageDto,
+  ) {
+    if (!userId) throw new ForbiddenException();
+    const tenantId = await this.activeTenant.resolve(userId);
+    return { package: serializePackage(await this.packages.update(tenantId, id, body)) };
+  }
+
+  @SalesOperation()
   @Post(':id/items')
   async addItem(
     @CurrentUser() userId: string | undefined,
@@ -90,6 +113,8 @@ function serializePackage(row: PackageRow) {
     currency: row.currency,
     customerId: row.customer_id,
     notes: row.notes,
+    searchCriteria: row.search_criteria ?? null,
+    showBreakdown: row.show_breakdown === true,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
   };
@@ -102,6 +127,7 @@ function serializeItem(row: PackageItemRow) {
     providerName: row.provider_name,
     providerItemId: row.provider_item_id,
     details: row.raw_details,
+    position: Number(row.position ?? 0),
     baseFareMinor: Number(row.base_fare_minor),
     taxesMinor: Number(row.taxes_minor),
     // El markup del ítem NO se expone: es el margen de la red sobre esta agencia.
