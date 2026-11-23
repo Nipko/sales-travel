@@ -1029,7 +1029,7 @@ export interface PackageQuotationsTable {
   global_markup_minor: Generated<number>;
   notes: string | null;
   /** 0098: criterios de la búsqueda del paquete, para la portada y el itinerario. */
-  search_criteria: unknown | null;
+  search_criteria: unknown;
   /** 0098: la cotización al cliente desglosa el precio por servicio. */
   show_breakdown: Generated<boolean>;
   expires_at: Timestamp;
