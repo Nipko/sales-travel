@@ -36,3 +36,11 @@ export function payloadShape(body: string | undefined): string[] {
   walk(json, '', 0);
   return [...paths].sort();
 }
+
+/**
+ * Una respuesta de disponibilidad sin una sola tarifa: ninguna ruta entra en un `roompacks`
+ * (`roompacks: []` deja la ruta `roompacks`, pero no `roompacks[]…`).
+ */
+export function isEmptyAvailability(shape: readonly string[]): boolean {
+  return !shape.some((p) => p.includes('roompacks[]'));
+}

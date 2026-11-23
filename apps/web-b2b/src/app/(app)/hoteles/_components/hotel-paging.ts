@@ -493,10 +493,15 @@ export function revealView(
 /**
  * La lista vacía cuando el primer tramo no trajo hoteles pero quedan por consultar: "no hay
  * disponibilidad" sería mentira, sólo la no hay en los que se consultaron.
+ *
+ * Vale también con un proveedor caído (`missing`): con TBO fallando en cada búsqueda, la pantalla
+ * decía "los que respondieron no tienen tarifas" y escondía que quedaban cientos de hoteles de
+ * Despegar por consultar.
  */
 export function emptyWithMoreView(
   paging: HotelSearchPaging,
   destinationLabel: string | undefined,
+  missing = 0,
 ): EmptyResultsView {
   const where = destinationShortLabel(destinationLabel);
   const of = where === undefined ? 'del destino' : `de ${where}`;
@@ -506,6 +511,12 @@ export function emptyWithMoreView(
       paging.consulted === 1
         ? `El hotel que consultamos ${of} no tiene disponibilidad para estas fechas.`
         : `Los ${nHotels(paging.consulted)} que consultamos ${of} no tienen disponibilidad para estas fechas.`,
-    hint: `Quedan ${nHotels(left)} por consultar: con "Ver más hoteles" buscamos en los siguientes.`,
+    hint:
+      `Quedan ${nHotels(left)} por consultar: con "Ver más hoteles" buscamos en los siguientes.` +
+      (missing === 0
+        ? ''
+        : missing === 1
+          ? ' Un proveedor no respondió: revisa el aviso de arriba.'
+          : ` ${missing} proveedores no respondieron: revisa el aviso de arriba.`),
   };
 }

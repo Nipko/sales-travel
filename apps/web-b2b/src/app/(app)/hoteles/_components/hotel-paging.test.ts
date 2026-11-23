@@ -481,6 +481,15 @@ describe('lo que dice la pantalla', () => {
     });
   });
 
+  it('vacío con un proveedor caído: igual ofrece los que quedan y avisa del que falló', () => {
+    expect(emptyWithMoreView(PRIMERO, CARTAGENA, 1).hint).toBe(
+      'Quedan 320 hoteles por consultar: con "Ver más hoteles" buscamos en los siguientes. Un proveedor no respondió: revisa el aviso de arriba.',
+    );
+    expect(emptyWithMoreView(PRIMERO, CARTAGENA, 2).hint).toMatch(
+      /2 proveedores no respondieron: revisa el aviso de arriba\.$/,
+    );
+  });
+
   it('todo en "tú": ni voseo ni usted en lo que ve el vendedor', () => {
     const textos = [
       coverageView(PRIMERO, CARTAGENA),

@@ -671,8 +671,8 @@ function EmptyResults({
   const standard = emptyResultsView(providers);
   const answered = providers.some((p) => p.status === 'ok' || p.status === 'empty');
   const view =
-    more.paging?.hasMore === true && answered && degradedProviders(providers).length === 0
-      ? emptyWithMoreView(more.paging, destinationLabel)
+    more.paging?.hasMore === true && answered
+      ? emptyWithMoreView(more.paging, destinationLabel, degradedProviders(providers).length)
       : standard;
   return (
     <div
