@@ -29,6 +29,19 @@ export type PictureProbe = (url: string) => Promise<PictureState>;
 /** Las fotos que abren, en el orden en que llegaron. */
 export type PictureFilter = (urls: readonly string[], max: number) => Promise<string[]>;
 
+/**
+ * Lo que resultó de probar las fotos de UNA lista, para el log: conteos y, si hubo, la primera
+ * foto que el CDN negó. Es un enlace público del CDN, no un dato del cliente ni de la cuenta.
+ */
+export interface PictureFilterReport {
+  readonly received: number;
+  readonly checked: number;
+  readonly dead: number;
+  readonly unknown: number;
+  readonly kept: number;
+  readonly firstDead?: string;
+}
+
 /** Un semáforo mínimo: como mucho `limit` tareas a la vez. */
 function limiter(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
   let active = 0;
@@ -80,6 +93,7 @@ export function httpPictureProbe(
 export function pictureFilter(
   probe: PictureProbe,
   concurrency: number = PICTURE_CHECK_CONCURRENCY,
+  onReport?: (report: PictureFilterReport) => void,
 ): PictureFilter {
   const run = limiter(concurrency);
   const check = (urls: readonly string[]): Promise<PictureState[]> =>
@@ -88,10 +102,23 @@ export function pictureFilter(
     const candidates = urls.slice(0, max);
     const head = candidates.slice(0, DEAD_STREAK);
     const headStates = await check(head);
-    if (head.length >= DEAD_STREAK && headStates.every((s) => s === 'dead')) return [];
-    const tailStates = await check(candidates.slice(DEAD_STREAK));
-    const states = [...headStates, ...tailStates];
-    return candidates.filter((_, i) => states[i] !== 'dead');
+    const allDead = head.length >= DEAD_STREAK && headStates.every((s) => s === 'dead');
+    const states = allDead
+      ? headStates
+      : [...headStates, ...(await check(candidates.slice(DEAD_STREAK)))];
+    const kept = allDead ? [] : candidates.filter((_, i) => states[i] !== 'dead');
+    if (onReport !== undefined && urls.length > 0) {
+      const deadAt = states.indexOf('dead');
+      onReport({
+        received: urls.length,
+        checked: states.length,
+        dead: states.filter((s) => s === 'dead').length,
+        unknown: states.filter((s) => s === 'unknown').length,
+        kept: kept.length,
+        ...(deadAt < 0 ? {} : { firstDead: candidates[deadAt] }),
+      });
+    }
+    return kept;
   };
 }
 

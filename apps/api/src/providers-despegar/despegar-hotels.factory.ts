@@ -36,7 +36,11 @@ import {
 import { DESPEGAR_IMAGE_HOSTS } from './despegar-hotel-content.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
 import { isEmptyAvailability, payloadShape } from './despegar-payload-shape.js';
-import { httpPictureProbe, pictureFilter } from './despegar-picture-check.js';
+import {
+  httpPictureProbe,
+  pictureFilter,
+  type PictureFilterReport,
+} from './despegar-picture-check.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
   DespegarHotelProviderAdapter,
@@ -508,8 +512,28 @@ const SHAPE_OPERATIONS: ReadonlySet<string> = new Set(['detail', 'prebook']);
 const SHAPE_LOG_EVERY_MS = 30 * 60_000;
 const EMPTY_AVAILABILITY_LOG_EVERY_MS = 5 * 60_000;
 
+const PICTURES_LOG = new Logger('DespegarHotels');
+
+/**
+ * Cuántas fotos negó el CDN. Una lista que se queda sin ninguna es un hotel (o una habitación) que
+ * sale «sin foto»: va como aviso, con una foto negada de muestra para probarla a mano.
+ */
+export function logPictureReport(
+  r: PictureFilterReport,
+  logger: Pick<Logger, 'log' | 'warn'>,
+): void {
+  if (r.dead === 0) return;
+  const line =
+    `recibidas=${r.received} probadas=${r.checked} rotas=${r.dead} dudosas=${r.unknown} ` +
+    `guardadas=${r.kept}${r.firstDead === undefined ? '' : ` muestra=${r.firstDead}`}`;
+  if (r.kept === 0) logger.warn(`despegar.fotos_sin_ninguna ${line}`);
+  else logger.log(`despegar.fotos_rotas ${line}`);
+}
+
 /** Un solo filtro para todas las cuentas: el tope de HEADs en vuelo hacia el CDN es del proceso. */
-const LIVE_PICTURES = pictureFilter(httpPictureProbe());
+const LIVE_PICTURES = pictureFilter(httpPictureProbe(), undefined, (r) =>
+  logPictureReport(r, PICTURES_LOG),
+);
 
 const INVOICE_LOG = new Logger('DespegarHotels');
 

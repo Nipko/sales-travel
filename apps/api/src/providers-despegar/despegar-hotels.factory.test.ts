@@ -9,7 +9,7 @@ import type {
 import type { HotelProviderFactory } from '../providers/hotel-provider.types.js';
 import { ProviderAccountIncompleteError } from '../providers/provider.types.js';
 import { DespegarHotelProviderAdapter } from './despegar-hotel-provider.adapter.js';
-import { DespegarHotelsProviderFactory } from './despegar-hotels.factory.js';
+import { DespegarHotelsProviderFactory, logPictureReport } from './despegar-hotels.factory.js';
 
 function resolved(overrides: Partial<ResolvedProviderAccount> = {}): ResolvedProviderAccount {
   return {
@@ -310,5 +310,51 @@ describe('DespegarHotelsProviderFactory — puerta de credenciales', () => {
     // Por tenant y cada vez: es una cuenta que ALGUIEN tiene que completar.
     expect(warn).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('no-se-loguea');
+  });
+});
+
+describe('logPictureReport', () => {
+  const logger = () => ({ log: vi.fn(), warn: vi.fn() });
+
+  it('sin fotos rotas no dice nada', () => {
+    const l = logger();
+    logPictureReport({ received: 5, checked: 5, dead: 0, unknown: 1, kept: 5 }, l);
+    expect(l.log).not.toHaveBeenCalled();
+    expect(l.warn).not.toHaveBeenCalled();
+  });
+
+  it('un hotel que se queda sin ninguna va como aviso, con la muestra', () => {
+    const l = logger();
+    logPictureReport(
+      {
+        received: 12,
+        checked: 8,
+        dead: 8,
+        unknown: 0,
+        kept: 0,
+        firstDead: 'https://cdn.example/p0',
+      },
+      l,
+    );
+    expect(l.warn).toHaveBeenCalledWith(
+      'despegar.fotos_sin_ninguna recibidas=12 probadas=8 rotas=8 dudosas=0 guardadas=0 muestra=https://cdn.example/p0',
+    );
+  });
+
+  it('algunas rotas, pero quedan fotos: sólo informativo', () => {
+    const l = logger();
+    logPictureReport(
+      {
+        received: 4,
+        checked: 4,
+        dead: 1,
+        unknown: 0,
+        kept: 3,
+        firstDead: 'https://cdn.example/p1',
+      },
+      l,
+    );
+    expect(l.log).toHaveBeenCalledTimes(1);
+    expect(l.warn).not.toHaveBeenCalled();
   });
 });
