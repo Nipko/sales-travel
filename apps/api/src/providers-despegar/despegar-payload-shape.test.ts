@@ -1,6 +1,6 @@
 import { mapHotelDetail } from '@sales-travel/despegar-hotels';
 import { describe, expect, it } from 'vitest';
-import { payloadShape } from './despegar-payload-shape';
+import { isEmptyAvailability, payloadShape } from './despegar-payload-shape';
 
 describe('payloadShape', () => {
   it('rutas de campos sin un solo valor', () => {
@@ -51,5 +51,19 @@ describe('mapHotelDetail — variantes de la respuesta', () => {
     const offer = mapHotelDetail({ items: [{ id: 555, roompacks: [pack()] }] }, '555');
     expect(offer.hotelId).toBe('555');
     expect(offer.roompacks).toHaveLength(1);
+  });
+});
+
+describe('isEmptyAvailability', () => {
+  it('vacía: sin hoteles, hoteles sin tarifas, o un cuerpo que no es JSON', () => {
+    expect(isEmptyAvailability(payloadShape('{"items":[]}'))).toBe(true);
+    expect(isEmptyAvailability(payloadShape('{"items":[{"id":"1","roompacks":[]}]}'))).toBe(true);
+    expect(isEmptyAvailability(payloadShape('[]'))).toBe(true);
+    expect(isEmptyAvailability(payloadShape('no es json'))).toBe(true);
+  });
+
+  it('con una tarifa no es vacía', () => {
+    const body = '{"items":[{"id":"1","roompacks":[{"id":"RP","price_detail":{"total":1}}]}]}';
+    expect(isEmptyAvailability(payloadShape(body))).toBe(false);
   });
 });

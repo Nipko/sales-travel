@@ -35,7 +35,7 @@ import {
 } from '../providers/provider.types.js';
 import { DESPEGAR_IMAGE_HOSTS } from './despegar-hotel-content.js';
 import { DespegarContextHotelProviderAdapter } from './despegar-hotel-context.adapter.js';
-import { payloadShape } from './despegar-payload-shape.js';
+import { isEmptyAvailability, payloadShape } from './despegar-payload-shape.js';
 import { httpPictureProbe, pictureFilter } from './despegar-picture-check.js';
 import {
   DESPEGAR_HOTELS_PROVIDER_CODE,
@@ -143,6 +143,10 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
    * operación: así se ve dónde manda Despegar el `choice_id` sin abrir la bóveda.
    */
   private logShape(e: DespegarExchange): void {
+    if (e.operation === 'availability') {
+      this.logEmptyAvailability(e);
+      return;
+    }
     if (!SHAPE_OPERATIONS.has(e.operation) || e.outcome !== 'SUCCESS') return;
     const now = Date.now();
     const last = this.shapeLoggedAt.get(e.operation);
@@ -151,6 +155,25 @@ export class DespegarHotelsProviderFactory implements HotelProviderFactory {
     const shape = payloadShape(e.responseBody);
     this.logger.log(
       `despegar.forma operation=${e.operation} paths=${shape.length} ${shape.join(',')}`,
+    );
+  }
+
+  /**
+   * Una disponibilidad que volvió sin tarifas: la forma de la respuesta, sin valores, una vez cada
+   * {@link EMPTY_AVAILABILITY_LOG_EVERY_MS}. Río y Miami del 16 al 19-feb-2027 volvían vacías en
+   * 0,3 s y no había cómo saber si era falta de cupo del sandbox o algo que Despegar decía y no
+   * leíamos: la búsqueda que respondió no se guarda en la bóveda.
+   */
+  private logEmptyAvailability(e: DespegarExchange): void {
+    if (e.outcome !== 'SUCCESS') return;
+    const shape = payloadShape(e.responseBody);
+    if (!isEmptyAvailability(shape)) return;
+    const now = Date.now();
+    const last = this.shapeLoggedAt.get('availability-empty');
+    if (last !== undefined && now - last < EMPTY_AVAILABILITY_LOG_EVERY_MS) return;
+    this.shapeLoggedAt.set('availability-empty', now);
+    this.logger.warn(
+      `despegar.disponibilidad_vacia status=${e.status} ms=${e.durationMs} bytes=${e.responseBody?.length ?? 0} paths=${shape.length} ${shape.join(',')}`,
     );
   }
 
@@ -483,6 +506,7 @@ export function despegarEnvironmentOf(baseUrl: string): 'test' | 'live' {
 
 const SHAPE_OPERATIONS: ReadonlySet<string> = new Set(['detail', 'prebook']);
 const SHAPE_LOG_EVERY_MS = 30 * 60_000;
+const EMPTY_AVAILABILITY_LOG_EVERY_MS = 5 * 60_000;
 
 /** Un solo filtro para todas las cuentas: el tope de HEADs en vuelo hacia el CDN es del proceso. */
 const LIVE_PICTURES = pictureFilter(httpPictureProbe());
