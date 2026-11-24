@@ -717,8 +717,9 @@ export class HotelContentService {
   /**
    * De los hoteles sin foto, los que vale la pena pedir: de un proveedor cuyo contenido sale del
    * catálogo, en SU catálogo (un código inventado no gasta el cupo de la cuenta del consolidador),
-   * sin contenido de detalle todavía en NINGÚN idioma (si ya lo tiene y no trae fotos, el proveedor
-   * no las tiene: las fotos no dependen del idioma) y sin un "no tiene" o un fallo reciente en la
+   * sin contenido de detalle todavía en NINGÚN idioma (las fotos no dependen del idioma; uno guardado
+   * sin fotos se vuelve a pedir cada `HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS`, ver
+   * `HotelCatalogStore.contentState`) y sin un "no tiene" o un fallo reciente en la
    * caché. Lo confirmado sin contenido se filtra después, con la cuenta de la agencia resuelta
    * ({@link fetchProvider}): es de la cuenta, no de la plataforma.
    */

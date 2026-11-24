@@ -28,7 +28,7 @@ import type {
 import { CircuitBreakerService } from '../search/circuit-breaker.service.js';
 import { MemoryCacheAdapter } from '../search/memory-cache.adapter.js';
 import { hotelFlags, hotelRegistry } from './__fixtures__/fake-despegar-hotels.adapter.js';
-import { HotelCatalogStore } from './hotel-catalog.store.js';
+import { HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS, HotelCatalogStore } from './hotel-catalog.store.js';
 import { HotelContentService } from './hotel-content.service.js';
 import { HOTEL_IMAGE_PROXY_PATH } from './hotel-image-proxy.js';
 
@@ -293,6 +293,35 @@ d('catálogo bajo demanda contra Postgres, como app_user (0054)', () => {
       { inCatalog: true, hasDetails: false },
       { inCatalog: false, hasDetails: false },
     ]);
+  });
+
+  it('un detalle guardado sin fotos se vuelve a pedir pasado un día; uno con fotos, no', async () => {
+    await store.storeContents(PROVEEDOR, [contenido(H(11), { images: [] })]);
+    const refs = [
+      { providerCode: PROVEEDOR, hotelId: H(10) },
+      { providerCode: PROVEEDOR, hotelId: H(11) },
+    ];
+    try {
+      expect([...(await store.contentState(refs)).values()]).toEqual([
+        { inCatalog: true, hasDetails: true },
+        { inCatalog: true, hasDetails: true },
+      ]);
+
+      await admin.query(
+        `UPDATE hotel_content SET fetched_at = now() - make_interval(hours => $3)
+          WHERE provider_code = $1 AND hotel_id = ANY($2::text[])`,
+        [PROVEEDOR, [H(10), H(11)], HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS + 1],
+      );
+      expect([...(await store.contentState(refs)).values()]).toEqual([
+        { inCatalog: true, hasDetails: true },
+        { inCatalog: true, hasDetails: false },
+      ]);
+    } finally {
+      await admin.query(`DELETE FROM hotel_content WHERE provider_code = $1 AND hotel_id = $2`, [
+        PROVEEDOR,
+        H(11),
+      ]);
+    }
   });
 
   it('el contenido por lote: trae lo que falta, lo guarda como app_user y lo devuelve', async () => {

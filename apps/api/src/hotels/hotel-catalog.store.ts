@@ -114,6 +114,13 @@ export interface HotelRoomContentStoreResult {
 /** Tope de `hotel_catalog_store_room_contents`. */
 export const HOTEL_ROOM_CONTENT_MAX_ROOMS = 100;
 
+/**
+ * Cada cuánto se vuelve a pedir el contenido de un hotel que quedó guardado sin fotos, si sale en
+ * una búsqueda. Lo que vuelve igual sólo renueva la fecha (0054), así que es una llamada por hotel
+ * y por día como mucho, por el mismo tope de llamadas extra del contenido por lote.
+ */
+export const HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS = 24;
+
 const ROOM_OUTCOMES: ReadonlySet<string> = new Set(['rooms', 'none', 'unreadable']);
 
 function isContentLanguage(value: unknown): value is HotelContentLanguage {
@@ -230,7 +237,12 @@ export class HotelCatalogStore {
     }));
   }
 
-  /** Si cada hotel está en el catálogo de su proveedor y si ya tiene contenido `details`. */
+  /**
+   * Si cada hotel está en el catálogo de su proveedor y si ya tiene contenido `details` que no haya
+   * que volver a pedir. Uno guardado SIN fotos cuenta sólo por
+   * {@link HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS}: las de Despegar se guardan después de probarlas
+   * contra su CDN, y un hotel cuyas fotos negó una vez no queda «sin foto» para siempre.
+   */
   async contentState(refs: readonly HotelRef[]): Promise<Map<string, HotelContentState>> {
     const out = new Map<string, HotelContentState>();
     const result = await sql<{
@@ -245,7 +257,9 @@ export class HotelCatalogStore {
                AS in_catalog,
              EXISTS (SELECT 1 FROM hotel_content c
                       WHERE c.provider_code = w.provider_code AND c.hotel_id = w.hotel_id
-                        AND c.source = 'details')
+                        AND c.source = 'details'
+                        AND ((jsonb_typeof(c.images) = 'array' AND jsonb_array_length(c.images) > 0)
+                             OR c.fetched_at > now() - make_interval(hours => ${sql.lit(HOTEL_CONTENT_NO_IMAGES_REFETCH_HOURS)})))
                AS has_details
         FROM unnest(${refs.map((r) => r.providerCode)}::text[],
                     ${refs.map((r) => r.hotelId)}::text[]) AS w(provider_code, hotel_id)`.execute(

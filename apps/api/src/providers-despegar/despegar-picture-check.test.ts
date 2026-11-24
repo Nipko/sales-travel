@@ -3,6 +3,7 @@ import {
   DEAD_STREAK,
   httpPictureProbe,
   pictureFilter,
+  type PictureFilterReport,
   type PictureState,
 } from './despegar-picture-check';
 
@@ -52,6 +53,43 @@ describe('pictureFilter', () => {
     const urls = Array.from({ length: 10 }, (_, i) => url(i));
     await Promise.all([filter(urls, 10), filter(urls, 10)]);
     expect(peak).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('pictureFilter: el reporte para el log', () => {
+  it('cuenta rotas, dudosas y guardadas, y da la primera rota de muestra', async () => {
+    const reports: PictureFilterReport[] = [];
+    const probe = probeOf({ [url(1)]: 'dead', [url(2)]: 'unknown', [url(3)]: 'dead' });
+    await pictureFilter(probe, 24, (r) => reports.push(r))([url(0), url(1), url(2), url(3)], 24);
+    expect(reports).toEqual([
+      { received: 4, checked: 4, dead: 2, unknown: 1, kept: 2, firstDead: url(1) },
+    ]);
+  });
+
+  it('con las primeras rotas al hilo, reporta el hotel sin ninguna', async () => {
+    const reports: PictureFilterReport[] = [];
+    const urls = Array.from({ length: 30 }, (_, i) => url(i));
+    await pictureFilter(
+      vi.fn(() => Promise.resolve('dead' as const)),
+      24,
+      (r) => reports.push(r),
+    )(urls, 24);
+    expect(reports).toEqual([
+      {
+        received: 30,
+        checked: DEAD_STREAK,
+        dead: DEAD_STREAK,
+        unknown: 0,
+        kept: 0,
+        firstDead: url(0),
+      },
+    ]);
+  });
+
+  it('una lista vacía no reporta nada', async () => {
+    const onReport = vi.fn();
+    await pictureFilter(probeOf({}), 24, onReport)([], 24);
+    expect(onReport).not.toHaveBeenCalled();
   });
 });
 
