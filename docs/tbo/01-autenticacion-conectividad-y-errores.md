@@ -136,6 +136,7 @@ expiración o rotación de la contraseña, allowlist de IP de origen y cabeceras
 | Integración (certificación)      | `http://api.tbotechnology.in/TBOHolidays_HotelAPI` (el mismo que test)                                   | Cert, "TBO Hotel API Details"                               | VERIFICADO-CERT    |
 | Staging (verificación de portal) | "Testing … must occur in our Staging environment". No se dice su URL                                     | Cert, "Certification Process (Website/Portal Verification)" | VERIFICADO-CERT    |
 | Postman                          | Todas las requests contra `http://api.tbotechnology.in/TBOHolidays_HotelAPI/…`, sin variables ni entorno | Postman: las 10 requests                                    | VERIFICADO-POSTMAN |
+| Test (cuenta entregada)          | `https://api.tbotechnology.in/HotelAPI`: la URL que TBO envió con nuestras credenciales de test (§2.4)   | Correo de TBO; sondas del 2026-11-25                        | VERIFICADO-SONDA   |
 
 Convención: "Please follow this convention for API endpoint: {BaseURL}/{Method Name}" (p. 7). **VERIFICADO-PDF.**
 
@@ -180,6 +181,33 @@ therefore, brief system outages may need to occur on occasion without prior noti
   - `baseUrl` se normaliza: sin barra final y sin query ni fragmento. El path de la operación se concatena con
     `/`.
 - La URL exacta de live, y si staging usa otra URL distinta de la de integración → [Q-04](./10-preguntas-para-tbo.md#q-04), [Q-76](./10-preguntas-para-tbo.md#q-76).
+
+### 2.4 Sondas con la cuenta de test entregada (2026-11-25)
+
+TBO envió las credenciales de test con la base `https://api.tbotechnology.in/HotelAPI`: el host de test
+con el path que el PDF reserva a live. Se probó desde el ambiente de pruebas (Mac mini,
+`infrastructure/pruebas`) antes de cargarla. **VERIFICADO-SONDA**:
+
+| Base                                                | `CountryList` (GET) | `Search` (5 y 100 códigos, Medellín)         |
+| --------------------------------------------------- | ------------------- | -------------------------------------------- |
+| `https://api.tbotechnology.in/HotelAPI`             | 200                 | 2,3–2,6 s; 100 códigos → 39 hoteles          |
+| `https://api.tbotechnology.in/TBOHolidays_HotelAPI` | 200                 | Sin respuesta en 60 s (y en los 8 s del api) |
+| `http://api.tbotechnology.in/TBOHolidays_HotelAPI`  | 200                 | 2,6 s, `Status.Code` 500 «Unexpected Error»  |
+
+- Las mismas credenciales autentican en los dos paths del host de test, así que son de test: las live se
+  entregan después de la certificación y son distintas (Cert, "Sign Off / API Live Credentials!").
+- **El host de test acepta `https`** en los dos paths. Responde la parte (a) de
+  [Q-03](./10-preguntas-para-tbo.md#q-03) para esta cuenta.
+- **`/HotelAPI` en el host de test no es live.** No sirve como señal de entorno; el entorno sale de la
+  cuenta (`environment`), no del path.
+- `hotelcodelist` (E5 del sync) no respondió en 180 s por `/TBOHolidays_HotelAPI` (dos intentos). E1–E3
+  y E6 sí completaron (211 ciudades y 15.661 hoteles de CO). Sin volver a probar E5 por `/HotelAPI`.
+- Las tarifas llegan en **USD** (moneda de perfil de la cuenta, [Q-82](./10-preguntas-para-tbo.md#q-82)):
+  una búsqueda en COP las descarta por la puerta de moneda (`currency-mismatch`) y en USD salen.
+- **Postura:** la cuenta del ambiente de pruebas usa `environment: test` y
+  `baseUrl: https://api.tbotechnology.in/HotelAPI`. `TBO_BASE_URLS.test` (por defecto, `http` +
+  `/TBOHolidays_HotelAPI`) no se cambia sin confirmarlo con TBO, porque es lo que publican el PDF, Cert y
+  Postman; la cuenta lleva su `baseUrl` explícita.
 
 ---
 
