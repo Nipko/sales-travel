@@ -71,10 +71,10 @@ apagarlo podría encenderse por error allá. El login automático sale del arné
   (cifrada con `PROVIDER_CREDENTIALS_KEY` de este `.env`).
 - `SABRE_OPERATIONS` enciende emisión/void/refund/etc. sólo para certificarlas en CERT.
 - Nunca poner aquí credenciales o URLs de producción.
-- Las ventas `@real` (F10, F12, F14, F17 y F27; ver `apps/web-b2b/e2e/README.md`) reservan y cancelan en
+- Las ventas `@real` (F10, F12 con Sabre y LATAM, F14, F17 y F27; ver `apps/web-b2b/e2e/README.md`) reservan y cancelan en
   Sabre CERT y dejan al consolidador y a la agencia A con carteras COP y USD de prueba y contacto de soporte.
   Estado al 2026-11-26: AgentCars rechaza la IP de la Mac hasta que la registren, el sandbox de LATAM cotiza
-  en BRL y la cuenta de test de TBO sólo trae tarifas de paquete con aéreo (`docs/tbo/10` Q-31).
+  en BRL (F12 LATAM usa la agencia B en BRL) y la cuenta de test de TBO sólo trae tarifas de paquete con aéreo (`docs/tbo/10` Q-31).
 
 ## 6. Diferencias con producción
 

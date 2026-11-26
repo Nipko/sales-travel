@@ -14,7 +14,37 @@ import type { UserKey } from './users';
 export const RED = {
   consolidador: 'e2e-consolidador',
   agenciaA: 'e2e-agencia-a',
+  agenciaB: 'e2e-agencia-b',
 } as const;
+
+/** El id de un nodo de la red de prueba, visto por el superadmin. */
+async function idDeNodo(api: APIRequestContext, slug: string): Promise<string> {
+  const red = await api.get('tenants/network');
+  expect(red.ok(), await red.text()).toBeTruthy();
+  const { tenants } = (await red.json()) as { tenants: { id: string; slug: string }[] };
+  const id = tenants.find((t) => t.slug === slug)?.id;
+  if (!id) throw new Error(`No encontré el nodo ${slug} en la red`);
+  return id;
+}
+
+/**
+ * La agencia B vende en Brasil (BRL): el sandbox de LATAM cotiza en BRL aunque el punto de venta sea
+ * CO, y la puerta de moneda del buscador descarta, con razón, tarifas en otra moneda que la de la
+ * agencia. Así el flujo de LATAM se prueba completo sin convertir nada. La agencia B cuelga de la
+ * plataforma y no hereda Sabre: en su búsqueda sólo responde LATAM.
+ */
+export async function prepararAgenciaBrasil(): Promise<void> {
+  const api = await apiComo('superadmin');
+  try {
+    const id = await idDeNodo(api, RED.agenciaB);
+    const res = await api.patch(`tenants/${id}/config`, {
+      data: { countryCode: 'BR', defaultCurrency: 'BRL' },
+    });
+    expect(res.ok(), await res.text()).toBeTruthy();
+  } finally {
+    await api.dispose();
+  }
+}
 
 /** Una fecha `días` adelante, a mediodía de Bogotá para no cruzar de día por el huso. */
 export function fechaEn(dias: number): Date {
@@ -98,23 +128,14 @@ interface Cartera {
 export async function prepararRedParaVender(): Promise<void> {
   const api = await apiComo('superadmin');
   try {
-    const red = await api.get('tenants/network');
-    expect(red.ok(), await red.text()).toBeTruthy();
-    const { tenants } = (await red.json()) as { tenants: { id: string; slug: string }[] };
-    const idDe = (slug: string): string => {
-      const id = tenants.find((t) => t.slug === slug)?.id;
-      if (!id) throw new Error(`No encontré el nodo ${slug} en la red`);
-      return id;
-    };
-
-    const consolidador = idDe(RED.consolidador);
+    const consolidador = await idDeNodo(api, RED.consolidador);
     const marca = await api.patch(`tenants/${consolidador}/branding`, {
       data: { supportEmail: 'soporte@e2e.test', supportPhone: '+57 300 123 4567' },
     });
     expect(marca.ok(), await marca.text()).toBeTruthy();
 
     const minimo = { COP: 2_000_000_000, USD: 500_000 } as const;
-    for (const tenantId of [consolidador, idDe(RED.agenciaA)]) {
+    for (const tenantId of [consolidador, await idDeNodo(api, RED.agenciaA)]) {
       const vista = await api.get(`tenants/${tenantId}/portfolios`);
       expect(vista.ok(), await vista.text()).toBeTruthy();
       const carteras = ((await vista.json()) as { portfolios: Cartera[] }).portfolios;

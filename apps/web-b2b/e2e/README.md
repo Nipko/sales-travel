@@ -68,6 +68,7 @@ tiene proveedores y las salta. Nunca contra producción.
 | F12 · F27 | `tests/f10-f12-vuelo-real.e2e.ts` | Elegir tarifa, cargar un pasajero y reservar sin cobro: PNR confirmado en menos de 2 min (anota el tiempo); luego cancela el PNR     |
 | F14       | `tests/f14-hotel-real.e2e.ts`     | Medellín en COP (Despegar, sin checkout en el panel) y en USD con nacionalidad CO (TBO): la tarifa de TBO se revalida en el checkout |
 | F17       | `tests/f17-paquete-real.e2e.ts`   | Paquete vuelo + hotel BOG → MDE, cotización PQ creada y su PDF                                                                       |
+| F12 LATAM | `tests/f12-latam-real.e2e.ts`     | Agencia B en BRL: GRU → GIG con LATAM sandbox, reserva sin cobro, diálogo de pago en BRL y cancelación BNPL                          |
 
 - **Limpieza:** la reserva de vuelo se cancela al final, aunque falle un paso intermedio (`afterAll`).
 - **Preparación de la red:** F14 deja carteras COP y USD con saldo en el consolidador y la agencia A y el
@@ -78,8 +79,13 @@ tiene proveedores y las salta. Nunca contra producción.
 - **TBO-PRUEBA-01** (`test.fixme`): la cuenta de test de TBO sólo trae tarifas «solo con paquete aéreo» en
   Colombia, así que no hay Book/Cancel de hotel suelto que probar. Pregunta abierta en
   `docs/tbo/10-preguntas-para-tbo.md` Q-31.
-- **Sin cubrir todavía:** autos (AgentCars rechaza la IP de la Mac hasta que la registren) y vuelos de LATAM
-  (el sandbox cotiza en BRL y la agencia vende en COP).
+- **LATAM en BRL:** el sandbox de LATAM cotiza en BRL aunque el punto de venta sea CO, y el buscador descarta
+  tarifas en otra moneda que la de la agencia. F12 LATAM pone la agencia B en Brasil y BRL
+  (`prepararAgenciaBrasil`) en vez de convertir.
+- **LATAM-PRUEBA-01** (`test.fixme`): pagar y emitir. Falta la tarjeta de prueba del sandbox de LATAM, y el pago
+  con tarjeta pasa número y CVV por el servidor (fuera de PCI SAQ-A). Ver `docs/latam-ndc/01-estado-y-plan.md`
+  H-09 y H-10.
+- **Sin cubrir todavía:** autos (AgentCars rechaza la IP de la Mac hasta que la registren).
 
 ## Bugs conocidos
 
