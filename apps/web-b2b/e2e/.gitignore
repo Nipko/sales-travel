@@ -1,0 +1,6 @@
+# Sesiones y claves TOTP de los usuarios de prueba de cada corrida (las borra el globalSetup).
+.auth/
+# Contraseñas y llaves del stack E2E local (e2e/env/generar-secretos.mjs).
+.env.e2e
+# El .gitignore raíz ignora `env/` (entornos de Python); aquí es la red de prueba y su generador.
+!env/
