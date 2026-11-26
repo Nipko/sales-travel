@@ -1,0 +1,217 @@
+# Ambiente de pruebas en la Mac mini: pruebas.planetour.cloud (README.md de esta carpeta).
+#
+# Mismo código que producción, construido aquí (arm64), con base y Redis persistentes y proveedores en
+# sus sandboxes reales (Sabre CERT, LATAM sandbox, TBO test, Despegar dev, AgentCars dev). Nada de este
+# stack llega a producción ni comparte red, base o claves con ella.
+#
+#   ./pruebas.sh up       # construye y levanta
+#   ./pruebas.sh e2e      # corre la suite Playwright contra este stack
+#
+# Puertos publicados SOLO en 127.0.0.1 de la Mac: Playwright y los scripts los usan; desde fuera se
+# entra únicamente por el túnel de Cloudflare (servicio `tunnel`), detrás de Cloudflare Access.
+name: sales-travel-pruebas
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: '20m'
+      max-file: '5'
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16-ts2.26
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?falta POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: sales_travel
+    volumes:
+      - postgres_data:/home/postgres/pgdata/data
+      - ../hostinger/postgres-init:/docker-entrypoint-initdb.d:ro
+    # `edge` sólo para publicar el puerto en 127.0.0.1 (seed del E2E y consultas desde la Mac).
+    networks: [internal, edge]
+    ports:
+      - '127.0.0.1:5532:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d sales_travel']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    <<: [*restart, *logging]
+    command:
+      [
+        'redis-server',
+        '--requirepass',
+        '${REDIS_PASSWORD:?falta REDIS_PASSWORD}',
+        '--appendonly',
+        'yes',
+      ]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: tools/db-migrate/Dockerfile
+    image: sales-travel-pruebas/migrate:local
+    <<: *logging
+    restart: 'no'
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      PGDATABASE: sales_travel
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?falta APP_USER_PASSWORD}
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Red de prueba del E2E (plataforma → consolidador → agencia → subagencia + agencia B, usuarios
+  # @e2e.test). Va antes del api porque el api siembra el gobierno de la plataforma al arrancar.
+  # Idempotente: sólo toca usuarios @e2e.test, así que convive con lo que se cree a mano.
+  seed:
+    image: timescale/timescaledb-ha:pg16-ts2.26
+    restart: 'no'
+    entrypoint: ['psql', '-v', 'ON_ERROR_STOP=1', '-f', '/seed/seed.sql']
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      PGDATABASE: sales_travel
+    volumes:
+      - ../../apps/web-b2b/e2e/env:/seed:ro
+    networks: [internal]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: sales-travel-pruebas/api:local
+    <<: [*restart, *logging]
+    init: true
+    stop_grace_period: 130s
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      APP_VERSION: ${APP_VERSION:-pruebas}
+      SHUTDOWN_DRAIN_TIMEOUT_MS: '125000'
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: app_user
+      PGPASSWORD: ${APP_USER_PASSWORD}
+      PGDATABASE: sales_travel
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET}
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:?falta INTERNAL_PROXY_SECRET}
+      PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY:?falta PROVIDER_CREDENTIALS_KEY}
+      PROVIDER_PAYLOADS_KEY: ${PROVIDER_PAYLOADS_KEY:?falta PROVIDER_PAYLOADS_KEY}
+      PROVIDER_PAYLOADS_RETENTION_DAYS: '30'
+      # Sólo sandboxes. Si alguien pone aquí una URL de producción, es error de configuración.
+      LATAM_API_URL: ${LATAM_API_URL:-https://sandbox.api.latam.com}
+      LATAM_API_KEY: ${LATAM_API_KEY:-}
+      LATAM_API_SECRET: ${LATAM_API_SECRET:-}
+      LATAM_AGENCY_ID: ${LATAM_AGENCY_ID:-}
+      LATAM_AGENCY_IATA: ${LATAM_AGENCY_IATA:-}
+      LATAM_AGENCY_NAME: ${LATAM_AGENCY_NAME:-}
+      LATAM_TRAVEL_AGENT_ID: ${LATAM_TRAVEL_AGENT_ID:-}
+      LATAM_COUNTRY: ${LATAM_COUNTRY:-}
+      DESPEGAR_API_KEY: ${DESPEGAR_API_KEY:-}
+      DESPEGAR_BASE_URL: ${DESPEGAR_BASE_URL:-https://api-dev.despegar.com/v3}
+      DESPEGAR_LANGUAGE: ${DESPEGAR_LANGUAGE:-ES}
+      DESPEGAR_COUNTRY: ${DESPEGAR_COUNTRY:-}
+      DESPEGAR_CURRENCY: ${DESPEGAR_CURRENCY:-}
+      DESPEGAR_LOCALE: ${DESPEGAR_LOCALE:-}
+      AGENT_CARS_ACCESS_TOKEN: ${AGENT_CARS_ACCESS_TOKEN:-}
+      AGENT_CARS_BASE_URL: ${AGENT_CARS_BASE_URL:-https://api.dev.agentcars.com/v2/sites}
+      AGENT_CARS_SUGGEST_URL: ${AGENT_CARS_SUGGEST_URL:-https://suggest.agentcars.com/suggest}
+      AGENT_CARS_SOURCE: ${AGENT_CARS_SOURCE:-}
+      AGENT_CARS_LANGUAGE: ${AGENT_CARS_LANGUAGE:-}
+      PROVIDERS_DISABLED: ${PROVIDERS_DISABLED:-}
+      TBO_ROOM_DETAILS: ${TBO_ROOM_DETAILS:-on}
+      HOTEL_ROOM_CONTENT: ${HOTEL_ROOM_CONTENT:-on}
+      # Operaciones de Sabre que mueven dinero o cambian la reserva. En CERT se pueden encender para
+      # certificarlas (issue, void, refund, seats, services, modify).
+      SABRE_OPERATIONS: ${SABRE_OPERATIONS:-}
+      APP_WEB_URL: ${APP_WEB_URL:-https://pruebas.planetour.cloud}
+      # Todo el correo cae en Mailpit (http://127.0.0.1:8025 en la Mac): nunca sale a un cliente real.
+      MAIL_HOST: mailpit
+      MAIL_PORT: '1025'
+      MAIL_SECURE: 'false'
+      MAIL_FROM: pruebas@planetour.cloud
+      MAIL_FROM_NAME: PlaneTour Pruebas
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [edge, internal]
+    ports:
+      - '127.0.0.1:4201:3000'
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web-b2b:
+    build:
+      context: ../..
+      dockerfile: apps/web-b2b/Dockerfile
+    image: sales-travel-pruebas/web-b2b:local
+    <<: [*restart, *logging]
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      INTERNAL_API_URL: http://api:3000
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET}
+    networks: [edge, internal]
+    ports:
+      - '127.0.0.1:3201:3001'
+    depends_on:
+      - api
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    <<: [*restart, *logging]
+    networks: [edge, internal]
+    ports:
+      - '127.0.0.1:8025:8025'
+
+  # Túnel de Cloudflare (sin puertos abiertos en la casa). Usa las credenciales del túnel que crea
+  # `./pruebas.sh tunnel-setup`; sin ellas este servicio no arranca (perfil `tunnel`).
+  tunnel:
+    image: cloudflare/cloudflared:2025.11.1
+    <<: [*restart, *logging]
+    profiles: [tunnel]
+    command: ['tunnel', '--no-autoupdate', '--config', '/etc/cloudflared/config.yml', 'run']
+    volumes:
+      - ${HOME}/.cloudflared:/etc/cloudflared:ro
+    networks: [edge]
+    depends_on:
+      - web-b2b
