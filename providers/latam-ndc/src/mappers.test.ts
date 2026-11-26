@@ -392,6 +392,38 @@ describe('OrderRetrieve', () => {
     expect(view.documents?.[0]?.status).toBe('VOIDED');
   });
 
+  it('H-09: una reserva sin pago cancelada vuelve CLOSED sin tiquetes y se lee cancelada', () => {
+    // Forma de la lectura del sandbox tras /order/cancel/bnpl (2026-11-26): sin aviso, sin
+    // TicketDocInfo y sin plazo de pago.
+    const view = mapOrderRetrieveResponse(
+      xml(`<IATA_OrderViewRS><Response>
+      <Order>
+        <BookingRef><BookingEntity/><BookingID>TOTCAJ</BookingID></BookingRef>
+        <OrderID>LA0350308IEYA</OrderID>
+        <OrderItem><OrderItemID>FLIGHT_X</OrderItemID></OrderItem>
+        <OwnerCode>LA</OwnerCode>
+        <StatusCode>CLOSED</StatusCode>
+        <TotalPrice><TotalAmount CurCode="BRL">588.70</TotalAmount></TotalPrice>
+      </Order>
+    </Response></IATA_OrderViewRS>`),
+    );
+    expect(view.status).toBe('cancelled');
+    expect(view.documents).toEqual([]);
+  });
+
+  it('H-09: un EMD solo no cuenta como emitida', () => {
+    const view = mapOrderRetrieveResponse(
+      xml(`<IATA_OrderViewRS><Response>
+      <Order><OrderID>LA0000004MNOP</OrderID><StatusCode>CLOSED</StatusCode></Order>
+      <TicketDocInfo><Ticket>
+        <Coupon><CouponStatusCode>OK</CouponStatusCode></Coupon>
+        <TicketDocTypeCode>EMD</TicketDocTypeCode><TicketNumber>0459990000009</TicketNumber>
+      </Ticket></TicketDocInfo>
+    </Response></IATA_OrderViewRS>`),
+    );
+    expect(view.status).toBe('cancelled');
+  });
+
   it('«Order Id not found» es found:false; cualquier otro error se lanza', () => {
     const notFound = mapOrderRetrieveResponse(
       xml(
@@ -413,6 +445,15 @@ describe('Pago (OrderChange)', () => {
   it('CLOSED → ticketed: nunca el código crudo de LATAM', () => {
     const r = mapOrderChangePaymentResponse(xml(PAID));
     expect(r).toMatchObject({ success: true, status: 'ticketed', orderId: 'LA0000001ABCD' });
+  });
+
+  it('H-09: CLOSED tras nuestro pago es ticketed aunque el tiquete todavía no venga', () => {
+    const r = mapOrderChangePaymentResponse(
+      xml(`<IATA_OrderViewRS><Response>
+      <Order><OrderID>LA0000005QRST</OrderID><StatusCode>CLOSED</StatusCode></Order>
+    </Response></IATA_OrderViewRS>`),
+    );
+    expect(r).toMatchObject({ success: true, status: 'ticketed' });
   });
 
   it('FROZEN es un pago rechazado', () => {
