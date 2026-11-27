@@ -18,6 +18,7 @@ import {
   type ProviderFlagsPort,
   type TenantProviderFactory,
 } from './provider.types.js';
+import { FakeFlightsFactory, fakeProvidersEnabled } from '../providers-fake/fake-flights.js';
 
 /**
  * LEGADO: el encendido de proveedores de vuelos por variable de entorno de antes de que el
@@ -74,7 +75,9 @@ export class EnvProviderFlags implements ProviderFlagsPort {
       useFactory: (
         latam: LatamNdcProviderFactory,
         sabre: SabreProviderFactory,
-      ): TenantProviderFactory<FlightProviderAdapter>[] => [latam, sabre],
+      ): TenantProviderFactory<FlightProviderAdapter>[] =>
+        // El proveedor falso sólo en el stack E2E (INF-4); fuera de él, el arranque falla.
+        fakeProvidersEnabled() ? [latam, sabre, new FakeFlightsFactory()] : [latam, sabre],
       inject: [LatamNdcProviderFactory, SabreProviderFactory],
     },
     EnvProviderFlags,

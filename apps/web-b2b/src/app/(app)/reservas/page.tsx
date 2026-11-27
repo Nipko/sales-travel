@@ -734,7 +734,7 @@ export default function ReservasPage() {
                             variant="secondary"
                             size="sm"
                             onClick={() => setHotelCancel({ order })}
-                            className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                            className="gap-1.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger)]"
                           >
                             <XCircle className="size-3.5" /> Cancelar
                           </Button>
@@ -753,7 +753,7 @@ export default function ReservasPage() {
                           size="sm"
                           disabled={actionLoading === order.id}
                           onClick={() => void requestCancellation(order)}
-                          className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                          className="gap-1.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger)]"
                         >
                           <XCircle className="size-3.5" /> Cancelar
                         </Button>
@@ -841,7 +841,7 @@ export default function ReservasPage() {
                             size="sm"
                             disabled={actionLoading === order.id}
                             onClick={() => void requestCancellation(order)}
-                            className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+                            className="gap-1.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger)]"
                           >
                             <XCircle className="size-3.5" /> Cancelar
                           </Button>
@@ -1477,7 +1477,12 @@ function OrderDetailModal({
                 {sending ? 'Enviando…' : 'Enviar confirmación por email'}
               </Button>
               {sendMsg && (
-                <span className={cn('text-xs', sendMsg.ok ? 'text-emerald-700' : 'text-red-700')}>
+                <span
+                  className={cn(
+                    'text-xs',
+                    sendMsg.ok ? 'text-emerald-700' : 'text-[var(--color-danger)]',
+                  )}
+                >
                   {sendMsg.text}
                 </span>
               )}
@@ -1546,7 +1551,7 @@ function OrderDetailModal({
                           </span>
                         </div>
                         {op.last_error && (
-                          <p className="mt-0.5 text-[10px] text-red-700">
+                          <p className="mt-0.5 text-[10px] text-[var(--color-danger)]">
                             {humanizeOrderError(op.last_error)}
                           </p>
                         )}
@@ -1587,7 +1592,7 @@ function OrderDetailModal({
               variant="secondary"
               size="sm"
               onClick={onCancelRequest}
-              className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+              className="gap-1.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger)]"
             >
               <XCircle className="size-3.5" /> Cancelar reserva
             </Button>

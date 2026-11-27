@@ -15,16 +15,31 @@ import { E2E_PASSWORD, USERS } from '../support/users';
  * Ingresa con `acceso@e2e.test`, que no usa nadie más.
  */
 
+/**
+ * Ingresa con `next`. Toda la suite de navegador sale de la misma IP y el api deja 10 ingresos por
+ * minuto: si el panel dice «muchos intentos», espera el minuto y reintenta una vez (como
+ * submitCredentials en support/auth.ts).
+ */
 async function ingresar(page: Page, next: string): Promise<void> {
-  await page.goto(`/login?next=${encodeURIComponent(next)}`);
-  await page.getByLabel('Correo electrónico').fill(USERS.acceso.email);
-  await page.getByLabel('Contraseña', { exact: true }).fill(E2E_PASSWORD);
-  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 });
+  for (let intento = 0; intento < 2; intento++) {
+    await page.goto(`/login?next=${encodeURIComponent(next)}`);
+    await page.getByLabel('Correo electrónico').fill(USERS.acceso.email);
+    await page.getByLabel('Contraseña', { exact: true }).fill(E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+    const limitado = page.getByText('Hiciste muchos intentos seguidos');
+    await Promise.race([
+      limitado.waitFor({ timeout: 30_000 }),
+      page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }),
+    ]);
+    if (!(await limitado.isVisible())) return;
+    await page.waitForTimeout(61_000);
+  }
+  throw new Error('/auth/login siguió limitado por tasa después de esperar un minuto');
 }
 
 test.describe('ingreso', { tag: '@desktop' }, () => {
   test.describe.configure({ mode: 'serial' });
+  test.setTimeout(180_000);
 
   test('ACC-03 sin correo ni contraseña avisa y no llama a la API', async ({ page }) => {
     const llamadas: string[] = [];

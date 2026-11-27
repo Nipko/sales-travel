@@ -31,9 +31,9 @@
   "que": "Proveedores falsos fake-flights / fake-hotels / fake-cars registrados en los registries sólo con env de test, alimentados con las fixtures de Sabre y TBO, con perillas: precio cambia en revalidación, timeout, declinado, parcial, incierto (5xx), sin disponibilidad.",
   "desbloquea": "Venta completa en CI (VUE, CHK, POS, HOT, AUT, PAQ)",
   "ola": 4,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "en_curso",
+  "nota": "Vuelos listo: fake-flights (apps/api/src/providers-fake) sólo con FAKE_PROVIDERS=1 y APP_VERSION=e2e (si no, el arranque falla), ofertas de prueba y perillas (SMR sin vuelos, ADZ caído, segunda oferta +5 % una vez al revalidar; apellido RECHAZO/PARCIAL/INCIERTO). Faltan hoteles y autos falsos.",
+  "donde": "apps/api/src/providers-fake"
  },
  {
   "id": "INF-5",
@@ -58,8 +58,8 @@
   "que": "Arnés de sandbox LATAM (no existe; Sabre y TBO sí tienen): AirShopping OW/RT con 1ADT y 2ADT+1CHD+1INF, OfferPrice, ServiceList, BNPL create → retrieve → cancel, enlace de pago.",
   "desbloquea": "LAT en R",
   "ola": 5,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "en_curso",
+  "nota": "tools/latam/capture.mjs graba la venta completa sin pago contra el sandbox (sólo si LATAM_API_URL es de sandbox) y redacta lo que manda. Falta ida y vuelta con 2ADT+1CHD+1INF, ServiceList y el enlace de pago.",
+  "donde": "tools/latam/capture.mjs"
  }
 ]

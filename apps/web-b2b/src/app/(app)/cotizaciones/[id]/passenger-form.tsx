@@ -267,7 +267,7 @@ function DobField({
         onChange={(e) => handle(e.target.value)}
         className={cn(inputClass, (invalid === true || problema !== null) && errClass)}
       />
-      {problema !== null && <p className="text-[11px] text-red-600">{problema}</p>}
+      {problema !== null && <p className="text-[11px] text-[var(--color-danger)]">{problema}</p>}
     </div>
   );
 }

@@ -29,6 +29,16 @@
       "estado": "listo",
       "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f.",
       "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
+    },
+    "INF-4": {
+      "estado": "en_curso",
+      "nota": "Vuelos listo: fake-flights (apps/api/src/providers-fake) sólo con FAKE_PROVIDERS=1 y APP_VERSION=e2e (si no, el arranque falla), ofertas de prueba y perillas (SMR sin vuelos, ADZ caído, segunda oferta +5 % una vez al revalidar; apellido RECHAZO/PARCIAL/INCIERTO). Faltan hoteles y autos falsos.",
+      "donde": "apps/api/src/providers-fake"
+    },
+    "INF-7": {
+      "estado": "en_curso",
+      "nota": "tools/latam/capture.mjs graba la venta completa sin pago contra el sandbox (sólo si LATAM_API_URL es de sandbox) y redacta lo que manda. Falta ida y vuelta con 2ADT+1CHD+1INF, ServiceList y el enlace de pago.",
+      "donde": "tools/latam/capture.mjs"
     }
   },
   "casos": {
@@ -158,7 +168,7 @@
     },
     "AGE-06": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "fecha": "2026-11-27",
       "hallazgo": "QA-H-38",
       "prueba": "apps/web-b2b/e2e/api/logos.api.ts, apps/api/src/storage/blobs.controller.test.ts",
@@ -668,6 +678,66 @@
       "nota": "El superadmin ve en /cotizaciones que no vende.",
       "fecha": "2026-11-27",
       "corrida": "mac"
+    },
+    "CHK-02": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f40-venta-falsa.e2e.ts",
+      "nota": "De la búsqueda a la reserva confirmada con el proveedor falso, cronometrado (< 2 min, F27); corre en CI en cada PR.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "CHK-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f40-venta-falsa.e2e.ts",
+      "nota": "La tarifa que sube al revalidar avisa «El precio cambió» y reserva con «Aceptar y reservar».",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "CHK-15": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/tests/f40-venta-falsa.e2e.ts",
+      "nota": "Rechazo cierto (el formulario vuelve), incierto (no vuelve, «Creación incierta») y parcial (a conciliar, lleva a la reserva). Confirmada en CHK-02. PENDING sin perilla todavía.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "CHK-16": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-14",
+      "prueba": "apps/web-b2b/src/app/(app)/cotizaciones/[id]/create-order-reconciliation.test.ts",
+      "nota": "Un 501 ya no se lee como creación incierta. El falso no produce 501: probado a nivel de unidad.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "POS-17": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-16",
+      "prueba": "apps/web-b2b/src/app/(app)/reservas/page.tsx",
+      "nota": "Repricing también en el detalle. El falso no recotiza: sin prueba de navegador.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "VUE-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f34-busquedas.e2e.ts, apps/web-b2b/src/app/(app)/cotizaciones/_components/search-form-model.test.ts",
+      "nota": "Sin origen, el formulario lo pide y no busca; cada regla en la prueba del modelo.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "HOT-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f34-busquedas.e2e.ts, apps/web-b2b/src/app/(app)/hoteles/actions.test.ts",
+      "nota": "Sin destino, lo pide; las reglas en la acción.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "LAT-08": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "providers/latam-ndc/src/real-fixtures.test.ts",
+      "nota": "Respuestas reales del sandbox (tools/latam/capture.mjs, redactadas): 153 ofertas canónicas válidas, revalidación sin cambio, reserva BNPL confirmada, relectura con el localizador de 6 letras, cancelación BNPL y un rechazo real (400112020). Faltan el error de pago y el reshop reales."
     }
   },
   "hallazgos": {
@@ -752,9 +822,9 @@
       "nota": "Confirmado: 200 {deleted:false}. Ahora 404. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-38": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts."
+      "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts. En el VPS el 2026-11-27 (0cc1ffda): la ruta responde."
     },
     "QA-M-01": {
       "fecha": "2026-11-27",
@@ -935,6 +1005,11 @@
       "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar. En el VPS el 2026-11-27 (4342cf92)."
+    },
+    "QA-H-47": {
+      "estado": "en_mac",
+      "fecha": "2026-11-27",
+      "nota": "Rojo fijo sobre el fondo pasado al token --color-danger (que tiene su valor de modo oscuro) en 7 pantallas; los que van sobre bg-red-50 se quedan. F26 sin violaciones nuevas."
     }
   },
   "ultimaCorrida": {

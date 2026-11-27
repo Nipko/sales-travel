@@ -375,8 +375,8 @@
   "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
   "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
   "casos": "AGE-06",
-  "estado": "en_mac",
-  "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts.",
+  "estado": "en_vps",
+  "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts. En el VPS el 2026-11-27 (0cc1ffda): la ruta responde.",
   "fecha": "2026-11-27"
  },
  {
@@ -457,6 +457,16 @@
   "casos": "SUP-14",
   "estado": "por_confirmar",
   "nota": "La siembra encendió LATAM `card` (PAN por el servidor). Confirmar en Plataforma → Gobierno de producción y decidir si se apaga.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-47",
+  "gravedad": "Baja",
+  "que": "Los botones y textos de acción en rojo fijo (text-red-600/700, «Cancelar reserva» y otros) no llegan al contraste AA en modo oscuro; F26 lo vio en /reservas móvil oscuro en cuanto hubo reservas en la lista",
+  "donde": "reservas/page.tsx y 6 pantallas más",
+  "casos": "TRV-18",
+  "estado": "en_mac",
+  "nota": "Rojo fijo sobre el fondo pasado al token --color-danger (que tiene su valor de modo oscuro) en 7 pantallas; los que van sobre bg-red-50 se quedan. F26 sin violaciones nuevas.",
   "fecha": "2026-11-27"
  },
  {
