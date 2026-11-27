@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -22,6 +23,8 @@ import { BrandingService } from '../branding/branding.service.js';
 import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 import {
   CreateQuotationSchema,
+  ListLimitQuerySchema,
+  type ListLimitQuery,
   QuotationStatusSchema,
   UpdateQuotationCustomerSchema,
 } from './dto.js';
@@ -90,11 +93,14 @@ export class QuotationsController {
   }
 
   @Get()
-  async list(@CurrentUser() userId: string | undefined) {
+  async list(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(ListLimitQuerySchema)) query: ListLimitQuery = { limit: 100 },
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const rows = await this.quotations.findAll(tenantId);
-    return { quotations: rows.map((r) => this.serialize(r)) };
+    const { rows, hasMore } = await this.quotations.findAll(tenantId, query.limit);
+    return { quotations: rows.map((r) => this.serialize(r)), hasMore };
   }
 
   @Get(':id')

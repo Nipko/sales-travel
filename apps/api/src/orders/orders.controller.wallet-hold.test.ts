@@ -74,7 +74,7 @@ function banco(
     new RecordingAuditService().asService(),
   );
   const orders = {
-    findAll: vi.fn(() => Promise.resolve(filas)),
+    findAll: vi.fn(() => Promise.resolve({ rows: filas, hasMore: false })),
     findById: vi.fn((_tenantId: string, id: string) =>
       Promise.resolve(filas.find((f) => f.id === id)),
     ),

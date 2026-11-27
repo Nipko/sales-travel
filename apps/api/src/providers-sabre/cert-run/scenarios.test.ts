@@ -467,6 +467,12 @@ describe('certainCreateRejection — cuándo un createBooking rechazado no dejó
     expect(certainCreateRejection(validationRejection('INVALID_TRAVELER_ID'))).toBe(
       'INVALID_TRAVELER_ID',
     );
+    // SAB-13 (H-05): la combinación inválida del bloque `agency` tampoco dejó PNR.
+    expect(
+      certainCreateRejection(
+        validationRejection('INVALID_COMBINATION', { fieldPath: 'CreateBookingRequest.agency' }),
+      ),
+    ).toBe('INVALID_COMBINATION');
   });
 
   it('cualquier otra cosa: no se puede afirmar', () => {

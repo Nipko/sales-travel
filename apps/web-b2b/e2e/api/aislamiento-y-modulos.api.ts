@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { E2E } from '../support/env';
-import { anonimo, como, nodo, sql } from './support/cliente';
+import { anonimo, como, nodo, olvidar, sql } from './support/cliente';
 import { API_PASSWORD, PERSONAS } from './support/personas';
 
 /**
@@ -426,6 +426,8 @@ test('ACC-34 logout cierra la sesión en la base: el token viejo da 401', async 
   expect(salir.status, salir.text).toBe(200);
   const despues = await anon.get('/me', auth);
   expect(despues.status, despues.text).toBe(401);
+  // Este ingreso reemplazó la sesión que el arnés guarda de vendedorB.
+  olvidar('vendedorB');
 });
 
 test('NFR-05 un cuerpo de 5 MB se rechaza con 413 y la API sigue respondiendo', async () => {

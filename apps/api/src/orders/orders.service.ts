@@ -1573,15 +1573,20 @@ export class OrdersService {
     return updated ?? order;
   }
 
-  async findAll(tenantId: string): Promise<OrderRow[]> {
+  /** Las `limit` más nuevas y si hay más detrás (QA-H-15). */
+  async findAll(tenantId: string, limit = 100): Promise<{ rows: OrderRow[]; hasMore: boolean }> {
     return this.db.withTenant(tenantId, async (trx) => {
       const rows = await trx
         .selectFrom('orders')
         .selectAll()
         .orderBy('created_at', 'desc')
-        .limit(100)
+        .orderBy('id', 'desc')
+        .limit(limit + 1)
         .execute();
-      return rows as unknown as OrderRow[];
+      return {
+        rows: rows.slice(0, limit) as unknown as OrderRow[],
+        hasMore: rows.length > limit,
+      };
     });
   }
 

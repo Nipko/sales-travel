@@ -277,6 +277,8 @@ function orderViewSummary(view: OrderView): Record<string, unknown> {
 const CREATE_VALIDATION_REJECTIONS: ReadonlySet<string> = new Set([
   'MANDATORY_DATA_MISSING',
   'INVALID_TRAVELER_ID',
+  // H-05: `ticketingPolicy` junto a `flightOffer` sobre `CreateBookingRequest.agency` (SAB-13).
+  'INVALID_COMBINATION',
 ]);
 
 /**

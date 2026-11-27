@@ -367,7 +367,7 @@
     },
     "SUP-21": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-admins.schemas.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
       "hallazgo": "QA-H-26",
       "nota": "La nota de decisión es 3–500 en la API y en el panel, con un mensaje que lo dice entero. Sólo aprobar pide 2FA reciente; rechazar y cancelar no cambian nada y no lo piden (probado por metadatos).",
@@ -375,7 +375,7 @@
     },
     "SUP-22": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts",
       "hallazgo": "QA-H-27",
       "nota": "Antes de dejar la solicitud se mira la cuenta: sin cuenta activa → 404, suspendida aunque se pida crearla → 404, uno mismo → 403; no queda solicitud.",
@@ -383,14 +383,14 @@
     },
     "SUP-25": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
       "nota": "Listado por páginas de 100 con `before` (fecha, id): 102 solicitudes del mismo instante salen todas, una vez. El panel muestra «Ver más antiguas» cuando la página vino llena.",
       "fecha": "2026-11-27"
     },
     "SAB-02": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/providers-sabre/sabre.factory.test.ts",
       "hallazgo": "QA-H-17",
       "nota": "`refund` se sigue aceptando (no tumba un despliegue que ya la escribió), pero el arranque avisa que no enciende nada y no sale entre las encendidas. El reembolso espera D9.",
@@ -398,10 +398,90 @@
     },
     "TRV-07": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/database/tablas-sin-rls.integration.test.ts",
       "hallazgo": "QA-H-45",
       "nota": "Lista cerrada de tablas sin RLS forzada (una nueva hace fallar el test); catálogos de sólo lectura para app_user (airports corregido en 0101); toda consulta Kysely a tenants/users/password_reset_tokens/consumed_tokens filtra, salvo 3 barridos del sistema y 2 rutas de superadmin nombradas. El SQL crudo no lo cubre el escaneo.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-14": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/gobierno-pagos.api.ts",
+      "corrida": "mac",
+      "hallazgo": "QA-H-46",
+      "nota": "Regla a mano en la agencia A: la forma desaparece de las opciones de pago de A y de su sub-agencia (con el origen «Agencia E2E A»), B no se entera; perfil asignado a B la apaga allí; cobrar con la forma apagada → 403 antes del proveedor; todo vuelve al deshacerlo. Sólo el lado que niega.",
+      "fecha": "2026-11-27"
+    },
+    "ACC-09": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/reto-mfa.api.ts, apps/web-b2b/src/app/login/login-state.test.ts",
+      "corrida": "mac",
+      "nota": "Reto vencido → 401 MFA_CHALLENGE_EXPIRED «venció» sin sumar fallos a la cuenta; el panel lo lleva a «la verificación venció» y vuelve a la contraseña.",
+      "fecha": "2026-11-27"
+    },
+    "POS-02": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/web-b2b/e2e/api/listados.api.ts, apps/web-b2b/src/lib/list-limit.test.ts",
+      "hallazgo": "QA-H-15",
+      "nota": "Reservas y cotizaciones dicen `hasMore` y aceptan `limit` 1–1000 (400 fuera de rango o con otro parámetro); con 101 sembradas la más vieja no sale en la primera página y sí con limit=1000, al final y sin repetidas. El panel muestra «Ver más … anteriores». No revisado en el navegador.",
+      "fecha": "2026-11-27"
+    },
+    "BYO-06": {
+      "fase": "parcial",
+      "prueba": "apps/api/src/providers-tbo/tbo-hotels.factory.test.ts, apps/web-b2b/src/lib/provider-forms.test.ts",
+      "hallazgo": "QA-M-05",
+      "nota": "TBO: el panel sólo ofrece el alta a plataforma y consolidador, y la fábrica no opera con la cuenta de una agencia (ni heredada de otra agencia). Despegar no tiene esa restricción: decisión pendiente (QA-M-05).",
+      "fecha": "2026-11-27"
+    },
+    "NFR-03": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/lifecycle/graceful-shutdown.test.ts",
+      "nota": "Con una app Nest y servidor HTTP reales: la SIGTERM deja terminar la petición y la saga en curso, detiene los workers, atiende con Connection: close lo que llega por keep-alive y cierra la base recién al final; plazo vencido → sale con 1. No probado con la señal de Docker sobre el contenedor.",
+      "fecha": "2026-11-27"
+    },
+    "JOB-03": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/orders/post-sale-sweeper.test.ts, apps/api/src/cars/cars-pending-sweep.scheduler.test.ts",
+      "nota": "Sin Redis (o con Redis caído) el barrido corre con temporizador: al minuto del arranque y cada 15 min; autos cada 30 min; una corrida lenta no se solapa.",
+      "fecha": "2026-11-27"
+    },
+    "JOB-05": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/provider-enablement/kill-switch.store.test.ts, apps/api/src/search/search-cache.adapter.test.ts, apps/api/src/auth/seats.integration.test.ts",
+      "nota": "Kill-switch releído cada 10 s (una lectura que falla no enciende nada, una lenta no pisa a la nueva); caché de búsqueda en memoria si Redis falla; last_seen con refresco perezoso.",
+      "fecha": "2026-11-27"
+    },
+    "INI-06": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/reports/reports.service.test.ts",
+      "hallazgo": "QA-M-06",
+      "nota": "El stub responde available:false sin inventar números. Construir el reporte es QA-M-06.",
+      "fecha": "2026-11-27"
+    },
+    "SAB-13": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/providers-sabre/cert-run/scenarios.test.ts",
+      "nota": "INVALID_COMBINATION (H-05, sobre CreateBookingRequest.agency) entra en los rechazos ciertos del arnés: ya no sale como «createBooking en duda». El producto no clasifica por tipo.",
+      "fecha": "2026-11-27"
+    },
+    "SAB-14": {
+      "fase": "parcial",
+      "prueba": "providers/sabre/src/shop/response.mapper.test.ts",
+      "nota": "La de mano con provisionType B ya se mapea; lo que no llega en CERT es la que viene en utaDescs, y no hay captura de esa forma. Falta una corrida de shop en CERT que la guarde como fixture; los cargos (baggageChargeDescs) no tienen lugar en el Offer canónico todavía.",
+      "fecha": "2026-11-27"
+    },
+    "SAB-22": {
+      "fase": "parcial",
+      "prueba": "providers/sabre/src/ancillaries/remove.response.mapper.test.ts, providers/sabre/src/booking-phase.e2e.test.ts",
+      "nota": "Tests nuevos de remove.response.mapper (quitado, sin confirmar, no pedido, avisos, rechazo, forma) y del adapter de price (respuesta vacía, aviso de forma de pago). Faltan las fixtures capturadas en CERT (create, get emitida, cancel, flightCheck, void, errores), que esperan H-07.",
+      "fecha": "2026-11-27"
+    },
+    "HOT-17": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/hotels/despegar-hotels-errors.test.ts, apps/api/src/providers-despegar/despegar-hotels.mappers.test.ts",
+      "nota": "Cada código de HotelDO (PRODUCT_GONE, INVALID_PREBOOK_ID, NOT_ENOUGH_BALANCE…) con su mensaje, 429 como cupo, y el mapeo; los tests viven en apps/api, no en el paquete (que no tiene runner).",
       "fecha": "2026-11-27"
     }
   },
@@ -542,24 +622,49 @@
       "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código. Desplegado en el VPS el 2026-11-27 (0101bebc)."
     },
     "QA-H-17": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts."
+      "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-26": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Nota de decisión 3–500 en API y panel, mensaje completo."
+      "nota": "Nota de decisión 3–500 en API y panel, mensaje completo. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-27": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar."
+      "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-45": {
+      "estado": "en_vps",
+      "fecha": "2026-11-27",
+      "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
+    },
+    "QA-H-15": {
       "estado": "en_mac",
       "fecha": "2026-11-27",
-      "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts."
+      "nota": "limit 1–1000 + hasMore en /orders y /quotations; «Ver más» en Reservas y Cotizaciones guardadas."
+    },
+    "QA-H-46": {
+      "estado": "por_confirmar",
+      "fecha": "2026-11-27",
+      "nota": "La siembra encendió LATAM `card` (PAN por el servidor). Confirmar en Plataforma → Gobierno de producción y decidir si se apaga."
+    },
+    "QA-M-05": {
+      "estado": "propuesta",
+      "fecha": "2026-11-27",
+      "nota": "Necesita tu decisión (junto con QA-H-30)."
+    },
+    "QA-M-06": {
+      "estado": "propuesta",
+      "fecha": "2026-11-27",
+      "nota": "Necesita el modelo de comisión del vendedor; decisión de cuándo."
+    },
+    "QA-M-07": {
+      "estado": "propuesta",
+      "fecha": "2026-11-27",
+      "nota": "Cuando una agencia pase las 1000 reservas o cotizaciones."
     }
   },
   "ultimaCorrida": {

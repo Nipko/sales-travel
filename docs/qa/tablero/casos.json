@@ -104,7 +104,7 @@
   "prioridad": "P0",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "mac",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-45",
   "prueba": "apps/api/src/database/tablas-sin-rls.integration.test.ts",
@@ -455,13 +455,13 @@
   "nivel": "H + E",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/reto-mfa.api.ts, apps/web-b2b/src/app/login/login-state.test.ts",
+  "nota": "Reto vencido → 401 MFA_CHALLENGE_EXPIRED «venció» sin sumar fallos a la cuenta; el panel lo lleva a «la verificación venció» y vuelve a la contraseña.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-10",
@@ -1511,13 +1511,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-05",
+  "prueba": "apps/api/src/providers-tbo/tbo-hotels.factory.test.ts, apps/web-b2b/src/lib/provider-forms.test.ts",
+  "nota": "TBO: el panel sólo ofrece el alta a plataforma y consolidador, y la fábrica no opera con la cuenta de una agencia (ni heredada de otra agencia). Despegar no tiene esa restricción: decisión pendiente (QA-M-05).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "BYO-07",
@@ -2647,13 +2647,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "mac",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-15",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/listados.api.ts, apps/web-b2b/src/lib/list-limit.test.ts",
+  "nota": "Reservas y cotizaciones dicen `hasMore` y aceptan `limit` 1–1000 (400 fuera de rango o con otro parámetro); con 101 sembradas la más vieja no sale en la primera página y sí con limit=1000, al final y sin repetidas. El panel muestra «Ver más … anteriores». No revisado en el navegador.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "POS-03",
@@ -2936,7 +2936,7 @@
   "prioridad": "P2",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "mac",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-17",
   "prueba": "apps/api/src/providers-sabre/sabre.factory.test.ts",
@@ -3111,13 +3111,13 @@
   "nivel": "U",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "mac",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/providers-sabre/cert-run/scenarios.test.ts",
+  "nota": "INVALID_COMBINATION (H-05, sobre CreateBookingRequest.agency) entra en los rechazos ciertos del arnés: ya no sale como «createBooking en duda». El producto no clasifica por tipo.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SAB-14",
@@ -3127,13 +3127,13 @@
   "nivel": "U",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "providers/sabre/src/shop/response.mapper.test.ts",
+  "nota": "La de mano con provisionType B ya se mapea; lo que no llega en CERT es la que viene en utaDescs, y no hay captura de esa forma. Falta una corrida de shop en CERT que la guarde como fixture; los cargos (baggageChargeDescs) no tienen lugar en el Offer canónico todavía.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SAB-15",
@@ -3255,13 +3255,13 @@
   "nivel": "U",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "providers/sabre/src/ancillaries/remove.response.mapper.test.ts, providers/sabre/src/booking-phase.e2e.test.ts",
+  "nota": "Tests nuevos de remove.response.mapper (quitado, sin confirmar, no pedido, avisos, rechazo, forma) y del adapter de price (respuesta vacía, aviso de forma de pago). Faltan las fixtures capturadas en CERT (create, get emitida, cancel, flightCheck, void, errores), que esperan H-07.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SAB-23",
@@ -3687,13 +3687,13 @@
   "nivel": "U",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/hotels/despegar-hotels-errors.test.ts, apps/api/src/providers-despegar/despegar-hotels.mappers.test.ts",
+  "nota": "Cada código de HotelDO (PRODUCT_GONE, INVALID_PREBOOK_ID, NOT_ENOUGH_BALANCE…) con su mensaje, 429 como cupo, y el mapeo; los tests viven en apps/api, no en el paquete (que no tiene runner).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "HOT-18",
@@ -4247,13 +4247,13 @@
   "nivel": "H",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-06",
+  "prueba": "apps/api/src/reports/reports.service.test.ts",
+  "nota": "El stub responde available:false sin inventar números. Construir el reporte es QA-M-06.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SUP-01",
@@ -4471,13 +4471,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-46",
+  "prueba": "apps/web-b2b/e2e/api/gobierno-pagos.api.ts",
+  "nota": "Regla a mano en la agencia A: la forma desaparece de las opciones de pago de A y de su sub-agencia (con el origen «Agencia E2E A»), B no se entera; perfil asignado a B la apaga allí; cobrar con la forma apagada → 403 antes del proveedor; todo vuelve al deshacerlo. Sólo el lado que niega.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SUP-15",
@@ -4584,7 +4584,7 @@
   "prioridad": "P2",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "mac",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-26",
   "prueba": "apps/api/src/platform-admins/platform-admins.schemas.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
@@ -4600,7 +4600,7 @@
   "prioridad": "P2",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "mac",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-27",
   "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts",
@@ -4648,7 +4648,7 @@
   "prioridad": "P2",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "mac",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "",
   "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
@@ -4695,13 +4695,13 @@
   "nivel": "I",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/orders/post-sale-sweeper.test.ts, apps/api/src/cars/cars-pending-sweep.scheduler.test.ts",
+  "nota": "Sin Redis (o con Redis caído) el barrido corre con temporizador: al minuto del arranque y cada 15 min; autos cada 30 min; una corrida lenta no se solapa.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "JOB-04",
@@ -4727,13 +4727,13 @@
   "nivel": "I",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/provider-enablement/kill-switch.store.test.ts, apps/api/src/search/search-cache.adapter.test.ts, apps/api/src/auth/seats.integration.test.ts",
+  "nota": "Kill-switch releído cada 10 s (una lectura que falla no enciende nada, una lenta no pisa a la nueva); caché de búsqueda en memoria si Redis falla; last_seen con refresco perezoso.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "JOB-06",
@@ -4919,13 +4919,13 @@
   "nivel": "I",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/lifecycle/graceful-shutdown.test.ts",
+  "nota": "Con una app Nest y servidor HTTP reales: la SIGTERM deja terminar la petición y la saga en curso, detiene los workers, atiende con Connection: close lo que llega por keep-alive y cierra la base recién al final; plazo vencido → sale con 1. No probado con la señal de Docker sobre el contenedor.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "NFR-04",
