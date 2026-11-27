@@ -14,6 +14,8 @@ import { API_PASSWORD, PERSONAS, type PersonaKey } from './support/personas';
  * - EQU-12: restablecer el 2FA (step-up): el admin vuelve a tener que enrolarse.
  * - EQU-13: puestos: el medidor lo ve, desconectar a alguien libera su puesto, a uno mismo no.
  * - EQU-15: exportar el equipo (step-up): las columnas y sólo gente del nodo.
+ * - EQU-04: invitar dos veces al mismo correo → 409 con la pendiente; reenviar no abre otra; ya
+ *   miembro → 409.
  *
  * En serie: el cambio forzado va al final porque deja la cuenta sin poder entrar.
  */
@@ -214,4 +216,44 @@ test('EQU-10 forzar el cambio de contraseña: cierra sus sesiones y el ingreso l
   });
   expect(login.status, login.text.slice(0, 200)).toBe(403);
   expect(login.text).toContain('PASSWORD_RESET_REQUIRED');
+});
+
+test('EQU-04 invitación repetida: 409 con la pendiente para reenviarla; ya miembro, 409', async () => {
+  const jefe = await como('jefeEquipo');
+  const email = `equ04-${Date.now().toString(36)}@e2e.test`;
+  const invitar = (correo: string) =>
+    jefe.post<{ publicDetails?: { invitationId?: string }; invitationId?: string }>(
+      '/invitations',
+      {
+        email: correo,
+        tenantId,
+        role: 'vendedor',
+      },
+    );
+
+  const primera = await invitar(email);
+  expect(primera.status, primera.text.slice(0, 200)).toBeLessThan(300);
+  const [pendiente] = await sql<{ id: string }>(
+    `SELECT id FROM user_invitations
+      WHERE email = $1 AND tenant_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL`,
+    [email, tenantId],
+  );
+
+  const otra = await invitar(email);
+  expect(otra.status, otra.text.slice(0, 200)).toBe(409);
+  expect(otra.text).toContain('INVITATION_ALREADY_PENDING');
+  expect(otra.text, 'trae la pendiente para «Reenviar»').toContain(pendiente!.id);
+
+  const reenviar = await jefe.post(`/invitations/${pendiente!.id}/resend?tenantId=${tenantId}`);
+  expect(reenviar.status, reenviar.text.slice(0, 200)).toBeLessThan(300);
+  const vigentes = await sql<{ n: string }>(
+    `SELECT count(*) AS n FROM user_invitations
+      WHERE email = $1 AND tenant_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL`,
+    [email, tenantId],
+  );
+  expect(Number(vigentes[0]!.n), 'reenviar no abre otra').toBe(1);
+
+  const miembro = await invitar(PERSONAS.vendedorEquipo.email);
+  expect(miembro.status, miembro.text.slice(0, 200)).toBe(409);
+  expect(miembro.text).toMatch(/ya es miembro/i);
 });

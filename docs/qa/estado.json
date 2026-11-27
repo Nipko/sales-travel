@@ -955,6 +955,14 @@
       "corrida": "mac",
       "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
       "nota": "Cuenta nueva invitada como admin (por el tenant_admin): al ingresar cae en el gate de 2FA, también yendo directo a /cotizaciones."
+    },
+    "EQU-04": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "cobertura": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "nota": "Por HTTP: invitar dos veces al mismo correo → 409 INVITATION_ALREADY_PENDING con el id de la pendiente; reenviarla no abre otra; un correo que ya es miembro → 409. Falta el aviso con «Reenviar» en Equipo (navegador)."
     }
   },
   "hallazgos": {
@@ -1246,8 +1254,8 @@
   },
   "ultimaCorrida": {
     "ambiente": "mac",
-    "fecha": "2026-11-27T10:10:51.686Z",
-    "tests": 31,
+    "fecha": "2026-11-27T10:13:57.953Z",
+    "tests": 32,
     "fallan": 0
   }
 }
