@@ -28,6 +28,8 @@ volumes:
   caddy_config:
   postgres_data:
   redis_data:
+  # Logos y favicons subidos por las agencias (QA-H-38).
+  blobs:
 
 services:
   caddy:
@@ -102,10 +104,14 @@ services:
     # `node`; el drenaje (SHUTDOWN_DRAIN_TIMEOUT_MS) tiene que quedar por debajo de este periodo.
     init: true
     stop_grace_period: 130s
+    volumes:
+      - blobs:/var/lib/sales-travel/blobs
     environment:
       NODE_ENV: production
       PORT: '3000'
       APP_VERSION: ${IMAGE_TAG:-dev}
+      # Logos y favicons subidos (QA-H-38): en el volumen `blobs`, servidos por la API misma.
+      BLOB_PUBLIC_BASE_URL: https://api.planetour.cloud/api/blobs
       # Espera máxima a peticiones y sagas en curso antes de cerrar el pool y la cola (ms). Los
       # 5 s que quedan hasta el stop_grace_period son para ese cierre.
       SHUTDOWN_DRAIN_TIMEOUT_MS: '125000'

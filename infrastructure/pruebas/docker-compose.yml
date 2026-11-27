@@ -31,6 +31,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  blobs:
 
 services:
   postgres:
@@ -119,6 +120,8 @@ services:
     <<: [*restart, *logging]
     init: true
     stop_grace_period: 130s
+    volumes:
+      - blobs:/var/lib/sales-travel/blobs
     environment:
       NODE_ENV: production
       PORT: '3000'
@@ -160,6 +163,8 @@ services:
       # Operaciones de Sabre que mueven dinero o cambian la reserva. En CERT se pueden encender para
       # certificarlas (issue, void, refund, seats, services, modify).
       SABRE_OPERATIONS: ${SABRE_OPERATIONS:-}
+      # Logos subidos (QA-H-38): los sirve la API; desde la Mac, por su puerto local.
+      BLOB_PUBLIC_BASE_URL: http://127.0.0.1:4201/api/blobs
       APP_WEB_URL: ${APP_WEB_URL:-https://pruebas.planetour.cloud}
       # Todo el correo cae en Mailpit (http://127.0.0.1:8025 en la Mac): nunca sale a un cliente real.
       MAIL_HOST: mailpit

@@ -137,6 +137,8 @@ const ENTRADAS: [string, Clase][] = [
     'POST /auth/verify-email',
     'POST /invitations/preview',
     'POST /invitations/accept',
+    // Los logos de marca (QA-H-38): los muestra el PDF que recibe el cliente final.
+    'GET /blobs/tenants/:tenantId/:file',
   ),
   ...noVenta(
     'la cuenta propia: sesión, dispositivos, contraseña, MFA, su nombre y aceptar una invitación con ella',

@@ -157,13 +157,13 @@
       "nota": "QA-H-32/33: aislamiento, cliente ajeno, fechas imposibles, regreso antes de ida y más de 12 ítems → 400/404; la moneda se normaliza a mayúsculas. Falta editar, agregar y quitar ítems propios."
     },
     "AGE-06": {
-      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fase": "corregido",
+      "arreglo": "mac",
       "fecha": "2026-11-27",
+      "hallazgo": "QA-H-38",
+      "prueba": "apps/web-b2b/e2e/api/logos.api.ts, apps/api/src/storage/blobs.controller.test.ts",
       "corrida": "mac",
-      "fase": "pasa",
-      "arreglo": "vps",
-      "nota": "QA-H-34/35: SVG con script, eventos, foreignObject, href o url() externos → 400; >512 KB → 400 o 413; admin de otra agencia → 403. La subida válida no se pudo probar: QA-H-38 (sin volumen ni ruta /blobs).",
-      "cobertura": "parcial"
+      "nota": "Subir el logo y leerlo sin sesión por su URL (image/png, nosniff, cross-origin); texto, SVG con script, >512 KB y vacío se rechazan; una clave que no es de marca da 404."
     },
     "BYO-07": {
       "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
@@ -511,7 +511,7 @@
     },
     "ACC-24": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-04",
       "prueba": "apps/web-b2b/src/app/restablecer/actions.test.ts",
       "nota": "Una de 129+ se rechaza en el formulario con su motivo, sin llegar a la API.",
@@ -525,24 +525,24 @@
       "fecha": "2026-11-27"
     },
     "AGE-03": {
-      "fase": "corregido",
-      "arreglo": "mac",
+      "fase": "pasa",
       "hallazgo": "QA-H-06",
-      "prueba": "apps/web-b2b/src/app/(app)/configuracion/page.tsx",
-      "nota": "Quien no administra ve «sin acceso»; al guardar, el motivo del servidor. Sin prueba de navegador todavía.",
-      "fecha": "2026-11-27"
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts",
+      "nota": "Un vendedor ve «sin acceso» en Ajustes.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     },
     "RED-07": {
-      "fase": "corregido",
-      "arreglo": "mac",
+      "fase": "pasa",
       "hallazgo": "QA-H-09",
-      "prueba": "apps/web-b2b/src/app/(app)/red/page.tsx",
-      "nota": "Quien no administra ve «sin acceso» en /red. Sin prueba de navegador todavía.",
-      "fecha": "2026-11-27"
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts",
+      "nota": "Un vendedor ve «sin acceso» en Mi Red.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     },
     "AGE-07": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-08",
       "prueba": "apps/web-b2b/src/app/(app)/configuracion/page.tsx",
       "nota": "El campo de dominio propio, que no guardaba nada, es ahora un aviso.",
@@ -550,31 +550,31 @@
     },
     "RED-11": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-11",
       "prueba": "apps/web-b2b/src/app/(app)/red/page.tsx",
       "nota": "Borrar regla pide confirmar y muestra el error; el simulador muestra el suyo. Sin prueba de navegador todavía.",
       "fecha": "2026-11-27"
     },
     "COT-02": {
-      "fase": "corregido",
-      "arreglo": "mac",
+      "fase": "pasa",
       "hallazgo": "QA-H-18",
-      "prueba": "apps/web-b2b/src/app/(app)/cotizaciones/guardadas/page.tsx",
+      "prueba": "apps/web-b2b/e2e/tests/f33-pantallas-corregidas.e2e.ts",
       "nota": "Pestaña «Canceladas».",
-      "fecha": "2026-11-27"
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     },
     "CLI-02": {
-      "fase": "corregido",
-      "arreglo": "mac",
+      "fase": "pasa",
       "hallazgo": "QA-H-19",
-      "prueba": "apps/web-b2b/src/app/(app)/clientes/ClientesClient.tsx",
-      "nota": "Nacimiento, género y nacionalidad visibles y sin relleno.",
-      "fecha": "2026-11-27"
+      "prueba": "apps/web-b2b/e2e/tests/f33-pantallas-corregidas.e2e.ts",
+      "nota": "Nacimiento y género vacíos al abrir el alta; nacionalidad visible.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     },
     "CLI-03": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-19",
       "prueba": "apps/web-b2b/src/app/(app)/clientes/ClientesClient.tsx",
       "nota": "Editar en la ficha; Eliminar sólo para quien administra (la API lo exige).",
@@ -582,7 +582,7 @@
     },
     "INI-04": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-21",
       "prueba": "apps/web-b2b/src/app/(app)/page.tsx",
       "nota": "Los mismos nombres de rol que Equipo.",
@@ -590,7 +590,7 @@
     },
     "SUP-02": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-22",
       "prueba": "apps/web-b2b/src/app/(app)/admin/tenants/layout.tsx",
       "nota": "/admin/tenants mira a la persona superadmin.",
@@ -598,7 +598,7 @@
     },
     "SUP-06": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-23",
       "prueba": "apps/web-b2b/src/app/(app)/admin/plataforma/sistema/anuncios/_components/announcements.render.test.ts",
       "nota": "Un vencido no ofrece Editar.",
@@ -606,7 +606,7 @@
     },
     "SUP-19": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-24",
       "prueba": "apps/web-b2b/src/lib/change-request-notice.test.ts",
       "nota": "La solicitud pendiente se avisa como información en las cuatro pantallas.",
@@ -614,16 +614,60 @@
     },
     "AGE-05": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "hallazgo": "QA-H-07",
       "prueba": "apps/api/src/tenants/branding.schemas.test.ts",
       "nota": "La API rechaza un teléfono de soporte que la reserva de hotel no puede usar.",
       "fecha": "2026-11-27"
     },
     "ACC-15": {
-      "fase": "por_crear",
-      "nota": "Ya hay buzón (INF-3): falta la prueba de navegador.",
-      "fecha": "2026-11-27"
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f32-cambio-de-clave.e2e.ts",
+      "nota": "Aviso al ingresar, enlace en el correo, contraseña nueva y entra.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "ACC-03": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts",
+      "nota": "Los campos son required: el navegador frena el envío y no sale ninguna llamada; el mensaje propio queda de respaldo en el servidor.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "ACC-12": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts, apps/web-b2b/src/lib/safe-next.test.ts",
+      "nota": "Ingresar con next=//otro-sitio lleva al inicio del panel; las demás formas (\\, /api, /login, largo, control) en safe-next.test.ts.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "ACC-13": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts",
+      "nota": "Con sesión, /login?next= lleva directo a la ruta propia.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "ACC-14": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f30-acceso.e2e.ts, apps/web-b2b/src/lib/session-reasons.test.ts",
+      "nota": "Inactividad con minutos, otro dispositivo y liberada muestran su aviso; uno inventado, ninguno.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "ACC-27": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f31-invitacion.e2e.ts",
+      "nota": "Invitación por API, enlace del buzón, nombre sin letras y contraseñas distintas rechazados, alta con cuenta y membresía vendedor.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "VUE-16": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f33-pantallas-corregidas.e2e.ts",
+      "nota": "El superadmin ve en /cotizaciones que no vende.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -708,9 +752,9 @@
       "nota": "Confirmado: 200 {deleted:false}. Ahora 404. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-38": {
+      "estado": "en_mac",
       "fecha": "2026-11-27",
-      "estado": "confirmado",
-      "nota": "Bajado a Media: el panel no usa la subida (el logo se carga como URL), así que hoy no afecta a nadie. Se arregla con QA-M-02 cuando se agregue la subida en Configuración."
+      "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts."
     },
     "QA-M-01": {
       "fecha": "2026-11-27",
@@ -718,9 +762,9 @@
       "nota": "Propuesta para la Ola 3."
     },
     "QA-M-02": {
+      "estado": "corregido",
       "fecha": "2026-11-27",
-      "estado": "propuesta",
-      "nota": "Para cuando se agregue la subida de logo en Configuración (hoy el panel sólo acepta una URL). Arregla QA-H-38."
+      "nota": "Hecho con la API sirviendo los blobs en vez de Caddy (mismas cabeceras) y un volumen persistente. MinIO/S3 sigue siendo otro adaptador del mismo puerto, cuando se aprovisione."
     },
     "QA-M-03": {
       "fecha": "2026-11-27",
@@ -808,89 +852,89 @@
       "nota": "Cuando una agencia pase las 1000 reservas o cotizaciones."
     },
     "QA-H-04": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció»."
+      "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció». En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-05": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español."
+      "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-06": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor."
+      "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-07": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice."
+      "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-08": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios."
+      "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-09": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "/red muestra «sin acceso» a quien no administra."
+      "nota": "/red muestra «sin acceso» a quien no administra. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-11": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo."
+      "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-14": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta»."
+      "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta». En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-16": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Repricing también en el detalle de la reserva."
+      "nota": "Repricing también en el detalle de la reserva. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-18": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Pestaña «Canceladas» en Cotizaciones guardadas."
+      "nota": "Pestaña «Canceladas» en Cotizaciones guardadas. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-19": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra."
+      "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-20": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "El valor estimado de la oportunidad se manda en centavos."
+      "nota": "El valor estimado de la oportunidad se manda en centavos. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-21": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Inicio usa los mismos nombres de rol que Equipo."
+      "nota": "Inicio usa los mismos nombres de rol que Equipo. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-22": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma."
+      "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-23": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar)."
+      "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar). En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-24": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios."
+      "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-28": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar."
+      "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar. En el VPS el 2026-11-27 (4342cf92)."
     }
   },
   "ultimaCorrida": {

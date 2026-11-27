@@ -35,6 +35,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && adduser -S app -u 1001 -G nodejs
+# Donde la API guarda los logos (QA-H-38). Del usuario `app`: un volumen nombrado vacío toma este
+# dueño al montarse la primera vez; sin esto la subida fallaba con EACCES.
+RUN mkdir -p /var/lib/sales-travel/blobs && chown -R app:nodejs /var/lib/sales-travel
 COPY --from=builder --chown=app:nodejs /out/api .
 USER app
 EXPOSE 3000
