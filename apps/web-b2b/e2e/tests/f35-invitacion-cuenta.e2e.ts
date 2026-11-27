@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { como, nodo, sql } from '../api/support/cliente';
 import { submitCredentials } from '../support/auth';
 import { hayBuzon, ultimoCorreo } from '../support/correo';
@@ -24,18 +24,21 @@ async function enlaceDeInvitacion(email: string, role: 'vendedor' | 'admin'): Pr
     tenantId: await nodo('e2e-agencia-a'),
     role,
   });
-  expect(inv.status, inv.text).toBeLessThan(300);
+  // Un reintento del test encuentra la del intento anterior pendiente: se reenvía (enlace nuevo).
+  if (inv.status === 409 && inv.text.includes('INVITATION_ALREADY_PENDING')) {
+    const { details } = inv.body as { details?: { invitationId?: string } };
+    const reenvio = await admin.post(
+      `/invitations/${details?.invitationId}/resend?tenantId=${await nodo('e2e-agencia-a')}`,
+    );
+    expect(reenvio.status, reenvio.text).toBeLessThan(300);
+  } else {
+    expect(inv.status, inv.text).toBeLessThan(300);
+  }
   const correo = await ultimoCorreo(email, { desde });
   const enlace = correo?.enlaces.find((e) => /\/invitacion\?token=/.test(e));
   expect(enlace, 'el correo trae el enlace').toBeDefined();
   const { pathname, search } = new URL(enlace!);
   return `${pathname}${search}`;
-}
-
-async function iniciarSesion(page: Page, email: string): Promise<void> {
-  await page.getByLabel('Correo electrónico').fill(email);
-  await page.getByLabel('Contraseña', { exact: true }).fill(E2E_PASSWORD);
-  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
 }
 
 test.describe('invitación a una cuenta que ya existe', { tag: '@desktop' }, () => {
@@ -62,8 +65,11 @@ test.describe('invitación a una cuenta que ya existe', { tag: '@desktop' }, () 
   }) => {
     await page.goto(ruta);
     await expect(page.getByText('Te invitaron a Agencia E2E A', { exact: false })).toBeVisible();
-    await page.getByRole('link', { name: 'Ingresar para aceptar' }).click();
-    await iniciarSesion(page, 'invitado@e2e.test');
+    const ingresar = page.getByRole('link', { name: 'Ingresar para aceptar' });
+    const login = await ingresar.getAttribute('href');
+    expect(login).toMatch(/^\/login\?next=/);
+    // Con reintento si el login está limitado por tasa (en CI todos entran desde la misma IP).
+    await submitCredentials(page, 'invitado@e2e.test', E2E_PASSWORD, login!);
 
     await expect(page).toHaveURL(/\/invitacion\?token=/);
     await page.getByRole('button', { name: 'Aceptar invitación' }).click();
