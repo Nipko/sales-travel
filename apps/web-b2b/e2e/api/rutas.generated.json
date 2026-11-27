@@ -1212,6 +1212,18 @@
   "superadmin": false
  },
  {
+  "method": "GET",
+  "path": "/api/blobs/tenants/:tenantId/:file",
+  "controller": "BlobsController",
+  "file": "apps/api/src/storage/blobs.controller.ts",
+  "public": true,
+  "roles": "",
+  "sale": false,
+  "recentMfa": false,
+  "allowWithoutMfa": false,
+  "superadmin": false
+ },
+ {
   "method": "POST",
   "path": "/api/cars/book",
   "controller": "CarsController",
