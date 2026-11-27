@@ -887,13 +887,13 @@
   "nivel": "H",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/perfil-y-limites.api.ts",
+  "nota": "10 cambios pasan, el 11.º es 429 «Demasiados intentos» y no se aplica.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CTA-03",
@@ -1143,13 +1143,13 @@
   "nivel": "I",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-43",
+  "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+  "nota": "Herencia campo a campo, lo más cercano gana, un ancestro suspendido no presta su marca; el nombre comercial no se hereda (QA-H-43, corregido en 0100).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-01",
@@ -4823,13 +4823,13 @@
   "nivel": "I",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+  "nota": "applicable_markup_rules: cadena de arriba abajo y por prioridad, sin las de sub-agencias ni hermanas, sin inactivas ni otra vertical, «all» entra. tenants_enforce_hierarchy y tenants_maintain_path ya los cubría tenant-hierarchy.integration.test.ts (67 casos).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-06",
@@ -4839,13 +4839,13 @@
   "nivel": "I",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-44",
+  "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+  "nota": "resolve_tenant_branding y resolve_tenant_by_host (verificado, mayúsculas, suspendido) probados; audit_direct_change lo cubre platform-supervision.integration.test.ts; is_admin_user borrada (QA-H-44). Falta governance_chain/governance_bootstrap contra la base.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-07",

@@ -320,6 +320,36 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "nota": "Escribirlo sobre NULL vale; cambiarlo o ponerlo en NULL falla, también como dueño de la tabla; cambiar otra columna no lo toca."
+    },
+    "AGE-08": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "hallazgo": "QA-H-43",
+      "nota": "Herencia campo a campo, lo más cercano gana, un ancestro suspendido no presta su marca; el nombre comercial no se hereda (QA-H-43, corregido en 0100)."
+    },
+    "SQL-05": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "nota": "applicable_markup_rules: cadena de arriba abajo y por prioridad, sin las de sub-agencias ni hermanas, sin inactivas ni otra vertical, «all» entra. tenants_enforce_hierarchy y tenants_maintain_path ya los cubría tenant-hierarchy.integration.test.ts (67 casos)."
+    },
+    "SQL-06": {
+      "fase": "parcial",
+      "prueba": "apps/api/src/network/red-sql.integration.test.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "hallazgo": "QA-H-44",
+      "nota": "resolve_tenant_branding y resolve_tenant_by_host (verificado, mayúsculas, suspendido) probados; audit_direct_change lo cubre platform-supervision.integration.test.ts; is_admin_user borrada (QA-H-44). Falta governance_chain/governance_bootstrap contra la base."
+    },
+    "CTA-02": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/perfil-y-limites.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "nota": "10 cambios pasan, el 11.º es 429 «Demasiados intentos» y no se aplica."
     }
   },
   "hallazgos": {
@@ -447,6 +477,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana. Desplegado en el VPS el 2026-11-27 (0bc7b228)."
+    },
+    "QA-H-43": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "0100: el nombre comercial es el propio o el nombre legal; logo, colores, soporte y web se siguen heredando. Probado en red-sql.integration.test.ts."
+    },
+    "QA-H-44": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código."
     }
   },
   "ultimaCorrida": {
