@@ -165,8 +165,8 @@
   "que": "SABRE_OPERATIONS=refund se acepta pero no hace nada",
   "donde": "sabre.factory.ts:214",
   "casos": "SAB-02",
-  "estado": "en_mac",
-  "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts.",
+  "estado": "en_vps",
+  "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0).",
   "fecha": "2026-11-27"
  },
  {
@@ -255,8 +255,8 @@
   "que": "Nota de decisión: BFF 3–500, API 1–500",
   "donde": "platform-admins.ts (BFF)",
   "casos": "SUP-21",
-  "estado": "en_mac",
-  "nota": "Nota de decisión 3–500 en API y panel, mensaje completo.",
+  "estado": "en_vps",
+  "nota": "Nota de decisión 3–500 en API y panel, mensaje completo. Desplegado en el VPS el 2026-11-27 (aa43cdd0).",
   "fecha": "2026-11-27"
  },
  {
@@ -265,8 +265,8 @@
   "que": "Dar acceso supervisado a correo inexistente falla recién al aprobar",
   "donde": "supervision.service.ts",
   "casos": "SUP-22",
-  "estado": "en_mac",
-  "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar.",
+  "estado": "en_vps",
+  "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar. Desplegado en el VPS el 2026-11-27 (aa43cdd0).",
   "fecha": "2026-11-27"
  },
  {
@@ -445,8 +445,8 @@
   "que": "airports sin RLS y con escritura para app_user: el GRANT SELECT de 0003 no quitó el INSERT/UPDATE/DELETE por defecto de 0001 (como 0041 con hoteles); sólo la escribe el sync como postgres",
   "donde": "db/migrations/0003, tablas-sin-rls.integration.test.ts",
   "casos": "TRV-07",
-  "estado": "en_mac",
-  "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts.",
+  "estado": "en_vps",
+  "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0).",
   "fecha": "2026-11-27"
  },
  {

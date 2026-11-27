@@ -367,7 +367,7 @@
     },
     "SUP-21": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-admins.schemas.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
       "hallazgo": "QA-H-26",
       "nota": "La nota de decisión es 3–500 en la API y en el panel, con un mensaje que lo dice entero. Sólo aprobar pide 2FA reciente; rechazar y cancelar no cambian nada y no lo piden (probado por metadatos).",
@@ -375,7 +375,7 @@
     },
     "SUP-22": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts",
       "hallazgo": "QA-H-27",
       "nota": "Antes de dejar la solicitud se mira la cuenta: sin cuenta activa → 404, suspendida aunque se pida crearla → 404, uno mismo → 403; no queda solicitud.",
@@ -383,14 +383,14 @@
     },
     "SUP-25": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
       "nota": "Listado por páginas de 100 con `before` (fecha, id): 102 solicitudes del mismo instante salen todas, una vez. El panel muestra «Ver más antiguas» cuando la página vino llena.",
       "fecha": "2026-11-27"
     },
     "SAB-02": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/providers-sabre/sabre.factory.test.ts",
       "hallazgo": "QA-H-17",
       "nota": "`refund` se sigue aceptando (no tumba un despliegue que ya la escribió), pero el arranque avisa que no enciende nada y no sale entre las encendidas. El reembolso espera D9.",
@@ -398,7 +398,7 @@
     },
     "TRV-07": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "prueba": "apps/api/src/database/tablas-sin-rls.integration.test.ts",
       "hallazgo": "QA-H-45",
       "nota": "Lista cerrada de tablas sin RLS forzada (una nueva hace fallar el test); catálogos de sólo lectura para app_user (airports corregido en 0101); toda consulta Kysely a tenants/users/password_reset_tokens/consumed_tokens filtra, salvo 3 barridos del sistema y 2 rutas de superadmin nombradas. El SQL crudo no lo cubre el escaneo.",
@@ -622,24 +622,24 @@
       "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código. Desplegado en el VPS el 2026-11-27 (0101bebc)."
     },
     "QA-H-17": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts."
+      "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-26": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "Nota de decisión 3–500 en API y panel, mensaje completo."
+      "nota": "Nota de decisión 3–500 en API y panel, mensaje completo. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-27": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar."
+      "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-45": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts."
+      "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts. Desplegado en el VPS el 2026-11-27 (aa43cdd0)."
     },
     "QA-H-15": {
       "estado": "en_mac",
