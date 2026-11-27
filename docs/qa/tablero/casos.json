@@ -23,13 +23,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
-  "nota": "Hecho: sin sesión y token inventado. Falta token vencido, sesión revocada, reemplazada o inactiva.",
-  "fecha": "2026-11-26"
+  "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts, apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+  "nota": "Sin sesión y token inventado → 401; sesión reemplazada → 401 SESSION_REPLACED; logout-all revoca todas en la base.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-03",
@@ -375,13 +375,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+  "nota": "API: 5 contraseñas malas → 401 cada una; la correcta después → 401; locked_until a ~15 min y evento auth.login.blocked. Falta el TOTP contando junto y el mensaje del panel.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-05",
@@ -647,13 +647,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+  "nota": "Usuario suspendido → 401. Único nodo suspendido: entra por diseño (el panel explica) pero no opera (403 en clientes, cotizaciones, CRM). Membresía suspendida en A con B activa: entra a B y no puede cambiar a A (403).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-22",
@@ -823,13 +823,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
+  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
   "nota": "",
-  "fecha": ""
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-33",
@@ -839,13 +839,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+  "nota": "API: a un nodo sin membresía → 403; a B → token nuevo con tid de B y el viejo da 401. Falta la cookie del panel.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-34",
@@ -1303,13 +1303,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+  "nota": "El ingreso con password_reset_required → 403 PASSWORD_RESET_REQUIRED sin token. Falta forzarlo desde Equipo (step-up) y que cierre sesiones.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-11",

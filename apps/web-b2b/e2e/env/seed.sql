@@ -8,7 +8,8 @@
 --   ├── e2e-consolidador (consolidator)
 --   │   └── e2e-agencia-a (agency)
 --   │       └── e2e-subagencia (subagency)
---   └── e2e-agencia-b (agency)
+--   ├── e2e-agencia-b (agency)
+--   └── e2e-agencia-suspendida (agency, suspendida: ACC-21)
 --
 -- Contraseña de todos (sólo de prueba, también en e2e/support/users.ts): E2e-Prueba-2026!
 
@@ -39,6 +40,11 @@ INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, pa
 SELECT 'e2e-agencia-b', 'Agencia E2E B', 'PE', 'PEN', 'agency', id FROM tenants WHERE slug = 'platform'
 ON CONFLICT (slug) DO NOTHING;
 
+INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+SELECT 'e2e-agencia-suspendida', 'Agencia E2E Suspendida', 'CO', 'COP', 'agency', id FROM tenants WHERE slug = 'platform'
+ON CONFLICT (slug) DO NOTHING;
+UPDATE tenants SET status = 'suspended' WHERE slug = 'e2e-agencia-suspendida';
+
 -- ── Usuarios ───────────────────────────────────────────────────────────────────────────────────────
 WITH seed_users(email, name) AS (
   VALUES
@@ -59,7 +65,14 @@ WITH seed_users(email, name) AS (
     ('api-sin-mfa@e2e.test',        'API Admin Sin MFA'),
     ('api-vendedor-sub@e2e.test',   'API Vendedor Subagencia'),
     ('api-admin-b@e2e.test',        'API Admin Agencia B'),
-    ('api-vendedor-b@e2e.test',     'API Vendedor B')
+    ('api-vendedor-b@e2e.test',     'API Vendedor B'),
+    -- Casos especiales del arnés (INF-2): el seed los deja en su estado en cada corrida.
+    ('api-bloqueo@e2e.test',        'API Bloqueo'),
+    ('api-suspendido@e2e.test',     'API Usuario Suspendido'),
+    ('api-multi@e2e.test',          'API Vendedor Dos Nodos'),
+    ('api-memb-susp@e2e.test',      'API Membresia Suspendida'),
+    ('api-nodo-susp@e2e.test',      'API Nodo Suspendido'),
+    ('api-reset@e2e.test',          'API Cambio de Contrasena')
 )
 INSERT INTO users (email, name, password_hash, email_verified_at, password_changed_at)
 SELECT email, name, crypt('E2e-Prueba-2026!', gen_salt('bf', 10)), now(), now() FROM seed_users
@@ -101,7 +114,15 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('api-sin-mfa@e2e.test',        'e2e-agencia-a',    'admin',              false),
     ('api-vendedor-sub@e2e.test',   'e2e-subagencia',   'vendedor',           false),
     ('api-admin-b@e2e.test',        'e2e-agencia-b',    'admin',              false),
-    ('api-vendedor-b@e2e.test',     'e2e-agencia-b',    'vendedor',           false)
+    ('api-vendedor-b@e2e.test',     'e2e-agencia-b',    'vendedor',           false),
+    ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
+    ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
+    ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
+    ('api-multi@e2e.test',          'e2e-agencia-b',    'vendedor',           false),
+    ('api-memb-susp@e2e.test',      'e2e-agencia-a',    'vendedor',           false),
+    ('api-memb-susp@e2e.test',      'e2e-agencia-b',    'vendedor',           false),
+    ('api-nodo-susp@e2e.test',      'e2e-agencia-suspendida', 'vendedor',     false),
+    ('api-reset@e2e.test',          'e2e-agencia-a',    'vendedor',           false)
 )
 INSERT INTO memberships (tenant_id, user_id, role, platform_supervised)
 SELECT t.id, u.id, s.role, s.supervised
@@ -111,5 +132,12 @@ SELECT t.id, u.id, s.role, s.supervised
 ON CONFLICT (tenant_id, user_id) DO UPDATE
    SET role = EXCLUDED.role, platform_supervised = EXCLUDED.platform_supervised,
        status = 'active', removed_at = NULL, removed_by = NULL;
+
+-- Estados de los casos especiales (después de dejar todo activo arriba).
+UPDATE users SET status = 'suspended' WHERE email = 'api-suspendido@e2e.test';
+UPDATE users SET password_reset_required_at = now() WHERE email = 'api-reset@e2e.test';
+UPDATE memberships SET status = 'suspended'
+ WHERE user_id = (SELECT id FROM users WHERE email = 'api-memb-susp@e2e.test')
+   AND tenant_id = (SELECT id FROM tenants WHERE slug = 'e2e-agencia-a');
 
 COMMIT;
