@@ -538,5 +538,25 @@
   "estado": "propuesta",
   "nota": "Cuando una agencia pase las 1000 reservas o cotizaciones.",
   "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-08",
+  "gravedad": "Mejora",
+  "que": "Un supervisado puede ENCENDER el kill-switch de un proveedor (PUT /admin/providers/:code/kill-switch) y duplicar un perfil de gobierno sin pasar por la puerta; apagarlo (clear) sí la tiene. ¿Es a propósito (emergencia) o debe quedar como solicitud? Necesita decisión del founder",
+  "donde": "provider-enablement.controller.ts, governance.controller.ts",
+  "casos": "TRV-12",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión: ¿encender el kill-switch y duplicar un perfil también como solicitud?",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-09",
+  "gravedad": "Mejora",
+  "que": "Un ajuste (débito) del financiador no tiene tope: deja la cartera muy por debajo de cero y de su cupo (probado: −3·10¹² sin error). PORTFOLIO_BALANCE_OUT_OF_RANGE sólo sale al liberar una retención. ¿Se topa el débito al saldo disponible o se deja libre por ser una corrección? Necesita decisión del founder",
+  "donde": "wallet-financing.service.ts",
+  "casos": "CAR-03",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión: ¿topar el débito de un ajuste al saldo disponible?",
+  "fecha": "2026-11-27"
  }
 ]

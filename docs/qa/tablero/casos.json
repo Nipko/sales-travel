@@ -39,13 +39,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
-  "nota": "Hecho: admin sin MFA → MFA_ENROLLMENT_REQUIRED. Falta MFA_STEP_UP_REQUIRED.",
-  "fecha": "2026-11-26"
+  "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts, apps/web-b2b/e2e/api/trv-mfa-reciente.api.ts",
+  "nota": "Admin sin MFA → 403 MFA_ENROLLMENT_REQUIRED; con MFA pero sesión sin verificar (mfa_verified_at nulo) → 401 MFA_STEP_UP_REQUIRED.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-04",
@@ -59,9 +59,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/trv-mfa-reciente.api.ts",
+  "nota": "Las 12 rutas marcadas (del inventario de rutas) responden 403 MFA_RECENT_REQUIRED con el 2FA envejecido en la base. Faltan las 2 condicionales (send-password-reset a un admin y memberships con rol admin).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-05",
@@ -171,9 +171,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "POST /orders: sin Idempotency-Key o con una que no es UUID → 400; la misma clave no crea otra reserva. Faltan las demás rutas con clave (depósitos, hotels/book).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-12",
@@ -183,13 +183,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-08",
+  "prueba": "apps/web-b2b/e2e/api/trv-supervisado.api.ts",
+  "nota": "Los 17 cambios con puerta: el supervisado deja solicitud (409 CHANGE_REQUEST_PENDING) y nada se aplica (nodo y cuenta sin cambios). Encender el kill-switch y duplicar un perfil no tienen puerta: pregunta abierta QA-M-08.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-13",
@@ -1819,9 +1819,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
+  "nota": "H: JPY (sin decimales), moneda inventada y motivo corto → 400; repetida → PORTFOLIO_ALREADY_ENABLED. Falta la mitad E.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CAR-02",
@@ -1835,9 +1835,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
+  "nota": "H: monto 0, sin Idempotency-Key o con una que no es UUID → 400; la misma clave no suma dos veces. Falta la mitad E (separadores de miles, decimales).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CAR-03",
@@ -1847,13 +1847,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-09",
+  "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
+  "nota": "Ajuste de cero → 400; débito y crédito se registran. El «fuera de rango» sólo existe al liberar retenciones; el débito sin tope es la pregunta QA-M-09.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CAR-04",
@@ -1879,13 +1879,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
+  "nota": "El admin de otra agencia y el vendedor de la agencia no ven ni depositan en las carteras de la agencia A (403/404).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CAR-06",
@@ -2347,9 +2347,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "H con el proveedor falso: la tarifa que cambió sin aceptarse → 409 «precio cambió», sin reserva. La mitad E (la UI revalida y vuelve a preguntar) en f40-venta-falsa (CHK-04).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-06",
@@ -2359,13 +2359,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "Un total tocado en el navegador no se reserva a ese precio: el proveedor revalida desde lo que dio (el falso, como uno real) y el servidor responde 409 o pone el total.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-07",
@@ -2379,9 +2379,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "Dos pasajeros para una búsqueda de uno → 400. Falta la edad del niño según su nacimiento.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-08",
@@ -2491,9 +2491,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "La misma Idempotency-Key dos veces en paralelo deja una sola orden (create_request_key). Falta el doble clic en el navegador.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-15",
@@ -2583,13 +2583,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "`payment` en el cuerpo → 400.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-21",
@@ -2663,13 +2663,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "El número del documento sale por sus últimos 4 en la lista y en el detalle (public-order-passengers.ts); el número entero no cruza el borde HTTP.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "POS-04",
@@ -2715,9 +2715,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
+  "nota": "H con el falso: cancelar una confirmada la deja cancelled; cancelarla otra vez → 4xx. Falta la liberación de la retención (el falso no retiene cartera) y la mitad E.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "POS-07",
@@ -4887,13 +4887,13 @@
   "nivel": "E + R",
   "prioridad": "P0",
   "ola": 4,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f40-venta-falsa.e2e.ts, apps/web-b2b/e2e/tests/f10-f12-vuelo-real.e2e.ts",
+  "nota": "Con el proveedor falso en CI (CHK-02/F27, cronometrado < 2 min en cada PR) y con Sabre CERT en la Mac (F12 @real).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "NFR-02",

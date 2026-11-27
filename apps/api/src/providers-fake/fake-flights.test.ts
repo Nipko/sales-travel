@@ -71,6 +71,15 @@ describe('FakeFlightsAdapter — perillas', () => {
     expect((await a.priceOffer(p.offer, criteria('MDE'), CTX)).priceChanged).toBe(false);
   });
 
+  it('revalida desde lo que dio, no desde lo que manda el cliente (CHK-06)', async () => {
+    const [fija] = await a.search(criteria('MDE'), CTX);
+    const tocada = { ...fija!, total: { ...fija!.total, amountMinor: 1 } };
+    const p = await a.priceOffer(tocada, criteria('MDE'), CTX);
+    expect(p.offer.total.amountMinor).toBe(fija!.total.amountMinor);
+    const inventada = { ...fija!, provider: { ...fija!.provider, offerRef: 'FAKE-FIJO-nada' } };
+    await expect(a.priceOffer(inventada, criteria('MDE'), CTX)).rejects.toThrow(/ya no existe/);
+  });
+
   it('reserva según el apellido: confirmada, rechazada, parcial o incierta', async () => {
     const ok = await a.createOrder(reserva('Prueba'), CTX);
     expect(ok).toMatchObject({ outcome: 'CONFIRMED' });
