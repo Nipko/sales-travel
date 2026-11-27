@@ -118,6 +118,16 @@ export const PayOrderSchema = z.object({
 });
 export type PayOrderInput = z.infer<typeof PayOrderSchema>;
 
+/**
+ * Cuántas filas trae un listado: las más nuevas primero, 100 de entrada y «Ver más» pide más
+ * (QA-H-15). Un tope y no un cursor: el panel relee la lista después de cada acción y así no pierde
+ * lo que ya había cargado. Más allá de 1000 hace falta buscar en el servidor.
+ */
+export const ListLimitQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(1000).default(100) })
+  .strict();
+export type ListLimitQuery = z.infer<typeof ListLimitQuerySchema>;
+
 /** Enviar el enlace de pago de LATAM: sólo a quién le llega. */
 export const PaymentLinkSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
 export type PaymentLinkInput = z.infer<typeof PaymentLinkSchema>;

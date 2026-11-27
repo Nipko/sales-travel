@@ -71,15 +71,23 @@ export class QuotationsService {
     });
   }
 
-  async findAll(tenantId: string): Promise<QuotationRow[]> {
+  /** Las `limit` más nuevas y si hay más detrás (QA-H-15). */
+  async findAll(
+    tenantId: string,
+    limit = 100,
+  ): Promise<{ rows: QuotationRow[]; hasMore: boolean }> {
     return this.db.withTenant(tenantId, async (trx) => {
       const rows = await trx
         .selectFrom('quotations')
         .selectAll()
         .orderBy('created_at', 'desc')
-        .limit(100)
+        .orderBy('id', 'desc')
+        .limit(limit + 1)
         .execute();
-      return rows as unknown as QuotationRow[];
+      return {
+        rows: rows.slice(0, limit) as unknown as QuotationRow[],
+        hasMore: rows.length > limit,
+      };
     });
   }
 

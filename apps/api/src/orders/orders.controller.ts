@@ -15,6 +15,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ServiceUnavailableException,
   UseFilters,
 } from '@nestjs/common';
@@ -34,6 +35,7 @@ import {
   IssueOrderSchema,
   ModifyTravelersSchema,
   PayOrderSchema,
+  ListLimitQuerySchema,
   PaymentLinkSchema,
   RemoveServicesSchema,
   ReshopOrderSchema,
@@ -41,6 +43,7 @@ import {
   type AddServicesInput,
   type IssueOrderInput,
   type ModifyTravelersInput,
+  type ListLimitQuery,
   type PaymentLinkInput,
   type RemoveServicesInput,
 } from './dto.js';
@@ -281,10 +284,13 @@ export class OrdersController {
   /** Lleva datos de los pasajeros (enmascarados, pero de personas): no se guarda en ningún caché. */
   @Get()
   @Header('Cache-Control', 'no-store')
-  async list(@CurrentUser() userId: string | undefined) {
+  async list(
+    @CurrentUser() userId: string | undefined,
+    @Query(new ZodValidationPipe(ListLimitQuerySchema)) query: ListLimitQuery = { limit: 100 },
+  ) {
     if (!userId) throw new ForbiddenException();
     const tenantId = await this.activeTenant.resolve(userId);
-    const rows = await this.orders.findAll(tenantId);
+    const { rows, hasMore } = await this.orders.findAll(tenantId, query.limit);
     const tracking = await this.hotelReads.trackingOf(
       tenantId,
       rows.filter((r) => this.hotelReads.handles(r.provider)).map((r) => r.id),
@@ -295,6 +301,7 @@ export class OrdersController {
       orders: rows.map((r) =>
         this.serialize(r, tracking.get(r.id), flights.get(r.id), holds.get(r.id)),
       ),
+      hasMore,
     };
   }
 

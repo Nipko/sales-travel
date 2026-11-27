@@ -235,7 +235,7 @@ describe('GET /orders y GET /orders/:id: el documento de los pasajeros sale enma
     return ordersController({
       orders: {
         findById: vi.fn(() => Promise.resolve(conDocumento)),
-        findAll: vi.fn(() => Promise.resolve([conDocumento])),
+        findAll: vi.fn(() => Promise.resolve({ rows: [conDocumento], hasMore: false })),
       } as unknown as OrdersService,
       mailer: {} as unknown as MailerService,
       branding: {} as unknown as BrandingService,

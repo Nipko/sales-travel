@@ -154,6 +154,16 @@ export async function anonimoDesde(ip: string): Promise<Api> {
 
 const sesiones = new Map<PersonaKey, Promise<Api>>();
 
+/**
+ * Un test que abre su propia sesión de la persona reemplaza la guardada (una sesión por usuario):
+ * después de eso, la siguiente llamada a `como(key)` tiene que volver a ingresar.
+ */
+export function olvidar(key: PersonaKey): void {
+  sesiones.delete(key);
+  const { token, ...resto } = leer(key);
+  if (token !== undefined) guardar(key, resto);
+}
+
 /** Cliente con la sesión de `key`. Una sola sesión por persona en toda la corrida. */
 export function como(key: PersonaKey): Promise<Api> {
   let s = sesiones.get(key);

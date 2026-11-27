@@ -21,12 +21,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
 import { useViewer } from '../../../components/layout/viewer-context';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/cn';
+import { LIST_MAX, LIST_PAGE, nextListLimit } from '../../../lib/list-limit';
 import { isCarOrder, isHotelOrder, orderVerticalOf } from '../../../lib/order-vertical';
 import { getCarReservationAction } from '../autos/actions';
 import { VoucherDetails } from '../autos/_components/voucher-details';
@@ -149,6 +150,9 @@ export default function ReservasPage() {
   // El superadmin no vende: consulta y cancela lo vendido, sin Pagar/Emitir, Servicios ni Repricing.
   const sells = canSell(useViewer());
   const [orders, setOrders] = useState<Order[]>([]);
+  // Cuántas se piden y si hay más detrás (QA-H-15): «Ver más» sube el tope y relee.
+  const [listLimit, setListLimit] = useState(LIST_PAGE);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{
@@ -240,8 +244,8 @@ export default function ReservasPage() {
   const loadOrders = useCallback(
     async (initial: boolean): Promise<Order[] | null> => {
       try {
-        const res = await fetch('/api/orders');
-        const data = (await res.json()) as { orders?: Order[]; error?: string };
+        const res = await fetch(`/api/orders?limit=${listLimit}`);
+        const data = (await res.json()) as { orders?: Order[]; hasMore?: boolean; error?: string };
         if (!res.ok) {
           if (initial) {
             setLoadError(data.error ?? 'No se pudieron cargar las reservas.');
@@ -254,6 +258,7 @@ export default function ReservasPage() {
           capabilities: capabilitiesForViewer(o.capabilities, sells),
         }));
         setOrders(fresh);
+        setHasMore(data.hasMore === true);
         setLoadError(null);
         setDetailOrder((prev) => (prev ? (fresh.find((o) => o.id === prev.id) ?? prev) : prev));
         return fresh;
@@ -267,11 +272,16 @@ export default function ReservasPage() {
         if (initial) setLoading(false);
       }
     },
-    [sells],
+    [sells, listLimit],
   );
 
+  // La primera lectura es la de la pantalla; las siguientes (más reservas) no borran la lista si fallan.
+  const firstLoad = useRef(true);
   useEffect(() => {
-    void loadOrders(true).then((fresh) => {
+    const initial = firstLoad.current;
+    firstLoad.current = false;
+    void loadOrders(initial).then((fresh) => {
+      if (!initial) return;
       // `?orden=<id>`: la confirmación del checkout abre la reserva recién hecha (U-15).
       const wanted = new URLSearchParams(window.location.search).get('orden');
       const found = wanted ? fresh?.find((o) => o.id === wanted) : undefined;
@@ -477,6 +487,7 @@ export default function ReservasPage() {
         <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">Reservas</h1>
         <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
           {orders.length} {orders.length === 1 ? 'reserva' : 'reservas'} en total
+          {hasMore ? ' (las más recientes)' : ''}
           {filtered.length !== orders.length ? ` · ${filtered.length} visibles` : ''}
         </p>
       </div>
@@ -858,6 +869,21 @@ export default function ReservasPage() {
           })}
         </div>
       )}
+
+      {hasMore && !loading ? (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setListLimit((n) => nextListLimit(n))}
+            disabled={listLimit >= LIST_MAX}
+          >
+            {listLimit >= LIST_MAX
+              ? 'Mostrando las 1000 más recientes'
+              : 'Ver más reservas anteriores'}
+          </Button>
+        </div>
+      ) : null}
 
       {/* Pago con las formas que el superadmin habilitó para la red (0089). */}
       {payingOrder && (

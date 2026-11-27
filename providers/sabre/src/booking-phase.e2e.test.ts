@@ -33,6 +33,7 @@ import { SABRE_PRICE_PATH, SABRE_RAW_KEYS } from './price/request.builder';
 import {
   SabreCardBinPricingDeniedError,
   SabreOfferPriceAdapter,
+  SabreOfferPriceEmptyError,
   buildSabrePriceRequestedTravelers,
 } from './sabre-offer-price.adapter';
 import { SABRE_BOOKING_USE_CASES, SabreOrderCreateAdapter } from './sabre-order-create.adapter';
@@ -587,6 +588,29 @@ describe('binding explícito del request de Offer Price', () => {
     expect(quote.fareIdentityChanged).toBe(true);
     expect(quote.priceChanged).toBe(true);
     expect(quote.warnings.map((warning) => warning.code)).toContain('fare-identity-changed');
+  });
+
+  it('SAB-22: una respuesta sin ofertas no se vende ni se inventa: SabreOfferPriceEmptyError', async () => {
+    const vacia = structuredClone(multipaxFixture) as { response: { offers: unknown[] } };
+    vacia.response.offers = [];
+    const harness = wire({ [SABRE_PRICE_PATH]: [ok(vacia)] });
+    const err = await harness.price.priceQuote(shopOffer(), CRITERIA, CTX).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SabreOfferPriceEmptyError);
+    expect((err as SabreOfferPriceEmptyError).droppedOffers).toBe(0);
+  });
+
+  it('SAB-22: priceOffer avisa que el total puede cambiar al cobrar si se tarificó sin forma de pago', async () => {
+    const harness = wire({ [SABRE_PRICE_PATH]: [ok(priceResponse())] });
+    const result = await harness.price.priceOffer(shopOffer(), CRITERIA, CTX);
+    const quote = await wire({ [SABRE_PRICE_PATH]: [ok(priceResponse())] }).price.priceQuote(
+      shopOffer(),
+      CRITERIA,
+      CTX,
+    );
+    expect(result.warnings.includes('price-subject-to-form-of-payment')).toBe(
+      quote.priceSubjectToFormOfPayment,
+    );
+    expect(result.priceChanged).toBe(quote.priceChanged);
   });
 });
 

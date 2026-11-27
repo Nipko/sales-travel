@@ -7,6 +7,7 @@ import { Button } from '../../../../components/ui/button';
 import { TestContentBadge } from '../../../../components/test-content-badge';
 import { cn } from '../../../../lib/cn';
 import { isTestFare } from '../../../../lib/test-content';
+import { LIST_MAX, LIST_PAGE, nextListLimit } from '../../../../lib/list-limit';
 
 interface QuotationSummary {
   id: string;
@@ -74,14 +75,22 @@ export default function QuotationsListPage() {
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  // Cuántas se piden y si hay más detrás (QA-H-15): «Ver más» sube el tope y relee.
+  const [listLimit, setListLimit] = useState(LIST_PAGE);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
-    fetch('/api/quotations')
-      .then((res) => res.json() as Promise<{ quotations: QuotationSummary[] }>)
-      .then((data) => setQuotations(data.quotations ?? []))
-      .catch(() => setQuotations([]))
+    fetch(`/api/quotations?limit=${listLimit}`)
+      .then((res) => res.json() as Promise<{ quotations?: QuotationSummary[]; hasMore?: boolean }>)
+      .then((data) => {
+        // Una página que falla no borra lo que ya se veía.
+        if (data.quotations === undefined) return;
+        setQuotations(data.quotations);
+        setHasMore(data.hasMore === true);
+      })
+      .catch(() => undefined)
       .finally(() => setLoading(false));
-  }, []);
+  }, [listLimit]);
 
   const filtered = filter === 'all' ? quotations : quotations.filter((q) => q.status === filter);
 
@@ -102,7 +111,8 @@ export default function QuotationsListPage() {
             Cotizaciones guardadas
           </h1>
           <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-            {quotations.length} {quotations.length === 1 ? 'cotización' : 'cotizaciones'} en total
+            {quotations.length} {quotations.length === 1 ? 'cotización' : 'cotizaciones'}
+            {hasMore ? ' (las más recientes)' : ' en total'}
           </p>
         </div>
         <Link href="/cotizaciones">
@@ -258,6 +268,21 @@ export default function QuotationsListPage() {
           })}
         </div>
       )}
+
+      {hasMore && !loading ? (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setListLimit((n) => nextListLimit(n))}
+            disabled={listLimit >= LIST_MAX}
+          >
+            {listLimit >= LIST_MAX
+              ? 'Mostrando las 1000 más recientes'
+              : 'Ver más cotizaciones anteriores'}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

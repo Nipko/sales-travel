@@ -145,9 +145,9 @@
   "que": "/reservas y cotizaciones guardadas sin paginación: tope de 100",
   "donde": "orders.service.ts, quotations.service.ts",
   "casos": "POS-02",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "en_mac",
+  "nota": "limit 1–1000 + hasMore en /orders y /quotations; «Ver más» en Reservas y Cotizaciones guardadas.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-16",
@@ -450,6 +450,16 @@
   "fecha": "2026-11-27"
  },
  {
+  "id": "QA-H-46",
+  "gravedad": "Alta",
+  "que": "La tarjeta digitada de LATAM (card, PAN y CVV por nuestro servidor, fuera de PCI SAQ-A) quedó ENCENDIDA en «Configuración vigente», aunque la doc 17 dice «apagada salvo que el superadmin la encienda» y CLAUDE.md exige sólo checkout alojado en fase 1. Por confirmar en producción y decidir",
+  "donde": "governance_bootstrap (siembra), doc 17 §6",
+  "casos": "SUP-14",
+  "estado": "por_confirmar",
+  "nota": "La siembra encendió LATAM `card` (PAN por el servidor). Confirmar en Plataforma → Gobierno de producción y decidir si se apaga.",
+  "fecha": "2026-11-27"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
@@ -487,6 +497,36 @@
   "casos": "COT-03",
   "estado": "propuesta",
   "nota": "Necesita tu decisión sobre los estados permitidos.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-05",
+  "gravedad": "Mejora",
+  "que": "¿Despegar sólo con la cuenta del consolidador, como TBO (D-TBO-03 A)? Hoy cualquier agencia puede cargar la suya. Necesita decisión del founder (va con QA-H-30)",
+  "donde": "provider-forms.ts, despegar-hotels.factory.ts",
+  "casos": "BYO-06",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión (junto con QA-H-30).",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-06",
+  "gravedad": "Mejora",
+  "que": "Reporte de comisiones: /reports/commissions responde available:false. Necesita el modelo de comisión del vendedor (pricing waterfall) y decisión de cuándo",
+  "donde": "reports.service.ts",
+  "casos": "INI-06",
+  "estado": "propuesta",
+  "nota": "Necesita el modelo de comisión del vendedor; decisión de cuándo.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-07",
+  "gravedad": "Mejora",
+  "que": "Buscar en el servidor en Reservas y Cotizaciones guardadas: hoy el filtro es del lado del panel sobre las que cargó (hasta 1000). Cuándo: cuando una agencia pase las 1000",
+  "donde": "orders.service.ts, quotations.service.ts",
+  "casos": "POS-02",
+  "estado": "propuesta",
+  "nota": "Cuando una agencia pase las 1000 reservas o cotizaciones.",
   "fecha": "2026-11-27"
  }
 ]
