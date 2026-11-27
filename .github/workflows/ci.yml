@@ -156,7 +156,8 @@ jobs:
   # El deploy de main espera a este job (deploy.yml, `ci-gate`).
   e2e:
     name: E2E (arnés HTTP y panel)
-    runs-on: ubuntu-latest
+    # Fijo: la versión de Playwright del repo no trae Chromium para ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
       run:
