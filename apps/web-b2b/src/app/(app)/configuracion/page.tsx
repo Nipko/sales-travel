@@ -12,7 +12,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
@@ -528,11 +528,13 @@ function BrandingTab({
                     setBranding({ ...branding, primaryColor: e.target.value || null })
                   }
                   placeholder="#e37b23"
+                  aria-label="Color primario (hexadecimal)"
                   className="form-input flex-1 font-mono text-xs shadow-[var(--shadow-xs)]"
                 />
                 <input
                   type="color"
                   value={branding.primaryColor ?? '#e37b23'}
+                  aria-label="Elegir color primario"
                   onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
                   className="size-10 cursor-pointer rounded-lg border border-[var(--color-border)] p-0.5 hover:scale-[1.02] transition-transform"
                 />
@@ -556,11 +558,13 @@ function BrandingTab({
                     setBranding({ ...branding, accentColor: e.target.value || null })
                   }
                   placeholder="#0f355c"
+                  aria-label="Color de acento (hexadecimal)"
                   className="form-input flex-1 font-mono text-xs shadow-[var(--shadow-xs)]"
                 />
                 <input
                   type="color"
                   value={branding.accentColor ?? '#0f355c'}
+                  aria-label="Elegir color de acento"
                   onChange={(e) => setBranding({ ...branding, accentColor: e.target.value })}
                   className="size-10 cursor-pointer rounded-lg border border-[var(--color-border)] p-0.5 hover:scale-[1.02] transition-transform"
                 />
@@ -734,9 +738,18 @@ function FormField({
   required?: boolean;
   children: React.ReactNode;
 }) {
+  const id = useId();
+  const control =
+    isValidElement<{ id?: string }>(children) &&
+    ['input', 'select', 'textarea'].includes(children.type as string)
+      ? cloneElement(children, { id: children.props.id ?? id })
+      : null;
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-[var(--color-fg-muted)]">
+      <label
+        htmlFor={control ? id : undefined}
+        className="text-xs font-semibold text-[var(--color-fg-muted)]"
+      >
         {label}
         {required && (
           <span className="ml-0.5 text-rose-500" aria-hidden="true">
@@ -744,7 +757,7 @@ function FormField({
           </span>
         )}
       </label>
-      {children}
+      {control ?? children}
       {helper && (
         <p className="text-[10px] text-[var(--color-fg-subtle)] font-medium leading-relaxed">
           {helper}

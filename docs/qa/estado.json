@@ -1038,6 +1038,40 @@
       "corrida": "mac",
       "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
       "nota": "«Cambiar de teléfono» pide contraseña + código de la app actual y da otra clave; abandonado, Seguridad muestra «Empezaste a cambiar de teléfono y no terminaste.» y la app vieja sigue entrando; terminado, la clave vieja se rechaza en el login y la nueva entra. El api no acepta dos códigos del mismo paso de 30 s aunque sean de claves distintas (el mensaje ya dice que se espere el siguiente)."
+    },
+    "RED-05": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-50",
+      "prueba": "apps/web-b2b/e2e/api/nodo-correo-y-marca.api.ts",
+      "nota": "Por HTTP: con adminEmail llega «Te invitaron a …» con /invitacion?token; si el correo heredado falla, el nodo se crea igual con status invited_email_failed y la invitación guardada; adminPassword → 400. En el navegador (f44) un admin ya no ve «Email admin»: el formulario explica que su rol no alcanza.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "BYO-10": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-49",
+      "prueba": "apps/web-b2b/e2e/tests/f44-red-marca-y-equipo.e2e.ts",
+      "nota": "f44: requeridos, 465 → secure:true, 1025 → secure:false y la prueba llega a Mailpit. HTTP: el hijo hereda el correo heredable (resolve inherited) y la prueba sale con ese remitente; sin herencia usa el del sistema. La API no valida host/usuario/clave del correo: una cuenta incompleta se ignora y se usa el del sistema.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "AGE-04": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-49",
+      "prueba": "apps/web-b2b/e2e/tests/f44-red-marca-y-equipo.e2e.ts",
+      "nota": "HTTP: #abc, #12345g, sin # y 8 dígitos → 400; http:// → 400; logoUrl null lo quita sin tocar colores. f44: vista previa con los colores, --color-primary/--color-accent tras recargar, «Quitar logo»; devuelve la marca original al terminar.",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
+    },
+    "EQU-14": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f44-red-marca-y-equipo.e2e.ts",
+      "nota": "filtro, rol, suspendidos=ocultos y orden viajan en la URL y sobreviven a recargar; «Quitar filtros» los limpia; búsqueda y vacío. La búsqueda NO va en la URL (así está hecho).",
+      "fecha": "2026-11-27",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1330,6 +1364,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "Los cuatro modales usan useModalBehavior: role=\"dialog\", aria-modal, título como nombre, foco atrapado y Escape; la X de Clientes tiene nombre. f42 lo prueba."
+    },
+    "QA-H-49": {
+      "estado": "en_vps",
+      "fecha": "2026-11-27",
+      "nota": "Field/FormField atan la etiqueta al campo con useId; los colores de Marca tienen nombre y los botones de cada fila de Mi Red dicen «de <nodo>». f44 los usa por su etiqueta."
+    },
+    "QA-H-50": {
+      "estado": "en_vps",
+      "fecha": "2026-11-27",
+      "nota": "canInviteNodeAdmin (mismo criterio que initialAdminRole): si el rol no alcanza, el formulario no ofrece el campo y explica a quién pedirlo. f44 lo prueba con admin-a."
     }
   },
   "ultimaCorrida": {
