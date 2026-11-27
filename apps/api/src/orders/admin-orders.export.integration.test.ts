@@ -85,7 +85,9 @@ function dataLines(csv: string): string[] {
     .slice(1);
 }
 
-d('Reservas de la red › Exportar CSV (0076 como app_user)', () => {
+// Siembra 5.001 reservas: en el runner de GitHub el beforeAll y los casos pasaron sus 10 s y 5 s
+// (CI de main en 593a9018).
+d('Reservas de la red › Exportar CSV (0076 como app_user)', { timeout: 60_000 }, () => {
   const sfx = randomBytes(4).toString('hex');
   const SFX = sfx.toUpperCase();
   /** SUPERUSUARIO: sólo para montar la red, mirar el audit log y desmontarla. */
@@ -272,7 +274,7 @@ d('Reservas de la red › Exportar CSV (0076 como app_user)', () => {
          FROM generate_series(1, $4::int) g`,
       [bulk, directSeller, bulkProvider, ADMIN_ORDERS_EXPORT_MAX_ROWS + 1],
     );
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await admin.query('DELETE FROM domain_events WHERE actor_user_id = ANY($1::uuid[])', [users]);
