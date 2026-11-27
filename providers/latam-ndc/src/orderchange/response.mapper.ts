@@ -34,7 +34,7 @@ export function mapOrderChangePaymentResponse(raw: unknown): OrderPayResult {
     return { success: false, warnings: ['No Order element.'], error: 'Respuesta vacía de LATAM' };
   }
 
-  const view = mapOrderView(response, order);
+  const view = mapOrderView(response, order, 'payment');
   const rawStatus = text(order.StatusCode)?.toUpperCase();
 
   if (rawStatus === 'FROZEN') {

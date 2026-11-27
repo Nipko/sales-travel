@@ -206,6 +206,10 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 
 **Cierre posible.** Sonda PR-03 ([07](./07-certificacion.md) §6.8) responde (a).
 
+**Sonda del 2026-11-25.** (a) Sí: con nuestra cuenta de test, `https://api.tbotechnology.in` responde en
+`/HotelAPI` y en `/TBOHolidays_HotelAPI` (`CountryList` 200). `Search` sólo funciona por `/HotelAPI`, la base
+que TBO envió con las credenciales ([01](./01-autenticacion-conectividad-y-errores.md) §2.4). (b) sigue abierta.
+
 **Postura si no responden.** `http` solo con `environment: 'test'`, host exacto `api.tbotechnology.in` y credenciales de test; `https` obligatorio en live; `redirect: 'manual'` ([01](./01-autenticacion-conectividad-y-errores.md) §2.2). La contraseña de test no se reutiliza en ningún otro sistema ([07](./07-certificacion.md) §2.3).
 
 ### Q-04
@@ -221,6 +225,12 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 **Por qué la necesitamos.** Sin host live no hay constante que usar. Decide si `baseUrl` es obligatorio en la cuenta TBO (decisión 2 de [01](./01-autenticacion-conectividad-y-errores.md) §14; [06](./06-seams-integracion-repo.md) §10) y qué valida el panel BYOC.
 
 **Postura si no responden.** `TBO_BASE_URLS` solo tiene `test`. En live, `baseUrl` es obligatorio por cuenta y no tiene valor por defecto; sin él la cuenta queda incompleta (`ProviderAccountIncompleteError`) y nunca se envían credenciales live al host de test ([01](./01-autenticacion-conectividad-y-errores.md) §2.3).
+
+**Dato del 2026-11-25.** TBO envió las credenciales de test con `https://api.tbotechnology.in/HotelAPI`: el path
+`/HotelAPI` también existe en el host de test, así que no identifica live. Conviene preguntar además
+(EN): _"Your test credentials came with `https://api.tbotechnology.in/HotelAPI`, and Search only answers there (it
+times out on `/TBOHolidays_HotelAPI`). Is `/HotelAPI` on this host the current test endpoint, and will live use a
+different host?"_ ([01](./01-autenticacion-conectividad-y-errores.md) §2.4).
 
 ### Q-05
 
@@ -625,6 +635,10 @@ Las preguntas en inglés citan la página física. Desde la p. 64 el pie impreso
 **Por qué la necesitamos.** Decide D-03-D (bloquear, advertir u ocultar esas tarifas) y si el vendedor ve en el listado tarifas que después no puede vender.
 
 **Postura si no responden.** Detección por texto tras el PreBook y bloqueo de la venta suelta hasta que exista una reserva de paquete que vincule vuelo y hotel (D-03-D A, [03](./03-prebook-y-book.md) §2.11).
+
+**Dato del 2026-11-26 (cuenta de test).** Con la cuenta de test entregada (`/HotelAPI`, ver [01](./01-autenticacion-conectividad-y-errores.md) §2.4), **todas** las tarifas que revalidamos traen la cláusula: 20 de 20 PreBook en Bogotá (destino 854, reembolsables y no reembolsables) y las 5 reembolsables probadas en Medellín (4434), para 2 adultos, nacionalidad CO, en USD. El panel las bloquea como corresponde (E2E F14, `apps/web-b2b/e2e/tests/f14-hotel-real.e2e.ts`), pero así no podemos probar ni certificar un Book/Cancel de hotel suelto. Pregunta adicional para TBO:
+
+> On our test account, every rate we PreBook for Colombia (Bogotá and Medellín, 2 adults, guest nationality CO, USD) carries the clause "should be sold only with an airline ticket as part of a package". (a) Is this specific to the test environment or to our account profile? (b) Can you enable standalone (non-package) rates on the test account so we can run the Book and Cancel certification cases?
 
 ### Q-32
 

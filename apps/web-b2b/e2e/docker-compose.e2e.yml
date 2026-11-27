@@ -1,0 +1,98 @@
+# Stack de pruebas E2E del panel: Postgres + Redis + migraciones + API, sin proveedores.
+#
+#   pnpm e2e:up     # genera e2e/.env.e2e si falta y levanta el stack
+#   pnpm e2e:down   # base limpia
+#
+# Las contraseñas y llaves salen de e2e/.env.e2e (fuera de git), que crea e2e/env/generar-secretos.mjs
+# con valores al azar: este archivo no lleva ningún secreto. La base no tiene volumen: `down -v` (o `down`) la descarta entera. El seed de la red lo corre
+# el globalSetup de Playwright (e2e/global-setup.ts) contra el puerto publicado de Postgres.
+name: sales-travel-e2e
+
+services:
+  postgres:
+    # La misma imagen que producción (docker-compose.prod.yml): TimescaleDB + pgvector.
+    image: timescale/timescaledb-ha:pg16-ts2.26
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: '${E2E_PG_PASSWORD:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      POSTGRES_DB: sales_travel
+    volumes:
+      - ../../../infrastructure/hostinger/postgres-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - '55442:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d sales_travel']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '56381:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ../../..
+      dockerfile: tools/db-migrate/Dockerfile
+    restart: 'no'
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: '${E2E_PG_PASSWORD:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      PGDATABASE: sales_travel
+      APP_USER_PASSWORD: '${E2E_APP_USER_PASSWORD:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # La red de prueba va ANTES del api: al arrancar, el api siembra el perfil de gobierno de la plataforma
+  # (GovernanceAdminService.onApplicationBootstrap) y necesita que la plataforma exista. El globalSetup
+  # vuelve a aplicar el mismo seed (idempotente) en cada corrida para resetear MFA y sesiones.
+  seed:
+    image: timescale/timescaledb-ha:pg16-ts2.26
+    restart: 'no'
+    entrypoint: ['psql', '-v', 'ON_ERROR_STOP=1', '-f', '/seed/seed.sql']
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: '${E2E_PG_PASSWORD:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      PGDATABASE: sales_travel
+    volumes:
+      - ./env:/seed:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      APP_VERSION: e2e
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: app_user
+      PGPASSWORD: '${E2E_APP_USER_PASSWORD:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      PGDATABASE: sales_travel
+      JWT_SECRET: '${E2E_JWT_SECRET:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      PROVIDER_CREDENTIALS_KEY: '${E2E_PROVIDER_CREDENTIALS_KEY:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      PROVIDER_PAYLOADS_KEY: '${E2E_PROVIDER_PAYLOADS_KEY:?corre pnpm e2e:up para generar e2e/.env.e2e}'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      APP_WEB_URL: http://localhost:3101
+    ports:
+      - '4102:3000'
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy

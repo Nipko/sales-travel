@@ -24,16 +24,25 @@ export const LATAM_VOIDED_WARNING = '111';
  * - `FROZEN`: el pago falló; la reserva sigue y se puede reintentar con otro medio → `confirmed`.
  * - `CLOSED`: pagada y emitida → `ticketed`, salvo que la lectura diga que se anuló (aviso 111) o
  *   que todos sus tiquetes estén anulados o reembolsados → `cancelled`.
+ * - `CLOSED` SIN ningún tiquete, en una lectura → `cancelled`. Es como vuelve una reserva sin pago
+ *   (BNPL) cancelada con `/order/cancel/bnpl`: sin aviso, sin `TicketDocInfo` y sin plazo de pago
+ *   (sandbox, 2026-11-26, docs/latam-ndc/01 H-09). Una orden emitida siempre trae su tiquete. En la
+ *   respuesta de NUESTRO pago (`source: 'payment'`) `CLOSED` sigue siendo `ticketed`: acabamos de
+ *   pagarla, y ahí la falta del tiquete no dice que esté caída.
  *
  * Antes el valor de LATAM pasaba tal cual y `orders.service` guardaba `CLOSED` en la orden: para
  * la plataforma una orden emitida seguía «sin emitir», con «Cancelar» a la vista.
  */
 export type LatamOrderStatus = 'confirmed' | 'ticketed' | 'cancelled';
 
+/** De dónde sale el `OrderViewRS`: una lectura de la orden o la respuesta a nuestro pago. */
+export type LatamOrderViewSource = 'read' | 'payment';
+
 export function normalizeLatamOrderStatus(
   statusCode: string | undefined,
   documents: readonly TicketDocument[],
   warnings: readonly LatamMessage[],
+  source: LatamOrderViewSource = 'read',
 ): LatamOrderStatus | undefined {
   const code = statusCode?.trim().toUpperCase();
   if (!code) return undefined;
@@ -43,7 +52,8 @@ export function normalizeLatamOrderStatus(
     const allDead =
       documents.length > 0 &&
       documents.every((d) => d.status === 'VOIDED' || d.status === 'REFUNDED');
-    return voided || allDead ? 'cancelled' : 'ticketed';
+    const neverTicketed = source === 'read' && !documents.some((d) => d.kind === 'TICKET');
+    return voided || allDead || neverTicketed ? 'cancelled' : 'ticketed';
   }
   if (code.includes('CANCEL') || code.includes('VOID')) return 'cancelled';
   return undefined;
@@ -75,11 +85,15 @@ export function mapOrderRetrieveResponse(raw: unknown, trackId?: string): OrderV
 }
 
 /** Lectura común de un `OrderViewRS` (retrieve, pago, cambio). */
-export function mapOrderView(response: unknown, order: Record<string, unknown>): OrderView {
+export function mapOrderView(
+  response: unknown,
+  order: Record<string, unknown>,
+  source: LatamOrderViewSource = 'read',
+): OrderView {
   const orderId = text(order.OrderID);
   const warnings = latamWarnings(response);
   const documents = ticketDocuments(response);
-  const status = normalizeLatamOrderStatus(text(order.StatusCode), documents, warnings);
+  const status = normalizeLatamOrderStatus(text(order.StatusCode), documents, warnings, source);
 
   const airlineLocators: AirlineLocator[] = [];
   const bookingId = text(pick(order.BookingRef, 'BookingID'));
