@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { toast } from 'sonner';
 import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
-import { useConfirm } from '../../../components/ui/dialog';
+import { useConfirm, useModalBehavior } from '../../../components/ui/dialog';
 import { seesAdministration } from '../../../lib/nav';
 import {
   Search,
@@ -170,6 +170,11 @@ export function ClientesClient({
 
   // Modal states for customer
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  // Diálogos de verdad (QA-H-48): foco atrapado, Escape cierra y el lector de pantalla los anuncia.
+  const oppPanelRef = useModalBehavior(isAddOppModalOpen, () => setIsAddOppModalOpen(false));
+  const oppTitleId = useId();
+  const travelerPanelRef = useModalBehavior(isAddModalOpen, () => setIsAddModalOpen(false));
+  const travelerTitleId = useId();
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -859,12 +864,23 @@ export function ClientesClient({
       {/* MODAL: NUEVA OPORTUNIDAD */}
       {isAddOppModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+          <div
+            ref={oppPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={oppTitleId}
+            className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2">
+              <h3
+                id={oppTitleId}
+                className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2"
+              >
                 <Kanban className="size-4 text-sky-700" /> Crear Oportunidad de Viaje
               </h3>
               <button
+                type="button"
+                aria-label="Cerrar"
                 onClick={() => setIsAddOppModalOpen(false)}
                 className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >
@@ -967,12 +983,23 @@ export function ClientesClient({
       {/* MODAL: NUEVO VIAJERO */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+          <div
+            ref={travelerPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={travelerTitleId}
+            className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2">
+              <h3
+                id={travelerTitleId}
+                className="text-base font-bold text-[var(--color-fg)] flex items-center gap-2"
+              >
                 <Users className="size-4 text-sky-700" /> Registrar Nuevo Viajero
               </h3>
               <button
+                type="button"
+                aria-label="Cerrar"
                 onClick={() => setIsAddModalOpen(false)}
                 className="text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >

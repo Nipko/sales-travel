@@ -470,6 +470,16 @@
   "fecha": "2026-11-27"
  },
  {
+  "id": "QA-H-48",
+  "gravedad": "Media",
+  "que": "Cuatro modales escritos a mano no eran diálogos: el detalle de una reserva y «Servicios disponibles» en Mis Reservas, y «Nuevo Viajero» y «Nueva Oportunidad» en Clientes. Sin role=\"dialog\" ni aria-modal, sin foco atrapado y sin Escape (el teclado tabulaba detrás); en Clientes la X de cerrar no tenía nombre",
+  "donde": "reservas/page.tsx, clientes/ClientesClient.tsx",
+  "casos": "POS-01, TRV-18",
+  "estado": "en_mac",
+  "nota": "Los cuatro modales usan useModalBehavior: role=\"dialog\", aria-modal, título como nombre, foco atrapado y Escape; la X de Clientes tiene nombre. f42 lo prueba.",
+  "fecha": "2026-11-27"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
