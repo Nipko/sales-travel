@@ -20,7 +20,7 @@ import { API_PASSWORD, PERSONAS, type Persona, type PersonaKey } from './persona
  * límite de 10 logins por minuto.
  */
 
-const PROXY_SECRET = process.env['E2E_INTERNAL_PROXY_SECRET'];
+const PROXY_SECRET = E2E.proxySecret;
 const ANON_IP = '198.51.100.99';
 
 export interface Respuesta<T = unknown> {

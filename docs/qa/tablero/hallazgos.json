@@ -145,8 +145,8 @@
   "que": "/reservas y cotizaciones guardadas sin paginación: tope de 100",
   "donde": "orders.service.ts, quotations.service.ts",
   "casos": "POS-02",
-  "estado": "en_mac",
-  "nota": "limit 1–1000 + hasMore en /orders y /quotations; «Ver más» en Reservas y Cotizaciones guardadas.",
+  "estado": "en_vps",
+  "nota": "limit 1–1000 + hasMore en /orders y /quotations; «Ver más» en Reservas y Cotizaciones guardadas. Desplegado en el VPS el 2026-11-27 (65d0ac7e).",
   "fecha": "2026-11-27"
  },
  {

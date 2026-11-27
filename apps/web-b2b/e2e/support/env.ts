@@ -24,8 +24,14 @@ function pgUrlLocal(): string {
 export const E2E = {
   webUrl: process.env['E2E_WEB_URL'] ?? 'http://localhost:3101',
   apiUrl: process.env['E2E_API_URL'] ?? 'http://localhost:4102',
+  /** Mailpit del stack (INF-3): sólo lectura de lo que la API mandó. */
+  mailUrl: process.env['E2E_MAIL_URL'] ?? 'http://localhost:58025',
   get pgUrl(): string {
     return process.env['E2E_PG_URL'] ?? pgUrlLocal();
+  },
+  /** `INTERNAL_PROXY_SECRET` del stack: con él, cada persona del arnés HTTP llega con su IP. */
+  get proxySecret(): string | undefined {
+    return process.env['E2E_INTERNAL_PROXY_SECRET'] ?? secretoLocal('E2E_INTERNAL_PROXY_SECRET');
   },
   authDir: path.resolve(__dirname, '..', '.auth'),
   seedFile: path.resolve(__dirname, '..', 'env', 'seed.sql'),

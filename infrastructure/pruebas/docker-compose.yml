@@ -165,6 +165,9 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: '1025'
       MAIL_SECURE: 'false'
+      # La API sólo arma el SMTP con usuario y clave (specFromEnv): Mailpit acepta cualquiera.
+      MAIL_USER: pruebas
+      MAIL_PASS: pruebas
       MAIL_FROM: pruebas@planetour.cloud
       MAIL_FROM_NAME: PlaneTour Pruebas
       REDIS_HOST: redis
@@ -199,6 +202,10 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     <<: [*restart, *logging]
+    environment:
+      # Acepta cualquier usuario y clave sin TLS: es un buzón de pruebas que no reenvía nada.
+      MP_SMTP_AUTH_ACCEPT_ANY: 'true'
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
     networks: [edge, internal]
     ports:
       - '127.0.0.1:8025:8025'

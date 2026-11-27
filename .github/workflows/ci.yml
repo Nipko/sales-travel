@@ -149,3 +149,62 @@ jobs:
       # el aislamiento entre tenants.
       - name: Integration + unit tests
         run: pnpm test
+
+  # INF-6 (docs/qa/01 §7): el arnés HTTP (proyecto `api`, una persona por rol) y el panel en
+  # navegador (desktop y 375 px) contra el stack E2E sin proveedores (apps/web-b2b/e2e). Las ventas
+  # `@real` no corren acá: necesitan sandboxes y sólo existen en el ambiente de pruebas de la Mac.
+  # El deploy de main espera a este job (deploy.yml, `ci-gate`).
+  e2e:
+    name: E2E (arnés HTTP y panel)
+    # Fijo: la versión de Playwright del repo no trae Chromium para ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/web-b2b
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build workspace deps del panel
+        run: pnpm --filter "@sales-travel/web-b2b^..." build
+
+      # Postgres (TimescaleDB) → migraciones → seed → API, con secretos al azar del propio runner.
+      - name: Stack E2E
+        run: pnpm e2e:up
+
+      - name: Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Playwright
+        run: pnpm e2e
+
+      - name: Reporte
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web-b2b/playwright-report
+            apps/web-b2b/test-results
+          retention-days: 7
+
+      - name: Logs del stack
+        if: failure()
+        run: docker compose --env-file e2e/.env.e2e -f e2e/docker-compose.e2e.yml logs --no-color --tail 300 api migrate seed
+
+      - name: Bajar el stack
+        if: always()
+        run: pnpm e2e:down

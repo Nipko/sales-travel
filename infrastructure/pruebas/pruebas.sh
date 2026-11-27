@@ -76,6 +76,7 @@ cmd_e2e() {
   E2E_INTERNAL_PROXY_SECRET="${INTERNAL_PROXY_SECRET}" \
   E2E_WEB_URL=http://127.0.0.1:3201 \
   E2E_API_URL=http://127.0.0.1:4201 \
+  E2E_MAIL_URL=http://127.0.0.1:8025 \
   E2E_PG_URL="postgres://postgres:${POSTGRES_ADMIN_PASSWORD}@127.0.0.1:5532/sales_travel" \
     npx playwright test "$@"
 }

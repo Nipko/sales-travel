@@ -89,6 +89,18 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: '6379'
       APP_WEB_URL: http://localhost:3101
+      # El arnés HTTP lo manda con la IP de cada persona (e2e/api/support/cliente.ts): sin él, todas
+      # comparten la IP del runner y el límite de 10 ingresos por minuto.
+      INTERNAL_PROXY_SECRET: '${E2E_INTERNAL_PROXY_SECRET:-}'
+      # Todo el correo cae en Mailpit (INF-3): las pruebas leen el enlace de ahí.
+      MAIL_HOST: mailpit
+      MAIL_PORT: '1025'
+      MAIL_SECURE: 'false'
+      # La API sólo arma el SMTP con usuario y clave (specFromEnv): Mailpit acepta cualquiera.
+      MAIL_USER: e2e
+      MAIL_PASS: e2e
+      MAIL_FROM: e2e@planetour.test
+      MAIL_FROM_NAME: PlaneTour E2E
     ports:
       - '4102:3000'
     depends_on:
@@ -96,3 +108,15 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  # INF-3: el buzón de las pruebas. API en http://localhost:58025 (e2e/support/correo.ts).
+  mailpit:
+    image: axllent/mailpit:v1.27
+    environment:
+      # Acepta cualquier usuario y clave sin TLS: es un buzón de pruebas que no reenvía nada.
+      MP_SMTP_AUTH_ACCEPT_ANY: 'true'
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
+    ports:
+      - '58025:8025'
