@@ -47,9 +47,11 @@ export async function submitCredentials(
   page: Page,
   email: string,
   password = E2E_PASSWORD,
+  /** El login con su `?next=` (p. ej. el de «Ingresar para aceptar» de una invitación). */
+  loginPath = '/login',
 ): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    await page.goto('/login');
+    await page.goto(loginPath);
     await page.getByLabel('Correo electrónico').fill(email);
     await page.getByLabel('Contraseña', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Iniciar sesión' }).click();
