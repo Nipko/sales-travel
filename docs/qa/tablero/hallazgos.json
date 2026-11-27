@@ -420,6 +420,26 @@
   "fecha": "2026-11-27"
  },
  {
+  "id": "QA-H-43",
+  "gravedad": "Media",
+  "que": "Marca blanca: una agencia sin nombre comercial propio salía con el del consolidador en el PDF y el correo de sus cotizaciones (resolve_tenant_branding heredaba el nombre aunque 0030 decía que no)",
+  "donde": "db/migrations/0030",
+  "casos": "AGE-08",
+  "estado": "corregido",
+  "nota": "0100: el nombre comercial es el propio o el nombre legal; logo, colores, soporte y web se siguen heredando. Probado en red-sql.integration.test.ts.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-44",
+  "gravedad": "Baja",
+  "que": "is_admin_user() (0013), sin uso desde 0020, seguía SECURITY DEFINER: «admin en cualquier nodo», peligrosa si se reusa en una política; la guarda de 0099 la dejaba pasar porque un comentario la nombraba",
+  "donde": "db/migrations/0013, security-definer.integration.test.ts",
+  "casos": "SQL-06",
+  "estado": "corregido",
+  "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código.",
+  "fecha": "2026-11-27"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

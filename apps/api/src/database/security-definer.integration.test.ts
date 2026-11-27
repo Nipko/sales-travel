@@ -29,10 +29,21 @@ function codigoDeLaApi(dir = SRC): string {
     if (statSync(p).isDirectory()) {
       if (name !== '__fixtures__' && name !== 'node_modules') out += codigoDeLaApi(p);
     } else if (name.endsWith('.ts') && !name.endsWith('.test.ts')) {
-      out += readFileSync(p, 'utf8');
+      out += sinComentarios(readFileSync(p, 'utf8'));
     }
   }
   return out;
+}
+
+/**
+ * Nombrarla en un comentario no es llamarla: `is_admin_user()` sobrevivió así hasta 0100 (QA-H-44).
+ * Sólo los comentarios que abren línea; un `/*` dentro de un string no corta nada.
+ */
+function sinComentarios(ts: string): string {
+  return ts
+    .replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+    .replace(/^[ \t]*\*.*$/gm, '');
 }
 
 d('guardas SQL en la base migrada', () => {
@@ -119,9 +130,10 @@ d('guardas SQL en la base migrada', () => {
       expect(huerfanas).toEqual([]);
     });
 
-    it('el canje viejo de 0028 ya no existe (QA-H-42)', async () => {
+    it('el canje viejo de 0028 e is_admin_user ya no existen (QA-H-42, QA-H-44)', async () => {
       const { rows } = await pool.query(
-        `SELECT 1 FROM pg_proc WHERE proname IN ('accept_invitation', 'find_pending_invitation')`,
+        `SELECT 1 FROM pg_proc
+          WHERE proname IN ('accept_invitation', 'find_pending_invitation', 'is_admin_user')`,
       );
       expect(rows).toEqual([]);
     });
