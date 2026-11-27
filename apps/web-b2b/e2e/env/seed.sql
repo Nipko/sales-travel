@@ -46,7 +46,20 @@ WITH seed_users(email, name) AS (
     ('admin-a@e2e.test',    'Admin Agencia A'),
     ('mfa-nuevo@e2e.test',  'Admin Sin MFA'),
     ('vendedor-a@e2e.test', 'Vendedor Agencia A'),
-    ('vendedor-b@e2e.test', 'Vendedor Agencia B')
+    ('vendedor-b@e2e.test', 'Vendedor Agencia B'),
+    -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
+    ('api-superadmin@e2e.test',     'API Superadmin'),
+    ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
+    ('api-consolidador@e2e.test',   'API Admin Consolidador'),
+    ('api-admin-a@e2e.test',        'API Admin Agencia A'),
+    ('api-agency-admin-a@e2e.test', 'API Agency Admin A'),
+    ('api-tenant-admin-a@e2e.test', 'API Tenant Admin A'),
+    ('api-vendedor-a@e2e.test',     'API Vendedor A'),
+    ('api-cliente-a@e2e.test',      'API Cliente Final A'),
+    ('api-sin-mfa@e2e.test',        'API Admin Sin MFA'),
+    ('api-vendedor-sub@e2e.test',   'API Vendedor Subagencia'),
+    ('api-admin-b@e2e.test',        'API Admin Agencia B'),
+    ('api-vendedor-b@e2e.test',     'API Vendedor B')
 )
 INSERT INTO users (email, name, password_hash, email_verified_at, password_changed_at)
 SELECT email, name, crypt('E2e-Prueba-2026!', gen_salt('bf', 10)), now(), now() FROM seed_users
@@ -70,20 +83,33 @@ DELETE FROM mfa_challenges     WHERE user_id IN (SELECT id FROM users WHERE emai
 DELETE FROM trusted_devices    WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@e2e.test');
 
 -- ── Membresías ─────────────────────────────────────────────────────────────────────────────────────
-WITH seed_memberships(email, slug, role) AS (
+WITH seed_memberships(email, slug, role, supervised) AS (
   VALUES
-    ('superadmin@e2e.test', 'platform',      'superadmin'),
-    ('admin-a@e2e.test',    'e2e-agencia-a', 'admin'),
-    ('mfa-nuevo@e2e.test',  'e2e-agencia-a', 'admin'),
-    ('vendedor-a@e2e.test', 'e2e-agencia-a', 'vendedor'),
-    ('vendedor-b@e2e.test', 'e2e-agencia-b', 'vendedor')
+    ('superadmin@e2e.test', 'platform',      'superadmin', false),
+    ('admin-a@e2e.test',    'e2e-agencia-a', 'admin',      false),
+    ('mfa-nuevo@e2e.test',  'e2e-agencia-a', 'admin',      false),
+    ('vendedor-a@e2e.test', 'e2e-agencia-a', 'vendedor',   false),
+    ('vendedor-b@e2e.test', 'e2e-agencia-b', 'vendedor', false),
+    ('api-superadmin@e2e.test',     'platform',         'superadmin',         false),
+    ('api-supervisado@e2e.test',    'platform',         'superadmin',         true),
+    ('api-consolidador@e2e.test',   'e2e-consolidador', 'consolidator_admin', false),
+    ('api-admin-a@e2e.test',        'e2e-agencia-a',    'admin',              false),
+    ('api-agency-admin-a@e2e.test', 'e2e-agencia-a',    'agency_admin',       false),
+    ('api-tenant-admin-a@e2e.test', 'e2e-agencia-a',    'tenant_admin',       false),
+    ('api-vendedor-a@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
+    ('api-cliente-a@e2e.test',      'e2e-agencia-a',    'cliente_final',      false),
+    ('api-sin-mfa@e2e.test',        'e2e-agencia-a',    'admin',              false),
+    ('api-vendedor-sub@e2e.test',   'e2e-subagencia',   'vendedor',           false),
+    ('api-admin-b@e2e.test',        'e2e-agencia-b',    'admin',              false),
+    ('api-vendedor-b@e2e.test',     'e2e-agencia-b',    'vendedor',           false)
 )
-INSERT INTO memberships (tenant_id, user_id, role)
-SELECT t.id, u.id, s.role
+INSERT INTO memberships (tenant_id, user_id, role, platform_supervised)
+SELECT t.id, u.id, s.role, s.supervised
   FROM seed_memberships s
   JOIN tenants t ON t.slug = s.slug
   JOIN users   u ON u.email = s.email
 ON CONFLICT (tenant_id, user_id) DO UPDATE
-   SET role = EXCLUDED.role, status = 'active', removed_at = NULL, removed_by = NULL;
+   SET role = EXCLUDED.role, platform_supervised = EXCLUDED.platform_supervised,
+       status = 'active', removed_at = NULL, removed_by = NULL;
 
 COMMIT;

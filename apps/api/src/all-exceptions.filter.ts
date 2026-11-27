@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ExceptionFilter,
   Catch,
   ArgumentsHost,
   HttpException,
   HttpStatus,
   Logger,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { tenantHierarchyHttpError } from './database/tenant-hierarchy-errors.js';
@@ -34,6 +36,59 @@ function machineReason(
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** SQLSTATE de Postgres para un texto que no se puede convertir al tipo pedido (p. ej. `uuid`). */
+const PG_INVALID_TEXT_REPRESENTATION = '22P02';
+
+/**
+ * Un id de ruta mal formado (`/orders/abc`) que llegó hasta la base: Postgres lo rechaza con 22P02 al
+ * convertirlo a `uuid`. Es un error del cliente, no nuestro: 400 `INVALID_ID` (docs/qa/01 QA-H-01).
+ * Antes salía como 500 «error inesperado» en ~16 rutas.
+ *
+ * Sólo si la ruta trae un parámetro que NO es UUID: un 22P02 con todos los parámetros bien formados
+ * es un bug del servidor y sigue siendo 500, para que no se esconda.
+ */
+function malformedIdHttpError(exception: unknown, request: Request): HttpException | undefined {
+  if (typeof exception !== 'object' || exception === null) return undefined;
+  if ((exception as { code?: unknown }).code !== PG_INVALID_TEXT_REPRESENTATION) return undefined;
+  // También la query: `?tenantId=abc` llegaba igual a la base (QA-H-36).
+  const values = [
+    ...Object.values((request.params ?? {}) as Record<string, unknown>),
+    ...Object.values((request.query ?? {}) as Record<string, unknown>),
+  ];
+  if (!values.some((v) => typeof v === 'string' && !UUID.test(v))) return undefined;
+  return new BadRequestException({
+    error: 'Bad Request',
+    message: 'El identificador no es válido.',
+    reason: 'INVALID_ID',
+  });
+}
+
+/**
+ * Los errores del parser del cuerpo (body-parser) no son HttpException: traen `type` y `status`.
+ * Un cuerpo demasiado grande o un JSON roto es un error del cliente, y salía como 500 (QA-H-35).
+ */
+function bodyParserHttpError(exception: unknown): HttpException | undefined {
+  if (typeof exception !== 'object' || exception === null) return undefined;
+  const { type, status } = exception as { type?: unknown; status?: unknown };
+  if (typeof type !== 'string' || typeof status !== 'number') return undefined;
+  if (type === 'entity.too.large')
+    return new PayloadTooLargeException({
+      error: 'Payload Too Large',
+      message: 'El contenido enviado es demasiado grande.',
+      reason: 'PAYLOAD_TOO_LARGE',
+    });
+  if (status >= 400 && status < 500)
+    return new HttpException(
+      {
+        error: 'Bad Request',
+        message: 'No pudimos leer los datos enviados.',
+        reason: 'MALFORMED_BODY',
+      },
+      status,
+    );
+  return undefined;
+}
 
 /** Las marcas que dicen si se puede repetir una reserva. Sólo `true`: su ausencia es "no". */
 const RECONCILIATION_FLAGS = ['duplicateRequest', 'retryForbidden', 'reconciliationRequired'];
@@ -86,7 +141,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const translated =
         tenantHierarchyHttpError(exception) ??
         walletHoldHttpError(exception) ??
-        portfolioHttpError(exception);
+        portfolioHttpError(exception) ??
+        bodyParserHttpError(exception) ??
+        malformedIdHttpError(exception, host.switchToHttp().getRequest<Request>());
       if (translated !== undefined) {
         this.catch(translated, host);
         return;

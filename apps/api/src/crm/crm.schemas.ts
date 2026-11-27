@@ -21,7 +21,20 @@ export const CRM_STAGES = [
 export const SOURCE_CHANNELS = ['WHATSAPP', 'WEB_B2B', 'WEB_B2C', 'MANUAL'] as const;
 
 const StageSchema = z.enum(CRM_STAGES);
-const Dateish = z.union([z.string(), z.date()]).nullable().optional();
+/**
+ * Una fecha que `new Date()` entiende. Sin el refine, «mañana» llegaba a Postgres como
+ * `Invalid Date` y salía un 500 (QA-H-33).
+ */
+export const DateInput = z.union([
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .refine((s) => !Number.isNaN(Date.parse(s)), { message: 'no es una fecha válida' }),
+  z.date(),
+]);
+const Dateish = DateInput.nullable().optional();
 
 export const CreateOpportunitySchema = z
   .object({
@@ -95,7 +108,7 @@ export const CreateTaskSchema = z
     title: z.string().min(1).max(200),
     notes: z.string().max(2000).nullable().optional(),
     kind: z.enum(TASK_KINDS).optional(),
-    dueAt: z.union([z.string(), z.date()]),
+    dueAt: DateInput,
   })
   .strict();
 export type CreateTaskDto = z.infer<typeof CreateTaskSchema>;

@@ -847,6 +847,30 @@ export class OrdersService {
       );
     }
 
+    // Cada pasajero tiene que tener, el día del viaje, la edad de su tipo: si no, la aerolínea le
+    // cobra otra tarifa o rechaza el embarque (docs/qa/01 QA-H-13). ADT 12+, CHD 2–11, INF 0–1.
+    dto.passengers.forEach((passenger, index) => {
+      const age = ageOnDate(passenger.birthdate, dto.searchCriteria.departureDate);
+      const fits =
+        age !== null &&
+        (passenger.paxType === 'ADT'
+          ? age >= 12
+          : passenger.paxType === 'CHD'
+            ? age >= 2 && age <= 11
+            : age >= 0 && age <= 1);
+      if (!fits) {
+        throw new BadRequestException({
+          message: `El pasajero ${index + 1} no tiene la edad de su tipo (${passenger.paxType}) el día del viaje.`,
+          fields: [
+            {
+              field: `passengers.${index}.birthdate`,
+              message: 'la edad no corresponde al tipo de pasajero',
+            },
+          ],
+        });
+      }
+    });
+
     // La edad de cada niño se cotizó en la búsqueda (`C08`, docs/sabre/16) y la aerolínea la
     // controla por la fecha de nacimiento. Si no coinciden, el precio de la oferta no es el que
     // la aerolínea va a cobrar: se corta antes de llamar a nadie y el vendedor vuelve a buscar.

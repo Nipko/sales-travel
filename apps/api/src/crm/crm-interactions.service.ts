@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
+import { currentContext } from '../request-context/request-context.js';
+import { assertCrmReferences } from './crm-references.js';
 
 export interface CreateInteractionDto {
   customerId: string;
@@ -28,8 +30,20 @@ export interface InteractionRow {
 export class CrmInteractionsService {
   constructor(private readonly db: DatabaseService) {}
 
+  /**
+   * El usuario va en el contexto, no sólo el tenant: la RLS del CRM (0031) decide por él qué
+   * oportunidades ve (admin del nodo: todas; vendedor: las suyas y la cola sin asignar). Con
+   * `withTenant` la base no sabía quién pedía y una oportunidad asignada no la veía nadie, ni se
+   * podía crear (QA-H-39).
+   */
+  private contexto(tenantId: string): { userId?: string; tenantId: string } {
+    const userId = currentContext()?.userId;
+    return userId ? { userId, tenantId } : { tenantId };
+  }
+
   async create(tenantId: string, dto: CreateInteractionDto): Promise<InteractionRow> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
       const row = await trx
         .insertInto('crm_interactions')
         .values({
@@ -50,7 +64,7 @@ export class CrmInteractionsService {
   }
 
   async findByCustomer(tenantId: string, customerId: string): Promise<InteractionRow[]> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
       const rows = await trx
         .selectFrom('crm_interactions')
         .selectAll()

@@ -55,6 +55,9 @@ export function ageOnDate(birthdate: string, date: string): number | null {
 export const CHILD_AGE_MIN = 2;
 export const CHILD_AGE_MAX = 11;
 
+/** Pasajeros por reserva, sumando adultos, niños e infantes. */
+export const PAX_TOTAL_MAX = 9;
+
 /** Conteo de pasajeros para una búsqueda (sin datos personales). */
 export const PaxCountSchema = z
   .object({
@@ -72,6 +75,11 @@ export const PaxCountSchema = z
      * asiento paga como un niño. Ausente = todos en brazos.
      */
     infantsWithSeat: z.number().int().min(0).max(9).optional(),
+  })
+  // Nueve por reserva en total, como el formulario (docs/qa/01 QA-H-12): antes cada tipo tenía su
+  // tope de 9 y la API aceptaba 9 adultos + 9 niños.
+  .refine((v) => v.adults + v.children + v.infants <= PAX_TOTAL_MAX, {
+    message: `no more than ${PAX_TOTAL_MAX} passengers in total`,
   })
   .refine((v) => v.infants <= v.adults, {
     message: 'infants must not exceed adults (1 lap infant per adult)',

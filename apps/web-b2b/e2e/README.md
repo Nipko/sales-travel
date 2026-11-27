@@ -102,6 +102,9 @@ para ver el error.
 
 ## Qué falta (Semana 2)
 
+El plan completo de pruebas funcionales (310 casos por área, nivel y ola) está en
+`docs/qa/01-plan-pruebas-funcionales.md`.
+
 - Proveedores falsos activables por env en los registries del api (`apps/api/src/providers/*-provider.registry.ts`),
   alimentados con las fixtures de Sabre y TBO, para que la venta F10–F27 también corra en CI sin sandboxes.
 - F11 (cambio de precio) y F16 (autos), que necesitan el proveedor falso o la IP registrada en AgentCars.

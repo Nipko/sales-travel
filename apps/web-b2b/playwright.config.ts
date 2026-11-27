@@ -13,6 +13,9 @@ import { E2E } from './e2e/support/env';
  * - `@real`: ventas con proveedores reales (Sabre CERT, TBO test, Despegar api-dev). Sólo desktop y
  *   sólo con `E2E_REAL=1`; el stack local de docker-compose.e2e.yml no tiene proveedores.
  *
+ * - `api`: el arnés HTTP (e2e/api/*.api.ts, INF-1 de docs/qa/01). Pega a la API sin navegador, con sus
+ *   propias personas `api-*@e2e.test` (una por rol); no depende de `setup`.
+ *
  * `PW_CHANNEL=chrome` (o `msedge`) usa el navegador instalado en vez del Chromium de Playwright.
  */
 const channel = process.env['PW_CHANNEL'];
@@ -29,7 +32,12 @@ export default defineConfig({
   // `next dev` compila cada ruta la primera vez que se pide (5–15 s).
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],
+    // Lo lee tools/qa/resultados.mjs para pasar los resultados al tablero de QA (docs/qa/estado.json).
+    ['json', { outputFile: 'playwright-report/resultados.json' }],
+  ],
   use: {
     baseURL: E2E.webUrl,
     trace: 'retain-on-failure',
@@ -40,6 +48,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'setup', testMatch: /.*\.setup\.ts$/ },
+    { name: 'api', testMatch: /.*\.api\.ts$/, timeout: 300_000 },
     {
       name: 'desktop',
       dependencies: ['setup'],

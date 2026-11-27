@@ -184,3 +184,43 @@ describe('middleware: st_tenant sigue al tid de la sesión', () => {
     expect(tenantSet(middleware(request('/', jwtWith({ tid: '../x' }))))).toBeNull();
   });
 });
+
+describe('middleware: acciones del panel desde otro origen (QA-H-03)', () => {
+  function action(method: string, headers: Record<string, string>): NextRequest {
+    return new NextRequest(new URL('/api/admin/tenants', ORIGIN), {
+      method,
+      headers: { cookie: `st_session=${jwtExpiringIn(600)}`, ...headers },
+    });
+  }
+
+  it('un POST de un subdominio hermano se corta con 403 CROSS_ORIGIN', async () => {
+    const res = middleware(
+      action('POST', { 'sec-fetch-site': 'same-site', origin: 'https://otro.planetour.cloud' }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ reason: 'CROSS_ORIGIN' });
+  });
+
+  it('sin Sec-Fetch-Site, un Origin de otro host también se corta', () => {
+    const res = middleware(
+      action('DELETE', { origin: 'https://evil.example', host: 'panel.planetour.cloud' }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('el mismo POST desde el panel sigue de largo', () => {
+    const res = middleware(action('POST', { 'sec-fetch-site': 'same-origin' }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('un GET de otro origen no se corta: leer no cambia nada', () => {
+    const res = middleware(action('GET', { 'sec-fetch-site': 'cross-site' }));
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('las rutas /api no pasan por el login del panel', () => {
+    const res = middleware(new NextRequest(new URL('/api/admin/tenants', ORIGIN)));
+    expect(location(res)).toBeNull();
+  });
+});

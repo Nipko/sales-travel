@@ -1,0 +1,452 @@
+[
+ {
+  "id": "QA-H-01",
+  "gravedad": "Media",
+  "que": ":id sin validar como UUID → Postgres 22P02 → 500 en ~10 rutas",
+  "donde": "orders, quotations, customers, crm, packages, pricing, hotels, tenants",
+  "casos": "TRV-08",
+  "estado": "en_mac",
+  "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-02",
+  "gravedad": "Media",
+  "que": "helmet() con valores por defecto: sin CSP ni HSTS propios, contra lo que pide CLAUDE.md",
+  "donde": "apps/api/src/main.ts",
+  "casos": "TRV-14",
+  "estado": "en_mac",
+  "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-03",
+  "gravedad": "Alta",
+  "que": "POST /api/admin/tenants y /move se saltan el chequeo de origen y la reconstrucción del cuerpo del BFF",
+  "donde": "apps/web-b2b/src/app/api/admin/tenants/**",
+  "casos": "TRV-15",
+  "estado": "en_mac",
+  "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN).",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-04",
+  "gravedad": "Baja",
+  "que": "Contraseña >128 en /restablecer dice «enlace usado o venció»",
+  "donde": "restablecer/actions.ts",
+  "casos": "ACC-24",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-05",
+  "gravedad": "Baja",
+  "que": "/verificar muestra el error de la API en inglés",
+  "donde": "verificar/verify-client.tsx",
+  "casos": "ACC-25",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-06",
+  "gravedad": "Baja",
+  "que": "/configuracion sin guarda de rol; al guardar, error genérico que pierde el motivo",
+  "donde": "configuracion/page.tsx",
+  "casos": "AGE-03",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-07",
+  "gravedad": "Media",
+  "que": "Teléfono de soporte no E.164 se guarda (el servidor sólo pide 4–40) y después bloquea reservar hoteles",
+  "donde": "support-contact-card.tsx, branding.schemas.ts",
+  "casos": "AGE-05",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-08",
+  "gravedad": "Baja",
+  "que": "Campo «Dominio personalizado (CNAME)» no guarda nada",
+  "donde": "configuracion/page.tsx",
+  "casos": "AGE-07",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-09",
+  "gravedad": "Baja",
+  "que": "/red sin guarda de página",
+  "donde": "red/page.tsx",
+  "casos": "RED-07",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-10",
+  "gravedad": "Media",
+  "que": "POST /pricing/rules y /pricing/waterfall sin Zod: ruleType malo → 403, negativo se trunca, vertical libre",
+  "donde": "pricing/pricing.controller.ts",
+  "casos": "RED-09",
+  "estado": "en_mac",
+  "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-11",
+  "gravedad": "Media",
+  "que": "Borrar regla de pricing sin confirmación ni manejo de error; el simulador se traga los errores",
+  "donde": "red/page.tsx (PricingModal)",
+  "casos": "RED-10, RED-11",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-12",
+  "gravedad": "Media",
+  "que": "La API no limita el total de pasajeros a 9 (sólo cada tipo)",
+  "donde": "packages/canonical/src/pax.ts",
+  "casos": "VUE-06",
+  "estado": "en_mac",
+  "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden).",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-13",
+  "gravedad": "Alta",
+  "que": "Pasajero de vuelo: sin reglas de caracteres/largo, sin edad vs tipo, pasaporte vencido aceptado, país sin ISO; en el servidor los pasajeros son JSON libre hasta el ACL",
+  "donde": "passenger-form.tsx, orders/dto.ts",
+  "casos": "CHK-09",
+  "estado": "en_mac",
+  "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-14",
+  "gravedad": "Media",
+  "que": "Un 501 al crear se muestra como «Creación incierta» aunque no se envió nada",
+  "donde": "create-order-reconciliation.ts:125",
+  "casos": "CHK-16",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-15",
+  "gravedad": "Media",
+  "que": "/reservas y cotizaciones guardadas sin paginación: tope de 100",
+  "donde": "orders.service.ts, quotations.service.ts",
+  "casos": "POS-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-16",
+  "gravedad": "Baja",
+  "que": "Repricing (LATAM) sólo en la lista de reservas, no en el detalle",
+  "donde": "reservas/page.tsx",
+  "casos": "POS-17",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-17",
+  "gravedad": "Baja",
+  "que": "SABRE_OPERATIONS=refund se acepta pero no hace nada",
+  "donde": "sabre.factory.ts:214",
+  "casos": "SAB-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-18",
+  "gravedad": "Baja",
+  "que": "Sin pestaña «Canceladas» en cotizaciones guardadas",
+  "donde": "cotizaciones/guardadas/page.tsx",
+  "casos": "COT-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-19",
+  "gravedad": "Media",
+  "que": "Clientes: nacimiento, género y nacionalidad fijos y ocultos; editar y borrar sin UI",
+  "donde": "clientes/ClientesClient.tsx",
+  "casos": "CLI-02, CLI-03",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-20",
+  "gravedad": "Media",
+  "que": "Valor estimado de la oportunidad sin pasar a unidades menores",
+  "donde": "clientes/ClientesClient.tsx",
+  "casos": "CLI-06",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-21",
+  "gravedad": "Baja",
+  "que": "Inicio etiqueta consolidator_admin y agency_admin como «Vendedor / Agente»",
+  "donde": "(app)/page.tsx:309",
+  "casos": "INI-04",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-22",
+  "gravedad": "Baja",
+  "que": "/admin/plataforma mira a la persona y /admin/tenants al nodo activo",
+  "donde": "layouts de admin/plataforma y admin/tenants",
+  "casos": "SUP-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-23",
+  "gravedad": "Baja",
+  "que": "Anuncio vencido editable en la UI, rechazado por la API",
+  "donde": "announcements-panel.tsx",
+  "casos": "SUP-06",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-24",
+  "gravedad": "Media",
+  "que": "«Tu cambio quedó como solicitud» (409) se muestra como error salvo en Superadmins",
+  "donde": "Proveedores, Gobierno, Agencias, Usuarios",
+  "casos": "SUP-19",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-25",
+  "gravedad": "Alta",
+  "que": "El superadmin supervisado asigna perfil de gobierno y puestos al crear un nodo sin pasar por la puerta",
+  "donde": "POST /admin/tenants",
+  "casos": "SUP-20",
+  "estado": "en_mac",
+  "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-26",
+  "gravedad": "Baja",
+  "que": "Nota de decisión: BFF 3–500, API 1–500",
+  "donde": "platform-admins.ts (BFF)",
+  "casos": "SUP-21",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-27",
+  "gravedad": "Baja",
+  "que": "Dar acceso supervisado a correo inexistente falla recién al aprobar",
+  "donde": "supervision.service.ts",
+  "casos": "SUP-22",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-28",
+  "gravedad": "Baja",
+  "que": "«Tarifas en otra moneda» cambia sin confirmación",
+  "donde": "foreign-currency-fares-card.tsx",
+  "casos": "SUP-24",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-29",
+  "gravedad": "Alta",
+  "que": "Neto de autos llega del cliente (ya en doc 21 §5.2)",
+  "donde": "cars/*",
+  "casos": "AUT-05",
+  "estado": "confirmado",
+  "nota": "Confirmado leyendo cars.service.ts: el neto que va a AgentCars y la base del precio de venta llegan del navegador. No se puede probar por HTTP hasta que AgentCars registre la IP de la Mac o exista un proveedor falso (INF-4). El arreglo pide volver a consultar la tarifa al proveedor.",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-30",
+  "gravedad": "Alta",
+  "que": "Reservas de hotel Despegar: :id es el id del proveedor y va directo al ACL sin chequear que la reserva sea de la agencia; un id inexistente sale como 502 en vez de 404",
+  "donde": "hotels/despegar-hotel-reservations.service.ts",
+  "casos": "TRV-08, TRV-06",
+  "estado": "confirmado",
+  "nota": "El 502 ya sale como 404 (probado en la Mac). Abierto: las reservas de Despegar no se guardan como órdenes, así que no hay forma de verificar que una reserva sea de la agencia que la pide. Necesita decisión del founder.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-31",
+  "gravedad": "Alta",
+  "que": "CRM: una oportunidad, interacción o tarea acepta el cliente, la oportunidad o el vendedor de OTRA agencia (las FK no miran el tenant)",
+  "donde": "crm/*.service.ts",
+  "casos": "CLI-09",
+  "estado": "en_mac",
+  "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-32",
+  "gravedad": "Alta",
+  "que": "Paquetes: aceptan el cliente de otra agencia, fechas que no existen (2027-02-31) y regreso antes de la ida",
+  "donde": "packages/packages.schemas.ts, packages.service.ts",
+  "casos": "PAQ-04",
+  "estado": "en_mac",
+  "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-33",
+  "gravedad": "Media",
+  "que": "Fechas que no son fecha («mañana», «nunca») en tareas, oportunidades y paquetes terminan en 500",
+  "donde": "crm/crm.schemas.ts, packages/packages.schemas.ts",
+  "casos": "CLI-07, PAQ-04",
+  "estado": "en_mac",
+  "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-34",
+  "gravedad": "Alta",
+  "que": "Logo SVG: sólo se revisaban los primeros 512 bytes y 3 patrones; un script tardío, un onclick, un foreignObject o un href a javascript: pasaban",
+  "donde": "storage/brand-assets.controller.ts",
+  "casos": "AGE-06",
+  "estado": "en_mac",
+  "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-35",
+  "gravedad": "Media",
+  "que": "Límite de cuerpo de Express (100 KB): un logo de más de ~75 KB no se puede subir, y el 413 del parser (o un JSON roto) sale como 500",
+  "donde": "main.ts, all-exceptions.filter.ts",
+  "casos": "AGE-06, NFR-05",
+  "estado": "en_mac",
+  "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-36",
+  "gravedad": "Baja",
+  "que": "Un UUID mal formado en la query (?tenantId=abc) sale como 500",
+  "donde": "all-exceptions.filter.ts",
+  "casos": "RED-13",
+  "estado": "en_mac",
+  "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-37",
+  "gravedad": "Baja",
+  "que": "Borrar una regla de pricing de otro nodo responde 200 {deleted:false}: no borra, pero el panel lo lee como hecho",
+  "donde": "pricing/pricing.controller.ts",
+  "casos": "RED-10",
+  "estado": "en_mac",
+  "nota": "Confirmado: 200 {deleted:false}. Ahora 404.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-38",
+  "gravedad": "Media",
+  "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
+  "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
+  "casos": "AGE-06",
+  "estado": "confirmado",
+  "nota": "Bajado a Media: el panel no usa la subida (el logo se carga como URL), así que hoy no afecta a nadie. Se arregla con QA-M-02 cuando se agregue la subida en Configuración.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-39",
+  "gravedad": "Alta",
+  "que": "CRM: oportunidades e interacciones abrían la transacción sin el usuario (withTenant), así que la RLS de 0031 no sabía quién pedía: una oportunidad asignada no la veía nadie (ni el admin), no se podía crear (500) y desaparecía al asignarla",
+  "donde": "crm/crm-opportunities.service.ts, crm-interactions.service.ts",
+  "casos": "CLI-06, CLI-08",
+  "estado": "en_mac",
+  "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-40",
+  "gravedad": "Alta",
+  "que": "Traspaso de cartera: reassign_portfolio (SECURITY DEFINER) no mira el destino; un admin podía pasar oportunidades y tareas a un vendedor de otra agencia",
+  "donde": "crm/crm-tasks.service.ts",
+  "casos": "CLI-08",
+  "estado": "en_mac",
+  "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-41",
+  "gravedad": "Baja",
+  "que": "Un vendedor que asigna una oportunidad a otro choca contra la RLS y recibe 500; el traspaso a sí mismo respondía 403 en vez de 400",
+  "donde": "crm/crm-opportunities.service.ts, crm-tasks.controller.ts",
+  "casos": "CLI-06, CLI-08",
+  "estado": "en_mac",
+  "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-01",
+  "gravedad": "Mejora",
+  "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
+  "donde": "db/migrations, crm/crm-references.ts",
+  "casos": "CLI-09, PAQ-04",
+  "estado": "propuesta",
+  "nota": "Propuesta para la Ola 3.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-02",
+  "gravedad": "Mejora",
+  "que": "Logos de verdad: volumen persistente, /blobs/* servido por Caddy con Content-Security-Policy: default-src 'none' y nosniff, y después MinIO/S3 detrás del mismo puerto. Cuándo: el próximo deploy al VPS",
+  "donde": "infrastructure/*, storage/*",
+  "casos": "AGE-06",
+  "estado": "propuesta",
+  "nota": "Para cuando se agregue la subida de logo en Configuración (hoy el panel sólo acepta una URL). Arregla QA-H-38.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-03",
+  "gravedad": "Mejora",
+  "que": "Una sola definición de «fecha» y «día de calendario» en packages/validation, usada por CRM, paquetes, cotizaciones, clientes y órdenes (hoy cada módulo tiene la suya)",
+  "donde": "packages/validation",
+  "casos": "CLI-07, PAQ-04",
+  "estado": "propuesta",
+  "nota": "Propuesta; chica, se puede hacer en la próxima tanda.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-04",
+  "gravedad": "Mejora",
+  "que": "Cotizaciones con estados permitidos (borrador → enviada → aceptada/vencida/cancelada) en vez de cualquier transición. Necesita decisión del founder",
+  "donde": "quotations/*",
+  "casos": "COT-03",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión sobre los estados permitidos.",
+  "fecha": "2026-11-27"
+ }
+]

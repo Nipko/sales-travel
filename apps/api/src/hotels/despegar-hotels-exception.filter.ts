@@ -57,6 +57,16 @@ export class DespegarHotelsExceptionFilter implements ExceptionFilter {
       return;
     }
     this.logger.warn(`${err.status} ${err.path}${err.providerCode ? ` ${err.providerCode}` : ''}`);
+    // «Booking does not exist»: el id no corresponde a ninguna reserva de la cuenta. Es un 404 del
+    // pedido, no una caída del proveedor (docs/qa/01 QA-H-30); antes salía 502.
+    if (err.status === 404 || /does not exist|not found/i.test(err.body)) {
+      res.status(HttpStatus.NOT_FOUND).json({
+        statusCode: HttpStatus.NOT_FOUND,
+        error: 'Not Found',
+        message: 'Despegar no tiene una reserva con ese número.',
+      });
+      return;
+    }
     res.status(HttpStatus.BAD_GATEWAY).json({
       statusCode: HttpStatus.BAD_GATEWAY,
       error: 'Bad Gateway',

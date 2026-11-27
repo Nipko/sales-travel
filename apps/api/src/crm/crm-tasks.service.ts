@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { currentContext } from '../request-context/request-context.js';
+import { assertCrmReferences } from './crm-references.js';
 import type { CrmTaskKind } from './crm.schemas.js';
 
 export interface CrmTaskRow {
@@ -42,6 +43,7 @@ export class CrmTasksService {
   async create(tenantId: string, input: CreateTaskInput): Promise<CrmTaskRow> {
     const userId = currentContext()?.userId ?? null;
     return this.db.withRequestContext({ userId: userId ?? undefined, tenantId }, async (trx) => {
+      await assertCrmReferences(trx, tenantId, input);
       const row = await trx
         .insertInto('crm_tasks')
         .values({
@@ -108,6 +110,11 @@ export class CrmTasksService {
     fromUserId: string,
     toUserId: string,
   ): Promise<{ opportunities: number; tasks: number }> {
+    // `reassign_portfolio` es SECURITY DEFINER y no mira a quién se traspasa: el destino tiene que
+    // ser del equipo del nodo, o la cartera salía de la agencia (QA-H-40).
+    await this.db.withRequestContext({ tenantId }, (trx) =>
+      assertCrmReferences(trx, tenantId, { assignedUserId: toUserId }),
+    );
     const res = await sql<{ opportunities: number; tasks: number }>`
       SELECT * FROM reassign_portfolio(${tenantId}::uuid, ${fromUserId}::uuid, ${toUserId}::uuid)
     `.execute(this.db.db);

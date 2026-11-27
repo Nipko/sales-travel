@@ -28,6 +28,31 @@ export const PACKAGE_STATUSES = ['draft', 'sent', 'accepted', 'expired'] as cons
 /** Tope del snapshot de presentación de un ítem: alcanza para un itinerario y unas fotos. */
 const MAX_RAW_DETAILS_BYTES = 64 * 1024;
 
+/** `YYYY-MM-DD` que existe en el calendario: «2027-02-31» no pasa (QA-H-32). */
+const CalendarDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((s) => new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s, {
+    message: 'esa fecha no existe',
+  });
+
+/** Una fecha que `new Date()` entiende; sin esto, «nunca» terminaba en un 500 (QA-H-33). */
+const DateInput = z.union([
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .refine((s) => !Number.isNaN(Date.parse(s)), { message: 'no es una fecha válida' }),
+  z.date(),
+]);
+
+/** Código ISO 4217. Se acepta en minúsculas y se guarda en mayúsculas. */
+const Currency = z
+  .string()
+  .regex(/^[A-Za-z]{3}$/, 'moneda ISO de 3 letras')
+  .transform((c) => c.toUpperCase());
+
 /** Lo que se buscó: presentación de la cotización (portada, itinerario). No se re-ejecuta. */
 export const PackageSearchCriteriaSchema = z
   .object({
@@ -35,8 +60,8 @@ export const PackageSearchCriteriaSchema = z
     originLabel: z.string().max(120).optional(),
     destination: z.string().max(80).optional(),
     destinationLabel: z.string().max(120).optional(),
-    departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    departureDate: CalendarDay,
+    returnDate: CalendarDay,
     rooms: z
       .array(
         z.object({
@@ -48,7 +73,11 @@ export const PackageSearchCriteriaSchema = z
       .max(6),
     includes: z.array(z.enum(PACKAGE_VERTICALS)).max(PACKAGE_VERTICALS.length).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.returnDate >= v.departureDate, {
+    message: 'el regreso no puede ser antes de la ida',
+    path: ['returnDate'],
+  });
 export type PackageSearchCriteria = z.infer<typeof PackageSearchCriteriaSchema>;
 
 export const PackageItemInputSchema = z
@@ -76,7 +105,7 @@ export const PackageItemInputSchema = z
      * La moneda del precio. Un paquete se arma en UNA moneda (no hay tasas de cambio en la
      * plataforma): un ítem en otra se rechaza en vez de sumarse como si fueran iguales.
      */
-    currency: z.string().length(3).optional(),
+    currency: Currency.optional(),
     /** Piso de venta del proveedor (hoteles, RF-12), en la moneda del ítem. */
     minimumSellingMinor: z.number().int().min(0).optional(),
   })
@@ -90,10 +119,10 @@ export type AddPackageItemDto = PackageItemInput;
 export const CreatePackageSchema = z
   .object({
     title: z.string().min(1).max(200),
-    currency: z.string().length(3),
+    currency: Currency,
     customerId: z.string().uuid().nullable().optional(),
     notes: z.string().max(4000).nullable().optional(),
-    expiresAt: z.union([z.string(), z.date()]).optional(),
+    expiresAt: DateInput.optional(),
     searchCriteria: PackageSearchCriteriaSchema.optional(),
     showBreakdown: z.boolean().optional(),
     /** El paquete con sus servicios en una sola transacción: o se guarda entero o nada. */
@@ -109,7 +138,7 @@ export const UpdatePackageSchema = z
     customerId: z.string().uuid().nullable().optional(),
     status: z.enum(PACKAGE_STATUSES).optional(),
     showBreakdown: z.boolean().optional(),
-    expiresAt: z.union([z.string(), z.date()]).optional(),
+    expiresAt: DateInput.optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'nada para actualizar' });

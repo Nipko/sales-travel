@@ -157,6 +157,24 @@ export class TenantsService {
     private readonly enablement: ProviderEnablementStore,
   ) {}
 
+  /** Superadmin supervisado: su membership de superadmin en la plataforma lleva `platform_supervised`. */
+  private async isSupervisedSuperadmin(userId: string): Promise<boolean> {
+    // Con el contexto del usuario: memberships tiene RLS y sin él la consulta no vería nada.
+    const rows = await this.db.withRequestContext({ userId }, (trx) =>
+      trx
+        .selectFrom('memberships as m')
+        .innerJoin('tenants as t', 't.id', 'm.tenant_id')
+        .select('m.platform_supervised')
+        .where('m.user_id', '=', userId)
+        .where('m.role', '=', 'superadmin')
+        .where('m.status', '=', 'active')
+        .where('t.tenant_type', '=', 'platform')
+        .execute(),
+    );
+    // Con una membership plena alcanza para ser pleno (mismo criterio que standingWithin).
+    return rows.length > 0 && rows.every((r) => r.platform_supervised);
+  }
+
   /** La raíz `platform` (Planetour). La base admite una sola (0050). */
   async platformRootId(): Promise<string | undefined> {
     const row = await this.db.db
@@ -193,6 +211,19 @@ export class TenantsService {
     // El gobierno de proveedores y formas de pago es sólo del superadmin (0089).
     if (input.governanceProfileId !== undefined && !superadmin) {
       throw new ForbiddenException('Sólo el superadmin asigna el perfil de gobierno de un nodo.');
+    }
+    // Asignar un perfil a un nodo existente es `governance.*`, que el supervisado sólo puede pedir
+    // (queda como solicitud que aprueba un pleno). Al crear el nodo se saltaba esa puerta
+    // (docs/qa/01 QA-H-25): ahora crea el nodo sin perfil y lo pide después desde Gobierno.
+    if (
+      input.governanceProfileId !== undefined &&
+      (await this.isSupervisedSuperadmin(actorUserId))
+    ) {
+      throw new ForbiddenException({
+        message:
+          'Como superadmin supervisado, crea el nodo sin perfil de gobierno y asígnalo después desde Gobierno: queda como solicitud para que la apruebe un superadmin pleno.',
+        reason: 'SUPERVISED_GOVERNANCE_NEEDS_APPROVAL',
+      });
     }
 
     const parentId = input.parentTenantId ?? (superadmin ? await this.platformRootId() : undefined);

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { type UpdateObject } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
+import { currentContext } from '../request-context/request-context.js';
 import { type DB, type CrmOpportunityStage } from '../database/database.types.js';
+import { assertCanAssign, assertCrmReferences } from './crm-references.js';
 
 export interface CreateOpportunityDto {
   customerId: string;
@@ -68,8 +70,21 @@ export interface OpportunityRow {
 export class CrmOpportunitiesService {
   constructor(private readonly db: DatabaseService) {}
 
+  /**
+   * El usuario va en el contexto, no sólo el tenant: la RLS del CRM (0031) decide por él qué
+   * oportunidades ve (admin del nodo: todas; vendedor: las suyas y la cola sin asignar). Con
+   * `withTenant` la base no sabía quién pedía y una oportunidad asignada no la veía nadie, ni se
+   * podía crear (QA-H-39).
+   */
+  private contexto(tenantId: string): { userId?: string; tenantId: string } {
+    const userId = currentContext()?.userId;
+    return userId ? { userId, tenantId } : { tenantId };
+  }
+
   async create(tenantId: string, dto: CreateOpportunityDto): Promise<OpportunityRow> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
+      await assertCanAssign(trx, currentContext()?.userId, dto.assignedUserId);
       const row = await trx
         .insertInto('crm_opportunities')
         .values({
@@ -96,7 +111,7 @@ export class CrmOpportunitiesService {
   }
 
   async findAll(tenantId: string, stage?: CrmOpportunityStage): Promise<OpportunityRow[]> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
       let query = trx
         .selectFrom('crm_opportunities')
         .innerJoin('customers', 'customers.id', 'crm_opportunities.customer_id')
@@ -136,7 +151,7 @@ export class CrmOpportunitiesService {
   }
 
   async findById(tenantId: string, id: string): Promise<OpportunityRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
       const row = await trx
         .selectFrom('crm_opportunities')
         .innerJoin('customers', 'customers.id', 'crm_opportunities.customer_id')
@@ -177,7 +192,9 @@ export class CrmOpportunitiesService {
     id: string,
     dto: UpdateOpportunityDto,
   ): Promise<OpportunityRow | undefined> {
-    return this.db.withTenant(tenantId, async (trx) => {
+    return this.db.withRequestContext(this.contexto(tenantId), async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
+      await assertCanAssign(trx, currentContext()?.userId, dto.assignedUserId);
       const updateData: UpdateObject<DB, 'crm_opportunities'> = {};
       if (dto.assignedUserId !== undefined) updateData.assigned_user_id = dto.assignedUserId;
       if (dto.stage !== undefined) updateData.stage = dto.stage;
