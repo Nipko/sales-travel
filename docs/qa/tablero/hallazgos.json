@@ -475,7 +475,7 @@
   "que": "Cuatro modales escritos a mano no eran diálogos: el detalle de una reserva y «Servicios disponibles» en Mis Reservas, y «Nuevo Viajero» y «Nueva Oportunidad» en Clientes. Sin role=\"dialog\" ni aria-modal, sin foco atrapado y sin Escape (el teclado tabulaba detrás); en Clientes la X de cerrar no tenía nombre",
   "donde": "reservas/page.tsx, clientes/ClientesClient.tsx",
   "casos": "POS-01, TRV-18",
-  "estado": "en_mac",
+  "estado": "en_vps",
   "nota": "Los cuatro modales usan useModalBehavior: role=\"dialog\", aria-modal, título como nombre, foco atrapado y Escape; la X de Clientes tiene nombre. f42 lo prueba.",
   "fecha": "2026-11-27"
  },
