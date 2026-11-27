@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canInviteNodeAdmin,
   ANONYMOUS_ACTOR,
   REMOVE_FROM_NODE_LABEL,
   canRemoveFromNode,
@@ -623,5 +624,20 @@ describe('forzar el cambio de contraseña', () => {
     expect(PASSWORD_RESET_PENDING_HINT).toBe(
       'No puede ingresar hasta que elija una contraseña nueva con el enlace que le enviamos a su correo.',
     );
+  });
+});
+
+describe('canInviteNodeAdmin', () => {
+  it('sólo quien está por encima de admin le da un admin al nodo nuevo', () => {
+    expect(canInviteNodeAdmin('admin', false)).toBe(false);
+    expect(canInviteNodeAdmin('vendedor', false)).toBe(false);
+    expect(canInviteNodeAdmin('agency_admin', false)).toBe(true);
+    expect(canInviteNodeAdmin('tenant_admin', false)).toBe(true);
+    expect(canInviteNodeAdmin('consolidator_admin', false)).toBe(true);
+  });
+
+  it('el superadmin sí; sin rol conocido decide la API', () => {
+    expect(canInviteNodeAdmin('admin', true)).toBe(true);
+    expect(canInviteNodeAdmin(undefined, false)).toBe(true);
   });
 });

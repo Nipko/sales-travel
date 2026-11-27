@@ -19,7 +19,15 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
 import { NoAccess } from '../../../components/layout/no-access';
 import { useViewer } from '../../../components/layout/viewer-context';
@@ -85,6 +93,7 @@ import {
   statusLabel,
   type CreatableKind,
 } from '../../../lib/tenant-network';
+import { canInviteNodeAdmin } from '../../../lib/tenant-admin-team';
 
 interface NetworkTenant {
   id: string;
@@ -186,7 +195,8 @@ interface SalesRow {
 
 export default function RedPage() {
   const { superadmin } = useViewer();
-  const administra = superadmin || seesAdministration(useAgencySwitcher().current?.role);
+  const rolActual = useAgencySwitcher().current?.role;
+  const administra = superadmin || seesAdministration(rolActual);
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
@@ -317,14 +327,17 @@ export default function RedPage() {
               >
                 <Percent className="size-3.5" />
                 Reglas
+                <span className="sr-only"> de {t.name}</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setCredsFor(t)}>
                 <KeyRound className="size-3.5" />
                 Credenciales
+                <span className="sr-only"> de {t.name}</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setEmailFor(t)}>
                 <Mail className="size-3.5" />
                 Email
+                <span className="sr-only"> de {t.name}</span>
               </Button>
               <Button asChild variant="ghost" size="sm" className="gap-1.5">
                 <Link href={`/admin/usuarios?tenant=${encodeURIComponent(t.id)}`}>
@@ -461,6 +474,7 @@ export default function RedPage() {
         <CreateAgencyModal
           parent={createFor}
           superadmin={superadmin}
+          actorRole={rolActual}
           onClose={() => setCreateFor(null)}
           onCreated={() => {
             setCreateFor(null);
@@ -495,17 +509,20 @@ export default function RedPage() {
 function CreateAgencyModal({
   parent,
   superadmin,
+  actorRole,
   onClose,
   onCreated,
 }: {
   parent: NetworkTenant;
   superadmin: boolean;
+  actorRole: string | undefined;
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const kinds = creatableKinds(parent, { superadmin });
+  const invitaAdmin = canInviteNodeAdmin(actorRole, superadmin);
   const [form, setForm] = useState<CreateForm>({
     name: '',
     slug: '',
@@ -564,7 +581,7 @@ function CreateAgencyModal({
           ...createFields(kind),
           parentTenantId: parent.id,
           // Vacío es "sin admin": no se manda, en vez de un '' que el API tenga que interpretar.
-          ...(adminEmail.trim() ? { adminEmail: adminEmail.trim() } : {}),
+          ...(invitaAdmin && adminEmail.trim() ? { adminEmail: adminEmail.trim() } : {}),
           ...(seats === undefined ? {} : { concurrentSeats: seats }),
           ...(idle === undefined ? {} : { idleTimeoutMinutes: idle }),
         }),
@@ -686,25 +703,37 @@ function CreateAgencyModal({
             />
           </div>
         ) : null}
-        <div className="sm:col-span-2">
-          <div className="my-1 border-t border-[var(--color-border)]" />
-          <p className="text-xs font-medium text-[var(--color-fg-muted)]">
-            Admin de la agencia (opcional)
-          </p>
-          <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
-            Le enviamos una invitación por correo: al aceptarla elige su propia contraseña.
-          </p>
-        </div>
-        <Field className="sm:col-span-2" label="Email admin">
-          <input
-            type="email"
-            autoComplete="off"
-            value={form.adminEmail}
-            onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
-            placeholder="admin@agencia.com"
-            className={inputClass}
-          />
-        </Field>
+        {invitaAdmin ? (
+          <>
+            <div className="sm:col-span-2">
+              <div className="my-1 border-t border-[var(--color-border)]" />
+              <p className="text-xs font-medium text-[var(--color-fg-muted)]">
+                Admin de la agencia (opcional)
+              </p>
+              <p className="mt-0.5 text-xs text-[var(--color-fg-muted)]">
+                Le enviamos una invitación por correo: al aceptarla elige su propia contraseña.
+              </p>
+            </div>
+            <Field className="sm:col-span-2" label="Email admin">
+              <input
+                type="email"
+                autoComplete="off"
+                value={form.adminEmail}
+                onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
+                placeholder="admin@agencia.com"
+                className={inputClass}
+              />
+            </Field>
+          </>
+        ) : (
+          <div className="sm:col-span-2">
+            <div className="my-1 border-t border-[var(--color-border)]" />
+            <p className="text-xs text-[var(--color-fg-muted)]">
+              Tu rol no alcanza para darle un admin al nodo nuevo: créalo y pide a quien administra
+              tu red que invite a su admin desde Equipo.
+            </p>
+          </div>
+        )}
       </div>
       {error && <ErrorBox>{error}</ErrorBox>}
     </Dialog>
@@ -2178,12 +2207,21 @@ function Field({
   children: React.ReactNode;
   className?: string;
 }) {
+  const id = useId();
+  const control = controlConId(children, id);
   return (
     <div className={cn('space-y-1', className)}>
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={control ? id : undefined}>{label}</Label>
+      {control ?? children}
     </div>
   );
+}
+
+/** Ata la etiqueta al campo (WCAG 1.3.1): sin `for`/`id` el lector de pantalla no lo nombra. */
+function controlConId(children: React.ReactNode, id: string): React.ReactElement | null {
+  if (!isValidElement<{ id?: string }>(children)) return null;
+  if (!['input', 'select', 'textarea'].includes(children.type as string)) return null;
+  return cloneElement(children, { id: children.props.id ?? id });
 }
 
 /** `role="alert"` para que el error se anuncie al aparecer: sin eso sólo lo ve quien mira. */

@@ -330,6 +330,15 @@ export function grantableRoles<T extends { readonly value: string }>(
   return roles.filter((r) => roleRank(r.value) < actor.rank);
 }
 
+/**
+ * ¿Puede darle un admin al nodo que crea? El admin inicial más bajo es `admin` y sólo lo da quien está
+ * estrictamente por encima (API `initialAdminRole`). Sin rol conocido, decide la API.
+ */
+export function canInviteNodeAdmin(actorRole: string | undefined, superadmin: boolean): boolean {
+  if (superadmin || actorRole === undefined) return true;
+  return roleRank(actorRole) > roleRank('admin');
+}
+
 export interface ConfirmCopy {
   readonly title: string;
   readonly description: string;
