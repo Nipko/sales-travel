@@ -479,20 +479,20 @@
       "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana. Desplegado en el VPS el 2026-11-27 (0bc7b228)."
     },
     "QA-H-43": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "0100: el nombre comercial es el propio o el nombre legal; logo, colores, soporte y web se siguen heredando. Probado en red-sql.integration.test.ts."
+      "nota": "0100: el nombre comercial es el propio o el nombre legal; logo, colores, soporte y web se siguen heredando. Probado en red-sql.integration.test.ts. Desplegado en el VPS el 2026-11-27 (0101bebc)."
     },
     "QA-H-44": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código."
+      "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código. Desplegado en el VPS el 2026-11-27 (0101bebc)."
     }
   },
   "ultimaCorrida": {
     "ambiente": "mac",
-    "fecha": "2026-11-27T04:37:16.507Z",
-    "tests": 40,
+    "fecha": "2026-11-27T05:14:25.567Z",
+    "tests": 41,
     "fallan": 0
   }
 }
