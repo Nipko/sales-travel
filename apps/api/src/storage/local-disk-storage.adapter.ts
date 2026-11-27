@@ -26,7 +26,9 @@ export class LocalDiskStorageAdapter implements BlobStoragePort {
 
   constructor() {
     this.root = resolve(process.env['BLOB_STORAGE_DIR'] ?? '/var/lib/sales-travel/blobs');
-    this.publicBaseUrl = (process.env['BLOB_PUBLIC_BASE_URL'] ?? '/blobs').replace(/\/$/, '');
+    // Los sirve la API (BlobsController, QA-H-38): en producción, la URL absoluta del api
+    // (https://api.planetour.cloud/api/blobs) para que funcione también en PDFs y correos.
+    this.publicBaseUrl = (process.env['BLOB_PUBLIC_BASE_URL'] ?? '/api/blobs').replace(/\/$/, '');
   }
 
   /**

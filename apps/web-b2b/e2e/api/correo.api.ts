@@ -17,7 +17,11 @@ test.describe.configure({ mode: 'serial' });
 
 const EMAIL = 'api-bloqueo@e2e.test';
 const NUEVA = 'Restablecida-E2E-2026!';
-const ip = () => `198.51.100.${10 + Math.floor(Math.random() * 40)}`;
+/**
+ * Una IP propia por caso y rangos que no se pisan: ACC-22 gasta el cupo de 5 pedidos por minuto
+ * de la suya, y si ACC-05 sorteaba la misma, recibía 429.
+ */
+const ip = (desde: number) => `198.51.100.${desde + Math.floor(Math.random() * 20)}`;
 
 test.beforeEach(async () => {
   test.skip(!(await hayBuzon()), 'este stack no tiene Mailpit (INF-3)');
@@ -27,7 +31,7 @@ const olvide = (api: Api, email: string) =>
   api.post<{ sent?: boolean }>('/auth/forgot-password', { email });
 
 test('ACC-22 olvidé mi contraseña: misma respuesta exista o no, enlace sólo al que existe, 6.º → 429', async () => {
-  const api = await anonimoDesde(ip());
+  const api = await anonimoDesde(ip(10));
   const desde = new Date(Date.now() - 1_000);
   const nadie = `nadie-${Date.now()}@e2e.test`;
 
@@ -54,7 +58,7 @@ test('ACC-05 restablecer con el enlace del correo desbloquea la cuenta', async (
       WHERE email = $1`,
     [EMAIL],
   );
-  const api = await anonimoDesde(ip());
+  const api = await anonimoDesde(ip(30));
   const bloqueada = await api.post('/auth/login', { email: EMAIL, password: API_PASSWORD });
   expect(bloqueada.status, 'bloqueada no entra').toBe(401);
 

@@ -35,8 +35,8 @@
   "que": "Contraseña >128 en /restablecer dice «enlace usado o venció»",
   "donde": "restablecer/actions.ts",
   "casos": "ACC-24",
-  "estado": "corregido",
-  "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció».",
+  "estado": "en_vps",
+  "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció». En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -45,8 +45,8 @@
   "que": "/verificar muestra el error de la API en inglés",
   "donde": "verificar/verify-client.tsx",
   "casos": "ACC-25",
-  "estado": "corregido",
-  "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español.",
+  "estado": "en_vps",
+  "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -55,8 +55,8 @@
   "que": "/configuracion sin guarda de rol; al guardar, error genérico que pierde el motivo",
   "donde": "configuracion/page.tsx",
   "casos": "AGE-03",
-  "estado": "corregido",
-  "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor.",
+  "estado": "en_vps",
+  "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -65,8 +65,8 @@
   "que": "Teléfono de soporte no E.164 se guarda (el servidor sólo pide 4–40) y después bloquea reservar hoteles",
   "donde": "support-contact-card.tsx, branding.schemas.ts",
   "casos": "AGE-05",
-  "estado": "corregido",
-  "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice.",
+  "estado": "en_vps",
+  "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -75,8 +75,8 @@
   "que": "Campo «Dominio personalizado (CNAME)» no guarda nada",
   "donde": "configuracion/page.tsx",
   "casos": "AGE-07",
-  "estado": "corregido",
-  "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios.",
+  "estado": "en_vps",
+  "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -85,8 +85,8 @@
   "que": "/red sin guarda de página",
   "donde": "red/page.tsx",
   "casos": "RED-07",
-  "estado": "corregido",
-  "nota": "/red muestra «sin acceso» a quien no administra.",
+  "estado": "en_vps",
+  "nota": "/red muestra «sin acceso» a quien no administra. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -105,8 +105,8 @@
   "que": "Borrar regla de pricing sin confirmación ni manejo de error; el simulador se traga los errores",
   "donde": "red/page.tsx (PricingModal)",
   "casos": "RED-10, RED-11",
-  "estado": "corregido",
-  "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo.",
+  "estado": "en_vps",
+  "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -135,8 +135,8 @@
   "que": "Un 501 al crear se muestra como «Creación incierta» aunque no se envió nada",
   "donde": "create-order-reconciliation.ts:125",
   "casos": "CHK-16",
-  "estado": "corregido",
-  "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta».",
+  "estado": "en_vps",
+  "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta». En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -155,8 +155,8 @@
   "que": "Repricing (LATAM) sólo en la lista de reservas, no en el detalle",
   "donde": "reservas/page.tsx",
   "casos": "POS-17",
-  "estado": "corregido",
-  "nota": "Repricing también en el detalle de la reserva.",
+  "estado": "en_vps",
+  "nota": "Repricing también en el detalle de la reserva. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -175,8 +175,8 @@
   "que": "Sin pestaña «Canceladas» en cotizaciones guardadas",
   "donde": "cotizaciones/guardadas/page.tsx",
   "casos": "COT-02",
-  "estado": "corregido",
-  "nota": "Pestaña «Canceladas» en Cotizaciones guardadas.",
+  "estado": "en_vps",
+  "nota": "Pestaña «Canceladas» en Cotizaciones guardadas. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -185,8 +185,8 @@
   "que": "Clientes: nacimiento, género y nacionalidad fijos y ocultos; editar y borrar sin UI",
   "donde": "clientes/ClientesClient.tsx",
   "casos": "CLI-02, CLI-03",
-  "estado": "corregido",
-  "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra.",
+  "estado": "en_vps",
+  "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -195,8 +195,8 @@
   "que": "Valor estimado de la oportunidad sin pasar a unidades menores",
   "donde": "clientes/ClientesClient.tsx",
   "casos": "CLI-06",
-  "estado": "corregido",
-  "nota": "El valor estimado de la oportunidad se manda en centavos.",
+  "estado": "en_vps",
+  "nota": "El valor estimado de la oportunidad se manda en centavos. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -205,8 +205,8 @@
   "que": "Inicio etiqueta consolidator_admin y agency_admin como «Vendedor / Agente»",
   "donde": "(app)/page.tsx:309",
   "casos": "INI-04",
-  "estado": "corregido",
-  "nota": "Inicio usa los mismos nombres de rol que Equipo.",
+  "estado": "en_vps",
+  "nota": "Inicio usa los mismos nombres de rol que Equipo. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -215,8 +215,8 @@
   "que": "/admin/plataforma mira a la persona y /admin/tenants al nodo activo",
   "donde": "layouts de admin/plataforma y admin/tenants",
   "casos": "SUP-02",
-  "estado": "corregido",
-  "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma.",
+  "estado": "en_vps",
+  "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -225,8 +225,8 @@
   "que": "Anuncio vencido editable en la UI, rechazado por la API",
   "donde": "announcements-panel.tsx",
   "casos": "SUP-06",
-  "estado": "corregido",
-  "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar).",
+  "estado": "en_vps",
+  "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar). En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -235,8 +235,8 @@
   "que": "«Tu cambio quedó como solicitud» (409) se muestra como error salvo en Superadmins",
   "donde": "Proveedores, Gobierno, Agencias, Usuarios",
   "casos": "SUP-19",
-  "estado": "corregido",
-  "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios.",
+  "estado": "en_vps",
+  "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -275,8 +275,8 @@
   "que": "«Tarifas en otra moneda» cambia sin confirmación",
   "donde": "foreign-currency-fares-card.tsx",
   "casos": "SUP-24",
-  "estado": "corregido",
-  "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar.",
+  "estado": "en_vps",
+  "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar. En el VPS el 2026-11-27 (4342cf92).",
   "fecha": "2026-11-27"
  },
  {
@@ -375,8 +375,8 @@
   "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
   "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
   "casos": "AGE-06",
-  "estado": "confirmado",
-  "nota": "Bajado a Media: el panel no usa la subida (el logo se carga como URL), así que hoy no afecta a nadie. Se arregla con QA-M-02 cuando se agregue la subida en Configuración.",
+  "estado": "en_mac",
+  "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts.",
   "fecha": "2026-11-27"
  },
  {
@@ -475,8 +475,8 @@
   "que": "Logos de verdad: volumen persistente, /blobs/* servido por Caddy con Content-Security-Policy: default-src 'none' y nosniff, y después MinIO/S3 detrás del mismo puerto. Cuándo: el próximo deploy al VPS",
   "donde": "infrastructure/*, storage/*",
   "casos": "AGE-06",
-  "estado": "propuesta",
-  "nota": "Para cuando se agregue la subida de logo en Configuración (hoy el panel sólo acepta una URL). Arregla QA-H-38.",
+  "estado": "corregido",
+  "nota": "Hecho con la API sirviendo los blobs en vez de Caddy (mismas cabeceras) y un volumen persistente. MinIO/S3 sigue siendo otro adaptador del mismo puerto, cuando se aprovisione.",
   "fecha": "2026-11-27"
  },
  {

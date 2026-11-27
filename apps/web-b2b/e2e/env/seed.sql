@@ -53,6 +53,10 @@ WITH seed_users(email, name) AS (
     ('mfa-nuevo@e2e.test',  'Admin Sin MFA'),
     ('vendedor-a@e2e.test', 'Vendedor Agencia A'),
     ('vendedor-b@e2e.test', 'Vendedor Agencia B'),
+    -- Los casos de ingreso del panel (?next=, ?motivo=): entra y sale sin tocar la sesión de otros.
+    ('acceso@e2e.test',     'Vendedor Acceso'),
+    -- ACC-15 en el panel: tiene que cambiar la contraseña (aparte de api-reset, que usa EQU-10).
+    ('cambio@e2e.test',     'Vendedor Cambio de Clave'),
     -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
     ('api-superadmin@e2e.test',     'API Superadmin'),
     ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
@@ -115,6 +119,8 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('api-vendedor-sub@e2e.test',   'e2e-subagencia',   'vendedor',           false),
     ('api-admin-b@e2e.test',        'e2e-agencia-b',    'admin',              false),
     ('api-vendedor-b@e2e.test',     'e2e-agencia-b',    'vendedor',           false),
+    ('acceso@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
+    ('cambio@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
     ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
     ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
     ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
@@ -135,7 +141,8 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE
 
 -- Estados de los casos especiales (después de dejar todo activo arriba).
 UPDATE users SET status = 'suspended' WHERE email = 'api-suspendido@e2e.test';
-UPDATE users SET password_reset_required_at = now() WHERE email = 'api-reset@e2e.test';
+UPDATE users SET password_reset_required_at = now()
+ WHERE email IN ('api-reset@e2e.test', 'cambio@e2e.test');
 UPDATE memberships SET status = 'suspended'
  WHERE user_id = (SELECT id FROM users WHERE email = 'api-memb-susp@e2e.test')
    AND tenant_id = (SELECT id FROM tenants WHERE slug = 'e2e-agencia-a');

@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { NetworkModule } from '../network/network.module.js';
+import { BlobsController } from './blobs.controller.js';
 import { BrandAssetsController } from './brand-assets.controller.js';
 import { LocalDiskStorageAdapter } from './local-disk-storage.adapter.js';
 
@@ -12,7 +13,7 @@ import { LocalDiskStorageAdapter } from './local-disk-storage.adapter.js';
 @Global()
 @Module({
   imports: [NetworkModule],
-  controllers: [BrandAssetsController],
+  controllers: [BrandAssetsController, BlobsController],
   providers: [LocalDiskStorageAdapter],
   exports: [LocalDiskStorageAdapter],
 })
