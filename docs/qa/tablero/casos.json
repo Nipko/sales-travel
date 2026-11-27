@@ -3784,7 +3784,7 @@
   "prioridad": "P0",
   "ola": 2,
   "fase": "corregido",
-  "arreglo": "rama",
+  "arreglo": "vps",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-29",
   "prueba": "apps/api/src/cars/cars-book-net-price.test.ts",
