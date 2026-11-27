@@ -141,6 +141,11 @@ function paxTotal(criteria: FlightSearchCriteria): number {
 export class FakeFlightsAdapter implements FlightProviderAdapter {
   /** Lo que se reservó en este proceso: la relectura y la cancelación lo consultan. */
   private readonly orders = new Map<string, { status: string; pnr: string }>();
+  /**
+   * Las ofertas que se dieron, por referencia: la revalidación sale de acá y no de lo que manda el
+   * cliente, como en un proveedor real (CHK-06: un total tocado en el navegador no pasa).
+   */
+  private readonly given = new Map<string, Offer>();
 
   search(criteria: FlightSearchCriteria, ctx: SearchContext): Promise<Offer[]> {
     const route = legs(criteria);
@@ -194,7 +199,9 @@ export class FakeFlightsAdapter implements FlightProviderAdapter {
         expiresAt: new Date(now + HOUR).toISOString(),
       };
     };
-    return Promise.resolve([offer('directo', 25_000), offer('escala', 19_000)]);
+    const offers = [offer('directo', 25_000), offer('escala', 19_000)];
+    for (const o of offers) this.given.set(o.provider.offerRef, o);
+    return Promise.resolve(offers);
   }
 
   priceOffer(
@@ -204,24 +211,26 @@ export class FakeFlightsAdapter implements FlightProviderAdapter {
   ): Promise<OfferPriceResult> {
     // Cambia una sola vez: la oferta revalidada queda marcada y la revalidación de la reserva ya
     // no la vuelve a subir (si no, «Aceptar y reservar» chocaría siempre con otro precio).
+    const original = this.given.get(offer.provider.offerRef);
+    if (original === undefined) {
+      return Promise.reject(new Error('fake-flights: la oferta ya no existe; vuelve a buscar'));
+    }
     if (!offer.provider.offerRef.startsWith('FAKE-CAMBIA-')) {
-      return Promise.resolve({ offer, priceChanged: false, warnings: [] });
+      return Promise.resolve({ offer: original, priceChanged: false, warnings: [] });
     }
     const up = (m: number) => Math.round(m * 1.05);
-    return Promise.resolve({
-      offer: {
-        ...offer,
-        provider: {
-          ...offer.provider,
-          offerRef: offer.provider.offerRef.replace('FAKE-CAMBIA-', 'FAKE-CAMBIADA-'),
-        },
-        total: { ...offer.total, amountMinor: up(offer.total.amountMinor) },
-        baseFare: { ...offer.baseFare, amountMinor: up(offer.baseFare.amountMinor) },
-        taxes: { ...offer.taxes, amountMinor: up(offer.taxes.amountMinor) },
+    const repriced: Offer = {
+      ...original,
+      provider: {
+        ...original.provider,
+        offerRef: original.provider.offerRef.replace('FAKE-CAMBIA-', 'FAKE-CAMBIADA-'),
       },
-      priceChanged: true,
-      warnings: [],
-    });
+      total: { ...original.total, amountMinor: up(original.total.amountMinor) },
+      baseFare: { ...original.baseFare, amountMinor: up(original.baseFare.amountMinor) },
+      taxes: { ...original.taxes, amountMinor: up(original.taxes.amountMinor) },
+    };
+    this.given.set(repriced.provider.offerRef, repriced);
+    return Promise.resolve({ offer: repriced, priceChanged: true, warnings: [] });
   }
 
   createOrder(request: OrderCreateRequest, _ctx: SearchContext): Promise<OrderCreateResult> {

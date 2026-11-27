@@ -70,11 +70,17 @@ export default defineConfig({
       },
     },
   ],
+  // En CI, el panel compilado (`next build` + `next start`), como en producción: `next dev` compila
+  // cada ruta al vuelo y a veces corta la respuesta de una server action a mitad ("An unexpected
+  // response was received from the server", F1 en CI). E2E_WEB=dev vuelve a `next dev` para iterar.
   webServer: {
-    command: 'node ./node_modules/next/dist/bin/next dev --port 3101',
+    command:
+      process.env['CI'] && process.env['E2E_WEB'] !== 'dev'
+        ? 'node ./node_modules/next/dist/bin/next build && node ./node_modules/next/dist/bin/next start --port 3101'
+        : 'node ./node_modules/next/dist/bin/next dev --port 3101',
     url: `${E2E.webUrl}/login`,
     reuseExistingServer: !process.env['CI'],
-    timeout: 180_000,
+    timeout: 420_000,
     env: { INTERNAL_API_URL: E2E.apiUrl },
   },
 });
