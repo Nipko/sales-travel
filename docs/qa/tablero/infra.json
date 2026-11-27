@@ -50,7 +50,7 @@
   "desbloquea": "Que todo esto proteja producción",
   "ola": 3,
   "estado": "listo",
-  "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f.",
+  "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f. Desde la tanda 14, el panel de CI corre compilado (next build + start): next dev cortaba a veces la respuesta de una server action (F1).",
   "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
  },
  {

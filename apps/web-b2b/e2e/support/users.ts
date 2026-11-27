@@ -12,6 +12,8 @@ export const USERS = {
   vendedorB: { email: 'vendedor-b@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
   /** Sólo para los casos de ingreso (ACC-12/13): nadie más usa su sesión. */
   acceso: { email: 'acceso@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** Sólo para equipos de confianza y sesiones abiertas (f36): abre y cierra varias a la vez. */
+  confianza: { email: 'confianza@e2e.test', tenant: 'e2e-agencia-b', mfa: true },
 } as const;
 
 export type UserKey = keyof typeof USERS;

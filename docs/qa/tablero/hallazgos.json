@@ -465,7 +465,7 @@
   "que": "Los botones y textos de acción en rojo fijo (text-red-600/700, «Cancelar reserva» y otros) no llegan al contraste AA en modo oscuro; F26 lo vio en /reservas móvil oscuro en cuanto hubo reservas en la lista",
   "donde": "reservas/page.tsx y 6 pantallas más",
   "casos": "TRV-18",
-  "estado": "en_mac",
+  "estado": "en_vps",
   "nota": "Rojo fijo sobre el fondo pasado al token --color-danger (que tiene su valor de modo oscuro) en 7 pantallas; los que van sobre bg-red-50 se quedan. F26 sin violaciones nuevas.",
   "fecha": "2026-11-27"
  },
@@ -557,6 +557,16 @@
   "casos": "CAR-03",
   "estado": "propuesta",
   "nota": "Necesita tu decisión: ¿topar el débito de un ajuste al saldo disponible?",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-10",
+  "gravedad": "Mejora",
+  "que": "Una sola sesión por persona (ingresar en otro equipo cierra la anterior), así que en Mi cuenta → Seguridad «Dispositivos con sesión abierta» siempre muestra sólo «Esta sesión» y el «Cerrar» por sesión nunca aparece. ¿Se simplifica la sección o se permiten varias sesiones? Necesita decisión del founder",
+  "donde": "seat.service.ts, sessions-list.tsx",
+  "casos": "CTA-09",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión: con una sesión por persona, ¿se simplifica «Dispositivos con sesión abierta» o se permiten varias sesiones?",
   "fecha": "2026-11-27"
  }
 ]

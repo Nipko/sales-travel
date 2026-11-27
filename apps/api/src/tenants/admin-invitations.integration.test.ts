@@ -190,17 +190,18 @@ d('invitaciones sin aceptar de toda la red, contra Postgres', () => {
       role: 'admin',
       createdAt: "now() - interval '2 hours'",
     });
-    // Dos en el mismo instante, hasta el microsegundo: el cursor no puede saltar ninguna.
+    // Dos en el mismo instante, hasta el microsegundo: el cursor no puede saltar ninguna. El instante
+    // se fija una vez: con `now()` en cada INSERT, si entre los dos cambiaba el segundo, quedaban en
+    // instantes distintos y el orden se invertía (falló en CI).
+    const mismoInstante = `'${new Date(Math.floor(Date.now() / 1000) * 1000 - 3 * 3_600_000).toISOString()}'::timestamptz + interval '123456 microseconds'`;
     await invitation('sur-a', consSur, {
       role: 'tenant_admin',
       invitedBy: root,
-      createdAt:
-        "date_trunc('second', now()) - interval '3 hours' + interval '123456 microseconds'",
+      createdAt: mismoInstante,
     });
     await invitation('sur-b', agenciaSur, {
       invitedBy: root,
-      createdAt:
-        "date_trunc('second', now()) - interval '3 hours' + interval '123456 microseconds'",
+      createdAt: mismoInstante,
     });
     // Vencida, de alguien cuya cuenta ya no existe.
     await invitation('vencida', agenciaSur, {

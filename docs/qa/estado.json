@@ -27,7 +27,7 @@
     },
     "INF-6": {
       "estado": "listo",
-      "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f.",
+      "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f. Desde la tanda 14, el panel de CI corre compilado (next build + start): next dev cortaba a veces la respuesta de una server action (F1).",
       "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
     },
     "INF-4": {
@@ -305,12 +305,11 @@
       "fase": "pasa"
     },
     "EQU-10": {
-      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fase": "pasa",
       "fecha": "2026-11-27",
       "corrida": "mac",
-      "fase": "pasa",
-      "cobertura": "parcial",
-      "nota": "El ingreso con password_reset_required → 403 PASSWORD_RESET_REQUIRED sin token. Falta forzarlo desde Equipo (step-up) y que cierre sesiones."
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "nota": "Forzar el cambio pide step-up (403 MFA_RECENT_REQUIRED con el 2FA viejo), cierra sus sesiones y el ingreso da 403 PASSWORD_RESET_REQUIRED."
     },
     "SQL-02": {
       "fase": "pasa",
@@ -843,6 +842,127 @@
       "corrida": "mac",
       "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
       "nota": "El admin de otra agencia y el vendedor de la agencia no ven ni depositan en las carteras de la agencia A (403/404)."
+    },
+    "EQU-06": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+      "nota": "No a sí mismo; el agency_admin no da tenant_admin ni su mismo rango; el admin no toca al jefe; la vista previa cuenta las invitaciones que se revocan y degradar las revoca; con un solo admin activo no se degrada (403)."
+    },
+    "EQU-07": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+      "nota": "Suspender cierra su sesión en el nodo (401 después) y revoca sus invitaciones; reactivar; aviso de suspensión y de reactivación en Mailpit; el último admin activo no se suspende; a sí mismo no."
+    },
+    "EQU-08": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+      "cobertura": "parcial",
+      "nota": "Baja blanda (la fila queda con removed_at), cierra sesiones; después quitar, reactivar o cambiar rol → 409 MEMBERSHIP_REMOVED; quitar a un admin con 2FA viejo → 403 MFA_RECENT_REQUIRED y con step-up sale. Falta: rol de plataforma no removible (sólo por unidad)."
+    },
+    "EQU-09": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "cobertura": "parcial",
+      "nota": "3 enlaces en 15 min, el 4.º → 429 PASSWORD_RESET_RATE_LIMITED; la respuesta nunca trae el enlace; con el acceso al nodo suspendido → 409 MEMBERSHIP_SUSPENDED. Falta el botón deshabilitado en Equipo (navegador)."
+    },
+    "EQU-11": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "nota": "Desbloquear una cuenta bloqueada (unlocked:true, después false); cerrar todas sus sesiones (401 después); sobre uno mismo, 403."
+    },
+    "EQU-12": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "cobertura": "parcial",
+      "nota": "Restablecer el 2FA del admin pide step-up; deja sin factor y sin sesiones, y el siguiente ingreso exige enrolarse. Falta el botón deshabilitado si no tiene 2FA (navegador): la API responde 200 con hadMfa:false."
+    },
+    "EQU-13": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "cobertura": "parcial",
+      "nota": "Con cupo, el medidor lista la sesión; liberar la de otro lo deja afuera (401) y repetir da 404; la propia no; un vendedor no ve los puestos. Falta el medidor en pantalla."
+    },
+    "EQU-15": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "nota": "Step-up exigido; text/csv con Correo, Nombre, Nodo, Rol, Estado en el nodo, 2FA; sólo correos de miembros del nodo; un admin de otra red → 403."
+    },
+    "ACC-10": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+      "nota": "«Recordar este equipo» viene marcado; con la sesión vencida, el siguiente ingreso desde ese navegador entra sin código."
+    },
+    "ACC-11": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+      "cobertura": "parcial",
+      "nota": "Quitado por el usuario desde Seguridad, el siguiente ingreso vuelve a pedir el código. Falta: por cambio de contraseña y por desactivar el 2FA."
+    },
+    "CTA-10": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+      "cobertura": "parcial",
+      "nota": "Quitar este equipo (con confirmación) lo saca de la lista y el siguiente ingreso pide el código. «Quitar todos» sólo aparece con 2+ equipos: no probado."
+    },
+    "CTA-09": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+      "hallazgo": "QA-M-10",
+      "cobertura": "parcial",
+      "nota": "Una sesión por persona: ingresar en otro navegador deja al primero con «Tu sesión se abrió en otro dispositivo»; la lista muestra sólo «Esta sesión», sin «Cerrar»; «Cerrar sesión en todos los dispositivos» lleva al login. «Cerrar otra» no se puede dar: QA-M-10."
+    },
+    "ACC-28": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+      "nota": "Cuenta existente sin sesión: «Ingresar para aceptar» → login → vuelve a /invitacion → «Aceptar invitación» → membresía activa; abierta otra vez ya no se acepta."
+    },
+    "ACC-29": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+      "nota": "Con la sesión de otra cuenta: «Esta invitación es para otra cuenta», sin «Aceptar», y «Salir e ingresar con la cuenta invitada» lleva al login. La sesión de la invitada la acepta (ACC-28)."
+    },
+    "ACC-31": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+      "nota": "Cuenta nueva invitada como admin (por el tenant_admin): al ingresar cae en el gate de 2FA, también yendo directo a /cotizaciones."
+    },
+    "EQU-04": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "cobertura": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+      "nota": "Por HTTP: invitar dos veces al mismo correo → 409 INVITATION_ALREADY_PENDING con el id de la pendiente; reenviarla no abre otra; un correo que ya es miembro → 409. Falta el aviso con «Reenviar» en Equipo (navegador)."
     }
   },
   "hallazgos": {
@@ -1112,7 +1232,7 @@
       "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar. En el VPS el 2026-11-27 (4342cf92)."
     },
     "QA-H-47": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "Rojo fijo sobre el fondo pasado al token --color-danger (que tiene su valor de modo oscuro) en 7 pantallas; los que van sobre bg-red-50 se quedan. F26 sin violaciones nuevas."
     },
@@ -1125,12 +1245,17 @@
       "estado": "propuesta",
       "fecha": "2026-11-27",
       "nota": "Necesita tu decisión: ¿topar el débito de un ajuste al saldo disponible?"
+    },
+    "QA-M-10": {
+      "estado": "propuesta",
+      "fecha": "2026-11-27",
+      "nota": "Necesita tu decisión: con una sesión por persona, ¿se simplifica «Dispositivos con sesión abierta» o se permiten varias sesiones?"
     }
   },
   "ultimaCorrida": {
     "ambiente": "mac",
-    "fecha": "2026-11-27T07:12:23.707Z",
-    "tests": 41,
+    "fecha": "2026-11-27T10:13:57.953Z",
+    "tests": 32,
     "fallan": 0
   }
 }
