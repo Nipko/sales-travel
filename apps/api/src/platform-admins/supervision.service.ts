@@ -68,6 +68,9 @@ interface ChangeRequestRow {
   created_at: Date;
 }
 
+/** Cuántas solicitudes trae cada página del listado. */
+export const CHANGE_REQUESTS_PAGE = 100;
+
 const SUMMARY_MAX = 300;
 const ERROR_MAX = 500;
 
@@ -195,15 +198,27 @@ export class SupervisionService {
     throw new ChangeRequestPendingError(id);
   }
 
+  /**
+   * Una página, de la más nueva a la más vieja. `before`: la última de la página anterior; la página
+   * sigue desde ella por (fecha, id), así dos solicitudes del mismo instante no se saltan ni se
+   * repiten (SUP-25). Una página llena puede tener más detrás.
+   */
   async list(
     viewer: string,
     status: PlatformChangeRequestStatus | undefined,
+    before?: string,
   ): Promise<ChangeRequestView[]> {
     return this.db.withRequestContext({ userId: viewer }, async (trx) => {
       const rows = await selectRequests(trx)
         .$if(status !== undefined, (qb) => qb.where('r.status', '=', status!))
+        .$if(before !== undefined, (qb) =>
+          qb.where(
+            sql<boolean>`(r.created_at, r.id) < (SELECT p.created_at, p.id FROM platform_change_requests p WHERE p.id = ${before!}::uuid)`,
+          ),
+        )
         .orderBy('r.created_at', 'desc')
-        .limit(100)
+        .orderBy('r.id', 'desc')
+        .limit(CHANGE_REQUESTS_PAGE)
         .execute();
       return rows.map(changeRequestView);
     });

@@ -223,17 +223,31 @@ export function decisionPlan(id: string, action: string, raw: unknown): TenantAd
   const path = `/admin/change-requests/${id.toLowerCase()}/${action}`;
   if (action === 'cancel') return { ok: true, path, body: {} };
   const note = reasonValue(rec(raw)?.['note']);
-  if (note === undefined) return { ok: false, error: 'La nota puede tener hasta 500 caracteres.' };
+  if (note === undefined) {
+    return { ok: false, error: 'La nota tiene que tener entre 3 y 500 caracteres.' };
+  }
   return { ok: true, path, body: { note } };
 }
 
+/** Cuántas trae cada página la API: una página llena puede tener más detrás (SUP-25). */
+export const CHANGE_REQUESTS_PAGE = 100;
+
 export function changeRequestsTarget(search: URLSearchParams): TenantAdminProxyTarget {
+  const params = new URLSearchParams();
   const status = search.get('status');
-  if (status === null || status === '') return { ok: true, path: '/admin/change-requests' };
-  if (!(CHANGE_REQUEST_STATUSES as readonly string[]).includes(status)) {
-    return { ok: false, error: 'Estado inválido.' };
+  if (status !== null && status !== '') {
+    if (!(CHANGE_REQUEST_STATUSES as readonly string[]).includes(status)) {
+      return { ok: false, error: 'Estado inválido.' };
+    }
+    params.set('status', status);
   }
-  return { ok: true, path: `/admin/change-requests?status=${status}` };
+  const before = search.get('before');
+  if (before !== null && before !== '') {
+    if (!isUuid(before)) return { ok: false, error: 'Solicitud inválida.' };
+    params.set('before', before.toLowerCase());
+  }
+  const query = params.toString();
+  return { ok: true, path: `/admin/change-requests${query === '' ? '' : `?${query}`}` };
 }
 
 // ───────────────────────────── Textos ─────────────────────────────

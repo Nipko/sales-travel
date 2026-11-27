@@ -76,11 +76,20 @@ export function loadViewer(): Promise<StepUpAware<PlatformViewer>> {
   return call('/api/admin/platform-admins/me', {}, parseViewer);
 }
 
+/** Una página de solicitudes; `before`: la última de la página anterior (SUP-25). */
 export function loadChangeRequests(
   status: ChangeRequestStatus | null,
+  before?: string,
 ): Promise<StepUpAware<ChangeRequest[]>> {
-  const query = status === null ? '' : `?status=${status}`;
-  return call(`/api/admin/change-requests${query}`, {}, parseChangeRequests);
+  const params = new URLSearchParams();
+  if (status !== null) params.set('status', status);
+  if (before !== undefined) params.set('before', before);
+  const query = params.toString();
+  return call(
+    `/api/admin/change-requests${query === '' ? '' : `?${query}`}`,
+    {},
+    parseChangeRequests,
+  );
 }
 
 export function grantPlatformAdmin(input: {

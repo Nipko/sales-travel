@@ -163,11 +163,27 @@ describe('Superadmins: el BFF', () => {
       body: {},
     });
     expect(decisionPlan(UID, 'delete', {}).ok).toBe(false);
+    // La misma regla que la API (QA-H-26): 3 a 500, y el mensaje lo dice entero.
+    expect(decisionPlan(UID, 'reject', { note: 'no' })).toEqual({
+      ok: false,
+      error: 'La nota tiene que tener entre 3 y 500 caracteres.',
+    });
+    expect(decisionPlan(UID, 'reject', { note: '  ' }).ok).toBe(true);
     expect(changeRequestsTarget(new URLSearchParams('status=pending'))).toEqual({
       ok: true,
       path: '/admin/change-requests?status=pending',
     });
     expect(changeRequestsTarget(new URLSearchParams('status=todo')).ok).toBe(false);
+    // SUP-25: la página siguiente sigue desde la última que se vio.
+    expect(changeRequestsTarget(new URLSearchParams(`status=pending&before=${UID}`))).toEqual({
+      ok: true,
+      path: `/admin/change-requests?status=pending&before=${UID}`,
+    });
+    expect(changeRequestsTarget(new URLSearchParams(`before=${UID}`))).toEqual({
+      ok: true,
+      path: `/admin/change-requests?before=${UID}`,
+    });
+    expect(changeRequestsTarget(new URLSearchParams('before=1%27%20OR%201')).ok).toBe(false);
   });
 });
 

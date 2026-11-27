@@ -11,6 +11,7 @@ import { SegmentedControl } from '../../../../../../components/ui/segmented-cont
 import { cn } from '../../../../../../lib/cn';
 import {
   CHANGE_REQUEST_STATUS_LABELS,
+  CHANGE_REQUESTS_PAGE,
   PLATFORM_ADMINS_COPY,
   standingLabel,
   type ChangeRequest,
@@ -41,6 +42,8 @@ type Loaded =
       readonly viewer: PlatformViewer;
       readonly admins: readonly PlatformAdmin[];
       readonly requests: readonly ChangeRequest[];
+      /** La última página vino llena: puede haber más antiguas (SUP-25). */
+      readonly moreRequests: boolean;
     };
 
 /** Lo que pasó con la última acción: se anuncia arriba, una sola línea. */
@@ -86,8 +89,27 @@ export function SuperadminsPanel() {
       viewer: viewer.data,
       admins: admins.data,
       requests: requests.data,
+      moreRequests: requests.data.length >= CHANGE_REQUESTS_PAGE,
     });
   }, []);
+
+  /** La página siguiente, desde la última que se ve; se suma abajo. */
+  const loadOlder = useCallback(async () => {
+    if (state.status !== 'ready') return;
+    const last = state.requests.at(-1);
+    if (last === undefined) return;
+    const next = await loadChangeRequests(tab === 'pending' ? 'pending' : null, last.id);
+    if (!next.ok) {
+      setNotice({ tone: 'error', text: next.message });
+      return;
+    }
+    const seen = new Set(state.requests.map((r) => r.id));
+    setState({
+      ...state,
+      requests: [...state.requests, ...next.data.filter((r) => !seen.has(r.id))],
+      moreRequests: next.data.length >= CHANGE_REQUESTS_PAGE,
+    });
+  }, [state, tab]);
 
   useEffect(() => {
     void load(tab);
@@ -207,6 +229,8 @@ export function SuperadminsPanel() {
             tab={tab}
             onTab={setTab}
             requests={state.requests}
+            more={state.moreRequests}
+            onMore={() => void loadOlder()}
             viewer={state.viewer}
             onDecide={(request, action) => setPending({ kind: 'decide', request, action })}
           />
@@ -269,12 +293,16 @@ function RequestsSection({
   tab,
   onTab,
   requests,
+  more,
+  onMore,
   viewer,
   onDecide,
 }: {
   tab: RequestsTab;
   onTab: (tab: RequestsTab) => void;
   requests: readonly ChangeRequest[];
+  more: boolean;
+  onMore: () => void;
   viewer: PlatformViewer;
   onDecide: (request: ChangeRequest, action: ChangeRequestAction) => void;
 }) {
@@ -288,7 +316,7 @@ function RequestsSection({
               {
                 value: 'pending',
                 label: 'Pendientes',
-                ...(tab === 'pending' ? { count: requests.length } : {}),
+                ...(tab === 'pending' && !more ? { count: requests.length } : {}),
               },
               { value: 'all', label: 'Todas' },
             ]}
@@ -363,6 +391,13 @@ function RequestsSection({
           })}
         </ul>
       )}
+      {more ? (
+        <div className="mt-3">
+          <Button size="sm" variant="secondary" onClick={onMore}>
+            Ver más antiguas
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }

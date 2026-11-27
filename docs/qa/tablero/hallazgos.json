@@ -165,9 +165,9 @@
   "que": "SABRE_OPERATIONS=refund se acepta pero no hace nada",
   "donde": "sabre.factory.ts:214",
   "casos": "SAB-02",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "en_mac",
+  "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-18",
@@ -255,9 +255,9 @@
   "que": "Nota de decisión: BFF 3–500, API 1–500",
   "donde": "platform-admins.ts (BFF)",
   "casos": "SUP-21",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "en_mac",
+  "nota": "Nota de decisión 3–500 en API y panel, mensaje completo.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-27",
@@ -265,9 +265,9 @@
   "que": "Dar acceso supervisado a correo inexistente falla recién al aprobar",
   "donde": "supervision.service.ts",
   "casos": "SUP-22",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "en_mac",
+  "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-28",
@@ -437,6 +437,16 @@
   "casos": "SQL-06",
   "estado": "en_vps",
   "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código. Desplegado en el VPS el 2026-11-27 (0101bebc).",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-45",
+  "gravedad": "Baja",
+  "que": "airports sin RLS y con escritura para app_user: el GRANT SELECT de 0003 no quitó el INSERT/UPDATE/DELETE por defecto de 0001 (como 0041 con hoteles); sólo la escribe el sync como postgres",
+  "donde": "db/migrations/0003, tablas-sin-rls.integration.test.ts",
+  "casos": "TRV-07",
+  "estado": "en_mac",
+  "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts.",
   "fecha": "2026-11-27"
  },
  {

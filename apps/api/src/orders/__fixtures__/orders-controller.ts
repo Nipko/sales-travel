@@ -1,4 +1,5 @@
 import type { BrandingService } from '../../branding/branding.service.js';
+import type { GovernancePaymentsService } from '../../governance/governance-payments.service.js';
 import type { MailerService } from '../../mail/mailer.service.js';
 import type { FlightProviderRegistry } from '../../providers/flight-provider.registry.js';
 import type { ActiveTenantService } from '../../request-context/active-tenant.service.js';
@@ -30,6 +31,7 @@ export function ordersController(deps: {
   readonly walletHolds?: BookingHoldLedger;
   readonly services?: FlightServicesService;
   readonly travelers?: FlightTravelersService;
+  readonly governance?: GovernancePaymentsService;
 }): OrdersController {
   return new OrdersController(
     deps.orders,
@@ -42,5 +44,6 @@ export function ordersController(deps: {
     deps.walletHolds,
     deps.services,
     deps.travelers,
+    deps.governance,
   );
 }

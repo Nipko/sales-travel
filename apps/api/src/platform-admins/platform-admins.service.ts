@@ -101,6 +101,29 @@ export class PlatformAdminsService {
   }
 
   /**
+   * Lo que `grant` rechazaría por la cuenta, dicho antes de que un supervisado deje la solicitud
+   * (QA-H-27): un correo mal escrito no espera a que un pleno lo apruebe para fallar. Las mismas
+   * reglas que `grant`, que las vuelve a mirar al aplicar.
+   */
+  async assertGrantable(
+    actor: string,
+    input: { email: string; createAccount?: boolean },
+  ): Promise<void> {
+    await this.db.withRequestContext({ userId: actor }, async (trx) => {
+      const users = await trx
+        .selectFrom('users')
+        .select(['id', 'status'])
+        .where('email', '=', input.email)
+        .execute();
+      const active = users.find((u) => u.status === 'active');
+      if (active?.id === actor) throw new SelfPlatformAdminChangeError();
+      if (active === undefined && (input.createAccount !== true || users.length > 0)) {
+        throw new PlatformAdminCandidateNotFoundError();
+      }
+    });
+  }
+
+  /**
    * Hace superadmin (pleno o supervisado) a una cuenta activa que ya existe. Si ya lo era, deja el
    * tipo pedido. El 2FA se le exige al entrar (MFA_REQUIRED_ROLES).
    */

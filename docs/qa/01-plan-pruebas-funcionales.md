@@ -590,6 +590,7 @@ falla, se abre el arreglo.
 | QA-H-42 | Media | `accept_invitation` (0028), sin uso desde 0056, seguía SECURITY DEFINER y ejecutable: marcaba aceptada cualquier invitación por id, de cualquier nodo y sin mirar vencimiento; 17 funciones SECURITY DEFINER más las podía ejecutar PUBLIC       | `db/migrations/0028`, `0056`                                           | SQL-02         |
 | QA-H-43 | Media | Marca blanca: una agencia sin nombre comercial propio salía con el del consolidador en el PDF y el correo de sus cotizaciones (`resolve_tenant_branding` heredaba el nombre aunque 0030 decía que no)                                            | `db/migrations/0030`                                                   | AGE-08         |
 | QA-H-44 | Baja  | `is_admin_user()` (0013), sin uso desde 0020, seguía SECURITY DEFINER: «admin en cualquier nodo», peligrosa si se reusa en una política; la guarda de 0099 la dejaba pasar porque un comentario la nombraba                                      | `db/migrations/0013`, `security-definer.integration.test.ts`           | SQL-06         |
+| QA-H-45 | Baja  | `airports` sin RLS y con escritura para `app_user`: el `GRANT SELECT` de 0003 no quitó el INSERT/UPDATE/DELETE por defecto de 0001 (como 0041 con hoteles); sólo la escribe el sync como `postgres`                                              | `db/migrations/0003`, `tablas-sin-rls.integration.test.ts`             | TRV-07         |
 
 ### 6.1 Mejoras que salen de probar
 

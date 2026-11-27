@@ -52,12 +52,13 @@ export const GrantInputSchema = GrantPlatformAdminSchema;
 export const SupervisionInputSchema = SetSupervisionSchema.extend({ userId: Uuid }).strict();
 export const RevokeInputSchema = RevokePlatformAdminSchema.extend({ userId: Uuid }).strict();
 
+/** La nota de quien decide: las mismas reglas que el motivo de quien pide (QA-H-26). */
 export const DecisionSchema = z
   .object({
     note: z
       .string()
       .trim()
-      .min(1, { message: 'la nota no puede ir vacía' })
+      .min(3, { message: 'la nota tiene que tener al menos 3 caracteres' })
       .max(500, { message: 'la nota puede tener hasta 500 caracteres' })
       .nullable()
       .optional()
@@ -81,6 +82,8 @@ export const ChangeRequestListQuerySchema = z
         errorMap: () => ({ message: `estado inválido: usa ${CHANGE_REQUEST_STATUSES.join(', ')}` }),
       })
       .optional(),
+    /** La última de la página anterior: trae las más antiguas que ella (SUP-25). */
+    before: Uuid.optional(),
   })
   .strict();
 export type ChangeRequestListQuery = z.infer<typeof ChangeRequestListQuerySchema>;
