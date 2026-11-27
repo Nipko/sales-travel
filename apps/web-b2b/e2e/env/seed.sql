@@ -6,8 +6,9 @@
 --
 --   platform (Planetour E2E)
 --   ├── e2e-consolidador (consolidator)
---   │   └── e2e-agencia-a (agency)
---   │       └── e2e-subagencia (subagency)
+--   │   ├── e2e-agencia-a (agency)
+--   │   │   └── e2e-subagencia (subagency)
+--   │   └── e2e-agencia-equipo (agency: EQU-06/07/08 del arnés, cambia roles y estados)
 --   ├── e2e-agencia-b (agency)
 --   └── e2e-agencia-suspendida (agency, suspendida: ACC-21)
 --
@@ -37,6 +38,10 @@ SELECT 'e2e-subagencia', 'Subagencia E2E', 'CO', 'COP', 'subagency', id FROM ten
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+SELECT 'e2e-agencia-equipo', 'Agencia E2E Equipo', 'CO', 'COP', 'agency', id FROM tenants WHERE slug = 'e2e-consolidador'
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
 SELECT 'e2e-agencia-b', 'Agencia E2E B', 'PE', 'PEN', 'agency', id FROM tenants WHERE slug = 'platform'
 ON CONFLICT (slug) DO NOTHING;
 
@@ -44,6 +49,8 @@ INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, pa
 SELECT 'e2e-agencia-suspendida', 'Agencia E2E Suspendida', 'CO', 'COP', 'agency', id FROM tenants WHERE slug = 'platform'
 ON CONFLICT (slug) DO NOTHING;
 UPDATE tenants SET status = 'suspended' WHERE slug = 'e2e-agencia-suspendida';
+-- EQU-13: los puestos sólo se cuentan en un nodo con cupo.
+UPDATE tenants SET concurrent_seats = 20 WHERE slug = 'e2e-agencia-equipo';
 
 -- ── Usuarios ───────────────────────────────────────────────────────────────────────────────────────
 WITH seed_users(email, name) AS (
@@ -57,6 +64,10 @@ WITH seed_users(email, name) AS (
     ('acceso@e2e.test',     'Vendedor Acceso'),
     -- ACC-15 en el panel: tiene que cambiar la contraseña (aparte de api-reset, que usa EQU-10).
     ('cambio@e2e.test',     'Vendedor Cambio de Clave'),
+    -- ACC-28/29: una cuenta de la agencia B a la que se invita a la A (el seed la vuelve a sacar de la A).
+    ('invitado@e2e.test',   'Vendedor Invitado'),
+    -- ACC-10/11 y CTA-09/10: equipos de confianza y sesiones abiertas, en su propio admin.
+    ('confianza@e2e.test',  'Admin Equipos de Confianza'),
     -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
     ('api-superadmin@e2e.test',     'API Superadmin'),
     ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
@@ -76,7 +87,12 @@ WITH seed_users(email, name) AS (
     ('api-multi@e2e.test',          'API Vendedor Dos Nodos'),
     ('api-memb-susp@e2e.test',      'API Membresia Suspendida'),
     ('api-nodo-susp@e2e.test',      'API Nodo Suspendido'),
-    ('api-reset@e2e.test',          'API Cambio de Contrasena')
+    ('api-reset@e2e.test',          'API Cambio de Contrasena'),
+    -- EQU-06/07/08: el equipo de e2e-agencia-equipo, que la prueba degrada, suspende y quita.
+    ('api-equipo-jefe@e2e.test',     'API Equipo Jefe'),
+    ('api-equipo-admin@e2e.test',    'API Equipo Admin'),
+    ('api-equipo-vendedor@e2e.test', 'API Equipo Vendedor'),
+    ('api-equipo-soporte@e2e.test',  'API Equipo Soporte')
 )
 INSERT INTO users (email, name, password_hash, email_verified_at, password_changed_at)
 SELECT email, name, crypt('E2e-Prueba-2026!', gen_salt('bf', 10)), now(), now() FROM seed_users
@@ -98,6 +114,8 @@ DELETE FROM sessions           WHERE user_id IN (SELECT id FROM users WHERE emai
 DELETE FROM mfa_recovery_codes WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@e2e.test');
 DELETE FROM mfa_challenges     WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@e2e.test');
 DELETE FROM trusted_devices    WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@e2e.test');
+-- EQU-09 cuenta los enlaces de los últimos 15 minutos: cada corrida empieza sin ninguno.
+DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'api-equipo-%@e2e.test');
 
 -- ── Membresías ─────────────────────────────────────────────────────────────────────────────────────
 WITH seed_memberships(email, slug, role, supervised) AS (
@@ -121,6 +139,8 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('api-vendedor-b@e2e.test',     'e2e-agencia-b',    'vendedor',           false),
     ('acceso@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
     ('cambio@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
+    ('invitado@e2e.test',           'e2e-agencia-b',    'vendedor',           false),
+    ('confianza@e2e.test',          'e2e-agencia-b',    'admin',              false),
     ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
     ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
     ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
@@ -128,7 +148,11 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('api-memb-susp@e2e.test',      'e2e-agencia-a',    'vendedor',           false),
     ('api-memb-susp@e2e.test',      'e2e-agencia-b',    'vendedor',           false),
     ('api-nodo-susp@e2e.test',      'e2e-agencia-suspendida', 'vendedor',     false),
-    ('api-reset@e2e.test',          'e2e-agencia-a',    'vendedor',           false)
+    ('api-reset@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
+    ('api-equipo-jefe@e2e.test',     'e2e-agencia-equipo', 'agency_admin',    false),
+    ('api-equipo-admin@e2e.test',    'e2e-agencia-equipo', 'admin',           false),
+    ('api-equipo-vendedor@e2e.test', 'e2e-agencia-equipo', 'vendedor',        false),
+    ('api-equipo-soporte@e2e.test',  'e2e-agencia-equipo', 'vendedor',        false)
 )
 INSERT INTO memberships (tenant_id, user_id, role, platform_supervised)
 SELECT t.id, u.id, s.role, s.supervised
@@ -143,6 +167,12 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE
 UPDATE users SET status = 'suspended' WHERE email = 'api-suspendido@e2e.test';
 UPDATE users SET password_reset_required_at = now()
  WHERE email IN ('api-reset@e2e.test', 'cambio@e2e.test');
+-- ACC-28/29: la invitación a la agencia A vuelve a hacer falta (una quitada se reactiva al aceptar).
+UPDATE memberships SET status = 'removed', removed_at = now(), removed_by = NULL
+ WHERE user_id = (SELECT id FROM users WHERE email = 'invitado@e2e.test')
+   AND tenant_id = (SELECT id FROM tenants WHERE slug = 'e2e-agencia-a');
+UPDATE user_invitations SET revoked_at = now()
+ WHERE email = 'invitado@e2e.test' AND accepted_at IS NULL AND revoked_at IS NULL;
 UPDATE memberships SET status = 'suspended'
  WHERE user_id = (SELECT id FROM users WHERE email = 'api-memb-susp@e2e.test')
    AND tenant_id = (SELECT id FROM tenants WHERE slug = 'e2e-agencia-a');

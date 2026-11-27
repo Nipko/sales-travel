@@ -471,13 +471,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+  "nota": "«Recordar este equipo» viene marcado; con la sesión vencida, el siguiente ingreso desde ese navegador entra sin código.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-11",
@@ -487,13 +487,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+  "nota": "Quitado por el usuario desde Seguridad, el siguiente ingreso vuelve a pedir el código. Falta: por cambio de contraseña y por desactivar el 2FA.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-12",
@@ -759,13 +759,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+  "nota": "Cuenta existente sin sesión: «Ingresar para aceptar» → login → vuelve a /invitacion → «Aceptar invitación» → membresía activa; abierta otra vez ya no se acepta.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-29",
@@ -775,13 +775,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+  "nota": "Con la sesión de otra cuenta: «Esta invitación es para otra cuenta», sin «Aceptar», y «Salir e ingresar con la cuenta invitada» lleva al login. La sesión de la invitada la acepta (ACC-28).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-30",
@@ -807,13 +807,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f35-invitacion-cuenta.e2e.ts",
+  "nota": "Cuenta nueva invitada como admin (por el tenant_admin): al ingresar cae en el gate de 2FA, también yendo directo a /cotizaciones.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-32",
@@ -999,13 +999,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-10",
+  "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+  "nota": "Una sesión por persona: ingresar en otro navegador deja al primero con «Tu sesión se abrió en otro dispositivo»; la lista muestra sólo «Esta sesión», sin «Cerrar»; «Cerrar sesión en todos los dispositivos» lleva al login. «Cerrar otra» no se puede dar: QA-M-10.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CTA-10",
@@ -1015,13 +1015,13 @@
   "nivel": "E",
   "prioridad": "P2",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f36-confianza-y-sesiones.e2e.ts",
+  "nota": "Quitar este equipo (con confirmación) lo saca de la lista y el siguiente ingreso pide el código. «Quitar todos» sólo aparece con 2+ equipos: no probado.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "AGE-01",
@@ -1239,13 +1239,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+  "nota": "No a sí mismo; el agency_admin no da tenant_admin ni su mismo rango; el admin no toca al jefe; la vista previa cuenta las invitaciones que se revocan y degradar las revoca; con un solo admin activo no se degrada (403).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-07",
@@ -1255,13 +1255,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+  "nota": "Suspender cierra su sesión en el nodo (401 después) y revoca sus invitaciones; reactivar; aviso de suspensión y de reactivación en Mailpit; el último admin activo no se suspende; a sí mismo no.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-08",
@@ -1271,13 +1271,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo.api.ts",
+  "nota": "Baja blanda (la fila queda con removed_at), cierra sesiones; después quitar, reactivar o cambiar rol → 409 MEMBERSHIP_REMOVED; quitar a un admin con 2FA viejo → 403 MFA_RECENT_REQUIRED y con step-up sale. Falta: rol de plataforma no removible (sólo por unidad).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-09",
@@ -1287,13 +1287,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "3 enlaces en 15 min, el 4.º → 429 PASSWORD_RESET_RATE_LIMITED; la respuesta nunca trae el enlace; con el acceso al nodo suspendido → 409 MEMBERSHIP_SUSPENDED. Falta el botón deshabilitado en Equipo (navegador).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-10",
@@ -1307,8 +1307,8 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
-  "nota": "El ingreso con password_reset_required → 403 PASSWORD_RESET_REQUIRED sin token. Falta forzarlo desde Equipo (step-up) y que cierre sesiones.",
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "Forzar el cambio pide step-up (403 MFA_RECENT_REQUIRED con el 2FA viejo), cierra sus sesiones y el ingreso da 403 PASSWORD_RESET_REQUIRED.",
   "fecha": "2026-11-27"
  },
  {
@@ -1319,13 +1319,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "Desbloquear una cuenta bloqueada (unlocked:true, después false); cerrar todas sus sesiones (401 después); sobre uno mismo, 403.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-12",
@@ -1335,13 +1335,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "Restablecer el 2FA del admin pide step-up; deja sin factor y sin sesiones, y el siguiente ingreso exige enrolarse. Falta el botón deshabilitado si no tiene 2FA (navegador): la API responde 200 con hadMfa:false.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-13",
@@ -1351,13 +1351,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "Con cupo, el medidor lista la sesión; liberar la de otro lo deja afuera (401) y repetir da 404; la propia no; un vendedor no ve los puestos. Falta el medidor en pantalla.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-14",
@@ -1383,13 +1383,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/equipo-soporte.api.ts",
+  "nota": "Step-up exigido; text/csv con Correo, Nombre, Nodo, Rol, Estado en el nodo, 2FA; sólo correos de miembros del nodo; un admin de otra red → 403.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-16",

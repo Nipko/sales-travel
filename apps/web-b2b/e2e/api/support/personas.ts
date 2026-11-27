@@ -102,6 +102,37 @@ export const PERSONAS = {
     mfa: false,
     ip: '198.51.100.51',
   },
+  // EQU-06/07/08: el equipo de e2e-agencia-equipo. Sólo los usa equipo.api.ts, que los degrada,
+  // suspende y quita; el seed los deja como al principio en cada corrida.
+  jefeEquipo: {
+    email: 'api-equipo-jefe@e2e.test',
+    tenant: 'e2e-agencia-equipo',
+    role: 'agency_admin',
+    mfa: true,
+    ip: '198.51.100.80',
+  },
+  adminEquipo: {
+    email: 'api-equipo-admin@e2e.test',
+    tenant: 'e2e-agencia-equipo',
+    role: 'admin',
+    mfa: true,
+    ip: '198.51.100.81',
+  },
+  vendedorEquipo: {
+    email: 'api-equipo-vendedor@e2e.test',
+    tenant: 'e2e-agencia-equipo',
+    role: 'vendedor',
+    mfa: false,
+    ip: '198.51.100.82',
+  },
+  // EQU-09/10/11/13: el miembro al que se le hace soporte (enlaces, bloqueo, puesto, cambio forzado).
+  soporteEquipo: {
+    email: 'api-equipo-soporte@e2e.test',
+    tenant: 'e2e-agencia-equipo',
+    role: 'vendedor',
+    mfa: false,
+    ip: '198.51.100.83',
+  },
 } as const satisfies Record<string, Persona>;
 
 export type PersonaKey = keyof typeof PERSONAS;
