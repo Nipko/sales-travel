@@ -1,0 +1,37 @@
+{
+  "criteria": {
+    "origin": "GRU",
+    "destination": "GIG",
+    "departureDate": "(+40 días)",
+    "paxCount": {
+      "adults": 1,
+      "children": 0,
+      "infants": 0
+    },
+    "currency": "BRL"
+  },
+  "pasos": [
+    {
+      "nombre": "search",
+      "offers": 153
+    },
+    {
+      "nombre": "price",
+      "priceChanged": false
+    },
+    {
+      "nombre": "create",
+      "outcome": "CONFIRMED",
+      "conOrden": true
+    },
+    {
+      "nombre": "retrieve",
+      "found": true,
+      "status": "confirmed"
+    },
+    {
+      "nombre": "cancel",
+      "success": true
+    }
+  ]
+}

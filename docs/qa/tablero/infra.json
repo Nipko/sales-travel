@@ -58,8 +58,8 @@
   "que": "Arnés de sandbox LATAM (no existe; Sabre y TBO sí tienen): AirShopping OW/RT con 1ADT y 2ADT+1CHD+1INF, OfferPrice, ServiceList, BNPL create → retrieve → cancel, enlace de pago.",
   "desbloquea": "LAT en R",
   "ola": 5,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "en_curso",
+  "nota": "tools/latam/capture.mjs graba la venta completa sin pago contra el sandbox (sólo si LATAM_API_URL es de sandbox) y redacta lo que manda. Falta ida y vuelta con 2ADT+1CHD+1INF, ServiceList y el enlace de pago.",
+  "donde": "tools/latam/capture.mjs"
  }
 ]

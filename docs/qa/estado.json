@@ -34,6 +34,11 @@
       "estado": "en_curso",
       "nota": "Vuelos listo: fake-flights (apps/api/src/providers-fake) sólo con FAKE_PROVIDERS=1 y APP_VERSION=e2e (si no, el arranque falla), ofertas de prueba y perillas (SMR sin vuelos, ADZ caído, segunda oferta +5 % una vez al revalidar; apellido RECHAZO/PARCIAL/INCIERTO). Faltan hoteles y autos falsos.",
       "donde": "apps/api/src/providers-fake"
+    },
+    "INF-7": {
+      "estado": "en_curso",
+      "nota": "tools/latam/capture.mjs graba la venta completa sin pago contra el sandbox (sólo si LATAM_API_URL es de sandbox) y redacta lo que manda. Falta ida y vuelta con 2ADT+1CHD+1INF, ServiceList y el enlace de pago.",
+      "donde": "tools/latam/capture.mjs"
     }
   },
   "casos": {
@@ -163,7 +168,7 @@
     },
     "AGE-06": {
       "fase": "corregido",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "fecha": "2026-11-27",
       "hallazgo": "QA-H-38",
       "prueba": "apps/web-b2b/e2e/api/logos.api.ts, apps/api/src/storage/blobs.controller.test.ts",
@@ -726,6 +731,13 @@
       "nota": "Sin destino, lo pide; las reglas en la acción.",
       "fecha": "2026-11-27",
       "corrida": "mac"
+    },
+    "LAT-08": {
+      "fase": "pasa",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "prueba": "providers/latam-ndc/src/real-fixtures.test.ts",
+      "nota": "Respuestas reales del sandbox (tools/latam/capture.mjs, redactadas): 153 ofertas canónicas válidas, revalidación sin cambio, reserva BNPL confirmada, relectura con el localizador de 6 letras, cancelación BNPL y un rechazo real (400112020). Faltan el error de pago y el reshop reales."
     }
   },
   "hallazgos": {
@@ -810,9 +822,9 @@
       "nota": "Confirmado: 200 {deleted:false}. Ahora 404. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-38": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts."
+      "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts. En el VPS el 2026-11-27 (0cc1ffda): la ruta responde."
     },
     "QA-M-01": {
       "fecha": "2026-11-27",

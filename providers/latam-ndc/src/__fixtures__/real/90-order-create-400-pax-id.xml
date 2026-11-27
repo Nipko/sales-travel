@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><IATA_OrderViewRS xmlns="http://www.iata.org/IATA/2015/00/2019.2/IATA_OrderViewRS"><Error><Code>400112020</Code><DescText>The passenger ID index and PTC must the same Eg. ID: ADT_1 PTC: ADT, ID: CHD_1 PTC: CHD</DescText></Error></IATA_OrderViewRS>

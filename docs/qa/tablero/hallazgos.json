@@ -375,8 +375,8 @@
   "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
   "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
   "casos": "AGE-06",
-  "estado": "en_mac",
-  "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts.",
+  "estado": "en_vps",
+  "nota": "La API sirve los logos (GET /api/blobs/tenants/<uuid>/<logo|favicon>-<hash>.<ext>, público, nosniff, CORP cross-origin, CSP sandbox, caché inmutable); el directorio es del usuario app en la imagen y vive en el volumen `blobs` (prod y Mac); en prod la URL es absoluta (api.planetour.cloud) para que sirva en PDFs y correos. Probado en logos.api.ts. En el VPS el 2026-11-27 (0cc1ffda): la ruta responde.",
   "fecha": "2026-11-27"
  },
  {
