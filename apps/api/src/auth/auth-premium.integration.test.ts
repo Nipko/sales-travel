@@ -45,7 +45,9 @@ const d = hasDb ? describe : describe.skip;
 
 const PASSWORD = 'contraseña-de-prueba-puestos';
 
-d('auth premium contra Postgres, como app_user', () => {
+// Cada ingreso hashea con bcrypt (12 rondas): con CI cargado, un caso de varios ingresos pasa los
+// 5 s por defecto sin que nada esté mal.
+d('auth premium contra Postgres, como app_user', { timeout: 20_000 }, () => {
   const sfx = randomBytes(4).toString('hex');
   const admin = new pg.Pool();
   const comoApp = new pg.Pool({ max: 12 });
