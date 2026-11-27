@@ -567,13 +567,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
+  "nota": "Con el único puesto de e2e-agencia-cupo ocupado, un vendedor ve «No hay puestos libres», «El único puesto de Agencia E2E Cupo está en uso.», «Volver a intentar» (vuelve al formulario) y ni el nombre ni el correo de quien ocupa el puesto.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-17",
@@ -583,13 +583,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
+  "nota": "El admin del nodo ve la fila de quien ocupa el puesto, confirma «¿Desconectar a …?» y entra (al gate de MFA, que activa); quien quedó afuera vuelve a /login?motivo=liberada con «vuelve a ingresar cuando haya un puesto libre».",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-18",
@@ -727,13 +727,13 @@
   "nivel": "E",
   "prioridad": "P2",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
+  "nota": "«Reenviar correo» dice «Te enviamos un correo de verificación.» y el correo llega a Mailpit; el 6.º reenvío del minuto se frena con aviso; el enlace muestra «¡Correo verificado!» y el banner desaparece.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "ACC-27",
@@ -903,13 +903,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
+  "nota": "Un vendedor activa la verificación en dos pasos desde Seguridad: QR + clave manual, contraseña + código, 10 códigos de recuperación; «Listo» está deshabilitado hasta marcar «Los guardé».",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CTA-04",
@@ -935,13 +935,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f43-cupo-mfa-y-verificacion.e2e.ts",
+  "nota": "«Cambiar de teléfono» pide contraseña + código de la app actual y da otra clave; abandonado, Seguridad muestra «Empezaste a cambiar de teléfono y no terminaste.» y la app vieja sigue entrando; terminado, la clave vieja se rechaza en el login y la nueva entra. El api no acepta dos códigos del mismo paso de 30 s aunque sean de claves distintas (el mensaje ya dice que se espere el siguiente).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CTA-06",

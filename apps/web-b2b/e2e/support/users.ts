@@ -14,6 +14,14 @@ export const USERS = {
   acceso: { email: 'acceso@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
   /** Sólo para equipos de confianza y sesiones abiertas (f36): abre y cierra varias a la vez. */
   confianza: { email: 'confianza@e2e.test', tenant: 'e2e-agencia-b', mfa: true },
+  /** ACC-16/17: e2e-agencia-cupo tiene un solo puesto. */
+  cupoUno: { email: 'cupo-uno@e2e.test', tenant: 'e2e-agencia-cupo', mfa: false },
+  cupoDos: { email: 'cupo-dos@e2e.test', tenant: 'e2e-agencia-cupo', mfa: false },
+  cupoAdmin: { email: 'cupo-admin@e2e.test', tenant: 'e2e-agencia-cupo', mfa: true },
+  /** CTA-03/05: activa el MFA sin que su rol lo exija, y después cambia de teléfono. */
+  voluntario: { email: 'voluntario@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** ACC-26: su correo nunca está verificado al empezar. */
+  sinVerificar: { email: 'sin-verificar@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
 } as const;
 
 export type UserKey = keyof typeof USERS;

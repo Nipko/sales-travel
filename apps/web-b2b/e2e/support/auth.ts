@@ -60,7 +60,8 @@ export async function submitCredentials(
     const settled = rateLimited
       .or(page.getByRole('textbox', { name: 'Dígito 1 de 6' }))
       .or(page.getByText('El correo o la contraseña no son correctos.'))
-      .or(page.getByRole('heading', { name: 'Activa la verificación en dos pasos' }));
+      .or(page.getByRole('heading', { name: 'Activa la verificación en dos pasos' }))
+      .or(page.getByRole('heading', { name: 'No hay puestos libres' }));
     await Promise.race([
       settled.first().waitFor({ timeout: 30_000 }),
       page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }),

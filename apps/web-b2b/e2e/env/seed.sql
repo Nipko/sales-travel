@@ -8,7 +8,8 @@
 --   ├── e2e-consolidador (consolidator)
 --   │   ├── e2e-agencia-a (agency)
 --   │   │   └── e2e-subagencia (subagency)
---   │   └── e2e-agencia-equipo (agency: EQU-06/07/08 del arnés, cambia roles y estados)
+--   │   ├── e2e-agencia-equipo (agency: EQU-06/07/08 del arnés, cambia roles y estados)
+--   │   └── e2e-agencia-cupo (agency con UN puesto: ACC-16/17)
 --   ├── e2e-agencia-b (agency)
 --   └── e2e-agencia-suspendida (agency, suspendida: ACC-21)
 --
@@ -42,6 +43,10 @@ SELECT 'e2e-agencia-equipo', 'Agencia E2E Equipo', 'CO', 'COP', 'agency', id FRO
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
+SELECT 'e2e-agencia-cupo', 'Agencia E2E Cupo', 'CO', 'COP', 'agency', id FROM tenants WHERE slug = 'e2e-consolidador'
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO tenants (slug, name, country_code, default_currency, tenant_type, parent_tenant_id)
 SELECT 'e2e-agencia-b', 'Agencia E2E B', 'PE', 'PEN', 'agency', id FROM tenants WHERE slug = 'platform'
 ON CONFLICT (slug) DO NOTHING;
 
@@ -51,6 +56,8 @@ ON CONFLICT (slug) DO NOTHING;
 UPDATE tenants SET status = 'suspended' WHERE slug = 'e2e-agencia-suspendida';
 -- EQU-13: los puestos sólo se cuentan en un nodo con cupo.
 UPDATE tenants SET concurrent_seats = 20 WHERE slug = 'e2e-agencia-equipo';
+-- ACC-16/17: un solo puesto, para llenarlo con una persona.
+UPDATE tenants SET concurrent_seats = 1 WHERE slug = 'e2e-agencia-cupo';
 
 -- ── Usuarios ───────────────────────────────────────────────────────────────────────────────────────
 WITH seed_users(email, name) AS (
@@ -68,6 +75,14 @@ WITH seed_users(email, name) AS (
     ('invitado@e2e.test',   'Vendedor Invitado'),
     -- ACC-10/11 y CTA-09/10: equipos de confianza y sesiones abiertas, en su propio admin.
     ('confianza@e2e.test',  'Admin Equipos de Confianza'),
+    -- ACC-16/17: el único puesto de e2e-agencia-cupo, quien no lo consigue y quien lo libera.
+    ('cupo-uno@e2e.test',   'Vendedor Cupo Uno'),
+    ('cupo-dos@e2e.test',   'Vendedor Cupo Dos'),
+    ('cupo-admin@e2e.test', 'Admin Cupo'),
+    -- CTA-03/05: activa la verificación en dos pasos por su cuenta y después cambia de teléfono.
+    ('voluntario@e2e.test', 'Vendedor MFA Voluntario'),
+    -- ACC-26: entra sin el correo verificado (el seed se lo vuelve a quitar).
+    ('sin-verificar@e2e.test', 'Vendedor Sin Verificar'),
     -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
     ('api-superadmin@e2e.test',     'API Superadmin'),
     ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
@@ -141,6 +156,11 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('cambio@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
     ('invitado@e2e.test',           'e2e-agencia-b',    'vendedor',           false),
     ('confianza@e2e.test',          'e2e-agencia-b',    'admin',              false),
+    ('cupo-uno@e2e.test',           'e2e-agencia-cupo', 'vendedor',           false),
+    ('cupo-dos@e2e.test',           'e2e-agencia-cupo', 'vendedor',           false),
+    ('cupo-admin@e2e.test',         'e2e-agencia-cupo', 'admin',              false),
+    ('voluntario@e2e.test',         'e2e-agencia-b',    'vendedor',           false),
+    ('sin-verificar@e2e.test',      'e2e-agencia-b',    'vendedor',           false),
     ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
     ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
     ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
@@ -167,6 +187,7 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE
 UPDATE users SET status = 'suspended' WHERE email = 'api-suspendido@e2e.test';
 UPDATE users SET password_reset_required_at = now()
  WHERE email IN ('api-reset@e2e.test', 'cambio@e2e.test');
+UPDATE users SET email_verified_at = NULL WHERE email = 'sin-verificar@e2e.test';
 -- ACC-28/29: la invitación a la agencia A vuelve a hacer falta (una quitada se reactiva al aceptar).
 UPDATE memberships SET status = 'removed', removed_at = now(), removed_by = NULL
  WHERE user_id = (SELECT id FROM users WHERE email = 'invitado@e2e.test')
