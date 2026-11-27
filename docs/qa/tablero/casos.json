@@ -282,7 +282,7 @@
   "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "QA-H-47",
+  "hallazgo": "QA-H-48",
   "prueba": "",
   "nota": "",
   "fecha": ""
@@ -2087,13 +2087,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f41-formulario-checkout.e2e.ts",
+  "nota": "Infantes ≤ adultos (el «+» se apaga; bajar adultos baja infantes), un niño pide su edad, tope de 9 con el «+» apagado y el aviso. Falta: infantes con asiento ≤ infantes.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "VUE-06",
@@ -2391,13 +2391,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f41-formulario-checkout.e2e.ts",
+  "nota": "«Faltan N datos para reservar» e «Ir al primero» (foco en Nombre); nacimiento con año < 1900, fecha que no existe y futura, cada una con su mensaje. Falta: pasaporte sin vencimiento.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-09",
@@ -2423,13 +2423,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f41-formulario-checkout.e2e.ts",
+  "nota": "Dos pasajeros con el mismo documento: el resumen lo dice y no se reserva (sigue en la cotización).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-11",
@@ -2455,13 +2455,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f41-formulario-checkout.e2e.ts",
+  "nota": "Email inválido y teléfono de 3 dígitos → «Facturación: completa email válido, teléfono.» y no reserva. Falta: país ISO, «Guardar facturación» y el tercero que factura.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CHK-13",
@@ -2631,13 +2631,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-48",
+  "prueba": "apps/web-b2b/e2e/tests/f42-lista-de-reservas.e2e.ts",
+  "nota": "Dos reservas del proveedor falso (confirmada y cancelada): búsqueda por pasajero y por número, «Sin resultados», chips Canceladas/Confirmadas/Todas, y ?orden= abre el detalle. Falta: chips de vertical y «Por vencer».",
+  "fecha": "2026-11-27"
  },
  {
   "id": "POS-02",

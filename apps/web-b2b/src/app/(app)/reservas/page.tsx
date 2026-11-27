@@ -21,7 +21,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { SalesBlockedBanner } from '../../../components/layout/sales-blocked';
 import { useViewer } from '../../../components/layout/viewer-context';
@@ -72,6 +72,7 @@ import { HotelOrderStatusChip } from './_components/hotel-order-status';
 import { TestOrderTag } from './_components/test-order-tag';
 import { TicketConditions } from './_components/ticket-conditions';
 import { ConfirmDialog } from './_components/confirm-dialog';
+import { useModalBehavior } from '../../../components/ui/dialog';
 import { isTestOrder, TEST_ORDER_EMAIL_NOTICE } from '../../../lib/test-content';
 import {
   ORDER_STATUS_CONFIG as STATUS_CONFIG,
@@ -163,6 +164,8 @@ export default function ReservasPage() {
   } | null>(null);
   const [payingOrder, setPayingOrder] = useState<Order | null>(null);
   const [servicesOrder, setServicesOrder] = useState<Order | null>(null);
+  const servicesPanelRef = useModalBehavior(servicesOrder !== null, () => setServicesOrder(null));
+  const servicesTitleId = useId();
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
@@ -919,13 +922,20 @@ export default function ReservasPage() {
       {/* Services modal */}
       {servicesOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
+          <div
+            ref={servicesPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={servicesTitleId}
+            className="w-full max-w-2xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl"
+          >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+              <h2 id={servicesTitleId} className="text-sm font-semibold text-[var(--color-fg)]">
                 Servicios disponibles — Reserva #{servicesOrder.orderNumber}
               </h2>
               <button
                 type="button"
+                aria-label="Cerrar"
                 onClick={() => setServicesOrder(null)}
                 className="rounded-lg p-1 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-muted)]"
               >
@@ -1139,6 +1149,9 @@ function OrderDetailModal({
   /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
   onOrderChanged: () => void;
 }) {
+  // Diálogo de verdad (QA-H-48): foco atrapado, Escape cierra y el lector de pantalla lo anuncia.
+  const panelRef = useModalBehavior(true, onClose);
+  const titleId = useId();
   const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending!;
   const isCar = isCarOrder(order);
   const pendingReconciliation = pendingOrderReconciliationMessage(order);
@@ -1250,10 +1263,16 @@ function OrderDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
+      >
         <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-[var(--color-fg)]">
+            <h2 id={titleId} className="text-sm font-semibold text-[var(--color-fg)]">
               Reserva #{order.orderNumber}
             </h2>
             {order.pnr && (
