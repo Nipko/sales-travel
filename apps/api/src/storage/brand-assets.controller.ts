@@ -42,15 +42,43 @@ const SIGNATURES: { ext: string; mime: string; test: (b: Buffer) => boolean }[] 
   {
     ext: 'svg',
     mime: 'image/svg+xml',
-    test: (b) => {
-      const head = b.subarray(0, 512).toString('utf8').toLowerCase();
-      // Un SVG puede contener <script>: se rechaza en vez de servirlo desde nuestro
-      // dominio, donde ejecutaría con nuestro origen.
-      if (/<script|onload=|javascript:/.test(head)) return false;
-      return head.includes('<svg');
-    },
+    test: (b) => isSafeSvg(b.toString('utf8')),
   },
 ];
+
+/**
+ * Lo que puede ejecutar código o traer contenido de afuera dentro de un SVG servido desde nuestro
+ * dominio. Antes sólo se miraban los primeros 512 bytes y tres patrones: un `<script>` después de
+ * un comentario largo, un `onclick`, un `<foreignObject>` o un `href` a `javascript:` pasaban y
+ * quedaban guardados como logo (QA-H-34). Se rechaza el archivo entero ante cualquiera de estos;
+ * un logo legítimo no los necesita.
+ */
+const SVG_ACTIVE_CONTENT = [
+  /<script/i,
+  /<foreignobject/i,
+  /<(iframe|embed|object|animate|set|handler|listener)\b/i,
+  /<!entity/i,
+  /\son[a-z]+\s*=/i,
+  /javascript:/i,
+  /&#/,
+  /@import/i,
+  /url\s*\(\s*["']?(?!#|data:image\/)/i,
+];
+
+/**
+ * `href` sólo a un elemento del mismo archivo (`#id`) o a una imagen embebida: es lo que exportan
+ * Figma o Illustrator con `<use>` e `<image>`. Cualquier otra cosa trae contenido de afuera.
+ */
+const SAFE_HREF = /^(#|data:image\/(png|jpeg|webp|gif);base64,)/i;
+
+export function isSafeSvg(text: string): boolean {
+  if (!/<svg[\s>]/i.test(text)) return false;
+  if (SVG_ACTIVE_CONTENT.some((re) => re.test(text))) return false;
+  for (const m of text.matchAll(/\bhref\s*=\s*(["']?)([^"'\s>]*)/gi)) {
+    if (!SAFE_HREF.test(m[2] ?? '')) return false;
+  }
+  return true;
+}
 
 @Roles(...AGENCY_ADMIN_ROLES)
 @Controller('tenants/:id/brand-assets')

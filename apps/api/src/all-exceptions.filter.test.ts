@@ -342,13 +342,16 @@ describe('AllExceptionsFilter — marcas de conciliación y detalles publicables
 });
 
 describe('AllExceptionsFilter — id de ruta mal formado (QA-H-01)', () => {
-  function conParams(params: Record<string, string>): Respuesta {
+  function conParams(
+    params: Record<string, string>,
+    query: Record<string, string> = {},
+  ): Respuesta {
     const json = vi.fn();
     const status = vi.fn(() => ({ json }));
     const host = {
       switchToHttp: () => ({
         getResponse: () => ({ status }),
-        getRequest: () => ({ method: 'GET', url: '/orders/x', params }),
+        getRequest: () => ({ method: 'GET', url: '/orders/x', params, query }),
       }),
     } as unknown as ArgumentsHost;
     return { host, status, json };
@@ -374,5 +377,32 @@ describe('AllExceptionsFilter — id de ruta mal formado (QA-H-01)', () => {
     const r = conParams({ id: 'abc' });
     new AllExceptionsFilter().catch(Object.assign(new Error('boom'), { code: '23505' }), r.host);
     expect(r.status).toHaveBeenCalledWith(500);
+  });
+
+  it('también un id mal formado en la query (QA-H-36)', () => {
+    const r = conParams({}, { tenantId: 'no-es-uuid' });
+    new AllExceptionsFilter().catch(pg22P02(), r.host);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(cuerpo(r)).toMatchObject({ reason: 'INVALID_ID' });
+  });
+});
+
+describe('AllExceptionsFilter — errores del parser del cuerpo (QA-H-35)', () => {
+  const parserError = (type: string, status: number) =>
+    Object.assign(new Error('raw-body'), { type, status, statusCode: status, expose: true });
+
+  it('un cuerpo demasiado grande sale como 413, no como 500', () => {
+    const r = respuesta();
+    new AllExceptionsFilter().catch(parserError('entity.too.large', 413), r.host);
+    expect(r.status).toHaveBeenCalledWith(413);
+    expect(cuerpo(r)).toMatchObject({ statusCode: 413, reason: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('un JSON roto sale como 400 sin el texto del parser', () => {
+    const r = respuesta();
+    new AllExceptionsFilter().catch(parserError('entity.parse.failed', 400), r.host);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(cuerpo(r)).toMatchObject({ reason: 'MALFORMED_BODY' });
+    expect(JSON.stringify(cuerpo(r))).not.toContain('raw-body');
   });
 });

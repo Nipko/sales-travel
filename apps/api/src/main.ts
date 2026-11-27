@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import type { Server } from 'node:http';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
@@ -10,7 +11,7 @@ import { InflightWorkRegistry } from './lifecycle/inflight-work.registry.js';
 import { loadShutdownConfig } from './lifecycle/shutdown.config.js';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
 
@@ -20,7 +21,36 @@ async function bootstrap(): Promise<void> {
   const express = app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void };
   express.set('trust proxy', true);
 
-  app.use(helmet());
+  // 1 MB: entra un logo de 512 KB en base64 (≈700 KB) y sigue cortando cuerpos abusivos con 413.
+  // El valor por defecto de Express (100 KB) rechazaba logos de más de ~75 KB (QA-H-35).
+  app.useBodyParser('json', { limit: '1mb' });
+
+  // La API sólo devuelve JSON (y los blobs de marca): nada de ella se embebe ni ejecuta en un
+  // navegador, así que la política es la más cerrada. Los valores por defecto de helmet dejaban
+  // X-Frame-Options SAMEORIGIN, Referrer-Policy no-referrer y HSTS sin preload (QA-H-02).
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+          formAction: ["'none'"],
+        },
+      },
+      frameguard: { action: 'deny' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      strictTransportSecurity: { maxAge: 63_072_000, includeSubDomains: true, preload: true },
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
+  // Las respuestas llevan datos de la agencia y de sus clientes: ningún proxy ni el navegador las
+  // guarda. Una ruta que quiera cache lo declara ella misma (pisa este valor).
+  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.setGlobalPrefix('api');
 

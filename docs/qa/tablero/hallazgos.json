@@ -15,9 +15,9 @@
   "que": "helmet() con valores por defecto: sin CSP ni HSTS propios, contra lo que pide CLAUDE.md",
   "donde": "apps/api/src/main.ts",
   "casos": "TRV-14",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "en_mac",
+  "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-03",
@@ -298,5 +298,125 @@
   "estado": "confirmado",
   "nota": "El 502 ya sale como 404 (probado en la Mac). Abierto: las reservas de Despegar no se guardan como órdenes, así que no hay forma de verificar que una reserva sea de la agencia que la pide. Necesita decisión del founder.",
   "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-31",
+  "gravedad": "Alta",
+  "que": "CRM: una oportunidad, interacción o tarea acepta el cliente, la oportunidad o el vendedor de OTRA agencia (las FK no miran el tenant)",
+  "donde": "crm/*.service.ts",
+  "casos": "CLI-09",
+  "estado": "en_mac",
+  "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-32",
+  "gravedad": "Alta",
+  "que": "Paquetes: aceptan el cliente de otra agencia, fechas que no existen (2027-02-31) y regreso antes de la ida",
+  "donde": "packages/packages.schemas.ts, packages.service.ts",
+  "casos": "PAQ-04",
+  "estado": "en_mac",
+  "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-33",
+  "gravedad": "Media",
+  "que": "Fechas que no son fecha («mañana», «nunca») en tareas, oportunidades y paquetes terminan en 500",
+  "donde": "crm/crm.schemas.ts, packages/packages.schemas.ts",
+  "casos": "CLI-07, PAQ-04",
+  "estado": "en_mac",
+  "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-34",
+  "gravedad": "Alta",
+  "que": "Logo SVG: sólo se revisaban los primeros 512 bytes y 3 patrones; un script tardío, un onclick, un foreignObject o un href a javascript: pasaban",
+  "donde": "storage/brand-assets.controller.ts",
+  "casos": "AGE-06",
+  "estado": "en_mac",
+  "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-35",
+  "gravedad": "Media",
+  "que": "Límite de cuerpo de Express (100 KB): un logo de más de ~75 KB no se puede subir, y el 413 del parser (o un JSON roto) sale como 500",
+  "donde": "main.ts, all-exceptions.filter.ts",
+  "casos": "AGE-06, NFR-05",
+  "estado": "en_mac",
+  "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-36",
+  "gravedad": "Baja",
+  "que": "Un UUID mal formado en la query (?tenantId=abc) sale como 500",
+  "donde": "all-exceptions.filter.ts",
+  "casos": "RED-13",
+  "estado": "en_mac",
+  "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-37",
+  "gravedad": "Baja",
+  "que": "Borrar una regla de pricing de otro nodo responde 200 {deleted:false}: no borra, pero el panel lo lee como hecho",
+  "donde": "pricing/pricing.controller.ts",
+  "casos": "RED-10",
+  "estado": "en_mac",
+  "nota": "Confirmado: 200 {deleted:false}. Ahora 404.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-38",
+  "gravedad": "Alta",
+  "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
+  "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
+  "casos": "AGE-06",
+  "estado": "confirmado",
+  "nota": "EACCES al crear /var/lib/sales-travel en la Mac; en el VPS tampoco hay volumen ni ruta /blobs en Caddy. Ver la mejora QA-M-02.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-01",
+  "gravedad": "Mejora",
+  "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
+  "donde": "db/migrations, crm/crm-references.ts",
+  "casos": "CLI-09, PAQ-04",
+  "estado": "propuesta",
+  "nota": "Propuesta para la Ola 3.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-02",
+  "gravedad": "Mejora",
+  "que": "Logos de verdad: volumen persistente, /blobs/* servido por Caddy con Content-Security-Policy: default-src 'none' y nosniff, y después MinIO/S3 detrás del mismo puerto. Cuándo: el próximo deploy al VPS",
+  "donde": "infrastructure/*, storage/*",
+  "casos": "AGE-06",
+  "estado": "propuesta",
+  "nota": "Propuesta para el próximo deploy al VPS; arregla QA-H-38.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-03",
+  "gravedad": "Mejora",
+  "que": "Una sola definición de «fecha» y «día de calendario» en packages/validation, usada por CRM, paquetes, cotizaciones, clientes y órdenes (hoy cada módulo tiene la suya)",
+  "donde": "packages/validation",
+  "casos": "CLI-07, PAQ-04",
+  "estado": "propuesta",
+  "nota": "Propuesta; chica, se puede hacer en la próxima tanda.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-M-04",
+  "gravedad": "Mejora",
+  "que": "Cotizaciones con estados permitidos (borrador → enviada → aceptada/vencida/cancelada) en vez de cualquier transición. Necesita decisión del founder",
+  "donde": "quotations/*",
+  "casos": "COT-03",
+  "estado": "propuesta",
+  "nota": "Necesita tu decisión sobre los estados permitidos.",
+  "fecha": "2026-11-27"
  }
 ]

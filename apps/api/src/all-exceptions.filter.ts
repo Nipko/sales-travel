@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { tenantHierarchyHttpError } from './database/tenant-hierarchy-errors.js';
@@ -50,13 +51,43 @@ const PG_INVALID_TEXT_REPRESENTATION = '22P02';
 function malformedIdHttpError(exception: unknown, request: Request): HttpException | undefined {
   if (typeof exception !== 'object' || exception === null) return undefined;
   if ((exception as { code?: unknown }).code !== PG_INVALID_TEXT_REPRESENTATION) return undefined;
-  const params = Object.values((request.params ?? {}) as Record<string, unknown>);
-  if (!params.some((v) => typeof v === 'string' && !UUID.test(v))) return undefined;
+  // También la query: `?tenantId=abc` llegaba igual a la base (QA-H-36).
+  const values = [
+    ...Object.values((request.params ?? {}) as Record<string, unknown>),
+    ...Object.values((request.query ?? {}) as Record<string, unknown>),
+  ];
+  if (!values.some((v) => typeof v === 'string' && !UUID.test(v))) return undefined;
   return new BadRequestException({
     error: 'Bad Request',
     message: 'El identificador no es válido.',
     reason: 'INVALID_ID',
   });
+}
+
+/**
+ * Los errores del parser del cuerpo (body-parser) no son HttpException: traen `type` y `status`.
+ * Un cuerpo demasiado grande o un JSON roto es un error del cliente, y salía como 500 (QA-H-35).
+ */
+function bodyParserHttpError(exception: unknown): HttpException | undefined {
+  if (typeof exception !== 'object' || exception === null) return undefined;
+  const { type, status } = exception as { type?: unknown; status?: unknown };
+  if (typeof type !== 'string' || typeof status !== 'number') return undefined;
+  if (type === 'entity.too.large')
+    return new PayloadTooLargeException({
+      error: 'Payload Too Large',
+      message: 'El contenido enviado es demasiado grande.',
+      reason: 'PAYLOAD_TOO_LARGE',
+    });
+  if (status >= 400 && status < 500)
+    return new HttpException(
+      {
+        error: 'Bad Request',
+        message: 'No pudimos leer los datos enviados.',
+        reason: 'MALFORMED_BODY',
+      },
+      status,
+    );
+  return undefined;
 }
 
 /** Las marcas que dicen si se puede repetir una reserva. Sólo `true`: su ausencia es "no". */
@@ -111,6 +142,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         tenantHierarchyHttpError(exception) ??
         walletHoldHttpError(exception) ??
         portfolioHttpError(exception) ??
+        bodyParserHttpError(exception) ??
         malformedIdHttpError(exception, host.switchToHttp().getRequest<Request>());
       if (translated !== undefined) {
         this.catch(translated, host);

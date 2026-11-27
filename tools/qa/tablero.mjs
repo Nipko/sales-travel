@@ -23,7 +23,15 @@ const OUT = path.join(ROOT, 'docs/qa/tablero');
 const FASES = ['por_crear', 'bloqueado', 'parcial', 'falla', 'corregido', 'pasa'];
 /** Dónde está el arreglo de un caso que falló: en la rama, probado en la Mac, o ya en el VPS. */
 const ARREGLO = ['rama', 'mac', 'vps'];
-const HALLAZGO = ['por_confirmar', 'confirmado', 'descartado', 'corregido', 'en_mac', 'en_vps'];
+const HALLAZGO = [
+  'propuesta',
+  'por_confirmar',
+  'confirmado',
+  'descartado',
+  'corregido',
+  'en_mac',
+  'en_vps',
+];
 const INFRA = ['falta', 'en_curso', 'listo'];
 
 /** Qué infraestructura necesita cada ola antes de poder escribir sus pruebas (plan §7). */
@@ -68,7 +76,7 @@ function parsePlan(md) {
         ola: Number(ola),
         planEstado: estado,
       });
-    } else if (/^QA-H-\d{2}$/.test(id) && c.length === 5) {
+    } else if (/^QA-[HM]-\d{2}$/.test(id) && c.length === 5) {
       const [, grav, que, donde, caso] = c;
       hallazgos.push({
         id,

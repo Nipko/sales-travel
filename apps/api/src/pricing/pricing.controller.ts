@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -116,16 +117,17 @@ export class PricingController {
   ) {
     await this.assertManage(userId, tenantId);
     const ok = await this.pricing.deleteRule(tenantId, id);
-    if (ok) {
-      await this.audit.emit({
-        eventType: 'MarkupRuleDeleted',
-        tenantId,
-        actorUserId: userId,
-        aggregateType: 'markup_rule',
-        aggregateId: id,
-      });
-    }
-    return { deleted: ok };
+    // Una regla de otro nodo (o inexistente) no se borra: decirlo, en vez de un 200 que el panel
+    // lee como «borrada» (QA-H-37).
+    if (!ok) throw new NotFoundException('La regla no existe en este nodo.');
+    await this.audit.emit({
+      eventType: 'MarkupRuleDeleted',
+      tenantId,
+      actorUserId: userId,
+      aggregateType: 'markup_rule',
+      aggregateId: id,
+    });
+    return { deleted: true };
   }
 
   /** Simula el precio final aplicando la cascada de markups de la red sobre un neto. */

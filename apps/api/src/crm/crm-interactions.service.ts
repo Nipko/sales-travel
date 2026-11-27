@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
+import { assertCrmReferences } from './crm-references.js';
 
 export interface CreateInteractionDto {
   customerId: string;
@@ -30,6 +31,7 @@ export class CrmInteractionsService {
 
   async create(tenantId: string, dto: CreateInteractionDto): Promise<InteractionRow> {
     return this.db.withTenant(tenantId, async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
       const row = await trx
         .insertInto('crm_interactions')
         .values({

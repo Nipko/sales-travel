@@ -576,6 +576,27 @@ falla, se abre el arreglo.
 | QA-H-28 | Baja  | «Tarifas en otra moneda» cambia sin confirmación                                                                                                                          | `foreign-currency-fares-card.tsx`                                      | SUP-24         |
 | QA-H-29 | Alta  | Neto de autos llega del cliente (ya en doc 21 §5.2)                                                                                                                       | `cars/*`                                                               | AUT-05         |
 | QA-H-30 | Alta  | Reservas de hotel Despegar: `:id` es el id del proveedor y va directo al ACL sin chequear que la reserva sea de la agencia; un id inexistente sale como 502 en vez de 404 | `hotels/despegar-hotel-reservations.service.ts`                        | TRV-08, TRV-06 |
+| QA-H-31 | Alta  | CRM: una oportunidad, interacción o tarea acepta el cliente, la oportunidad o el vendedor de OTRA agencia (las FK no miran el tenant)                                     | `crm/*.service.ts`                                                     | CLI-09         |
+| QA-H-32 | Alta  | Paquetes: aceptan el cliente de otra agencia, fechas que no existen (2027-02-31) y regreso antes de la ida                                                                | `packages/packages.schemas.ts`, `packages.service.ts`                  | PAQ-04         |
+| QA-H-33 | Media | Fechas que no son fecha («mañana», «nunca») en tareas, oportunidades y paquetes terminan en 500                                                                           | `crm/crm.schemas.ts`, `packages/packages.schemas.ts`                   | CLI-07, PAQ-04 |
+| QA-H-34 | Alta  | Logo SVG: sólo se revisaban los primeros 512 bytes y 3 patrones; un script tardío, un `onclick`, un `foreignObject` o un `href` a `javascript:` pasaban                   | `storage/brand-assets.controller.ts`                                   | AGE-06         |
+| QA-H-35 | Media | Límite de cuerpo de Express (100 KB): un logo de más de ~75 KB no se puede subir, y el 413 del parser (o un JSON roto) sale como 500                                      | `main.ts`, `all-exceptions.filter.ts`                                  | AGE-06, NFR-05 |
+| QA-H-36 | Baja  | Un UUID mal formado en la query (`?tenantId=abc`) sale como 500                                                                                                           | `all-exceptions.filter.ts`                                             | RED-13         |
+| QA-H-37 | Baja  | Borrar una regla de pricing de otro nodo responde 200 `{deleted:false}`: no borra, pero el panel lo lee como hecho                                                        | `pricing/pricing.controller.ts`                                        | RED-10         |
+| QA-H-38 | Alta  | Los logos no funcionan en ningún ambiente: el api escribe en `/var/lib/sales-travel/blobs` sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven `/blobs/*`       | `docker-compose.*.yml`, `Caddyfile`, `local-disk-storage.adapter.ts`   | AGE-06         |
+
+### 6.1 Mejoras que salen de probar
+
+Probar también es evaluar la funcionalidad. Lo que no es un bug pero conviene mejorar va acá, con
+cuándo conviene hacerlo. Las chicas y sin riesgo se hacen en el momento, junto al arreglo; las que
+cambian el producto o piden una decisión quedan propuestas.
+
+| ID      | Grav.  | Qué                                                                                                                                                                                                            | Dónde (aprox.)                           | Caso           |
+| ------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------- |
+| QA-M-01 | Mejora | Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas `(tenant_id, id)` o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3                             | `db/migrations`, `crm/crm-references.ts` | CLI-09, PAQ-04 |
+| QA-M-02 | Mejora | Logos de verdad: volumen persistente, `/blobs/*` servido por Caddy con `Content-Security-Policy: default-src 'none'` y `nosniff`, y después MinIO/S3 detrás del mismo puerto. Cuándo: el próximo deploy al VPS | `infrastructure/*`, `storage/*`          | AGE-06         |
+| QA-M-03 | Mejora | Una sola definición de «fecha» y «día de calendario» en `packages/validation`, usada por CRM, paquetes, cotizaciones, clientes y órdenes (hoy cada módulo tiene la suya)                                       | `packages/validation`                    | CLI-07, PAQ-04 |
+| QA-M-04 | Mejora | Cotizaciones con estados permitidos (borrador → enviada → aceptada/vencida/cancelada) en vez de cualquier transición. Necesita decisión del founder                                                            | `quotations/*`                           | COT-03         |
 
 ---
 

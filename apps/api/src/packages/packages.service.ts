@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { assertCrmReferences } from '../crm/crm-references.js';
 import { DatabaseService } from '../database/database.service.js';
 import {
   applyCascade,
@@ -109,6 +110,7 @@ export class PackagesService {
     const priced = await this.priceAll(tenantId, items);
 
     return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await assertCrmReferences(trx, tenantId, { customerId: dto.customerId });
       const row = await trx
         .insertInto('package_quotations')
         .values({
@@ -135,6 +137,7 @@ export class PackagesService {
   async update(tenantId: string, packageId: string, dto: UpdatePackageDto): Promise<PackageRow> {
     const userId = currentContext()?.userId;
     return this.db.withRequestContext({ userId, tenantId }, async (trx) => {
+      await assertCrmReferences(trx, tenantId, { customerId: dto.customerId });
       const row = await trx
         .updateTable('package_quotations')
         .set({

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type UpdateObject } from 'kysely';
 import { DatabaseService } from '../database/database.service.js';
 import { type DB, type CrmOpportunityStage } from '../database/database.types.js';
+import { assertCrmReferences } from './crm-references.js';
 
 export interface CreateOpportunityDto {
   customerId: string;
@@ -70,6 +71,7 @@ export class CrmOpportunitiesService {
 
   async create(tenantId: string, dto: CreateOpportunityDto): Promise<OpportunityRow> {
     return this.db.withTenant(tenantId, async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
       const row = await trx
         .insertInto('crm_opportunities')
         .values({
@@ -178,6 +180,7 @@ export class CrmOpportunitiesService {
     dto: UpdateOpportunityDto,
   ): Promise<OpportunityRow | undefined> {
     return this.db.withTenant(tenantId, async (trx) => {
+      await assertCrmReferences(trx, tenantId, dto);
       const updateData: UpdateObject<DB, 'crm_opportunities'> = {};
       if (dto.assignedUserId !== undefined) updateData.assigned_user_id = dto.assignedUserId;
       if (dto.stage !== undefined) updateData.stage = dto.stage;

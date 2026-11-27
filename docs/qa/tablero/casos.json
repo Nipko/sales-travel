@@ -215,13 +215,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-02",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "API: CSP default-src none + frame-ancestors none, X-Frame-Options DENY, Referrer-Policy strict-origin-when-cross-origin, HSTS 2 años con preload, Cache-Control no-store. Panel: CSP, DENY y Referrer ya estaban; su HSTS lo pone Caddy en el VPS.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "TRV-15",
@@ -855,13 +855,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
   "nota": "",
-  "fecha": ""
+  "fecha": "2026-11-27"
  },
  {
   "id": "CTA-01",
@@ -1111,13 +1111,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-02",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "QA-H-34/35: SVG con script, eventos, foreignObject, href o url() externos → 400; >512 KB → 400 o 413; admin de otra agencia → 403. La subida válida no se pudo probar: QA-H-38 (sin volumen ni ruta /blobs).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "AGE-07",
@@ -1527,13 +1527,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
   "nota": "",
-  "fecha": ""
+  "fecha": "2026-11-27"
  },
  {
   "id": "BYO-08",
@@ -1751,13 +1751,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "QA-H-11",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-37",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "API: borrar una regla de otro nodo → 403/404 y la regla sigue (QA-H-37). Falta la mitad del panel (confirmación y error visible, QA-H-11).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "RED-11",
@@ -1799,13 +1799,13 @@
   "nivel": "H",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-36",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "Sin tenantId 403, UUID malo 400 (QA-H-36), nodo de otra red 403.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CAR-01",
@@ -3911,13 +3911,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-03",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "QA-H-32/33: aislamiento, cliente ajeno, fechas imposibles, regreso antes de ida y más de 12 ítems → 400/404; la moneda se normaliza a mayúsculas. Falta editar, agregar y quitar ítems propios.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "PAQ-05",
@@ -3978,7 +3978,7 @@
   "fase": "por_crear",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
+  "hallazgo": "QA-M-04",
   "prueba": "",
   "nota": "",
   "fecha": ""
@@ -4007,13 +4007,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "Aislamiento probado: GET, PATCH status y PATCH customer de una cotización de B desde A → 404, y no cambia. Falta la mitad «permite» (editar la propia).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-01",
@@ -4119,13 +4119,13 @@
   "nivel": "H",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-03",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "Fechas inválidas y filtros raros ya no dan 500 (QA-H-33). Falta el límite de tareas >200 y el filtro de etapa con 400 explícito.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-08",
@@ -4151,13 +4151,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-M-01",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "QA-H-31: lo de B no se lee ni se edita desde A, y ya no se puede colgar una oportunidad, interacción o tarea del cliente, la oportunidad o el vendedor de B (400 FOREIGN_REFERENCE).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "INI-01",
@@ -4951,12 +4951,12 @@
   "nivel": "H",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-35",
+  "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+  "nota": "5 MB → 413 (antes 500) y la API sigue respondiendo; JSON roto → 400. Límite del cuerpo en 1 MB para que entren logos de 512 KB.",
+  "fecha": "2026-11-27"
  }
 ]

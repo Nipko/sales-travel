@@ -105,6 +105,94 @@
     "TRV-06": {
       "cobertura": "parcial",
       "nota": "Nuevo hueco: reservas de Despegar sin dueño en la plataforma (QA-H-30)."
+    },
+    "CLI-09": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "QA-H-31: lo de B no se lee ni se edita desde A, y ya no se puede colgar una oportunidad, interacción o tarea del cliente, la oportunidad o el vendedor de B (400 FOREIGN_REFERENCE)."
+    },
+    "CLI-07": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "Fechas inválidas y filtros raros ya no dan 500 (QA-H-33). Falta el límite de tareas >200 y el filtro de etapa con 400 explícito."
+    },
+    "COT-05": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "Aislamiento probado: GET, PATCH status y PATCH customer de una cotización de B desde A → 404, y no cambia. Falta la mitad «permite» (editar la propia)."
+    },
+    "PAQ-04": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "QA-H-32/33: aislamiento, cliente ajeno, fechas imposibles, regreso antes de ida y más de 12 ítems → 400/404; la moneda se normaliza a mayúsculas. Falta editar, agregar y quitar ítems propios."
+    },
+    "AGE-06": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "QA-H-34/35: SVG con script, eventos, foreignObject, href o url() externos → 400; >512 KB → 400 o 413; admin de otra agencia → 403. La subida válida no se pudo probar: QA-H-38 (sin volumen ni ruta /blobs).",
+      "cobertura": "parcial"
+    },
+    "BYO-07": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa"
+    },
+    "RED-10": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "API: borrar una regla de otro nodo → 403/404 y la regla sigue (QA-H-37). Falta la mitad del panel (confirmación y error visible, QA-H-11)."
+    },
+    "RED-13": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "Sin tenantId 403, UUID malo 400 (QA-H-36), nodo de otra red 403."
+    },
+    "TRV-14": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "API: CSP default-src none + frame-ancestors none, X-Frame-Options DENY, Referrer-Policy strict-origin-when-cross-origin, HSTS 2 años con preload, Cache-Control no-store. Panel: CSP, DENY y Referrer ya estaban; su HSTS lo pone Caddy en el VPS."
+    },
+    "ACC-34": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa"
+    },
+    "NFR-05": {
+      "prueba": "apps/web-b2b/e2e/api/aislamiento-y-modulos.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "5 MB → 413 (antes 500) y la API sigue respondiendo; JSON roto → 400. Límite del cuerpo en 1 MB para que entren logos de 512 KB."
     }
   },
   "hallazgos": {
@@ -146,6 +234,71 @@
     "QA-H-29": {
       "estado": "confirmado",
       "nota": "Confirmado leyendo cars.service.ts: el neto que va a AgentCars y la base del precio de venta llegan del navegador. No se puede probar por HTTP hasta que AgentCars registre la IP de la Mac o exista un proveedor falso (INF-4). El arreglo pide volver a consultar la tarifa al proveedor."
+    },
+    "QA-H-02": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor."
+    },
+    "QA-H-31": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia."
+    },
+    "QA-H-32": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio."
+    },
+    "QA-H-33": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes."
+    },
+    "QA-H-34": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href."
+    },
+    "QA-H-35": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB."
+    },
+    "QA-H-36": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query."
+    },
+    "QA-H-37": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado: 200 {deleted:false}. Ahora 404."
+    },
+    "QA-H-38": {
+      "fecha": "2026-11-27",
+      "estado": "confirmado",
+      "nota": "EACCES al crear /var/lib/sales-travel en la Mac; en el VPS tampoco hay volumen ni ruta /blobs en Caddy. Ver la mejora QA-M-02."
+    },
+    "QA-M-01": {
+      "fecha": "2026-11-27",
+      "estado": "propuesta",
+      "nota": "Propuesta para la Ola 3."
+    },
+    "QA-M-02": {
+      "fecha": "2026-11-27",
+      "estado": "propuesta",
+      "nota": "Propuesta para el próximo deploy al VPS; arregla QA-H-38."
+    },
+    "QA-M-03": {
+      "fecha": "2026-11-27",
+      "estado": "propuesta",
+      "nota": "Propuesta; chica, se puede hacer en la próxima tanda."
+    },
+    "QA-M-04": {
+      "fecha": "2026-11-27",
+      "estado": "propuesta",
+      "nota": "Necesita tu decisión sobre los estados permitidos."
     }
   },
   "ultimaCorrida": {
