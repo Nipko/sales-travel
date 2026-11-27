@@ -3783,13 +3783,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "rama",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-29",
-  "prueba": "",
-  "nota": "Bug confirmado leyendo el código (QA-H-29). Bloqueado: AgentCars no acepta la IP de la Mac y no hay proveedor falso.",
-  "fecha": ""
+  "prueba": "apps/api/src/cars/cars-book-net-price.test.ts",
+  "nota": "El Book reserva con el neto que la API guardó en la selección; el del cuerpo sólo se compara (409 si difiere). Prueba unitaria; por HTTP sigue bloqueado (AgentCars no acepta la IP de la Mac).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "AUT-06",
@@ -4775,13 +4775,13 @@
   "nivel": "I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-42",
+  "prueba": "apps/api/src/database/security-definer.integration.test.ts",
+  "nota": "claim_pending_invitation: vigente una sola vez; vencida, revocada, usada o hash inexistente no. El invitador sin rango y el nodo suspendido ya los cubría membership-revocation.integration.test.ts (canje). El canje viejo de 0028 se borró (QA-H-42).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-03",
@@ -4791,13 +4791,13 @@
   "nivel": "I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/portfolios/wallets-rls.integration.test.ts",
+  "nota": "Ya cubierto: wallets-rls, wallets-per-currency, network-holds-rls y deposit-report-queue prueban las guardas (cupo, depósitos, libro inmutable, saldo sólo por las funciones de 0060).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-04",
@@ -4807,13 +4807,13 @@
   "nivel": "I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/tenants/membership-revocation.integration.test.ts",
+  "nota": "Ya cubierto: suspender corta las sesiones del nodo y su subárbol, no las de otros nodos; reactivar no toca sesiones.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-05",
@@ -4855,13 +4855,13 @@
   "nivel": "I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/api/src/database/security-definer.integration.test.ts",
+  "nota": "Escribirlo sobre NULL vale; cambiarlo o ponerlo en NULL falla, también como dueño de la tabla; cambiar otra columna no lo toca.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-08",

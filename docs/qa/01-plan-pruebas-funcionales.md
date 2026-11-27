@@ -587,6 +587,7 @@ falla, se abre el arreglo.
 | QA-H-39 | Alta  | CRM: oportunidades e interacciones abrían la transacción sin el usuario (`withTenant`), así que la RLS de 0031 no sabía quién pedía: una oportunidad asignada no la veía nadie (ni el admin), no se podía crear (500) y desaparecía al asignarla | `crm/crm-opportunities.service.ts`, `crm-interactions.service.ts`      | CLI-06, CLI-08 |
 | QA-H-40 | Alta  | Traspaso de cartera: `reassign_portfolio` (SECURITY DEFINER) no mira el destino; un admin podía pasar oportunidades y tareas a un vendedor de otra agencia                                                                                       | `crm/crm-tasks.service.ts`                                             | CLI-08         |
 | QA-H-41 | Baja  | Un vendedor que asigna una oportunidad a otro choca contra la RLS y recibe 500; el traspaso a sí mismo respondía 403 en vez de 400                                                                                                               | `crm/crm-opportunities.service.ts`, `crm-tasks.controller.ts`          | CLI-06, CLI-08 |
+| QA-H-42 | Media | `accept_invitation` (0028), sin uso desde 0056, seguía SECURITY DEFINER y ejecutable: marcaba aceptada cualquier invitación por id, de cualquier nodo y sin mirar vencimiento; 17 funciones SECURITY DEFINER más las podía ejecutar PUBLIC       | `db/migrations/0028`, `0056`                                           | SQL-02         |
 
 ### 6.1 Mejoras que salen de probar
 
