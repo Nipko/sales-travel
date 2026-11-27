@@ -1,3 +1,4 @@
+import { z } from '@sales-travel/validation';
 import {
   Body,
   Controller,
@@ -15,20 +16,51 @@ import { NetworkService } from '../network/network.service.js';
 import { PricingService, type WaterfallResult } from './pricing.service.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AGENCY_ADMIN_ROLES, SELLING_ROLES } from '../auth/roles.js';
+import { ZodValidationPipe } from '../zod/zod-validation.pipe.js';
 
-interface WaterfallBody {
-  tenantId: string;
-  vertical: string;
-  netMinor: number;
-}
+/**
+ * Antes estas rutas no tenían Zod (docs/qa/01 QA-H-10): un `ruleType` malo daba 403, un valor
+ * negativo se truncaba a 0 y se guardaba, un 200 % entraba, la vertical era texto libre y un
+ * `tenantId` mal formado terminaba en 500.
+ */
+export const PRICING_VERTICALS = [
+  'all',
+  'flights',
+  'hotels',
+  'cars',
+  'assistance',
+  'activities',
+] as const;
+/** `percentage` va en centésimas de punto: 10000 = 100 %. */
+const PERCENT_MAX = 10_000;
+const AMOUNT_MAX = Number.MAX_SAFE_INTEGER;
 
-interface CreateRuleBody {
-  tenantId: string;
-  vertical: string;
-  ruleType: 'percentage' | 'fixed';
-  valueMinor: number;
-  priority?: number;
-}
+export const CreateRuleSchema = z
+  .object({
+    tenantId: z.string().uuid(),
+    vertical: z.enum(PRICING_VERTICALS).default('all'),
+    ruleType: z.enum(['percentage', 'fixed']),
+    valueMinor: z.number().int().positive().max(AMOUNT_MAX),
+    priority: z.number().int().min(0).max(1000).optional(),
+  })
+  .strict()
+  .refine((b) => b.ruleType !== 'percentage' || b.valueMinor <= PERCENT_MAX, {
+    message: 'un porcentaje no puede pasar de 100 %',
+    path: ['valueMinor'],
+  });
+type CreateRuleBody = z.infer<typeof CreateRuleSchema>;
+
+export const WaterfallSchema = z
+  .object({
+    tenantId: z.string().uuid(),
+    vertical: z.enum(PRICING_VERTICALS).default('all'),
+    netMinor: z.number().int().min(0).max(AMOUNT_MAX),
+  })
+  .strict();
+type WaterfallBody = z.infer<typeof WaterfallSchema>;
+
+const TenantQuerySchema = z.string().uuid();
+const RuleIdSchema = z.string().uuid();
 
 @Roles(...SELLING_ROLES)
 @Controller('pricing')
@@ -41,7 +73,10 @@ export class PricingController {
 
   /** Reglas de markup propias de un tenant. Requiere poder ver ese tenant. */
   @Get('rules')
-  async listRules(@CurrentUser() userId: string | undefined, @Query('tenantId') tenantId: string) {
+  async listRules(
+    @CurrentUser() userId: string | undefined,
+    @Query('tenantId', new ZodValidationPipe(TenantQuerySchema)) tenantId: string,
+  ) {
     await this.assertAccess(userId, tenantId);
     const rules = await this.pricing.listRules(tenantId);
     return { rules };
@@ -50,16 +85,16 @@ export class PricingController {
   /** Crea una regla de markup en un tenant. Requiere gestionar ese tenant. */
   @Roles(...AGENCY_ADMIN_ROLES)
   @Post('rules')
-  async createRule(@CurrentUser() userId: string | undefined, @Body() body: CreateRuleBody) {
+  async createRule(
+    @CurrentUser() userId: string | undefined,
+    @Body(new ZodValidationPipe(CreateRuleSchema)) body: CreateRuleBody,
+  ) {
     await this.assertManage(userId, body.tenantId);
-    if (body.ruleType !== 'percentage' && body.ruleType !== 'fixed') {
-      throw new ForbiddenException('invalid ruleType');
-    }
     const result = await this.pricing.createRule(body.tenantId, {
-      vertical: body.vertical || 'all',
+      vertical: body.vertical,
       ruleType: body.ruleType,
-      valueMinor: Math.max(0, Math.trunc(body.valueMinor || 0)),
-      priority: body.priority,
+      valueMinor: body.valueMinor,
+      ...(body.priority === undefined ? {} : { priority: body.priority }),
     });
     await this.audit.emit({
       eventType: 'MarkupRuleCreated',
@@ -76,8 +111,8 @@ export class PricingController {
   @Delete('rules/:id')
   async deleteRule(
     @CurrentUser() userId: string | undefined,
-    @Param('id') id: string,
-    @Query('tenantId') tenantId: string,
+    @Param('id', new ZodValidationPipe(RuleIdSchema)) id: string,
+    @Query('tenantId', new ZodValidationPipe(TenantQuerySchema)) tenantId: string,
   ) {
     await this.assertManage(userId, tenantId);
     const ok = await this.pricing.deleteRule(tenantId, id);
@@ -97,14 +132,10 @@ export class PricingController {
   @Post('waterfall')
   async waterfall(
     @CurrentUser() userId: string | undefined,
-    @Body() body: WaterfallBody,
+    @Body(new ZodValidationPipe(WaterfallSchema)) body: WaterfallBody,
   ): Promise<WaterfallResult> {
     await this.assertAccess(userId, body.tenantId);
-    return this.pricing.computeWaterfall(
-      body.tenantId,
-      body.vertical || 'all',
-      Math.max(0, Math.trunc(body.netMinor || 0)),
-    );
+    return this.pricing.computeWaterfall(body.tenantId, body.vertical, body.netMinor);
   }
 
   private async assertAccess(userId: string | undefined, tenantId: string): Promise<void> {

@@ -6,8 +6,62 @@ import {
 } from '@sales-travel/domain';
 import { OfferSchema } from '@sales-travel/canonical';
 
-/** Objetos JSON de pasajeros que se persisten verbatim después de validar el sobre. */
-const jsonObject = z.record(z.unknown());
+/** `YYYY-MM-DD` que existe en el calendario (no 2024-02-30). */
+const isoDay = z.string().refine((v) => isCalendarDate(v), 'fecha AAAA-MM-DD que exista');
+
+/** Letras de cualquier idioma, espacios, apóstrofo, guion y punto; al menos una letra. */
+const personName = z
+  .string()
+  .trim()
+  .min(1, 'es obligatorio')
+  .max(60, 'máximo 60 caracteres')
+  .regex(/^[\p{L}\p{M}][\p{L}\p{M} '.-]*$/u, 'sólo letras, espacios, apóstrofo, guion o punto');
+
+const isoCountry = z
+  .string()
+  .trim()
+  .refine((v) => isIsoCountryAlpha2(v), 'país ISO 3166 de 2 letras');
+
+/**
+ * Un pasajero de vuelo (puerto `Passenger` de domain). Antes era `z.record(z.unknown())`: el
+ * servidor guardaba y mandaba al proveedor lo que llegara, y el formulario era la única defensa
+ * (docs/qa/01 QA-H-13). Se validan los campos que la plataforma conoce; los demás (`providerPaxId`,
+ * `loyaltyProgramAccount`…) siguen pasando para que los valide el ACL de cada proveedor.
+ *
+ * La edad contra el tipo (ADT/CHD/INF) depende de la fecha del viaje y la revisa
+ * `OrdersService.assertCreateRequestConsistency`.
+ */
+export const OrderPassengerSchema = z
+  .object({
+    paxId: z.string().trim().min(1).max(64),
+    requestedTravelerIndex: z.number().int().min(0).max(8).optional(),
+    paxType: z.enum(['ADT', 'CHD', 'INF']),
+    title: z.enum(['Mr', 'Mrs', 'Miss', 'Dr']).optional(),
+    givenName: personName,
+    surname: personName,
+    birthdate: isoDay
+      .refine((v) => v >= '1900-01-01', 'fecha de nacimiento anterior a 1900')
+      .refine((v) => v <= todayUtc(), 'la fecha de nacimiento no puede ser futura'),
+    gender: z.enum(['M', 'F']),
+    citizenshipCountryCode: isoCountry,
+    identityDoc: z
+      .object({
+        type: z.enum(['P', 'DNI', 'CC', 'CE']),
+        number: z
+          .string()
+          .trim()
+          .regex(/^[A-Za-z0-9-]{4,20}$/, 'entre 4 y 20 letras o números'),
+        issuingCountryCode: isoCountry,
+        issueDate: isoDay.optional(),
+        expiryDate: isoDay.refine((v) => v > todayUtc(), 'el documento está vencido').optional(),
+      })
+      .passthrough()
+      .refine((d) => d.type !== 'P' || d.expiryDate !== undefined, {
+        message: 'el pasaporte necesita fecha de vencimiento',
+        path: ['expiryDate'],
+      }),
+  })
+  .passthrough();
 
 /** Nueve pasajeros con asiento, por hasta dieciséis aviones (tramos y cambios de equipo). */
 const SEATS_MAX = 9 * 16;
@@ -37,7 +91,7 @@ export const CreateOrderSchema = z
   .object({
     offer: OfferSchema,
     searchCriteria: FlightSearchCriteriaSchema,
-    passengers: z.array(jsonObject).min(1).max(9),
+    passengers: z.array(OrderPassengerSchema).min(1).max(9),
     contactInfo: z
       .object({
         email: z.string().trim().email().max(200).optional(),

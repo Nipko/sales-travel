@@ -1,0 +1,302 @@
+[
+ {
+  "id": "QA-H-01",
+  "gravedad": "Media",
+  "que": ":id sin validar como UUID → Postgres 22P02 → 500 en ~10 rutas",
+  "donde": "orders, quotations, customers, crm, packages, pricing, hotels, tenants",
+  "casos": "TRV-08",
+  "estado": "en_mac",
+  "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-02",
+  "gravedad": "Media",
+  "que": "helmet() con valores por defecto: sin CSP ni HSTS propios, contra lo que pide CLAUDE.md",
+  "donde": "apps/api/src/main.ts",
+  "casos": "TRV-14",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-03",
+  "gravedad": "Alta",
+  "que": "POST /api/admin/tenants y /move se saltan el chequeo de origen y la reconstrucción del cuerpo del BFF",
+  "donde": "apps/web-b2b/src/app/api/admin/tenants/**",
+  "casos": "TRV-15",
+  "estado": "en_mac",
+  "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN).",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-04",
+  "gravedad": "Baja",
+  "que": "Contraseña >128 en /restablecer dice «enlace usado o venció»",
+  "donde": "restablecer/actions.ts",
+  "casos": "ACC-24",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-05",
+  "gravedad": "Baja",
+  "que": "/verificar muestra el error de la API en inglés",
+  "donde": "verificar/verify-client.tsx",
+  "casos": "ACC-25",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-06",
+  "gravedad": "Baja",
+  "que": "/configuracion sin guarda de rol; al guardar, error genérico que pierde el motivo",
+  "donde": "configuracion/page.tsx",
+  "casos": "AGE-03",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-07",
+  "gravedad": "Media",
+  "que": "Teléfono de soporte no E.164 se guarda (el servidor sólo pide 4–40) y después bloquea reservar hoteles",
+  "donde": "support-contact-card.tsx, branding.schemas.ts",
+  "casos": "AGE-05",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-08",
+  "gravedad": "Baja",
+  "que": "Campo «Dominio personalizado (CNAME)» no guarda nada",
+  "donde": "configuracion/page.tsx",
+  "casos": "AGE-07",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-09",
+  "gravedad": "Baja",
+  "que": "/red sin guarda de página",
+  "donde": "red/page.tsx",
+  "casos": "RED-07",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-10",
+  "gravedad": "Media",
+  "que": "POST /pricing/rules y /pricing/waterfall sin Zod: ruleType malo → 403, negativo se trunca, vertical libre",
+  "donde": "pricing/pricing.controller.ts",
+  "casos": "RED-09",
+  "estado": "en_mac",
+  "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-11",
+  "gravedad": "Media",
+  "que": "Borrar regla de pricing sin confirmación ni manejo de error; el simulador se traga los errores",
+  "donde": "red/page.tsx (PricingModal)",
+  "casos": "RED-10, RED-11",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-12",
+  "gravedad": "Media",
+  "que": "La API no limita el total de pasajeros a 9 (sólo cada tipo)",
+  "donde": "packages/canonical/src/pax.ts",
+  "casos": "VUE-06",
+  "estado": "en_mac",
+  "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden).",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-13",
+  "gravedad": "Alta",
+  "que": "Pasajero de vuelo: sin reglas de caracteres/largo, sin edad vs tipo, pasaporte vencido aceptado, país sin ISO; en el servidor los pasajeros son JSON libre hasta el ACL",
+  "donde": "passenger-form.tsx, orders/dto.ts",
+  "casos": "CHK-09",
+  "estado": "en_mac",
+  "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-14",
+  "gravedad": "Media",
+  "que": "Un 501 al crear se muestra como «Creación incierta» aunque no se envió nada",
+  "donde": "create-order-reconciliation.ts:125",
+  "casos": "CHK-16",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-15",
+  "gravedad": "Media",
+  "que": "/reservas y cotizaciones guardadas sin paginación: tope de 100",
+  "donde": "orders.service.ts, quotations.service.ts",
+  "casos": "POS-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-16",
+  "gravedad": "Baja",
+  "que": "Repricing (LATAM) sólo en la lista de reservas, no en el detalle",
+  "donde": "reservas/page.tsx",
+  "casos": "POS-17",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-17",
+  "gravedad": "Baja",
+  "que": "SABRE_OPERATIONS=refund se acepta pero no hace nada",
+  "donde": "sabre.factory.ts:214",
+  "casos": "SAB-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-18",
+  "gravedad": "Baja",
+  "que": "Sin pestaña «Canceladas» en cotizaciones guardadas",
+  "donde": "cotizaciones/guardadas/page.tsx",
+  "casos": "COT-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-19",
+  "gravedad": "Media",
+  "que": "Clientes: nacimiento, género y nacionalidad fijos y ocultos; editar y borrar sin UI",
+  "donde": "clientes/ClientesClient.tsx",
+  "casos": "CLI-02, CLI-03",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-20",
+  "gravedad": "Media",
+  "que": "Valor estimado de la oportunidad sin pasar a unidades menores",
+  "donde": "clientes/ClientesClient.tsx",
+  "casos": "CLI-06",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-21",
+  "gravedad": "Baja",
+  "que": "Inicio etiqueta consolidator_admin y agency_admin como «Vendedor / Agente»",
+  "donde": "(app)/page.tsx:309",
+  "casos": "INI-04",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-22",
+  "gravedad": "Baja",
+  "que": "/admin/plataforma mira a la persona y /admin/tenants al nodo activo",
+  "donde": "layouts de admin/plataforma y admin/tenants",
+  "casos": "SUP-02",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-23",
+  "gravedad": "Baja",
+  "que": "Anuncio vencido editable en la UI, rechazado por la API",
+  "donde": "announcements-panel.tsx",
+  "casos": "SUP-06",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-24",
+  "gravedad": "Media",
+  "que": "«Tu cambio quedó como solicitud» (409) se muestra como error salvo en Superadmins",
+  "donde": "Proveedores, Gobierno, Agencias, Usuarios",
+  "casos": "SUP-19",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-25",
+  "gravedad": "Alta",
+  "que": "El superadmin supervisado asigna perfil de gobierno y puestos al crear un nodo sin pasar por la puerta",
+  "donde": "POST /admin/tenants",
+  "casos": "SUP-20",
+  "estado": "en_mac",
+  "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta.",
+  "fecha": "2026-11-26"
+ },
+ {
+  "id": "QA-H-26",
+  "gravedad": "Baja",
+  "que": "Nota de decisión: BFF 3–500, API 1–500",
+  "donde": "platform-admins.ts (BFF)",
+  "casos": "SUP-21",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-27",
+  "gravedad": "Baja",
+  "que": "Dar acceso supervisado a correo inexistente falla recién al aprobar",
+  "donde": "supervision.service.ts",
+  "casos": "SUP-22",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-28",
+  "gravedad": "Baja",
+  "que": "«Tarifas en otra moneda» cambia sin confirmación",
+  "donde": "foreign-currency-fares-card.tsx",
+  "casos": "SUP-24",
+  "estado": "por_confirmar",
+  "nota": "",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-29",
+  "gravedad": "Alta",
+  "que": "Neto de autos llega del cliente (ya en doc 21 §5.2)",
+  "donde": "cars/*",
+  "casos": "AUT-05",
+  "estado": "confirmado",
+  "nota": "Confirmado leyendo cars.service.ts: el neto que va a AgentCars y la base del precio de venta llegan del navegador. No se puede probar por HTTP hasta que AgentCars registre la IP de la Mac o exista un proveedor falso (INF-4). El arreglo pide volver a consultar la tarifa al proveedor.",
+  "fecha": ""
+ },
+ {
+  "id": "QA-H-30",
+  "gravedad": "Alta",
+  "que": "Reservas de hotel Despegar: :id es el id del proveedor y va directo al ACL sin chequear que la reserva sea de la agencia; un id inexistente sale como 502 en vez de 404",
+  "donde": "hotels/despegar-hotel-reservations.service.ts",
+  "casos": "TRV-08, TRV-06",
+  "estado": "confirmado",
+  "nota": "El 502 ya sale como 404 (probado en la Mac). Abierto: las reservas de Despegar no se guardan como órdenes, así que no hay forma de verificar que una reserva sea de la agencia que la pide. Necesita decisión del founder.",
+  "fecha": "2026-11-26"
+ }
+]

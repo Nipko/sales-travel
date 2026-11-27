@@ -6,6 +6,7 @@ import {
   tokenTenantId,
 } from './app/login/login-redirect';
 import { SAFE_NEXT_FALLBACK, safeNextPath } from './lib/safe-next';
+import { isSameOriginRequest } from './lib/same-origin';
 import {
   COOKIES_CLEARED_ON_LOGOUT,
   REQUESTED_PATH_HEADER,
@@ -63,8 +64,30 @@ function staleTenantCookie(req: NextRequest, token: string): string | null {
   return tid && req.cookies.get(TENANT_COOKIE)?.value !== tid ? tid : null;
 }
 
+/** Métodos que cambian algo: los únicos que el chequeo de origen corta. */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Las acciones del panel (`/api/*` del BFF) llevan la cookie de sesión de quien está logueado. Los
+ * route handlers no tienen el chequeo de origen de los server actions y `SameSite=Lax` no frena a un
+ * subdominio hermano, así que cualquier página de `*.planetour.cloud` podía disparar una acción con
+ * la sesión de un admin (docs/qa/01 QA-H-03). Antes lo hacían a mano unas pocas rutas; acá vale
+ * para las 85.
+ */
+function crossOriginAction(req: NextRequest): NextResponse | null {
+  if (!MUTATING_METHODS.has(req.method) || isSameOriginRequest(req.headers)) return null;
+  return NextResponse.json(
+    {
+      error: 'No pudimos confirmar que el pedido venga del panel. Recarga la página.',
+      reason: 'CROSS_ORIGIN',
+    },
+    { status: 403 },
+  );
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (isUnder(pathname, ['/api'])) return crossOriginAction(req) ?? NextResponse.next();
   const token = req.cookies.get(SESSION_COOKIE)?.value || null;
   // Un token vencido es lo mismo que no tener sesión. Pasa con las cookies de antes de alinear su
   // duración con la del token (duraban 7 días con un token de 12 h) y con un reloj algo corrido:
@@ -107,6 +130,7 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    '/api/:path*',
     '/((?!_next/|api/|data/|favicon\\.ico|.*\\.(?:png|jpg|jpeg|svg|webp|gif|ico|txt|json|css|js|woff2?)$).*)',
   ],
 };

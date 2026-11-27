@@ -157,3 +157,25 @@ describe('DespegarHotelsExceptionFilter — cancelación sin motivo', () => {
     expect(r.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
   });
 });
+
+describe('DespegarHotelsExceptionFilter — reserva inexistente (QA-H-30)', () => {
+  it('«Booking does not exist» es un 404 del pedido, no un 502 del proveedor', () => {
+    const r = respuesta();
+    const body = JSON.stringify({ message: 'Booking does not exist or wrong reservation id' });
+    new DespegarHotelsExceptionFilter().catch(
+      new DespegarApiError(400, body, '/reservations/999999999'),
+      r.host,
+    );
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+    expect(JSON.stringify(cuerpoEnviado(r))).not.toContain('wrong reservation id');
+  });
+
+  it('un 404 de Despegar también sale como 404', () => {
+    const r = respuesta();
+    new DespegarHotelsExceptionFilter().catch(
+      new DespegarApiError(404, '', '/reservations/1'),
+      r.host,
+    );
+    expect(r.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+  });
+});

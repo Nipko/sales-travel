@@ -27,3 +27,7 @@ docs/sabre/evidence/
 # Lo genera release-please en cada release con su propio formato (líneas en blanco dobles):
 # reformatearlo no sirve, el próximo release lo vuelve a escribir igual y rompe `format:check`.
 CHANGELOG.md
+
+# Generados por tools/qa (tablero de QA e inventario de rutas)
+docs/qa/tablero/
+apps/web-b2b/e2e/api/rutas.generated.json

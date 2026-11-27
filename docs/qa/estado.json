@@ -1,0 +1,157 @@
+{
+  "$comentario": "Estado de cada caso del plan (docs/qa/01). Sólo los que cambiaron respecto del plan. Fases: por_crear, parcial, falla, corregido, pasa. arreglo: rama | mac | vps. Hallazgos: por_confirmar, confirmado, descartado, corregido, en_mac, en_vps. Infra: falta, en_curso, listo. Regenerar: node tools/qa/tablero.mjs",
+  "ambientes": {
+    "mac": "pruebas.planetour.cloud (Mac mini)",
+    "vps": "producción (VPS Hostinger)"
+  },
+  "infra": {
+    "INF-1": {
+      "estado": "listo",
+      "nota": "Proyecto «api» de Playwright (e2e/api): pega a la API real con una persona por rol, sin navegador.",
+      "donde": "apps/web-b2b/e2e/api"
+    },
+    "INF-3": {
+      "estado": "en_curso",
+      "nota": "Mailpit ya corre en la Mac (8025); falta el helper que lee el correo."
+    },
+    "INF-2": {
+      "estado": "en_curso",
+      "nota": "12 personas api-*@e2e.test, una por rol, con el supervisado. Faltan los casos especiales: bloqueado, suspendido, password_reset_required, contraseña legada."
+    }
+  },
+  "casos": {
+    "TRV-01": {
+      "cobertura": "parcial",
+      "nota": "Hecha la mitad «niega» (cada grupo de rutas rechaza a quien no corresponde). Falta la mitad «permite» con cuerpos válidos.",
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac"
+    },
+    "TRV-02": {
+      "cobertura": "parcial",
+      "nota": "Hecho: sin sesión y token inventado. Falta token vencido, sesión revocada, reemplazada o inactiva.",
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac"
+    },
+    "TRV-03": {
+      "cobertura": "parcial",
+      "nota": "Hecho: admin sin MFA → MFA_ENROLLMENT_REQUIRED. Falta MFA_STEP_UP_REQUIRED.",
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac"
+    },
+    "TRV-05": {
+      "cobertura": "parcial",
+      "nota": "Hecho: superadmin pleno y supervisado en las 37 rutas de venta. Falta superadmin con membresía de vendedor en una sucursal.",
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac"
+    },
+    "TRV-08": {
+      "fase": "pasa",
+      "arreglo": "mac",
+      "nota": "QA-H-01 corregido. Reservas de hotel inexistentes ahora 404 (QA-H-30, parte del 502).",
+      "prueba": "apps/web-b2b/e2e/api/trv-08-ids-malformados.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac"
+    },
+    "SUP-20": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/supervision-y-panel.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac",
+      "arreglo": "mac"
+    },
+    "TRV-15": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/supervision-y-panel.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac",
+      "arreglo": "mac",
+      "nota": "Probado con 5 acciones de muestra; el chequeo vive en el middleware y cubre todo /api/*."
+    },
+    "VUE-06": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac",
+      "arreglo": "mac"
+    },
+    "CHK-09": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "Probado en la Mac: Zod rechaza cada campo inválido del pasajero. Falta probar por HTTP la edad contra el tipo (necesita una oferta válida: Ola 4, INF-4)."
+    },
+    "RED-09": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
+      "fecha": "2026-11-26",
+      "corrida": "mac",
+      "arreglo": "mac"
+    },
+    "AUT-05": {
+      "fase": "por_crear",
+      "nota": "Bug confirmado leyendo el código (QA-H-29). Bloqueado: AgentCars no acepta la IP de la Mac y no hay proveedor falso."
+    },
+    "TRV-06": {
+      "cobertura": "parcial",
+      "nota": "Nuevo hueco: reservas de Despegar sin dueño en la plataforma (QA-H-30)."
+    }
+  },
+  "hallazgos": {
+    "QA-H-01": {
+      "estado": "en_mac",
+      "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID.",
+      "fecha": "2026-11-26"
+    },
+    "QA-H-30": {
+      "estado": "confirmado",
+      "nota": "El 502 ya sale como 404 (probado en la Mac). Abierto: las reservas de Despegar no se guardan como órdenes, así que no hay forma de verificar que una reserva sea de la agencia que la pide. Necesita decisión del founder.",
+      "fecha": "2026-11-26"
+    },
+    "QA-H-25": {
+      "estado": "en_mac",
+      "fecha": "2026-11-26",
+      "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta."
+    },
+    "QA-H-03": {
+      "estado": "en_mac",
+      "fecha": "2026-11-26",
+      "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN)."
+    },
+    "QA-H-12": {
+      "estado": "en_mac",
+      "fecha": "2026-11-26",
+      "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden)."
+    },
+    "QA-H-13": {
+      "estado": "en_mac",
+      "fecha": "2026-11-26",
+      "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje."
+    },
+    "QA-H-10": {
+      "estado": "en_mac",
+      "fecha": "2026-11-26",
+      "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500."
+    },
+    "QA-H-29": {
+      "estado": "confirmado",
+      "nota": "Confirmado leyendo cars.service.ts: el neto que va a AgentCars y la base del precio de venta llegan del navegador. No se puede probar por HTTP hasta que AgentCars registre la IP de la Mac o exista un proveedor falso (INF-4). El arreglo pide volver a consultar la tarifa al proveedor."
+    }
+  },
+  "ultimaCorrida": {
+    "ambiente": "mac",
+    "fecha": "2026-11-26T20:37:56.074Z",
+    "tests": 17,
+    "fallan": 0
+  }
+}

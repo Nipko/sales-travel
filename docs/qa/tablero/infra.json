@@ -1,0 +1,65 @@
+[
+ {
+  "id": "INF-1",
+  "que": "Arnés HTTP: levantar AppModule completo con Postgres/Redis de test y pegarle por HTTP (supertest o fetch contra un puerto). Helpers: como(rol, tenant) que emite sesión real (login + TOTP), conMfaReciente(), sinMfa(). Reutiliza el seed de la red E2E.",
+  "desbloquea": "Todo lo de nivel H (154 casos)",
+  "ola": 2,
+  "estado": "listo",
+  "nota": "Proyecto «api» de Playwright (e2e/api): pega a la API real con una persona por rol, sin navegador.",
+  "donde": "apps/web-b2b/e2e/api"
+ },
+ {
+  "id": "INF-2",
+  "que": "Seed por rol completo: un usuario por rol en cada nodo (superadmin pleno, superadmin supervisado, platform_admin, consolidator_admin, tenant_admin, agency_admin, admin, vendedor, cliente_final) + casos especiales: bloqueado, sin MFA con rol que lo exige, con password_reset_required, contraseña legada, cuenta suspendida, membresía suspendida.",
+  "desbloquea": "H y E de permisos",
+  "ola": 2,
+  "estado": "en_curso",
+  "nota": "12 personas api-*@e2e.test, una por rol, con el supervisado. Faltan los casos especiales: bloqueado, suspendido, password_reset_required, contraseña legada.",
+  "donde": ""
+ },
+ {
+  "id": "INF-3",
+  "que": "Mailpit en el stack E2E (ya existe en la Mac, puerto 8025) y helper ultimoCorreo(para) que extrae el enlace. Invitaciones, restablecer, verificar correo, confirmaciones, cotizaciones.",
+  "desbloquea": "ACC, EQU, COT, POS",
+  "ola": 3,
+  "estado": "en_curso",
+  "nota": "Mailpit ya corre en la Mac (8025); falta el helper que lee el correo.",
+  "donde": ""
+ },
+ {
+  "id": "INF-4",
+  "que": "Proveedores falsos fake-flights / fake-hotels / fake-cars registrados en los registries sólo con env de test, alimentados con las fixtures de Sabre y TBO, con perillas: precio cambia en revalidación, timeout, declinado, parcial, incierto (5xx), sin disponibilidad.",
+  "desbloquea": "Venta completa en CI (VUE, CHK, POS, HOT, AUT, PAQ)",
+  "ola": 4,
+  "estado": "falta",
+  "nota": "",
+  "donde": ""
+ },
+ {
+  "id": "INF-5",
+  "que": "Reloj manipulable para vencimientos: mover fechas en BD (expires_at, ticketing_deadline, invitaciones de 7 días, tokens de 1 h) en vez de esperar.",
+  "desbloquea": "ACC, POS, SUP",
+  "ola": 2,
+  "estado": "falta",
+  "nota": "",
+  "donde": ""
+ },
+ {
+  "id": "INF-6",
+  "que": "Gate de CI: el job E2E (sin @real) corre en cada PR y el deploy espera a CI (hoy deploy.yml no espera).",
+  "desbloquea": "Que todo esto proteja producción",
+  "ola": 3,
+  "estado": "falta",
+  "nota": "",
+  "donde": ""
+ },
+ {
+  "id": "INF-7",
+  "que": "Arnés de sandbox LATAM (no existe; Sabre y TBO sí tienen): AirShopping OW/RT con 1ADT y 2ADT+1CHD+1INF, OfferPrice, ServiceList, BNPL create → retrieve → cancel, enlace de pago.",
+  "desbloquea": "LAT en R",
+  "ola": 5,
+  "estado": "falta",
+  "nota": "",
+  "donde": ""
+ }
+]

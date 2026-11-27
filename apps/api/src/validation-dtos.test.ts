@@ -77,7 +77,19 @@ describe('CreateOrderSchema', () => {
       cabin: 'economy',
       currency: 'COP',
     },
-    passengers: [{ firstName: 'Ana', lastName: 'García', documentNumber: 'AB1' }],
+    passengers: [
+      {
+        paxId: 'p1',
+        paxType: 'ADT',
+        givenName: 'Ana',
+        surname: 'García',
+        birthdate: '1990-05-15',
+        gender: 'F',
+        citizenshipCountryCode: 'CO',
+        identityDoc: { type: 'CC', number: '52123456', issuingCountryCode: 'CO' },
+        providerPaxId: 'sabre-1',
+      },
+    ],
     contactInfo: { email: 'ana@example.com', phone: '+57300' },
   };
 
@@ -87,7 +99,7 @@ describe('CreateOrderSchema', () => {
     expect(parsed.offer.provider.raw).toMatchObject({
       flightCheckRef: 'opaque-provider-value',
     });
-    expect(parsed.passengers[0]).toMatchObject({ documentNumber: 'AB1' });
+    expect(parsed.passengers[0]).toMatchObject({ providerPaxId: 'sabre-1' });
   });
 
   it('SAB-16: acepta asientos en los ejes del mapa, con el avión 0 por defecto', () => {
@@ -123,6 +135,68 @@ describe('CreateOrderSchema', () => {
       expect(CreateOrderSchema.safeParse({ ...base, seats: [bad] }).success).toBe(false);
     }
     expect(CreateOrderSchema.safeParse({ ...base, seats: [] }).success).toBe(false);
+  });
+
+  it('QA-H-13: rechaza pasajeros con datos imposibles, campo por campo', () => {
+    const r = CreateOrderSchema.safeParse({
+      ...base,
+      passengers: [
+        {
+          paxId: 'p1',
+          paxType: 'ADT',
+          givenName: 'J0hn',
+          surname: ' ',
+          birthdate: '2099-01-01',
+          gender: 'X',
+          citizenshipCountryCode: 'ZZ',
+          identityDoc: {
+            type: 'P',
+            number: '1',
+            issuingCountryCode: 'CO',
+            expiryDate: '2001-01-01',
+          },
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+    const fields = r.success ? [] : r.error.issues.map((i) => i.path.join('.'));
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        'passengers.0.givenName',
+        'passengers.0.surname',
+        'passengers.0.birthdate',
+        'passengers.0.gender',
+        'passengers.0.citizenshipCountryCode',
+        'passengers.0.identityDoc.number',
+        'passengers.0.identityDoc.expiryDate',
+      ]),
+    );
+  });
+
+  it('QA-H-13: un pasaporte necesita vencimiento; una cédula no', () => {
+    const pax = (identityDoc: Record<string, string>) => ({
+      ...base,
+      passengers: [{ ...base.passengers[0], identityDoc }],
+    });
+    expect(
+      CreateOrderSchema.safeParse(pax({ type: 'P', number: 'AB123456', issuingCountryCode: 'CO' }))
+        .success,
+    ).toBe(false);
+    expect(
+      CreateOrderSchema.safeParse(pax({ type: 'CC', number: '52123456', issuingCountryCode: 'CO' }))
+        .success,
+    ).toBe(true);
+  });
+
+  it('QA-H-12: no más de 9 pasajeros en total aunque cada tipo esté bajo 9', () => {
+    const r = CreateOrderSchema.safeParse({
+      ...base,
+      searchCriteria: { ...base.searchCriteria, paxCount: { adults: 9, children: 9, infants: 0 } },
+    });
+    expect(r.success).toBe(false);
+    expect(r.success ? [] : r.error.issues.map((i) => i.path.join('.'))).toContain(
+      'searchCriteria.paxCount',
+    );
   });
 
   it('rejects zero passengers and a non-object offer', () => {

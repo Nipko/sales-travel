@@ -340,3 +340,39 @@ describe('AllExceptionsFilter — marcas de conciliación y detalles publicables
     expect(cuerpo(r)).not.toHaveProperty('details');
   });
 });
+
+describe('AllExceptionsFilter — id de ruta mal formado (QA-H-01)', () => {
+  function conParams(params: Record<string, string>): Respuesta {
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({ method: 'GET', url: '/orders/x', params }),
+      }),
+    } as unknown as ArgumentsHost;
+    return { host, status, json };
+  }
+  const pg22P02 = () =>
+    Object.assign(new Error('invalid input syntax for type uuid: "abc"'), { code: '22P02' });
+
+  it('un 22P02 con un parámetro que no es UUID sale como 400 INVALID_ID, sin el texto de Postgres', () => {
+    const r = conParams({ id: 'no-es-un-uuid' });
+    new AllExceptionsFilter().catch(pg22P02(), r.host);
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(cuerpo(r)).toMatchObject({ statusCode: 400, reason: 'INVALID_ID' });
+    expect(JSON.stringify(cuerpo(r))).not.toContain('invalid input syntax');
+  });
+
+  it('un 22P02 con todos los parámetros bien formados sigue siendo 500: es un bug nuestro', () => {
+    const r = conParams({ id: '7d0f1a3e-2b4c-4d5e-8f60-718293a4b5c6' });
+    new AllExceptionsFilter().catch(pg22P02(), r.host);
+    expect(r.status).toHaveBeenCalledWith(500);
+  });
+
+  it('otro error de base con un id mal formado no se disfraza de 400', () => {
+    const r = conParams({ id: 'abc' });
+    new AllExceptionsFilter().catch(Object.assign(new Error('boom'), { code: '23505' }), r.host);
+    expect(r.status).toHaveBeenCalledWith(500);
+  });
+});

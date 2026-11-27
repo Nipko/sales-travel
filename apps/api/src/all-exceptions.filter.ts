@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ExceptionFilter,
   Catch,
   ArgumentsHost,
@@ -34,6 +35,29 @@ function machineReason(
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** SQLSTATE de Postgres para un texto que no se puede convertir al tipo pedido (p. ej. `uuid`). */
+const PG_INVALID_TEXT_REPRESENTATION = '22P02';
+
+/**
+ * Un id de ruta mal formado (`/orders/abc`) que llegó hasta la base: Postgres lo rechaza con 22P02 al
+ * convertirlo a `uuid`. Es un error del cliente, no nuestro: 400 `INVALID_ID` (docs/qa/01 QA-H-01).
+ * Antes salía como 500 «error inesperado» en ~16 rutas.
+ *
+ * Sólo si la ruta trae un parámetro que NO es UUID: un 22P02 con todos los parámetros bien formados
+ * es un bug del servidor y sigue siendo 500, para que no se esconda.
+ */
+function malformedIdHttpError(exception: unknown, request: Request): HttpException | undefined {
+  if (typeof exception !== 'object' || exception === null) return undefined;
+  if ((exception as { code?: unknown }).code !== PG_INVALID_TEXT_REPRESENTATION) return undefined;
+  const params = Object.values((request.params ?? {}) as Record<string, unknown>);
+  if (!params.some((v) => typeof v === 'string' && !UUID.test(v))) return undefined;
+  return new BadRequestException({
+    error: 'Bad Request',
+    message: 'El identificador no es válido.',
+    reason: 'INVALID_ID',
+  });
+}
 
 /** Las marcas que dicen si se puede repetir una reserva. Sólo `true`: su ausencia es "no". */
 const RECONCILIATION_FLAGS = ['duplicateRequest', 'retryForbidden', 'reconciliationRequired'];
@@ -86,7 +110,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const translated =
         tenantHierarchyHttpError(exception) ??
         walletHoldHttpError(exception) ??
-        portfolioHttpError(exception);
+        portfolioHttpError(exception) ??
+        malformedIdHttpError(exception, host.switchToHttp().getRequest<Request>());
       if (translated !== undefined) {
         this.catch(translated, host);
         return;

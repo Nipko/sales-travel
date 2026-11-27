@@ -563,6 +563,8 @@ Lo que se usó para este análisis sirve de base y se puede guionar:
 
 ### 8.2 Inventario de funcionalidades verificables
 
+> Bajado a 310 casos concretos, con nivel, prioridad y ola, en `docs/qa/01-plan-pruebas-funcionales.md`.
+
 Nivel: **U** unit · **I** integración (Vitest + Postgres/Redis reales) · **E** E2E Playwright.
 Sandbox: si necesita el sandbox del proveedor para la versión «real» del test.
 
