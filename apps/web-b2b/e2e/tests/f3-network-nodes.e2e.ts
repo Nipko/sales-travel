@@ -50,16 +50,11 @@ test.describe('F3 · nodos de la red', { tag: '@desktop' }, () => {
     ).toHaveCount(0);
   });
 
+  // BUG-E2E-01 (docs/platform/21 §4.1), corregido en la tanda 11 de QA: el error quedaba fuera de
+  // la vista del diálogo y el foco seguía en «Crear agencia».
   test('BUG-E2E-01: si falta «Puestos simultáneos», el error se ve y recibe el foco', async ({
     page,
   }) => {
-    test.info().annotations.push({
-      type: 'bug',
-      description:
-        'BUG-E2E-01 (docs/platform/21 §4.1): el error queda fuera de la vista del diálogo y el foco sigue en «Crear agencia»; parece que el botón no hace nada.',
-    });
-    test.fail(!process.env['E2E_SHOW_BUGS']);
-
     await openRed(page);
     await page.getByRole('button', { name: 'Nuevo nodo' }).click();
     const dialog = page.getByRole('dialog');

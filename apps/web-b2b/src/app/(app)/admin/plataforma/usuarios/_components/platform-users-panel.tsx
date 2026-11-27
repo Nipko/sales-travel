@@ -88,6 +88,7 @@ import { useNow } from '../../../usuarios/_components/seats-ui';
 import { supportMember } from '../../../usuarios/_components/support-action';
 import { LegacyPasswordsCallout, LegacyPasswordsDialog } from './legacy-passwords-dialog';
 import { PlatformInvitations, SEARCH_DEBOUNCE_MS, useDebounced } from './platform-invitations';
+import { toastFailure } from '../../../../../../lib/change-request-notice';
 
 /** Las pestañas de la pantalla: las personas, o las invitaciones que nadie aceptó todavía. */
 type PanelTab = 'users' | 'invitations';
@@ -367,7 +368,7 @@ export function PlatformUsersPanel({
     setExporting(false);
     if (isStepUpCancelled(res)) return;
     if (!res.ok) {
-      toast.error(res.message);
+      toastFailure(res.message);
       return;
     }
     saveFile(res.data);

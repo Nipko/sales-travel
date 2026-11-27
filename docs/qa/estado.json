@@ -26,8 +26,8 @@
       "donde": "apps/web-b2b/e2e/support/reloj.ts"
     },
     "INF-6": {
-      "estado": "en_curso",
-      "nota": "Job «E2E (arnés HTTP y panel)» en ci.yml contra el stack sin proveedores (47/47 API y 63 de navegador en la Mac), y deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate). Falta verlo correr en GitHub.",
+      "estado": "listo",
+      "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f.",
       "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
     }
   },
@@ -508,6 +508,122 @@
       "corrida": "mac",
       "nota": "Cuenta bloqueada → restablecer con el enlace del correo la desbloquea y entra con la nueva; el mismo enlace no sirve dos veces.",
       "fecha": "2026-11-27"
+    },
+    "ACC-24": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-04",
+      "prueba": "apps/web-b2b/src/app/restablecer/actions.test.ts",
+      "nota": "Una de 129+ se rechaza en el formulario con su motivo, sin llegar a la API.",
+      "fecha": "2026-11-27"
+    },
+    "ACC-25": {
+      "fase": "parcial",
+      "hallazgo": "QA-H-05",
+      "prueba": "apps/api/src/auth/jwt-email.test.ts",
+      "nota": "El enlace vencido responde 401 EMAIL_VERIFICATION_EXPIRED en español. Falta la mitad E (pantalla /verificar con token válido e idempotente).",
+      "fecha": "2026-11-27"
+    },
+    "AGE-03": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-06",
+      "prueba": "apps/web-b2b/src/app/(app)/configuracion/page.tsx",
+      "nota": "Quien no administra ve «sin acceso»; al guardar, el motivo del servidor. Sin prueba de navegador todavía.",
+      "fecha": "2026-11-27"
+    },
+    "RED-07": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-09",
+      "prueba": "apps/web-b2b/src/app/(app)/red/page.tsx",
+      "nota": "Quien no administra ve «sin acceso» en /red. Sin prueba de navegador todavía.",
+      "fecha": "2026-11-27"
+    },
+    "AGE-07": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-08",
+      "prueba": "apps/web-b2b/src/app/(app)/configuracion/page.tsx",
+      "nota": "El campo de dominio propio, que no guardaba nada, es ahora un aviso.",
+      "fecha": "2026-11-27"
+    },
+    "RED-11": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-11",
+      "prueba": "apps/web-b2b/src/app/(app)/red/page.tsx",
+      "nota": "Borrar regla pide confirmar y muestra el error; el simulador muestra el suyo. Sin prueba de navegador todavía.",
+      "fecha": "2026-11-27"
+    },
+    "COT-02": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-18",
+      "prueba": "apps/web-b2b/src/app/(app)/cotizaciones/guardadas/page.tsx",
+      "nota": "Pestaña «Canceladas».",
+      "fecha": "2026-11-27"
+    },
+    "CLI-02": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-19",
+      "prueba": "apps/web-b2b/src/app/(app)/clientes/ClientesClient.tsx",
+      "nota": "Nacimiento, género y nacionalidad visibles y sin relleno.",
+      "fecha": "2026-11-27"
+    },
+    "CLI-03": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-19",
+      "prueba": "apps/web-b2b/src/app/(app)/clientes/ClientesClient.tsx",
+      "nota": "Editar en la ficha; Eliminar sólo para quien administra (la API lo exige).",
+      "fecha": "2026-11-27"
+    },
+    "INI-04": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-21",
+      "prueba": "apps/web-b2b/src/app/(app)/page.tsx",
+      "nota": "Los mismos nombres de rol que Equipo.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-02": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-22",
+      "prueba": "apps/web-b2b/src/app/(app)/admin/tenants/layout.tsx",
+      "nota": "/admin/tenants mira a la persona superadmin.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-06": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-23",
+      "prueba": "apps/web-b2b/src/app/(app)/admin/plataforma/sistema/anuncios/_components/announcements.render.test.ts",
+      "nota": "Un vencido no ofrece Editar.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-19": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-24",
+      "prueba": "apps/web-b2b/src/lib/change-request-notice.test.ts",
+      "nota": "La solicitud pendiente se avisa como información en las cuatro pantallas.",
+      "fecha": "2026-11-27"
+    },
+    "AGE-05": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "hallazgo": "QA-H-07",
+      "prueba": "apps/api/src/tenants/branding.schemas.test.ts",
+      "nota": "La API rechaza un teléfono de soporte que la reserva de hotel no puede usar.",
+      "fecha": "2026-11-27"
+    },
+    "ACC-15": {
+      "fase": "por_crear",
+      "nota": "Ya hay buzón (INF-3): falta la prueba de navegador.",
+      "fecha": "2026-11-27"
     }
   },
   "hallazgos": {
@@ -690,6 +806,91 @@
       "estado": "propuesta",
       "fecha": "2026-11-27",
       "nota": "Cuando una agencia pase las 1000 reservas o cotizaciones."
+    },
+    "QA-H-04": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció»."
+    },
+    "QA-H-05": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español."
+    },
+    "QA-H-06": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor."
+    },
+    "QA-H-07": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice."
+    },
+    "QA-H-08": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios."
+    },
+    "QA-H-09": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "/red muestra «sin acceso» a quien no administra."
+    },
+    "QA-H-11": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo."
+    },
+    "QA-H-14": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta»."
+    },
+    "QA-H-16": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Repricing también en el detalle de la reserva."
+    },
+    "QA-H-18": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Pestaña «Canceladas» en Cotizaciones guardadas."
+    },
+    "QA-H-19": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra."
+    },
+    "QA-H-20": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "El valor estimado de la oportunidad se manda en centavos."
+    },
+    "QA-H-21": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Inicio usa los mismos nombres de rol que Equipo."
+    },
+    "QA-H-22": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma."
+    },
+    "QA-H-23": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar)."
+    },
+    "QA-H-24": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios."
+    },
+    "QA-H-28": {
+      "estado": "corregido",
+      "fecha": "2026-11-27",
+      "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar."
     }
   },
   "ultimaCorrida": {

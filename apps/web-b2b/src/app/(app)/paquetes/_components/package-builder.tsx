@@ -517,7 +517,7 @@ export function PackageBuilder() {
   const carHidden = carOffers.length - carsInCurrency.length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 pb-28 lg:pb-8">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-5 pt-8 pb-28 lg:pb-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-[var(--color-fg)]">

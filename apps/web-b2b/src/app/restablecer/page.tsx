@@ -87,6 +87,7 @@ function ResetForm() {
             required
             autoFocus
             minLength={12}
+            maxLength={128}
             autoComplete="new-password"
             className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] rounded-lg"
           />
@@ -102,6 +103,7 @@ function ResetForm() {
             type="password"
             required
             minLength={12}
+            maxLength={128}
             autoComplete="new-password"
             className="h-10 border-[var(--color-border)] bg-[var(--color-bg)] focus-visible:ring-[var(--color-primary)]/20 focus-visible:border-[var(--color-primary)] rounded-lg"
           />

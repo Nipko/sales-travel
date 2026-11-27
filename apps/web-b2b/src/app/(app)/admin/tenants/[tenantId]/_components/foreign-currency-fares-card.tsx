@@ -4,6 +4,7 @@ import { FlaskConical } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 import { Card } from '../../../../../../components/ui/card';
+import { useConfirm } from '../../../../../../components/ui/dialog';
 import { cn } from '../../../../../../lib/cn';
 import {
   foreignCurrencyFaresHint,
@@ -31,6 +32,7 @@ export function ForeignCurrencyFaresCard({
 }) {
   const [state, setState] = useState<CardState>({ status: 'loading' });
   const [saving, setSaving] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
   const labelId = useId();
   const hintId = useId();
 
@@ -50,6 +52,21 @@ export function ForeignCurrencyFaresCard({
   async function toggle() {
     if (state.status !== 'ready' || saving) return;
     const next = !state.view.enabled;
+    // Cambia los precios que ven las agencias de ese nodo: se confirma antes (QA-H-28).
+    const ok = await confirm(
+      next
+        ? {
+            title: 'Encender tarifas en otra moneda',
+            description: `${tenantName} va a ver tarifas de vuelo cotizadas en otra moneda que la suya. Es un ajuste de pruebas.`,
+            confirmLabel: 'Encender',
+          }
+        : {
+            title: 'Apagar tarifas en otra moneda',
+            description: `${tenantName} deja de ver las tarifas de vuelo cotizadas en otra moneda.`,
+            confirmLabel: 'Apagar',
+          },
+    );
+    if (!ok) return;
     setSaving(true);
     const res = await saveForeignCurrencyFares(tenantId, next);
     setSaving(false);
@@ -118,6 +135,7 @@ export function ForeignCurrencyFaresCard({
           />
         </button>
       </div>
+      {confirmDialog}
     </Card>
   );
 }

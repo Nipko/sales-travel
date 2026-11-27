@@ -32,6 +32,7 @@ import {
 import { ForeignCurrencyFaresCard } from './foreign-currency-fares-card';
 import { NodeSectionNav } from './node-section-nav';
 import { TenantGovernanceCard } from './tenant-governance-card';
+import { announcedPending } from '../../../../../../lib/change-request-notice';
 
 type PanelState =
   | { readonly status: 'loading' }
@@ -73,6 +74,7 @@ export function TenantProvidersPanel({ tenantId }: { tenantId: string }) {
     if (pending === null || state.status !== 'ready') return undefined;
     const { provider, to } = pending;
     const res = await saveTenant(provider.code, tenantId, enablementRequest(to, reason));
+    if (announcedPending(res)) return void setPending(null);
     if (!res.ok) return res.message;
     setPending(null);
     toast.success(savedMessage(provider.code, to, state.view.tenantName));

@@ -130,6 +130,7 @@ export default function QuotationsListPage() {
           { key: 'sent', label: 'Enviadas' },
           { key: 'accepted', label: 'Aceptadas' },
           { key: 'expired', label: 'Expiradas' },
+          { key: 'cancelled', label: 'Canceladas' },
         ].map(({ key, label }) => (
           <button
             key={key}

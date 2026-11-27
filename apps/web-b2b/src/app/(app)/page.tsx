@@ -30,6 +30,7 @@ import { parseProviderStatus } from '../../lib/provider-status';
 import { getActiveTenant } from '../../lib/session';
 import { parseAgencyWallets } from '../../lib/wallets';
 import { canSell, viewerOf, type Viewer } from '../../lib/viewer';
+import { roleLabel } from './admin/usuarios/_components/roles';
 
 interface QuickAction {
   href: Route;
@@ -306,13 +307,8 @@ export default async function DashboardPage() {
                                 : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)] border-[var(--color-border)]'
                             }`}
                           >
-                            {m.role === 'superadmin'
-                              ? 'Super Admin'
-                              : m.role === 'tenant_admin'
-                                ? 'Administrador de Agencia'
-                                : m.role === 'admin'
-                                  ? 'Admin'
-                                  : 'Vendedor / Agente'}
+                            {/* El mismo nombre de cada rol que en Equipo (QA-H-21). */}
+                            {roleLabel(m.role)}
                           </span>
                         </td>
                         <td className="px-6 py-4.5">

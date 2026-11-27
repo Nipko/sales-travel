@@ -49,8 +49,8 @@
   "que": "Gate de CI: el job E2E (sin @real) corre en cada PR y el deploy espera a CI (hoy deploy.yml no espera).",
   "desbloquea": "Que todo esto proteja producción",
   "ola": 3,
-  "estado": "en_curso",
-  "nota": "Job «E2E (arnés HTTP y panel)» en ci.yml contra el stack sin proveedores (47/47 API y 63 de navegador en la Mac), y deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate). Falta verlo correr en GitHub.",
+  "estado": "listo",
+  "nota": "Job «E2E (arnés HTTP y panel)» en CI (ubuntu-24.04, ~7 min) contra el stack sin proveedores; deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate), probado con el deploy de b335927f.",
   "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
  },
  {

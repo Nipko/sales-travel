@@ -119,6 +119,18 @@ export class MfaCodeInvalidError extends UnauthorizedException {
   }
 }
 
+/** El enlace para verificar el correo venció o no es válido. 401, en español (QA-H-05). */
+export class EmailVerificationExpiredError extends UnauthorizedException {
+  readonly reason = 'EMAIL_VERIFICATION_EXPIRED';
+
+  constructor() {
+    super(
+      'El enlace para verificar tu correo venció o no es válido. Pide uno nuevo desde el aviso del panel.',
+    );
+    this.name = 'EmailVerificationExpiredError';
+  }
+}
+
 /** El desafío venció, ya se usó o se quedó sin intentos: hay que volver a la contraseña. 401. */
 export class MfaChallengeExpiredError extends UnauthorizedException {
   readonly reason = 'MFA_CHALLENGE_EXPIRED';

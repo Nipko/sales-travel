@@ -35,9 +35,9 @@
   "que": "Contraseña >128 en /restablecer dice «enlace usado o venció»",
   "donde": "restablecer/actions.ts",
   "casos": "ACC-24",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "/restablecer valida el tope de 128 en el formulario y en la acción: ya no sale «enlace usado o venció».",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-05",
@@ -45,9 +45,9 @@
   "que": "/verificar muestra el error de la API en inglés",
   "donde": "verificar/verify-client.tsx",
   "casos": "ACC-25",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "/verificar: la API responde 401 EMAIL_VERIFICATION_EXPIRED en español.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-06",
@@ -55,9 +55,9 @@
   "que": "/configuracion sin guarda de rol; al guardar, error genérico que pierde el motivo",
   "donde": "configuracion/page.tsx",
   "casos": "AGE-03",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "/configuracion muestra «sin acceso» a quien no administra y, al guardar, el motivo del servidor.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-07",
@@ -65,9 +65,9 @@
   "que": "Teléfono de soporte no E.164 se guarda (el servidor sólo pide 4–40) y después bloquea reservar hoteles",
   "donde": "support-contact-card.tsx, branding.schemas.ts",
   "casos": "AGE-05",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "La API rechaza el teléfono de soporte que la reserva de hotel no puede usar (con + y código de país); la pista del panel lo dice.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-08",
@@ -75,9 +75,9 @@
   "que": "Campo «Dominio personalizado (CNAME)» no guarda nada",
   "donde": "configuracion/page.tsx",
   "casos": "AGE-07",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "El campo de dominio propio, que no guardaba nada, se reemplaza por un aviso: la API todavía no administra dominios.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-09",
@@ -85,9 +85,9 @@
   "que": "/red sin guarda de página",
   "donde": "red/page.tsx",
   "casos": "RED-07",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "/red muestra «sin acceso» a quien no administra.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-10",
@@ -105,9 +105,9 @@
   "que": "Borrar regla de pricing sin confirmación ni manejo de error; el simulador se traga los errores",
   "donde": "red/page.tsx (PricingModal)",
   "casos": "RED-10, RED-11",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Borrar una regla de pricing pide confirmar y muestra el error; el simulador muestra el suyo.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-12",
@@ -135,9 +135,9 @@
   "que": "Un 501 al crear se muestra como «Creación incierta» aunque no se envió nada",
   "donde": "create-order-reconciliation.ts:125",
   "casos": "CHK-16",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Un 501 al crear es un rechazo cierto con su mensaje, no «Creación incierta».",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-15",
@@ -155,9 +155,9 @@
   "que": "Repricing (LATAM) sólo en la lista de reservas, no en el detalle",
   "donde": "reservas/page.tsx",
   "casos": "POS-17",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Repricing también en el detalle de la reserva.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-17",
@@ -175,9 +175,9 @@
   "que": "Sin pestaña «Canceladas» en cotizaciones guardadas",
   "donde": "cotizaciones/guardadas/page.tsx",
   "casos": "COT-02",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Pestaña «Canceladas» en Cotizaciones guardadas.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-19",
@@ -185,9 +185,9 @@
   "que": "Clientes: nacimiento, género y nacionalidad fijos y ocultos; editar y borrar sin UI",
   "donde": "clientes/ClientesClient.tsx",
   "casos": "CLI-02, CLI-03",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Clientes: nacimiento, género y nacionalidad visibles y sin relleno; Editar en la ficha y Eliminar para quien administra.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-20",
@@ -195,9 +195,9 @@
   "que": "Valor estimado de la oportunidad sin pasar a unidades menores",
   "donde": "clientes/ClientesClient.tsx",
   "casos": "CLI-06",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "El valor estimado de la oportunidad se manda en centavos.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-21",
@@ -205,9 +205,9 @@
   "que": "Inicio etiqueta consolidator_admin y agency_admin como «Vendedor / Agente»",
   "donde": "(app)/page.tsx:309",
   "casos": "INI-04",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Inicio usa los mismos nombres de rol que Equipo.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-22",
@@ -215,9 +215,9 @@
   "que": "/admin/plataforma mira a la persona y /admin/tenants al nodo activo",
   "donde": "layouts de admin/plataforma y admin/tenants",
   "casos": "SUP-02",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "/admin/tenants mira a la persona superadmin, como /admin/plataforma.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-23",
@@ -225,9 +225,9 @@
   "que": "Anuncio vencido editable en la UI, rechazado por la API",
   "donde": "announcements-panel.tsx",
   "casos": "SUP-06",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "Un anuncio vencido ya no ofrece Editar (sí Archivar).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-24",
@@ -235,9 +235,9 @@
   "que": "«Tu cambio quedó como solicitud» (409) se muestra como error salvo en Superadmins",
   "donde": "Proveedores, Gobierno, Agencias, Usuarios",
   "casos": "SUP-19",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "El 409 de solicitud pendiente se avisa como información en Proveedores, Gobierno, Agencias y Usuarios.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-25",
@@ -275,9 +275,9 @@
   "que": "«Tarifas en otra moneda» cambia sin confirmación",
   "donde": "foreign-currency-fares-card.tsx",
   "casos": "SUP-24",
-  "estado": "por_confirmar",
-  "nota": "",
-  "fecha": ""
+  "estado": "corregido",
+  "nota": "«Tarifas en otra moneda» pide confirmar antes de encender o apagar.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "QA-H-29",

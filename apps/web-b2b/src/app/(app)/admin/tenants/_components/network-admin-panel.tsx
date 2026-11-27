@@ -49,6 +49,7 @@ import { MoveNodeDialog } from './move-node-dialog';
 import { NodeUsersLink } from './node-users-link';
 import { NodeStatsColumns, NodeStatsLine, PendingDepositsBadge, type RowStats } from './node-stats';
 import { SuspendNodeDialog, type NodeStatusMode } from './suspend-node-dialog';
+import { toastFailure } from '../../../../../lib/change-request-notice';
 
 const SUPERADMIN = { superadmin: true } as const;
 
@@ -129,7 +130,7 @@ export function NetworkAdminPanel() {
       }
       // Una relectura que falla no borra lo que ya se veía: se avisa y se sigue mostrando.
       if (initial) setState({ status: 'error', message: res.message });
-      else toast.error(res.message);
+      else toastFailure(res.message);
     },
     [loadStats],
   );
@@ -177,7 +178,7 @@ export function NetworkAdminPanel() {
     const res = await updateNode(node.id, { isBranch: change.isBranch });
     setBusyId(null);
     if (!res.ok) {
-      toast.error(res.message);
+      toastFailure(res.message);
       return;
     }
     toast.success(

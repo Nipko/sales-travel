@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
 import { useConfirm } from '../../../components/ui/dialog';
+import { seesAdministration } from '../../../lib/nav';
 import {
   Search,
   Plus,
@@ -147,6 +149,8 @@ export function ClientesClient({
 }: ClientesClientProps) {
   const [activeView, setActiveView] = useState<'kanban' | 'directory'>('kanban');
   const [confirmAction, confirmDialog] = useConfirm();
+  // Borrar un cliente es de quien administra la agencia (DELETE con AGENCY_ADMIN_ROLES en la API).
+  const administra = seesAdministration(useAgencySwitcher().current?.role);
 
   // Customer State
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -177,10 +181,12 @@ export function ClientesClient({
   const [documentType, setDocumentType] = useState('PASAPORTE');
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentIssuingCountry, setDocumentIssuingCountry] = useState('COL');
-  const [birthdate, setBirthdate] = useState('1990-05-15');
-  const [gender, setGender] = useState('M');
+  // Sin valores de relleno: antes todo cliente nuevo salía nacido el 1990-05-15, de género M y
+  // colombiano, con esos campos ocultos (QA-H-19).
+  const [birthdate, setBirthdate] = useState('');
+  const [gender, setGender] = useState('');
   const [nationality, setNationality] = useState('COL');
-  const [passportExpiry, setPassportExpiry] = useState('2028-10-20');
+  const [passportExpiry, setPassportExpiry] = useState('');
 
   // Selected customer for detail drawer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
@@ -215,16 +221,16 @@ export function ClientesClient({
     setDocumentType('PASAPORTE');
     setDocumentNumber('');
     setDocumentIssuingCountry('COL');
-    setBirthdate('1990-05-15');
-    setGender('M');
+    setBirthdate('');
+    setGender('');
     setNationality('COL');
-    setPassportExpiry('2028-10-20');
+    setPassportExpiry('');
     setIsAddModalOpen(true);
   };
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName || !lastName || !documentNumber || !birthdate) {
+    if (!firstName || !lastName || !documentNumber || !birthdate || !gender || !nationality) {
       toast.error('Por favor complete todos los campos requeridos.');
       return;
     }
@@ -295,7 +301,8 @@ export function ClientesClient({
       body: JSON.stringify({
         customerId: oppCustomer,
         title: oppTitle || `Viaje a ${oppDestination}`,
-        estimatedValueMinor: Number(oppValue) || 0,
+        // El campo pide pesos; la API guarda centavos y la lista divide por 100 (QA-H-20).
+        estimatedValueMinor: Math.round((Number(oppValue) || 0) * 100),
         destinationCity: oppDestination || null,
         paxCount: Number(oppPax) || 1,
         sourceChannel: oppChannel,
@@ -326,6 +333,24 @@ export function ClientesClient({
     setIsAddOppModalOpen(false);
     setOppTitle('');
     toast.success('Oportunidad creada');
+  };
+
+  /** Abre el mismo formulario con los datos del cliente (QA-H-19: editar no tenía cómo llegar). */
+  const handleOpenEdit = (c: Customer) => {
+    setIsEditMode(true);
+    setEditingId(c.id);
+    setFirstName(c.firstName);
+    setLastName(c.lastName);
+    setEmail(c.email ?? '');
+    setPhone(c.phone ?? '');
+    setDocumentType(c.documentType);
+    setDocumentNumber(c.documentNumber);
+    setDocumentIssuingCountry(c.documentIssuingCountry);
+    setBirthdate(c.birthdate ? c.birthdate.slice(0, 10) : '');
+    setGender(c.gender ?? '');
+    setNationality(c.nationality ?? '');
+    setPassportExpiry(c.passportExpiry ? c.passportExpiry.slice(0, 10) : '');
+    setIsAddModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -745,9 +770,27 @@ export function ClientesClient({
                       Expediente del Viajero 360°
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-primary)]/10 text-sky-700 border border-[var(--color-primary)]/20">
-                    {selectedCustomer.nationality}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-primary)]/10 text-sky-700 border border-[var(--color-primary)]/20">
+                      {selectedCustomer.nationality}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(selectedCustomer)}
+                      className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs font-semibold text-[var(--color-fg)] hover:bg-[var(--color-surface-muted)]"
+                    >
+                      Editar
+                    </button>
+                    {administra ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(selectedCustomer.id)}
+                        className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs font-semibold text-[var(--color-danger)] hover:bg-red-50"
+                      >
+                        Eliminar
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 {/* DATOS PERSONALES */}
@@ -1029,6 +1072,62 @@ export function ClientesClient({
                     value={passportExpiry}
                     onChange={(e) => setPassportExpiry(e.target.value)}
                     className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label
+                    htmlFor="cliente-nacimiento"
+                    className="block text-[var(--color-fg-subtle)] font-medium mb-1"
+                  >
+                    Nacimiento
+                  </label>
+                  <input
+                    id="cliente-nacimiento"
+                    type="date"
+                    required
+                    value={birthdate}
+                    onChange={(e) => setBirthdate(e.target.value)}
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="cliente-genero"
+                    className="block text-[var(--color-fg-subtle)] font-medium mb-1"
+                  >
+                    Género
+                  </label>
+                  <select
+                    id="cliente-genero"
+                    required
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)]"
+                  >
+                    <option value="">Elige…</option>
+                    <option value="F">Femenino</option>
+                    <option value="M">Masculino</option>
+                  </select>
+                </div>
+                <div>
+                  <label
+                    htmlFor="cliente-nacionalidad"
+                    className="block text-[var(--color-fg-subtle)] font-medium mb-1"
+                  >
+                    Nacionalidad
+                  </label>
+                  <input
+                    id="cliente-nacionalidad"
+                    type="text"
+                    required
+                    maxLength={60}
+                    value={nationality}
+                    onChange={(e) => setNationality(e.target.value.toUpperCase())}
+                    placeholder="COL"
+                    className="w-full bg-[var(--color-surface-muted)] border border-[var(--color-border)] rounded-lg p-2.5 text-[var(--color-fg)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
                   />
                 </div>
               </div>

@@ -25,6 +25,7 @@ import {
   loadTenantGovernance,
 } from '../../../../../../lib/governance-client';
 import { GovernanceRulesEditor } from '../../../_components/governance-rules';
+import { toastFailure } from '../../../../../../lib/change-request-notice';
 
 type CardState =
   | { readonly status: 'loading' }
@@ -133,7 +134,7 @@ export function TenantGovernanceCard({ tenantId }: { tenantId: string }) {
     const res = await assignTenantProfile(tenantId, selected === '' ? null : selected);
     setAssigning(false);
     if (!res.ok) {
-      toast.error(res.message);
+      toastFailure(res.message);
       return;
     }
     setState((s) => (s.status === 'ready' ? { ...s, view: res.data } : s));
