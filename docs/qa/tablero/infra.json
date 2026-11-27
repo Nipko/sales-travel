@@ -22,9 +22,9 @@
   "que": "Mailpit en el stack E2E (ya existe en la Mac, puerto 8025) y helper ultimoCorreo(para) que extrae el enlace. Invitaciones, restablecer, verificar correo, confirmaciones, cotizaciones.",
   "desbloquea": "ACC, EQU, COT, POS",
   "ola": 3,
-  "estado": "en_curso",
-  "nota": "Mailpit ya corre en la Mac (8025); falta el helper que lee el correo.",
-  "donde": ""
+  "estado": "listo",
+  "nota": "Mailpit en la Mac (8025) y en el stack E2E local (58025), aceptando cualquier credencial: la API sólo arma el SMTP con usuario y clave, y por eso hasta ahora ningún correo llegaba a Mailpit. Helpers ultimoCorreo/correosPara/hayBuzon.",
+  "donde": "apps/web-b2b/e2e/support/correo.ts"
  },
  {
   "id": "INF-4",
@@ -40,18 +40,18 @@
   "que": "Reloj manipulable para vencimientos: mover fechas en BD (expires_at, ticketing_deadline, invitaciones de 7 días, tokens de 1 h) en vez de esperar.",
   "desbloquea": "ACC, POS, SUP",
   "ola": 2,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "listo",
+  "nota": "atrasar()/vencer() mueven en la base la fecha que decide el vencimiento (retos de 2FA, enlaces de restablecer, invitaciones, cotizaciones, sesiones, bloqueos), con lista cerrada de columnas.",
+  "donde": "apps/web-b2b/e2e/support/reloj.ts"
  },
  {
   "id": "INF-6",
   "que": "Gate de CI: el job E2E (sin @real) corre en cada PR y el deploy espera a CI (hoy deploy.yml no espera).",
   "desbloquea": "Que todo esto proteja producción",
   "ola": 3,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "en_curso",
+  "nota": "Job «E2E (arnés HTTP y panel)» en ci.yml contra el stack sin proveedores (47/47 API y 63 de navegador en la Mac), y deploy.yml espera a que el CI del mismo commit termine en verde (ci-gate). Falta verlo correr en GitHub.",
+  "donde": ".github/workflows/ci.yml, .github/workflows/deploy.yml"
  },
  {
   "id": "INF-7",

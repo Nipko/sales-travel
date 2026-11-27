@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { anonimoDesde, como, sql } from './support/cliente';
 import { API_PASSWORD, PERSONAS } from './support/personas';
+import { vencer } from '../support/reloj';
 
 /**
  * Tanda 9 (docs/qa/01 §5 ACC): ACC-09, el reto del segundo factor vencido. El panel ya traduce
@@ -31,9 +32,9 @@ test('ACC-09 un reto de 2FA vencido: 401 MFA_CHALLENGE_EXPIRED, sin gastar inten
   const antes = await fallosAntes();
 
   // Lo que harían cinco minutos de espera.
-  await sql(
-    `UPDATE mfa_challenges SET expires_at = now() - interval '1 second'
-      WHERE user_id = (SELECT id FROM users WHERE email = $1) AND consumed_at IS NULL`,
+  await vencer(
+    'mfa_challenges',
+    'user_id = (SELECT id FROM users WHERE email = $1) AND consumed_at IS NULL',
     [p.email],
   );
 

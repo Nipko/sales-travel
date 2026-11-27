@@ -38,10 +38,42 @@ env:
   STACK_DIR: /opt/sales-travel
 
 jobs:
+  # INF-6 (docs/qa/01 §7): un push a main se despliega sólo si su CI —lint, tests de integración y
+  # E2E— terminó en verde. Antes el deploy corría en paralelo a CI y subía aunque CI fallara. Los
+  # tags (vX.Y.Z) y el despliegue a mano no esperan: apuntan a commits que ya pasaron por main.
+  ci-gate:
+    name: Espera a CI
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      actions: read
+    steps:
+      - name: CI del mismo commit en verde
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 140); do
+            estado=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
+            case "$estado" in
+              "completed success") echo "CI en verde."; exit 0 ;;
+              completed*) echo "::error::CI de $GITHUB_SHA terminó así: $estado. No se despliega."; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::CI de $GITHUB_SHA no terminó a tiempo. No se despliega."
+          exit 1
+
   build:
     name: Build & push ${{ matrix.app.name }}
+    needs: [ci-gate]
     # El stack de certificación corre las imágenes que ya corre producción: no construye nada.
-    if: github.event_name != 'workflow_dispatch' || (inputs.target != 'cert' && inputs.image_tag == '')
+    # `!cancelled()` y el resultado del gate a mano: sin eso, un gate saltado (tag o a mano) también
+    # saltaría el build.
+    if: |
+      !cancelled() &&
+      (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') &&
+      (github.event_name != 'workflow_dispatch' || (inputs.target != 'cert' && inputs.image_tag == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -96,10 +128,12 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    needs: [build]
+    needs: [ci-gate, build]
+    # Un gate en rojo deja el build saltado: sin mirar el gate, «build saltado» desplegaría igual.
     if: |
       always() &&
       inputs.target != 'cert' &&
+      (needs.ci-gate.result == 'success' || needs.ci-gate.result == 'skipped') &&
       (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
