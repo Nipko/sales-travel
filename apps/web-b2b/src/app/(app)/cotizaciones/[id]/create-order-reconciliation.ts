@@ -122,8 +122,12 @@ export function createOrderTransportFailureView(): BookingOutcomeView {
   };
 }
 
+/**
+ * 501 es la excepción: la API dice que esa operación no existe para ese proveedor y no llamó a nadie,
+ * así que es un rechazo cierto con su mensaje, no una creación «incierta» (QA-H-14).
+ */
 export function isAmbiguousCreateHttpStatus(status: number): boolean {
-  return status >= 500;
+  return status >= 500 && status !== 501;
 }
 
 /**

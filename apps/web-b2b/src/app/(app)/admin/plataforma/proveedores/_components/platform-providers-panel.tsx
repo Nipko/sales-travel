@@ -61,6 +61,7 @@ import {
 import { AddExceptionDialog } from './add-exception-dialog';
 import { KillSwitchDialog, ReasonConfirmDialog } from './kill-switch-dialog';
 import { ProviderHealthRow } from './provider-health';
+import { announcedPending } from '../../../../../../lib/change-request-notice';
 
 type GlobalNext = { readonly kind: 'set'; readonly enabled: boolean } | { readonly kind: 'reset' };
 
@@ -193,6 +194,7 @@ export function PlatformProvidersPanel() {
     body: KillSwitchBody,
   ): Promise<string | undefined> {
     const res = await saveKillSwitch(provider.code, body);
+    if (announcedPending(res)) return void setIncident(null);
     if (!res.ok) return res.message;
     replaceHealth(res.data);
     setIncident(null);
@@ -206,6 +208,7 @@ export function PlatformProvidersPanel() {
     reason: string,
   ): Promise<string | undefined> {
     const res = await clearKillSwitch(provider.code, reason);
+    if (announcedPending(res)) return void setIncident(null);
     if (!res.ok) return res.message;
     replaceHealth(res.data);
     setIncident(null);
@@ -235,6 +238,7 @@ export function PlatformProvidersPanel() {
       const choice: EnablementChoice =
         pending.next.kind === 'reset' ? 'inherit' : pending.next.enabled ? 'enabled' : 'disabled';
       const res = await saveGlobal(provider.code, enablementRequest(choice, reason));
+      if (announcedPending(res)) return void setPending(null);
       if (!res.ok) return res.message;
       replace(res.data);
       setPending(null);
@@ -243,6 +247,7 @@ export function PlatformProvidersPanel() {
     }
     const { override, to } = pending;
     const res = await saveTenant(provider.code, override.tenantId, enablementRequest(to, reason));
+    if (announcedPending(res)) return void setPending(null);
     if (!res.ok) return res.message;
     replace(res.data);
     setPending(null);
@@ -257,6 +262,7 @@ export function PlatformProvidersPanel() {
     reason: string,
   ): Promise<string | undefined> {
     const res = await saveTenant(provider.code, tenant.id, enablementRequest(choice, reason));
+    if (announcedPending(res)) return void setAdding(null);
     if (!res.ok) return res.message;
     replace(res.data);
     setAdding(null);

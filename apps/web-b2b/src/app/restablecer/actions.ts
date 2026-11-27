@@ -7,8 +7,10 @@ export interface ResetState {
   done?: boolean;
 }
 
-/** Mismo mínimo que exige la API (Zod: min 12). Se valida acá para dar feedback inmediato. */
+/** Mismos límites que exige la API (Zod: 12 a 128). Se validan acá para dar feedback inmediato. */
 const MIN_PASSWORD = 12;
+/** Sin este tope, una de 129+ salía de la API como 400 y se leía como «el enlace venció» (QA-H-04). */
+const MAX_PASSWORD = 128;
 
 /** El motivo del 400 cuando, con el cambio forzado por un admin, eligió la misma contraseña. */
 const PASSWORD_REUSED = 'PASSWORD_REUSED';
@@ -31,6 +33,9 @@ export async function resetPasswordAction(
   if (!token) return { error: 'El enlace no es válido. Pide uno nuevo.' };
   if (newPassword.length < MIN_PASSWORD) {
     return { error: `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres.` };
+  }
+  if (newPassword.length > MAX_PASSWORD) {
+    return { error: `La contraseña puede tener hasta ${MAX_PASSWORD} caracteres.` };
   }
   if (newPassword !== confirm) return { error: 'Las contraseñas no coinciden.' };
 

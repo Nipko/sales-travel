@@ -21,11 +21,8 @@ const SALES_ROUTES = [
 const MIN_GUTTER_PX = 12;
 
 /** Bugs conocidos (docs/platform/21 §4.1): el test se marca como falla esperada hasta que se arreglen. */
-const KNOWN_BUGS: Partial<Record<(typeof SALES_ROUTES)[number], string>> = {
-  '/paquetes':
-    'BUG-E2E-02: el título de Paquetes queda pegado al borde (0 px) a 375 px; el resto usa ~20 px.',
-  '/paquetes/guardados': 'BUG-E2E-02: mismo contenedor sin margen lateral que /paquetes.',
-};
+// BUG-E2E-02 (Paquetes sin margen lateral) se corrigió en la tanda 11 de QA: hoy no hay ninguno.
+const KNOWN_BUGS: Partial<Record<(typeof SALES_ROUTES)[number], string>> = {};
 
 test.describe('F25 · 375 px', { tag: '@mobile' }, () => {
   for (const route of SALES_ROUTES) {

@@ -28,3 +28,18 @@ describe('JwtService email tokens', () => {
     await expect(svc.verifyEmailToken(token)).rejects.toThrow();
   });
 });
+
+describe('AuthService.verifyEmail con un enlace vencido o inválido (QA-H-05)', () => {
+  it('401 EMAIL_VERIFICATION_EXPIRED en español, sin tocar la base', async () => {
+    const { AuthService } = await import('./auth.service.js');
+    const { EmailVerificationExpiredError } = await import('./auth-errors.js');
+    const jwt = { verifyEmailToken: () => Promise.reject(new Error('exp')) };
+    const self = { jwt, db: { db: {} }, audit: {} } as unknown as InstanceType<typeof AuthService>;
+    const err = await AuthService.prototype.verifyEmail
+      .call(self, 'token-vencido')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EmailVerificationExpiredError);
+    expect((err as Error).message).toMatch(/venció/);
+    expect((err as { reason: string }).reason).toBe('EMAIL_VERIFICATION_EXPIRED');
+  });
+});

@@ -20,7 +20,10 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
+import { NoAccess } from '../../../components/layout/no-access';
 import { useViewer } from '../../../components/layout/viewer-context';
+import { seesAdministration } from '../../../lib/nav';
 import { NodeKindBadge, NodeKindPicker } from '../../../components/network/node-kind';
 import { Button } from '../../../components/ui/button';
 import { Dialog } from '../../../components/ui/dialog';
@@ -183,6 +186,7 @@ interface SalesRow {
 
 export default function RedPage() {
   const { superadmin } = useViewer();
+  const administra = superadmin || seesAdministration(useAgencySwitcher().current?.role);
   const [tenants, setTenants] = useState<NetworkTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [createFor, setCreateFor] = useState<NetworkTenant | null>(null);
@@ -356,6 +360,15 @@ export default function RedPage() {
         ...renderRows(kids, level + 1),
       ];
     });
+  }
+
+  if (!administra) {
+    return (
+      <NoAccess
+        title="Mi Red es de quien administra la agencia"
+        reason="Con tu rol en esta agencia no puedes ver ni cambiar su red. Si necesitas algo de aquí, pídeselo a un administrador."
+      />
+    );
   }
 
   return (
@@ -1318,6 +1331,10 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
     null,
   );
   const [simulating, setSimulating] = useState(false);
+  const [simError, setSimError] = useState('');
+  // Borrar pide confirmar en la misma fila (QA-H-11): antes un clic la borraba sin preguntar.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     void load();
@@ -1373,14 +1390,30 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
   }
 
   async function removeRule(id: string) {
-    await fetch(`/api/pricing/rules/${id}?tenantId=${encodeURIComponent(tenant.id)}`, {
-      method: 'DELETE',
-    });
-    void load();
+    setError('');
+    setRemoving(true);
+    try {
+      const res = await fetch(
+        `/api/pricing/rules/${encodeURIComponent(id)}?tenantId=${encodeURIComponent(tenant.id)}`,
+        { method: 'DELETE' },
+      );
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? 'No se pudo eliminar la regla. Inténtalo de nuevo.');
+        return;
+      }
+      setConfirmingId(null);
+      void load();
+    } catch {
+      setError('Error de conexión: la regla no se eliminó.');
+    } finally {
+      setRemoving(false);
+    }
   }
 
   async function simulate() {
     setSimulating(true);
+    setSimError('');
     try {
       const res = await fetch('/api/pricing/waterfall', {
         method: 'POST',
@@ -1391,11 +1424,22 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
           netMinor: Math.round(Number(simNet) * 100),
         }),
       });
-      const data = (await res.json()) as {
-        finalMinor: number;
-        totalMarkupMinor: number;
-        breakdown: WaterfallStep[];
+      const data = (await res.json().catch(() => ({}))) as {
+        finalMinor?: number;
+        totalMarkupMinor?: number;
+        breakdown?: WaterfallStep[];
+        error?: string;
       };
+      // Un error ya no queda como «sin resultado» en silencio (QA-H-11).
+      if (
+        !res.ok ||
+        typeof data.finalMinor !== 'number' ||
+        typeof data.totalMarkupMinor !== 'number'
+      ) {
+        setSim(null);
+        setSimError(data.error ?? 'No se pudo simular. Revisa el monto e inténtalo de nuevo.');
+        return;
+      }
       setSim({
         final: data.finalMinor,
         markup: data.totalMarkupMinor,
@@ -1403,6 +1447,7 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
       });
     } catch {
       setSim(null);
+      setSimError('Error de conexión: no se pudo simular.');
     } finally {
       setSimulating(false);
     }
@@ -1456,14 +1501,36 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
                     : `+${money(r.valueMinor)}`}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void removeRule(r.id)}
-                className="rounded p-1 text-[var(--color-fg-subtle)] hover:bg-red-50 hover:text-red-600"
-                aria-label="Eliminar regla"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
+              {confirmingId === r.id ? (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[var(--color-fg-muted)]">¿Eliminarla?</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={removing}
+                    onClick={() => void removeRule(r.id)}
+                  >
+                    {removing ? 'Eliminando…' : 'Sí, eliminar'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={removing}
+                    onClick={() => setConfirmingId(null)}
+                  >
+                    No
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingId(r.id)}
+                  className="rounded p-1 text-[var(--color-fg-subtle)] hover:bg-red-50 hover:text-red-600"
+                  aria-label="Eliminar regla"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -1553,6 +1620,11 @@ function PricingModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () 
           </Button>
         </div>
 
+        {simError ? (
+          <p role="alert" className="mt-3 text-xs text-[var(--color-danger)]">
+            {simError}
+          </p>
+        ) : null}
         {sim && (
           <div className="mt-3 space-y-1.5 text-sm">
             {sim.steps.map((s, i) => (

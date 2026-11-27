@@ -24,6 +24,7 @@ import {
   type ProfileDraft,
 } from '../../../../../../lib/governance-client';
 import { GovernanceMatrix } from '../../../_components/governance-matrix';
+import { announcedPending } from '../../../../../../lib/change-request-notice';
 
 /**
  * Crear o editar un perfil: nombre, descripción y la matriz completa. Cada celda es Encendido,
@@ -72,6 +73,11 @@ export function ProfileEditorDialog({
     const res =
       profile === undefined ? await createProfile(draft) : await updateProfile(profile.id, draft);
     savingRef.current = false;
+    if (announcedPending(res)) {
+      setSaving(false);
+      onClose();
+      return;
+    }
     if (!res.ok) {
       setSaving(false);
       setServerError(res.message);

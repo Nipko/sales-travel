@@ -18,6 +18,7 @@ import { Card, CardContent } from '../../../components/ui/card';
 import { useAgencySwitcher } from '../../../components/layout/agency-switcher';
 import { cn } from '../../../lib/cn';
 import { seesAdministration } from '../../../lib/nav';
+import { NoAccess } from '../../../components/layout/no-access';
 import { TeamCard } from './_components/team-card';
 import { SupportContactCard } from './_components/support-contact-card';
 import { trimmedSupportContact } from './_components/support-contact';
@@ -61,6 +62,20 @@ const COLOR_PRESETS = [
   '#0f766e', // Teal Elegante
   '#1e293b', // Grafito/Pizarra
 ];
+
+/** El motivo que dio el servidor (`error` del BFF), o uno genérico (QA-H-06). */
+async function motivoDe(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown; message?: unknown };
+    const texto = typeof body.error === 'string' ? body.error : body.message;
+    if (typeof texto === 'string' && texto.trim() !== '') return texto;
+  } catch {
+    // sin cuerpo legible
+  }
+  return res.status === 403
+    ? 'Tu rol en esta agencia no permite cambiar sus ajustes.'
+    : 'No se pudo guardar la configuración.';
+}
 
 // --- Page ---
 export default function ConfiguracionPage() {
@@ -126,7 +141,7 @@ export default function ConfiguracionPage() {
           success: true,
         });
       } else {
-        setMessage({ text: 'Error al guardar la configuración.', success: false });
+        setMessage({ text: await motivoDe(res), success: false });
       }
     } catch {
       setMessage({ text: 'Error de conexión con el servidor.', success: false });
@@ -155,13 +170,23 @@ export default function ConfiguracionPage() {
           success: true,
         });
       } else {
-        setMessage({ text: 'Error al guardar la configuración.', success: false });
+        setMessage({ text: await motivoDe(res), success: false });
       }
     } catch {
       setMessage({ text: 'Error de conexión con el servidor.', success: false });
     } finally {
       setSaving(false);
     }
+  }
+
+  // La plataforma también tiene sus Ajustes (lib/nav.ts): el superadmin entra con su rol.
+  if (!admin) {
+    return (
+      <NoAccess
+        title="Los ajustes son de quien administra la agencia"
+        reason="Con tu rol en esta agencia no puedes cambiar su nombre, su marca ni su contacto. Tu cuenta personal está en Mi cuenta."
+      />
+    );
   }
 
   if (loading) {
@@ -653,7 +678,7 @@ function DomainTab({ config }: { config: TenantConfig }) {
       <CardContent className="p-6 space-y-5">
         <SectionHeader
           title="Dominio personalizado"
-          description="Apunta un subdominio o dominio propio de su agencia para brindar un aspecto 100% corporativo."
+          description="El subdominio con el que tu agencia entra al panel."
         />
 
         <div className="space-y-5 pt-3">
@@ -672,15 +697,12 @@ function DomainTab({ config }: { config: TenantConfig }) {
           </FormField>
 
           <div className="border-t border-[var(--color-border)] pt-5">
-            <FormField
-              label="Dominio personalizado (CNAME)"
-              helper="Apunta el CNAME de su dominio propio (ej. viajes.miagencia.com) a: app.planetour.cloud"
-            >
-              <input
-                type="text"
-                placeholder="Ej. viajes.miagencia.com"
-                className="form-input shadow-[var(--shadow-xs)] font-mono text-xs"
-              />
+            {/* El campo no guardaba nada: la API todavía no administra dominios propios (QA-H-08). */}
+            <FormField label="Dominio personalizado">
+              <p className="text-xs leading-relaxed text-[var(--color-fg-muted)]">
+                El dominio propio (por ejemplo viajes.miagencia.com) todavía no se configura desde
+                aquí. Si lo necesitas, pídeselo al equipo de la plataforma.
+              </p>
             </FormField>
           </div>
         </div>

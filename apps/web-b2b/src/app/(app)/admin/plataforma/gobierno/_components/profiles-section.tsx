@@ -23,6 +23,7 @@ import {
   setDefaultProfile,
 } from '../../../../../../lib/governance-client';
 import { ProfileEditorDialog } from './profile-editor-dialog';
+import { toastFailure } from '../../../../../../lib/change-request-notice';
 
 type Editing = { readonly kind: 'new' } | { readonly kind: 'edit'; profile: GovernanceProfile };
 
@@ -73,7 +74,7 @@ export function ProfilesSection({
     const res = await archiveProfile(profile.id);
     setBusyId(null);
     if (!res.ok) {
-      toast.error(res.message);
+      toastFailure(res.message);
       return;
     }
     toast.success(`«${profile.name}» quedó archivado.`);
@@ -96,7 +97,7 @@ export function ProfilesSection({
     const res = await setDefaultProfile(profile.id, isDefault);
     setBusyId(null);
     if (!res.ok) {
-      toast.error(res.message);
+      toastFailure(res.message);
       return;
     }
     toast.success(

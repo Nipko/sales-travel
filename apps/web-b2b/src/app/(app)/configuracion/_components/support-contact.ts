@@ -28,7 +28,7 @@ export function isInternationalPhone(raw: string | null): boolean {
 /** El aviso bajo el teléfono, o `undefined` si está vacío (se hereda) o sirve para reservar. */
 export function supportPhoneHint(raw: string | null): string | undefined {
   if (raw === null || raw.trim() === '' || isInternationalPhone(raw)) return undefined;
-  return 'Así no se pueden reservar hoteles: escríbelo con + y el código de país.';
+  return 'Escríbelo con + y el código de país (ej. +57 300 123 4567): así no se puede guardar ni reservar hoteles.';
 }
 
 /** Lo que se guarda: sin espacios de más, y vacío como `null` para heredar del consolidador. */

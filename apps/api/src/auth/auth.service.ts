@@ -13,6 +13,7 @@ import { currentContext } from '../request-context/request-context.js';
 import {
   CurrentSessionRevokeError,
   MfaAccountLockedError,
+  EmailVerificationExpiredError,
   MfaChallengeExpiredError,
   MfaCodeInvalidError,
   PasswordResetRequiredError,
@@ -286,7 +287,7 @@ export class AuthService {
     try {
       userId = await this.jwt.verifyEmailToken(token);
     } catch {
-      throw new UnauthorizedException('invalid or expired verification token');
+      throw new EmailVerificationExpiredError();
     }
     await this.db.db
       .updateTable('users')

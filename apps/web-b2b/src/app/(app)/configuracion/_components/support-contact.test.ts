@@ -29,9 +29,9 @@ describe('isInternationalPhone — el teléfono que el Book de hoteles manda al 
 });
 
 describe('supportPhoneHint — el aviso mientras se escribe', () => {
-  it('un teléfono local avisa que así no se reservan hoteles', () => {
+  it('un teléfono local avisa que así no se guarda ni se reservan hoteles (QA-H-07)', () => {
     expect(supportPhoneHint('300 123 4567')).toBe(
-      'Así no se pueden reservar hoteles: escríbelo con + y el código de país.',
+      'Escríbelo con + y el código de país (ej. +57 300 123 4567): así no se puede guardar ni reservar hoteles.',
     );
   });
 

@@ -48,6 +48,9 @@ function AnnouncementRow({
   archiving: boolean;
 }) {
   const archived = announcement.status === 'archived';
+  // Uno vencido ya no se muestra y la API sólo acepta un final futuro: editarlo terminaba en error
+  // (QA-H-23). Para volver a avisar se crea otro.
+  const expired = announcement.status === 'expired';
   return (
     <li className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:px-5">
       <div className="min-w-0 flex-1 space-y-1.5">
@@ -71,17 +74,19 @@ function AnnouncementRow({
       </div>
       {archived ? null : (
         <div className="flex shrink-0 gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => onEdit(announcement)}
-            disabled={archiving}
-            aria-label={`Editar: ${announcement.title}`}
-          >
-            <Pencil aria-hidden="true" />
-            Editar
-          </Button>
+          {expired ? null : (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => onEdit(announcement)}
+              disabled={archiving}
+              aria-label={`Editar: ${announcement.title}`}
+            >
+              <Pencil aria-hidden="true" />
+              Editar
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

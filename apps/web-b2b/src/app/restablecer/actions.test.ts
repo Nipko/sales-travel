@@ -50,6 +50,17 @@ describe('resetPasswordAction', () => {
     expect(voseoIn(state.error ?? '')).toEqual([]);
   });
 
+  it('una de más de 128 no llega a la API ni se lee como enlace vencido (QA-H-04)', async () => {
+    const larga = 'x'.repeat(129);
+    const data = form();
+    data.set(CAMPO.nueva, larga);
+    data.set(CAMPO.repetida, larga);
+    expect(await resetPasswordAction({}, data)).toEqual({
+      error: 'La contraseña puede tener hasta 128 caracteres.',
+    });
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+
   it('otro 400: el enlace ya se usó o venció', async () => {
     mocks.api.mockResolvedValue(apiError(400));
 

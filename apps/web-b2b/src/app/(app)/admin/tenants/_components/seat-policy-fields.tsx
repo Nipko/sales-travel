@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Field, Select, TextInput } from '../../../../../components/ui/field';
 import {
   DEFAULT_IDLE_MINUTES,
@@ -32,6 +33,20 @@ export function SeatPolicyFields({
   errors: { readonly concurrentSeats?: string; readonly idleTimeoutMinutes?: string };
 }) {
   const parent = parentName ?? 'su padre';
+  const seatsRef = useRef<HTMLInputElement>(null);
+  const idleRef = useRef<HTMLSelectElement>(null);
+  // Cuando aparece un error, el primer campo inválido recibe el foco y entra en la vista del diálogo.
+  // Antes el error quedaba fuera de la vista y el botón parecía no hacer nada (BUG-E2E-01). Se mira
+  // el texto del error y no el objeto: un padre que lo recalcula en cada render robaría el foco a
+  // cada tecla.
+  const seatsError = errors.concurrentSeats;
+  const idleErrorText = errors.idleTimeoutMinutes;
+  useEffect(() => {
+    const target = seatsError ? seatsRef.current : idleErrorText ? idleRef.current : null;
+    if (target === null) return;
+    target.focus();
+    target.scrollIntoView({ block: 'center' });
+  }, [seatsError, idleErrorText]);
   return (
     <fieldset className="space-y-4 border-t border-[var(--color-border)] pt-4">
       <legend className="sr-only">Puestos y sesión</legend>
@@ -58,6 +73,7 @@ export function SeatPolicyFields({
           {(a11y) => (
             <TextInput
               {...a11y}
+              ref={seatsRef}
               // El asterisco de Field es aria-hidden: sin esto, un lector de pantalla se entera de
               // que es obligatorio recién al enviar. `aria-required` y no `required`: el formulario
               // valida por su cuenta y no queremos el globo del navegador.
@@ -78,7 +94,7 @@ export function SeatPolicyFields({
           hint="Se avisa 2 minutos antes y libera el puesto."
         >
           {(a11y) => (
-            <Select {...a11y} value={idle} onChange={(e) => onIdle(e.target.value)}>
+            <Select {...a11y} ref={idleRef} value={idle} onChange={(e) => onIdle(e.target.value)}>
               <option value="">Heredar de {parent}</option>
               {IDLE_OPTIONS.map((m) => (
                 <option key={m} value={String(m)}>

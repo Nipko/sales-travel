@@ -30,7 +30,7 @@ export default async function SavedPackagesPage() {
   const now = Date.now();
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-5 py-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-[var(--color-fg)]">

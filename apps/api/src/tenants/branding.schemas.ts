@@ -1,4 +1,5 @@
 import { z } from '@sales-travel/validation';
+import { parseInternationalPhone } from '../hotels/hotel-booking-contact.js';
 
 /**
  * Hex de 6 dígitos, y nada más.
@@ -33,7 +34,16 @@ export const UpdateBrandingSchema = z
     accentColor: HexColor.nullable().optional(),
     commercialName: z.string().min(1).max(120).nullable().optional(),
     supportEmail: z.string().email().max(160).nullable().optional(),
-    supportPhone: z.string().min(4).max(40).nullable().optional(),
+    // Con + y código de país: el mismo criterio con que la reserva de hotel lo usa. Antes se
+    // guardaba cualquier texto de 4 a 40 y recién al reservar salía AGENCY_CONTACT_MISSING (QA-H-07).
+    supportPhone: z
+      .string()
+      .max(40)
+      .refine((v) => parseInternationalPhone(v) !== undefined, {
+        message: 'escribe el teléfono con + y el código de país, por ejemplo +57 300 123 4567',
+      })
+      .nullable()
+      .optional(),
     websiteUrl: z.string().url().max(2048).nullable().optional(),
   })
   .strict();

@@ -31,13 +31,13 @@ describe('SupportContactCard — el contacto de soporte de la agencia', () => {
     expect(out).toContain('value="reservas@agencia.example"');
     expect(out).toContain('value="+57 300 123 4567"');
     expect(out).toContain('se usan los de tu consolidador');
-    expect(out).not.toContain('Así no se pueden reservar hoteles');
+    expect(out).not.toContain('así no se puede guardar ni reservar hoteles');
   });
 
   it('un teléfono sin + avisa que así no se reservan hoteles, y el campo lo anuncia', () => {
     const out = html({ supportEmail: null, supportPhone: '300 123 4567' });
     expect(out).toContain(
-      'Así no se pueden reservar hoteles: escríbelo con + y el código de país.',
+      'Escríbelo con + y el código de país (ej. +57 300 123 4567): así no se puede guardar ni reservar hoteles.',
     );
     const describedBy = /type="tel"[^>]*aria-describedby="([^"]+)"/.exec(out)?.[1] ?? '';
     expect(describedBy.split(' ')).toHaveLength(2);
@@ -46,6 +46,6 @@ describe('SupportContactCard — el contacto de soporte de la agencia', () => {
   it('vacíos se heredan: no hay aviso', () => {
     const out = html({ supportEmail: null, supportPhone: null });
     expect(out).toContain('value=""');
-    expect(out).not.toContain('Así no se pueden reservar hoteles');
+    expect(out).not.toContain('así no se puede guardar ni reservar hoteles');
   });
 });

@@ -90,6 +90,8 @@ describe('fallos de transporte después del POST', () => {
 
     expect(isAmbiguousCreateHttpStatus(504)).toBe(true);
     expect(isAmbiguousCreateHttpStatus(502)).toBe(true);
+    // 501: la operación no existe para ese proveedor y no se llamó a nadie (QA-H-14).
+    expect(isAmbiguousCreateHttpStatus(501)).toBe(false);
     expect(view.outcome).toBe('UNCERTAIN');
     expect(view.error).toMatch(/No volver a reservar/i);
     expect(shouldShowBookingForm(view)).toBe(false);

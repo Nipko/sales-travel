@@ -82,8 +82,11 @@ describe('la lista', () => {
     expect(text).toContain('Del 17 oct, 02:00 al 17 oct, 04:00 (hora Bogotá)');
   });
 
-  it('Editar y Archivar en los que no están archivados, con el título en el nombre del botón', () => {
-    expect(html.match(/aria-label="Editar: /g)?.length).toBe(3);
+  it('Editar en programados y vigentes; Archivar en todo lo no archivado (QA-H-23)', () => {
+    expect(html.match(/aria-label="Editar: /g)?.length).toBe(2);
+    // El vencido no se edita: la API sólo acepta un final futuro.
+    expect(html).not.toContain('aria-label="Editar: Anuncio 3"');
+    expect(html).toContain('aria-label="Archivar: Anuncio 3"');
     expect(html.match(/aria-label="Archivar: /g)?.length).toBe(3);
     expect(html).toContain('aria-label="Archivar: Anuncio 1"');
     expect(html).not.toContain('aria-label="Archivar: Anuncio 4"');

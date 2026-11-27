@@ -1024,6 +1024,11 @@ export default function ReservasPage() {
             onIssueRequest={() => setIssuing(detailOrder)}
             onServicesRequest={() => setServicesSheet(detailOrder)}
             onTravelersRequest={() => setTravelersSheet(detailOrder)}
+            onReshopRequest={() => {
+              const target = detailOrder;
+              setDetailOrder(null);
+              void handleReshop(target);
+            }}
             onOrderChanged={() => void loadOrders(false)}
           />
         ))}
@@ -1115,6 +1120,7 @@ function OrderDetailModal({
   onIssueRequest,
   onServicesRequest,
   onTravelersRequest,
+  onReshopRequest,
   onOrderChanged,
 }: {
   order: Order;
@@ -1128,6 +1134,8 @@ function OrderDetailModal({
   onServicesRequest: () => void;
   /** Abrir los datos de los pasajeros de la reserva (SAB-25). */
   onTravelersRequest: () => void;
+  /** Recotizar una reserva emitida (LATAM): antes sólo estaba en la lista (QA-H-16). */
+  onReshopRequest: () => void;
   /** La reserva pudo cambiar en el proveedor (una anulación): se relee la lista. */
   onOrderChanged: () => void;
 }) {
@@ -1149,6 +1157,9 @@ function OrderDetailModal({
     supportsOrderCapability(order.capabilities, 'pay');
   const canIssue = !isCar && canIssueTicket(order) && !issueInFlight;
   const canServices = !isCar && canManageServices(order) && !issueInFlight;
+  // Lo mismo que muestra la fila de la lista (QA-H-16).
+  const canReshop =
+    !isCar && order.status === 'ticketed' && supportsOrderCapability(order.capabilities, 'reshop');
   // Corregir los datos de los pasajeros no mueve dinero: también con la reserva emitida.
   const canTravelers = !isCar && canEditTravelers(order) && !issueInFlight;
   // El template de email de confirmación es de vuelo (ruta origen→destino); se deshabilita para
@@ -1609,6 +1620,16 @@ function OrderDetailModal({
               className="gap-1.5 text-xs"
             >
               <IdCard aria-hidden="true" className="size-3.5" /> {TRAVELERS_UI.open}
+            </Button>
+          )}
+          {canReshop && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onReshopRequest}
+              className="gap-1.5 text-xs"
+            >
+              <RefreshCw className="size-3.5" /> Repricing
             </Button>
           )}
           {canPay && (
