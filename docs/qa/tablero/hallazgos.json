@@ -5,8 +5,8 @@
   "que": ":id sin validar como UUID → Postgres 22P02 → 500 en ~10 rutas",
   "donde": "orders, quotations, customers, crm, packages, pricing, hotels, tenants",
   "casos": "TRV-08",
-  "estado": "en_mac",
-  "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID.",
+  "estado": "en_vps",
+  "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -15,8 +15,8 @@
   "que": "helmet() con valores por defecto: sin CSP ni HSTS propios, contra lo que pide CLAUDE.md",
   "donde": "apps/api/src/main.ts",
   "casos": "TRV-14",
-  "estado": "en_mac",
-  "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor.",
+  "estado": "en_vps",
+  "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -25,8 +25,8 @@
   "que": "POST /api/admin/tenants y /move se saltan el chequeo de origen y la reconstrucción del cuerpo del BFF",
   "donde": "apps/web-b2b/src/app/api/admin/tenants/**",
   "casos": "TRV-15",
-  "estado": "en_mac",
-  "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN).",
+  "estado": "en_vps",
+  "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN). Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -95,8 +95,8 @@
   "que": "POST /pricing/rules y /pricing/waterfall sin Zod: ruleType malo → 403, negativo se trunca, vertical libre",
   "donde": "pricing/pricing.controller.ts",
   "casos": "RED-09",
-  "estado": "en_mac",
-  "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500.",
+  "estado": "en_vps",
+  "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -115,8 +115,8 @@
   "que": "La API no limita el total de pasajeros a 9 (sólo cada tipo)",
   "donde": "packages/canonical/src/pax.ts",
   "casos": "VUE-06",
-  "estado": "en_mac",
-  "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden).",
+  "estado": "en_vps",
+  "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden). Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -125,8 +125,8 @@
   "que": "Pasajero de vuelo: sin reglas de caracteres/largo, sin edad vs tipo, pasaporte vencido aceptado, país sin ISO; en el servidor los pasajeros son JSON libre hasta el ACL",
   "donde": "passenger-form.tsx, orders/dto.ts",
   "casos": "CHK-09",
-  "estado": "en_mac",
-  "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje.",
+  "estado": "en_vps",
+  "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -245,8 +245,8 @@
   "que": "El superadmin supervisado asigna perfil de gobierno y puestos al crear un nodo sin pasar por la puerta",
   "donde": "POST /admin/tenants",
   "casos": "SUP-20",
-  "estado": "en_mac",
-  "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta.",
+  "estado": "en_vps",
+  "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-26"
  },
  {
@@ -305,8 +305,8 @@
   "que": "CRM: una oportunidad, interacción o tarea acepta el cliente, la oportunidad o el vendedor de OTRA agencia (las FK no miran el tenant)",
   "donde": "crm/*.service.ts",
   "casos": "CLI-09",
-  "estado": "en_mac",
-  "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia.",
+  "estado": "en_vps",
+  "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -315,8 +315,8 @@
   "que": "Paquetes: aceptan el cliente de otra agencia, fechas que no existen (2027-02-31) y regreso antes de la ida",
   "donde": "packages/packages.schemas.ts, packages.service.ts",
   "casos": "PAQ-04",
-  "estado": "en_mac",
-  "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio.",
+  "estado": "en_vps",
+  "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -325,8 +325,8 @@
   "que": "Fechas que no son fecha («mañana», «nunca») en tareas, oportunidades y paquetes terminan en 500",
   "donde": "crm/crm.schemas.ts, packages/packages.schemas.ts",
   "casos": "CLI-07, PAQ-04",
-  "estado": "en_mac",
-  "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes.",
+  "estado": "en_vps",
+  "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -335,8 +335,8 @@
   "que": "Logo SVG: sólo se revisaban los primeros 512 bytes y 3 patrones; un script tardío, un onclick, un foreignObject o un href a javascript: pasaban",
   "donde": "storage/brand-assets.controller.ts",
   "casos": "AGE-06",
-  "estado": "en_mac",
-  "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href.",
+  "estado": "en_vps",
+  "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -345,8 +345,8 @@
   "que": "Límite de cuerpo de Express (100 KB): un logo de más de ~75 KB no se puede subir, y el 413 del parser (o un JSON roto) sale como 500",
   "donde": "main.ts, all-exceptions.filter.ts",
   "casos": "AGE-06, NFR-05",
-  "estado": "en_mac",
-  "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB.",
+  "estado": "en_vps",
+  "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -355,8 +355,8 @@
   "que": "Un UUID mal formado en la query (?tenantId=abc) sale como 500",
   "donde": "all-exceptions.filter.ts",
   "casos": "RED-13",
-  "estado": "en_mac",
-  "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query.",
+  "estado": "en_vps",
+  "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -365,8 +365,8 @@
   "que": "Borrar una regla de pricing de otro nodo responde 200 {deleted:false}: no borra, pero el panel lo lee como hecho",
   "donde": "pricing/pricing.controller.ts",
   "casos": "RED-10",
-  "estado": "en_mac",
-  "nota": "Confirmado: 200 {deleted:false}. Ahora 404.",
+  "estado": "en_vps",
+  "nota": "Confirmado: 200 {deleted:false}. Ahora 404. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -385,8 +385,8 @@
   "que": "CRM: oportunidades e interacciones abrían la transacción sin el usuario (withTenant), así que la RLS de 0031 no sabía quién pedía: una oportunidad asignada no la veía nadie (ni el admin), no se podía crear (500) y desaparecía al asignarla",
   "donde": "crm/crm-opportunities.service.ts, crm-interactions.service.ts",
   "casos": "CLI-06, CLI-08",
-  "estado": "en_mac",
-  "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas.",
+  "estado": "en_vps",
+  "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -395,8 +395,8 @@
   "que": "Traspaso de cartera: reassign_portfolio (SECURITY DEFINER) no mira el destino; un admin podía pasar oportunidades y tareas a un vendedor de otra agencia",
   "donde": "crm/crm-tasks.service.ts",
   "casos": "CLI-08",
-  "estado": "en_mac",
-  "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo.",
+  "estado": "en_vps",
+  "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {
@@ -405,8 +405,8 @@
   "que": "Un vendedor que asigna una oportunidad a otro choca contra la RLS y recibe 500; el traspaso a sí mismo respondía 403 en vez de 400",
   "donde": "crm/crm-opportunities.service.ts, crm-tasks.controller.ts",
   "casos": "CLI-06, CLI-08",
-  "estado": "en_mac",
-  "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo.",
+  "estado": "en_vps",
+  "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
   "fecha": "2026-11-27"
  },
  {

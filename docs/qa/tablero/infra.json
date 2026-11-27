@@ -13,9 +13,9 @@
   "que": "Seed por rol completo: un usuario por rol en cada nodo (superadmin pleno, superadmin supervisado, platform_admin, consolidator_admin, tenant_admin, agency_admin, admin, vendedor, cliente_final) + casos especiales: bloqueado, sin MFA con rol que lo exige, con password_reset_required, contraseña legada, cuenta suspendida, membresía suspendida.",
   "desbloquea": "H y E de permisos",
   "ola": 2,
-  "estado": "en_curso",
-  "nota": "12 personas api-*@e2e.test, una por rol, con el supervisado. Faltan los casos especiales: bloqueado, suspendido, password_reset_required, contraseña legada.",
-  "donde": ""
+  "estado": "listo",
+  "nota": "18 personas api-*@e2e.test: una por rol, más bloqueo, suspendido, dos nodos, membresía suspendida, nodo suspendido y contraseña por cambiar (e2e/env/seed.sql).",
+  "donde": "apps/web-b2b/e2e/env/seed.sql"
  },
  {
   "id": "INF-3",

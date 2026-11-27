@@ -15,8 +15,9 @@
       "nota": "Mailpit ya corre en la Mac (8025); falta el helper que lee el correo."
     },
     "INF-2": {
-      "estado": "en_curso",
-      "nota": "12 personas api-*@e2e.test, una por rol, con el supervisado. Faltan los casos especiales: bloqueado, suspendido, password_reset_required, contraseña legada."
+      "estado": "listo",
+      "nota": "18 personas api-*@e2e.test: una por rol, más bloqueo, suspendido, dos nodos, membresía suspendida, nodo suspendido y contraseña por cambiar (e2e/env/seed.sql).",
+      "donde": "apps/web-b2b/e2e/env/seed.sql"
     }
   },
   "casos": {
@@ -30,10 +31,10 @@
     },
     "TRV-02": {
       "cobertura": "parcial",
-      "nota": "Hecho: sin sesión y token inventado. Falta token vencido, sesión revocada, reemplazada o inactiva.",
-      "fase": "parcial",
-      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
-      "fecha": "2026-11-26",
+      "nota": "Sin sesión y token inventado → 401; sesión reemplazada → 401 SESSION_REPLACED; logout-all revoca todas en la base.",
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts, apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
       "corrida": "mac"
     },
     "TRV-03": {
@@ -54,7 +55,7 @@
     },
     "TRV-08": {
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "QA-H-01 corregido. Reservas de hotel inexistentes ahora 404 (QA-H-30, parte del 502).",
       "prueba": "apps/web-b2b/e2e/api/trv-08-ids-malformados.api.ts",
       "fecha": "2026-11-26",
@@ -65,14 +66,14 @@
       "prueba": "apps/web-b2b/e2e/api/supervision-y-panel.api.ts",
       "fecha": "2026-11-26",
       "corrida": "mac",
-      "arreglo": "mac"
+      "arreglo": "vps"
     },
     "TRV-15": {
       "fase": "pasa",
       "prueba": "apps/web-b2b/e2e/api/supervision-y-panel.api.ts",
       "fecha": "2026-11-26",
       "corrida": "mac",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "Probado con 5 acciones de muestra; el chequeo vive en el middleware y cubre todo /api/*."
     },
     "VUE-06": {
@@ -80,14 +81,14 @@
       "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
       "fecha": "2026-11-26",
       "corrida": "mac",
-      "arreglo": "mac"
+      "arreglo": "vps"
     },
     "CHK-09": {
       "fase": "parcial",
       "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
       "fecha": "2026-11-26",
       "corrida": "mac",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "Probado en la Mac: Zod rechaza cada campo inválido del pasajero. Falta probar por HTTP la edad contra el tipo (necesita una oferta válida: Ola 4, INF-4)."
     },
@@ -96,7 +97,7 @@
       "prueba": "apps/web-b2b/e2e/api/validaciones.api.ts",
       "fecha": "2026-11-26",
       "corrida": "mac",
-      "arreglo": "mac"
+      "arreglo": "vps"
     },
     "AUT-05": {
       "fase": "por_crear",
@@ -111,7 +112,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "QA-H-31: lo de B no se lee ni se edita desde A, y ya no se puede colgar una oportunidad, interacción o tarea del cliente, la oportunidad o el vendedor de B (400 FOREIGN_REFERENCE)."
     },
     "CLI-07": {
@@ -119,7 +120,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "Fechas inválidas y filtros raros ya no dan 500 (QA-H-33). Falta el límite de tareas >200 y el filtro de etapa con 400 explícito."
     },
@@ -136,7 +137,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "QA-H-32/33: aislamiento, cliente ajeno, fechas imposibles, regreso antes de ida y más de 12 ítems → 400/404; la moneda se normaliza a mayúsculas. Falta editar, agregar y quitar ítems propios."
     },
@@ -145,7 +146,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "QA-H-34/35: SVG con script, eventos, foreignObject, href o url() externos → 400; >512 KB → 400 o 413; admin de otra agencia → 403. La subida válida no se pudo probar: QA-H-38 (sin volumen ni ruta /blobs).",
       "cobertura": "parcial"
     },
@@ -160,7 +161,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "API: borrar una regla de otro nodo → 403/404 y la regla sigue (QA-H-37). Falta la mitad del panel (confirmación y error visible, QA-H-11)."
     },
@@ -169,7 +170,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "Sin tenantId 403, UUID malo 400 (QA-H-36), nodo de otra red 403."
     },
     "TRV-14": {
@@ -177,7 +178,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "API: CSP default-src none + frame-ancestors none, X-Frame-Options DENY, Referrer-Policy strict-origin-when-cross-origin, HSTS 2 años con preload, Cache-Control no-store. Panel: CSP, DENY y Referrer ya estaban; su HSTS lo pone Caddy en el VPS."
     },
     "ACC-34": {
@@ -191,7 +192,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "nota": "5 MB → 413 (antes 500) y la API sigue respondiendo; JSON roto → 400. Límite del cuerpo en 1 MB para que entren logos de 512 KB."
     },
     "SUP-13": {
@@ -222,7 +223,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "QA-H-40/41: traspaso a otra agencia → 400, a sí mismo → 400, un vendedor → 403. Falta tareas e interacciones."
     },
@@ -231,7 +232,7 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "fase": "pasa",
-      "arreglo": "mac",
+      "arreglo": "vps",
       "cobertura": "parcial",
       "nota": "QA-H-39: una oportunidad asignada la ven el vendedor y el admin, el vendedor la mueve de etapa, y no puede asignar a otro (403). Falta el valor estimado del panel (QA-H-20)."
     },
@@ -249,12 +250,49 @@
       "fase": "pasa",
       "cobertura": "parcial",
       "nota": "Probado por API: un admin no asciende a consolidador ni a superadmin ni invita con esos roles. Falta el test de integración directo de enforce_platform_role_scope."
+    },
+    "ACC-04": {
+      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "API: 5 contraseñas malas → 401 cada una; la correcta después → 401; locked_until a ~15 min y evento auth.login.blocked. Falta el TOTP contando junto y el mensaje del panel."
+    },
+    "ACC-21": {
+      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "nota": "Usuario suspendido → 401. Único nodo suspendido: entra por diseño (el panel explica) pero no opera (403 en clientes, cotizaciones, CRM). Membresía suspendida en A con B activa: entra a B y no puede cambiar a A (403)."
+    },
+    "ACC-33": {
+      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "API: a un nodo sin membresía → 403; a B → token nuevo con tid de B y el viejo da 401. Falta la cookie del panel."
+    },
+    "ACC-32": {
+      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa"
+    },
+    "EQU-10": {
+      "prueba": "apps/web-b2b/e2e/api/cuentas-especiales.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "El ingreso con password_reset_required → 403 PASSWORD_RESET_REQUIRED sin token. Falta forzarlo desde Equipo (step-up) y que cierre sesiones."
     }
   },
   "hallazgos": {
     "QA-H-01": {
-      "estado": "en_mac",
-      "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID.",
+      "estado": "en_vps",
+      "nota": "16 rutas daban 500 con un id mal formado; ahora 400 INVALID_ID. Desplegado en el VPS el 2026-11-27 (ad573ccc).",
       "fecha": "2026-11-26"
     },
     "QA-H-30": {
@@ -263,29 +301,29 @@
       "fecha": "2026-11-26"
     },
     "QA-H-25": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-26",
-      "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta."
+      "nota": "El supervisado ahora recibe 403 SUPERVISED_GOVERNANCE_NEEDS_APPROVAL si manda perfil de gobierno al crear un nodo; lo asigna después desde Gobierno, que pasa por la puerta. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-03": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-26",
-      "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN)."
+      "nota": "Era más grande que 2 rutas: ninguna de las 85 acciones del panel validaba el origen salvo unas pocas. Ahora lo hace el middleware para todo /api/* (403 CROSS_ORIGIN). Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-12": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-26",
-      "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden)."
+      "nota": "Tope de 9 pasajeros en total en PaxCountSchema (búsqueda y orden). Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-13": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-26",
-      "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje."
+      "nota": "El servidor valida cada pasajero (nombre, fecha, género, país ISO, documento, vencimiento) y la edad contra el tipo el día del viaje. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-10": {
-      "estado": "en_mac",
+      "estado": "en_vps",
       "fecha": "2026-11-26",
-      "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500."
+      "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-29": {
       "estado": "confirmado",
@@ -293,43 +331,43 @@
     },
     "QA-H-02": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor."
+      "estado": "en_vps",
+      "nota": "Helmet configurado en la API (CSP, DENY, Referrer, HSTS preload) y Cache-Control no-store global. En el VPS Caddy ya ponía HSTS, DENY y Referrer: el riesgo real era menor. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-31": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia."
+      "estado": "en_vps",
+      "nota": "Confirmado en la Mac (3 referencias cruzadas aceptadas con 201). Arreglo: crm-references.ts revisa con la RLS del pedido que cliente, oportunidad, paquete, orden y vendedor sean de la agencia. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-32": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio."
+      "estado": "en_vps",
+      "nota": "Confirmado: cliente de B, 2027-02-31 y regreso antes de la ida pasaban con 201. Corregido en el schema y en el servicio. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-33": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes."
+      "estado": "en_vps",
+      "nota": "Confirmado (Postgres: invalid input syntax for timestamp «0NaN-…»). Zod valida la fecha antes. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-34": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href."
+      "estado": "en_vps",
+      "nota": "Confirmado: los SVG con onclick, href javascript tardío y script tras 512 bytes pasaban la firma y llegaban a guardarse. Ahora se revisa el archivo entero y los href. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-35": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB."
+      "estado": "en_vps",
+      "nota": "Confirmado: PayloadTooLargeError → 500. Filtro traduce 413/400 del parser y el límite sube a 1 MB. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-36": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query."
+      "estado": "en_vps",
+      "nota": "Confirmado en /tenants/network/sales. El filtro de QA-H-01 mira también la query. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-37": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado: 200 {deleted:false}. Ahora 404."
+      "estado": "en_vps",
+      "nota": "Confirmado: 200 {deleted:false}. Ahora 404. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-38": {
       "fecha": "2026-11-27",
@@ -358,18 +396,18 @@
     },
     "QA-H-39": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas."
+      "estado": "en_vps",
+      "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-40": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo."
+      "estado": "en_vps",
+      "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-41": {
       "fecha": "2026-11-27",
-      "estado": "en_mac",
-      "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo."
+      "estado": "en_vps",
+      "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     }
   },
   "ultimaCorrida": {

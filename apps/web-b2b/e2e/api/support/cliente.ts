@@ -147,6 +147,11 @@ export async function anonimo(): Promise<Api> {
   return new Api(await ctx(), origen(ANON_IP));
 }
 
+/** Sin sesión pero desde una IP propia: para los casos de login que gastan su cupo de intentos. */
+export async function anonimoDesde(ip: string): Promise<Api> {
+  return new Api(await ctx(), origen(ip));
+}
+
 const sesiones = new Map<PersonaKey, Promise<Api>>();
 
 /** Cliente con la sesión de `key`. Una sola sesión por persona en toda la corrida. */
