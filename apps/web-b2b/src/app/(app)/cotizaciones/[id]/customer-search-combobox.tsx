@@ -219,7 +219,7 @@ export function CustomerSearchCombobox({
         aria-live="polite"
         className={cn(
           'mt-1 min-h-4 text-[11px]',
-          state.kind === 'error' ? 'text-red-700' : 'text-[var(--color-fg-muted)]',
+          state.kind === 'error' ? 'text-[var(--color-danger)]' : 'text-[var(--color-fg-muted)]',
           // Con resultados a la vista el conteo sólo hace falta para el lector de pantalla.
           expanded && 'sr-only',
         )}

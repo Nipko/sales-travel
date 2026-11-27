@@ -386,7 +386,7 @@ export function BillingSection({
       <div className="mt-4 flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
         <div role="status" aria-live="polite" className="text-xs">
           {saveError ? (
-            <span className="font-medium text-red-700">{saveError}</span>
+            <span className="font-medium text-[var(--color-danger)]">{saveError}</span>
           ) : saveInfo ? (
             <span className="flex items-center gap-1 font-medium text-emerald-700">
               <CheckCircle2 aria-hidden="true" className="size-3.5 shrink-0" /> {saveInfo}

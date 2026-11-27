@@ -572,7 +572,7 @@ export function HotelOrderDetail({
               variant="secondary"
               size="sm"
               onClick={() => onCancelRequest()}
-              className="gap-1.5 text-xs text-red-600 hover:text-red-700"
+              className="gap-1.5 text-xs text-[var(--color-danger)] hover:text-[var(--color-danger)]"
             >
               <XCircle aria-hidden="true" className="size-3.5" /> Cancelar reserva
             </Button>

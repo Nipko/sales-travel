@@ -78,6 +78,8 @@ services:
       NODE_ENV: production
       PORT: '3000'
       APP_VERSION: e2e
+      # INF-4: el proveedor de vuelos falso (apps/api/src/providers-fake). Sólo con APP_VERSION=e2e.
+      FAKE_PROVIDERS: '1'
       PGHOST: postgres
       PGPORT: '5432'
       PGUSER: app_user

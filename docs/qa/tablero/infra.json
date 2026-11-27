@@ -31,9 +31,9 @@
   "que": "Proveedores falsos fake-flights / fake-hotels / fake-cars registrados en los registries sólo con env de test, alimentados con las fixtures de Sabre y TBO, con perillas: precio cambia en revalidación, timeout, declinado, parcial, incierto (5xx), sin disponibilidad.",
   "desbloquea": "Venta completa en CI (VUE, CHK, POS, HOT, AUT, PAQ)",
   "ola": 4,
-  "estado": "falta",
-  "nota": "",
-  "donde": ""
+  "estado": "en_curso",
+  "nota": "Vuelos listo: fake-flights (apps/api/src/providers-fake) sólo con FAKE_PROVIDERS=1 y APP_VERSION=e2e (si no, el arranque falla), ofertas de prueba y perillas (SMR sin vuelos, ADZ caído, segunda oferta +5 % una vez al revalidar; apellido RECHAZO/PARCIAL/INCIERTO). Faltan hoteles y autos falsos.",
+  "donde": "apps/api/src/providers-fake"
  },
  {
   "id": "INF-5",

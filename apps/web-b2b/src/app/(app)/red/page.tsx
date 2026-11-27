@@ -2152,7 +2152,10 @@ function EmailModal({ tenant, onClose }: { tenant: NetworkTenant; onClose: () =>
             </span>
             {testMsg && (
               <span
-                className={cn('w-full text-xs', testMsg.ok ? 'text-emerald-700' : 'text-red-700')}
+                className={cn(
+                  'w-full text-xs',
+                  testMsg.ok ? 'text-emerald-700' : 'text-[var(--color-danger)]',
+                )}
               >
                 {testMsg.text}
               </span>

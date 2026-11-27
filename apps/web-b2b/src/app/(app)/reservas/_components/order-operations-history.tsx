@@ -122,7 +122,7 @@ export function OrderOperationsHistory({
                     </span>
                   </div>
                   {op.last_error ? (
-                    <p className="mt-0.5 text-[11px] text-red-700">
+                    <p className="mt-0.5 text-[11px] text-[var(--color-danger)]">
                       {humanizeProviderError(op.last_error)}
                     </p>
                   ) : null}
