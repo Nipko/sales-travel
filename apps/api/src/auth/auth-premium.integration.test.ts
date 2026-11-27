@@ -13,6 +13,7 @@ import {
   MfaCodeRejectedError,
   MfaRecentRequiredError,
   SeatReleaseExpiredError,
+  SeatReleaseForbiddenError,
   SeatsFullError,
   SessionInvalidError,
 } from './auth-errors.js';
@@ -293,6 +294,88 @@ d('auth premium contra Postgres, como app_user', () => {
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const rejected = results.find((r) => r.status === 'rejected');
       expect((rejected as PromiseRejectedResult).reason).toBeInstanceOf(SeatsFullError);
+    });
+  });
+
+  /**
+   * ACC-18: lo que puede salir mal entre el 409 y «Desconectar y entrar». Un cupo de un puesto propio
+   * para no depender del orden de los casos de arriba.
+   */
+  describe('liberar un puesto: los rechazos (ACC-18)', () => {
+    let lib: string;
+    let titular: { id: string; email: string };
+    let jefe: { id: string; email: string };
+    let sesionTitular: string;
+    let tokenTitular: string;
+
+    /** El jefe choca con el cupo lleno y recibe el permiso de un solo uso. */
+    async function permiso(): Promise<string> {
+      const err = await rejection(auth.login({ email: jefe.email, password: PASSWORD }));
+      expect(err).toBeInstanceOf(SeatsFullError);
+      return (err as SeatsFullError).publicDetails.release!.token;
+    }
+
+    async function titularEntra(): Promise<void> {
+      tokenTitular = session(await auth.login({ email: titular.email, password: PASSWORD })).token;
+      sesionTitular = (await sessionRow(tokenTitular)).id;
+    }
+
+    beforeAll(async () => {
+      lib = await tenant('lib', 'consolidator', platform, { seats: 1 });
+      titular = await user('lib-titular', lib, 'vendedor');
+      jefe = await user('lib-jefe', lib, 'agency_admin');
+      await titularEntra();
+    });
+
+    it('un permiso inventado o mal firmado: 401 SEAT_RELEASE_EXPIRED, sin tocar a nadie', async () => {
+      expect(await rejection(auth.releaseSeat('no-es-un-jwt', sesionTitular))).toBeInstanceOf(
+        SeatReleaseExpiredError,
+      );
+      expect(await validate(tokenTitular, lib)).toMatchObject({ ok: true });
+    });
+
+    it('quien dejó de administrar el nodo entre el 409 y el clic: 403, y el titular sigue', async () => {
+      const token = await permiso();
+      await admin.query(`UPDATE memberships SET role = 'vendedor' WHERE user_id = $1`, [jefe.id]);
+      try {
+        expect(await rejection(auth.releaseSeat(token, sesionTitular))).toBeInstanceOf(
+          SeatReleaseForbiddenError,
+        );
+      } finally {
+        await admin.query(`UPDATE memberships SET role = 'agency_admin' WHERE user_id = $1`, [
+          jefe.id,
+        ]);
+      }
+      expect(await validate(tokenTitular, lib)).toMatchObject({ ok: true });
+      // El permiso ya se gastó: no sirve para reintentar.
+      expect(await rejection(auth.releaseSeat(token, sesionTitular))).toBeInstanceOf(
+        SeatReleaseExpiredError,
+      );
+    });
+
+    it('una sesión que no es del cupo: no libera nada y el cupo sigue lleno (409)', async () => {
+      const token = await permiso();
+      expect(
+        await rejection(auth.releaseSeat(token, '00000000-0000-4000-8000-000000000000')),
+      ).toBeInstanceOf(SeatsFullError);
+      expect(await validate(tokenTitular, lib)).toMatchObject({ ok: true });
+    });
+
+    it('la sesión elegida ya se cerró sola: entra con el puesto que quedó libre', async () => {
+      const token = await permiso();
+      await admin.query(
+        `UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE id = $1`,
+        [sesionTitular],
+      );
+      const result = await auth.releaseSeat(token, sesionTitular);
+      expect(result).toMatchObject({ userId: jefe.id });
+      // Nadie fue desconectado por el jefe: no queda el evento de liberación.
+      const ev = await admin.query(
+        `SELECT 1 FROM domain_events
+          WHERE event_type = 'auth.seat.released_at_login' AND aggregate_id = $1`,
+        [sesionTitular],
+      );
+      expect(ev.rowCount).toBe(0);
     });
   });
 

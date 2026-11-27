@@ -12,11 +12,16 @@ import type { DB } from '../database/database.types.js';
 import { PLATFORM_ADMIN_CHANGE_KINDS } from './platform-admins.controller.js';
 import {
   ChangeRequestPendingError,
+  PlatformAdminCandidateNotFoundError,
   SelfPlatformAdminChangeError,
 } from './platform-admins.errors.js';
 import { GrantInputSchema } from './platform-admins.schemas.js';
 import { PLATFORM_ADMIN_EVENTS, PlatformAdminsService } from './platform-admins.service.js';
-import { CHANGE_REQUEST_EVENTS, SupervisionService } from './supervision.service.js';
+import {
+  CHANGE_REQUEST_EVENTS,
+  CHANGE_REQUESTS_PAGE,
+  SupervisionService,
+} from './supervision.service.js';
 import type { SessionService } from '../auth/session.service.js';
 
 /**
@@ -250,6 +255,66 @@ d('Superadmins plenos y supervisados (0092) contra Postgres', () => {
     await expect(admins.revoke(pleno, { userId: pleno, reason: null })).rejects.toBeInstanceOf(
       SelfPlatformAdminChangeError,
     );
+  });
+
+  it('SUP-25: el listado pagina de 100 en 100 sin saltar ni repetir, con instantes empatados', async () => {
+    // 102 solicitudes del mismo instante: el orden por fecha solo no alcanza, decide el id.
+    const { rows: mias } = await pool.query<{ id: string }>(
+      `INSERT INTO platform_change_requests
+              (kind, summary, requested_by, status, decided_at, created_at)
+       SELECT 'qa.paginar', 'paginar ' || g, $1, 'cancelled', now(), '2000-01-01T00:00:00Z'
+         FROM generate_series(1, 102) g
+       RETURNING id`,
+      [supervisado],
+    );
+    const vistas: string[] = [];
+    let before: string | undefined;
+    for (let pagina = 0; pagina < 20; pagina++) {
+      const page = await supervision.list(pleno, 'cancelled', before);
+      expect(page.length).toBeLessThanOrEqual(CHANGE_REQUESTS_PAGE);
+      vistas.push(...page.map((r) => r.id));
+      if (page.length < CHANGE_REQUESTS_PAGE) break;
+      before = page.at(-1)!.id;
+    }
+    const mio = new Set(mias.map((r) => r.id));
+    const vistasMias = vistas.filter((id) => mio.has(id));
+    expect(vistasMias).toHaveLength(102);
+    expect(new Set(vistasMias).size).toBe(102);
+  });
+
+  it('SUP-22: un correo sin cuenta activa se rechaza antes de dejar la solicitud (QA-H-27)', async () => {
+    const pendientes = () =>
+      pool
+        .query(`SELECT 1 FROM platform_change_requests WHERE requested_by = $1`, [supervisado])
+        .then((r) => r.rowCount);
+    const antes = await pendientes();
+    const suspendida = await user('suspendida');
+    await pool.query(`UPDATE users SET status = 'suspended' WHERE id = $1`, [suspendida]);
+
+    await expect(
+      admins.assertGrantable(supervisado, { email: `sup-nadie-${sfx}@test.local` }),
+    ).rejects.toBeInstanceOf(PlatformAdminCandidateNotFoundError);
+    // Crearla no reactiva una cuenta suspendida: `grant` tampoco lo hace.
+    await expect(
+      admins.assertGrantable(supervisado, {
+        email: `sup-suspendida-${sfx}@test.local`,
+        createAccount: true,
+      }),
+    ).rejects.toBeInstanceOf(PlatformAdminCandidateNotFoundError);
+    await expect(
+      admins.assertGrantable(supervisado, { email: `sup-supervisado-${sfx}@test.local` }),
+    ).rejects.toBeInstanceOf(SelfPlatformAdminChangeError);
+
+    await expect(
+      admins.assertGrantable(supervisado, { email: `sup-candidata-${sfx}@test.local` }),
+    ).resolves.toBeUndefined();
+    await expect(
+      admins.assertGrantable(supervisado, {
+        email: `sup-nueva-${sfx}@test.local`,
+        createAccount: true,
+      }),
+    ).resolves.toBeUndefined();
+    expect(await pendientes()).toBe(antes);
   });
 
   it('el pleno da, supervisa y quita acceso, y cada paso queda escrito en la base', async () => {

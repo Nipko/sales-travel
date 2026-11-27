@@ -214,6 +214,13 @@ export function sabreShopOptionsFromAccountConfig(
 export const SABRE_OPERATIONS = ['issue', 'void', 'refund', 'seats', 'services', 'modify'] as const;
 export type SabreOperation = (typeof SABRE_OPERATIONS)[number];
 
+/**
+ * Las que se aceptan en `SABRE_OPERATIONS` pero todavía no hay código que las lea: `refund` espera
+ * la decisión D9 (QA-H-17). Se admiten para no tumbar un despliegue que ya la escribió, pero el
+ * arranque dice que no encienden nada y no salen entre las encendidas.
+ */
+export const SABRE_OPERATIONS_NOT_WIRED: ReadonlySet<SabreOperation> = new Set(['refund']);
+
 const SabreOperationsSchema = z.array(z.enum(SABRE_OPERATIONS));
 
 /** Una lista de `SABRE_OPERATIONS` que no se entiende. Tumba el arranque: no se adivina. */
@@ -993,10 +1000,17 @@ export class SabreProviderFactory implements TenantProviderFactory<FlightProvide
       // certificar modifyBooking en CERT.
       modify: this.operations.has('modify'),
     };
-    if (this.operations.size > 0) {
+    const wired = [...this.operations].filter((op) => !SABRE_OPERATIONS_NOT_WIRED.has(op));
+    if (wired.length > 0) {
       // Encender una operación que mueve dinero tiene que verse en el log de arranque.
       this.logger.warn(
-        `operaciones de Sabre encendidas por SABRE_OPERATIONS: [${[...this.operations].sort().join(', ')}]`,
+        `operaciones de Sabre encendidas por SABRE_OPERATIONS: [${wired.sort().join(', ')}]`,
+      );
+    }
+    const inert = [...this.operations].filter((op) => SABRE_OPERATIONS_NOT_WIRED.has(op));
+    if (inert.length > 0) {
+      this.logger.warn(
+        `SABRE_OPERATIONS nombra operaciones que todavía no existen y no encienden nada: [${inert.sort().join(', ')}]`,
       );
     }
   }

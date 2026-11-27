@@ -337,12 +337,12 @@
       "nota": "applicable_markup_rules: cadena de arriba abajo y por prioridad, sin las de sub-agencias ni hermanas, sin inactivas ni otra vertical, «all» entra. tenants_enforce_hierarchy y tenants_maintain_path ya los cubría tenant-hierarchy.integration.test.ts (67 casos)."
     },
     "SQL-06": {
-      "fase": "parcial",
+      "fase": "pasa",
       "prueba": "apps/api/src/network/red-sql.integration.test.ts",
-      "fecha": "2026-11-27",
       "corrida": "mac",
       "hallazgo": "QA-H-44",
-      "nota": "resolve_tenant_branding y resolve_tenant_by_host (verificado, mayúsculas, suspendido) probados; audit_direct_change lo cubre platform-supervision.integration.test.ts; is_admin_user borrada (QA-H-44). Falta governance_chain/governance_bootstrap contra la base."
+      "nota": "resolve_tenant_branding, resolve_tenant_by_host, governance_chain (cadena con profundidad, sin la hermana, sólo lo global para un nodo inexistente) y governance_bootstrap (una sola vez, como app_user, reglas por nodo) contra la base; audit_direct_change en platform-supervision.integration.test.ts; is_admin_user borrada.",
+      "fecha": "2026-11-27"
     },
     "CTA-02": {
       "fase": "pasa",
@@ -350,6 +350,59 @@
       "fecha": "2026-11-27",
       "corrida": "mac",
       "nota": "10 cambios pasan, el 11.º es 429 «Demasiados intentos» y no se aplica."
+    },
+    "POS-14": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/orders/orders.payment-link.test.ts",
+      "corrida": "mac",
+      "nota": "Compuertas (403/404/409/400, gobierno apagado o sin cablear → 403), cuerpo estricto y lo que queda escrito: operación siempre, evento sólo si salió y nunca el correo del pagador. Por HTTP con un PNR real espera INF-4/INF-7.",
+      "fecha": "2026-11-27"
+    },
+    "ACC-18": {
+      "fase": "pasa",
+      "prueba": "apps/api/src/auth/auth-premium.integration.test.ts",
+      "corrida": "mac",
+      "nota": "Permiso inventado → 401 SEAT_RELEASE_EXPIRED; dejar de administrar entre el 409 y el clic → 403 y el permiso queda gastado; sesión ajena al cupo → 409 sin liberar a nadie; sesión elegida ya cerrada → entra con el puesto libre, sin evento de liberación.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-21": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/platform-admins/platform-admins.schemas.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
+      "hallazgo": "QA-H-26",
+      "nota": "La nota de decisión es 3–500 en la API y en el panel, con un mensaje que lo dice entero. Sólo aprobar pide 2FA reciente; rechazar y cancelar no cambian nada y no lo piden (probado por metadatos).",
+      "fecha": "2026-11-27"
+    },
+    "SUP-22": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts",
+      "hallazgo": "QA-H-27",
+      "nota": "Antes de dejar la solicitud se mira la cuenta: sin cuenta activa → 404, suspendida aunque se pida crearla → 404, uno mismo → 403; no queda solicitud.",
+      "fecha": "2026-11-27"
+    },
+    "SUP-25": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/platform-admins/platform-supervision.integration.test.ts, apps/web-b2b/src/lib/platform-admins.test.ts",
+      "nota": "Listado por páginas de 100 con `before` (fecha, id): 102 solicitudes del mismo instante salen todas, una vez. El panel muestra «Ver más antiguas» cuando la página vino llena.",
+      "fecha": "2026-11-27"
+    },
+    "SAB-02": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/providers-sabre/sabre.factory.test.ts",
+      "hallazgo": "QA-H-17",
+      "nota": "`refund` se sigue aceptando (no tumba un despliegue que ya la escribió), pero el arranque avisa que no enciende nada y no sale entre las encendidas. El reembolso espera D9.",
+      "fecha": "2026-11-27"
+    },
+    "TRV-07": {
+      "fase": "corregido",
+      "arreglo": "mac",
+      "prueba": "apps/api/src/database/tablas-sin-rls.integration.test.ts",
+      "hallazgo": "QA-H-45",
+      "nota": "Lista cerrada de tablas sin RLS forzada (una nueva hace fallar el test); catálogos de sólo lectura para app_user (airports corregido en 0101); toda consulta Kysely a tenants/users/password_reset_tokens/consumed_tokens filtra, salvo 3 barridos del sistema y 2 rutas de superadmin nombradas. El SQL crudo no lo cubre el escaneo.",
+      "fecha": "2026-11-27"
     }
   },
   "hallazgos": {
@@ -487,11 +540,31 @@
       "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "0100 la borra; la guarda de huérfanas ahora ignora los comentarios del código. Desplegado en el VPS el 2026-11-27 (0101bebc)."
+    },
+    "QA-H-17": {
+      "estado": "en_mac",
+      "fecha": "2026-11-27",
+      "nota": "`refund` en SABRE_OPERATIONS: el arranque avisa que no enciende nada. Probado en sabre.factory.test.ts."
+    },
+    "QA-H-26": {
+      "estado": "en_mac",
+      "fecha": "2026-11-27",
+      "nota": "Nota de decisión 3–500 en API y panel, mensaje completo."
+    },
+    "QA-H-27": {
+      "estado": "en_mac",
+      "fecha": "2026-11-27",
+      "nota": "assertGrantable antes de la puerta de supervisión: el correo inexistente falla al pedir, no al aprobar."
+    },
+    "QA-H-45": {
+      "estado": "en_mac",
+      "fecha": "2026-11-27",
+      "nota": "0101: REVOKE INSERT/UPDATE/DELETE/TRUNCATE de airports para app_user. Probado en tablas-sin-rls.integration.test.ts."
     }
   },
   "ultimaCorrida": {
     "ambiente": "mac",
-    "fecha": "2026-11-27T05:14:25.567Z",
+    "fecha": "2026-11-27T07:12:23.707Z",
     "tests": 41,
     "fallan": 0
   }

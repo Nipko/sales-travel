@@ -9,6 +9,7 @@ import { platformRootId } from '../__fixtures__/platform-root.js';
  * ancestros que la RLS no le muestra a la agencia.
  *
  * Red: plataforma → consolidador C → agencia A → sub-agencia S, más una agencia hermana H bajo C.
+ * SQL-06 suma el gobierno de proveedores y formas de pago (governance_chain, governance_bootstrap).
  * Nada se le cuelga a la raíz compartida (ver platform-root.ts).
  *
  * Se salta sin base (PGHOST), como los demás tests de integración.
@@ -196,6 +197,197 @@ d('herencia en la red (SQL-05, SQL-06, AGE-08)', () => {
     it('fuera quedan las inactivas y las de otra vertical; «all» entra', async () => {
       const c = await reglas(ids.C);
       expect(c).toEqual(['C:100', 'C:200']);
+    });
+  });
+
+  /**
+   * Gobierno de proveedores y formas de pago (0089). Cada caso corre en una transacción que se
+   * deshace: las reglas globales y el perfil de la plataforma los comparte toda la base, y una regla
+   * a medio borrar le apagaría un proveedor a otro test.
+   */
+  async function enTransaccion<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      return await fn(c);
+    } finally {
+      await c.query('ROLLBACK');
+      c.release();
+    }
+  }
+
+  const nivel = async (c: pg.PoolClient, id: string) =>
+    (await c.query<{ n: number }>('SELECT nlevel(path) AS n FROM tenants WHERE id = $1', [id]))
+      .rows[0]!.n;
+
+  describe('SQL-06 governance_chain', () => {
+    const prov = `qa-gob-${sfx}`;
+    const nombre = (id: string | null) =>
+      id === null ? 'global' : (Object.entries(ids).find(([, v]) => v === id)?.[0] ?? id);
+
+    async function sembrar(c: pg.PoolClient): Promise<void> {
+      const p = await c.query<{ id: string }>(
+        `INSERT INTO governance_profiles (name) VALUES ($1) RETURNING id`,
+        [`Perfil red ${sfx}`],
+      );
+      const perfil = p.rows[0]!.id;
+      await c.query(
+        `INSERT INTO governance_profile_items (profile_id, provider_code, payment_method, enabled)
+         VALUES ($1, $2, '', true), ($1, $2, 'card', false)`,
+        [perfil, prov],
+      );
+      await c.query(
+        `INSERT INTO tenant_governance_profiles (tenant_id, profile_id) VALUES ($1, $2)`,
+        [ids.C, perfil],
+      );
+      await c.query(
+        `INSERT INTO provider_enablement (provider_code, tenant_id, enabled)
+         VALUES ($1, NULL, false), ($1, $2, true)`,
+        [prov, ids.A],
+      );
+      await c.query(
+        `INSERT INTO payment_method_rules (provider_code, payment_method, tenant_id, enabled)
+         VALUES ($1, 'cash', $2, true), ($1, 'card', $3, true), ($1, 'gov', NULL, false)`,
+        [prov, ids.S, ids.H],
+      );
+    }
+
+    async function cadena(c: pg.PoolClient, tenantId: string): Promise<string[]> {
+      await c.query('SET LOCAL ROLE app_user');
+      await c.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [tenantId]);
+      const { rows } = await c.query<{
+        source: string;
+        payment_method: string;
+        tenant_id: string | null;
+        lvl: number;
+        enabled: boolean;
+      }>(
+        `SELECT source, payment_method, tenant_id, lvl, enabled
+           FROM governance_chain($1) WHERE provider_code = $2`,
+        [tenantId, prov],
+      );
+      await c.query('RESET ROLE');
+      return rows
+        .map(
+          (r) =>
+            `${r.source}:${r.payment_method || '-'}:${nombre(r.tenant_id)}:${r.lvl}:${r.enabled}`,
+        )
+        .sort();
+    }
+
+    it('la sub-agencia ve reglas y perfiles de toda su cadena, con su profundidad, y nada de la hermana', async () => {
+      await enTransaccion(async (c) => {
+        await sembrar(c);
+        const [lc, la, ls] = [await nivel(c, ids.C), await nivel(c, ids.A), await nivel(c, ids.S)];
+        expect(await cadena(c, ids.S)).toEqual(
+          [
+            'rule:-:global:1:false',
+            'rule:gov:global:1:false',
+            `rule:-:A:${la}:true`,
+            `rule:cash:S:${ls}:true`,
+            `profile:-:C:${lc}:true`,
+            `profile:card:C:${lc}:false`,
+          ].sort(),
+        );
+      });
+    });
+
+    it('la hermana ve lo global, el perfil del consolidador y lo suyo; no lo de A ni lo de S', async () => {
+      await enTransaccion(async (c) => {
+        await sembrar(c);
+        const [lc, lh] = [await nivel(c, ids.C), await nivel(c, ids.H)];
+        expect(await cadena(c, ids.H)).toEqual(
+          [
+            'rule:-:global:1:false',
+            'rule:gov:global:1:false',
+            `rule:card:H:${lh}:true`,
+            `profile:-:C:${lc}:true`,
+            `profile:card:C:${lc}:false`,
+          ].sort(),
+        );
+      });
+    });
+
+    it('un nodo que no existe sólo ve lo global', async () => {
+      await enTransaccion(async (c) => {
+        await sembrar(c);
+        expect(await cadena(c, '00000000-0000-4000-8000-000000000000')).toEqual([
+          'rule:-:global:1:false',
+          'rule:gov:global:1:false',
+        ]);
+      });
+    });
+  });
+
+  describe('SQL-06 governance_bootstrap', () => {
+    const prov = `qa-boot-${sfx}`;
+    const items = JSON.stringify([
+      { provider: prov, enabled: true },
+      { provider: prov, method: 'card', enabled: false },
+    ]);
+
+    /** La siembra como la hace el API al arrancar: app_user, sin usuario en el contexto. */
+    async function sembrar(c: pg.PoolClient, reglas: unknown[]): Promise<string | null> {
+      await c.query('SET LOCAL ROLE app_user');
+      const { rows } = await c.query<{ id: string | null }>(
+        `SELECT governance_bootstrap($1, $2::jsonb, $3::jsonb) AS id`,
+        [`Siembra ${sfx}`, items, JSON.stringify(reglas)],
+      );
+      await c.query('RESET ROLE');
+      return rows[0]!.id;
+    }
+
+    it('una base sin sembrar: crea el perfil, se lo asigna a la plataforma y pasa las reglas por nodo', async () => {
+      await enTransaccion(async (c) => {
+        const root = await platformRootId(pool);
+        await c.query('DELETE FROM governance_state');
+        await c.query('DELETE FROM tenant_governance_profiles WHERE tenant_id = $1', [root]);
+
+        const perfil = await sembrar(c, [
+          { provider: prov, tenantId: ids.A },
+          { provider: prov, tenantId: '00000000-0000-4000-8000-000000000000' },
+        ]);
+        expect(perfil).toMatch(/^[0-9a-f-]{36}$/);
+
+        const filas = await c.query<{ m: string; e: boolean }>(
+          `SELECT payment_method AS m, enabled AS e FROM governance_profile_items
+            WHERE profile_id = $1 ORDER BY 1`,
+          [perfil],
+        );
+        expect(filas.rows).toEqual([
+          { m: '', e: true },
+          { m: 'card', e: false },
+        ]);
+        const asignado = await c.query(
+          `SELECT 1 FROM tenant_governance_profiles WHERE tenant_id = $1 AND profile_id = $2`,
+          [root, perfil],
+        );
+        expect(asignado.rowCount).toBe(1);
+        // La del nodo que existe queda como regla a mano; la del que no existe se ignora.
+        const reglas = await c.query<{ tenant_id: string; enabled: boolean }>(
+          `SELECT tenant_id, enabled FROM provider_enablement WHERE provider_code = $1`,
+          [prov],
+        );
+        expect(reglas.rows).toEqual([{ tenant_id: ids.A, enabled: true }]);
+      });
+    });
+
+    it('una sola vez en la vida de la base: la segunda no hace nada', async () => {
+      await enTransaccion(async (c) => {
+        const root = await platformRootId(pool);
+        await c.query('DELETE FROM governance_state');
+        await c.query('DELETE FROM tenant_governance_profiles WHERE tenant_id = $1', [root]);
+        expect(await sembrar(c, [])).not.toBeNull();
+        expect(await sembrar(c, [{ provider: prov, tenantId: ids.A }])).toBeNull();
+        const perfiles = await c.query(`SELECT 1 FROM governance_profiles WHERE name = $1`, [
+          `Siembra ${sfx}`,
+        ]);
+        expect(perfiles.rowCount).toBe(1);
+        const reglas = await c.query(`SELECT 1 FROM provider_enablement WHERE provider_code = $1`, [
+          prov,
+        ]);
+        expect(reglas.rowCount).toBe(0);
+      });
     });
   });
 });

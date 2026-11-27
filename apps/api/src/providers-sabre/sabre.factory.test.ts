@@ -2040,6 +2040,29 @@ describe('SabreProviderFactory — SABRE_OPERATIONS', () => {
     vi.stubEnv('SABRE_OPERATIONS', 'void');
     expect(factoryWith(() => Promise.resolve(resolved())).capabilities.issue).toBe(false);
   });
+
+  it('SAB-02: `refund` se acepta, pero el arranque dice que no enciende nada (QA-H-17)', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.stubEnv('SABRE_OPERATIONS', 'refund,void');
+    const factory = factoryWith(() => Promise.resolve(resolved()));
+    expect(factory.capabilities).toMatchObject({ void: true, issue: false });
+    const lineas = warn.mock.calls.map((c) => String(c[0]));
+    expect(lineas).toContain('operaciones de Sabre encendidas por SABRE_OPERATIONS: [void]');
+    expect(lineas).toContain(
+      'SABRE_OPERATIONS nombra operaciones que todavía no existen y no encienden nada: [refund]',
+    );
+    warn.mockRestore();
+  });
+
+  it('`refund` sola no anuncia nada encendido', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.stubEnv('SABRE_OPERATIONS', 'refund');
+    factoryWith(() => Promise.resolve(resolved()));
+    expect(warn.mock.calls.map((c) => String(c[0])).some((l) => l.includes('encendidas'))).toBe(
+      false,
+    );
+    warn.mockRestore();
+  });
 });
 
 describe('SabreProviderFactory — la emisión está CABLEADA al ACL, sin tarjeta', () => {

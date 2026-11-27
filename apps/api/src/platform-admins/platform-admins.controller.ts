@@ -110,6 +110,7 @@ export class PlatformAdminsController implements OnModuleInit {
     @Body(new ZodValidationPipe(GrantPlatformAdminSchema)) dto: GrantPlatformAdminDto,
   ): Promise<PlatformAdminView[]> {
     const actor = requireUser(userId);
+    await this.admins.assertGrantable(actor, dto);
     await this.supervision.gate(actor, PLATFORM_ADMIN_CHANGE_KINDS.grant, dto);
     return this.admins.grant(actor, dto);
   }
@@ -159,7 +160,7 @@ export class ChangeRequestsController {
     @CurrentUser() userId: string | undefined,
     @Query(new ZodValidationPipe(ChangeRequestListQuerySchema)) query: ChangeRequestListQuery,
   ): Promise<ChangeRequestView[]> {
-    return this.supervision.list(requireUser(userId), query.status);
+    return this.supervision.list(requireUser(userId), query.status, query.before);
   }
 
   @Post(':id/approve')
