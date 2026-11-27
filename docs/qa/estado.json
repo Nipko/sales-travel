@@ -193,6 +193,62 @@
       "fase": "pasa",
       "arreglo": "mac",
       "nota": "5 MB → 413 (antes 500) y la API sigue respondiendo; JSON roto → 400. Límite del cuerpo en 1 MB para que entren logos de 512 KB."
+    },
+    "SUP-13": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "Validación (nombre 2–80, proveedor del catálogo, ítems repetidos, >200, campos extra), nombre único sin importar mayúsculas, duplicar, asignar, no archivar en uso, archivado no se edita ni asigna. Falta la puerta del supervisado (TRV-12)."
+    },
+    "CLI-04": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "nota": "El upsert por documento (con espacios y minúsculas) devuelve el mismo viajero y no duplica; otra agencia con el mismo documento tiene el suyo."
+    },
+    "CLI-05": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "API: q 2–120 y limit 1–25 → 400 fuera de rango; B no encuentra viajeros de A. Falta el directorio del panel."
+    },
+    "CLI-08": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "QA-H-40/41: traspaso a otra agencia → 400, a sí mismo → 400, un vendedor → 403. Falta tareas e interacciones."
+    },
+    "CLI-06": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "arreglo": "mac",
+      "cobertura": "parcial",
+      "nota": "QA-H-39: una oportunidad asignada la ven el vendedor y el admin, el vendedor la mueve de etapa, y no puede asignar a otro (403). Falta el valor estimado del panel (QA-H-20)."
+    },
+    "EQU-03": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "nota": "Invitar como superadmin → 400; como consolidador o a otra agencia → 403; un vendedor no invita."
+    },
+    "SQL-01": {
+      "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+      "fecha": "2026-11-27",
+      "corrida": "mac",
+      "fase": "pasa",
+      "cobertura": "parcial",
+      "nota": "Probado por API: un admin no asciende a consolidador ni a superadmin ni invita con esos roles. Falta el test de integración directo de enforce_platform_role_scope."
     }
   },
   "hallazgos": {
@@ -278,7 +334,7 @@
     "QA-H-38": {
       "fecha": "2026-11-27",
       "estado": "confirmado",
-      "nota": "EACCES al crear /var/lib/sales-travel en la Mac; en el VPS tampoco hay volumen ni ruta /blobs en Caddy. Ver la mejora QA-M-02."
+      "nota": "Bajado a Media: el panel no usa la subida (el logo se carga como URL), así que hoy no afecta a nadie. Se arregla con QA-M-02 cuando se agregue la subida en Configuración."
     },
     "QA-M-01": {
       "fecha": "2026-11-27",
@@ -288,7 +344,7 @@
     "QA-M-02": {
       "fecha": "2026-11-27",
       "estado": "propuesta",
-      "nota": "Propuesta para el próximo deploy al VPS; arregla QA-H-38."
+      "nota": "Para cuando se agregue la subida de logo en Configuración (hoy el panel sólo acepta una URL). Arregla QA-H-38."
     },
     "QA-M-03": {
       "fecha": "2026-11-27",
@@ -299,6 +355,21 @@
       "fecha": "2026-11-27",
       "estado": "propuesta",
       "nota": "Necesita tu decisión sobre los estados permitidos."
+    },
+    "QA-H-39": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas."
+    },
+    "QA-H-40": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo."
+    },
+    "QA-H-41": {
+      "fecha": "2026-11-27",
+      "estado": "en_mac",
+      "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo."
     }
   },
   "ultimaCorrida": {

@@ -1191,13 +1191,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "Invitar como superadmin → 400; como consolidador o a otra agencia → 403; un vendedor no invita.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "EQU-04",
@@ -4071,13 +4071,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "El upsert por documento (con espacios y minúsculas) devuelve el mismo viajero y no duplica; otra agencia con el mismo documento tiene el suyo.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-05",
@@ -4087,13 +4087,13 @@
   "nivel": "H + E",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "API: q 2–120 y limit 1–25 → 400 fuera de rango; B no encuentra viajeros de A. Falta el directorio del panel.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-06",
@@ -4103,13 +4103,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "QA-H-20",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-41",
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "QA-H-39: una oportunidad asignada la ven el vendedor y el admin, el vendedor la mueve de etapa, y no puede asignar a otro (403). Falta el valor estimado del panel (QA-H-20).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-07",
@@ -4135,13 +4135,13 @@
   "nivel": "H + I",
   "prioridad": "P2",
   "ola": 2,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "pasa",
+  "arreglo": "mac",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-41",
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "QA-H-40/41: traspaso a otra agencia → 400, a sí mismo → 400, un vendedor → 403. Falta tareas e interacciones.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "CLI-09",
@@ -4455,13 +4455,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "Validación (nombre 2–80, proveedor del catálogo, ítems repetidos, >200, campos extra), nombre único sin importar mayúsculas, duplicar, asignar, no archivar en uso, archivado no se edita ni asigna. Falta la puerta del supervisado (TRV-12).",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SUP-14",
@@ -4759,13 +4759,13 @@
   "nivel": "I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/gobierno-crm-y-equipo.api.ts",
+  "nota": "Probado por API: un admin no asciende a consolidador ni a superadmin ni invita con esos roles. Falta el test de integración directo de enforce_platform_role_scope.",
+  "fecha": "2026-11-27"
  },
  {
   "id": "SQL-02",

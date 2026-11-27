@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -79,7 +80,7 @@ export class CrmTasksController {
       throw new ForbiddenException('not authorized to manage this tenant');
     }
     if (body.fromUserId === body.toUserId) {
-      throw new ForbiddenException('el origen y el destino son el mismo usuario');
+      throw new BadRequestException('El origen y el destino son la misma persona.');
     }
 
     return this.tasks.reassignPortfolio(tenantId, body.fromUserId, body.toUserId);

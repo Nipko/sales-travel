@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import type { Server } from 'node:http';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -61,7 +60,7 @@ async function bootstrap(): Promise<void> {
   const shutdownConfig = loadShutdownConfig(process.env);
   if (shutdownConfig.invalidReason !== undefined) shutdownLogger.warn(shutdownConfig.invalidReason);
   installGracefulShutdown({
-    server: app.getHttpServer() as Server,
+    server: app.getHttpServer(),
     work: app.get(InflightWorkRegistry),
     closeApp: () => app.close(),
     drainTimeoutMs: shutdownConfig.drainTimeoutMs,

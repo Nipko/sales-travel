@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
-import type { Transaction } from 'kysely';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { sql, type Transaction } from 'kysely';
 import type { DB } from '../database/database.types.js';
 
 export interface CrmReferences {
@@ -63,4 +63,25 @@ export async function assertCrmReferences(
       reason: 'FOREIGN_REFERENCE',
       fields,
     });
+}
+
+/**
+ * Un vendedor sólo se asigna a sí mismo o deja la oportunidad en la cola: la RLS de 0031 rechaza el
+ * resto, y sin esta comprobación el rechazo salía como 500. Asignar a otro es de un admin del nodo.
+ */
+export async function assertCanAssign(
+  trx: Transaction<DB>,
+  actorUserId: string | undefined,
+  assignedUserId: string | null | undefined,
+): Promise<void> {
+  if (!assignedUserId || assignedUserId === actorUserId) return;
+  const { rows } = await sql<{ admin: boolean }>`
+    SELECT is_admin_of_current_tenant() AS admin
+  `.execute(trx);
+  if (rows[0]?.admin === true) return;
+  throw new ForbiddenException({
+    error: 'Forbidden',
+    message: 'Sólo un administrador de la agencia asigna oportunidades a otra persona.',
+    reason: 'CRM_ASSIGN_REQUIRES_ADMIN',
+  });
 }

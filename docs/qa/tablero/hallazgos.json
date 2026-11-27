@@ -371,12 +371,42 @@
  },
  {
   "id": "QA-H-38",
-  "gravedad": "Alta",
+  "gravedad": "Media",
   "que": "Los logos no funcionan en ningún ambiente: el api escribe en /var/lib/sales-travel/blobs sin volumen ni permiso (EACCES) y ni Caddy ni el panel sirven /blobs/*",
   "donde": "docker-compose.*.yml, Caddyfile, local-disk-storage.adapter.ts",
   "casos": "AGE-06",
   "estado": "confirmado",
-  "nota": "EACCES al crear /var/lib/sales-travel en la Mac; en el VPS tampoco hay volumen ni ruta /blobs en Caddy. Ver la mejora QA-M-02.",
+  "nota": "Bajado a Media: el panel no usa la subida (el logo se carga como URL), así que hoy no afecta a nadie. Se arregla con QA-M-02 cuando se agregue la subida en Configuración.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-39",
+  "gravedad": "Alta",
+  "que": "CRM: oportunidades e interacciones abrían la transacción sin el usuario (withTenant), así que la RLS de 0031 no sabía quién pedía: una oportunidad asignada no la veía nadie (ni el admin), no se podía crear (500) y desaparecía al asignarla",
+  "donde": "crm/crm-opportunities.service.ts, crm-interactions.service.ts",
+  "casos": "CLI-06, CLI-08",
+  "estado": "en_mac",
+  "nota": "Confirmado: crear una oportunidad asignada daba 500 «new row violates row-level security». Los dos servicios pasan el usuario al contexto, como ya hacían las tareas.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-40",
+  "gravedad": "Alta",
+  "que": "Traspaso de cartera: reassign_portfolio (SECURITY DEFINER) no mira el destino; un admin podía pasar oportunidades y tareas a un vendedor de otra agencia",
+  "donde": "crm/crm-tasks.service.ts",
+  "casos": "CLI-08",
+  "estado": "en_mac",
+  "nota": "Confirmado leyendo 0034 y probado: el destino ahora tiene que ser miembro activo del nodo.",
+  "fecha": "2026-11-27"
+ },
+ {
+  "id": "QA-H-41",
+  "gravedad": "Baja",
+  "que": "Un vendedor que asigna una oportunidad a otro choca contra la RLS y recibe 500; el traspaso a sí mismo respondía 403 en vez de 400",
+  "donde": "crm/crm-opportunities.service.ts, crm-tasks.controller.ts",
+  "casos": "CLI-06, CLI-08",
+  "estado": "en_mac",
+  "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo.",
   "fecha": "2026-11-27"
  },
  {
@@ -396,7 +426,7 @@
   "donde": "infrastructure/*, storage/*",
   "casos": "AGE-06",
   "estado": "propuesta",
-  "nota": "Propuesta para el próximo deploy al VPS; arregla QA-H-38.",
+  "nota": "Para cuando se agregue la subida de logo en Configuración (hoy el panel sólo acepta una URL). Arregla QA-H-38.",
   "fecha": "2026-11-27"
  },
  {

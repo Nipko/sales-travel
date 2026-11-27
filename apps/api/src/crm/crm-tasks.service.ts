@@ -110,6 +110,11 @@ export class CrmTasksService {
     fromUserId: string,
     toUserId: string,
   ): Promise<{ opportunities: number; tasks: number }> {
+    // `reassign_portfolio` es SECURITY DEFINER y no mira a quién se traspasa: el destino tiene que
+    // ser del equipo del nodo, o la cartera salía de la agencia (QA-H-40).
+    await this.db.withRequestContext({ tenantId }, (trx) =>
+      assertCrmReferences(trx, tenantId, { assignedUserId: toUserId }),
+    );
     const res = await sql<{ opportunities: number; tasks: number }>`
       SELECT * FROM reassign_portfolio(${tenantId}::uuid, ${fromUserId}::uuid, ${toUserId}::uuid)
     `.execute(this.db.db);
