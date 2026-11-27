@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CAR_RESERVATION_UNRECORDED_EVENT, CarsService } from './cars.service.js';
+import { CarSelectionStore } from './car-selection.store.js';
 import type { ConfirmInput } from './cars.schemas.js';
 
 /*
@@ -42,7 +43,17 @@ const BOOKED = {
   status: 'confirmed',
 };
 
-function setup(failures: number) {
+/** La selección que la API guardó al pedirla: el Book sólo acepta ese neto (AUT-05). */
+const SELECTION = {
+  uniqid: 'sess-1',
+  companyCode: 'ZE',
+  sippCode: 'ECMR',
+  base: { amountMinor: 11800, currency: 'USD' },
+  tax: { amountMinor: 2550, currency: 'USD' },
+  rateAmount: { amountMinor: 14350, currency: 'USD' },
+};
+
+async function setup(failures: number) {
   const adapter = { confirm: vi.fn(() => Promise.resolve(BOOKED)) };
   const factory = { forTenant: vi.fn(() => Promise.resolve(adapter)) };
   const pricing = {
@@ -60,6 +71,8 @@ function setup(failures: number) {
     }),
   };
   const audit = { emit: vi.fn(() => Promise.resolve()) };
+  const selections = new CarSelectionStore();
+  await selections.remember(TENANT, SELECTION as never);
   const service = new CarsService(
     factory as never,
     {} as never,
@@ -67,6 +80,8 @@ function setup(failures: number) {
     orders as never,
     audit as never,
     {} as never,
+    undefined,
+    selections,
   );
   const sleep = vi
     .spyOn(service as unknown as { sleep: (ms: number) => Promise<void> }, 'sleep')
@@ -76,7 +91,7 @@ function setup(failures: number) {
 
 describe('CarsService.book: guardar la orden después de confirmar', () => {
   it('sin fallos guarda la orden una vez y devuelve recorded: true', async () => {
-    const { service, orders, audit, sleep } = setup(0);
+    const { service, orders, audit, sleep } = await setup(0);
     const res = await service.book(TENANT, USER, INPUT);
     expect(res).toEqual({ ...BOOKED, recorded: true });
     expect(orders.recordExternalOrder).toHaveBeenCalledTimes(1);
@@ -87,7 +102,7 @@ describe('CarsService.book: guardar la orden después de confirmar', () => {
   });
 
   it('un fallo pasajero se reintenta y la orden queda', async () => {
-    const { service, orders, audit } = setup(2);
+    const { service, orders, audit } = await setup(2);
     const res = await service.book(TENANT, USER, INPUT);
     expect(res.recorded).toBe(true);
     expect(orders.recordExternalOrder).toHaveBeenCalledTimes(3);
@@ -98,7 +113,7 @@ describe('CarsService.book: guardar la orden después de confirmar', () => {
   });
 
   it('agotados los intentos devuelve el código con recorded: false y deja el rastro', async () => {
-    const { service, orders, audit } = setup(99);
+    const { service, orders, audit } = await setup(99);
     const res = await service.book(TENANT, USER, INPUT);
     expect(res).toEqual({ ...BOOKED, recorded: false });
     expect(orders.recordExternalOrder).toHaveBeenCalledTimes(3);

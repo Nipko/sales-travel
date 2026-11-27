@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -41,6 +42,7 @@ import {
   toTenantView,
   type TenantPricingView,
 } from '../pricing/pricing.service.js';
+import { CarSelectionStore, sameMoney, type StoredCarSelection } from './car-selection.store.js';
 import type {
   CarSearchInput,
   CarSelectionInput,
@@ -87,6 +89,8 @@ export class CarsService {
     private readonly activeTenant: ActiveTenantService,
     /** Gobierno de proveedores y formas de pago (0089). Opcional para los dobles de las suites. */
     @Optional() private readonly governance?: GovernancePaymentsService,
+    /** El neto de cada selección, para que el Book no lo tome del cliente (AUT-05). */
+    @Optional() private readonly selections: CarSelectionStore = new CarSelectionStore(),
   ) {}
 
   /** AgentCars no pasa por los registries: su habilitación la mira el servicio (0089). */
@@ -148,6 +152,7 @@ export class CarsService {
     if (input.coupon) q.coupon = input.coupon;
     if (input.tp) q.tp = input.tp;
     const selection = await adapter.getSelection(q);
+    await this.selections.remember(tenantId, selection);
     const [priced] = await this.withPricing([selection], tenantId);
     return priced ?? selection;
   }
@@ -168,9 +173,11 @@ export class CarsService {
         input.paymentType === 'pod' ? 'pay_at_destination' : 'prepaid',
       );
     }
+    const quoted = await this.quotedNet(tenantId, input);
     const adapter = await this.factory.forTenant(tenantId);
-    // El proveedor SIEMPRE recibe el neto (input.total). El precio de venta (con la cascada de
-    // markup) se calcula aparte y se guarda en la orden — nunca se le manda al proveedor.
+    // El proveedor SIEMPRE recibe el neto de la selección, el que AgentCars cotizó y esta API
+    // guardó (AUT-05). El precio de venta (con la cascada de markup) se calcula aparte y se guarda
+    // en la orden — nunca se le manda al proveedor.
     const req: ConfirmCarRequest = {
       uniqid: input.uniqid,
       paymentType: input.paymentType,
@@ -189,9 +196,9 @@ export class CarsService {
       lastName: input.lastName,
       age: input.age,
       email: input.email,
-      realBase: Money.fromMajor(input.realBase, input.currency),
-      realTax: Money.fromMajor(input.realTax, input.currency),
-      total: Money.fromMajor(input.total, input.currency),
+      realBase: quoted.base,
+      realTax: quoted.tax,
+      total: quoted.rateAmount,
     };
     if (input.ccrc) req.ccrc = input.ccrc;
     if (input.rateIdentifier) req.rateIdentifier = input.rateIdentifier;
@@ -205,11 +212,54 @@ export class CarsService {
     if (input.language) req.language = input.language;
 
     const result = await adapter.confirm(req);
+    await this.selections.forget(tenantId, input.uniqid);
 
     // La reserva YA ocurrió: persistirla NO debe poder tumbarla. Se reintenta; si igual no entra,
     // queda un rastro durable y el vendedor recibe el código con el aviso, nunca un error genérico.
     const recorded = await this.persistWithRetry(tenantId, userId, input, result);
     return { ...result, recorded };
+  }
+
+  /**
+   * El neto con el que se reserva: el de la selección guardada para esa sesión, no el del cuerpo.
+   * El cuerpo todavía lo trae (el panel lo muestra y lo manda); si no coincide con el cotizado, la
+   * reserva se frena con 409 en vez de mandar a AgentCars, a la orden y a la cartera un número que
+   * el proveedor no dio.
+   */
+  private async quotedNet(tenantId: string, input: ConfirmInput): Promise<StoredCarSelection> {
+    const quoted = await this.selections.recall(tenantId, input.uniqid);
+    if (!quoted) {
+      throw new ConflictException({
+        error: 'Conflict',
+        message: 'La selección del auto venció. Vuelve a elegirlo para ver el precio vigente.',
+        reason: 'CAR_SELECTION_EXPIRED',
+      });
+    }
+    if (quoted.companyCode !== input.companyCode || quoted.sippCode !== input.sippCode) {
+      throw new ConflictException({
+        error: 'Conflict',
+        message: 'La reserva no corresponde al auto elegido. Vuelve a elegirlo.',
+        reason: 'CAR_SELECTION_MISMATCH',
+      });
+    }
+    const sent = {
+      base: Money.fromMajor(input.realBase, input.currency),
+      tax: Money.fromMajor(input.realTax, input.currency),
+      rateAmount: Money.fromMajor(input.total, input.currency),
+    };
+    if (
+      !sameMoney(sent.base, quoted.base) ||
+      !sameMoney(sent.tax, quoted.tax) ||
+      !sameMoney(sent.rateAmount, quoted.rateAmount)
+    ) {
+      throw new ConflictException({
+        error: 'Conflict',
+        message: 'El precio no coincide con el que cotizó la arrendadora. Vuelve a elegir el auto.',
+        reason: 'CAR_PRICE_MISMATCH',
+        quoted: { base: quoted.base, tax: quoted.tax, total: quoted.rateAmount },
+      });
+    }
+    return quoted;
   }
 
   /**
