@@ -101,7 +101,7 @@
     },
     "AUT-05": {
       "fase": "corregido",
-      "arreglo": "rama",
+      "arreglo": "vps",
       "prueba": "apps/api/src/cars/cars-book-net-price.test.ts",
       "fecha": "2026-11-27",
       "hallazgo": "QA-H-29",
@@ -359,9 +359,9 @@
       "nota": "Zod en las 4 rutas de pricing; además, un tenantId mal formado daba 500. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-29": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "La API guarda el neto de cada selección (CarSelectionStore, por nodo y uniqid, 15 min) y el Book reserva con ese: un neto distinto en el cuerpo es 409 CAR_PRICE_MISMATCH, sin selección 409 CAR_SELECTION_EXPIRED, otro auto 409 CAR_SELECTION_MISMATCH. Probado con dobles (cars-book-net-price.test.ts); por HTTP sigue bloqueado hasta que AgentCars registre la IP de la Mac."
+      "nota": "La API guarda el neto de cada selección (CarSelectionStore, por nodo y uniqid, 15 min) y el Book reserva con ese: un neto distinto en el cuerpo es 409 CAR_PRICE_MISMATCH, sin selección 409 CAR_SELECTION_EXPIRED, otro auto 409 CAR_SELECTION_MISMATCH. Probado con dobles (cars-book-net-price.test.ts); por HTTP sigue bloqueado hasta que AgentCars registre la IP de la Mac. Desplegado en el VPS el 2026-11-27 (0bc7b228)."
     },
     "QA-H-02": {
       "fecha": "2026-11-27",
@@ -444,15 +444,15 @@
       "nota": "403 CRM_ASSIGN_REQUIRES_ADMIN y 400 en el traspaso a sí mismo. Desplegado en el VPS el 2026-11-27 (ad573ccc)."
     },
     "QA-H-42": {
-      "estado": "corregido",
+      "estado": "en_vps",
       "fecha": "2026-11-27",
-      "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana."
+      "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana. Desplegado en el VPS el 2026-11-27 (0bc7b228)."
     }
   },
   "ultimaCorrida": {
     "ambiente": "mac",
-    "fecha": "2026-11-26T20:37:56.074Z",
-    "tests": 17,
+    "fecha": "2026-11-27T04:37:16.507Z",
+    "tests": 40,
     "fallan": 0
   }
 }

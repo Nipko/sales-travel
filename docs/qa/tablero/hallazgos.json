@@ -285,8 +285,8 @@
   "que": "Neto de autos llega del cliente (ya en doc 21 §5.2)",
   "donde": "cars/*",
   "casos": "AUT-05",
-  "estado": "corregido",
-  "nota": "La API guarda el neto de cada selección (CarSelectionStore, por nodo y uniqid, 15 min) y el Book reserva con ese: un neto distinto en el cuerpo es 409 CAR_PRICE_MISMATCH, sin selección 409 CAR_SELECTION_EXPIRED, otro auto 409 CAR_SELECTION_MISMATCH. Probado con dobles (cars-book-net-price.test.ts); por HTTP sigue bloqueado hasta que AgentCars registre la IP de la Mac.",
+  "estado": "en_vps",
+  "nota": "La API guarda el neto de cada selección (CarSelectionStore, por nodo y uniqid, 15 min) y el Book reserva con ese: un neto distinto en el cuerpo es 409 CAR_PRICE_MISMATCH, sin selección 409 CAR_SELECTION_EXPIRED, otro auto 409 CAR_SELECTION_MISMATCH. Probado con dobles (cars-book-net-price.test.ts); por HTTP sigue bloqueado hasta que AgentCars registre la IP de la Mac. Desplegado en el VPS el 2026-11-27 (0bc7b228).",
   "fecha": "2026-11-27"
  },
  {
@@ -415,8 +415,8 @@
   "que": "accept_invitation (0028), sin uso desde 0056, seguía SECURITY DEFINER y ejecutable: marcaba aceptada cualquier invitación por id, de cualquier nodo y sin mirar vencimiento; 17 funciones SECURITY DEFINER más las podía ejecutar PUBLIC",
   "donde": "db/migrations/0028, 0056",
   "casos": "SQL-02",
-  "estado": "corregido",
-  "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana.",
+  "estado": "en_vps",
+  "nota": "0099 borra accept_invitation y find_pending_invitation, da EXECUTE explícito a app_user y se lo quita a PUBLIC en toda SECURITY DEFINER. security-definer.integration.test.ts vigila que ninguna quede abierta a PUBLIC ni huérfana. Desplegado en el VPS el 2026-11-27 (0bc7b228).",
   "fecha": "2026-11-27"
  },
  {
