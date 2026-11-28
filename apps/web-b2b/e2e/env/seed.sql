@@ -83,6 +83,9 @@ WITH seed_users(email, name) AS (
     ('voluntario@e2e.test', 'Vendedor MFA Voluntario'),
     -- ACC-26: entra sin el correo verificado (el seed se lo vuelve a quitar).
     ('sin-verificar@e2e.test', 'Vendedor Sin Verificar'),
+    ('clave@e2e.test',         'Vendedor Cambia Clave'),
+    ('restablecer@e2e.test',   'Vendedor Restablece Clave'),
+    ('codigos@e2e.test',       'Vendedor Codigos Recuperacion'),
     -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
     ('api-superadmin@e2e.test',     'API Superadmin'),
     ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
@@ -131,6 +134,7 @@ DELETE FROM mfa_challenges     WHERE user_id IN (SELECT id FROM users WHERE emai
 DELETE FROM trusted_devices    WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@e2e.test');
 -- EQU-09 cuenta los enlaces de los últimos 15 minutos: cada corrida empieza sin ninguno.
 DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'api-equipo-%@e2e.test');
+DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = 'restablecer@e2e.test');
 
 -- ── Membresías ─────────────────────────────────────────────────────────────────────────────────────
 WITH seed_memberships(email, slug, role, supervised) AS (
@@ -161,6 +165,9 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('cupo-admin@e2e.test',         'e2e-agencia-cupo', 'admin',              false),
     ('voluntario@e2e.test',         'e2e-agencia-b',    'vendedor',           false),
     ('sin-verificar@e2e.test',      'e2e-agencia-b',    'vendedor',           false),
+    ('clave@e2e.test',              'e2e-agencia-b',    'vendedor',           false),
+    ('restablecer@e2e.test',        'e2e-agencia-b',    'vendedor',           false),
+    ('codigos@e2e.test',            'e2e-agencia-b',    'vendedor',           false),
     ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
     ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
     ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),
