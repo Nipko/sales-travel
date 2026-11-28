@@ -19,11 +19,14 @@ const STATUS_LABEL: Record<string, string> = {
 export function QuoteActions({
   packageId,
   status,
+  shownStatus,
   showBreakdown,
   whatsappText,
 }: {
   packageId: string;
   status: string;
+  /** El estado a mostrar (vencida incluida); `status` es el guardado y decide las acciones. */
+  shownStatus: string;
   showBreakdown: boolean;
   whatsappText: string;
 }) {
@@ -68,14 +71,14 @@ export function QuoteActions({
           <span
             className={cn(
               'rounded-full px-2.5 py-1 text-xs font-medium',
-              status === 'accepted'
+              shownStatus === 'accepted'
                 ? 'bg-[var(--color-success)]/15 text-[var(--color-success)]'
-                : status === 'sent'
+                : shownStatus === 'sent'
                   ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                   : 'bg-[var(--color-surface-muted)] text-[var(--color-fg-muted)]',
             )}
           >
-            {STATUS_LABEL[status] ?? status}
+            {STATUS_LABEL[shownStatus] ?? shownStatus}
           </span>
           {status !== 'accepted' ? (
             <Button

@@ -47,6 +47,14 @@ export interface QuoteModel {
 }
 
 /** «PQ-3F9A1C»: corto para decirlo por teléfono, estable porque sale del id. */
+/**
+ * El estado que ve el vendedor: una cotización no aceptada con `expiresAt` en el pasado está vencida
+ * aunque la base todavía diga borrador o enviada (nadie la pasa a `expired`). Lista y detalle igual.
+ */
+export function shownStatus(pkg: { status: string; expiresAt: string }, now: number): string {
+  return pkg.status !== 'accepted' && Date.parse(pkg.expiresAt) < now ? 'expired' : pkg.status;
+}
+
 export function quoteRefOf(id: string): string {
   return `PQ-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
 }

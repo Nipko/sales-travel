@@ -5,6 +5,7 @@ import {
   includedList,
   quoteModel,
   quoteRefOf,
+  shownStatus,
   travelersText,
   whatsappText,
 } from './package-quote';
@@ -101,5 +102,21 @@ describe('textos para el cliente', () => {
 
   it('referencia corta y estable', () => {
     expect(quoteRefOf(pkg.id)).toBe('PQ-3F9A1C');
+  });
+});
+
+describe('shownStatus', () => {
+  const now = Date.parse('2026-11-28T12:00:00Z');
+  it('una cotización no aceptada con la fecha pasada se ve vencida', () => {
+    expect(shownStatus({ status: 'draft', expiresAt: '2026-11-27T12:00:00Z' }, now)).toBe(
+      'expired',
+    );
+    expect(shownStatus({ status: 'sent', expiresAt: '2026-11-27T12:00:00Z' }, now)).toBe('expired');
+  });
+  it('aceptada o vigente se ve como está', () => {
+    expect(shownStatus({ status: 'accepted', expiresAt: '2026-11-27T12:00:00Z' }, now)).toBe(
+      'accepted',
+    );
+    expect(shownStatus({ status: 'sent', expiresAt: '2026-11-29T12:00:00Z' }, now)).toBe('sent');
   });
 });

@@ -5,7 +5,7 @@ import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/cn';
 import { formatMoney } from '../../../../lib/flight-format';
 import { listPackagesAction } from '../actions';
-import { formatShortDate, quoteRefOf } from '../_components/package-quote';
+import { formatShortDate, quoteRefOf, shownStatus } from '../_components/package-quote';
 
 export const metadata: Metadata = { title: 'Paquetes guardados' };
 
@@ -62,8 +62,7 @@ export default async function SavedPackagesPage() {
       ) : (
         <ul className="space-y-2">
           {res.data.map((p) => {
-            const expired = p.status !== 'accepted' && Date.parse(p.expiresAt) < now;
-            const status = STATUS[expired ? 'expired' : p.status] ?? STATUS.draft!;
+            const status = STATUS[shownStatus(p, now)] ?? STATUS.draft!;
             const c = p.searchCriteria;
             const pax = c?.rooms.reduce((n, r) => n + r.adults + r.childrenAges.length, 0);
             return (
