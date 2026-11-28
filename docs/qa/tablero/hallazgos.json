@@ -660,6 +660,26 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-67",
+  "gravedad": "Media",
+  "que": "En el checkout de vuelos, «Reservar» del resumen de escritorio sólo quedaba aria-disabled mientras reservaba: un doble clic mandaba dos pedidos y el segundo (409 duplicateRequest) llevaba a la vista de conciliación",
+  "donde": "cotizaciones/[id]/page.tsx",
+  "casos": "CHK-14",
+  "estado": "en_vps",
+  "nota": "reserveFromBar no hace nada mientras reserva (f60 con doble clic).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-68",
+  "gravedad": "Baja",
+  "que": "La ficha de una reserva ofrecía «Reenviar confirmación» en pendientes y canceladas, y la API respondía 409; el checkout decía «Faltan 1 dato para reservar»",
+  "donde": "reservas/reservation-detail-view.ts, cotizaciones/[id]/page.tsx",
+  "casos": "POS-15",
+  "estado": "en_vps",
+  "nota": "Reenviar sólo en confirmadas o emitidas (prueba unitaria y f60); «Falta 1 dato» en singular.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

@@ -852,6 +852,9 @@ export default function QuotationDetailPage() {
    * formulario lleva la vista al primer campo marcado; si el servidor falla, a su mensaje.
    */
   function reserveFromBar() {
+    // El botón de escritorio sólo queda aria-disabled mientras reserva: sin esto, un doble clic
+    // mandaba dos pedidos y el segundo (409 duplicateRequest) llevaba a la conciliación (CHK-14).
+    if (submitting) return;
     submitRef.current?.(priceChangeTotal !== undefined);
   }
 
@@ -860,7 +863,7 @@ export default function QuotationDetailPage() {
     formStatus.error !== null
       ? 'No se pudo reservar: mira el mensaje'
       : missingCount > 0
-        ? `Faltan ${String(missingCount)} ${missingCount === 1 ? 'dato' : 'datos'} por completar`
+        ? `${missingCount === 1 ? 'Falta 1 dato' : `Faltan ${String(missingCount)} datos`} por completar`
         : null;
 
   /** Lo que falta o falló, junto al botón fijo: el formulario es largo y su final no se ve. */
@@ -880,7 +883,8 @@ export default function QuotationDetailPage() {
     return (
       <div className="rounded-lg border border-[var(--color-warning)]/45 bg-[var(--color-warning)]/12 px-3 py-2.5 text-xs text-[var(--color-fg)]">
         <p className="font-semibold">
-          Faltan {missingCount} {missingCount === 1 ? 'dato' : 'datos'} para reservar
+          {missingCount === 1 ? 'Falta 1 dato' : `Faltan ${String(missingCount)} datos`} para
+          reservar
         </p>
         <ul className="ml-4 mt-1 list-disc space-y-0.5">
           {formStatus.problems.slice(0, 3).map((problem) => (

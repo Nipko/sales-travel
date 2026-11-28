@@ -202,11 +202,17 @@ describe('reservationActions — la principal a la vista, el resto en el menú',
     );
   });
 
-  it('cancelada: sólo reenviar la confirmación', () => {
+  it('cancelada: nada, ni reenviar la confirmación (la API sólo la manda de confirmadas o emitidas)', () => {
     expect(reservationActions(order({ status: 'cancelled' }), free)).toEqual({
       primary: null,
-      secondary: ['resend'],
+      secondary: [],
     });
+  });
+
+  it('pendiente: no ofrece reenviar la confirmación', () => {
+    expect(reservationActions(order({ status: 'pending' }), free).secondary).not.toContain(
+      'resend',
+    );
   });
 
   it('emitida: no se cancela (eso es anular tiquetes)', () => {
