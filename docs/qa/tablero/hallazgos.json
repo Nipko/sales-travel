@@ -550,6 +550,26 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-56",
+  "gravedad": "Baja",
+  "que": "Mi Agencia → General no validaba el nombre antes de mandar: con 1 o 121 caracteres mostraba el mensaje de Zod en inglés («String must contain at least 2 character(s)»), guardaba los espacios de más y el aviso de guardado no se anunciaba; el subdominio de Dominio no tenía nombre accesible",
+  "donde": "configuracion/page.tsx, branding.schemas.ts",
+  "casos": "AGE-01",
+  "estado": "en_vps",
+  "nota": "El panel valida 2–120 sobre el nombre normalizado y anuncia el resultado (status/alert); la API recorta y responde en castellano; el subdominio tiene aria-label.",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-57",
+  "gravedad": "Baja",
+  "que": "Invitar con un correo como persona@agencia mostraba «email: Invalid email» en inglés",
+  "donde": "tenants/dto.ts",
+  "casos": "EQU-02",
+  "estado": "en_vps",
+  "nota": "InviteUserSchema: email con trim y mensaje propio.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
