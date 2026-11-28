@@ -1134,6 +1134,38 @@
       "nota": "f46: depósito USD y ajuste COP sembrados por el consolidador; el filtro de moneda muestra sólo los de cada una; admin-a (financia a su sub-agencia) ve «Reservas de tu red»; vendedor-a no. La cartera EUR de la agencia A queda muy negativa por los ajustes sin tope de carteras.api.ts en cada corrida (QA-M-09).",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "HOT-09": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-54",
+      "prueba": "apps/web-b2b/e2e/api/hoteles-contacto.api.ts",
+      "nota": "HTTP: correo sin dominio, prefijo de 4 dígitos o con letras, teléfono de 3/21 caracteres, sin dígitos o con letras → 400 en su campo; un contacto válido pasa el borde. El formulario del panel no se alcanza sin hoteles falsos (INF-4): sus mensajes los cubre guest-form-view.test.ts.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "HOT-08": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/src/app/(app)/hoteles/checkout/_components/guest-form-view.test.ts",
+      "nota": "Cubierto por pruebas unitarias (guest-form-view, booking-view GUESTS_INVALID → campos, book.request.builder de TBO y hotel-booking-errors). El E2E necesita hoteles falsos (INF-4): GUESTS_INVALID corre después del prebook, y un prebookRef inventado se frena antes.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "TRV-19": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-55",
+      "prueba": "apps/web-b2b/e2e/tests/f47-teclado-y-monedas.e2e.ts",
+      "nota": "f47: combobox de ruta (flechas marcan opción, Enter elige, Escape cierra con el foco en el campo), calendario (Enter abre, Escape cierra y devuelve el foco, flechas mueven el día, PageDown, Enter elige), menú «Acciones» (Enter, flechas, Escape vuelve al botón) y confirmación (foco en «Cancelar», Tab atrapado, Escape devuelve el foco al menú). El combobox no tiene Home/End (opcional en APG).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "TRV-20": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f47-teclado-y-monedas.e2e.ts",
+      "nota": "f47 copia una venta COP de vendedor-a en USD: Inicio muestra una línea por moneda, Reportes ofrece COP y USD y el resumen de la plataforma una tarjeta «Ventas confirmadas en …» por moneda. Revisado el código: reportes, resumen, carteras y Mi Red agrupan por moneda en el SQL y en el panel.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1451,6 +1483,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "shownStatus() en package-quote.ts: lista y detalle usan la misma regla (prueba unitaria y f46)."
+    },
+    "QA-H-54": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "refine de al menos 4 dígitos en contact.phone.number (prueba unitaria y hoteles-contacto.api.ts)."
+    },
+    "QA-H-55": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "El botón de la fila queda aria-disabled y no abre mientras corre algo, como el de la ficha; f47 lo prueba con el teclado."
     }
   },
   "ultimaCorrida": {

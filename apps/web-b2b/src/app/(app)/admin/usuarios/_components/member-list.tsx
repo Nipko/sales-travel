@@ -21,7 +21,7 @@ import {
   UserX,
   X,
 } from 'lucide-react';
-import { Fragment, useId, useRef } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { Button } from '../../../../../components/ui/button';
 import { cn } from '../../../../../lib/cn';
 import {
@@ -702,6 +702,7 @@ function MemberActions({
   onRemove: (() => void) | undefined;
   onAction: (action: MemberAction) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // La acción elegida corre cuando el menú ya cerró y devolvió el foco a su botón: si abriera su
   // confirmación antes, Radix le quitaba el foco al diálogo para devolvérselo al botón.
@@ -711,15 +712,18 @@ function MemberActions({
   };
 
   return (
-    <DropdownMenu.Root modal={false}>
+    // `aria-disabled` y no `disabled` mientras corre algo (como en la ficha): antes de confirmar una
+    // suspensión se cuentan las invitaciones que revocaría, y un botón deshabilitado soltaba el foco
+    // al `<body>`; la confirmación lo devolvía ahí al cerrar (TRV-19).
+    <DropdownMenu.Root modal={false} open={open && !busy} onOpenChange={(o) => setOpen(o && !busy)}>
       <DropdownMenu.Trigger asChild>
         <Button
           ref={triggerRef}
           variant="ghost"
           size="sm"
-          disabled={busy}
+          aria-disabled={busy || undefined}
           aria-label={`Acciones sobre ${name}`}
-          className="px-2"
+          className="px-2 aria-disabled:cursor-wait aria-disabled:opacity-60"
         >
           {busy ? (
             <RefreshCw aria-hidden="true" className="animate-spin" />

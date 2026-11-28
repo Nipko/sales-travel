@@ -416,7 +416,15 @@ const HotelBookContactSchema = z
           .string()
           .regex(/^\d{1,6}$/)
           .optional(),
-        number: z.string().regex(/^[\d\s().-]{4,20}$/),
+        // Con sólo guiones o espacios el formato pasaba: el proveedor necesita al menos 4 dígitos
+        // (el panel ya lo exigía; HOT-09).
+        number: z
+          .string()
+          .regex(/^[\d\s().-]{4,20}$/)
+          .refine(
+            (v) => v.replace(/\D/g, '').length >= 4,
+            'el teléfono necesita al menos 4 dígitos',
+          ),
       })
       .strict(),
   })

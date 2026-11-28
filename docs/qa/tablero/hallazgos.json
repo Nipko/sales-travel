@@ -530,6 +530,26 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-54",
+  "gravedad": "Baja",
+  "que": "La API de reserva de hotel aceptaba un teléfono de contacto sin dígitos (----, 1 2-3): el formato 4–20 pasaba y sólo el panel exigía al menos 4 dígitos",
+  "donde": "hotels.schemas.ts",
+  "casos": "HOT-09",
+  "estado": "en_vps",
+  "nota": "refine de al menos 4 dígitos en contact.phone.number (prueba unitaria y hoteles-contacto.api.ts).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-55",
+  "gravedad": "Media",
+  "que": "En Equipo, tras cancelar la confirmación de «Suspender» abierta desde el menú «Acciones» de una fila, el foco quedaba en el <body>: el botón se deshabilitaba mientras se contaban las invitaciones a revocar y soltaba el foco",
+  "donde": "admin/usuarios/_components/member-list.tsx",
+  "casos": "TRV-19",
+  "estado": "en_vps",
+  "nota": "El botón de la fila queda aria-disabled y no abre mientras corre algo, como el de la ficha; f47 lo prueba con el teclado.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

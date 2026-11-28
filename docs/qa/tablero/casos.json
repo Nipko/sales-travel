@@ -295,13 +295,13 @@
   "nivel": "E",
   "prioridad": "P2",
   "ola": 3,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-55",
+  "prueba": "apps/web-b2b/e2e/tests/f47-teclado-y-monedas.e2e.ts",
+  "nota": "f47: combobox de ruta (flechas marcan opción, Enter elige, Escape cierra con el foco en el campo), calendario (Enter abre, Escape cierra y devuelve el foco, flechas mueven el día, PageDown, Enter elige), menú «Acciones» (Enter, flechas, Escape vuelve al botón) y confirmación (foco en «Cancelar», Tab atrapado, Escape devuelve el foco al menú). El combobox no tiene Home/End (opcional en APG).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "TRV-20",
@@ -311,13 +311,13 @@
   "nivel": "E + I",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f47-teclado-y-monedas.e2e.ts",
+  "nota": "f47 copia una venta COP de vendedor-a en USD: Inicio muestra una línea por moneda, Reportes ofrece COP y USD y el resumen de la plataforma una tarjeta «Ventas confirmadas en …» por moneda. Revisado el código: reportes, resumen, carteras y Mi Red agrupan por moneda en el SQL y en el panel.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "ACC-01",
@@ -3543,13 +3543,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
+  "fase": "parcial",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/src/app/(app)/hoteles/checkout/_components/guest-form-view.test.ts",
+  "nota": "Cubierto por pruebas unitarias (guest-form-view, booking-view GUESTS_INVALID → campos, book.request.builder de TBO y hotel-booking-errors). El E2E necesita hoteles falsos (INF-4): GUESTS_INVALID corre después del prebook, y un prebookRef inventado se frena antes.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "HOT-09",
@@ -3559,13 +3559,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "por_crear",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-54",
+  "prueba": "apps/web-b2b/e2e/api/hoteles-contacto.api.ts",
+  "nota": "HTTP: correo sin dominio, prefijo de 4 dígitos o con letras, teléfono de 3/21 caracteres, sin dígitos o con letras → 400 en su campo; un contacto válido pasa el borde. El formulario del panel no se alcanza sin hoteles falsos (INF-4): sus mensajes los cubre guest-form-view.test.ts.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "HOT-10",
