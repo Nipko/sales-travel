@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getPackageAction } from '../actions';
 import { agencyBranding } from '../_components/agency-branding';
-import { quoteModel, quoteRefOf, whatsappText } from '../_components/package-quote';
+import { quoteModel, quoteRefOf, shownStatus, whatsappText } from '../_components/package-quote';
 import { QuoteActions } from '../_components/quote-actions';
 import { QuoteDocument } from '../_components/quote-document';
 
@@ -32,6 +32,7 @@ export default async function PackageQuotePage({ params }: { params: Promise<{ i
       <QuoteActions
         packageId={id}
         status={res.data.package.status}
+        shownStatus={shownStatus(res.data.package, Date.now())}
         showBreakdown={res.data.package.showBreakdown}
         whatsappText={whatsappText(model, branding.name)}
       />

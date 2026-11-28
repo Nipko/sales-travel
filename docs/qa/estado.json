@@ -1104,6 +1104,36 @@
       "nota": "f45 con vendedor-a: «Sesiones abiertas (n)», la invitación pendiente que envió y actividad de a 30 con «Cargar más». Cerrar una sesión ajena no se prueba aquí para no tumbar la sesión guardada de vendedor-a.",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "PAQ-03": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f46-paquetes-inicio-carteras.e2e.ts",
+      "nota": "f46: sin servicio, sin destino, sin origen, sin fechas y 10 pasajeros de vuelo, cada uno con su mensaje. «Indica cuántos viajan» no se alcanza desde la UI (siempre hay 1 adulto). La API no repite el tope de 9 ni exige un servicio: son validaciones sólo del panel (la reserva de vuelo sí lo valida, QA-H-12).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "PAQ-05": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-53",
+      "prueba": "apps/web-b2b/e2e/tests/f46-paquetes-inicio-carteras.e2e.ts",
+      "nota": "f46: «Copiar texto» y WhatsApp (wa.me/?text=, sin número) llevan el mismo texto; WhatsApp pasa el borrador a Enviada; «Imprimir» abre la impresión; «Marcar aceptada»; la lista muestra Borrador/Vencida/Aceptada y el detalle de la vencida ya dice Vencida.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "INI-03": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f46-paquetes-inicio-carteras.e2e.ts",
+      "nota": "f46: «Ventas del mes» una línea por moneda con su código, sin repetir monedas. El estado de falla («—» y «Sin datos») lo cubre page.render.test.ts: el pedido es del servidor (RSC) y el navegador no lo puede interceptar.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-13": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f46-paquetes-inicio-carteras.e2e.ts",
+      "nota": "f46: depósito USD y ajuste COP sembrados por el consolidador; el filtro de moneda muestra sólo los de cada una; admin-a (financia a su sub-agencia) ve «Reservas de tu red»; vendedor-a no. La cartera EUR de la agencia A queda muy negativa por los ajustes sin tope de carteras.api.ts en cada corrida (QA-M-09).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1416,6 +1446,11 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "aria-label «Agencia» en el selector."
+    },
+    "QA-H-53": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "shownStatus() en package-quote.ts: lista y detalle usan la misma regla (prueba unitaria y f46)."
     }
   },
   "ultimaCorrida": {

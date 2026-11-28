@@ -520,6 +520,16 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-53",
+  "gravedad": "Baja",
+  "que": "Una cotización de paquete vencida se veía «Vencida» en la lista pero «Borrador» o «Enviada» en su detalle: sólo la lista calculaba el vencimiento",
+  "donde": "paquetes/[id]/page.tsx, quote-actions.tsx, package-quote.ts",
+  "casos": "PAQ-05",
+  "estado": "en_vps",
+  "nota": "shownStatus() en package-quote.ts: lista y detalle usan la misma regla (prueba unitaria y f46).",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
