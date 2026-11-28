@@ -23,7 +23,15 @@ test.describe('TRV-19 teclado', { tag: '@desktop' }, () => {
       await origen.focus();
       await origen.fill('MDE');
       await expect(origen).toHaveAttribute('aria-expanded', 'true');
-      await page.keyboard.press('ArrowDown');
+      // La lista se filtra al escribir: hasta que aparece MDE, la primera opción puede ser otra.
+      await expect(page.getByRole('option', { name: /MDE|Medellín/ }).first()).toBeVisible();
+      const activaEs = async () => {
+        const id = await origen.getAttribute('aria-activedescendant');
+        return id ? ((await page.locator(`[id="${id}"]`).getAttribute('aria-label')) ?? '') : '';
+      };
+      for (let i = 0; i < 10 && !/MDE|Medellín/.test(await activaEs()); i++) {
+        await page.keyboard.press('ArrowDown');
+      }
       const activa = await origen.getAttribute('aria-activedescendant');
       expect(activa, 'la flecha marca una opción').toBeTruthy();
       await expect(page.locator(`[id="${activa}"]`)).toHaveAttribute('aria-selected', 'true');

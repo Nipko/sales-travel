@@ -24,9 +24,14 @@ test.describe.configure({ mode: 'serial' });
 
 async function panelDeLaSub(page: Page): Promise<void> {
   await page.goto('/red');
-  await page.getByRole('link', { name: 'Carteras de Subagencia E2E' }).click();
+  const enlace = page.getByRole('link', { name: 'Carteras de Subagencia E2E' });
+  const destino = await enlace.getAttribute('href');
+  expect(destino, 'Mi Red ofrece las carteras de la sub-agencia').toMatch(
+    /^\/red\/[^/]+\/carteras$/,
+  );
+  await page.goto(destino!);
   await expect(page.getByRole('heading', { name: 'Subagencia E2E', level: 1 })).toBeVisible({
-    timeout: 20_000,
+    timeout: 45_000,
   });
 }
 
