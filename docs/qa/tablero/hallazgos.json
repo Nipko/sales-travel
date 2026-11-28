@@ -620,6 +620,16 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-63",
+  "gravedad": "Baja",
+  "que": "Con un superadmin supervisado, suspender un nodo (Agencias) o una cuenta (Usuarios) mostraba «Tu cambio quedó como solicitud…» en rojo como error; las demás pantallas ya lo avisaban como información (QA-H-24)",
+  "donde": "suspend-node-dialog.tsx, platform-users-panel.tsx",
+  "casos": "SUP-18",
+  "estado": "en_vps",
+  "nota": "suspend-node-dialog usa announcedPending y la fila de Usuarios avisa con toast.info.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

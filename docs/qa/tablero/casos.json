@@ -4503,13 +4503,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/superadmins-y-nodos.api.ts",
+  "nota": "HTTP: el impacto cuenta membresías y sesiones vivas; sobre uno mismo → 403 «no puedes suspender tu propio usuario»; cuenta inexistente → 404. La suspensión con step-up y la reactivación en el navegador: f53 (SUP-15).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-17",
@@ -4519,13 +4519,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/superadmins-y-nodos.api.ts",
+  "nota": "HTTP: cambiar el acceso propio → 403 SELF_PLATFORM_ADMIN_CHANGE; correo sin cuenta → 404 USER_NOT_FOUND; createAccount crea la cuenta y llega «Activa tu cuenta · PlaneTour»; pasarla a supervisado (platform_supervised) y quitarle el acceso. El panel de Superadmins no se prueba en el navegador.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-18",
@@ -4535,13 +4535,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-63",
+  "prueba": "apps/web-b2b/e2e/api/superadmins-y-nodos.api.ts",
+  "nota": "HTTP: el supervisado pide dar acceso → 409 con changeRequestId; no puede aprobar (FULL_SUPERADMIN_REQUIRED); el pleno no cancela la ajena (NOT_REQUESTER); nota de 2 → 400; aprobar con step-up aplica el cambio; otra vez → CHANGE_REQUEST_NOT_PENDING; el supervisado cancela la suya. No hay vencimiento de solicitudes (así está hecho). El aviso de Agencias y Usuarios ya es información.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-19",
@@ -4615,13 +4615,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f57-agencias-y-nodo.e2e.ts",
+  "nota": "f57: Agencias busca por slug sin importar mayúsculas y avisa «Ningún nodo coincide»; el alta trae CO/COP/es. HTTP: suspender sin motivo o con 3 caracteres → 400; impacto; suspender y reactivar; la plataforma → 409 TENANT_PLATFORM_LOCKED.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-24",
@@ -4631,13 +4631,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "QA-H-28",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f57-agencias-y-nodo.e2e.ts",
+  "nota": "f57: «Tarifas de vuelo en otra moneda» pide confirmar al encender y al apagar y avisa cada cambio (se devuelve al estado original). HTTP: se lee lo guardado; nodo inexistente → 404. Proveedores y gobierno del nodo: SUP-12 y TRV-12.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-25",

@@ -88,7 +88,7 @@ import { useNow } from '../../../usuarios/_components/seats-ui';
 import { supportMember } from '../../../usuarios/_components/support-action';
 import { LegacyPasswordsCallout, LegacyPasswordsDialog } from './legacy-passwords-dialog';
 import { PlatformInvitations, SEARCH_DEBOUNCE_MS, useDebounced } from './platform-invitations';
-import { toastFailure } from '../../../../../../lib/change-request-notice';
+import { isChangeRequestPending, toastFailure } from '../../../../../../lib/change-request-notice';
 
 /** Las pestañas de la pantalla: las personas, o las invitaciones que nadie aceptó todavía. */
 type PanelTab = 'users' | 'invitations';
@@ -302,7 +302,10 @@ export function PlatformUsersPanel({
   /** Una acción pedida desde la fila: si falla, el motivo va en su fila. */
   async function fromRow(user: PlatformUser, outcome: Promise<SheetActionOutcome>) {
     const out = await outcome;
-    if (out.status === 'failed') setRowError({ userId: user.id, message: out.message });
+    if (out.status !== 'failed') return;
+    // La solicitud de un supervisado no es un error de la fila: se avisa como información (QA-H-63).
+    if (isChangeRequestPending(out.message)) toast.info(out.message);
+    else setRowError({ userId: user.id, message: out.message });
   }
 
   async function setStatus(
