@@ -389,12 +389,17 @@ const CreatableTenantTypeSchema = z.enum(CREATABLE_TENANT_TYPES, {
  * él al aceptar (un `adminName` de un panel viejo se descarta sin error).
  */
 export const CreateTenantSchema = z.object({
-  name: z.string().min(2).max(120),
+  // Mensajes en castellano: el panel muestra el de la API tal cual (RED-03).
+  name: z
+    .string()
+    .trim()
+    .min(2, 'el nombre del nodo tiene que tener al menos 2 caracteres')
+    .max(120, 'el nombre del nodo puede tener hasta 120 caracteres'),
   slug: z
     .string()
-    .min(2)
-    .max(50)
-    .regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric with hyphens'),
+    .min(2, 'el slug tiene que tener al menos 2 caracteres')
+    .max(50, 'el slug puede tener hasta 50 caracteres')
+    .regex(/^[a-z0-9-]+$/, 'el slug va en minúsculas, números y guiones, sin espacios'),
   countryCode: z
     .string()
     .length(2)
