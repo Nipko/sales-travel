@@ -135,7 +135,7 @@ export interface Offer {
 }
 
 /** Qué pasó con un proveedor en esta búsqueda. Espejo de ProviderOutcome en el API. */
-export type ProviderStatus = 'ok' | 'empty' | 'error' | 'simulated' | 'skipped';
+export type ProviderStatus = 'ok' | 'empty' | 'error' | 'simulated' | 'skipped' | 'unavailable';
 
 /**
  * Por qué un proveedor no llegó a ser llamado. `platform-disabled`: el superadmin lo apagó para
@@ -152,6 +152,8 @@ export interface ProviderOutcome {
   /** Motivo ya humanizado por el API: cuando `status === 'error'` o en `platform-disabled`. */
   reason?: string;
   skipReason?: ProviderSkipReason;
+  /** `unavailable`: la agencia no tiene cuenta usable (sin credenciales o incompleta). */
+  unavailableReason?: 'no-credentials' | 'incomplete-account';
 }
 
 export interface SearchResult {
