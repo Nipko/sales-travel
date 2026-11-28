@@ -32,6 +32,8 @@ export const USERS = {
   perfil: { email: 'perfil@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
   /** CTA-07: activa y desactiva el 2FA. */
   desactiva: { email: 'desactiva@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** CAR-06/07: admin de la sub-agencia; informa depósitos que admin-a (su financiador) resuelve. */
+  subAdmin: { email: 'sub-admin@e2e.test', tenant: 'e2e-subagencia', mfa: true },
 } as const;
 
 export type UserKey = keyof typeof USERS;
