@@ -1286,6 +1286,41 @@
       "nota": "HTTP: keep en cuenta nueva → 400; keep + credenciales → 400; keep conserva credentials_enc byte a byte (credentialsChanged false); credenciales nuevas lo cambian (true). El aviso del formulario ya no pide recargarlas.",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "SUP-03": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f52-consola-de-plataforma.e2e.ts",
+      "nota": "f52: Resumen guarda ?periodo=7d y lo relee tras recargar; Salud y Estado cargan con su tabla y su titular.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "SUP-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f52-consola-de-plataforma.e2e.ts",
+      "nota": "f52: la categoría Proveedores va en la URL y muestra el apagado de emergencia; la API rechaza 93+ días, fechas al revés y categoría inválida con mensaje en castellano.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "SUP-05": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f52-consola-de-plataforma.e2e.ts",
+      "nota": "f52: título corto y fin igual al inicio con su mensaje; cancelar con datos pide descartar; un aviso de información y uno crítico se ven en el panel del vendedor; «Ocultar aviso» esconde el primero y sigue oculto al recargar; el crítico no tiene botón; archivarlo con confirmación lo saca.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "SUP-10": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f52-consola-de-plataforma.e2e.ts",
+      "nota": "f52 con Sabre: motivo corto y código errado con su mensaje (el botón queda aria-disabled hasta escribir el código); «solo ventas» por 1 hora deja el aviso en la ficha y en «Requiere tu atención»; «Reanudar proveedor» lo levanta.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "SUP-12": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f52-consola-de-plataforma.e2e.ts",
+      "nota": "f52 con Sabre: «Agregar excepción» para Agencia E2E A en Deshabilitado y vuelta a Heredar, cada una con su aviso. El stack E2E no registra AgentCars como proveedor de plataforma.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
