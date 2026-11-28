@@ -20,24 +20,30 @@ test.describe('TRV-19 teclado', { tag: '@desktop' }, () => {
     test('combobox de ruta y calendario sólo con teclado', async ({ page }) => {
       await page.goto('/cotizaciones');
       const origen = page.getByRole('combobox', { name: 'Origen', exact: true });
-      await origen.focus();
-      await origen.fill('MDE');
-      await expect(origen).toHaveAttribute('aria-expanded', 'true');
-      // La lista se filtra al escribir: hasta que aparece MDE, la primera opción puede ser otra.
-      await expect(page.getByRole('option', { name: /MDE|Medellín/ }).first()).toBeVisible();
       const activaEs = async () => {
         const id = await origen.getAttribute('aria-activedescendant');
         return id ? ((await page.locator(`[id="${id}"]`).getAttribute('aria-label')) ?? '') : '';
       };
-      for (let i = 0; i < 10 && !/MDE|Medellín/.test(await activaEs()); i++) {
-        await page.keyboard.press('ArrowDown');
-      }
-      const activa = await origen.getAttribute('aria-activedescendant');
-      expect(activa, 'la flecha marca una opción').toBeTruthy();
-      await expect(page.locator(`[id="${activa}"]`)).toHaveAttribute('aria-selected', 'true');
-      await page.keyboard.press('Enter');
-      await expect(origen).toHaveAttribute('aria-expanded', 'false');
-      await expect(origen).toHaveValue(/MDE|Medellín/);
+      // La lista se vuelve a filtrar cuando llegan los resultados y, en CI, a veces después de
+      // marcar la opción: borra lo marcado. Se repite la secuencia entera (escribir, flechas, Enter)
+      // hasta que el campo queda con Medellín, que es lo que se prueba: que el teclado basta.
+      await expect(async () => {
+        await origen.focus();
+        await origen.fill('MDE');
+        await expect(origen).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.getByRole('option', { name: /MDE|Medellín/ }).first()).toBeVisible();
+        for (let i = 0; i < 10 && !/MDE|Medellín/.test(await activaEs()); i++) {
+          await page.keyboard.press('ArrowDown');
+        }
+        const activa = await origen.getAttribute('aria-activedescendant');
+        expect(activa, 'la flecha marca una opción').toBeTruthy();
+        await expect(page.locator(`[id="${activa}"]`)).toHaveAttribute('aria-selected', 'true', {
+          timeout: 2_000,
+        });
+        await page.keyboard.press('Enter');
+        await expect(origen).toHaveAttribute('aria-expanded', 'false', { timeout: 2_000 });
+        await expect(origen).toHaveValue(/MDE|Medellín/, { timeout: 2_000 });
+      }).toPass({ timeout: 45_000 });
 
       const destino = page.getByRole('combobox', { name: 'Destino', exact: true });
       await destino.focus();

@@ -775,11 +775,11 @@
       "nota": "`payment` en el cuerpo → 400."
     },
     "TRV-11": {
-      "fase": "parcial",
-      "fecha": "2026-11-27",
-      "corrida": "mac",
-      "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
-      "nota": "POST /orders: sin Idempotency-Key o con una que no es UUID → 400; la misma clave no crea otra reserva. Faltan las demás rutas con clave (depósitos, hotels/book)."
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+      "nota": "HTTP: ajustes y depósitos sin clave o no UUID → 400; misma clave y datos → no suma dos veces; misma clave con otro monto → 409 PORTFOLIO_IDEMPOTENCY_KEY_REUSED. Depósitos informados igual (uno solo por clave). hotels/book sin clave o no UUID → 400 antes del proveedor. Órdenes: venta-falsa.api.ts (la repetida es 409 duplicateRequest con el id, no la respuesta guardada). /cars/book no usa clave.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     },
     "POS-03": {
       "fase": "pasa",
@@ -1584,6 +1584,34 @@
       "fase": "pasa",
       "prueba": "apps/web-b2b/e2e/api/checkout-y-postventa.api.ts",
       "nota": "HTTP: cuenta AgentCars del consolidador ligada por SQL a una reserva confirmada de agencia A: dejar de heredar y deshabilitar → 409 PROVIDER_ACCOUNT_IN_USE con activeOrders 1 y su mensaje; sin la reserva se deshabilita.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "TRV-10": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+      "nota": "HTTP: por IP (/invitations/preview 20/min) la 21.ª → 429 «Demasiados intentos. Espera un momento…» con Retry-After; por vendedor (/search/seat-map 30/min, cuenta antes de validar) la 31.ª → 429 con Retry-After 1–60, y otro vendedor sigue libre. Otros límites: ACC-22 (5/min), CTA-02 (10/min). El 429 no trae reason (así está hecho).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "TRV-13": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+      "nota": "HTTP: UserProfileUpdated, portfolio.deposit.recorded y tenant.provider_disclosure.updated con actor, nodo y sin claves sensibles en el payload. Otros eventos ya se miran en sus casos (auth.login.blocked, ProviderCredentialsUpdated, credentialsChanged). Falta recorrer el resto de acciones del plan.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CLI-01": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+      "nota": "HTTP: persona sin nacimiento, género ni nacionalidad → 400 «requerido para una persona» en cada campo; empresa sin apellido sí; creada, el documento vuelve completo y en la base queda NULL en claro, cifrado (sin el número en el hex) y con su hash. Email, teléfono y nombres van en claro (así está diseñado).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "BYO-09": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+      "nota": "HTTP: Mostrar/Ocultar/Heredar en agencia A cambia showProviderInResults de la búsqueda (oculto por defecto); ocultar en el consolidador bloquea la rama (own true, effective false, lockedByAncestor); admin de otra red → 403. Ocultar no filtra ofertas: sólo esconde la etiqueta. Se devuelven los valores originales.",
       "fecha": "2026-11-28",
       "corrida": "mac"
     }
