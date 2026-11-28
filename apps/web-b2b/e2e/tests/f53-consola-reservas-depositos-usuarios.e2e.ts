@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { como, nodo, sql } from '../api/support/cliente';
 import { readMfa, storageStateFile, typeSixDigits, writeMfa } from '../support/auth';
 import { hayBuzon, ultimoCorreo } from '../support/correo';
@@ -95,6 +95,18 @@ async function pasarStepUp(page: Page, listo: ReturnType<Page['getByText']>): Pr
       .catch(() => undefined);
   }
   await expect(listo).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * Abre «Acciones» de la fila y elige `item`. La lista se vuelve a pedir al buscar o filtrar y, si llega
+ * con el menú abierto, lo cierra (en CI: «element was detached»): se reintenta hasta que quede quieta.
+ */
+async function elegirAccion(page: Page, fila: Locator, item: string): Promise<void> {
+  await expect(async () => {
+    await page.keyboard.press('Escape');
+    await fila.getByRole('button', { name: /^Acciones sobre / }).click({ timeout: 5_000 });
+    await page.getByRole('menuitem', { name: item }).click({ timeout: 5_000 });
+  }).toPass({ timeout: 45_000 });
 }
 
 test.describe('SUP-07 / SUP-08 reservas de la red', { tag: '@desktop' }, () => {
@@ -307,21 +319,13 @@ test.describe('SUP-15 usuarios de la plataforma', { tag: '@desktop' }, () => {
       .filter({ has: page.getByText('perfil@e2e.test', { exact: true }) });
     await expect(fila.first()).toBeVisible({ timeout: 20_000 });
 
-    await fila
-      .first()
-      .getByRole('button', { name: /^Acciones sobre / })
-      .click();
-    await page.getByRole('menuitem', { name: 'Suspender en toda la plataforma' }).click();
+    await elegirAccion(page, fila.first(), 'Suspender en toda la plataforma');
     const confirmar = page.getByRole('dialog', { name: /^Suspender a .+ en toda la plataforma$/ });
     await confirmar.getByRole('button', { name: 'Suspender en toda la plataforma' }).click();
     await pasarStepUp(page, page.getByText(/quedó suspendido en toda la plataforma\./));
     await expect(fila.first()).toContainText('Suspendido en toda la plataforma');
 
-    await fila
-      .first()
-      .getByRole('button', { name: /^Acciones sobre / })
-      .click();
-    await page.getByRole('menuitem', { name: 'Reactivar cuenta' }).click();
+    await elegirAccion(page, fila.first(), 'Reactivar cuenta');
     await page
       .getByRole('dialog', { name: /^Reactivar la cuenta de / })
       .getByRole('button', { name: 'Reactivar' })

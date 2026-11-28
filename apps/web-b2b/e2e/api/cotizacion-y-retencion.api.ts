@@ -157,6 +157,16 @@ test('CAR-08 / CHK-17 la retención sólo toma el total de la reserva y rechaza 
 
   const cons = await como('consolidador');
   const nodoA = await nodo('e2e-agencia-a');
+  // En una base recién sembrada (CI) la agencia A todavía no tiene cartera COP: se habilita acá.
+  const habilitar = await cons.post(`/tenants/${nodoA}/portfolios`, {
+    currency: 'COP',
+    creditLimitMinor: 0,
+    reason: 'QA30 retención',
+  });
+  expect(
+    habilitar.status < 300 || habilitar.text.includes('PORTFOLIO_ALREADY_ENABLED'),
+    habilitar.text,
+  ).toBe(true);
   const carteras = await cons.get<{ portfolios?: { id: string; currency: string }[] }>(
     `/tenants/${nodoA}/portfolios`,
   );
