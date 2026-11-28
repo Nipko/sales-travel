@@ -20,7 +20,11 @@ export const ChangeRoleSchema = z.object({
 export type ChangeRoleDto = z.infer<typeof ChangeRoleSchema>;
 
 export const InviteUserSchema = z.object({
-  email: z.string().email().toLowerCase(),
+  email: z
+    .string()
+    .trim()
+    .email('escribe un correo válido, como persona@agencia.com')
+    .toLowerCase(),
   tenantId: z.string().uuid(),
   role: AssignableRoleSchema,
 });

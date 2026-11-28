@@ -1187,6 +1187,45 @@
       "nota": "f48: regenerar pide el código de la app (uno errado → mensaje), da 10 códigos distintos, «Listo» sólo tras «Los guardé»; un código viejo no entra; el aviso dice 3, 1 y 0 (umbral LOW_RECOVERY_CODES = 3) con «Generar códigos nuevos».",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "CTA-01": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
+      "nota": "f49 con perfil@: vacío, 121, invisible (U+200B) y sin letras, cada uno con su mensaje y aria-invalid; espacios y tabuladores se normalizan; el correo no se edita; el menú de la cuenta muestra el nombre nuevo.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CTA-07": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
+      "nota": "f49 con desactiva@: sin contraseña no se manda (required), código errado → «La contraseña o el código no son correctos.», con contraseña y código queda Desactivada y la sesión sigue. admin-a ve «Obligatoria para tu rol» sin botón.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "AGE-01": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-56",
+      "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
+      "nota": "f49: nombre de 1 y 121 caracteres con mensaje en castellano antes de mandar; nombre con espacios de más se guarda normalizado; país, moneda e idioma se releen tras recargar; slug deshabilitado; devuelve los valores originales.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "EQU-02": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-57",
+      "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
+      "nota": "f49: admin-a sólo ofrece Vendedor y Cliente; persona@agencia → «escribe un correo válido…»; la invitación llega a Mailpit («Te invitaron a …»).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "EQU-05": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
+      "nota": "f49: «Reenviar» manda un enlace nuevo y el viejo muestra «Invitación no válida»; «Revocar» con confirmación deja sin efecto el nuevo.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1514,6 +1553,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "El botón de la fila queda aria-disabled y no abre mientras corre algo, como el de la ficha; f47 lo prueba con el teclado."
+    },
+    "QA-H-56": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "El panel valida 2–120 sobre el nombre normalizado y anuncia el resultado (status/alert); la API recorta y responde en castellano; el subdominio tiene aria-label."
+    },
+    "QA-H-57": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "InviteUserSchema: email con trim y mensaje propio."
     }
   },
   "ultimaCorrida": {

@@ -28,6 +28,10 @@ export const USERS = {
   restablecer: { email: 'restablecer@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
   /** CTA-06: activa el 2FA y regenera sus códigos de recuperación. */
   codigos: { email: 'codigos@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** CTA-01: cambia su nombre (el seed lo devuelve a «Vendedor Perfil»). */
+  perfil: { email: 'perfil@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** CTA-07: activa y desactiva el 2FA. */
+  desactiva: { email: 'desactiva@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
 } as const;
 
 export type UserKey = keyof typeof USERS;

@@ -51,7 +51,13 @@ export type UpdateBrandingDto = z.infer<typeof UpdateBrandingSchema>;
 
 export const UpdateConfigSchema = z
   .object({
-    name: z.string().min(2).max(120).optional(),
+    // Con mensaje propio: el panel muestra el de Zod tal cual, y en inglés no le decía nada (AGE-01).
+    name: z
+      .string()
+      .trim()
+      .min(2, 'el nombre de la agencia tiene que tener al menos 2 caracteres')
+      .max(120, 'el nombre de la agencia puede tener hasta 120 caracteres')
+      .optional(),
     countryCode: z
       .string()
       .length(2)

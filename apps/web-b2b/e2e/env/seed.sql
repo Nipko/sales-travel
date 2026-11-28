@@ -86,6 +86,8 @@ WITH seed_users(email, name) AS (
     ('clave@e2e.test',         'Vendedor Cambia Clave'),
     ('restablecer@e2e.test',   'Vendedor Restablece Clave'),
     ('codigos@e2e.test',       'Vendedor Codigos Recuperacion'),
+    ('perfil@e2e.test',        'Vendedor Perfil'),
+    ('desactiva@e2e.test',     'Vendedor Desactiva 2FA'),
     -- Personas del arnés HTTP (e2e/api): una por rol, propias, para no compartir sesión ni MFA con el panel.
     ('api-superadmin@e2e.test',     'API Superadmin'),
     ('api-supervisado@e2e.test',    'API Superadmin Supervisado'),
@@ -168,6 +170,8 @@ WITH seed_memberships(email, slug, role, supervised) AS (
     ('clave@e2e.test',              'e2e-agencia-b',    'vendedor',           false),
     ('restablecer@e2e.test',        'e2e-agencia-b',    'vendedor',           false),
     ('codigos@e2e.test',            'e2e-agencia-b',    'vendedor',           false),
+    ('perfil@e2e.test',             'e2e-agencia-b',    'vendedor',           false),
+    ('desactiva@e2e.test',          'e2e-agencia-b',    'vendedor',           false),
     ('api-bloqueo@e2e.test',        'e2e-agencia-a',    'vendedor',           false),
     ('api-suspendido@e2e.test',     'e2e-agencia-a',    'vendedor',           false),
     ('api-multi@e2e.test',          'e2e-agencia-a',    'vendedor',           false),

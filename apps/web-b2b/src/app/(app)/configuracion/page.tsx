@@ -151,6 +151,11 @@ export default function ConfiguracionPage() {
   }
 
   async function handleSaveConfig() {
+    const problema = agencyNameProblem(config.name);
+    if (problema) {
+      setMessage({ text: problema, success: false });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -158,7 +163,7 @@ export default function ConfiguracionPage() {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: config.name,
+          name: config.name.replace(/\s+/gu, ' ').trim(),
           countryCode: config.countryCode,
           defaultCurrency: config.defaultCurrency,
           defaultLanguage: config.defaultLanguage,
@@ -375,6 +380,7 @@ function GeneralTab({
       <div className="sticky bottom-0 -mx-6 border-t border-[var(--color-border)]/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {message ? (
           <div
+            role={message.success ? 'status' : 'alert'}
             className={cn(
               'flex items-center gap-1.5 text-xs font-semibold',
               message.success ? 'text-emerald-600' : 'text-rose-600',
@@ -643,6 +649,7 @@ function BrandingTab({
       <div className="sticky bottom-0 -mx-6 border-t border-[var(--color-border)]/60 bg-white/80 px-6 py-4.5 backdrop-blur-md z-10 rounded-b-xl flex items-center justify-between shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {message ? (
           <div
+            role={message.success ? 'status' : 'alert'}
             className={cn(
               'flex items-center gap-1.5 text-xs font-semibold',
               message.success ? 'text-emerald-600' : 'text-rose-600',
@@ -692,6 +699,7 @@ function DomainTab({ config }: { config: TenantConfig }) {
                 type="text"
                 value={config.slug}
                 disabled
+                aria-label="Subdominio por defecto"
                 className="form-input rounded-r-none border-r-0 opacity-60 bg-[var(--color-surface-muted)] font-mono text-xs cursor-not-allowed"
               />
               <span className="inline-flex items-center rounded-r-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3.5 py-2.5 text-xs font-semibold text-[var(--color-fg-subtle)]">
@@ -765,4 +773,12 @@ function FormField({
       )}
     </div>
   );
+}
+
+/** Lo mismo que exige la API (UpdateConfigSchema), dicho antes de mandar. */
+function agencyNameProblem(raw: string): string | null {
+  const name = raw.replace(/\s+/gu, ' ').trim();
+  if (name.length < 2) return 'El nombre de la agencia tiene que tener al menos 2 caracteres.';
+  if (name.length > 120) return 'El nombre de la agencia puede tener hasta 120 caracteres.';
+  return null;
 }
