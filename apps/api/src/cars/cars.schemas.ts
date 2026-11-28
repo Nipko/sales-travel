@@ -11,13 +11,20 @@ export const CarSuggestQuerySchema = z.object({
   lang: z.string().min(2).max(5).optional(),
 });
 
+/** En la query `lat=` llega como `''` y `z.coerce` lo hacía 0: vacío es «no vino». */
+const coordenada = (limite: number, mensaje: string) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().min(-limite, mensaje).max(limite, mensaje).optional(),
+  );
+
 export const FindOfficesQuerySchema = z
   .object({
     distance: z.coerce.number().positive(),
     source: z.string().length(2).optional(),
     companyCode: z.string().min(1).optional(),
-    lat: z.coerce.number().optional(),
-    lng: z.coerce.number().optional(),
+    lat: coordenada(90, 'la latitud va entre -90 y 90'),
+    lng: coordenada(180, 'la longitud va entre -180 y 180'),
     cityCode: z.string().min(1).optional(),
   })
   .refine((v) => (v.lat != null && v.lng != null) || v.cityCode != null, {

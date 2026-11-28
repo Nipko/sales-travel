@@ -87,10 +87,12 @@ export default function OficinasPage() {
         return;
       }
     } else {
-      const latN = Number(lat);
-      const lngN = Number(lng);
-      if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
-        setError('Escribe coordenadas válidas (lat y lng).');
+      const latN = coordenada(lat, 90);
+      const lngN = coordenada(lng, 180);
+      if (latN === null || lngN === null) {
+        setError(
+          'Escribe coordenadas válidas: latitud entre -90 y 90 y longitud entre -180 y 180.',
+        );
         return;
       }
       values.lat = latN;
@@ -351,4 +353,11 @@ function OfficeSchedule({ schedule }: { schedule: Record<string, OfficeScheduleD
       </div>
     </div>
   );
+}
+
+/** Vacío no es 0: `Number('')` mandaba la búsqueda a 0,0 (frente a África). */
+function coordenada(texto: string, limite: number): number | null {
+  if (texto.trim() === '') return null;
+  const n = Number(texto);
+  return Number.isFinite(n) && Math.abs(n) <= limite ? n : null;
 }

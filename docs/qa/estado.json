@@ -1072,6 +1072,38 @@
       "nota": "filtro, rol, suspendidos=ocultos y orden viajan en la URL y sobreviven a recargar; «Quitar filtros» los limpia; búsqueda y vacío. La búsqueda NO va en la URL (así está hecho).",
       "fecha": "2026-11-27",
       "corrida": "mac"
+    },
+    "AUT-08": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-51",
+      "prueba": "apps/web-b2b/e2e/api/autos-validaciones.api.ts",
+      "nota": "HTTP: distancia ≤0 o no numérica, sin lugar, lat/lng vacías, fuera de rango, source de 3 letras y fecha que no es AAAA-MM-DD → 400. f45: los mensajes del panel. La UI no tiene campo de país (source): sólo se prueba por HTTP.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "BYO-01": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-52",
+      "prueba": "apps/web-b2b/e2e/tests/f45-autos-proveedores-procesos-ficha.e2e.ts",
+      "nota": "f45 desde Proveedores (GDS): Sabre vacío → «Revisa 3 campos…», foco y aria-invalid en EPR, PCC corto; Despegar sin API key; LATAM sin credenciales; AgentCars con Base URL inválida; cancelar con datos pide «Descartar cambios»; TBO lo carga el consolidador; nada se guarda. Desde Mi Red usa la misma hoja.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "JOB-06": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f45-autos-proveedores-procesos-ficha.e2e.ts",
+      "nota": "f45 siembra dos conciliaciones (40 h y 2 h): la vieja muestra «Atrasada» junto a «Correcta», la reciente no. El umbral es 36 h.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "EQU-16": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f45-autos-proveedores-procesos-ficha.e2e.ts",
+      "nota": "f45 con vendedor-a: «Sesiones abiertas (n)», la invitación pendiente que envió y actividad de a 30 con «Cargar más». Cerrar una sesión ajena no se prueba aquí para no tumbar la sesión guardada de vendedor-a.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1374,6 +1406,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-27",
       "nota": "canInviteNodeAdmin (mismo criterio que initialAdminRole): si el rol no alcanza, el formulario no ofrece el campo y explica a quién pedirlo. f44 lo prueba con admin-a."
+    },
+    "QA-H-51": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "El panel trata vacío como faltante y exige el rango; la API ignora `lat=`/`lng=` vacíos y valida ±90/±180 (prueba unitaria y autos-validaciones.api.ts)."
+    },
+    "QA-H-52": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "aria-label «Agencia» en el selector."
     }
   },
   "ultimaCorrida": {

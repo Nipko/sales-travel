@@ -459,6 +459,7 @@ export default function ProveedoresPage() {
           <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-surface)] p-1.5 shadow-xs">
             <Building2 className="size-4 text-[var(--color-fg-subtle)] ml-2" />
             <select
+              aria-label="Agencia"
               value={selectedTenant?.id ?? ''}
               onChange={(e) => {
                 const found = tenants.find((t) => t.id === e.target.value);
