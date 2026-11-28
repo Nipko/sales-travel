@@ -66,11 +66,10 @@
       "nota": "Admin sin MFA → 403 MFA_ENROLLMENT_REQUIRED; con MFA pero sesión sin verificar (mfa_verified_at nulo) → 401 MFA_STEP_UP_REQUIRED."
     },
     "TRV-05": {
-      "cobertura": "parcial",
-      "nota": "Hecho: superadmin pleno y supervisado en las 37 rutas de venta. Falta superadmin con membresía de vendedor en una sucursal.",
-      "fase": "parcial",
-      "prueba": "apps/web-b2b/e2e/api/trv-permisos.api.ts",
-      "fecha": "2026-11-26",
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/mfa-condicional-y-reintentos.api.ts",
+      "nota": "Superadmin pleno y supervisado en las rutas de venta: trv-permisos. Con una membresía de vendedor en agencia A y ese nodo activo: búsqueda, orden y cotización → 403 PLATFORM_ROLE_CANNOT_SELL (el guard mira si es usuario de plataforma en cualquier nodo).",
+      "fecha": "2026-11-28",
       "corrida": "mac"
     },
     "TRV-08": {
@@ -803,11 +802,11 @@
       "nota": "Con el proveedor falso en CI (CHK-02/F27, cronometrado < 2 min en cada PR) y con Sabre CERT en la Mac (F12 @real)."
     },
     "TRV-04": {
-      "fase": "parcial",
-      "fecha": "2026-11-27",
-      "corrida": "mac",
-      "prueba": "apps/web-b2b/e2e/api/trv-mfa-reciente.api.ts",
-      "nota": "Las 12 rutas marcadas (del inventario de rutas) responden 403 MFA_RECENT_REQUIRED con el 2FA envejecido en la base. Faltan las 2 condicionales (send-password-reset a un admin y memberships con rol admin)."
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/mfa-condicional-y-reintentos.api.ts",
+      "nota": "Las 12 marcadas: trv-mfa-reciente.api.ts. Las condicionales: mandar el enlace de restablecer a un admin con el 2FA envejecido → 403 MFA_RECENT_REQUIRED y con step-up → 200 (a un vendedor no lo pide: EQU-09); quitar a un admin: EQU-08. El cambio de rol no pide 2FA reciente (así está hecho).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     },
     "TRV-12": {
       "fase": "pasa",
@@ -1612,6 +1611,26 @@
       "fase": "pasa",
       "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
       "nota": "HTTP: Mostrar/Ocultar/Heredar en agencia A cambia showProviderInResults de la búsqueda (oculto por defecto); ocultar en el consolidador bloquea la rama (own true, effective false, lockedByAncestor); admin de otra red → 403. Ocultar no filtra ofertas: sólo esconde la etiqueta. Se devuelven los valores originales.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CHK-18": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/mfa-condicional-y-reintentos.api.ts",
+      "nota": "Perilla nueva OCUPADO del falso (sentToProvider false, como la cola de Sabre llena): 429 «La reserva no se envió a la aerolínea…», el intento queda fallido sin PNR y la reserva siguiente sale.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "POS-07": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/mfa-condicional-y-reintentos.api.ts",
+      "nota": "Una cancelación fallida antes de llegar al proveedor (insertada por SQL: el falso no la produce) sale retryable en /operations y el reintento cancela la reserva; una sin verificar → 409 «…está prohibido reenviar el write.». El botón «Reintentar» del historial no se prueba en el navegador.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "NFR-04": {
+      "fase": "parcial",
+      "nota": "/api/health responde 503 {status:'fail', checks:{db:'fail'}} si el ping a la base falla (health.controller). Probarlo exige apagar el Postgres del stack, que tumba todas las pruebas en paralelo y quizá la API (el pool no tiene manejador de error): queda como prueba manual. El deploy espera /api/health (deploy.yml).",
       "fecha": "2026-11-28",
       "corrida": "mac"
     }

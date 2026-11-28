@@ -37,7 +37,8 @@ import type {
  * - búsqueda hacia SMR → sin disponibilidad; hacia ADZ → el proveedor se cae;
  * - cualquier otra ruta → dos ofertas; la segunda cambia de precio (+5 %) al revalidar;
  * - reserva según el apellido del primer pasajero: RECHAZO → rechazo cierto (FAILED, sin PNR),
- *   PARCIAL → PARTIAL con un ítem caído, INCIERTO → el proveedor no contesta (desenlace incierto);
+ *   PARCIAL → PARTIAL con un ítem caído, INCIERTO → el proveedor no contesta (desenlace incierto),
+ *   OCUPADO → el pedido no sale (`sentToProvider: false`, como la cola de Sabre llena: 429 reintentable);
  *   cualquier otro → confirmada.
  */
 export const FAKE_FLIGHTS_CODE = 'fake-flights';
@@ -48,6 +49,7 @@ export const FAKE_KNOBS = {
   rejectSurname: 'RECHAZO',
   partialSurname: 'PARCIAL',
   uncertainSurname: 'INCIERTO',
+  busySurname: 'OCUPADO',
 } as const;
 
 /** ¿El proveedor falso se registra? Lanza si lo piden fuera del stack E2E. */
@@ -235,6 +237,13 @@ export class FakeFlightsAdapter implements FlightProviderAdapter {
 
   createOrder(request: OrderCreateRequest, _ctx: SearchContext): Promise<OrderCreateResult> {
     const surname = (request.passengers[0]?.surname ?? '').toUpperCase();
+    if (surname === FAKE_KNOBS.busySurname) {
+      return Promise.reject(
+        Object.assign(new Error('fake-flights: ocupado, no se envió (perilla OCUPADO)'), {
+          sentToProvider: false,
+        }),
+      );
+    }
     if (surname === FAKE_KNOBS.uncertainSurname) {
       return Promise.reject(new Error('fake-flights: el proveedor no contestó (perilla INCIERTO)'));
     }
