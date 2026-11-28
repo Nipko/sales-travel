@@ -663,13 +663,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/correo.api.ts",
-  "nota": "H: misma respuesta exista o no el correo, el enlace sólo al que existe (Mailpit), el 6.º pedido en un minuto → 429. Falta la mitad E (pantalla /olvide-password).",
-  "fecha": "2026-11-27"
+  "prueba": "apps/web-b2b/e2e/tests/f48-claves-y-codigos.e2e.ts",
+  "nota": "H (correo.api.ts): misma respuesta, enlace sólo al que existe, 6.º → 429. E (f48): «Restablecer contraseña» muestra el mismo aviso para un correo que existe y otro que no.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "ACC-23",
@@ -679,13 +679,13 @@
   "nivel": "E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f48-claves-y-codigos.e2e.ts",
+  "nota": "f48: sin token → «Enlace inválido» con «Pide uno nuevo»; corta, larga (sin los límites nativos) y distintas con su mensaje; éxito con aviso de sesiones cerradas; el mismo enlace otra vez y uno vencido por SQL → «El enlace ya se usó o venció»; entra con la nueva. Tras un error el formulario vacía las dos contraseñas.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "ACC-24",
@@ -951,13 +951,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f48-claves-y-codigos.e2e.ts",
+  "nota": "f48: regenerar pide el código de la app (uno errado → mensaje), da 10 códigos distintos, «Listo» sólo tras «Los guardé»; un código viejo no entra; el aviso dice 3, 1 y 0 (umbral LOW_RECOVERY_CODES = 3) con «Generar códigos nuevos».",
+  "fecha": "2026-11-28"
  },
  {
   "id": "CTA-07",
@@ -983,13 +983,13 @@
   "nivel": "E + H",
   "prioridad": "P0",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f48-claves-y-codigos.e2e.ts",
+  "nota": "f48: actual errada, nueva corta, distintas e igual a la actual, cada una con su mensaje; con éxito la sesión sigue y otro navegador entra con la nueva. No pide 2FA reciente (no es ruta @RequireRecentMfa).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "CTA-09",

@@ -22,6 +22,12 @@ export const USERS = {
   voluntario: { email: 'voluntario@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
   /** ACC-26: su correo nunca está verificado al empezar. */
   sinVerificar: { email: 'sin-verificar@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** CTA-08: cambia su contraseña (el seed la devuelve en cada corrida). */
+  clave: { email: 'clave@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** ACC-22/ACC-23: la restablece con el enlace del correo. */
+  restablecer: { email: 'restablecer@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** CTA-06: activa el 2FA y regenera sus códigos de recuperación. */
+  codigos: { email: 'codigos@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
 } as const;
 
 export type UserKey = keyof typeof USERS;
