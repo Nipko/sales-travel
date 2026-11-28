@@ -4359,13 +4359,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
+  "nota": "f53: búsqueda de 1 carácter avisa «al menos 2»; por correo del cliente trae la reserva; la ficha avisa que queda en la auditoría; «Requieren atención» (?atencion=1) trae una pendiente de 31 min.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-08",
@@ -4375,13 +4375,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
+  "nota": "f53 con una reserva del falso: motivo de 3 → error; reenviar confirmación llega a Mailpit; consultar al proveedor; cancelar sólo con el n.º de orden correcto. «Reintentar» no se alcanza con el falso (pide una cancelación fallida reintentable).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-09",
@@ -4391,13 +4391,13 @@
   "nivel": "E + H",
   "prioridad": "P0",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
+  "nota": "f53: agencia B (la financia Planetour) informa dos depósitos por HTTP; desde la cola se aprueba uno y se rechaza otro (motivo de 2 → error); «Aprobados» va en la URL y lo muestra.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-10",
@@ -4423,13 +4423,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
+  "nota": "f53: 5 búsquedas a ADZ abren el circuito del falso; la ficha dice «No responde: circuito abierto»; «Cerrar circuito» con motivo corto → error; con motivo lo cierra y el botón desaparece.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-12",
@@ -4487,13 +4487,13 @@
   "nivel": "E + H",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
+  "nota": "f53: «Sin 2FA» queda presionado; búsqueda por correo; suspender en toda la plataforma con confirmación y código de la app (step-up); reactivar. Los filtros no van en la URL.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "SUP-16",
