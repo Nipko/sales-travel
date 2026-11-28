@@ -816,18 +816,18 @@
       "nota": "Los 17 cambios con puerta: el supervisado deja solicitud (409 CHANGE_REQUEST_PENDING) y nada se aplica (nodo y cuenta sin cambios). Encender el kill-switch y duplicar un perfil no tienen puerta: pregunta abierta QA-M-08."
     },
     "CAR-01": {
-      "fase": "parcial",
-      "fecha": "2026-11-27",
-      "corrida": "mac",
-      "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
-      "nota": "H: JPY (sin decimales), moneda inventada y motivo corto → 400; repetida → PORTFOLIO_ALREADY_ENABLED. Falta la mitad E."
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f50-carteras-financiador.e2e.ts",
+      "nota": "H (carteras.api.ts): JPY, moneda inventada y motivo corto → 400; repetida → PORTFOLIO_ALREADY_ENABLED. E (f50): admin-a habilita una moneda libre de su sub-agencia; cupo con separadores y motivo corto muestran su mensaje; el select sólo ofrece monedas no habilitadas (la repetida no se puede pedir desde la UI).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     },
     "CAR-02": {
-      "fase": "parcial",
-      "fecha": "2026-11-27",
-      "corrida": "mac",
-      "prueba": "apps/web-b2b/e2e/api/carteras.api.ts",
-      "nota": "H: monto 0, sin Idempotency-Key o con una que no es UUID → 400; la misma clave no suma dos veces. Falta la mitad E (separadores de miles, decimales)."
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f50-carteras-financiador.e2e.ts",
+      "nota": "H: monto 0, sin clave o clave no UUID → 400; la misma clave no suma dos veces. E (f50): separadores de miles, signo, cero, 3 decimales y vacío con su mensaje; «Confirma el depósito» antes de acreditar.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     },
     "CAR-03": {
       "fase": "pasa",
@@ -1224,6 +1224,27 @@
       "fase": "pasa",
       "prueba": "apps/web-b2b/e2e/tests/f49-perfil-agencia-e-invitaciones.e2e.ts",
       "nota": "f49: «Reenviar» manda un enlace nuevo y el viejo muestra «Invitación no válida»; «Revocar» con confirmación deja sin efecto el nuevo.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f50-carteras-financiador.e2e.ts",
+      "nota": "f50: cupo igual al actual → error; cupo nuevo con «Confirma el cupo»; suspender con motivo y reactivar, cada uno con su aviso.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-06": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f50-carteras-financiador.e2e.ts",
+      "nota": "f50 con sub-admin@ (admin de e2e-subagencia): sin referencia y con fecha futura → sus mensajes; informar deja «Depósito informado.» y el item pendiente.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-07": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f50-carteras-financiador.e2e.ts",
+      "nota": "f50: admin-a aprueba uno con comentario (se acredita y desaparecen sus botones) y rechaza otro (motivo de 2 → error; luego válido); la agencia ve «Aprobado» con el comentario y «Rechazado» con el motivo. El 409 «ya fue resuelto» no se alcanza desde la UI (los botones sólo salen en pendientes).",
       "fecha": "2026-11-28",
       "corrida": "mac"
     }
