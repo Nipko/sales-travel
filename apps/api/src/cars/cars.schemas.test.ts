@@ -84,6 +84,22 @@ describe('FindOfficesQuerySchema', () => {
     expect(parsed.lng).toBe(-80.29);
   });
 
+  it('coordenadas vacías no son 0,0: sin cityCode, falta la ubicación', () => {
+    expect(FindOfficesQuerySchema.safeParse({ distance: 25, lat: '', lng: '' }).success).toBe(
+      false,
+    );
+    const soloCiudad = FindOfficesQuerySchema.parse({ distance: 25, lat: '', cityCode: 'MIA' });
+    expect(soloCiudad.lat).toBeUndefined();
+  });
+
+  it('rechaza latitud fuera de ±90 y longitud fuera de ±180', () => {
+    expect(FindOfficesQuerySchema.safeParse({ distance: 25, lat: 91, lng: 0 }).success).toBe(false);
+    expect(FindOfficesQuerySchema.safeParse({ distance: 25, lat: 0, lng: -181 }).success).toBe(
+      false,
+    );
+    expect(FindOfficesQuerySchema.parse({ distance: 25, lat: '-90', lng: '180' }).lat).toBe(-90);
+  });
+
   it('acepta cityCode sin coordenadas', () => {
     const parsed = FindOfficesQuerySchema.parse({ distance: 25, cityCode: 'MIA' });
     expect(parsed.cityCode).toBe('MIA');

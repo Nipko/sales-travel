@@ -500,6 +500,26 @@
   "fecha": "2026-11-27"
  },
  {
+  "id": "QA-H-51",
+  "gravedad": "Media",
+  "que": "Oficinas de autos con latitud o longitud vacías buscaba en 0,0 (Number('') es 0, y z.coerce en la API hacía lo mismo con lat=); tampoco se validaba el rango ±90/±180",
+  "donde": "autos/oficinas/page.tsx, cars.schemas.ts",
+  "casos": "AUT-08",
+  "estado": "en_vps",
+  "nota": "El panel trata vacío como faltante y exige el rango; la API ignora `lat=`/`lng=` vacíos y valida ±90/±180 (prueba unitaria y autos-validaciones.api.ts).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-52",
+  "gravedad": "Baja",
+  "que": "El selector de agencia de «Proveedores (GDS)» no tenía nombre accesible",
+  "donde": "admin/proveedores/page.tsx",
+  "casos": "BYO-01",
+  "estado": "en_vps",
+  "nota": "aria-label «Agencia» en el selector.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",
