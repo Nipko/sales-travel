@@ -56,6 +56,9 @@ importers:
       '@sales-travel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sales-travel/despegar-activities':
+        specifier: workspace:*
+        version: link:../../providers/despegar-activities
       '@sales-travel/despegar-hotels':
         specifier: workspace:*
         version: link:../../providers/despegar-hotels
@@ -268,6 +271,19 @@ importers:
       '@sales-travel/canonical':
         specifier: workspace:*
         version: link:../../packages/canonical
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  providers/despegar-activities:
+    dependencies:
+      '@sales-travel/canonical':
+        specifier: workspace:*
+        version: link:../../packages/canonical
+      '@sales-travel/despegar-hotels':
+        specifier: workspace:*
+        version: link:../despegar-hotels
     devDependencies:
       typescript:
         specifier: ^5.7.2

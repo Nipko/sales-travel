@@ -8,3 +8,4 @@ export * from './offer';
 export * from './hotel-offer';
 export * from './seat-map';
 export * from './ancillary';
+export * from './activity';

@@ -18,6 +18,8 @@ export type ProviderPayloadRedactor = (payload: unknown) => unknown;
 const REDACTORS: Readonly<Record<string, ProviderPayloadRedactor>> = {
   [TBO_HOTELS_PROVIDER_CODE]: redactTboPayload,
   [DESPEGAR_HOTELS_PROVIDER_CODE]: redactDespegarPayload,
+  // Misma API y mismas claves (`first_name`, `birth_date`, `identification`…) que hoteles.
+  'despegar-activities': redactDespegarPayload,
 };
 
 export function redactorFor(providerCode: string): ProviderPayloadRedactor | undefined {

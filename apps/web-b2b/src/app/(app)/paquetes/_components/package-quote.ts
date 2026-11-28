@@ -102,7 +102,7 @@ export function quoteModel(pkg: PackageSummary, rawItems: readonly PackageItem[]
     ...(items.find((i) => i.snapshot.kind === 'car')
       ? { car: items.find((i) => i.snapshot.kind === 'car')! }
       : {}),
-    extras: items.filter((i) => i.snapshot.kind === 'manual'),
+    extras: items.filter((i) => i.snapshot.kind === 'manual' || i.snapshot.kind === 'activity'),
     ...(coverImage ? { coverImage } : {}),
     hasTestContent: items.some(
       (i) =>
@@ -172,6 +172,8 @@ export function includedList(m: QuoteModel): string[] {
       if (/unlimit|ilimit/i.test(s.kmIncluded)) out.push('Kilometraje ilimitado');
     } else if (s.kind === 'manual') {
       out.push(s.title);
+    } else if (s.kind === 'activity') {
+      out.push(s.modality ? `${s.title} (${s.modality})` : s.title);
     }
   }
   return [...new Set(out)];

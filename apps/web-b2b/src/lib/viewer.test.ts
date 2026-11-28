@@ -71,6 +71,7 @@ describe('salesAreaOf: qué pantallas son de venta', () => {
     ['/autos', 'cars'],
     ['/autos/', 'cars'],
     ['/autos/oficinas', 'cars'],
+    ['/actividades', 'activities'],
     ['/paquetes', 'packages'],
     ['/paquetes/nuevo', 'packages'],
   ] as const)('%s es venta (%s)', (path, area) => {

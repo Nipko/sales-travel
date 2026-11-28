@@ -64,7 +64,9 @@ export const ACTIVITY_CATEGORY_PREFIXES: Readonly<
   },
   wallets: { include: ['portfolio.', 'portfolios.', 'wallet_hold.'] },
   providers: { include: ['platform.provider', 'Provider', 'tenant.provider_disclosure'] },
-  orders: { include: ['Order', 'Hotel', 'CarReservation', 'platform.order.'] },
+  orders: {
+    include: ['Order', 'Hotel', 'CarReservation', 'ActivityReservation', 'platform.order.'],
+  },
   system: { include: ['system.', 'platform.announcement', 'platform.audit', 'platform.orders'] },
   superadmins: { include: ['platform.superadmin', 'platform.change_request', 'db.'] },
 };
