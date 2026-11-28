@@ -57,7 +57,7 @@ test('TRV-10 límite por IP y balde por vendedor → 429 con Retry-After', async
   // El balde es una ventana fija en memoria: una corrida anterior en el mismo minuto pudo gastar
   // parte. Lo que se mira: todo lo que no es 429 es 400 (cuenta antes de validar) y el 429 llega a
   // más tardar en el 31.º pedido.
-  const vendedor = await como('vendedorEquipo');
+  const vendedor = await como('vendedorSub');
   const balde: number[] = [];
   let tope: Awaited<ReturnType<Api['post']>> | undefined;
   for (let i = 0; i < 31; i++) {
@@ -65,7 +65,7 @@ test('TRV-10 límite por IP y balde por vendedor → 429 con Retry-After', async
     balde.push(tope.status);
     if (tope.status === 429) break;
   }
-  expect(balde.at(-1), balde.join(',')).toBe(429);
+  expect(balde.at(-1), `${balde.join(',')} ${tope!.text.slice(0, 200)}`).toBe(429);
   expect(
     new Set(balde.slice(0, -1)).size <= 1 && (balde.length === 1 || balde[0] === 400),
     'cuenta antes de validar',
@@ -73,7 +73,7 @@ test('TRV-10 límite por IP y balde por vendedor → 429 con Retry-After', async
   const espera = Number(tope!.headers['retry-after']);
   expect(espera).toBeGreaterThanOrEqual(1);
   expect(espera).toBeLessThanOrEqual(60);
-  const otro = await (await como('soporteEquipo')).post('/search/seat-map', {});
+  const otro = await (await como('vendedorB')).post('/search/seat-map', {});
   expect(otro.status, 'el balde es por vendedor').toBe(400);
 });
 
@@ -194,8 +194,8 @@ test('TRV-13 cada acción deja su evento con actor y nodo, sin claves sensibles'
   const desde = new Date(Date.now() - 2_000).toISOString();
   const idDe = async (email: string) =>
     (await sql<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]))[0]!.id;
-  const soporte = await como('soporteEquipo');
-  const equipo = await nodo('e2e-agencia-equipo');
+  const soporte = await como('agencyAdminA');
+  const equipo = nodoA;
 
   expect((await soporte.patch('/me', { name: `Soporte QA36 ${corrida}` })).status).toBeLessThan(
     300,
@@ -213,7 +213,7 @@ test('TRV-13 cada acción deja su evento con actor y nodo, sin claves sensibles'
 
   const malas: string[] = [];
   for (const [tipo, actor, tenant] of [
-    ['UserProfileUpdated', PERSONAS.soporteEquipo.email, equipo],
+    ['UserProfileUpdated', PERSONAS.agencyAdminA.email, equipo],
     ['portfolio.deposit.recorded', PERSONAS.consolidador.email, nodoA],
     ['tenant.provider_disclosure.updated', PERSONAS.consolidador.email, nodoA],
   ] as const) {
