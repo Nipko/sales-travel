@@ -526,11 +526,11 @@
       "fecha": "2026-11-27"
     },
     "ACC-25": {
-      "fase": "parcial",
-      "hallazgo": "QA-H-05",
-      "prueba": "apps/api/src/auth/jwt-email.test.ts",
-      "nota": "El enlace vencido responde 401 EMAIL_VERIFICATION_EXPIRED en español. Falta la mitad E (pantalla /verificar con token válido e idempotente).",
-      "fecha": "2026-11-27"
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f54-verificar-invitaciones-y-reportes.e2e.ts",
+      "nota": "H: el enlace vencido da 401 EMAIL_VERIFICATION_EXPIRED en castellano. E (f54): sin token «Enlace inválido: falta el token.»; token que no sirve muestra ese mensaje; el mismo enlace dos veces dice «¡Correo verificado!» las dos (idempotente).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     },
     "AGE-03": {
       "fase": "pasa",
@@ -1354,6 +1354,34 @@
       "fase": "pasa",
       "prueba": "apps/web-b2b/e2e/tests/f53-consola-reservas-depositos-usuarios.e2e.ts",
       "nota": "f53: «Sin 2FA» queda presionado; búsqueda por correo; suspender en toda la plataforma con confirmación y código de la app (step-up); reactivar. Los filtros no van en la URL.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "ACC-30": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f54-verificar-invitaciones-y-reportes.e2e.ts",
+      "nota": "f54: vencida y ya usada → «Invitación no válida» y el accept da 400; con el formulario abierto y la membresía de quien invitó suspendida por SQL → «Esta invitación ya no es válida, pide una nueva.» (INVITATION_NO_LONGER_VALID). Suspender o degradar por la API revoca las invitaciones en la misma transacción (cubierto en las pruebas de integración de la API).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CTA-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f54-verificar-invitaciones-y-reportes.e2e.ts",
+      "nota": "f54 con enrola@: contraseña errada en la primera activación → mensaje en el campo con aria-invalid; al 5.º intento «Demasiados intentos fallidos…» y locked_until queda 15 minutos adelante.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "INI-02": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f54-verificar-invitaciones-y-reportes.e2e.ts",
+      "nota": "f54: el superadmin en / termina en /admin/plataforma/estado.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "INI-05": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f54-verificar-invitaciones-y-reportes.e2e.ts",
+      "nota": "f54 con vendedor-a: período en hora de Bogotá, KPI, tablas por mes, vertical y vendedor en COP y CSV (encabezado y filas por vertical). Un vendedor ve toda la agencia, no sólo lo suyo (así está hecho). Las dos monedas por separado: f47.",
       "fecha": "2026-11-28",
       "corrida": "mac"
     }

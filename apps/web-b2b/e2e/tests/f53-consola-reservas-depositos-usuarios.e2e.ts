@@ -76,16 +76,25 @@ async function reservar(destino = 'MDE'): Promise<Orden> {
   }
 }
 
-/** Si la acción pide el 2FA reciente, escribe el código de la app del superadmin. */
-async function pasarStepUp(page: Page): Promise<void> {
+/**
+ * La acción puede pedir el 2FA reciente («Confirma que eres tú») o terminar directo en `listo`. Si pide
+ * el código, escribe el de la app del superadmin; si choca con uno ya usado (mismo paso de 30 s), espera
+ * el siguiente y repite.
+ */
+async function pasarStepUp(page: Page, listo: ReturnType<Page['getByText']>): Promise<void> {
   const dialogo = page.getByRole('dialog', { name: 'Confirma que eres tú' });
-  if (!(await dialogo.isVisible({ timeout: 5_000 }).catch(() => false))) return;
-  const mfa = readMfa('superadmin')!;
-  const paso = await freshTotp(mfa.secret, mfa.lastStep);
-  await typeSixDigits(page, paso.code);
-  writeMfa('superadmin', { ...mfa, lastStep: paso.step });
-  if (await dialogo.isVisible()) await dialogo.getByRole('button', { name: 'Confirmar' }).click();
-  await expect(dialogo).toBeHidden();
+  await expect(dialogo.or(listo).first()).toBeVisible({ timeout: 30_000 });
+  for (let intento = 0; intento < 3 && (await dialogo.isVisible()); intento++) {
+    const mfa = readMfa('superadmin')!;
+    const paso = await freshTotp(mfa.secret, mfa.lastStep);
+    await typeSixDigits(page, paso.code);
+    writeMfa('superadmin', { ...mfa, lastStep: paso.step });
+    await expect(dialogo.or(listo).first()).toBeVisible({ timeout: 15_000 });
+    await expect(dialogo)
+      .toBeHidden({ timeout: 10_000 })
+      .catch(() => undefined);
+  }
+  await expect(listo).toBeVisible({ timeout: 20_000 });
 }
 
 test.describe('SUP-07 / SUP-08 reservas de la red', { tag: '@desktop' }, () => {
@@ -305,10 +314,7 @@ test.describe('SUP-15 usuarios de la plataforma', { tag: '@desktop' }, () => {
     await page.getByRole('menuitem', { name: 'Suspender en toda la plataforma' }).click();
     const confirmar = page.getByRole('dialog', { name: /^Suspender a .+ en toda la plataforma$/ });
     await confirmar.getByRole('button', { name: 'Suspender en toda la plataforma' }).click();
-    await pasarStepUp(page);
-    await expect(page.getByText(/quedó suspendido en toda la plataforma\./)).toBeVisible({
-      timeout: 20_000,
-    });
+    await pasarStepUp(page, page.getByText(/quedó suspendido en toda la plataforma\./));
     await expect(fila.first()).toContainText('Suspendido en toda la plataforma');
 
     await fila
@@ -320,7 +326,6 @@ test.describe('SUP-15 usuarios de la plataforma', { tag: '@desktop' }, () => {
       .getByRole('dialog', { name: /^Reactivar la cuenta de / })
       .getByRole('button', { name: 'Reactivar' })
       .click();
-    await pasarStepUp(page);
-    await expect(page.getByText(/^Reactivamos la cuenta de /)).toBeVisible({ timeout: 20_000 });
+    await pasarStepUp(page, page.getByText(/^Reactivamos la cuenta de /));
   });
 });
