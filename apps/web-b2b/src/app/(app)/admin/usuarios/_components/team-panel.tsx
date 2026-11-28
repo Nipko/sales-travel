@@ -492,7 +492,9 @@ export function TeamPanel({
   const sheetActionable = sheetMember !== undefined && canActOn(actor, sheetMember);
 
   return (
-    <div className="space-y-6">
+    // Su propio contenedor, como Usuarios de la plataforma: sin él, a 375 px el título y los campos
+    // quedaban pegados al borde (TRV-17).
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-5 sm:py-8">
       {confirmDialog}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

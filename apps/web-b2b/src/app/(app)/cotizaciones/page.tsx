@@ -761,6 +761,40 @@ function DegradedProvidersNotice({ providers }: { providers: ProviderOutcome[] }
 }
 
 /**
+ * Sin resultados, dice qué proveedores ni se consultaron y por qué (sin cuenta usable o apagados
+ * por la plataforma para esta agencia). Sólo en el vacío: con vuelos en pantalla sería ruido, y sin
+ * él «Ningún vuelo disponible» parece que no hay vuelos cuando nadie los buscó (BYO-11).
+ */
+function UnreachedProvidersNote({ providers }: { providers: ProviderOutcome[] }) {
+  const unreached = providers.filter(
+    (p) =>
+      p.reason !== undefined &&
+      (p.status === 'unavailable' ||
+        (p.status === 'skipped' && p.skipReason === 'platform-disabled')),
+  );
+  if (unreached.length === 0) return null;
+  return (
+    <div
+      role="status"
+      className="mx-auto mt-4 max-w-lg rounded-lg bg-[var(--color-surface-muted)] px-4 py-3 text-left text-xs text-[var(--color-fg-muted)]"
+    >
+      <p className="font-medium text-[var(--color-fg)]">
+        {unreached.length === 1
+          ? 'Un proveedor no se consultó:'
+          : `${unreached.length} proveedores no se consultaron:`}
+      </p>
+      <ul className="mt-1 space-y-0.5">
+        {unreached.map((p) => (
+          <li key={p.code}>
+            <span className="font-medium">{p.code}</span> · {p.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Aviso de tarifas simuladas. El detalle por vuelo lo lleva el badge de cada fila; esto
  * dice cuánto del resultado es falso, que es lo que decide si la búsqueda sirve para algo.
  */
@@ -1093,6 +1127,7 @@ function SearchResultsBody({
           <p className="text-sm font-semibold text-[var(--color-fg)]">
             Ningún vuelo disponible para {echo || 'esta búsqueda'}
           </p>
+          <UnreachedProvidersNote providers={result.providers} />
           {searchedLegs && isOpenJaw(searchedLegs) ? (
             <>
               <p className="mx-auto mt-1 max-w-lg text-xs text-[var(--color-fg-muted)]">

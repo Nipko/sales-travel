@@ -630,6 +630,36 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-64",
+  "gravedad": "Baja",
+  "que": "Equipo (/admin/usuarios) no tenía contenedor propio: a 375 px el título, los campos y la lista quedaban pegados al borde",
+  "donde": "admin/usuarios/_components/team-panel.tsx",
+  "casos": "TRV-17",
+  "estado": "en_vps",
+  "nota": "Contenedor mx-auto max-w-6xl px-4 py-6, como Usuarios de la plataforma (f58).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-65",
+  "gravedad": "Media",
+  "que": "Una búsqueda de vuelos sin resultados decía «Ningún vuelo disponible» aunque ningún proveedor se hubiera consultado (sin credenciales o apagado para la agencia): el panel ignoraba unavailable y skipped",
+  "donde": "cotizaciones/page.tsx, cotizaciones/actions.ts",
+  "casos": "BYO-11",
+  "estado": "en_vps",
+  "nota": "UnreachedProvidersNote en el vacío de /cotizaciones (f59).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-66",
+  "gravedad": "Baja",
+  "que": "Con la cuota en 1, el límite decía «1 búsquedas por hora»",
+  "donde": "search/search-telemetry.service.ts",
+  "casos": "VUE-15",
+  "estado": "en_vps",
+  "nota": "Singular para cuota 1.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

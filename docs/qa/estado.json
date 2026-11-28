@@ -1506,6 +1506,61 @@
       "nota": "f57: «Tarifas de vuelo en otra moneda» pide confirmar al encender y al apagar y avisa cada cambio (se devuelve al estado original). HTTP: se lee lo guardado; nodo inexistente → 404. Proveedores y gobierno del nodo: SUP-12 y TRV-12.",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "TRV-17": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-64",
+      "prueba": "apps/web-b2b/e2e/tests/f58-axe-y-375-admin.e2e.ts",
+      "nota": "F25 (rutas de venta) + f58 (9 de administración con admin-a y 12 de plataforma con superadmin): a 375 px sin scroll horizontal y con margen en el título. Equipo no tenía margen y se corrigió.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "TRV-18": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/tests/f58-axe-y-375-admin.e2e.ts",
+      "nota": "F26 (rutas de venta) + f58 (21 rutas de administración y plataforma), temas claro y oscuro: la única regla seria es color-contrast, en todas las rutas; quedó en la línea base (a11y-baseline.json) como el resto. Falta corregir el contraste (QA-H-47 y el tema) para sacarlo de la línea base.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "BYO-11": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-65",
+      "prueba": "apps/web-b2b/e2e/tests/f59-busqueda-sin-proveedores.e2e.ts",
+      "nota": "HTTP: LATAM y Sabre sin credenciales salen unavailable/no-credentials con su motivo. f59: con el falso apagado para la agencia, el vacío dice «3 proveedores no se consultaron» con cada motivo. Sólo en el vacío: con vuelos en pantalla no se muestra.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "VUE-14": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/busqueda-proveedores.api.ts",
+      "nota": "HTTP: apagado para la agencia → skipped/platform-disabled con «Deshabilitado por la plataforma para esta agencia.» (caché ≤10 s); el apagado de emergencia «solo ventas» corta la búsqueda en el acto (502 «temporalmente deshabilitado», el falso es el único activo) y al levantarlo vuelve.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "VUE-15": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-66",
+      "prueba": "apps/web-b2b/e2e/api/busqueda-proveedores.api.ts",
+      "nota": "HTTP: con search_quota_per_hour = 1 (sólo por SQL: no hay pantalla) la segunda búsqueda → 403 «Se alcanzó el límite de 1 búsqueda por hora…». No trae reason.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "VUE-13": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/busqueda-proveedores.api.ts",
+      "nota": "HTTP: el falso caído (ADZ) → 502 con su motivo; el circuito lo cubre SUP-11. «Los demás responden y el caído aparece con su motivo» necesita un segundo proveedor activo (LATAM o Sabre con credenciales de prueba): queda para R; lo cubren las pruebas unitarias de search.service y provider-fanout.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "AGE-02": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/busqueda-proveedores.api.ts",
+      "nota": "HTTP: las tarifas salen en la moneda de la agencia (COP en A, PEN en B). El descarte de ofertas en otra moneda no se alcanza con el falso (cotiza en la moneda pedida): lo cubre search.currency.test.ts; falta con un proveedor real.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1873,6 +1928,21 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "suspend-node-dialog usa announcedPending y la fila de Usuarios avisa con toast.info."
+    },
+    "QA-H-64": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "Contenedor mx-auto max-w-6xl px-4 py-6, como Usuarios de la plataforma (f58)."
+    },
+    "QA-H-65": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "UnreachedProvidersNote en el vacío de /cotizaciones (f59)."
+    },
+    "QA-H-66": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "Singular para cuota 1."
     }
   },
   "ultimaCorrida": {
