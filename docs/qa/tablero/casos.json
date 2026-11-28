@@ -151,13 +151,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+  "nota": "HTTP: por IP (/invitations/preview 20/min) la 21.ª → 429 «Demasiados intentos. Espera un momento…» con Retry-After; por vendedor (/search/seat-map 30/min, cuenta antes de validar) la 31.ª → 429 con Retry-After 1–60, y otro vendedor sigue libre. Otros límites: ACC-22 (5/min), CTA-02 (10/min). El 429 no trae reason (así está hecho).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "TRV-11",
@@ -167,13 +167,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
-  "nota": "POST /orders: sin Idempotency-Key o con una que no es UUID → 400; la misma clave no crea otra reserva. Faltan las demás rutas con clave (depósitos, hotels/book).",
-  "fecha": "2026-11-27"
+  "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+  "nota": "HTTP: ajustes y depósitos sin clave o no UUID → 400; misma clave y datos → no suma dos veces; misma clave con otro monto → 409 PORTFOLIO_IDEMPOTENCY_KEY_REUSED. Depósitos informados igual (uno solo por clave). hotels/book sin clave o no UUID → 400 antes del proveedor. Órdenes: venta-falsa.api.ts (la repetida es 409 duplicateRequest con el id, no la respuesta guardada). /cars/book no usa clave.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "TRV-12",
@@ -203,9 +203,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+  "nota": "HTTP: UserProfileUpdated, portfolio.deposit.recorded y tenant.provider_disclosure.updated con actor, nodo y sin claves sensibles en el payload. Otros eventos ya se miran en sus casos (auth.login.blocked, ProviderCredentialsUpdated, credentialsChanged). Falta recorrer el resto de acciones del plan.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "TRV-14",
@@ -1495,13 +1495,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/checkout-y-postventa.api.ts",
+  "nota": "HTTP: cuenta AgentCars del consolidador ligada por SQL a una reserva confirmada de agencia A: dejar de heredar y deshabilitar → 409 PROVIDER_ACCOUNT_IN_USE con activeOrders 1 y su mensaje; sin la reserva se deshabilita.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-06",
@@ -1559,13 +1559,13 @@
   "nivel": "E + H",
   "prioridad": "P2",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+  "nota": "HTTP: Mostrar/Ocultar/Heredar en agencia A cambia showProviderInResults de la búsqueda (oculto por defecto); ocultar en el consolidador bloquea la rama (own true, effective false, lockedByAncestor); admin de otra red → 403. Ocultar no filtra ofertas: sólo esconde la etiqueta. Se devuelven los valores originales.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-10",
@@ -2375,13 +2375,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
-  "nota": "Dos pasajeros para una búsqueda de uno → 400. Falta la edad del niño según su nacimiento.",
-  "fecha": "2026-11-27"
+  "prueba": "apps/web-b2b/e2e/api/checkout-y-postventa.api.ts",
+  "nota": "HTTP: cantidad distinta → 400 (venta-falsa); niño de 5 años para una búsqueda de 8 → 400 «La edad de un niño según su fecha de nacimiento no coincide…»; niño de 13 → 400 «El pasajero 2 no tiene la edad de su tipo (CHD)…» en passengers.1.birthdate.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "CHK-08",
@@ -2487,13 +2487,13 @@
   "nivel": "H + E",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "apps/web-b2b/e2e/api/venta-falsa.api.ts",
-  "nota": "La misma Idempotency-Key dos veces en paralelo deja una sola orden (create_request_key). Falta el doble clic en el navegador.",
-  "fecha": "2026-11-27"
+  "hallazgo": "QA-H-67",
+  "prueba": "apps/web-b2b/e2e/tests/f60-doble-clic-y-reenviar.e2e.ts",
+  "nota": "H (venta-falsa.api.ts): la misma Idempotency-Key en paralelo deja una orden. E (f60): doble clic en «Reservar» del resumen → una sola reserva y su ficha confirmada.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "CHK-15",
@@ -2619,9 +2619,9 @@
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/checkout-y-postventa.api.ts",
+  "nota": "HTTP: una reserva del falso (tarifa de prueba, marcada por el servidor) no manda el correo automático (Mailpit en 0 a los 5 s). La rama «confirmada y no de prueba sí lo manda» no se alcanza en el stack (todo el falso es de prueba): la cubre orders.controller.test-content.test.ts; falta con un proveedor real.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "POS-01",
@@ -2855,13 +2855,13 @@
   "nivel": "H + E",
   "prioridad": "P2",
   "ola": 3,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-68",
+  "prueba": "apps/web-b2b/e2e/api/checkout-y-postventa.api.ts",
+  "nota": "HTTP: reenviar llega «[PRUEBA] Reserva registrada #N · PNR …» con el aviso de reserva de prueba; de una cancelada → 409. f60: la ficha lo ofrece en «Más acciones» mientras está confirmada y ya no al cancelarla.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "POS-16",
@@ -4023,13 +4023,13 @@
   "nivel": "H + I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/transversales-y-origen.api.ts",
+  "nota": "HTTP: persona sin nacimiento, género ni nacionalidad → 400 «requerido para una persona» en cada campo; empresa sin apellido sí; creada, el documento vuelve completo y en la base queda NULL en claro, cifrado (sin el número en el hex) y con su hash. Email, teléfono y nombres van en claro (así está diseñado).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "CLI-02",

@@ -230,7 +230,10 @@ export function reservationActions(
   if (live && supportsOrderCapability(order.capabilities, 'retrieve')) available.push('retrieve');
   if (canManageServices(order) && !context.issueInFlight) available.push('services');
   if (canEditTravelers(order) && !context.issueInFlight) available.push('travelers');
-  if (hasPnr && order.status !== 'failed' && !!order.contactInfo?.email) available.push('resend');
+  // Como la API (OrderConfirmationService.resend): sólo de una confirmada o emitida. Pendientes y
+  // canceladas ofrecían el botón y la API respondía 409 (POS-15).
+  const confirmable = order.status === 'confirmed' || order.status === 'ticketed';
+  if (hasPnr && confirmable && !!order.contactInfo?.email) available.push('resend');
   if (
     live &&
     supportsOrderCancellation(order.capabilities, order.status) &&
