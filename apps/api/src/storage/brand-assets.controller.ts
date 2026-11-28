@@ -107,7 +107,7 @@ export class BrandAssetsController {
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
 
     const body = Buffer.from(dto.dataBase64, 'base64');

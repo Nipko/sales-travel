@@ -142,7 +142,7 @@ export class PricingController {
 
   private async assertAccess(userId: string | undefined, tenantId: string): Promise<void> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     if (!(await this.network.canAccessTenant(userId, tenantId))) {
       throw new ForbiddenException('not authorized for this tenant');
     }
@@ -150,9 +150,9 @@ export class PricingController {
 
   private async assertManage(userId: string | undefined, tenantId: string): Promise<void> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     if (!(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
+      throw new ForbiddenException('No administras este nodo.');
     }
   }
 }

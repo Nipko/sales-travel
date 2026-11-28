@@ -398,6 +398,29 @@ describe('AllExceptionsFilter — errores del parser del cuerpo (QA-H-35)', () =
     expect(cuerpo(r)).toMatchObject({ statusCode: 413, reason: 'PAYLOAD_TOO_LARGE' });
   });
 
+  it('un JSON roto que Nest ya envolvió en BadRequestException también sale como MALFORMED_BODY', () => {
+    const r = respuesta();
+    new AllExceptionsFilter().catch(
+      new BadRequestException('Expected double-quoted property name in JSON at position 19'),
+      r.host,
+    );
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(cuerpo(r)).toMatchObject({
+      reason: 'MALFORMED_BODY',
+      message: 'No pudimos leer los datos enviados.',
+    });
+    expect(JSON.stringify(cuerpo(r))).not.toContain('position');
+  });
+
+  it('un 400 propio que menciona JSON no se confunde con un cuerpo roto', () => {
+    const r = respuesta();
+    new AllExceptionsFilter().catch(
+      new BadRequestException({ message: 'el detalle no es un JSON válido', fields: [] }),
+      r.host,
+    );
+    expect(cuerpo(r)).not.toMatchObject({ reason: 'MALFORMED_BODY' });
+  });
+
   it('un JSON roto sale como 400 sin el texto del parser', () => {
     const r = respuesta();
     new AllExceptionsFilter().catch(parserError('entity.parse.failed', 400), r.host);

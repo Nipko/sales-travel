@@ -320,7 +320,7 @@ export class NetworkService {
    */
   async networkSalesSummary(userId: string, rootTenantId: string): Promise<NetworkSalesRow[]> {
     if (!(await this.canManageTenant(userId, rootTenantId))) {
-      throw new ForbiddenException('not authorized to view this network');
+      throw new ForbiddenException('No puedes ver la red de ese nodo.');
     }
     const result = await sql<{
       t_id: string;
@@ -354,7 +354,7 @@ export class NetworkService {
    */
   async listTenantUsers(userId: string, tenantId: string): Promise<NetworkUser[]> {
     if (!(await this.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
+      throw new ForbiddenException('No administras este nodo.');
     }
     return this.db.withRequestContext({ userId, tenantId }, (trx) =>
       readTenantUsers(trx, tenantId),

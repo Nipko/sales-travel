@@ -90,6 +90,26 @@ function bodyParserHttpError(exception: unknown): HttpException | undefined {
   return undefined;
 }
 
+/**
+ * Nest (routes-resolver `mapExternalException`) envuelve el SyntaxError de body-parser en un
+ * `BadRequestException(err.message)` antes de llegar acá: el error crudo que mira
+ * `bodyParserHttpError` nunca aparece y salía el texto del parser en inglés («Expected
+ * double-quoted property name in JSON at position 19», TRV-09). Se reconoce por su forma: el cuerpo
+ * por defecto de Nest con un mensaje de JSON.parse.
+ */
+const JSON_PARSE_MESSAGE =
+  /in JSON at position|Unexpected (token|end of JSON input|non-whitespace)|is not valid JSON|Bad control character|Unterminated string in JSON/;
+
+function wrappedJsonParseError(exception: HttpException): HttpException | undefined {
+  if (exception.getStatus() !== 400) return undefined;
+  const body = exception.getResponse();
+  if (typeof body !== 'object' || body === null) return undefined;
+  const { message, error } = body as { message?: unknown; error?: unknown };
+  if (error !== 'Bad Request' || typeof message !== 'string') return undefined;
+  if (!JSON_PARSE_MESSAGE.test(message)) return undefined;
+  return bodyParserHttpError({ type: 'entity.parse.failed', status: 400 });
+}
+
 /** Las marcas que dicen si se puede repetir una reserva. Sólo `true`: su ausencia es "no". */
 const RECONCILIATION_FLAGS = ['duplicateRequest', 'retryForbidden', 'reconciliationRequired'];
 
@@ -137,6 +157,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // valida la base con SQLSTATE propio: un nodo en un lugar que la matriz no admite, una cartera
     // que toca quien no la financia o una retención que la red no cubre, es un 409 o un 403 con
     // motivo, no un 500.
+    if (exception instanceof HttpException) {
+      const parse = wrappedJsonParseError(exception);
+      if (parse !== undefined && parse !== exception) {
+        this.catch(parse, host);
+        return;
+      }
+    }
     if (!(exception instanceof HttpException)) {
       const translated =
         tenantHierarchyHttpError(exception) ??

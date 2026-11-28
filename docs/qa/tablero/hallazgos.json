@@ -600,6 +600,26 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-61",
+  "gravedad": "Media",
+  "que": "Un cuerpo JSON roto devolvía el texto del parser en inglés («Expected double-quoted property name in JSON at position 19»): Nest envuelve el SyntaxError en un BadRequestException antes del filtro, así que la traducción a MALFORMED_BODY nunca corría",
+  "donde": "all-exceptions.filter.ts",
+  "casos": "TRV-09",
+  "estado": "en_vps",
+  "nota": "El filtro reconoce el BadRequestException que arma Nest con un mensaje de JSON.parse y responde MALFORMED_BODY (pruebas unitarias y errores-red-y-legadas.api.ts).",
+  "fecha": "2026-11-28"
+ },
+ {
+  "id": "QA-H-62",
+  "gravedad": "Baja",
+  "que": "Varios 403/404 salían en inglés y el panel los muestra tal cual: «not authorized to manage this tenant», «not authorized to view this network», «tenantId required», «not a member of this tenant», «target tenant is outside your network» y el 404 de resolver una cuenta de proveedor",
+  "donde": "11 controladores y servicios de la API",
+  "casos": "RED-06, BYO-04",
+  "estado": "en_vps",
+  "nota": "«No administras este nodo.», «No puedes ver la red de ese nodo.», «Falta el nodo (tenantId).», «No eres miembro de ese nodo.», «Ese nodo no está en tu red.» y el 404 de resolve en castellano.",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

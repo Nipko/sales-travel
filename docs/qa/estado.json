@@ -1421,6 +1421,54 @@
       "nota": "HTTP: cartera suspendida → 409 PORTFOLIO_INACTIVE «…está suspendida…» sin retener. Por el checkout el falso no retiene (sólo Sabre), así que «sin saldo», «suspendida» y «red sin moneda» en la UI quedan para Sabre CERT.",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "TRV-09": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-61",
+      "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+      "nota": "HTTP: Zod → 400 con statusCode, error, message «Revisa los datos ingresados — …» y fields, sin stack; JSON roto → 400 MALFORMED_BODY «No pudimos leer los datos enviados.»; ruta inexistente → 404. El 500 sin stack lo cubre all-exceptions.filter.test.ts (ninguna ruta lo provoca a propósito).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "RED-06": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-62",
+      "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+      "nota": "HTTP con el consolidador: /tenants/network trae su subárbol y no agencia B, la suspendida ni la plataforma; usuarios, ventas, auditoría, carteras y cuentas de agencia B → 403 con mensaje en castellano o su reason. No hay un segundo consolidador en el seed: lo ajeno es lo que cuelga de la plataforma.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "BYO-04": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-62",
+      "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+      "nota": "HTTP con AgentCars en nodos nuevos: sin cuenta → 404 en castellano; la del padre activa y heredable se hereda; deshabilitada no; la propia activa gana (inherited false); la propia en sandbox no cuenta y vuelve a la del padre. El correo heredable: BYO-10.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "EQU-17": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+      "nota": "HTTP: una cuenta legada armada por SQL (alta 2026-09-01, invitada por un admin, sin password_changed_at) aparece en la lista; require-reset pide step-up, 0 y 51 cuentas → 400 en castellano; forzarla deja password_reset_required_at y la segunda vez se omite. El diálogo del panel no se prueba en el navegador.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "ACC-19": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f56-sesion-inactiva-y-otro-equipo.e2e.ts",
+      "nota": "f56 con inactivo@: con last_seen_at 31 minutos atrás (el nodo tiene 30) la siguiente página lleva a /login?motivo=inactividad y lo explica.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "ACC-20": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f56-sesion-inactiva-y-otro-equipo.e2e.ts",
+      "nota": "f56 con doble@: entrar en un segundo navegador saca al primero a /login?motivo=otro-dispositivo con «Tu sesión se abrió en otro dispositivo.» y el consejo de cambiar la contraseña. La sesión única aplica a todo usuario que no es de plataforma (no hay política por nodo).",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1773,6 +1821,16 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "«Actualiza la reserva antes de retener saldo.» (total y moneda)."
+    },
+    "QA-H-61": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "El filtro reconoce el BadRequestException que arma Nest con un mensaje de JSON.parse y responde MALFORMED_BODY (pruebas unitarias y errores-red-y-legadas.api.ts)."
+    },
+    "QA-H-62": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "«No administras este nodo.», «No puedes ver la red de ese nodo.», «Falta el nodo (tenantId).», «No eres miembro de ese nodo.», «Ese nodo no está en tu red.» y el 404 de resolve en castellano."
     }
   },
   "ultimaCorrida": {

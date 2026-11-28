@@ -148,8 +148,8 @@ export class ProviderCredentialsController {
    */
   private async assertCanManage(userId: string | undefined, tenantId: string): Promise<void> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     const ok = await this.network.canManageTenant(userId, tenantId);
-    if (!ok) throw new ForbiddenException('not authorized to manage this tenant');
+    if (!ok) throw new ForbiddenException('No administras este nodo.');
   }
 }

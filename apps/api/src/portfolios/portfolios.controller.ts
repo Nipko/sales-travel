@@ -235,7 +235,7 @@ export class PortfoliosController {
    */
   private async assertAdminMembership(userId: string, tenantId: string): Promise<void> {
     const role = await this.membershipRole(userId, tenantId);
-    if (role === undefined) throw new ForbiddenException('not a member of this tenant');
+    if (role === undefined) throw new ForbiddenException('No eres miembro de ese nodo.');
     if (!ADMIN_MEMBERSHIP_ROLES.includes(role)) {
       throw new ForbiddenException('admin role required');
     }

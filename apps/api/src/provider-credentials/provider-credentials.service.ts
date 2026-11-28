@@ -218,7 +218,7 @@ export class ProviderCredentialsService {
     const row = result.rows[0];
     if (!row?.id || !row.credentials_enc || !row.tenant_id) {
       throw new NotFoundException(
-        `no active provider account for '${providerCode}' resolvable from tenant ${tenantId}`,
+        `Ni este nodo ni los de arriba tienen una cuenta activa de ${providerCode} que se pueda usar.`,
       );
     }
 
