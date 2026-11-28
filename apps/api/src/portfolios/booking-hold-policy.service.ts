@@ -151,14 +151,14 @@ export class BookingHoldPolicyService {
         // Los valores opcionales del cliente son un control optimista, no una fuente de verdad.
         if (expected.amountMinor !== undefined && expected.amountMinor !== order.amountMinor) {
           throw new BadRequestException(
-            'El total de la reserva cambió. Actualice la reserva antes de retener saldo.',
+            'El total de la reserva cambió. Actualiza la reserva antes de retener saldo.',
           );
         }
         if (expected.currency !== undefined) {
           const expectedCurrency = normalizeCurrency(expected.currency);
           if (!expectedCurrency || expectedCurrency !== order.currency) {
             throw new BadRequestException(
-              'La moneda de la reserva cambió. Actualice la reserva antes de retener saldo.',
+              'La moneda de la reserva cambió. Actualiza la reserva antes de retener saldo.',
             );
           }
         }
