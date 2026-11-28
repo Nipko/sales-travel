@@ -92,6 +92,12 @@ describe('FakeFlightsAdapter — perillas', () => {
     await expect(a.createOrder(reserva('Incierto'), CTX)).rejects.toThrow(/no contestó/);
   });
 
+  it('OCUPADO: el pedido no sale (sentToProvider false), como la cola de Sabre llena', async () => {
+    await expect(a.createOrder(reserva('Ocupado'), CTX)).rejects.toMatchObject({
+      sentToProvider: false,
+    });
+  });
+
   it('la cancelación la ve la relectura', async () => {
     const ok = await a.createOrder(reserva('Prueba'), CTX);
     expect(await a.cancelOrder(ok.orderId!, CTX)).toMatchObject({ success: true });
