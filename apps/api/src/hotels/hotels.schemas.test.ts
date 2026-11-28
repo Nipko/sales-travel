@@ -20,6 +20,7 @@ import {
   RoomDistributionSchema,
   SpecialRequestBodySchema,
   isNeutralHotelPrebook,
+  HotelBookInputSchema,
 } from './hotels.schemas.js';
 
 /**
@@ -738,5 +739,30 @@ describe('BookSchema — pago diferido sin unidades', () => {
       payment: { optionType: 'DEFERRED' },
     });
     expect(r.error?.issues.map((i) => i.path.join('.'))).toEqual(['payment.units']);
+  });
+});
+
+describe('HotelBookInputSchema contacto (HOT-09)', () => {
+  const reserva = (number: string, email = 'cliente@correo.co') => ({
+    providerCode: 'tbo-hotels',
+    prebookRef: '00000000-0000-4000-8000-000000000001',
+    acceptedTotal: { amountMinor: 10000, currency: 'USD' },
+    rooms: [{ guests: [{ paxType: 'ADT', title: 'Mr', firstName: 'Ana', lastName: 'Ruiz' }] }],
+    contact: { email, phone: { countryCode: '+57', number } },
+  });
+  const rutas = (body: unknown) => {
+    const r = HotelBookInputSchema.safeParse(body);
+    return r.success ? [] : [...new Set(r.error.issues.map((i) => i.path.join('.')))];
+  };
+
+  it('el teléfono necesita al menos 4 dígitos, aunque el formato sea válido', () => {
+    expect(rutas(reserva('----'))).toEqual(['contact.phone.number']);
+    expect(rutas(reserva('1 2-3'))).toEqual(['contact.phone.number']);
+    expect(rutas(reserva('300 123 4567'))).toEqual([]);
+  });
+
+  it('rechaza un correo inválido y un teléfono de 3 caracteres', () => {
+    expect(rutas(reserva('123'))).toEqual(['contact.phone.number']);
+    expect(rutas(reserva('3001234567', 'no-es-correo'))).toEqual(['contact.email']);
   });
 });
