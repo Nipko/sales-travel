@@ -1297,7 +1297,7 @@ function editMessage(
     tone: 'warn',
     title: `Reescribe la cuenta «${names.originalLabel}» entera`,
     body:
-      'Guardar reemplaza esa cuenta por lo que haya en este formulario. Las credenciales guardadas no se pueden precargar —van cifradas y el API no las devuelve—, así que hay que volver a cargarlas completas aunque sólo quieras cambiar el estado, la herencia o la configuración.' +
+      'Guardar reemplaza el estado, la herencia y la configuración de esa cuenta por lo que haya en este formulario. Las credenciales guardadas no se muestran —van cifradas y el API no las devuelve—: si dejas sus campos vacíos se conservan; si cargas alguno, hay que cargarlas todas.' +
       (names.dropped.length > 0
         ? ` Y la cuenta guardada tiene configuración que este formulario no reenvía (${listar(names.dropped)}): al guardar se pierde.`
         : ''),

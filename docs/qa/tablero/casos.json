@@ -1447,13 +1447,13 @@
   "nivel": "H + I",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/red-y-credenciales.api.ts",
+  "nota": "HTTP: ni la lista ni resolve traen credenciales; credentials_enc no contiene el secreto en claro.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-03",
@@ -1463,13 +1463,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-59",
+  "prueba": "apps/web-b2b/e2e/api/red-y-credenciales.api.ts",
+  "nota": "HTTP: keep en cuenta nueva → 400; keep + credenciales → 400; keep conserva credentials_enc byte a byte (credentialsChanged false); credenciales nuevas lo cambian (true). El aviso del formulario ya no pide recargarlas.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-04",
@@ -1623,13 +1623,13 @@
   "nivel": "E + H",
   "prioridad": "P0",
   "ola": 1,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/red-y-credenciales.api.ts",
+  "nota": "HTTP: sub-agencia bajo consolidador y cualquier hijo bajo una sub-agencia → 409 TENANT_PARENT_TYPE; consolidador o sucursal por un no superadmin → 403 TENANT_SUPERADMIN_ONLY; sub-agencia bajo agencia → 201. f51: Mi Red ofrece «Sub-agencia bajo Agencia E2E A» y nada bajo la sub-agencia. TENANT_DEPTH_LIMIT no se alcanza creando nodos (el nivel 4 es siempre una sub-agencia, que ya falla por tipo).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "RED-03",
@@ -1639,13 +1639,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-58",
+  "prueba": "apps/web-b2b/e2e/api/red-y-credenciales.api.ts",
+  "nota": "HTTP: slug repetido → 409 TENANT_SLUG_TAKEN «Ese slug ya lo usa otro nodo de la red.»; slug con mayúsculas o espacios, nombre de 1, de 121 o sólo espacios → 400 en su campo, en castellano. f51: el slug se arma del nombre y uno escrito a mano con mayúsculas vuelve con el motivo.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "RED-04",
@@ -1783,13 +1783,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/red-y-credenciales.api.ts",
+  "nota": "HTTP: category=credentials sólo trae ProviderCredentialsUpdated, network sólo Tenant*, categoría inválida → 400, limit=1 + before pagina, admin de otra red → 403. f51: el diálogo «Actividad de la red» con filtros aria-pressed.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "RED-13",
