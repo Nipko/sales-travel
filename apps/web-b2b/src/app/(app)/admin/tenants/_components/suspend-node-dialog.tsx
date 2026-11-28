@@ -16,6 +16,7 @@ import {
   suspendCopy,
   type NodeImpact,
 } from '../../../../../lib/platform-node-stats';
+import { announcedPending } from '../../../../../lib/change-request-notice';
 import { loadNodeImpact, updateNode } from '../../../../../lib/tenant-admin-client';
 
 /** Suspender o reactivar. */
@@ -116,6 +117,11 @@ export function NodeStatusDialog({
           ? { status: 'suspended', reason: motivo }
           : { status: 'active', ...(motivo === '' ? {} : { reason: motivo }) },
       );
+      // Un supervisado no suspende: deja una solicitud. Es un aviso, no un error (QA-H-63).
+      if (announcedPending(res)) {
+        onCloseRef.current();
+        return;
+      }
       if (!res.ok) {
         setError(res.message);
         return;
