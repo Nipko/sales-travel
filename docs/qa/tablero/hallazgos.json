@@ -590,6 +590,16 @@
   "fecha": "2026-11-28"
  },
  {
+  "id": "QA-H-60",
+  "gravedad": "Baja",
+  "que": "La retención de cartera respondía «Actualice la reserva…» (de usted) cuando el resto del producto tutea",
+  "donde": "portfolios/booking-hold-policy.service.ts",
+  "casos": "CAR-08",
+  "estado": "en_vps",
+  "nota": "«Actualiza la reserva antes de retener saldo.» (total y moneda).",
+  "fecha": "2026-11-28"
+ },
+ {
   "id": "QA-M-01",
   "gravedad": "Mejora",
   "que": "Llevar a la base la regla «lo que referencio es de mi agencia» (FK compuestas (tenant_id, id) o un trigger) en vez de chequearla en cada servicio. Cuándo: migración de la Ola 3",

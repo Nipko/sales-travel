@@ -1384,6 +1384,43 @@
       "nota": "f54 con vendedor-a: período en hora de Bogotá, KPI, tablas por mes, vertical y vendedor en COP y CSV (encabezado y filas por vertical). Un vendedor ve toda la agencia, no sólo lo suyo (así está hecho). Las dos monedas por separado: f47.",
       "fecha": "2026-11-28",
       "corrida": "mac"
+    },
+    "COT-04": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/api/cotizacion-y-retencion.api.ts",
+      "nota": "HTTP: sin email del cliente → 400 «La cotización no tiene email de cliente. Guárdalo primero.»; con email → sent:true y llega «[PRUEBA] Tu cotización de vuelo #N · BOG → MDE». f55: el panel avisa «Cotización enviada a …». «Sin SMTP» no se alcanza en el stack (siempre está Mailpit); sent:false lo cubre el aviso del panel.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CHK-13": {
+      "fase": "pasa",
+      "prueba": "apps/web-b2b/e2e/tests/f55-compartir-cotizacion.e2e.ts",
+      "nota": "f55: sin email ni teléfono de facturación, email y WhatsApp quedan aria-disabled con su motivo; con ellos, el correo llega a Mailpit y WhatsApp abre wa.me/<número>?text=… con «Te envío cotización #».",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-12": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/cotizacion-y-retencion.api.ts",
+      "nota": "HTTP: motivo corto → 400; la propia agencia → 403 BOOKING_PERMISSIONS_FINANCIER_REQUIRED; el consolidador bloquea, la sub-agencia lo hereda y se vuelve a permitir. El bloqueo sólo aplica a hoteles (NON_REFUNDABLE_BLOCKED) y el stack no tiene hoteles falsos (INF-4): falta la mitad E.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CAR-08": {
+      "fase": "corregido",
+      "arreglo": "vps",
+      "hallazgo": "QA-H-60",
+      "prueba": "apps/web-b2b/e2e/api/cotizacion-y-retencion.api.ts",
+      "nota": "HTTP: hold-booking sólo retiene el total de la reserva (otro monto → 400 en tuteo). PORTFOLIO_FUNDS_INSUFFICIENT por el checkout no se alcanza con el falso: sólo Sabre liquida contra la cartera (settlement network-wallet). Queda para Sabre CERT.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
+    },
+    "CHK-17": {
+      "fase": "parcial",
+      "prueba": "apps/web-b2b/e2e/api/cotizacion-y-retencion.api.ts",
+      "nota": "HTTP: cartera suspendida → 409 PORTFOLIO_INACTIVE «…está suspendida…» sin retener. Por el checkout el falso no retiene (sólo Sabre), así que «sin saldo», «suspendida» y «red sin moneda» en la UI quedan para Sabre CERT.",
+      "fecha": "2026-11-28",
+      "corrida": "mac"
     }
   },
   "hallazgos": {
@@ -1731,6 +1768,11 @@
       "estado": "en_vps",
       "fecha": "2026-11-28",
       "nota": "El aviso explica que las credenciales vacías se conservan."
+    },
+    "QA-H-60": {
+      "estado": "en_vps",
+      "fecha": "2026-11-28",
+      "nota": "«Actualiza la reserva antes de retener saldo.» (total y moneda)."
     }
   },
   "ultimaCorrida": {
