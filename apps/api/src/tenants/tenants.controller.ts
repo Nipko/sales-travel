@@ -101,7 +101,7 @@ export class TenantsController {
     @Query('tenantId') tenantId: string,
   ): Promise<{ summary: NetworkSalesRow[] }> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     const summary = await this.network.networkSalesSummary(userId, tenantId);
     return { summary };
   }
@@ -136,7 +136,7 @@ export class TenantsController {
     @Query('tenantId') tenantId: string,
   ): Promise<{ users: NetworkUser[] }> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     const users = await this.network.listTenantUsers(userId, tenantId);
     return { users };
   }
@@ -331,7 +331,7 @@ export class TenantsController {
   private async assertCanManage(userId: string, tenantId: string): Promise<void> {
     if (await this.network.isSuperadmin(userId)) return;
     if (!(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
   }
 
@@ -347,7 +347,7 @@ export class TenantsController {
       .where('tenant_id', '=', tenantId)
       .where('status', '=', 'active')
       .executeTakeFirst();
-    if (!row) throw new ForbiddenException('not a member of this tenant');
+    if (!row) throw new ForbiddenException('No eres miembro de ese nodo.');
   }
 
   private async assertAdminMembership(
@@ -362,7 +362,7 @@ export class TenantsController {
       .where('tenant_id', '=', tenantId)
       .where('status', '=', 'active')
       .executeTakeFirst();
-    if (!row) throw new ForbiddenException('not a member of this tenant');
+    if (!row) throw new ForbiddenException('No eres miembro de ese nodo.');
     if (!isAdminRole(row.role)) {
       throw new ForbiddenException('admin role required');
     }

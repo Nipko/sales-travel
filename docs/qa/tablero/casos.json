@@ -135,13 +135,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-61",
+  "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+  "nota": "HTTP: Zod → 400 con statusCode, error, message «Revisa los datos ingresados — …» y fields, sin stack; JSON roto → 400 MALFORMED_BODY «No pudimos leer los datos enviados.»; ruta inexistente → 404. El 500 sin stack lo cubre all-exceptions.filter.test.ts (ninguna ruta lo provoca a propósito).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "TRV-10",
@@ -615,13 +615,13 @@
   "nivel": "H",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f56-sesion-inactiva-y-otro-equipo.e2e.ts",
+  "nota": "f56 con inactivo@: con last_seen_at 31 minutos atrás (el nodo tiene 30) la siguiente página lleva a /login?motivo=inactividad y lo explica.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "ACC-20",
@@ -631,13 +631,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 2,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/tests/f56-sesion-inactiva-y-otro-equipo.e2e.ts",
+  "nota": "f56 con doble@: entrar en un segundo navegador saca al primero a /login?motivo=otro-dispositivo con «Tu sesión se abrió en otro dispositivo.» y el consejo de cambiar la contraseña. La sesión única aplica a todo usuario que no es de plataforma (no hay política por nodo).",
+  "fecha": "2026-11-28"
  },
  {
   "id": "ACC-21",
@@ -1415,13 +1415,13 @@
   "nivel": "H + E",
   "prioridad": "P1",
   "ola": 3,
-  "fase": "parcial",
+  "fase": "pasa",
   "arreglo": "",
   "bloqueadoPor": "",
   "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+  "nota": "HTTP: una cuenta legada armada por SQL (alta 2026-09-01, invitada por un admin, sin password_changed_at) aparece en la lista; require-reset pide step-up, 0 y 51 cuentas → 400 en castellano; forzarla deja password_reset_required_at y la segunda vez se omite. El diálogo del panel no se prueba en el navegador.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-01",
@@ -1479,13 +1479,13 @@
   "nivel": "I + H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-62",
+  "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+  "nota": "HTTP con AgentCars en nodos nuevos: sin cuenta → 404 en castellano; la del padre activa y heredable se hereda; deshabilitada no; la propia activa gana (inherited false); la propia en sandbox no cuenta y vuelve a la del padre. El correo heredable: BYO-10.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "BYO-05",
@@ -1687,13 +1687,13 @@
   "nivel": "H",
   "prioridad": "P0",
   "ola": 2,
-  "fase": "parcial",
-  "arreglo": "",
+  "fase": "corregido",
+  "arreglo": "vps",
   "bloqueadoPor": "",
-  "hallazgo": "",
-  "prueba": "",
-  "nota": "",
-  "fecha": ""
+  "hallazgo": "QA-H-62",
+  "prueba": "apps/web-b2b/e2e/api/errores-red-y-legadas.api.ts",
+  "nota": "HTTP con el consolidador: /tenants/network trae su subárbol y no agencia B, la suspendida ni la plataforma; usuarios, ventas, auditoría, carteras y cuentas de agencia B → 403 con mensaje en castellano o su reason. No hay un segundo consolidador en el seed: lo ajeno es lo que cuelga de la plataforma.",
+  "fecha": "2026-11-28"
  },
  {
   "id": "RED-07",

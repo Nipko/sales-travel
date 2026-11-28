@@ -44,7 +44,7 @@ export class ProviderDisclosureController {
     @Query('tenantId') tenantId: string,
   ): Promise<DisclosureView> {
     if (!userId) throw new UnauthorizedException();
-    if (!tenantId) throw new ForbiddenException('tenantId required');
+    if (!tenantId) throw new ForbiddenException('Falta el nodo (tenantId).');
     await this.assertCanManage(userId, tenantId);
 
     return this.disclosure.view(tenantId);
@@ -77,7 +77,7 @@ export class ProviderDisclosureController {
   private async assertCanManage(userId: string, tenantId: string): Promise<void> {
     if (await this.network.isSuperadmin(userId)) return;
     if (!(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('target tenant is outside your network');
+      throw new ForbiddenException('Ese nodo no está en tu red.');
     }
   }
 }

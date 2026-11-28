@@ -165,7 +165,7 @@ describe('PortfoliosController: las ventas de la red, sólo para quien administr
 
     for (const role of ['vendedor', null]) {
       const h = harness(role);
-      await expect(h.controller.listNetworkHolds(USER, {})).rejects.toThrow(/admin|member/);
+      await expect(h.controller.listNetworkHolds(USER, {})).rejects.toThrow(/admin|member|miembro/);
       expect(h.service.listNetworkHolds).not.toHaveBeenCalled();
     }
   });

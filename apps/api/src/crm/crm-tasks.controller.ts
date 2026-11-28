@@ -77,7 +77,7 @@ export class CrmTasksController {
 
     const superadmin = await this.network.isSuperadmin(userId);
     if (!superadmin && !(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
+      throw new ForbiddenException('No administras este nodo.');
     }
     if (body.fromUserId === body.toUserId) {
       throw new BadRequestException('El origen y el destino son la misma persona.');

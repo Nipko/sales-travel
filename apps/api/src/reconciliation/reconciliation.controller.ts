@@ -119,7 +119,7 @@ export class ReconciliationController {
   private async assertCanManage(userId: string | undefined, tenantId: string): Promise<string> {
     if (!userId) throw new UnauthorizedException();
     if (!(await this.network.canManageTenant(userId, tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
+      throw new ForbiddenException('No administras este nodo.');
     }
     return userId;
   }

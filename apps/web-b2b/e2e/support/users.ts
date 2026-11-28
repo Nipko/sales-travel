@@ -36,6 +36,10 @@ export const USERS = {
   subAdmin: { email: 'sub-admin@e2e.test', tenant: 'e2e-subagencia', mfa: true },
   /** CTA-04: activa el 2FA con la contraseña errada hasta que la cuenta se bloquea. */
   enrola: { email: 'enrola@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** ACC-19: su sesión se envejece por SQL hasta caer por inactividad. */
+  inactivo: { email: 'inactivo@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
+  /** ACC-20: entra en dos navegadores; el primero queda afuera. */
+  doble: { email: 'doble@e2e.test', tenant: 'e2e-agencia-b', mfa: false },
 } as const;
 
 export type UserKey = keyof typeof USERS;

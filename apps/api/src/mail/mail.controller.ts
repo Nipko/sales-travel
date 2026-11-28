@@ -40,7 +40,7 @@ export class MailController {
   ): Promise<MailTestResult & { to: string }> {
     if (!userId) throw new UnauthorizedException();
     if (!(await this.network.canManageTenant(userId, body.tenantId))) {
-      throw new ForbiddenException('not authorized to manage this tenant');
+      throw new ForbiddenException('No administras este nodo.');
     }
     const user = await this.db.db
       .selectFrom('users')
